@@ -34,6 +34,7 @@ import { BlockMove } from './blockMove.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
+import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { errorToast, toast } from '../store.ts';
@@ -124,6 +125,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         DetailsContent,
         TaskRef.configure({ pageId }),
         BlockMove,
+        PageLink.configure({ pageId }),
         SlashCommand,
         ...collabExtensions(session, user),
       ],
@@ -196,6 +198,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
       {editor && canEdit && <BlockHandle editor={editor} />}
       <EditorContent editor={editor} />
       <SlashMenuView />
+      <PageLinkMenuView />
       <LinkEditorView />
     </div>
   );
@@ -305,7 +308,7 @@ function FormattingMenu({ editor }: { editor: Editor }) {
         const { empty } = state.selection;
         // Keep showing while keyboard focus is inside the toolbar itself.
         const inToolbar = !!document.activeElement?.closest('.bubble-menu');
-        if (empty || !e.isEditable || !(e.view.hasFocus() || inToolbar)) return false;
+        if (empty || e.isDestroyed || !e.isEditable || !(e.isFocused || inToolbar)) return false;
         if (state.selection instanceof TextSelection === false) return false; // node selections (images, files, tasks)
         return !e.isActive('codeBlock');
       }}

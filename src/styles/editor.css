@@ -222,6 +222,35 @@
 .page-emoji { font-size: 18px; line-height: 1; width: 18px; display: inline-flex; justify-content: center; }
 .page-emoji-sm { font-size: 15px; width: 15px; }
 
+/* ───────── Page links & backlinks ───────── */
+.ProseMirror .page-link { display: inline; }
+.ProseMirror .page-link > a, .ProseMirror .page-link > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0 3px;
+  border-radius: 4px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-strong);
+  cursor: pointer;
+}
+.ProseMirror .page-link > a:hover { background: var(--bg-hover); border-bottom-color: var(--text-muted); }
+.ProseMirror .page-link.is-selected > a { background: var(--accent-soft); }
+.ProseMirror .page-link.is-missing > span { color: var(--text-muted); font-weight: 400; cursor: default; }
+.page-link-icon { display: inline-flex; align-self: center; font-size: 0.95em; color: var(--text-muted); }
+.page-link-menu .page-link-item { padding: 5px 8px; }
+.page-link-item-icon { width: 24px; height: 24px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); font-size: 16px; }
+.page-link-item-text { min-width: 0; display: flex; flex-direction: column; }
+.page-link-empty { padding: 6px 10px; }
+.backlinks { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--border); }
+.backlinks-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 6px; }
+.backlink { display: flex; align-items: center; gap: 8px; padding: 5px 6px; margin: 0 -6px; border-radius: 6px; color: var(--text); text-decoration: none; }
+.backlink:hover { background: var(--bg-hover); }
+.backlink-icon { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--text-muted); }
+.backlink .muted { margin-left: auto; flex: none; max-width: 45%; }
+
 /* ───────── Accessibility: visible keyboard focus ───────── */
 .bm-btn:focus-visible,
 .block-handle-btn:focus-visible,

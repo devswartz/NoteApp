@@ -7,6 +7,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronRight,
+  FileSymlink,
   Link2,
   MessageSquareQuote,
   CheckSquare,
@@ -141,6 +142,13 @@ export const SLASH_ITEMS: SlashItem[] = [
       e.chain().focus().deleteRange(r).insertContent(label).setTextSelection({ from: r.from, to: r.from + label.length }).run();
       slashHooks.editLink(e);
     },
+  },
+  {
+    title: 'Link to page',
+    description: 'Link another page (or type [[)',
+    keywords: 'page link reference backlink wiki [[',
+    icon: <FileSymlink size={18} />,
+    run: (e, r) => e.chain().focus().deleteRange(r).insertContent('[[').run(),
   },
   {
     title: 'Quote',
