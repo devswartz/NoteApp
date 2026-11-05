@@ -34,6 +34,7 @@ import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
+import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { errorToast, toast } from '../store.ts';
@@ -104,6 +105,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         DetailsContent,
         TaskRef.configure({ pageId }),
         UndoTasks,
+        PageLink.configure({ pageId }),
         SlashCommand,
         ...collabExtensions(session, user),
       ],
@@ -166,6 +168,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
       {editor && canEdit && <BlockHandle editor={editor} />}
       <EditorContent editor={editor} />
       <SlashMenuView />
+      <PageLinkMenuView />
       <LinkEditorView />
     </div>
   );
@@ -259,7 +262,7 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       className="bubble-menu"
       shouldShow={({ editor: e, state }) => {
         const { empty } = state.selection;
-        if (empty || !e.isEditable || !e.view.hasFocus()) return false;
+        if (empty || e.isDestroyed || !e.isEditable || !e.isFocused) return false;
         if (state.selection instanceof TextSelection === false) return false; // node selections (images, files, tasks)
         return !e.isActive('codeBlock');
       }}
