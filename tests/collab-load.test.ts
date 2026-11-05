@@ -1,6 +1,8 @@
 // Load: 10 people editing one page at once through the real server.
 // Checks convergence (no lost edits), awareness for everyone, save + reload,
 // and that a reconnect storm (everyone drops and comes back) still converges.
+// The 10-editor tests take ~9 s, so they run only with LOAD_TEST=1
+// (`LOAD_TEST=1 npm test`); the save max-wait test always runs.
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
@@ -16,7 +18,7 @@ let pageId: string;
 
 before(async () => {
   app = await startTestApp();
-  users = await Promise.all(Array.from({ length: N }, (_, i) => app.signUp(`Editor${i}`)));
+  users = await Promise.all(Array.from({ length: process.env.LOAD_TEST === '1' ? N : 1 }, (_, i) => app.signUp(`Editor${i}`)));
   const owner = users[0];
   for (const u of users.slice(1)) await app.call('POST', `/workspaces/${owner.wsId}/members`, owner.token, { email: u.user.email, role: 'member' });
   const nb = (await app.call('POST', `/workspaces/${owner.wsId}/notebooks`, owner.token, { name: 'Load' })).data.id;
@@ -35,7 +37,9 @@ const content = (c: CollabClient) =>
     .toArray()
     .map((p) => ((p as Y.XmlElement).get(0) as Y.XmlText | undefined)?.toString() ?? '');
 
-test(`${N} editors × ${EDITS_EACH} edits converge with nothing lost`, async () => {
+const LOAD = process.env.LOAD_TEST === '1' ? {} : { skip: 'set LOAD_TEST=1 to run the 10-editor load test' };
+
+test(`${N} editors × ${EDITS_EACH} edits converge with nothing lost`, LOAD, async () => {
   const t0 = Date.now();
   for (const u of users) clients.push(collabClient(app, pageId, u.token, { id: u.user.id, name: u.user.name, color: u.user.color }));
   await Promise.all(clients.map(synced));
@@ -87,7 +91,7 @@ test(`${N} editors × ${EDITS_EACH} edits converge with nothing lost`, async () 
   await waitFor(() => JSON.stringify(content(late)) === ref(), 5000, 'reload after save');
 });
 
-test('reconnect storm: everyone drops, edits offline, and comes back', async () => {
+test('reconnect storm: everyone drops, edits offline, and comes back', LOAD, async () => {
   for (const c of clients) c.provider.disconnect();
   clients.forEach((c, k) => {
     const p = new Y.XmlElement('paragraph');
@@ -103,8 +107,16 @@ test('reconnect storm: everyone drops, edits offline, and comes back', async () 
 
 test('continuous typing still saves at least every few seconds (debounce has a max wait)', async () => {
   const { db } = await import('../server/db.ts');
-  const c = clients[0];
-  const text = (c.doc.getXmlFragment('default').get(0) as Y.XmlElement).get(0) as Y.XmlText;
+  const c = collabClient(app, pageId, users[0].token);
+  clients.push(c);
+  await synced(c);
+  const frag = c.doc.getXmlFragment('default');
+  if (!frag.length) {
+    const p = new Y.XmlElement('paragraph');
+    p.insert(0, [new Y.XmlText('')]);
+    frag.insert(0, [p]);
+  }
+  const text = (frag.get(0) as Y.XmlElement).get(0) as Y.XmlText;
   const savedAt = () => (db.prepare('SELECT updated_at FROM pages WHERE id = ?').get(pageId) as { updated_at: string }).updated_at;
   const before = savedAt();
   const start = Date.now();
