@@ -103,7 +103,7 @@ src/               React web app
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
 apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
-public/            icon.svg (manifest and sw.js are generated at build time; see Offline)
+public/            icon.svg (the icon source), icons/ (PNG/ICO set generated from it: `npm run web:icons`), theme-init.js (pre-paint theme); manifest and sw.js are generated at build time (see Offline)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
 apps/desktop/      Tauri 2 desktop app (Rust in src-tauri/, build scripts, icon sources); docs/DESKTOP.md
@@ -211,6 +211,7 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 | `PageLink.tsx`, `pageItems.ts` | `[[` page links: inline `pageLink[pageId]` node showing the page's live title and icon; the `[[` picker (search pages, or create one). Backlinks: `GET /pages/:id/backlinks` (`server/links.ts`, a lazily rebuilt in-memory index keyed by `pages.updated_at`) |
 | `templates.ts`, `TemplatePicker.tsx` | Built-in page templates (ProseMirror JSON) and the "Start with a template" row on empty pages (shown only after the server copy has synced). `applyTemplate(editor, pageId, template)` sets content, title and icon |
 | `VersionHistory.tsx` | Version history modal: snapshot list, read-only preview (`documentExtensions()` + a scratch Y.Doc), Restore (snapshots the current state first, then replaces the content as one collaborative edit). Server: `server/versions.ts` (`page_versions`): a 5-minute sweep snapshots pages edited since their last version (at most one per 10 min), opening the history also snapshots if due; kept: all < 24 h, hourly < 7 days, daily after, max 200 per page |
+| `exportPage.ts`, `markdownUtils.ts` | Export as Markdown (`@tiptap/markdown`; custom nodes have `renderMarkdown`: callout → quote, toggle → `<details>`, file card → link, task → `- [ ]` with due/priority, page link → `[[Title]]`), print / save as PDF (print stylesheet in `editor.css`), import Markdown (appends; a leading `# Title` names an untitled page) |
 | `IconPicker.tsx` | Emoji picker for page icons |
 | `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
 

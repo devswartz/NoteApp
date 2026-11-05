@@ -17,6 +17,15 @@ import { publish } from './events.ts';
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 const SAVE_DEBOUNCE_MS = 1000;
+/**
+ * Largest single message accepted on /collab. Normal typing sends bytes to a
+ * few KB; pasting a long document or syncing a page edited offline can reach
+ * hundreds of KB. Anything bigger is refused (close 1009) rather than applied,
+ * so one client can't bloat a page for everyone. Images are uploads, not inline.
+ */
+export const MAX_SYNC_MESSAGE_BYTES = 4 * 1024 * 1024;
+/** Presence (cursor, name, colour) is tiny; cap it hard. */
+export const MAX_AWARENESS_MESSAGE_BYTES = 64 * 1024;
 /** Save at least this often while people keep typing (the debounce alone would wait for a pause). */
 const SAVE_MAX_WAIT_MS = 5000;
 
@@ -308,6 +317,12 @@ export function attachCollab(wss: WebSocketServer) {
         const dec = decoding.createDecoder(new Uint8Array(data));
         const enc = encoding.createEncoder();
         const type = decoding.readVarUint(dec);
+        const max = type === MSG_AWARENESS ? MAX_AWARENESS_MESSAGE_BYTES : MAX_SYNC_MESSAGE_BYTES;
+        if (data.byteLength > max) {
+          console.warn(`[collab] refused a ${data.byteLength}-byte message (type ${type}) on page ${pageId}`);
+          conn.close(1009, 'Message too big');
+          return;
+        }
         if (type === MSG_SYNC) {
           encoding.writeVarUint(enc, MSG_SYNC);
           // Peek at the sync sub-type so read-only users can't push updates.

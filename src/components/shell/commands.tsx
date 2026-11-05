@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CalendarRange,
   CheckCircle2,
+  BookPlus,
   FilePlus,
   Inbox,
   Keyboard,
@@ -22,6 +23,7 @@ import { post } from '../../api.ts';
 import { canEditWorkspace, errorToast, toast, ui, useStore } from '../../store.ts';
 import { cycleTheme } from '../../store/ui.ts';
 import { useCommands, type Command } from '../../hooks/useShortcuts.ts';
+import { openNewNotebook } from './NewNotebookDialog.tsx';
 
 const currentPageId = () => location.pathname.match(/\/p\/([^/?#]+)/)?.[1];
 
@@ -80,6 +82,7 @@ export function useShellCommands(wsId: string) {
           ui.openQuickAdd(pageId ? { pageId } : {});
         },
       },
+      { id: 'notebooks.new', title: 'New notebook…', group: 'Create', keywords: 'template project personal meetings', icon: <BookPlus size={16} />, when: canEditWorkspace, run: openNewNotebook },
       { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note document', icon: <FilePlus size={16} />, when: canEditWorkspace, run: newPage },
       nav('today', 'Today', 't', 'tasks/today', <Sun size={16} />),
       nav('my', 'My Tasks', 'm', 'tasks/my', <Inbox size={16} />),

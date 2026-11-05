@@ -21,6 +21,11 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 - **Version history:** the page's ⋯ menu → *Version history* lists automatic snapshots. Preview any of them and **Restore** it; restoring is one edit that everyone sees, and it can be undone.
 - The app opens offline, even from a cold start. Pages you've opened stay editable offline and sync when you reconnect; tasks are read-only offline. A banner tells you when you're offline, and a prompt offers to reload when a new version of the app is available.
 
+## Comments and mentions
+
+- Select text and click **Comment** in the formatting bubble to start a thread on it. The comments panel shows every thread on the page; reply there, **resolve** a thread when it's done, or reopen it.
+- Type **@** and a name in a comment to mention someone. A notification inbox to collect mentions and replies is on its way.
+
 ## Tasks inside notes
 
 - Type **`[]` then space** at the start of a line to make a task, or put the cursor on any line and press **⌘↵** to turn it into one.
