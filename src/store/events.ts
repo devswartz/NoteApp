@@ -7,6 +7,8 @@ import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
 import type { EventMessage, ServerEvent } from '../../shared/types.ts';
 import { commentsChanged } from '../editor/collabComments.ts';
+import { receiveNotification } from '../components/sharing/inbox.ts';
+import { toast } from './toasts.ts';
 
 let socket: WebSocket | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,6 +121,11 @@ function handle(ev: ServerEvent) {
       break;
     case 'comments':
       if (ev.workspaceId === wsId) commentsChanged(ev.pageId);
+      break;
+    case 'notification':
+      receiveNotification(ev.notification);
+      if (ev.notification.kind === 'mention' || ev.notification.kind === 'shared' || ev.notification.kind === 'assigned')
+        toast(ev.notification.title);
       break;
     case 'workspaces':
       debounce('ws', () => void loadWorkspaces());
