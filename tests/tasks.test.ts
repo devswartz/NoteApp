@@ -392,3 +392,40 @@ test('subtasks of a private-notebook task are as private as their parent', async
   assert.ok(!seen.includes(parent.id) && !seen.includes(child.id));
   assert.equal((await create(other, wsId, { title: 'Sneaky', parentId: parent.id })).status, 400, 'cannot attach to an invisible parent');
 });
+
+test('completion history of a recurring private-note task stays private', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const t = (await create(owner, wsId, { title: 'Secret recurring', pageId, dueDate: '2026-11-05', recurrence: { freq: 'week', interval: 1 } })).data;
+  assert.equal((await app.call('PATCH', `/tasks/${t.id}`, owner.token, { status: 'done' })).status, 200);
+  const mine = (await app.call<Task[]>('GET', `/workspaces/${wsId}/tasks/completed`, owner.token)).data;
+  const history = mine.find((x) => x.title === 'Secret recurring' && x.status === 'done');
+  assert.ok(history, 'the owner sees the completed occurrence');
+  assert.equal(history!.pageId, pageId, 'history keeps the note');
+  for (const path of [`/workspaces/${wsId}/tasks`, `/workspaces/${wsId}/tasks/completed`]) {
+    const seen = (await app.call<Task[]>('GET', path, other.token)).data;
+    assert.ok(!seen.some((x) => x.title === 'Secret recurring'), `hidden from other members in ${path}`);
+  }
+  // Reconciling the note doesn't detach the history row (it isn't embedded).
+  const { syncPageTasks, getTask } = await import('../server/tasks.ts');
+  syncPageTasks(pageId, wsId, new Set([t.id]));
+  assert.equal(getTask(history!.id)!.pageId, pageId);
+});
+
+test('subtasks need edit access to the parent’s note; recurring parents reopen their subtasks', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const assigned = (await create(owner, wsId, { title: 'Yours, in my private note', pageId, assigneeId: other.user.id })).data;
+  assert.equal((await create(other, wsId, { title: 'Sneaky sub', parentId: assigned.id })).status, 400, 'same rule as a top-level task in that note');
+  assert.equal((await create(owner, wsId, { title: 'Owner sub', parentId: assigned.id })).status, 200);
+
+  const parent = (await create(owner, wsId, { title: 'Weekly review', dueDate: '2026-11-05', recurrence: { freq: 'week', interval: 1 } })).data;
+  const sub = (await create(owner, wsId, { title: 'Collect numbers', parentId: parent.id })).data;
+  await app.call('PATCH', `/tasks/${sub.id}`, owner.token, { status: 'done' });
+  const rolled = (await app.call<Task>('PATCH', `/tasks/${parent.id}`, owner.token, { status: 'done' })).data;
+  assert.equal(rolled.status, 'open');
+  assert.ok(rolled.dueDate! > '2026-11-05');
+  const { getTask } = await import('../server/tasks.ts');
+  assert.equal(getTask(sub.id)!.status, 'open', 'subtask reopened for the next occurrence');
+  assert.equal(getTask(sub.id)!.completedAt, null);
+});

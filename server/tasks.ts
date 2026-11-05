@@ -105,6 +105,12 @@ function resolveParent(userId: string, workspaceId: string, parentId: string, se
   if (!parent || parent.workspaceId !== workspaceId || !taskVisibleTo(parentId, userId)) throw new HttpError(400, 'Invalid parent task');
   if (parent.id === selfId) throw new HttpError(400, 'A task cannot be its own subtask');
   if (parent.parentId) throw new HttpError(400, 'Subtasks cannot have subtasks');
+  // A subtask goes into the parent's note, so the same rule as creating a task
+  // there applies: seeing the parent (e.g. as its assignee) isn't enough.
+  if (parent.pageId) {
+    const a = pageAccess(parent.pageId, userId);
+    if (!a || !a.canEdit) throw new HttpError(400, 'You can’t add tasks to that note');
+  }
   return parent;
 }
 
@@ -227,6 +233,7 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   const reopening = patch.status === 'open' && task.status === 'done';
   const recurrence = patch.recurrence !== undefined ? patch.recurrence : task.recurrence;
 
+  let reopenedChildren: string[] = [];
   db.transaction(() => {
     // Recurring: the next due date in the completing user's time zone, or null
     // when the series has ended (until / count) and the task completes for good.
@@ -234,12 +241,14 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
     if (completing && recurrence && dueDate) {
       // Record a completed occurrence for history, then roll the original
       // forward to its next due date and keep it open (docs/REMINDERS.md).
+      // The history row keeps page_id: task visibility follows the note, so a
+      // private note's history must stay private (reconcile skips occurrences).
       const occId = newId();
       db.prepare(
         `INSERT INTO tasks (id, workspace_id, title, description, status, priority, due_date, due_time, assignee_id,
            created_by, page_id, occurrence_of, completed_at, completed_by, created_at, updated_at)
          SELECT @occId, workspace_id, title, description, 'done', priority, due_date, due_time, assignee_id,
-           created_by, NULL, id, @ts, @userId, @ts, @ts FROM tasks WHERE id = @id`,
+           created_by, page_id, id, @ts, @userId, @ts, @ts FROM tasks WHERE id = @id`,
       ).run({ occId, id, ts, userId });
       // Shift the reminder by the same offset relative to the due date.
       let reminderAt = task.reminderAt;
@@ -254,6 +263,12 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
         nextDue: dueDate,
         nextReminder: reminderAt,
       });
+      // The next occurrence starts with its subtasks open again.
+      reopenedChildren = (
+        db.prepare(`SELECT id FROM tasks WHERE parent_id = ? AND status = 'done'`).all(id) as { id: string }[]
+      ).map((r) => r.id);
+      if (reopenedChildren.length)
+        db.prepare(`UPDATE tasks SET status = 'open', completed_at = NULL, completed_by = NULL, updated_at = ? WHERE parent_id = ? AND status = 'done'`).run(ts, id);
       publish({ type: 'task', task: getTask(occId)! });
       return;
     }
@@ -266,6 +281,7 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   const updated = getTask(id)!;
   publish({ type: 'task', task: updated });
   if (updated.pageId !== task.pageId) for (const c of cascadePage(id, updated.pageId)) publish({ type: 'task', task: getTask(c)! });
+  for (const c of reopenedChildren) publish({ type: 'task', task: getTask(c)! });
   return updated;
 }
 
