@@ -31,6 +31,7 @@ import {
   PanelTop,
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
+import { LongPage } from './longPage.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
@@ -121,6 +122,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
       extensions: [
         ...documentExtensions(pageId),
         SlashCommand,
+        LongPage, // long pages: render-skipping CSS away from the cursor
         ...collabExtensions(session, user),
       ],
       editorProps: {

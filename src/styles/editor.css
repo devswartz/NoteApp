@@ -371,8 +371,10 @@
 
 /* ───────── Long pages ─────────
    Let the browser skip layout and paint for blocks far off-screen. `auto` remembers each
-   block's real size once rendered, so scrolling and the scrollbar stay stable. */
-.ProseMirror > :is(p, h1, h2, h3, ul, ol, blockquote, pre, .code-block, .tableWrapper, .callout, .toggle, .file-card, .task-ref) {
+   block's real size once rendered, so scrolling and the scrollbar stay stable.
+   Only on long pages (.is-long), and never for the blocks around the cursor (.near-cursor):
+   applied to the block being edited, fast typing could land characters in the wrong place. */
+.ProseMirror.is-long > :is(p, h1, h2, h3, ul, ol, blockquote, pre, .code-block, .tableWrapper, .callout, .toggle, .file-card, .task-ref):not(.near-cursor) {
   content-visibility: auto;
   contain-intrinsic-size: auto 1.7em;
 }
