@@ -281,3 +281,58 @@ test('task changes are pushed live to other members; hidden tasks arrive as task
     sock.close();
   }
 });
+
+test('reconcile through the collab socket: removing a taskRef detaches it, adding one links it', async () => {
+  const u = await app.signUp('Collab');
+  const Y = await import('yjs');
+  const { WebsocketProvider } = await import('y-websocket');
+  const { seedPageDoc, flushAll } = await import('../server/collab.ts');
+  const { getTask } = await import('../server/tasks.ts');
+  const { pageId } = await makePage(u, u.wsId);
+  const inNote = (await create(u, u.wsId, { title: 'In note', pageId })).data;
+  const loose = (await create(u, u.wsId, { title: 'Loose' })).data;
+  seedPageDoc(pageId, (frag) => {
+    const ref = new Y.XmlElement('taskRef');
+    ref.setAttribute('taskId', inNote.id);
+    frag.insert(0, [ref]);
+  });
+
+  const token = u.token;
+  class AuthedWS extends WebSocket {
+    constructor(url: string) {
+      super(url, ['noteapp.v1', `bearer.${token}`]);
+    }
+  }
+  const doc = new Y.Doc();
+  const provider = new WebsocketProvider(`${app.wsOrigin}/collab`, pageId, doc, {
+    WebSocketPolyfill: AuthedWS as unknown as typeof globalThis.WebSocket,
+    disableBc: true,
+  });
+  try {
+    await new Promise<void>((res, rej) => {
+      const t = setTimeout(() => rej(new Error('collab sync timed out')), 3000);
+      provider.once('sync', () => (clearTimeout(t), res()));
+    });
+    const frag = doc.getXmlFragment('default');
+    assert.equal((frag.get(0) as InstanceType<typeof Y.XmlElement>).getAttribute('taskId'), inNote.id);
+    doc.transact(() => {
+      frag.delete(0, 1);
+      const ref = new Y.XmlElement('taskRef');
+      ref.setAttribute('taskId', loose.id);
+      frag.insert(0, [ref]);
+    });
+    // Wait for the server to receive the update, then save without waiting for the debounce.
+    for (let i = 0; i < 50 && getTask(loose.id)!.pageId !== pageId; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      flushAll();
+    }
+    assert.equal(getTask(loose.id)!.pageId, pageId, 'task added to the note is linked to it');
+    assert.equal(getTask(inNote.id)!.pageId, null, 'task removed from the note becomes standalone');
+  } finally {
+    const sock = provider.ws as unknown as WebSocket | null;
+    provider.destroy();
+    provider.awareness.destroy(); // its check interval would keep the test process alive
+    doc.destroy();
+    if (sock && sock.readyState !== WebSocket.CLOSED) await new Promise((r) => sock.once('close', r));
+  }
+});
