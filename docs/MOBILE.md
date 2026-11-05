@@ -92,7 +92,7 @@ Set these on the server (`docs/DEPLOY_CONTRACT.md` lists the server env). Each c
 | `APNS_TEAM_ID` | Team ID |
 | `APNS_BUNDLE_ID` | `com.devswartz.noteapp` |
 | `APNS_PRIVATE_KEY` | Contents of the APNs `.p8` (newlines may be written as `\n`) |
-| `APNS_ENV` | `production` for TestFlight/App Store builds (default); `sandbox` for builds run from Xcode |
+| `APNS_ENV` | Optional: which environment to try first, `production` (default) or `sandbox`. Builds run from Xcode get sandbox tokens and TestFlight/App Store builds get production ones. A token the first environment rejects (`BadDeviceToken`) is retried on the other, and the one that works is remembered, so one server reaches both kinds of build. |
 | `FCM_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts → Generate new private key (the JSON, raw or base64) |
 
 Firebase setup: create a Firebase project, add an Android app with package `com.devswartz.noteapp`, and download `google-services.json` (that's the GitHub secret above). iOS doesn't use Firebase; it talks to APNs directly.
