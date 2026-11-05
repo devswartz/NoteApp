@@ -1,10 +1,12 @@
 // All Tasks: search, filter, sort and group everything in the workspace.
-import { useDeferredValue, useMemo, useState } from 'react';
-import { SlidersHorizontal, X } from 'lucide-react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { Bookmark, BookmarkPlus, SlidersHorizontal, X } from 'lucide-react';
 import { useStore } from '../../store.ts';
 import { TaskGroups } from '../../components/TaskRow.tsx';
 import { DEFAULT_FILTERS, applyFilters, groupBy, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
 import { Loading, useOpen } from './common.tsx';
+import { loadSavedViews, sameView, storeSavedViews, type SavedView } from './savedViews.ts';
+import { newTaskId } from '../../store.ts';
 
 export function AllView() {
   const open = useOpen();
@@ -17,6 +19,11 @@ export function AllView() {
   const [sort, setSort] = useState<SortKey>('due');
   const [group, setGroup] = useState<GroupKey>('none');
   const [showFilters, setShowFilters] = useState(false);
+  const wsId = useStore((s) => s.wsId!);
+  const [views, setViews] = useState<SavedView[]>(() => loadSavedViews(wsId));
+  useEffect(() => setViews(loadSavedViews(wsId)), [wsId]); // the workspace can switch under a mounted view
+  const saveViews = (v: SavedView[]) => (setViews(v), storeSavedViews(wsId, v));
+  const current = views.find((v) => sameView(v, filters, sort, group));
   // Filtering thousands of tasks shouldn't block typing in the search box.
   const deferred = useDeferredValue(filters);
   // "Open" reads from the open list so just-completed tasks linger for their check animation.
@@ -34,11 +41,49 @@ export function AllView() {
   if (!loaded) return <Loading />;
   return (
     <>
+      {views.length > 0 && (
+        <div className="saved-views" role="tablist" aria-label="Saved views">
+          {views.map((v) => (
+            <span key={v.id} className={`chip saved-view ${current?.id === v.id ? 'chip-active' : ''}`}>
+              <button
+                role="tab"
+                aria-selected={current?.id === v.id}
+                onClick={() => {
+                  setFilters(v.filters);
+                  setSort(v.sort);
+                  setGroup(v.group);
+                }}
+              >
+                <Bookmark size={12} /> {v.name}
+              </button>
+              <button
+                className="saved-view-x"
+                aria-label={`Delete saved view ${v.name}`}
+                onClick={() => confirm(`Delete the saved view “${v.name}”?`) && saveViews(views.filter((x) => x.id !== v.id))}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="toolbar wrap">
         <input className="input" style={{ flex: '1 1 200px' }} placeholder="Filter tasks…" value={filters.q} onChange={(e) => f('q', e.target.value)} />
         <button className={`btn btn-secondary ${active ? 'is-active' : ''}`} onClick={() => setShowFilters((v) => !v)}>
           <SlidersHorizontal size={15} /> Filters{active ? ` · ${active}` : ''}
         </button>
+        {!current && (
+          <button
+            className="btn btn-secondary"
+            title="Save these filters as a view"
+            onClick={() => {
+              const name = prompt('Name this view')?.trim();
+              if (name) saveViews([...views, { id: newTaskId(), name: name.slice(0, 60), filters, sort, group }]);
+            }}
+          >
+            <BookmarkPlus size={15} /> Save view
+          </button>
+        )}
         <label className="select-label">
           Sort
           <select className="input input-sm" value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>

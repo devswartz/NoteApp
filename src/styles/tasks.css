@@ -71,3 +71,10 @@ button.cal-more:hover { color: var(--accent); }
 .prod-bar div { width: 100%; background: var(--text-muted); border-radius: 3px; }
 .prod-bar div.is-today { background: var(--accent); }
 .prod-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+
+/* Saved views (All Tasks) */
+.saved-views { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.saved-view { padding: 0; gap: 0; }
+.saved-view button { display: inline-flex; align-items: center; gap: 5px; padding: 0 4px 0 10px; height: 100%; color: inherit; }
+.saved-view .saved-view-x { padding: 0 8px 0 4px; opacity: 0.5; }
+.saved-view .saved-view-x:hover { opacity: 1; }

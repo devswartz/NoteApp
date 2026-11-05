@@ -125,3 +125,19 @@ test('productivity: done today, tasks left, streak and week', async () => {
   // Nothing yet today: the streak still counts up to yesterday.
   assert.equal(productivity([done(1), done(2)], ME, now).streak, 2);
 });
+
+test('saved views: stored JSON is parsed defensively', async () => {
+  const { parseSavedViews, sameView } = await import('../src/pages/tasks/savedViews.ts');
+  assert.deepEqual(parseSavedViews(null), []);
+  assert.deepEqual(parseSavedViews('not json'), []);
+  assert.deepEqual(parseSavedViews('{"a":1}'), []);
+  const [v] = parseSavedViews(JSON.stringify([{ id: 'v1', name: 'Mine, urgent', filters: { assignee: 'me', priority: '1', bogus: 'x' }, sort: 'evil', group: 'priority' }, { name: 'no id' }]));
+  assert.equal(v.name, 'Mine, urgent');
+  assert.equal(v.sort, 'due', 'unknown sort falls back');
+  assert.equal(v.group, 'priority');
+  assert.equal(v.filters.assignee, 'me');
+  assert.equal(v.filters.status, 'open', 'missing filters get defaults');
+  assert.ok(!('bogus' in v.filters));
+  assert.ok(sameView(v, { ...DEFAULT_FILTERS, assignee: 'me', priority: '1' }, 'due', 'priority'));
+  assert.ok(!sameView(v, DEFAULT_FILTERS, 'due', 'priority'));
+});
