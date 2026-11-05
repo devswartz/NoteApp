@@ -1,19 +1,23 @@
 // File uploads (images and attachments). Owner: Editor & Notes.
 //
-//   POST /api/workspaces/:id/files?type=<mime type>&pageId=<optional>
+//   POST /api/workspaces/:id/files?pageId=<optional>
 //     body: the raw bytes, sent as Content-Type: application/octet-stream
 //     header: X-Filename: <URI-encoded original name>
-//     (the type is a query param, not a header, so cross-origin shells need no extra CORS header)
 //     → UploadedFile { id, url, name, mime, size }
 //   GET  /api/files/:id → UploadedFile (metadata; members of the file's workspace only)
 //   POST /api/uploads   legacy, same body and headers, no workspace
 //
-// Bytes are stored at $DATA_DIR/files/<id><ext> and served at /uploads/<id><ext>
-// (see server/app.ts). Ids are 128 random bits: an <img> can't send a bearer token,
-// so the URL itself is the capability. Types a browser would execute when opened
-// directly (HTML, SVG, XML, JS) are stored with a ".bin" suffix so they download
-// as application/octet-stream instead of running on our origin.
-import express, { Router, type Request } from 'express';
+// Bytes are stored at $DATA_DIR/files/<id><ext> and served by serveUploads() at
+// /uploads/<id><ext>. Ids are 128 random bits: an <img> can't send a bearer token,
+// so the URL itself is the capability.
+//
+// XSS defence, two layers:
+//   1. Allow-list: only extensions in SAFE_TYPES keep their extension; anything else is
+//      stored without one and served as application/octet-stream.
+//   2. Every file is served with X-Content-Type-Options: nosniff and
+//      Content-Security-Policy: sandbox, and everything except raster images with
+//      Content-Disposition: attachment, so nothing uploaded can run on our origin.
+import express, { Router, type Request, type Response, type NextFunction } from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,16 +36,56 @@ fs.mkdirSync(FILES_DIR, { recursive: true });
 export const UPLOAD_DIR = FILES_DIR;
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-const ACTIVE_EXT = new Set(['.html', '.htm', '.xhtml', '.shtml', '.svg', '.svgz', '.xml', '.xsl', '.js', '.mjs']);
+
+/** Raster images: safe to show inline (SVG is deliberately not here: it can carry script). */
+const INLINE_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+};
+
+/** Extensions we keep, with the Content-Type we serve them as. Everything else is application/octet-stream. */
+export const SAFE_TYPES: Record<string, string> = {
+  ...INLINE_TYPES,
+  '.heic': 'image/heic',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.json': 'application/json',
+  '.rtf': 'application/rtf',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.odt': 'application/vnd.oasis.opendocument.text',
+  '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+  '.odp': 'application/vnd.oasis.opendocument.presentation',
+  '.key': 'application/vnd.apple.keynote',
+  '.pages': 'application/vnd.apple.pages',
+  '.numbers': 'application/vnd.apple.numbers',
+  '.zip': 'application/zip',
+  '.gz': 'application/gzip',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+};
 
 export const fileRoutes = Router();
 const raw = express.raw({ type: () => true, limit: MAX_UPLOAD_BYTES });
 
-/** Safe extension for the stored file name ("" if none). */
+/** Extension for the stored file name: kept only if it's on the allow-list, else "". */
 export function storedExt(original: string): string {
-  const ext = path.extname(original).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 10);
-  if (ext === '.') return '';
-  return ACTIVE_EXT.has(ext) ? `${ext}.bin` : ext;
+  const ext = path.extname(original).toLowerCase();
+  return Object.hasOwn(SAFE_TYPES, ext) ? ext : '';
 }
 
 function cleanName(req: Request): string {
@@ -56,24 +100,16 @@ function cleanName(req: Request): string {
   return name.slice(0, 200) || 'file';
 }
 
-function mimeOf(req: Request, name: string): string {
-  const declared = String(req.query.type ?? req.headers['x-file-type'] ?? '').toLowerCase();
-  const ct = String(req.headers['content-type'] ?? '').toLowerCase().split(';')[0];
-  const m = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(declared) ? declared : ct && ct !== 'application/octet-stream' ? ct : '';
-  if (m && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(m)) return m;
-  const ext = path.extname(name).toLowerCase();
-  const byExt: Record<string, string> = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
-    '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.zip': 'application/zip',
-  };
-  return byExt[ext] ?? 'application/octet-stream';
+/** The type we record and report: from the allow-listed extension, never from the client. */
+function mimeOf(ext: string): string {
+  return (SAFE_TYPES[ext] ?? 'application/octet-stream').split(';')[0];
 }
 
 function store(req: Request, workspaceId: string | null, pageId: string | null): UploadedFile {
   if (!Buffer.isBuffer(req.body) || !req.body.length) throw new HttpError(400, 'Empty upload');
   const name = cleanName(req);
-  const mime = mimeOf(req, name);
   const ext = storedExt(name);
+  const mime = mimeOf(ext);
   const id = crypto.randomBytes(16).toString('hex');
   fs.writeFileSync(path.join(UPLOAD_DIR, id + ext), req.body);
   db.prepare(
@@ -122,3 +158,23 @@ fileRoutes.use((err: { type?: string }, _req: Request, _res: express.Response, n
   if (err?.type === 'entity.too.large') return next(new HttpError(413, `Files can be up to ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`));
   next(err);
 });
+
+/** Serves /uploads/<id><ext> with headers that stop uploaded content from running on our origin. */
+export function serveUploads(req: Request, res: Response, next: NextFunction) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+  const m = /^\/([0-9a-f]{32})(\.[a-z0-9]{1,10})?$/.exec(req.path);
+  const file = m ? path.join(UPLOAD_DIR, m[1] + (m[2] ?? '')) : '';
+  if (!m || !fs.existsSync(file)) return res.status(404).type('text/plain').send('Not found');
+  const ext = m[2] ?? '';
+  const row = db.prepare('SELECT name FROM files WHERE id = ?').get(m[1]) as { name: string } | undefined;
+  const name = row?.name ?? `file${ext}`;
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'");
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // images are embedded by the native shells
+  res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+  res.setHeader('Content-Type', SAFE_TYPES[ext] ?? 'application/octet-stream');
+  const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  const disposition = Object.hasOwn(INLINE_TYPES, ext) ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition', `${disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  res.sendFile(file, { headers: {}, lastModified: true, cacheControl: false }, (err) => err && next(err));
+}

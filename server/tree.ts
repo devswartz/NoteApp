@@ -94,8 +94,21 @@ export function copyPage(pageId: string, sectionId: string, userId: string, opts
     ).run(id, sectionId, title, src.icon, src.kind, src.text, position, userId, ts, ts, userId);
     for (const el of taskRefsInDoc(doc)) {
       const oldId = el.getAttribute('taskId');
-      const row = typeof oldId === 'string' ? (db.prepare('SELECT * FROM tasks WHERE id = ?').get(oldId) as Record<string, unknown> | undefined) : undefined;
-      if (!row) continue;
+      // Only tasks this page owns are cloned. A reference to any other task (another page's,
+      // another workspace's, or a deleted one) is dropped from the copy rather than cloned or
+      // left in place, where the copy's next save would claim that task.
+      const row =
+        typeof oldId === 'string'
+          ? (db.prepare('SELECT * FROM tasks WHERE id = ? AND page_id = ? AND occurrence_of IS NULL').get(oldId, pageId) as Record<string, unknown> | undefined)
+          : undefined;
+      if (!row) {
+        const parent = el.parent as Y.XmlElement | Y.XmlFragment | null;
+        if (parent) {
+          const idx = parent.toArray().indexOf(el);
+          if (idx >= 0) parent.delete(idx, 1);
+        }
+        continue;
+      }
       const copy: Record<string, unknown> = { ...row, id: newId(), page_id: id, occurrence_of: null, created_by: userId, created_at: ts, updated_at: ts };
       const cols = Object.keys(copy);
       db.prepare(`INSERT INTO tasks (${cols.join(', ')}) VALUES (${cols.map((c) => '@' + c).join(', ')})`).run(copy);

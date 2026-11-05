@@ -145,6 +145,7 @@ test('files: upload, metadata, and serving from /uploads', async () => {
   const served = await fetch(`${app.origin}${r.data.url}`);
   assert.equal(served.status, 200);
   assert.equal(served.headers.get('content-type'), 'image/png');
+  assert.match(served.headers.get('content-disposition')!, /^inline/);
   assert.deepEqual(new Uint8Array(await served.arrayBuffer()), png);
   const meta = await app.call('GET', `/files/${r.data.id}`, u.token);
   assert.deepEqual(meta.data, r.data);
@@ -152,12 +153,49 @@ test('files: upload, metadata, and serving from /uploads', async () => {
   assert.equal((await app.call('GET', `/files/${r.data.id}`, stranger.token)).status, 404);
 });
 
-test('files: active content is stored so it downloads instead of running', async () => {
+test('files: only allow-listed extensions are kept; active content downloads as octet-stream', async () => {
   const u = await setup('Svg');
-  const r = await uploadTo(u, '<svg onload="alert(1)"/>', 'evil.svg', 'image/svg+xml');
-  assert.equal(r.data.url.endsWith('.svg.bin'), true);
-  const served = await fetch(`${app.origin}${r.data.url}`);
-  assert.equal(served.headers.get('content-type'), 'application/octet-stream');
+  for (const name of ['evil.svg', 'evil.html', 'evil.xht', 'evil.xhtml', 'evil.htm', 'evil.js', 'evil.xml', 'noext']) {
+    const r = await uploadTo(u, '<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>', name, 'image/svg+xml');
+    assert.equal(r.status, 200, name);
+    assert.equal(r.data.url, `/uploads/${r.data.id}`, `${name} keeps no extension`);
+    assert.equal(r.data.mime, 'application/octet-stream', `${name}: client-declared type is ignored`);
+    const served = await fetch(`${app.origin}${r.data.url}`);
+    assert.equal(served.headers.get('content-type'), 'application/octet-stream', name);
+    assert.equal(served.headers.get('x-content-type-options'), 'nosniff', name);
+    assert.match(served.headers.get('content-security-policy') ?? '', /^sandbox/, name);
+    assert.match(served.headers.get('content-disposition') ?? '', /^attachment; filename="(evil|noext)/, name);
+  }
+});
+
+test('files: images are inline, documents are attachments; both sandboxed', async () => {
+  const u = await setup('Headers');
+  const img = await uploadTo(u, 'png', 'photo.jpg');
+  const imgRes = await fetch(`${app.origin}${img.data.url}`);
+  assert.equal(imgRes.headers.get('content-type'), 'image/jpeg');
+  assert.match(imgRes.headers.get('content-disposition')!, /^inline; filename="photo.jpg"/);
+  assert.equal(imgRes.headers.get('x-content-type-options'), 'nosniff');
+  assert.match(imgRes.headers.get('content-security-policy')!, /^sandbox/);
+  const pdf = await uploadTo(u, '%PDF-1.4', 'Réport "Q3".pdf');
+  const pdfRes = await fetch(`${app.origin}${pdf.data.url}`);
+  assert.equal(pdfRes.headers.get('content-type'), 'application/pdf');
+  const cd = pdfRes.headers.get('content-disposition')!;
+  assert.match(cd, /^attachment; filename="R_port _Q3_.pdf"/);
+  assert.match(cd, /filename\*=UTF-8''R%C3%A9port%20%22Q3%22.pdf/);
+  assert.equal((await fetch(`${app.origin}/uploads/../noteapp.db`)).status, 404);
+  assert.equal((await fetch(`${app.origin}/uploads/${'0'.repeat(32)}.png`)).status, 404);
+});
+
+test('files: metadata is hidden from non-members; oversize uploads get 413', async () => {
+  const u = await setup('Limits');
+  const r = await uploadTo(u, 'x', 'a.txt');
+  const outsider = await app.signUp('Outsider');
+  const meta = await app.call('GET', `/files/${r.data.id}`, outsider.token);
+  assert.ok([403, 404].includes(meta.status), String(meta.status));
+  const { MAX_UPLOAD_BYTES } = await import('../server/routes/files.ts');
+  const big = await uploadTo(u, new Uint8Array(MAX_UPLOAD_BYTES + 1), 'big.zip');
+  assert.equal(big.status, 413);
+  assert.match(big.data.error, /25 MB/);
 });
 
 test('files: path tricks in names are stripped; empty, unauthenticated and viewer uploads are rejected', async () => {
@@ -216,12 +254,17 @@ test('pages: copy duplicates content and gives the copy its own tasks', async ()
   const p = await newPage(u, u.s1, 'Template');
   const after = await newPage(u, u.s1, 'After');
   const t = (await app.call('POST', `/workspaces/${u.wsId}/tasks`, u.token, { title: 'Check list', pageId: p, priority: 2 })).data;
-  await writeDoc(p, (f) => f.insert(0, [para('Copy me'), taskRef(t.id)]));
+  // Also references a task owned by another page and one in another workspace: neither may be cloned.
+  const elsewhere = await newPage(u, u.s1, 'Elsewhere');
+  const foreignTask = (await app.call('POST', `/workspaces/${u.wsId}/tasks`, u.token, { title: 'Not mine', pageId: elsewhere })).data;
+  const stranger = await app.signUp('CopyStranger');
+  const theirs = (await app.call('POST', `/workspaces/${stranger.wsId}/tasks`, stranger.token, { title: 'Secret' })).data;
+  await writeDoc(p, (f) => f.insert(0, [para('Copy me'), taskRef(t.id), taskRef(foreignTask.id), taskRef(theirs.id)]));
 
   const r = await app.call('POST', `/pages/${p}/copy`, u.token, {});
   assert.equal(r.status, 200);
   const copyId = r.data.id as string;
-  assert.deepEqual((await pagesIn(u, u.s1)).map((x) => x.title), ['Template', 'Template (copy)', 'After']);
+  assert.deepEqual((await pagesIn(u, u.s1)).map((x) => x.title), ['Template', 'Template (copy)', 'After', 'Elsewhere']);
   void after;
 
   const { db } = await import('../server/db.ts');
@@ -231,8 +274,10 @@ test('pages: copy duplicates content and gives the copy its own tasks', async ()
   const doc = new Y.Doc();
   Y.applyUpdate(doc, new Uint8Array(row.ydoc));
   const refs = taskRefsInDoc(doc).map((e) => e.getAttribute('taskId') as string);
-  assert.equal(refs.length, 1);
+  assert.equal(refs.length, 1, 'references to tasks the page does not own are dropped');
   assert.notEqual(refs[0], t.id, 'the copy embeds a new task');
+  const { db: d } = await import('../server/db.ts');
+  assert.equal((d.prepare("SELECT COUNT(*) AS n FROM tasks WHERE title = 'Secret'").get() as { n: number }).n, 1, 'no clone of a foreign task');
   const tasks = (await app.call('GET', `/workspaces/${u.wsId}/tasks`, u.token)).data as { id: string; pageId: string; title: string; priority: number }[];
   const copied = tasks.find((x) => x.id === refs[0])!;
   assert.equal(copied.pageId, copyId);
