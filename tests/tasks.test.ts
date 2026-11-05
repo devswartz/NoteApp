@@ -489,3 +489,19 @@ test('tasks from a deleted shared page are still visible to everyone', async () 
   await app.call('DELETE', `/pages/${pageId}`, owner.token);
   assert.ok((await list(other, wsId)).data.some((x) => x.id === t.id));
 });
+
+test('history of a private standalone recurring task (one that left its private note) stays private', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { syncPageTasks } = await import('../server/tasks.ts');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const t = (await create(owner, wsId, { title: 'Private daily', pageId, dueDate: '2026-11-05', recurrence: { freq: 'day', interval: 1 } })).data;
+  syncPageTasks(pageId, wsId, new Set()); // removed from the note: now private standalone
+  await app.call('PATCH', `/tasks/${t.id}`, owner.token, { status: 'done' });
+  await app.call('PATCH', `/tasks/${t.id}`, owner.token, { status: 'done' });
+  const own = (await app.call<Task[]>('GET', `/workspaces/${wsId}/tasks/completed`, owner.token)).data.filter((x) => x.title === 'Private daily');
+  assert.equal(own.length, 2, 'the owner sees both completed occurrences');
+  for (const path of [`/workspaces/${wsId}/tasks`, `/workspaces/${wsId}/tasks/completed`]) {
+    const seen = (await app.call<Task[]>('GET', path, other.token)).data;
+    assert.ok(!seen.some((x) => x.title === 'Private daily'), `no leak in ${path}`);
+  }
+});

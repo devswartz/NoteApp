@@ -269,14 +269,14 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
     if (completing && recurrence && dueDate) {
       // Record a completed occurrence for history, then roll the original
       // forward to its next due date and keep it open (docs/REMINDERS.md).
-      // The history row keeps page_id: task visibility follows the note, so a
-      // private note's history must stay private (reconcile skips occurrences).
+      // The history row keeps page_id and private_owner_only: visibility follows
+      // them, so history is exactly as private as the task (reconcile skips occurrences).
       const occId = newId();
       db.prepare(
         `INSERT INTO tasks (id, workspace_id, title, description, status, priority, due_date, due_time, assignee_id,
-           created_by, page_id, occurrence_of, completed_at, completed_by, created_at, updated_at)
+           created_by, page_id, private_owner_only, occurrence_of, completed_at, completed_by, created_at, updated_at)
          SELECT @occId, workspace_id, title, description, 'done', priority, due_date, due_time, assignee_id,
-           created_by, page_id, id, @ts, @userId, @ts, @ts FROM tasks WHERE id = @id`,
+           created_by, page_id, private_owner_only, id, @ts, @userId, @ts, @ts FROM tasks WHERE id = @id`,
       ).run({ occId, id, ts, userId });
       // Shift the reminder by the same offset relative to the due date.
       let reminderAt = task.reminderAt;
