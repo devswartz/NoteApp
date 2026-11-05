@@ -30,6 +30,7 @@ import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { refreshSession, upload, wsProtocols, wsUrl } from '../api.ts';
 import { errorToast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
+import { platform } from '../platform/index.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 export interface PresenceUser {
@@ -165,11 +166,13 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
   }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // File pickers for the slash menu.
-  const imageInput = useRef<HTMLInputElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    slashHooks.pickImage = () => imageInput.current?.click();
-    slashHooks.pickFile = () => fileInput.current?.click();
+    const pick = async (ed: Editor, accept?: string) => {
+      const files = await platform.pickFiles({ accept, multiple: true });
+      if (files.length) void insertFiles(ed, files, ed.state.selection.from);
+    };
+    slashHooks.pickImage = (ed) => void pick(ed, 'image/*');
+    slashHooks.pickFile = (ed) => void pick(ed);
   }, []);
 
   return (
@@ -178,25 +181,6 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
       {editor && canEdit && <TableBar editor={editor} />}
       <EditorContent editor={editor} />
       <SlashMenuView />
-      <input
-        ref={imageInput}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          if (editor && e.target.files?.length) void insertFiles(editor, [...e.target.files], editor.state.selection.from);
-          e.target.value = '';
-        }}
-      />
-      <input
-        ref={fileInput}
-        type="file"
-        hidden
-        onChange={(e) => {
-          if (editor && e.target.files?.length) void insertFiles(editor, [...e.target.files], editor.state.selection.from);
-          e.target.value = '';
-        }}
-      />
     </div>
   );
 }

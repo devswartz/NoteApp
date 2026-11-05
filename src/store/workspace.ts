@@ -3,6 +3,7 @@ import { get } from '../api.ts';
 import { emptyTree, set, st } from './state.ts';
 import { loadTasks } from './tasks.ts';
 import type { Member, PendingInvite, Tree, Workspace } from '../../shared/types.ts';
+import { platform } from '../platform/index.ts';
 
 export async function loadWorkspaces() {
   const workspaces = await get<Workspace[]>('/workspaces');
@@ -13,11 +14,7 @@ export async function loadWorkspaces() {
 export async function selectWorkspace(wsId: string) {
   if (st().wsId === wsId && st().treeLoaded) return;
   set({ wsId, tree: emptyTree, tasks: {}, members: [], treeLoaded: false, tasksLoaded: false });
-  try {
-    localStorage.setItem('noteapp.lastWs', wsId);
-  } catch {
-    /* ignore */
-  }
+  platform.kv.set('noteapp.lastWs', wsId);
   await Promise.all([loadTree(), loadTasks(), loadMembers()]);
 }
 

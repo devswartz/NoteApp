@@ -2,7 +2,7 @@
 
 How NoteApp is built today. Read `PLAN.md` for what we're building and `docs/AGENT_GUIDE.md` for how we work. Keep this file accurate: if you change something described here, update it in the same PR.
 
-> **Moving parts.** Phase 0 is still in progress. Next comes the `src/platform/` adapter (PR 4b). This file is updated with each PR.
+> Phase 0 foundation is in place. Keep this file current: update it in any PR that changes something described here.
 
 ## Stack
 
@@ -83,10 +83,13 @@ shared/            Code used by both server and client
   dates.ts         Local-date helpers and recurrence (nextOccurrence)
   quickadd.ts      Natural-language task parsing ("Pay rent tomorrow p1 @sam every month")
 src/               React web app
-  main.tsx         Entry; registers the service worker in production
+  main.tsx         Entry: initPlatform(), external-link handler, render
   App.tsx          Top-level routing (login, workspace shell); workspace screens come from routes.tsx
   routes.tsx       Workspace screens (/w/:wsId/…), one line each
-  api.ts           fetch wrapper (adds the bearer token, JSON, error handling), upload helper
+  api.ts           API client: base URL, token session (access + refresh), fetch wrapper, upload helper
+  platform/        Platform adapter (web now; Tauri/Capacitor later): storage, secure storage, notifications,
+                   external links, deep links, file picking, cross-window locks
+  components/DeepLinks.tsx  routes deep links from the shells into the router
   store.ts         Barrel re-exporting the store; import from here
   store/           Zustand store split by area:
     state.ts       the State shape and useStore
@@ -146,9 +149,27 @@ pages_fts (FTS5: page_id, title, text)
 - **Sign-in** (`POST /auth/register` | `/auth/login`) returns an `AuthSession` (`shared/types.ts`): `{ accessToken, expiresIn, refreshToken, user }`.
 - **Access token:** a JWT `{sub, typ:'access'}` valid for 15 minutes, sent as `Authorization: Bearer …`. The client keeps it in memory only.
 - **Refresh token:** 32 random bytes, valid for 30 days, stored server-side only as a SHA-256 hash (`refresh_tokens`, migration 002). `POST /auth/refresh {refreshToken}` returns a new session and retires the old token (**rotation**). If a retired token is presented again more than 60 s after it was rotated, the server treats that as theft and **revokes the whole sign-in** (every token in its `family_id`). The 60 s grace window covers two tabs or a retried request racing each other. `POST /auth/logout {refreshToken}` revokes the family.
-- **Client:** the refresh token is persisted by `tokenStore` in `src/api.ts` (localStorage on the web; PR 4b moves it behind `src/platform/` secure storage, i.e. the keychain in the shells). Startup calls `/auth/refresh` to restore the session. A timer refreshes a minute before expiry. Any 401 triggers one refresh-and-retry. Refreshes are single-flight per tab and serialized across tabs with the Web Locks API, each reading the latest stored token, so tabs don't burn each other's tokens.
+- **Client:** the refresh token is persisted by `tokenStore` in `src/api.ts` through `platform.secureStorage` (localStorage on the web, the OS keychain in the shells). Startup calls `/auth/refresh` to restore the session. A timer refreshes a minute before expiry. Any 401 triggers one refresh-and-retry. Refreshes are single-flight per tab and serialized across tabs/windows with `platform.withLock` (Web Locks on the web), each reading the latest stored token, so tabs don't burn each other's tokens.
 - **WebSockets:** browsers can't set headers on a WebSocket, so the client offers subprotocols `noteapp.v1, bearer.<accessToken>`. The server reads the token from there (`tokenFromUpgrade`) and answers with `noteapp.v1` only, never echoing the token. `?token=` is still accepted for scripts. A socket is authenticated when it opens; on close code 4401 the client refreshes and reconnects. The collab provider gets the current token on every reconnect through a `WebSocket` subclass passed as y-websocket's `WebSocketPolyfill`.
 - **API base URL:** `VITE_API_URL` at build time, else same origin. `apiUrl()`, `wsUrl()` and `fileUrl()` in `src/api.ts` build every URL; nothing else should hard-code `/api` or `location`.
+
+## Platform adapter (`src/platform/`)
+
+One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mobile). Everything that differs goes through `platform` (`src/platform/index.ts`, interface in `types.ts`). **App code must not call browser-only APIs directly:** no `localStorage`, `Notification`, `window.open`, `<input type="file">` or `navigator.locks` outside `src/platform/`. Layout APIs (`window.innerWidth`, `matchMedia`, key events) and IndexedDB (y-indexeddb) are fine; they work the same in every WebView.
+
+| `platform.` | Use for | Web implementation (`web.ts`) |
+|---|---|---|
+| `init()` | one-time setup before render | registers the service worker (production) |
+| `kv.get/set/remove` (sync) | small preferences: last workspace/page, sidebar state | localStorage |
+| `secureStorage` (async) | the refresh token | localStorage (no keychain in browsers) |
+| `notifications.permission/request/show` | reminders | Web Notifications |
+| `openExternal(url)` | links leaving the app | `window.open(…, noopener)`; `installExternalLinkHandler()` routes clicks on external `<a>` here |
+| `deepLinks.initial/subscribe` | `noteapp://page/<id>`, `noteapp://w/…`, universal links | no-op (the URL is the link); `parseDeepLink()` + `components/DeepLinks.tsx` handle routing |
+| `pickFiles({accept, multiple})` | attachments and images | a temporary `<input type=file>` |
+| `withLock(name, fn)` | cross-tab/window mutual exclusion | Web Locks API, else just runs |
+| `isHidden()`, `focus()` | notification vs in-app toast | `document.hidden`, `window.focus()` |
+
+To add a shell: implement `Platform` in `src/platform/tauri.ts` or `capacitor.ts` and load it in `initPlatform()` when `detectPlatform()` matches (the stub is commented there). Shell builds also set `VITE_API_URL`.
 
 ## Real-time sync
 
@@ -187,7 +208,7 @@ All under `/api`, JSON, bearer token except where noted:
 | Recurrence & reminders | Recurrence: daily / weekdays / weekly / monthly / yearly / every N | Reminders fire only in an open tab (`AppShell.tsx`, browser Notification or toast); "weekly on chosen days" not supported by the `Recurrence` type | Server reminder worker, web push, email |
 | Collaboration | Real-time co-editing with live cursors and presence; task changes pushed live; roles (owner/admin/member/viewer); private vs shared notebooks | Invites: pending invite applied when that email signs up, but no email is sent | Email invites |
 | Offline | Notes cached in IndexedDB (y-indexeddb), sync on reconnect; service worker caches the app shell; offline indicator | Tasks offline: whatever is in memory; nothing persisted | Persisted read-only task cache |
-| Platform (§2) | Bearer access + rotating refresh tokens, no cookies; token-authenticated WebSockets; configurable API base URL (`VITE_API_URL`) | Refresh token kept in localStorage on the web until PR 4b | `src/platform/` adapter (PR 4b) |
+| Platform (§2) | Bearer access + rotating refresh tokens, no cookies; token-authenticated WebSockets; configurable API base URL (`VITE_API_URL`); `src/platform/` adapter with the web implementation, existing browser-only calls routed through it | Deep links: parsing and routing done; only shells deliver them | Tauri/Capacitor implementations (Phases 2–3) |
 | Deploy (§4) | One-port production server (API, `/api/events` + `/collab/*` WebSockets, web app), `DATA_DIR`, `/api/health`, graceful SIGTERM, `SEED_DEMO` | | Docker/CI (Infra agent) |
 
 Known rough edges: uploaded files are served without auth (unguessable names), and the main JS bundle is about 1 MB (no code splitting yet).

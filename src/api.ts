@@ -7,6 +7,7 @@
 //   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
 //   tab and serialized across tabs, each reading the latest stored token.
 import type { AuthSession } from '../shared/types.ts';
+import { platform } from './platform/index.ts';
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
@@ -28,24 +29,14 @@ export function wsProtocols(): string[] {
 }
 
 // ───────────── Token storage ─────────────
-// Async so native shells can back it with the keychain (src/platform, PR 4b).
+// The refresh token lives in platform secure storage (the OS keychain in the shells).
 const REFRESH_KEY = 'noteapp.refreshToken';
 export const tokenStore = {
-  async get(): Promise<string | null> {
-    try {
-      return localStorage.getItem(REFRESH_KEY);
-    } catch {
-      return null;
-    }
-  },
+  get: (): Promise<string | null> => platform.secureStorage.get(REFRESH_KEY),
   async set(token: string | null): Promise<void> {
-    try {
-      if (token) localStorage.setItem(REFRESH_KEY, token);
-      else localStorage.removeItem(REFRESH_KEY);
-      localStorage.removeItem('noteapp.token'); // pre-refresh-token sessions
-    } catch {
-      /* storage unavailable */
-    }
+    if (token) await platform.secureStorage.set(REFRESH_KEY, token);
+    else await platform.secureStorage.remove(REFRESH_KEY);
+    platform.kv.remove('noteapp.token'); // pre-refresh-token sessions
   },
 };
 
@@ -81,19 +72,14 @@ export async function endSession() {
   }
 }
 
-/** Serialize across tabs when the browser supports it, so two tabs never spend the same refresh token. */
-function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
-  return locks ? (locks.request(name, fn) as Promise<T>) : fn();
-}
-
 /**
  * Exchange the stored refresh token for a new session. Resolves to the session
  * (including the user), or null if signed out / the refresh token is no longer
  * valid. Network errors reject, so callers can tell "offline" from "signed out".
  */
 export function refreshSession(): Promise<AuthSession | null> {
-  refreshing ??= withLock('noteapp-auth-refresh', async () => {
+  // Serialized across tabs/windows so two never spend the same refresh token.
+  refreshing ??= platform.withLock('noteapp-auth-refresh', async () => {
     const refreshToken = await tokenStore.get();
     if (!refreshToken) return null;
     const res = await fetch(apiUrl('/auth/refresh'), {

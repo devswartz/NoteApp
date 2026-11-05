@@ -4,6 +4,7 @@ import { emptyTree, set } from './state.ts';
 import { loadWorkspaces } from './workspace.ts';
 import { connectEvents, disconnectEvents } from './events.ts';
 import type { AuthSession, Workspace } from '../../shared/types.ts';
+import { platform } from '../platform/index.ts';
 
 /** Restore a session from the stored refresh token. */
 export async function bootstrap(): Promise<boolean> {
@@ -40,10 +41,6 @@ export async function signOut() {
   } catch {
     /* ignore */
   }
-  try {
-    localStorage.removeItem('noteapp.lastWs');
-  } catch {
-    /* ignore */
-  }
+  platform.kv.remove('noteapp.lastWs');
   set({ user: null, workspaces: [], wsId: null, tree: emptyTree, tasks: {}, members: [], treeLoaded: false, tasksLoaded: false });
 }
