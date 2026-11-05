@@ -633,12 +633,15 @@ select.input { padding-right: 4px; }
 .auth-card form { display: grid; gap: 14px; margin: 24px 0 18px; }
 .auth-card label { display: grid; gap: 6px; font-weight: 500; font-size: 13px; }
 .auth-card .input { height: 40px; }
+.auth-icon { border-radius: 9px; box-shadow: var(--shadow-sm); }
 .auth-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
 .form-error { color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: var(--radius); font-size: 13px; }
 
 /* ───────────────────────── App layout ───────────────────────── */
 .app { display: flex; height: 100%; overflow: hidden; }
 .main { flex: 1; min-width: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.route { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: route-in var(--dur) var(--ease-out); }
+@keyframes route-in { from { opacity: 0; transform: translateY(4px); } }
 .sidebar-reveal { position: absolute; top: 10px; left: 10px; z-index: 5; }
 
 .sidebar {
@@ -1529,4 +1532,23 @@ body.is-resizing .sidebar { transition: none; }
 
 @media (hover: none) {
   .chip-empty, .avatar-btn-empty, .task-ref-open { opacity: 1; }
+}
+
+/* ───────────────────────── Print ─────────────────────────
+   Printing a page gives just the note: no chrome, light colours, full width. */
+@page { margin: 18mm 16mm; }
+@media print {
+  :root { color-scheme: light; --bg: #fff; --text: #000; --text-2: #222; --text-muted: #555; --border: #ccc; }
+  html, body, #root, .app, .main, .route { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; }
+  .sidebar, .mobile-top, .tabbar, .fab, .page-topbar, .page-panel, .toasts, .offline-banner, .sidebar-reveal,
+  .drawer-backdrop, .add-task-end, .drag-handle, .sb-resizer, .tooltip, .popover, .modal-backdrop { display: none !important; }
+  .page-scroll { overflow: visible !important; }
+  .page-article { max-width: none; padding: 0; }
+  .page-title { font-size: 24pt; }
+  .ProseMirror { font-size: 11.5pt; line-height: 1.55; }
+  .ProseMirror a { color: inherit; text-decoration: underline; }
+  .ProseMirror a[href^='http']::after { content: ' (' attr(href) ')'; font-size: 0.85em; color: #555; }
+  .ProseMirror pre, .ProseMirror img, .ProseMirror table, .task-ref, li { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+  * { animation: none !important; transition: none !important; box-shadow: none !important; }
 }

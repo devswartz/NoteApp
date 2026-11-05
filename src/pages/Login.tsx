@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { signIn } from '../store.ts';
 import { APP_NAME } from '../../shared/config.ts';
+import { Button } from '../components/ui.tsx';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -13,7 +14,7 @@ export function Login() {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-logo">
-          <span className="ws-logo lg">{APP_NAME[0]}</span>
+          <img className="auth-icon" src="/icon.svg" alt="" width={34} height={34} />
           <span>{APP_NAME}</span>
         </div>
         <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
@@ -55,10 +56,14 @@ export function Login() {
               onChange={set('password')}
             />
           </label>
-          {error && <div className="form-error">{error}</div>}
-          <button className="btn btn-primary btn-lg" disabled={busy}>
-            {busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-          </button>
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
+          <Button type="submit" variant="primary" size="lg" loading={busy}>
+            {mode === 'login' ? 'Sign in' : 'Create account'}
+          </Button>
         </form>
         <p className="muted small center">
           {mode === 'login' ? 'New here?' : 'Already have an account?'}{' '}

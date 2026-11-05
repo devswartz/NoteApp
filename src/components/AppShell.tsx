@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Navigate, Outlet, useParams } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { PanelLeftOpen } from 'lucide-react';
 import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
@@ -26,6 +26,7 @@ export function AppShell() {
   const workspaces = useStore((s) => s.workspaces);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const isMobile = useIsMobile();
+  const location = useLocation();
   const valid = workspaces.some((w) => w.id === wsId);
 
   useEffect(() => {
@@ -38,6 +39,8 @@ export function AppShell() {
   useDrawerSwipe(isMobile);
 
   if (!valid) return <Navigate to="/" replace />;
+  // Fade between screens (tasks, notes, settings), not between pages of the same kind.
+  const routeKey = location.pathname.split('/')[3] ?? '';
 
   return (
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'is-mobile' : ''}`}>
@@ -50,7 +53,9 @@ export function AppShell() {
             <PanelLeftOpen size={18} />
           </IconButton>
         )}
-        <Outlet />
+        <div className="route" key={routeKey}>
+          <Outlet />
+        </div>
       </main>
       {isMobile && <MobileTabBar wsId={wsId} />}
       <TaskDetail />
