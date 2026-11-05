@@ -30,7 +30,8 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 > 4. **iOS push (when the iOS app ships):** `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.devswartz.noteapp`, `APNS_PRIVATE_KEY` (the `.p8` contents, newlines as `\n`) and `APNS_ENV=production`. The values come from the user (see `docs/MOBILE.md` → *Server environment*).
 > 5. **Android push (when the Android app ships):** `FCM_SERVICE_ACCOUNT_JSON` (the Firebase service-account JSON, one line or base64).
 > 6. **App links (#57):** `ANDROID_CERT_SHA256` (comma-separated SHA-256 fingerprints of the Play app-signing and upload certs). `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) is used for the iOS `apple-app-site-association`. Verify with `curl -i https://notes.devswartz.com/.well-known/assetlinks.json` and `…/apple-app-site-association` (200, `application/json`, no redirect).
-> 7. **`ADMIN_EMAILS=<the user's email>` on staging AND prod, before anyone signs up** (#67). Without it, **the first account created becomes the instance admin** (who may call `GET /api/admin/stats`). Comma-separated if there's more than one admin. Logs also become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
+> 7. **`ADMIN_EMAILS=<the user's email>` on staging AND prod, before anyone signs up** (#67). Without it, **the first account created becomes the instance admin** (who may call `GET /api/admin/stats`). Comma-separated if there's more than one admin. Admins can always sign up.
+> 7b. **`SIGNUP_MODE`:** leave **unset**. In production it defaults to `invite`: only people with a pending invite, plus the addresses in `ADMIN_EMAILS`, can create accounts. Set `SIGNUP_MODE=open` only if you ever want public sign-up. Logs also become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
 > 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log. With #70, the *Demo Team* workspace shows off every feature (a notebook per area, every block type, subtasks, recurrence, links, comments, versions, a private notebook), which makes it a good tour for the team on staging.
 > 9. Unchanged from the brief: `NODE_ENV`, `PUBLIC_URL`, `JWT_SECRET` (per env), the SES SMTP settings (`SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`), VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `SEED_DEMO=1` on staging only, backups (`sqlite3 .backup` or Litestream, plus `/data/files/`, off the box), Cloudflare Access **off**.
 >
@@ -46,7 +47,8 @@ Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and 
 - [ ] **Health:** `curl -s https://notes-staging.devswartz.com/api/health` → `{"ok":true,"version":"<sha>"}`, where `<sha>` matches the latest `main` commit (`git rev-parse --short origin/main`).
 - [ ] **Security headers:** `curl -sI https://notes-staging.devswartz.com/ | grep -iE "strict-transport|content-security"` shows both (#51).
 - [ ] **Sign up** (only after `ADMIN_EMAILS` is set, section 2) with your real email in a private window, check that you land in your workspace, then sign out and back in.
-- [ ] **Invite email (SES):** Settings → Members → invite a second address you own as *Member*. The email arrives (check spam), the link opens the invite page, and signing up with that address joins the workspace. If no email arrives, check the staging log for `mail:` warnings and the SES sending statistics.
+- [ ] **Invite-only sign-up:** in a private window, try to create an account with an address that has **no** invite. It's refused.
+- [ ] **Invite email (SES):** Settings → Members → invite a second address you own as *Member*. The email arrives (check spam), the link opens the invite page, and signing up with that address works and joins the workspace. If no email arrives, check the staging log for `mail:` warnings and the SES sending statistics.
 - [ ] **Web push reminder:**
   1. Settings → Notifications → allow notifications in the browser.
   2. Create a task due today, with a reminder 2 minutes from now (task details → Reminders).
@@ -105,28 +107,22 @@ Rollback: `docs/RELEASING.md` → *Roll back* (pin `NOTEAPP_TAG` to the previous
 
 ## 6. Known limitations and follow-ups
 
-As of 2026-11-05 ~11:30 UTC (`docs/STATUS.md`, open PRs).
+As of 2026-11-05 ~11:55 UTC (`docs/STATUS.md`, open PRs).
 
-**Decide before inviting anyone beyond the team**
-- **Sign-up is open.** Anyone who can reach the URL can create an account. They only get their own empty workspace and can't see anyone else's data, but the plan says invite-only. A follow-up is needed: e.g. an `ALLOW_SIGNUP=invite` setting that only accepts emails with a pending invite. Not yet requested from anyone.
-- **Rate limiting isn't merged yet** **(open PR #43)**. Until it is, sign-in has no brute-force limit beyond bcrypt's cost.
+**Security notes**
+- **Sign-up is invite-only in production** (#67, `SIGNUP_MODE=invite` by default). Only invited emails and `ADMIN_EMAILS` can register. Local development stays open.
+- **Auth endpoints are rate-limited** (#43): per IP and per account, with 429 + Retry-After. This relies on `TRUST_PROXY_HEADER=cf` and the port rule in section 2.
 
 **In flight (open PRs, expected to land soon)**
-- Hardening:
-  - input limits (#46);
-  - authorization audit with a route coverage check (#49);
-  - error handling, request IDs, JSON logs and admin stats (#67).
-- Comments in the page view (#62, after #55). Comment threads exist server-side but aren't visible yet.
-- Notification inbox and @mentions (#29), activity feed (#33), follow a collaborator (#39), presence avatars (#23).
+- Hardening: input limits (#46); authorization audit with a route coverage check (#49).
+- Activity feed (#33), follow a collaborator (#39), presence avatars (#23).
 - Editor:
   - export to Markdown/PDF and Markdown import (#44);
   - table of contents and full-width pages (#53);
   - long-page performance (#58);
   - undo of convert-to-task (#60);
-  - accessibility (#68);
-  - the BUG-3 title-loss fix (#66).
-- Tasks staying private when they leave a private notebook (#63, migration 010).
-- Web icon set and favicons (#73); notebook templates (#71); mobile visual QA (#69); editor E2E (#72).
+  - accessibility (#68).
+- Web icon set and favicons (#73); editor E2E (#72).
 
 **Known gaps (not planned for v0.1.0)**
 - Desktop and mobile builds have **never run on real macOS/Windows/iOS hardware**. The first tag is their first real build, so watch those workflow runs.

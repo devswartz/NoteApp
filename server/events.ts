@@ -152,3 +152,10 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
     for (const ws of sockets) if (ws.readyState === WebSocket.OPEN) ws.send(data);
   }
 }
+
+/** For /api/admin/stats. */
+export function eventStats() {
+  let sockets = 0;
+  for (const set of clients.values()) sockets += set.size;
+  return { users: clients.size, sockets };
+}
