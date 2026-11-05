@@ -33,6 +33,10 @@ function deliverLinks(urls: string[]) {
 export const tauriPlatform: Platform = {
   kind: 'tauri',
 
+  // Desktop updates go through the Tauri updater (tauri/updates.ts: checked on
+  // start and from "Check for Updates…" in the menu), with its own dialog.
+  appUpdates: { subscribe: () => () => {} },
+
   async init() {
     const win = getCurrentWindow();
 

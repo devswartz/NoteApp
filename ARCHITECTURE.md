@@ -99,11 +99,11 @@ src/               React web app
     events.ts      live event client
     toasts.ts, ui.ts  (ui.ts: overlay toggles + the light/dark/system theme, applied as <html data-theme>)
   components/      App shell, sidebar, command palette, quick add, task row/detail/controls, overlays, ui primitives
-  editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
+  editor/          The note editor (see "Editor" below); styles in src/styles/editor.css
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
 apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
-public/            sw.js (offline shell), icon.svg (the manifest is generated from shared/config.ts)
+public/            icon.svg (manifest and sw.js are generated at build time; see Offline)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
 apps/desktop/      Tauri 2 desktop app (Rust in src-tauri/, build scripts, icon sources); docs/DESKTOP.md
@@ -114,6 +114,7 @@ docs/              Plan-adjacent docs: agent guide, deploy contract, homelab bri
 
 - **A REST endpoint:** put it in your area's `server/routes/<area>.ts`. A new area gets a new file plus one `api.use(...)` line in `server/routes/index.ts` (a `[shared]` change).
 - **A screen:** one line in `src/routes.tsx`.
+- **Asking the user something:** `await confirmDialog({ title, message, confirmLabel, danger })` / `await promptDialog({ title, label })` from `src/components/shell/dialogs.tsx`, not `window.confirm/prompt` (those don't work well in the desktop and mobile shells). Shared UI pieces (Button, IconButton, Input, Dialog, Tabs, Badge, EmptyState, Skeleton, Tooltip, menus with `useContextMenu`) are in `src/components/ui.tsx`.
 - **A command or keyboard shortcut:** `useCommands(() => [{ id, title, group, keys, icon, run, when }], deps)` from `src/hooks/useShortcuts.ts` inside your component. The ⌘K palette, the `?` overlay and the global key listener all read that one registry (`listCommands()` / `runCommand(id)` are there for the desktop menu). Don't add your own `window` keydown listeners for app-wide shortcuts.
 - **Client state for a new area:** create your own small zustand store in your area's folder. Add to `src/store/state.ts` only for genuinely global state.
 - **A schema change:** a new file `server/migrations/NNN-name.sql`, with the number the manager reserves for your PR. Never edit a merged migration. If two PRs end up with the same number, the server refuses to start ("Two migrations share number …"), and the second PR to merge renumbers its file.
@@ -180,6 +181,30 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 **Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
+## Offline
+
+- **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view (names are immutable). `/api/*` and `/collab/*` are never cached.
+- **Updates:** a new service worker waits rather than taking over a running page. `platform.appUpdates` reports it, and `components/AppUpdates.tsx` shows a sticky "A new version is available — Reload" toast. Reload tells the worker to take over and reloads the page. Registrations check for a new deploy every 30 min and whenever the app becomes visible. The shells will plug their own updater into the same hook.
+- **Notes:** each page's Yjs doc is cached in IndexedDB (`y-indexeddb`, `noteapp-page-<id>`), so pages you've opened before load and stay editable offline. Edit rights are remembered per user and page (`noteapp.canEdit.<userId>.<pageId>`). Changes merge when the collab socket reconnects.
+- **Everything else, read-only:** `src/store/cache.ts` → `cached(key, path)` caches workspaces, tree, tasks and members in IndexedDB (`src/lib/offlineCache.ts`) under per-user keys (`u:<userId>:…`), and falls back to that copy only when the server can't be reached. Task edits need a connection in v1.
+- **Cold start offline:** if the refresh call can't reach the server, `bootstrap()` opens with the cached user and data and shows the offline banner. The events socket keeps retrying with backoff; once it reconnects, the session refreshes and data reloads. `clearLocalUserData()` wipes the data cache, the IndexedDB note copies and cached uploads (`uploads-*` in Cache Storage). It runs on sign-out (even if revoking fails), when startup finds the session rejected (401), and when a different user signs in than the last one on this device.
+
+## Editor (`src/editor/`)
+
+| File | What |
+|---|---|
+| `NoteEditor.tsx` | Builds the TipTap editor (extension list, paste/drop uploads, ⌘K), the formatting toolbar, table bar and block handle |
+| `collab.ts` | Y.Doc + `y-websocket` provider + `y-indexeddb` cache + presence, the Collaboration/caret extensions, and save-state tracking (`useCollab`, `collabExtensions`). The Collaboration agent works here |
+| `blocks.tsx` | Custom nodes: `callout`, `fileAttachment` (file card), `Image` (resizable; stores the API-relative `/uploads/…` src and resolves it with `fileUrl()`), `CodeBlock` (lowlight, language picker) |
+| `TaskRef.tsx` | The `taskRef` node (live task: checkbox, title, priority, due date, assignee), `[] ` input rule, `insertTask`, and **`convertToTask`** (command) / **`convertToTasks(editor)`** (returns the new ids): the current line or every line in a selection becomes a task |
+| `SlashMenu.tsx` | `/` menu: items, ranking, the suggestion plugin |
+| `LinkEditor.tsx` | Inline link editor (⌘K with a selection; ⌘K without one goes to the command palette) |
+| `PageLink.tsx`, `pageItems.ts` | `[[` page links: inline `pageLink[pageId]` node showing the page's live title and icon; the `[[` picker (search pages, or create one). Backlinks: `GET /pages/:id/backlinks` (`server/links.ts`, a lazily rebuilt in-memory index keyed by `pages.updated_at`) |
+| `IconPicker.tsx` | Emoji picker for page icons |
+| `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
+
+The document schema is ProseMirror's, stored in the Yjs `XmlFragment` named `default`. Node names that the server reads in `extractDoc` (`server/collab.ts`): every text node for search, and `taskRef[taskId]` for task reconcile. **Save state:** a local edit marks the page "Saving…"; it becomes "Saved" once the socket has flushed it and the server's 1 s save debounce has passed; with no connection it reads "Offline" (edits are already in IndexedDB).
+
 ## Real-time sync
 
 There are two channels:
@@ -211,13 +236,13 @@ All under `/api`, JSON, bearer token except where noted:
 | Area | Done | Stubbed / partial | Not started |
 |---|---|---|---|
 | Organisation | Workspaces, notebooks (shared/private), sections, pages; drag-and-drop reordering/moving in the sidebar | Page icons: `pages.icon` column and `PATCH /pages/:id {icon}` exist, no picker UI | |
-| Editor | Headings, bullet/numbered lists, checklists, tables, links, images, file attachments (as links), code blocks, quotes, dividers; slash menu; Markdown shortcuts; autosave via Yjs | | |
+| Editor | Headings, bullet/numbered lists, checklists, toggles, callouts, tables (add/remove rows and columns, header row), code blocks with highlighting and a language, quotes, dividers, links (⌘K, paste), resizable images, file cards; slash menu; Markdown shortcuts; formatting toolbar; block drag handles; page icons; autosave with a Saved/Saving…/Offline indicator | | |
 | Search | FTS5 page search + task search; ⌘K command palette | | |
 | Tasks | Inline tasks (`[] `), convert line to task (⌘↵ / bubble menu), standalone tasks, quick add with natural language, assignee, due date + time, priority, completion; editable from note or dashboard | | |
 | Dashboard | My Tasks, Today (incl. overdue), Upcoming, Team, All (filter/sort), Calendar, Completed | | |
 | Recurrence & reminders | Recurrence: daily / weekdays / weekly / monthly / yearly / every N | Reminders fire only in an open tab (`AppShell.tsx`, browser Notification or toast); "weekly on chosen days" not supported by the `Recurrence` type | Server reminder worker, web push, email |
 | Collaboration | Real-time co-editing with live cursors and presence; task changes pushed live; roles (owner/admin/member/viewer); private vs shared notebooks | Invites: pending invite applied when that email signs up, but no email is sent | Email invites |
-| Offline | Notes cached in IndexedDB (y-indexeddb), sync on reconnect; service worker caches the app shell; offline indicator | Tasks offline: whatever is in memory; nothing persisted | Persisted read-only task cache |
+| Offline | Notes cached in IndexedDB and editable offline (sync on reconnect); precached app shell with an update prompt; offline cold start; read-only cache of workspaces/tree/tasks/members; offline banner | | Offline task edits (deferred past v1) |
 | Platform (§2) | Bearer access + rotating refresh tokens, no cookies; token-authenticated WebSockets; configurable API base URL (`VITE_API_URL`); `src/platform/` adapter with the web implementation, existing browser-only calls routed through it | Deep links: parsing and routing done; the desktop app delivers them. Desktop (Tauri) app: see `docs/DESKTOP.md` | Capacitor implementation (Phase 3) |
 | Deploy (§4) | One-port production server (API, `/api/events` + `/collab/*` WebSockets, web app), `DATA_DIR`, `/api/health`, graceful SIGTERM, `SEED_DEMO` | | Docker/CI (Infra agent) |
 

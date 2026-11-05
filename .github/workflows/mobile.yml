@@ -20,6 +20,9 @@ on:
     paths:
       - 'apps/mobile/**'
       - 'src/platform/capacitor.ts'
+      - 'src/platform/index.ts'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/mobile.yml'
 
 permissions:

@@ -6,6 +6,10 @@ import { create } from 'zustand';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  ChevronRight,
+  FileSymlink,
+  Link2,
+  MessageSquareQuote,
   CheckSquare,
   CircleCheck,
   Code2,
@@ -34,6 +38,7 @@ export interface SlashItem {
 export const slashHooks = {
   pickImage: (_editor: Editor) => {},
   pickFile: (_editor: Editor) => {},
+  editLink: (_editor: Editor): boolean => false,
 };
 
 export const SLASH_ITEMS: SlashItem[] = [
@@ -94,6 +99,13 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (e, r) => e.chain().focus().deleteRange(r).toggleOrderedList().run(),
   },
   {
+    title: 'Toggle',
+    description: 'Collapsible section with hidden content',
+    keywords: 'toggle collapse collapsible details expand fold',
+    icon: <ChevronRight size={18} />,
+    run: (e, r) => e.chain().focus().deleteRange(r).setDetails().run(),
+  },
+  {
     title: 'Table',
     description: 'Rows and columns',
     keywords: 'grid spreadsheet',
@@ -121,6 +133,24 @@ export const SLASH_ITEMS: SlashItem[] = [
     },
   },
   {
+    title: 'Link',
+    description: 'Link to a web page (or select text and press ⌘K)',
+    keywords: 'url href hyperlink web',
+    icon: <Link2 size={18} />,
+    run: (e, r) => {
+      const label = 'link';
+      e.chain().focus().deleteRange(r).insertContent(label).setTextSelection({ from: r.from, to: r.from + label.length }).run();
+      slashHooks.editLink(e);
+    },
+  },
+  {
+    title: 'Link to page',
+    description: 'Link another page (or type [[)',
+    keywords: 'page link reference backlink wiki [[',
+    icon: <FileSymlink size={18} />,
+    run: (e, r) => e.chain().focus().deleteRange(r).insertContent('[[').run(),
+  },
+  {
     title: 'Quote',
     description: 'Capture a quotation',
     keywords: 'blockquote citation',
@@ -128,9 +158,16 @@ export const SLASH_ITEMS: SlashItem[] = [
     run: (e, r) => e.chain().focus().deleteRange(r).toggleBlockquote().run(),
   },
   {
+    title: 'Callout',
+    description: 'Highlighted note with an icon',
+    keywords: 'callout info note tip warning admonition box',
+    icon: <MessageSquareQuote size={18} />,
+    run: (e, r) => e.chain().focus().deleteRange(r).setCallout().run(),
+  },
+  {
     title: 'Code block',
-    description: 'Monospaced code snippet',
-    keywords: 'pre snippet',
+    description: 'Code with syntax highlighting',
+    keywords: 'pre snippet code ``` program',
     icon: <Code2 size={18} />,
     run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run(),
   },
@@ -152,10 +189,23 @@ interface SlashState {
 }
 const useSlash = create<SlashState>(() => ({ open: false, items: [], index: 0, rect: null, pick: null }));
 
-export function filterSlash(query: string): SlashItem[] {
+/** Title prefix matches first, then word-prefix matches in title or keywords, then substring matches. */
+export function filterSlash(query: string, items: SlashItem[] = SLASH_ITEMS): SlashItem[] {
   const q = query.toLowerCase().trim();
-  if (!q) return SLASH_ITEMS;
-  return SLASH_ITEMS.filter((i) => i.title.toLowerCase().includes(q) || i.keywords.includes(q));
+  if (!q) return items;
+  const score = (i: SlashItem) => {
+    const t = i.title.toLowerCase();
+    const words = `${t} ${i.keywords.toLowerCase()}`.split(/\s+/);
+    if (t.startsWith(q)) return 0;
+    if (words.some((w) => w.startsWith(q))) return 1;
+    if (t.includes(q) || i.keywords.toLowerCase().includes(q)) return 2;
+    return -1;
+  };
+  return items
+    .map((i, n) => ({ i, n, s: score(i) }))
+    .filter((x) => x.s >= 0)
+    .sort((a, b) => a.s - b.s || a.n - b.n)
+    .map((x) => x.i);
 }
 
 export const SlashCommand = Extension.create({
@@ -168,6 +218,10 @@ export const SlashCommand = Extension.create({
         char: '/',
         startOfLine: false,
         allowSpaces: false,
+        allow: ({ state, range }) => {
+          const $from = state.doc.resolve(range.from);
+          return $from.parent.type.name !== 'codeBlock' && !$from.parent.type.spec.code;
+        },
         items: ({ query }) => filterSlash(query),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: () => ({

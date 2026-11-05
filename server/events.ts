@@ -5,7 +5,7 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
-import { taskVisible } from './access.ts';
+import { pageAccess, taskVisible } from './access.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import type { ServerEvent } from '../shared/types.ts';
 
@@ -71,10 +71,11 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
     for (const u of opts.userIds) send(u, ev);
     return;
   }
-  if (ev.type === 'workspaces' || ev.type === 'resync') return;
+  if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification') return; // user-targeted only
   const ws = ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId;
   for (const userId of membersOf(ws)) {
     if (!clients.has(userId)) continue;
+    if (ev.type === 'comments' && !pageAccess(ev.pageId, userId)) continue; // private notebook pages
     if (ev.type === 'task' && !taskVisible(ev.task.id, userId)) {
       // Tell clients that may have previously seen it to drop it.
       send(userId, { type: 'task-deleted', id: ev.task.id, workspaceId: ws });
