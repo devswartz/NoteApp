@@ -12,6 +12,7 @@ import { describeDue } from '../../lib/format.ts';
 import { resolveMember } from '../../components/TaskRow.tsx';
 import type { Member, Tree, Workspace } from '../../../shared/types.ts';
 import { platform } from '../index.ts';
+import { SignedOut, describeFailure } from './captureErrors.ts';
 
 type Mode = 'task' | 'note';
 
@@ -20,7 +21,8 @@ let me: string | null = null;
 /** The signed-in user's id, restoring the session from the keychain if needed. */
 async function session(): Promise<string | null> {
   if (getAccessToken() && me) return me;
-  me = (await refreshSession().catch(() => null))?.user.id ?? null;
+  // null = no stored sign-in or it was rejected; a network failure throws.
+  me = (await refreshSession())?.user.id ?? null;
   return me;
 }
 
@@ -37,6 +39,7 @@ function QuickCapture() {
   const [mode, setMode] = useState<Mode>('task');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [signedOut, setSignedOut] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parsed = useMemo(() => parseQuickAdd(text), [text]);
 
@@ -44,12 +47,25 @@ function QuickCapture() {
     const win = getCurrentWindow();
     const reset = () => {
       setError('');
+      setSignedOut(false);
       input.current?.focus();
       input.current?.select();
     };
     reset();
-    // Hide when the user clicks elsewhere, like Spotlight.
-    const un = win.onFocusChanged(({ payload }) => (payload ? reset() : hide()));
+    // Hide when the user clicks elsewhere, like Spotlight, but only after the
+    // window actually had focus: a blur that arrives before focus was ever
+    // granted (activation refused, slow window manager) would otherwise hide it
+    // the moment it appears.
+    let hadFocus = false;
+    const un = win.onFocusChanged(({ payload }) => {
+      if (payload) {
+        hadFocus = true;
+        reset();
+      } else if (hadFocus) {
+        hadFocus = false;
+        hide();
+      }
+    });
     return () => void un.then((f) => f());
   }, []);
 
@@ -59,7 +75,7 @@ function QuickCapture() {
     setError('');
     try {
       const me = await session();
-      if (!me) throw new Error('Sign in to the app first.');
+      if (!me) throw new SignedOut();
       const ws = await workspaceId();
       if (!ws) throw new Error('Create a workspace in the app first.');
       if (mode === 'task') {
@@ -90,7 +106,8 @@ function QuickCapture() {
       setText('');
       hide();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setSignedOut(e instanceof SignedOut);
+      setError(describeFailure(e));
     } finally {
       setBusy(false);
     }
@@ -108,12 +125,21 @@ function QuickCapture() {
         className="input"
         style={{ height: 44, fontSize: 'var(--text-lg)' }}
         value={text}
-        disabled={busy}
+        readOnly={busy}
+        aria-busy={busy}
         placeholder={mode === 'task' ? 'Add a task: “Send invoice tomorrow p1”' : 'New note title'}
         aria-label={mode === 'task' ? 'New task' : 'New note'}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') void submit();
+          if (e.key === 'Enter') {
+            if (signedOut) {
+              // Open the main window, where the sign-in screen is.
+              setSignedOut(false);
+              setError('');
+              hide();
+              void invoke('show_main_window');
+            } else void submit();
+          }
           else if (e.key === 'Escape') hide();
           else if (e.key === 'Tab') {
             e.preventDefault();

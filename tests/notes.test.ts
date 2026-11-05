@@ -361,3 +361,30 @@ test('notebook and section colours must be #rrggbb', async () => {
   assert.match(tree.notebooks.find((n: { name: string }) => n.name === 'Work').color, /^#[0-9a-f]{6}$/i, 'no colour → palette colour');
   assert.equal((await app.call('PATCH', `/sections/${u.s1}`, u.token, { color: '#10b981' })).status, 200);
 });
+
+test('files of a deleted page (or section, or notebook) are visible only to their uploader', async () => {
+  const owner = await setup('DelOwner');
+  const member = await app.signUp('DelMember');
+  await app.call('POST', `/workspaces/${owner.wsId}/members`, owner.token, { email: member.user.email, role: 'member' });
+  const meta = (u: TestUser, id: string) => app.call('GET', `/files/${id}`, u.token);
+
+  // Page delete.
+  const p1 = await newPage(owner, owner.s1, 'Doomed');
+  const f1 = (await uploadTo(owner, 'x', 'a.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${p1}`)).data;
+  assert.equal((await meta(member, f1.id)).status, 200, 'visible while the page is');
+  assert.equal((await app.call('DELETE', `/pages/${p1}`, owner.token)).status, 200);
+  assert.equal((await meta(member, f1.id)).status, 404, 'not to other members after the page is deleted');
+  assert.equal((await meta(owner, f1.id)).status, 200, 'still to the uploader');
+  assert.equal((await fetch(`${app.origin}${f1.url}`)).status, 200, 'bytes still served (copies may embed them)');
+
+  // Section and notebook deletes go through the same path.
+  const p2 = await newPage(owner, owner.s2, 'In section');
+  const f2 = (await uploadTo(owner, 'x', 'b.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${p2}`)).data;
+  await app.call('DELETE', `/sections/${owner.s2}`, owner.token);
+  assert.equal((await meta(member, f2.id)).status, 404);
+  const p3 = await newPage(owner, owner.s1, 'In notebook');
+  const f3 = (await uploadTo(owner, 'x', 'c.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${p3}`)).data;
+  await app.call('DELETE', `/notebooks/${owner.notebookId}`, owner.token);
+  assert.equal((await meta(member, f3.id)).status, 404);
+  assert.equal((await meta(owner, f3.id)).status, 200);
+});
