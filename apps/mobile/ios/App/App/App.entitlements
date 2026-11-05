@@ -15,7 +15,7 @@
 	<!-- Shared container with the Share Extension and the Today widget (ios/App/Shared/SharedStore.swift). -->
 	<key>com.apple.security.application-groups</key>
 	<array>
-		<string>group.com.devswartz.noteapp</string>
+		<string>group.com.devswartz.notivelo</string>
 	</array>
 </dict>
 </plist>

@@ -65,7 +65,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (env.TAURI_SIGNING_PRIVATE_KEY) env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ??= '';
   const [cmd = 'dev', ...rest] = process.argv.slice(2);
   const args = [cmd, '--config', JSON.stringify(computedConfig(env)), ...rest];
-  const bin = join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tauri.cmd' : 'tauri');
-  const r = spawnSync(bin, args, { cwd: desktop, env, stdio: 'inherit', shell: process.platform === 'win32' });
+  // Run the CLI's JS entry with node directly: going through tauri.cmd needs `shell: true` on Windows,
+  // and cmd.exe strips the quotes from the JSON --config argument.
+  const cli = join(root, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+  const r = spawnSync(process.execPath, [cli, ...args], { cwd: desktop, env, stdio: 'inherit' });
   process.exit(r.status ?? 1);
 }

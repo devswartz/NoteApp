@@ -14,7 +14,7 @@ test('without SMTP, sendMail logs to the outbox and reports not sent', async () 
 });
 
 test('with a transport, sendMail delivers with MAIL_FROM', async () => {
-  process.env.MAIL_FROM = 'NoteApp <notes@example.com>';
+  process.env.MAIL_FROM = 'Notivelo <notes@example.com>';
   const t = nodemailer.createTransport({ jsonTransport: true });
   const sent: string[] = [];
   const orig = t.sendMail.bind(t);

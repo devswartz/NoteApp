@@ -73,7 +73,9 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri -> target
 
-      - run: npm ci --no-audit --no-fund
+      # --ignore-scripts: better-sqlite3 (server only) would compile from source and fail on runners whose
+      # Visual Studio is newer than node-gyp knows. Nothing the desktop build needs runs an install script.
+      - run: npm ci --no-audit --no-fund --ignore-scripts
 
       # macOS code signing: import the Developer ID certificate into a temporary
       # keychain (only when the secret exists) and export the identity + notarisation

@@ -114,8 +114,8 @@ test.describe('sharing a private notebook with people', () => {
     await signInContext(context, alice);
     await page.goto(`/w/${alice.wsId}/tasks/today`);
     const nbRow = page.locator('.sb-row', { hasText: 'Dialog Notebook' });
-    await nbRow.hover();
-    await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
+    // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
+    await nbRow.locator('.sb-label').click({ button: 'right' });
     await page.getByRole('menuitem', { name: 'Share with people…' }).click();
     await expect(page.getByRole('dialog', { name: 'Share Dialog Notebook' })).toBeVisible();
   });

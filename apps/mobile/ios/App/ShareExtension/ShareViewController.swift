@@ -2,7 +2,7 @@ import UIKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// "Share to NoteApp": saves the shared text or link as a pending task or note
+/// "Share to Notivelo": saves the shared text or link as a pending task or note
 /// in the App Group. The app picks it up the next time it becomes active
 /// (src/platform/capacitor.ts → NoteAppNative.getPendingShares) and opens quick
 /// add, or creates the note.
@@ -47,7 +47,7 @@ class ShareViewController: UIViewController {
 
     private func show() {
         let preview = [title_, text.isEmpty ? nil : text, url].compactMap { $0 }.joined(separator: "\n")
-        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "NoteApp"
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Notivelo"
         let root = ShareView(appName: appName, preview: preview.isEmpty ? "Nothing to share" : preview, canSave: !preview.isEmpty,
                              onPick: { [weak self] kind in self?.save(kind) },
                              onCancel: { [weak self] in self?.cancel() })

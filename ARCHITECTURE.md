@@ -58,7 +58,7 @@ server/
   demo.ts          SEED_DEMO content
   routes/          REST API, one Router per area, registered in routes/index.ts
     index.ts       Registration: public routes, then requireAuth, then each area (add one line per area)
-    auth.ts        /auth/register, /auth/login, /me
+    auth.ts        /auth/register, /auth/login, /auth/verify-email, /auth/resend-verification, /me
     workspaces.ts  /workspaces, members, invites
     tree.ts        /workspaces/:id/tree, notebooks, sections
     pages.ts       /sections/:id/pages, /pages/:id
@@ -69,7 +69,9 @@ server/
   http.ts          Route helpers: h() handler wrapper, str() validation, param(), errorHandler
   db.ts            SQLite connection + migration runner
   migrations/      NNN-name.sql schema migrations, applied in order (see "Migrations" below)
-  auth.ts          JWT signing/verification, requireAuth middleware
+  auth.ts          JWT signing/verification, requireAuth and requireVerifiedEmail middleware
+  verification.ts  Email verification: token issue/consume, who starts verified, pending-invite acceptance, cleanup
+  testHooks.ts     e2e-only mail outbox endpoint (mounted only with E2E_TEST_HOOKS=1 and NODE_ENV != production)
   access.ts        All permission checks (workspace roles, private notebooks, task visibility SQL)
   tasks.ts         Task persistence and rules: create/update/complete/recur, syncPageTasks (note ↔ task reconcile)
   tree.ts          Tree helpers shared by routes: nextPos, detachPagesTasks, refreshTasksForNotebook
@@ -132,7 +134,8 @@ workspaces ──< workspace_members (role: owner | admin | member | viewer) >�
           ──< tasks (page_id → pages, nullable)
 pages_fts (FTS5: page_id, title, text)
 tasks_fts (FTS5: task_id, title, description; kept in sync by triggers)
-files (uploads: workspace_id, page_id, name, mime, size)
+files (uploads: workspace_id, page_id, template_id, name, mime, size)
+templates (workspace_id, name, icon, visibility 'workspace' | 'private', content = TipTap JSON, tasks = task snapshots, created_by)
 ```
 
 - **Hierarchy:** workspace → notebook → section → page. Ordering uses a `position REAL` column per level (insert between two items by averaging).
@@ -159,6 +162,13 @@ files (uploads: workspace_id, page_id, name, mime, size)
 - **WebSockets:** browsers can't set headers on a WebSocket, so the client offers subprotocols `noteapp.v1, bearer.<accessToken>`. The server reads the token from there (`tokenFromUpgrade`) and answers with `noteapp.v1` only, never echoing the token. `?token=` is accepted in development only. A socket is closed with **4401 when its access token expires** (the client refreshes and reconnects). Collab sockets are also re-checked every 30 s and whenever access changes, and are closed with **4403** if the user lost access to the page. The collab provider gets the current token on every reconnect through a `WebSocket` subclass passed as y-websocket's `WebSocketPolyfill`.
 - **Access changes:** any route that can take access away (role or membership change, workspace deleted, notebook made private, page or section moved) calls `accessChanged()` from `server/access.ts`. Live connections subscribe with `onAccessChange()` and re-check themselves, so new routes only need that one call.
 - **Who can sign up** (`SIGNUP_MODE`, `server/config.ts`): `invite`, the default in production, allows registration only with a pending, unexpired invite for that email, or to bootstrap the server (the first account, or an email in `ADMIN_EMAILS`); anyone else gets 403. `open` allows anyone, and is the default in local dev and what the tests use. `GET /api/auth/config` → `{signupMode, signupOpen}` tells the login page whether to offer "Create an account", which is also offered after arriving from an invite link.
+- **Email verification** (`server/verification.ts`, migration 012, `src/pages/CheckEmail.tsx` and `VerifyEmail.tsx`). `users.email_verified_at` is NULL until the mailbox is proven; `User.emailVerified` is in every session and `/me`. A new account **starts verified** when it is a bootstrap account (the very first, or an email in `ADMIN_EMAILS`) or when mail can't be sent (`mailConfigured()` false: dev, tests, a server without `SMTP_HOST`, where verification would be impossible); otherwise it is unverified and is emailed "Confirm your email for ${APP_NAME}" with `${PUBLIC_URL}/verify-email?token=…` (sent without blocking sign-up; a failure is logged and the user can resend). Migration 012 backfilled every existing user as verified. A workspace **invite link does not verify** the address, because its token is also returned to the inviting admin (`inviteUrl`), so it doesn't prove who owns the mailbox.
+  - **Token:** 32 random bytes, only the SHA-256 stored in `email_verifications` (one row per user, so a new request replaces the old token), valid 24 h, deleted on use (single use, even if expired). `pruneEmailVerifications()` drops expired rows in the existing 6-hourly housekeeping in `server/index.ts`.
+  - **Endpoints:** `POST /auth/verify-email {token}` is public (works signed in or out, any device; every failure is the same 400; rate limited per IP). `POST /auth/resend-verification` needs a signed-in user and is limited to 1 a minute and 5 an hour per user and per IP (`takeResend` in `server/ratelimit.ts`, 429 + `Retry-After`); a verified user gets `{alreadyVerified:true}` and no mail.
+  - **Pending invites** for the address are **not** applied at sign-up unless the account starts verified; otherwise they are accepted in the same transaction that marks it verified (`acceptPendingInvites`, publishing the usual `members` events). Likewise, inviting the address of an existing *unverified* account creates a pending invite instead of adding that account directly.
+  - **Enforcement:** `requireVerifiedEmail` runs right after `requireAuth`. An unverified user gets **403 `{ error, code: 'email_unverified' }`** on every authenticated route except `GET /me` and `POST /auth/resend-verification` (an allowlist, so new routes are denied by default; changing the password is not allowed). Sign-in, refresh, sign-out and verify-email are public routes and keep working. Both WebSockets close with 4403 for an unverified token (`server/events.ts`, `server/collab.ts`). `/uploads/*` stays a capability URL with no user check (as before); the upload routes themselves (`POST /uploads`, `/workspaces/:id/files`) are behind the middleware. `tests/authz-audit.test.ts` asserts all of this for every audited route, both sockets, and that nothing is mounted outside the audited `/api` router except uploads and `/.well-known`.
+  - **Client:** `api()` turns a 403 `email_unverified` into the "Check your email" screen (`markEmailUnverified`); `App.tsx` renders only that screen (plus `/verify-email` and `/reset`) for an unverified user, with Resend (60 s cooldown), Sign out and "I've verified, continue" (`recheckEmailVerified` → `GET /me`). `/verify-email?token=` works signed in or out and then routes to the app or the login page. Desktop and mobile shells run the same web app.
+  - **Test-only hooks:** the e2e suite runs a server with `E2E_TEST_HOOKS=1` and `NODE_ENV=test`, which makes verification required even without SMTP and exposes `GET /api/__test/outbox?to=`. Both are off whenever `NODE_ENV=production`, however the variable is set (checked on every request).
 - **Password reset and change:** `POST /auth/forgot {email}` always answers `{ok:true}` (no account enumeration) and emails a link to `$PUBLIC_URL/reset?token=…`, at most once a minute per address. The token is a 1-hour JWT `{typ:'reset'}` bound to a fingerprint of the current password hash, so it works once and dies when the password changes; no table is needed. `POST /auth/reset {token, password}` sets the password and revokes every sign-in. `POST /me/password {currentPassword, newPassword}` does the same but returns a fresh session for the current device. UI: "Forgot password?" on the login page, `/reset`, and Settings → Profile (avatar colour and change password, `components/AccountSettings.tsx`). Time zone belongs to the Reminders notification settings.
 - **Secrets:** in production the server refuses to start unless `JWT_SECRET` is at least 32 bytes.
 - **API base URL:** `VITE_API_URL` at build time, else same origin. `apiUrl()`, `wsUrl()` and `fileUrl()` in `src/api.ts` build every URL; nothing else should hard-code `/api` or `location`.
@@ -210,7 +220,9 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 | `LinkEditor.tsx` | Inline link editor (⌘K with a selection; ⌘K without one goes to the command palette) |
 | `PageLink.tsx`, `pageItems.ts` | `[[` page links: inline `pageLink[pageId]` node showing the page's live title and icon; the `[[` picker (search pages, or create one). Backlinks: `GET /pages/:id/backlinks` (`server/links.ts`, a lazily rebuilt in-memory index keyed by `pages.updated_at`) |
 | `templates.ts`, `TemplatePicker.tsx` | Built-in page templates (ProseMirror JSON) and the "Start with a template" row on empty pages (shown only after the server copy has synced). `applyTemplate(editor, pageId, template)` sets content, title and icon |
+| `userTemplates.ts` (+ `server/templates.ts`, `server/routes/templates.ts`) | **User templates.** "Save as template…" (page menu) POSTs `editor.getJSON()` to `/pages/:id/templates`. The server stores a self-contained snapshot: every `taskRef.taskId` is replaced by a template-local key with the task's title/description/priority/subtasks kept in `templates.tasks` (done state, dates, recurrence, reminders, assignee dropped; unreadable or foreign tasks dropped), and every `/uploads/…` URL is copied to a template-owned file row (`files.template_id`; caps: 100 templates per workspace, 300 KB content, 20 files / 50 MB, 100 tasks). Templates saved from a private notebook are `visibility = 'private'` (creator only, files included). `POST /templates/:id/use {pageId}` creates NEW open tasks (assigned to the user) and new file copies on that page and returns the rewritten JSON, which the picker inserts through the editor like a built-in. Rename/delete: creator, or an owner/admin for workspace-visible ones; delete removes the template's file copies from disk. A `templates` live event refreshes other clients (private ones go to the creator only) |
 | `VersionHistory.tsx` | Version history modal: snapshot list, read-only preview (`documentExtensions()` + a scratch Y.Doc), Restore (snapshots the current state first, then replaces the content as one collaborative edit). Server: `server/versions.ts` (`page_versions`): a 5-minute sweep snapshots pages edited since their last version (at most one per 10 min), opening the history also snapshots if due; kept: all < 24 h, hourly < 7 days, daily after, max 200 per page |
+| `exportPage.ts`, `markdownUtils.ts` | Export as Markdown (`@tiptap/markdown`; custom nodes have `renderMarkdown`: callout → quote, toggle → `<details>`, file card → link, task → `- [ ]` with due/priority, page link → `[[Title]]`), print / save as PDF (print stylesheet in `editor.css`), import Markdown (appends; a leading `# Title` names an untitled page) |
 | `IconPicker.tsx` | Emoji picker for page icons |
 | `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
 
@@ -230,7 +242,7 @@ Client-side task writes are optimistic with rollback (`createTask`, `updateTask`
 
 All under `/api`, JSON, bearer token except where noted:
 
-- `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` → `AuthSession`; `POST /auth/logout` (no access token needed)
+- `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` → `AuthSession`; `POST /auth/logout` (no access token needed); `POST /auth/verify-email {token}` (public) and `POST /auth/resend-verification` (signed in; the only routes besides `GET /me` open to an unverified user)
 - `GET /health` (no auth)
 - `GET/PATCH /me`; live events are the `/api/events` WebSocket, not REST
 - `GET/POST /workspaces`, `PATCH/DELETE /workspaces/:id`, members: `GET/POST /workspaces/:id/members`, `PATCH/DELETE /workspaces/:id/members/:userId`, `DELETE /workspaces/:id/invites/:email`
