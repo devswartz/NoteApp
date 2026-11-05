@@ -1,0 +1,252 @@
+// Authorization audit: EVERY REST route and both WebSockets, as
+//   anon     – no token
+//   stranger – signed in, not a member of the workspace
+//   viewer   – workspace viewer
+//   member   – workspace member
+//   private  – the same member, against resources in the owner's PRIVATE notebook
+// Each cell runs against fresh resources. A coverage check fails if a route is
+// registered that this table doesn't list, so new routes must be audited here.
+// (Owner/admin rules are covered in tests/permissions.test.ts.)
+import { before, after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import WS from 'ws';
+import { startTestApp, type TestApp, type TestUser } from './helpers/app.ts';
+
+type Who = 'anon' | 'stranger' | 'viewer' | 'member' | 'private';
+const WHO: Who[] = ['anon', 'stranger', 'viewer', 'member', 'private'];
+
+let app: TestApp;
+let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser;
+before(async () => {
+  app = await startTestApp();
+  [owner, stranger, viewer, member] = await Promise.all(['Owner', 'Stranger', 'Viewer', 'Member'].map((n) => app.signUp(`Az${n}`)));
+});
+after(() => app.close());
+
+interface Fx {
+  ws: string;
+  nb: string;
+  sec: string;
+  page: string;
+  task: string;
+  file: string;
+  target: string;
+  email: string;
+  invite: string;
+}
+
+let seq = 0;
+const upload = async (token: string, ws: string, pageId: string | null) => {
+  const r = await fetch(`${app.origin}/api/workspaces/${ws}/files${pageId ? `?pageId=${pageId}` : ''}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'text/plain', 'x-filename': 'note.txt' },
+    body: 'hello',
+  });
+  return { status: r.status, data: await r.json().catch(() => null) };
+};
+
+/** A workspace with viewer + member, and the same resource set in a shared and in a private (owner's) notebook. */
+async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
+  const o = owner.token;
+  const n = ++seq;
+  const ws = (await app.call('POST', '/workspaces', o, { name: `Audit ${n}` })).data.id as string;
+  await app.call('POST', `/workspaces/${ws}/members`, o, { email: viewer.user.email, role: 'viewer' });
+  await app.call('POST', `/workspaces/${ws}/members`, o, { email: member.user.email, role: 'member' });
+  const target = await app.signUp(`AzTarget${n}`);
+  await app.call('POST', `/workspaces/${ws}/members`, o, { email: target.user.email, role: 'member' });
+  const email = `pending-${n}@example.com`;
+  const invite = (await app.call('POST', `/workspaces/${ws}/members`, o, { email, role: 'member' })).data.inviteUrl.split('/invite/')[1] as string;
+  const make = async (visibility: 'shared' | 'private'): Promise<Fx> => {
+    const nb = (await app.call('POST', `/workspaces/${ws}/notebooks`, o, { name: `NB ${visibility}`, visibility })).data.id;
+    const sec = (await app.call('POST', `/notebooks/${nb}/sections`, o, { name: 'Sec' })).data.id;
+    const page = (await app.call('POST', `/sections/${sec}/pages`, o, { title: 'Page' })).data.id;
+    const task = (await app.call('POST', `/workspaces/${ws}/tasks`, o, { title: 'Task', pageId: page })).data.id;
+    const file = (await upload(o, ws, page)).data.id;
+    return { ws, nb, sec, page, task, file, target: target.user.id, email, invite };
+  };
+  return { shared: await make('shared'), priv: await make('private') };
+}
+
+type Expect = Partial<Record<Who, number>>;
+interface Row {
+  /** Known hole, routed to the owning area: reported as a TODO instead of failing CI. */
+  known?: string;
+  method: string;
+  /** Route path exactly as registered (used for the coverage check). */
+  route: string;
+  /** Fill in the path for a fixture. */
+  path: (f: Fx) => string;
+  body?: (f: Fx) => unknown;
+  raw?: boolean;
+  expect: Expect;
+}
+
+// Shorthands: defaults are anon 401, stranger 404, private = member.
+const READ: Expect = { viewer: 200, member: 200 };
+const WRITE: Expect = { viewer: 403, member: 200 };
+const ADMIN: Expect = { viewer: 403, member: 403 };
+const inPrivate = (e: Expect, p = 404): Expect => ({ ...e, private: p });
+
+const ROWS: Row[] = [
+  // ── Public (no token needed; identical for everyone) ──
+  { method: 'GET', route: '/health', path: () => '/health', expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'POST', route: '/auth/register', path: () => '/auth/register', body: () => ({ name: 'New', email: `reg-${++seq}@example.com`, password: 'password123' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'POST', route: '/auth/login', path: () => '/auth/login', body: () => ({ email: 'nobody@example.com', password: 'wrong-password' }), expect: { anon: 401, stranger: 401, viewer: 401, member: 401, private: 401 } },
+  { method: 'POST', route: '/auth/refresh', path: () => '/auth/refresh', body: () => ({ refreshToken: 'not-a-token' }), expect: { anon: 401, stranger: 401, viewer: 401, member: 401, private: 401 } },
+  { method: 'POST', route: '/auth/logout', path: () => '/auth/logout', body: () => ({ refreshToken: 'not-a-token' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'GET', route: '/invites/:token', path: (f) => `/invites/${f.invite}`, expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+
+  // ── The signed-in user ──
+  { method: 'GET', route: '/me', path: () => '/me', expect: { stranger: 200, ...READ } },
+  { method: 'PATCH', route: '/me', path: () => '/me', body: () => ({ name: 'Same Name' }), expect: { stranger: 200, viewer: 200, member: 200 } },
+  { method: 'GET', route: '/workspaces', path: () => '/workspaces', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/workspaces', path: () => '/workspaces', body: () => ({ name: 'Mine' }), expect: { stranger: 200, viewer: 200, member: 200 } },
+  { method: 'POST', route: '/uploads', path: () => '/uploads', raw: true, expect: { stranger: 200, viewer: 200, member: 200 } }, // personal, unscoped upload
+  // Invite acceptance requires the invited email: nobody in this table has it.
+  { method: 'POST', route: '/invites/:token/accept', path: (f) => `/invites/${f.invite}/accept`, expect: { stranger: 403, viewer: 403, member: 403 } },
+
+  // ── Workspace ──
+  { method: 'PATCH', route: '/workspaces/:id', path: (f) => `/workspaces/${f.ws}`, body: () => ({ name: 'Renamed' }), expect: ADMIN },
+  { method: 'DELETE', route: '/workspaces/:id', path: (f) => `/workspaces/${f.ws}`, expect: ADMIN },
+  { method: 'GET', route: '/workspaces/:id/members', path: (f) => `/workspaces/${f.ws}/members`, expect: READ },
+  { method: 'POST', route: '/workspaces/:id/members', path: (f) => `/workspaces/${f.ws}/members`, body: () => ({ email: `x${++seq}@example.com` }), expect: ADMIN },
+  { method: 'PATCH', route: '/workspaces/:id/members/:userId', path: (f) => `/workspaces/${f.ws}/members/${f.target}`, body: () => ({ role: 'viewer' }), expect: ADMIN },
+  { method: 'DELETE', route: '/workspaces/:id/members/:userId', path: (f) => `/workspaces/${f.ws}/members/${f.target}`, expect: ADMIN },
+  { method: 'POST', route: '/workspaces/:id/invites/:email/resend', path: (f) => `/workspaces/${f.ws}/invites/${encodeURIComponent(f.email)}/resend`, expect: ADMIN },
+  { method: 'DELETE', route: '/workspaces/:id/invites/:email', path: (f) => `/workspaces/${f.ws}/invites/${encodeURIComponent(f.email)}`, expect: ADMIN },
+  { method: 'GET', route: '/workspaces/:id/tree', path: (f) => `/workspaces/${f.ws}/tree`, expect: READ },
+  { method: 'GET', route: '/workspaces/:id/search', path: (f) => `/workspaces/${f.ws}/search?q=page`, expect: READ },
+  { method: 'GET', route: '/workspaces/:id/tasks', path: (f) => `/workspaces/${f.ws}/tasks`, expect: READ },
+  { method: 'GET', route: '/workspaces/:id/tasks/completed', path: (f) => `/workspaces/${f.ws}/tasks/completed`, expect: READ },
+  { method: 'POST', route: '/workspaces/:id/tasks', path: (f) => `/workspaces/${f.ws}/tasks`, body: () => ({ title: 'New' }), expect: WRITE },
+  { method: 'POST', route: '/workspaces/:id/notebooks', path: (f) => `/workspaces/${f.ws}/notebooks`, body: () => ({ name: 'New' }), expect: WRITE },
+
+  // ── Notebook-scoped (private: the member can't see the owner's private notebook → 404) ──
+  { method: 'PATCH', route: '/notebooks/:id', path: (f) => `/notebooks/${f.nb}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(WRITE) },
+  { method: 'DELETE', route: '/notebooks/:id', path: (f) => `/notebooks/${f.nb}`, expect: inPrivate(ADMIN) }, // creator or admin only
+  { method: 'POST', route: '/notebooks/:id/move', path: (f) => `/notebooks/${f.nb}/move`, body: () => ({ index: 0 }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/notebooks/:id/sections', path: (f) => `/notebooks/${f.nb}/sections`, body: () => ({ name: 'S2' }), expect: inPrivate(WRITE) },
+  { method: 'GET', route: '/notebooks/:id/shares', path: (f) => `/notebooks/${f.nb}/shares`, expect: inPrivate(READ) },
+  { method: 'PUT', route: '/notebooks/:id/shares', path: (f) => `/notebooks/${f.nb}/shares`, body: () => ({ userIds: [] }), expect: inPrivate(ADMIN) }, // creator only
+  { method: 'PATCH', route: '/sections/:id', path: (f) => `/sections/${f.sec}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(WRITE) },
+  { method: 'DELETE', route: '/sections/:id', path: (f) => `/sections/${f.sec}`, expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/sections/:id/move', path: (f) => `/sections/${f.sec}/move`, body: () => ({ index: 0 }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/sections/:id/copy', path: (f) => `/sections/${f.sec}/copy`, body: () => ({}), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/sections/:id/pages', path: (f) => `/sections/${f.sec}/pages`, body: () => ({ title: 'P2' }), expect: inPrivate(WRITE) },
+  { method: 'GET', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: inPrivate(READ) },
+  { method: 'PATCH', route: '/pages/:id', path: (f) => `/pages/${f.page}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/pages/:id/move', path: (f) => `/pages/${f.page}/move`, body: () => ({ index: 0 }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/pages/:id/copy', path: (f) => `/pages/${f.page}/copy`, body: () => ({}), expect: inPrivate(WRITE) },
+  { method: 'DELETE', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: inPrivate(WRITE) },
+  { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
+  { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: inPrivate(WRITE) },
+  {
+    method: 'GET',
+    route: '/files/:id',
+    path: (f) => `/files/${f.file}`,
+    expect: inPrivate(READ),
+    known: 'AUTHZ-1: /files/:id checks workspace membership but not the file’s page access (private notebooks) — routed to Editor & Notes',
+  },
+];
+
+const tokenOf = (who: Who) => (who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : member.token);
+const expected = (r: Row, who: Who) => r.expect[who] ?? (who === 'anon' ? 401 : who === 'stranger' ? 404 : who === 'private' ? (r.expect.member ?? 404) : 404);
+
+async function run(r: Row, f: Fx, who: Who): Promise<number> {
+  const token = tokenOf(who);
+  if (r.raw) {
+    const res = await fetch(`${app.origin}/api${r.path(f)}`, {
+      method: r.method,
+      headers: { 'content-type': 'text/plain', 'x-filename': 'a.txt', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: 'data',
+    });
+    return res.status;
+  }
+  return (await app.call(r.method, r.path(f), token, r.body?.(f))).status;
+}
+
+for (const r of ROWS) {
+  test(`authz: ${r.method} ${r.route}`, { todo: r.known }, async () => {
+    const got: string[] = [];
+    for (const who of WHO) {
+      const { shared, priv } = await fixture();
+      const f = who === 'private' ? priv : shared;
+      const status = await run(r, f, who);
+      got.push(`${who}=${status}`);
+      assert.equal(status, expected(r, who), `${r.method} ${r.route} as ${who}: expected ${expected(r, who)}, got ${status}  [${got.join(' ')}]`);
+    }
+  });
+}
+
+test('authz: every registered REST route is in the audit table', async () => {
+  const mods = await Promise.all(
+    ['auth', 'health', 'workspaces', 'tree', 'pages', 'tasks', 'search', 'files'].map((m) => import(`../server/routes/${m}.ts`)),
+  );
+  const registered = new Set<string>();
+  for (const mod of mods)
+    for (const router of Object.values(mod))
+      for (const layer of ((router as { stack?: { route?: { path: string; methods: Record<string, boolean> } }[] }).stack ?? []))
+        if (layer.route) for (const m of Object.keys(layer.route.methods)) registered.add(`${m.toUpperCase()} ${layer.route.path}`);
+  const audited = new Set(ROWS.map((r) => `${r.method} ${r.route}`));
+  const missing = [...registered].filter((r) => !audited.has(r));
+  assert.deepEqual(missing, [], `routes missing from the authorization audit: ${missing.join(', ')}`);
+  assert.ok(registered.size >= 45, `found ${registered.size} routes`);
+});
+
+// ── WebSockets ──
+
+function connect(path: string, token?: string): Promise<{ code: number | null; ws: WS }> {
+  return new Promise((resolve) => {
+    const ws = new WS(`${app.wsOrigin}${path}`, token ? ['noteapp.v1', `bearer.${token}`] : ['noteapp.v1']);
+    let opened = false;
+    ws.on('open', () => {
+      opened = true;
+      setTimeout(() => resolve({ code: null, ws }), 150); // still open after the auth check
+    });
+    ws.on('close', (code) => resolve({ code, ws }));
+    ws.on('error', () => !opened && resolve({ code: -1, ws }));
+  });
+}
+
+test('authz: /collab/<page> socket', async () => {
+  const { shared, priv } = await fixture();
+  const cases: [Who, string, number | null][] = [
+    ['anon', shared.page, 4401],
+    ['stranger', shared.page, 4403],
+    ['viewer', shared.page, null], // connects (read-only: updates dropped, covered in collab tests)
+    ['member', shared.page, null],
+    ['private', priv.page, 4403],
+  ];
+  for (const [who, page, code] of cases) {
+    const r = await connect(`/collab/${page}`, tokenOf(who));
+    assert.equal(r.code, code, `/collab as ${who}`);
+    r.ws.terminate();
+  }
+  const bad = await connect(`/collab/${shared.page}`, 'garbage');
+  assert.equal(bad.code, 4401);
+  bad.ws.terminate();
+});
+
+test('authz: /api/events socket only delivers what each user may see', async () => {
+  const { shared, priv } = await fixture();
+  const anon = await connect('/api/events');
+  assert.equal(anon.code, 4401);
+  const listeners = await Promise.all((['stranger', 'viewer', 'member'] as Who[]).map(async (who) => {
+    const r = await connect('/api/events', tokenOf(who));
+    assert.equal(r.code, null, `events as ${who}`);
+    const msgs: { type: string; task?: { id: string }; id?: string }[] = [];
+    r.ws.on('message', (d) => msgs.push(JSON.parse(String(d))));
+    return { who, ws: r.ws, msgs };
+  }));
+  // Owner edits a task in the shared notebook and one in the private notebook.
+  await app.call('PATCH', `/tasks/${shared.task}`, owner.token, { title: 'Shared edit' });
+  await app.call('PATCH', `/tasks/${priv.task}`, owner.token, { title: 'Private edit' });
+  await new Promise((r) => setTimeout(r, 300));
+  const by = Object.fromEntries(listeners.map((l) => [l.who, l.msgs]));
+  const sawTask = (who: string, id: string) => by[who].some((m) => m.type === 'task' && m.task?.id === id);
+  assert.equal(by.stranger.filter((m) => m.type !== 'hello').length, 0, 'stranger gets nothing');
+  assert.ok(sawTask('viewer', shared.task) && sawTask('member', shared.task));
+  assert.ok(!sawTask('viewer', priv.task) && !sawTask('member', priv.task), 'private task never sent');
+  for (const l of listeners) l.ws.terminate();
+});
