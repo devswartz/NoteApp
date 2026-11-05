@@ -60,6 +60,14 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 - **Test:** `tests/e2e/<file>` › "<test name>" (`test.fixme`)
 -->
 
+### BUG-2: a member demoted to viewer can keep editing an open page, and the edits are saved
+- **Area / owner:** Collaboration & Access (`server/collab.ts`: the role is checked only when the socket connects). Possibly fixed by open PRs #12 (socket access revalidation) and #14 (live access re-checks); the fixme test will confirm.
+- **Found on:** main @ 1b38732, 2026-11-05
+- **Steps:** 1. A (owner) and B (member) are in a team workspace; B opens a page. 2. A changes B's role to Viewer (Settings → Members). 3. Without reloading, B types in the page.
+- **Expected:** the server drops B's updates as soon as B is a viewer (and B's UI switches to "View only").
+- **Actual:** B's text reaches A live and is persisted (it's still there after A reloads); B's UI stays editable until B reloads.
+- **Test:** `tests/e2e/11-live-access.spec.ts` › "member demoted to viewer while the page is open can no longer edit (server + UI)" (`test.fixme`)
+
 ## Fixed bugs
 
 None yet.
