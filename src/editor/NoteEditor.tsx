@@ -58,10 +58,12 @@ interface Props {
   onStatus: (s: SyncStatus) => void;
   onPresence: (users: PresenceUser[]) => void;
   onSave?: (s: SaveState) => void;
+  /** Called once the server's copy of the page has been loaded. */
+  onServerSynced?: () => void;
   onReady: (editor: Editor) => void;
 }
 
-export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onReady }: Props) {
+export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
@@ -139,6 +141,10 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   );
   const editorRef = useRef<Editor | null>(null);
   editorRef.current = editor;
+
+  useEffect(() => {
+    if (session.serverSynced) onServerSynced?.();
+  }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     editor?.setEditable(canEdit);
