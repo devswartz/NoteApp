@@ -32,10 +32,6 @@ ENV NODE_ENV=production \
     PORT=3001 \
     DATA_DIR=/data \
     GIT_SHA=${GIT_SHA}
-# Interim: point the current server's DB/upload paths into /data until it reads
-# DATA_DIR itself. Same locations the contract specifies, so harmless after.
-ENV DB_FILE=/data/noteapp.db \
-    UPLOAD_DIR=/data/files
 LABEL org.opencontainers.image.source="https://github.com/devswartz/NoteApp" \
       org.opencontainers.image.revision="${GIT_SHA}"
 
