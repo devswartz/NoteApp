@@ -15,6 +15,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
   - socket expiry and live access re-validation (#12).
 - File metadata follows page access (AUTHZ-1), and notebook/section colours are validated (#52).
 - Security headers: strict CSP, HSTS, framing, and referrer and permissions policies (#51).
+- Password reset by email, change password, and an avatar colour. Auth hardening: constant-time checks, async bcrypt, and the 72-byte password limit (#61).
 - Offline/PWA: precached app shell with an update prompt, offline cold start, and a read-only data cache for tasks (fixes BUG-1) (#35).
 
 ### Notes and editor
@@ -47,6 +48,9 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Groundwork for comments, notifications and activity: migration 008, types and route stubs (#26).
 - Comment threads on text selections: API with permissions, live events, the comment mark and a side panel (#28). The panel isn't in the page view yet.
 - Groundwork for page version history: the `page_versions` migration (#31).
+- Reliable live events: sequence numbers with catch-up replay and resync, plus `GET /workspaces/:id/team` (#18).
+- Comments hook-up on the collaboration side (#55); mounting the panel in the page view is pending in the editor.
+- Files on deleted pages become private to their uploader (#59).
 - 10-editor load test, and a fix so pages save while people keep typing (#38).
 
 ### UI shell and design system
@@ -86,6 +90,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - E2E tests for notes edge cases and live access changes (#22). Fix for BUG-2 (a demoted member could keep editing), re-checking edit rights on role changes (#41).
 - E2E test for token refresh mid-session (#42).
 - E2E tests for invite links, sharing with people and the command registry (#54).
+- Remaining E2E fixmes enabled, with page-link and callout/toggle tests; BUG-1 fixed, BUG-3 found (#64).
 
 ### Docs
 - `README.md`, `docs/USER_GUIDE.md` and this changelog.

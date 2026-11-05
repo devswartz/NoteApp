@@ -77,6 +77,11 @@ The sidebar counts show how many tasks are in Today, My Tasks and Upcoming.
   - **quiet hours** per workspace (reminders wait until they end);
   - a private **calendar feed** link to subscribe to from Apple or Google Calendar.
 
+## Your account
+
+- **Settings → Profile:** your name, avatar colour and password (*Change password*).
+- **Forgot your password?** Use the link on the sign-in screen. You'll get an email with a reset link.
+
 ## Sharing and roles
 
 - Invite people from **Settings → Members** by email. They get a link and join with that email address. Pending invites can be copied, resent or revoked there.
