@@ -106,3 +106,23 @@ test('comment changes are pushed live to people who can see the page', async () 
   await start(owner, pageId);
   await waitFor(() => msgs.some((m) => m.type === 'comments' && m.pageId === pageId), 2000, 'comments event');
 });
+
+test('live comment events for a private page are withheld from members who cannot see it', async () => {
+  const { owner, member, pageId, notebookId } = await team();
+  await app.call('PATCH', `/notebooks/${notebookId}`, owner.token, { visibility: 'private' });
+  const listen = async (token: string) => {
+    const msgs: { type: string; pageId?: string }[] = [];
+    const ws = new WS(`${app.wsOrigin}/api/events`, ['noteapp.v1', `bearer.${token}`]);
+    sockets.push(ws);
+    ws.on('message', (d) => msgs.push(JSON.parse(String(d))));
+    await new Promise((r) => ws.on('open', r));
+    return msgs;
+  };
+  const [ownerMsgs, memberMsgs] = await Promise.all([listen(owner.token), listen(member.token)]);
+  const t = (await start(owner, pageId)).data;
+  await app.call('POST', `/comment-threads/${t.id}/replies`, owner.token, { body: 'more' });
+  await app.call('PATCH', `/comment-threads/${t.id}`, owner.token, { resolved: true });
+  await waitFor(() => ownerMsgs.filter((m) => m.type === 'comments' && m.pageId === pageId).length >= 3, 2000, 'owner events');
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(memberMsgs.filter((m) => m.type === 'comments').length, 0, 'member received no comment events for the private page');
+});
