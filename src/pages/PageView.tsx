@@ -160,7 +160,7 @@ function SaveIndicator({ status, save }: { status: SyncStatus; save: SaveState }
   }[state];
   const icon = state === 'offline' ? <CloudOff size={14} /> : state === 'saved' ? <Check size={14} /> : <Loader size={14} className="spin" />;
   return (
-    <span className={`sync save-${state}`} title={title} role="status" aria-live="polite">
+    <span className={`sync sync-${status} save-${state}`} title={title} role="status" aria-live="polite">
       {icon}
       <span className="sync-label">{label}</span>
     </span>

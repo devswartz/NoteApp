@@ -217,3 +217,7 @@
   .code-copy { opacity: 1; }
   .ProseMirror [data-resize-handle] { opacity: 1; }
 }
+
+/* Page icons outside the editor (notes overview) */
+.page-emoji { font-size: 18px; line-height: 1; width: 18px; display: inline-flex; justify-content: center; }
+.page-emoji-sm { font-size: 15px; width: 15px; }
