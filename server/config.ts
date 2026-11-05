@@ -11,6 +11,8 @@ export const DB_FILE = process.env.DB_FILE ?? path.join(DATA_DIR, 'noteapp.db');
 export const FILES_DIR = path.join(DATA_DIR, 'files');
 
 export const PORT = Number(process.env.PORT ?? 3001);
+/** Public origin of the web app, used in emailed links. Required in production (contract). */
+export const PUBLIC_URL = (process.env.PUBLIC_URL || (IS_PROD ? '' : 'http://localhost:5173')).replace(/\/+$/, '');
 /** Build identifier reported by /api/health: the git SHA or tag baked in at image build time. */
 export const VERSION = process.env.GIT_SHA || 'dev';
 /** Load demo content into an empty database on startup (staging only). */

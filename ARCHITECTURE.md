@@ -103,7 +103,7 @@ src/               React web app
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
 apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
-public/            sw.js (offline shell), icon.svg (the manifest is generated from shared/config.ts)
+public/            icon.svg (manifest and sw.js are generated at build time; see Offline)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
 apps/desktop/      Tauri 2 desktop app (Rust in src-tauri/, build scripts, icon sources); docs/DESKTOP.md
@@ -158,6 +158,7 @@ files (uploads: workspace_id, page_id, name, mime, size)
 - **Client:** the refresh token is persisted by `tokenStore` in `src/api.ts` through `platform.secureStorage` (localStorage on the web, the OS keychain in the shells). Startup calls `/auth/refresh` to restore the session. A timer refreshes a minute before expiry. Any 401 triggers one refresh-and-retry. Refreshes are single-flight per tab and serialized across tabs/windows with `platform.withLock` (Web Locks on the web), each reading the latest stored token, so tabs don't burn each other's tokens.
 - **WebSockets:** browsers can't set headers on a WebSocket, so the client offers subprotocols `noteapp.v1, bearer.<accessToken>`. The server reads the token from there (`tokenFromUpgrade`) and answers with `noteapp.v1` only, never echoing the token. `?token=` is accepted in development only. A socket is closed with **4401 when its access token expires** (the client refreshes and reconnects). Collab sockets are also re-checked every 30 s and whenever access changes, and are closed with **4403** if the user lost access to the page. The collab provider gets the current token on every reconnect through a `WebSocket` subclass passed as y-websocket's `WebSocketPolyfill`.
 - **Access changes:** any route that can take access away (role or membership change, workspace deleted, notebook made private, page or section moved) calls `accessChanged()` from `server/access.ts`. Live connections subscribe with `onAccessChange()` and re-check themselves, so new routes only need that one call.
+- **Password reset and change:** `POST /auth/forgot {email}` always answers `{ok:true}` (no account enumeration) and emails a link to `$PUBLIC_URL/reset?token=…`, at most once a minute per address. The token is a 1-hour JWT `{typ:'reset'}` bound to a fingerprint of the current password hash, so it works once and dies when the password changes; no table is needed. `POST /auth/reset {token, password}` sets the password and revokes every sign-in. `POST /me/password {currentPassword, newPassword}` does the same but returns a fresh session for the current device. UI: "Forgot password?" on the login page, `/reset`, and Settings → Profile (avatar colour and change password, `components/AccountSettings.tsx`). Time zone belongs to the Reminders notification settings.
 - **Secrets:** in production the server refuses to start unless `JWT_SECRET` is at least 32 bytes.
 - **API base URL:** `VITE_API_URL` at build time, else same origin. `apiUrl()`, `wsUrl()` and `fileUrl()` in `src/api.ts` build every URL; nothing else should hard-code `/api` or `location`.
 
@@ -181,6 +182,14 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 **Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
+## Offline
+
+- **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view (names are immutable). `/api/*` and `/collab/*` are never cached.
+- **Updates:** a new service worker waits rather than taking over a running page. `platform.appUpdates` reports it, and `components/AppUpdates.tsx` shows a sticky "A new version is available — Reload" toast. Reload tells the worker to take over and reloads the page. Registrations check for a new deploy every 30 min and whenever the app becomes visible. The shells will plug their own updater into the same hook.
+- **Notes:** each page's Yjs doc is cached in IndexedDB (`y-indexeddb`, `noteapp-page-<id>`), so pages you've opened before load and stay editable offline. Edit rights are remembered per user and page (`noteapp.canEdit.<userId>.<pageId>`). Changes merge when the collab socket reconnects.
+- **Everything else, read-only:** `src/store/cache.ts` → `cached(key, path)` caches workspaces, tree, tasks and members in IndexedDB (`src/lib/offlineCache.ts`) under per-user keys (`u:<userId>:…`), and falls back to that copy only when the server can't be reached. Task edits need a connection in v1.
+- **Cold start offline:** if the refresh call can't reach the server, `bootstrap()` opens with the cached user and data and shows the offline banner. The events socket keeps retrying with backoff; once it reconnects, the session refreshes and data reloads. `clearLocalUserData()` wipes the data cache, the IndexedDB note copies and cached uploads (`uploads-*` in Cache Storage). It runs on sign-out (even if revoking fails), when startup finds the session rejected (401), and when a different user signs in than the last one on this device.
+
 ## Editor (`src/editor/`)
 
 | File | What |
@@ -191,6 +200,9 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 | `TaskRef.tsx` | The `taskRef` node (live task: checkbox, title, priority, due date, assignee), `[] ` input rule, `insertTask`, and **`convertToTask`** (command) / **`convertToTasks(editor)`** (returns the new ids): the current line or every line in a selection becomes a task |
 | `SlashMenu.tsx` | `/` menu: items, ranking, the suggestion plugin |
 | `LinkEditor.tsx` | Inline link editor (⌘K with a selection; ⌘K without one goes to the command palette) |
+| `PageLink.tsx`, `pageItems.ts` | `[[` page links: inline `pageLink[pageId]` node showing the page's live title and icon; the `[[` picker (search pages, or create one). Backlinks: `GET /pages/:id/backlinks` (`server/links.ts`, a lazily rebuilt in-memory index keyed by `pages.updated_at`) |
+| `templates.ts`, `TemplatePicker.tsx` | Built-in page templates (ProseMirror JSON) and the "Start with a template" row on empty pages (shown only after the server copy has synced). `applyTemplate(editor, pageId, template)` sets content, title and icon |
+| `VersionHistory.tsx` | Version history modal: snapshot list, read-only preview (`documentExtensions()` + a scratch Y.Doc), Restore (snapshots the current state first, then replaces the content as one collaborative edit). Server: `server/versions.ts` (`page_versions`): a 5-minute sweep snapshots pages edited since their last version (at most one per 10 min), opening the history also snapshots if due; kept: all < 24 h, hourly < 7 days, daily after, max 200 per page |
 | `IconPicker.tsx` | Emoji picker for page icons |
 | `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
 
@@ -233,7 +245,7 @@ All under `/api`, JSON, bearer token except where noted:
 | Dashboard | My Tasks, Today (incl. overdue), Upcoming, Team, All (filter/sort), Calendar, Completed | | |
 | Recurrence & reminders | Recurrence: daily / weekdays / weekly / monthly / yearly / every N | Reminders fire only in an open tab (`AppShell.tsx`, browser Notification or toast); "weekly on chosen days" not supported by the `Recurrence` type | Server reminder worker, web push, email |
 | Collaboration | Real-time co-editing with live cursors and presence; task changes pushed live; roles (owner/admin/member/viewer); private vs shared notebooks | Invites: pending invite applied when that email signs up, but no email is sent | Email invites |
-| Offline | Notes cached in IndexedDB (y-indexeddb), sync on reconnect; service worker caches the app shell; offline indicator | Tasks offline: whatever is in memory; nothing persisted | Persisted read-only task cache |
+| Offline | Notes cached in IndexedDB and editable offline (sync on reconnect); precached app shell with an update prompt; offline cold start; read-only cache of workspaces/tree/tasks/members; offline banner | | Offline task edits (deferred past v1) |
 | Platform (§2) | Bearer access + rotating refresh tokens, no cookies; token-authenticated WebSockets; configurable API base URL (`VITE_API_URL`); `src/platform/` adapter with the web implementation, existing browser-only calls routed through it | Deep links: parsing and routing done; the desktop app delivers them. Desktop (Tauri) app: see `docs/DESKTOP.md` | Capacitor implementation (Phase 3) |
 | Deploy (§4) | One-port production server (API, `/api/events` + `/collab/*` WebSockets, web app), `DATA_DIR`, `/api/health`, graceful SIGTERM, `SEED_DEMO` | | Docker/CI (Infra agent) |
 

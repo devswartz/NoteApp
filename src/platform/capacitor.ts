@@ -12,6 +12,8 @@
 //   haptics            light tap on checkbox toggles and [data-haptic] elements; platform.haptics
 //   share capture      "Share to NoteApp" (iOS Share Extension, Android share targets): a task opens
 //                      quick add prefilled, a note becomes a new page in the workspace's Inbox section
+//   server             first-run "Connect to a server" screen and "Change server…" (platform.server),
+//                      same rules as the desktop app (src/platform/serverUrl.ts)
 //   app lock           optional Face ID / Touch ID / fingerprint lock (platform.appLock), with a
 //                      privacy cover while the app is in the background
 //   system UI          status bar text follows the theme, splash hidden after first render,
@@ -33,6 +35,8 @@ import type { BadgePlugin } from '@capawesome/capacitor-badge';
 import type { Task, Tree } from '../../shared/types.ts';
 import type { NotificationPermission, Platform } from './types.ts';
 import { webPlatform } from './web.ts';
+import { SERVER_URL_KEY, normalizeServerUrl, storedServerUrl } from './serverUrl.ts';
+import { APP_NAME } from '../../shared/config.ts';
 
 export type MobileOS = 'ios' | 'android';
 
@@ -59,6 +63,8 @@ export interface NativePlugins {
     getPendingShares(): Promise<{ items: SharedItem[] }>;
     /** Stores the Today snapshot for the widget (App Group / SharedPreferences) and refreshes it. */
     writeWidgetSnapshot(options: { json: string }): Promise<void>;
+    /** Values the native side needs on its own (Android snooze actions call the API directly). */
+    setConfig(options: { apiBase: string | null }): Promise<void>;
     addListener(event: 'shareReceived', fn: () => void): Promise<unknown>;
   };
   BiometricAuth: {
@@ -84,6 +90,8 @@ export interface AppBridge {
   /** Handles a shared item once someone is signed in. Resolves to an in-app path to open, if any. */
   capture(item: SharedItem): Promise<string | null>;
   signOut(): Promise<void>;
+  /** The server origin the API client uses ("https://notes.example.com"), or null if same-origin. */
+  apiBase(): string | null;
   /** Adds commands to the ⌘K palette (src/hooks/useShortcuts.ts). */
   registerCommands(cmds: { id: string; title: string; group?: string; keywords?: string; run: () => void; when?: () => boolean }[]): void;
 }
@@ -93,6 +101,13 @@ export interface MobileExtras {
   haptics: {
     tap(): void;
     success(): void;
+  };
+  /** The server this app talks to. Settings or the login screen can offer "Change server…". */
+  server: {
+    /** The server in use ("https://notes.example.com"), or null when same-origin (dev). */
+    current(): string | null;
+    /** Shows the server screen; saving a different server signs out and restarts the app. */
+    change(): Promise<void>;
   };
   /** Optional biometric lock. Settings can offer a toggle when `'appLock' in platform`. */
   appLock: {
@@ -273,6 +288,104 @@ export function dueTodayCount(tasks: Iterable<Task>, me: string | null, today = 
     if (mine && t.status === 'open' && t.dueDate && t.dueDate <= today) n++;
   }
   return n;
+}
+
+// ───────────── Server choice ─────────────
+
+const SERVER_CONFIRMED_KEY = 'noteapp.serverConfirmed';
+/** The server baked into this build (npm run mobile:sync → MOBILE_SERVER_URL). */
+const BUILD_SERVER = (import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '') || null;
+
+/** Is there a NoteApp server at this address? (GET /api/health → {ok:true}) */
+export async function probeServer(url: string, doFetch: typeof fetch = fetch, timeoutMs = 8000): Promise<boolean> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    const res = await doFetch(`${url}/api/health`, { signal: ctl.signal, headers: { Accept: 'application/json' } });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { ok?: unknown };
+    return body?.ok === true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Validates and probes an address the user typed; on success saves it (and
+ * marks the first-run choice as made). Resolves to the saved URL or an error.
+ */
+export async function chooseServer(
+  input: string,
+  kv: Platform['kv'],
+  doFetch: typeof fetch = fetch,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const r = normalizeServerUrl(input);
+  if (!r.ok) return r;
+  if (!(await probeServer(r.url, doFetch))) return { ok: false, error: `Couldn't reach a server at ${r.url}. Check the address and your connection.` };
+  kv.set(SERVER_URL_KEY, r.url);
+  kv.set(SERVER_CONFIRMED_KEY, '1');
+  return { ok: true, url: r.url };
+}
+
+/** The "Connect to a server" screen (DOM, outside React; it can run before the app renders). */
+function serverScreen(opts: { firstRun: boolean; current: string; appName: string; kv: Platform['kv'] }): Promise<string | null> {
+  return new Promise((resolve) => {
+    const el = (tag: string, css = '', text = '') => {
+      const e = document.createElement(tag);
+      if (css) e.style.cssText = css;
+      if (text) e.textContent = text;
+      return e;
+    };
+    const root = el(
+      'div',
+      'position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;justify-content:center;gap:14px;' +
+        'padding:calc(var(--safe-top, 0px) + 24px) 24px calc(var(--safe-bottom, 0px) + 24px);background:var(--bg, #fff);color:var(--text, #18181b);font:inherit',
+    );
+    root.setAttribute('role', 'dialog');
+    root.setAttribute('aria-label', 'Connect to a server');
+    const title = el('h1', 'margin:0;font-size:22px', 'Connect to a server');
+    const hint = el('p', 'margin:0;color:var(--text-muted, #71717a)', `The address of your ${opts.appName} server.`);
+    const input = document.createElement('input');
+    input.type = 'url';
+    input.inputMode = 'url';
+    input.autocapitalize = 'off';
+    input.spellcheck = false;
+    input.value = opts.current;
+    input.className = 'input';
+    input.style.cssText = 'font-size:16px;padding:12px;border-radius:10px;border:1px solid var(--border, #d4d4d8);background:var(--bg-subtle, #fafafa);color:inherit';
+    const error = el('p', 'margin:0;min-height:1.4em;color:var(--danger, #dc2626);font-size:14px');
+    error.setAttribute('role', 'alert');
+    const connect = el('button', 'padding:12px;font-size:16px', 'Connect') as HTMLButtonElement;
+    connect.className = 'btn btn-primary';
+    const form = document.createElement('form');
+    form.style.cssText = 'display:flex;flex-direction:column;gap:14px';
+    form.append(input, error, connect);
+    root.append(title, hint, form);
+    if (!opts.firstRun) {
+      const cancel = el('button', 'padding:10px;font-size:15px', 'Cancel') as HTMLButtonElement;
+      cancel.type = 'button';
+      cancel.className = 'btn btn-ghost';
+      cancel.addEventListener('click', () => {
+        root.remove();
+        resolve(null);
+      });
+      root.append(cancel);
+    }
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      connect.disabled = true;
+      error.textContent = 'Checking…';
+      void chooseServer(input.value, opts.kv).then((r) => {
+        connect.disabled = false;
+        if (!r.ok) return void (error.textContent = r.error);
+        root.remove();
+        resolve(r.url);
+      });
+    });
+    document.body.appendChild(root);
+  });
 }
 
 // ───────────── App lock ─────────────
@@ -604,13 +717,36 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   const platform: Platform & MobileExtras = {
     kind: 'capacitor',
     haptics,
+    server: {
+      current: () => storedServerUrl() ?? BUILD_SERVER,
+      async change() {
+        const before = storedServerUrl() ?? BUILD_SERVER;
+        const chosen = await serverScreen({ firstRun: false, current: before ?? '', appName: APP_NAME, kv });
+        if (!chosen || chosen === before) return;
+        // Tokens belong to the old server: sign out there, then restart on the new one.
+        await (await appBridge()).signOut().catch(() => {});
+        location.reload();
+      },
+    },
     appLock: appLock.api,
+
+    // The native app updates through the App Store / Play Store; the web
+    // bundle inside it ships with each native release, so nothing to prompt.
+    appUpdates: { subscribe: () => () => {} },
 
     async init() {
       // Keychain items readable after the first unlock (so a background token
       // refresh works) and never restored onto another device from a backup.
       await native.SecureStorage.setDefaultKeychainAccess(3 /* afterFirstUnlockThisDeviceOnly */).catch(() => {});
       await refreshPermission();
+      // First run: confirm which server to use (the build's default is filled in). Dev builds that
+      // load the Vite server (same origin) skip this.
+      if (BUILD_SERVER && kv.get(SERVER_CONFIRMED_KEY) !== '1' && typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+        void native.SplashScreen.hide().catch(() => {});
+        const chosen = await serverScreen({ firstRun: true, current: storedServerUrl() ?? BUILD_SERVER, appName: APP_NAME, kv });
+        // src/api.ts read the server when the app loaded; restart if the choice differs.
+        if (chosen && chosen !== BUILD_SERVER) return void location.reload();
+      }
       appLock.start(); // before the first render, so nothing shows through
       appLock.onUnlock(() => void drainShares());
       appLock.api.subscribe(() => {
@@ -666,8 +802,13 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       // Session-dependent work (push registration, badge) starts once the app's store is up.
       void appBridge().then((b) => {
         app = b;
+        void native.NoteAppNative.setConfig({ apiBase: b.apiBase() }).catch(() => {});
         b.onUser((u) => void onUser(u));
         b.onTasks(scheduleBadge);
+        if (BUILD_SERVER)
+          b.registerCommands([
+            { id: 'mobile.changeServer', title: 'Change server…', group: 'Settings', keywords: 'server url address host', run: () => void platform.server.change() },
+          ]);
         void appLock.api.method().then((label) => {
           if (!label) return;
           b.registerCommands([
@@ -814,6 +955,10 @@ async function loadAppBridge(): Promise<AppBridge> {
     del: (path, body) => api.api(path, { method: 'DELETE', json: body }),
     registerCommands: (cmds) => void shortcuts.registerCommands(cmds),
     signOut: async () => (await import('../store/session.ts')).signOut(),
+    apiBase: () => {
+      const url = api.apiUrl('');
+      return /^https?:\/\//.test(url) ? url.replace(/\/api$/, '') : null;
+    },
     async capture(item) {
       const ws = await workspaceReady(useStore);
       if (!ws) return null;

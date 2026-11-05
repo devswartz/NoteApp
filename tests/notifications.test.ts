@@ -123,3 +123,69 @@ test('an @mention node added to a page notifies once, when the page is saved', a
   const search = await app.call('GET', `/workspaces/${ann.wsId}/search?q=Owner`, ann.token);
   assert.ok(search.data.pages.some((x: { id: string }) => x.id === pageId));
 });
+
+/** A y-websocket client on `pageId` as `u`. */
+async function collab(u: TestUser, pageId: string) {
+  class AuthedWS extends WS {
+    constructor(url: string | URL) {
+      super(url, ['noteapp.v1', `bearer.${u.token}`]);
+    }
+  }
+  const doc = new Y.Doc();
+  const provider = new WebsocketProvider(`${app.wsOrigin}/collab`, pageId, doc, { WebSocketPolyfill: AuthedWS as unknown as typeof WebSocket, disableBc: true });
+  cleanup.push(() => {
+    provider.destroy();
+    doc.destroy();
+  });
+  await waitFor(() => provider.synced, 3000, 'sync');
+  return doc;
+}
+const mentionNode = (u: TestUser) => {
+  const m = new Y.XmlElement('mention');
+  m.setAttribute('id', u.user.id);
+  m.setAttribute('label', u.user.name);
+  return m;
+};
+
+test('page mentions are attributed to whoever added them, not to the last editor', async () => {
+  const { ann, bob, cat, pageId } = await team();
+  const annDoc = await collab(ann, pageId);
+  const catDoc = await collab(cat, pageId);
+  const p = new Y.XmlElement('paragraph');
+  p.insert(0, [new Y.XmlText('Owner: '), mentionNode(bob)]);
+  annDoc.getXmlFragment('default').push([p]); // Ann adds the mention…
+  await waitFor(() => catDoc.getXmlFragment('default').length > 0, 2000, 'cat sees it');
+  const q = new Y.XmlElement('paragraph');
+  q.insert(0, [new Y.XmlText('typo fix')]);
+  catDoc.getXmlFragment('default').push([q]); // …then Cat is the last editor before the save.
+  await new Promise((r) => setTimeout(r, 1400));
+  const b = await inbox(bob);
+  assert.equal(b.items.length, 1);
+  assert.equal(b.items[0].actorId, ann.user.id);
+  assert.equal(b.items[0].title, 'Ann mentioned you in “Roadmap”');
+});
+
+test('deleting and re-adding a mention does not notify again (10 min dedup)', async () => {
+  const { ann, bob, pageId } = await team();
+  const doc = await collab(ann, pageId);
+  const frag = doc.getXmlFragment('default');
+  for (let i = 0; i < 3; i++) {
+    const p = new Y.XmlElement('paragraph');
+    p.insert(0, [mentionNode(bob)]);
+    frag.push([p]);
+    await new Promise((r) => setTimeout(r, 1300)); // saved with the mention
+    frag.delete(0, frag.length);
+    await new Promise((r) => setTimeout(r, 1300)); // saved without it
+  }
+  assert.equal((await inbox(bob)).items.filter((n) => n.kind === 'mention').length, 1);
+});
+
+test('notifications per recipient are capped per minute', async () => {
+  const { notify, MAX_PER_MINUTE } = await import('../server/notifications.ts');
+  const { ann, bob } = await team();
+  let delivered = 0;
+  for (let i = 0; i < MAX_PER_MINUTE + 10; i++)
+    if (notify(bob.user.id, { kind: 'other', workspaceId: ann.wsId, actorId: ann.user.id, title: `n${i}`, link: `/x/${i}` })) delivered++;
+  assert.equal(delivered, MAX_PER_MINUTE);
+  assert.equal((await inbox(bob)).items.length, MAX_PER_MINUTE);
+});

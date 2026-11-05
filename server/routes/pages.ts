@@ -3,12 +3,16 @@ import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
 import { accessChanged, mustAccess, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
+import { flushAll } from '../collab.ts';
 import { rowToTask } from '../tasks.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
 import type { Access } from '../access.ts';
 import { HttpError, h, param } from '../http.ts';
+import { backlinks } from '../links.ts';
+import { getVersion, listVersions, snapshot, startVersionSweep } from '../versions.ts';
 
 export const pageRoutes = Router();
+startVersionSweep();
 
 pageRoutes.post(
   '/sections/:id/pages',
@@ -40,6 +44,52 @@ pageRoutes.get(
       )
       .get(id);
     return { page, workspaceId: a.workspaceId, canEdit: a.canEdit };
+  }),
+);
+
+/** GET /pages/:id/backlinks → Backlink[]: visible pages that link here with [[…]], most recently edited first. */
+pageRoutes.get(
+  '/pages/:id/backlinks',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(pageAccess(id, req.user.id));
+    return backlinks(id, a.workspaceId, req.user.id);
+  }),
+);
+
+// ───────── Version history ─────────
+// GET  /pages/:id/versions          → VersionMeta[] (newest first); takes an auto snapshot first if due
+// GET  /pages/:id/versions/:vid     → VersionMeta & { ydoc: base64 Yjs state }
+// POST /pages/:id/versions {reason?} → { id } snapshot now ('manual' | 'restore'; the client calls this before restoring)
+pageRoutes.get(
+  '/pages/:id/versions',
+  h((req) => {
+    const id = param(req, 'id');
+    mustAccess(pageAccess(id, req.user.id));
+    snapshot(id, 'auto');
+    return listVersions(id);
+  }),
+);
+
+pageRoutes.get(
+  '/pages/:id/versions/:vid',
+  h((req) => {
+    const id = param(req, 'id');
+    mustAccess(pageAccess(id, req.user.id));
+    const v = getVersion(id, param(req, 'vid'));
+    if (!v) throw new HttpError(404, 'Version not found');
+    return { ...v, ydoc: v.ydoc.toString('base64') };
+  }),
+);
+
+pageRoutes.post(
+  '/pages/:id/versions',
+  h((req) => {
+    const id = param(req, 'id');
+    mustAccess(pageAccess(id, req.user.id), true);
+    flushAll(); // capture edits still pending in the open collab room
+    const reason = req.body?.reason === 'restore' ? 'restore' : 'manual';
+    return { id: snapshot(id, reason) ?? listVersions(id)[0]?.id ?? null };
   }),
 );
 

@@ -15,9 +15,11 @@ import type { NotificationPermission, Platform } from './types.ts';
 import { webPlatform } from './web.ts';
 import { navigateTo, runMenuCommand } from './tauri/commands.ts';
 import { serverInfo, showServerSetup } from './tauri/serverSetup.ts';
+import { createClickTracker } from './tauri/notificationClicks.ts';
 
 let notificationPermission: NotificationPermission = 'default';
 let focused = true;
+const notificationClicks = createClickTracker();
 const linkListeners = new Set<(url: string) => void>();
 const pendingLinks: string[] = [];
 
@@ -30,6 +32,10 @@ function deliverLinks(urls: string[]) {
 
 export const tauriPlatform: Platform = {
   kind: 'tauri',
+
+  // Desktop updates go through the Tauri updater (tauri/updates.ts: checked on
+  // start and from "Check for Updates…" in the menu), with its own dialog.
+  appUpdates: { subscribe: () => () => {} },
 
   async init() {
     const win = getCurrentWindow();
@@ -48,7 +54,10 @@ export const tauriPlatform: Platform = {
     }
 
     focused = await win.isFocused().catch(() => true);
-    void win.onFocusChanged(({ payload }) => (focused = payload));
+    void win.onFocusChanged(({ payload }) => {
+      focused = payload;
+      if (payload) notificationClicks.focused();
+    });
 
     notificationPermission = (await isPermissionGranted().catch(() => false)) ? 'granted' : 'default';
 
@@ -93,11 +102,13 @@ export const tauriPlatform: Platform = {
       notificationPermission = p === 'granted' ? 'granted' : p === 'denied' ? 'denied' : 'default';
       return notificationPermission;
     },
-    // Desktop notifications can't report clicks back to the app yet, so onClick
-    // isn't called; clicking one brings the app forward (the OS default).
-    show(title, { body }) {
+    // Desktop notifications can't report clicks, but clicking one brings the
+    // app forward; coming to the front shortly after one was shown runs its
+    // onClick (see tauri/notificationClicks.ts).
+    show(title, { body, onClick }) {
       if (notificationPermission !== 'granted') return;
       sendNotification({ title, body });
+      notificationClicks.shown(onClick, tauriPlatform.isHidden());
     },
   },
 

@@ -49,9 +49,27 @@ export const rowToNotification = (r: Row): AppNotification => ({
   readAt: r.read_at,
 });
 
-/** Notify one user. Returns the notification, or null if skipped (self-notification). */
+/** The same (recipient, kind, actor, page/link) within this window is delivered once. */
+export const DEDUP_WINDOW_MS = 10 * 60_000;
+/** At most this many notifications per recipient per minute; the rest are dropped. */
+export const MAX_PER_MINUTE = 20;
+
+/**
+ * Notify one user. Returns the notification, or null if skipped: your own action,
+ * a duplicate (same kind, actor and page/link within DEDUP_WINDOW_MS, e.g. deleting
+ * and re-adding an @mention), or over MAX_PER_MINUTE for this recipient.
+ */
 export function notify(userId: string, n: NotifyInput): AppNotification | null {
   if (n.actorId && n.actorId === userId) return null;
+  const since = (ms: number) => new Date(Date.now() - ms).toISOString();
+  const dup = db
+    .prepare(
+      `SELECT 1 FROM notifications WHERE user_id = ? AND kind = ? AND actor_id IS ? AND COALESCE(link, title) = ? AND created_at > ? LIMIT 1`,
+    )
+    .get(userId, n.kind, n.actorId ?? null, n.link ?? n.title.slice(0, 300), since(DEDUP_WINDOW_MS));
+  if (dup) return null;
+  const recent = (db.prepare('SELECT COUNT(*) AS c FROM notifications WHERE user_id = ? AND created_at > ?').get(userId, since(60_000)) as { c: number }).c;
+  if (recent >= MAX_PER_MINUTE) return null;
   const row: Row = {
     id: newId(),
     kind: n.kind,

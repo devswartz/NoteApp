@@ -32,11 +32,13 @@ interface Room {
   lastEditor: string | null;
   /** People @mentioned in the doc as last saved; only new mentions notify. */
   mentioned: Set<string>;
+  /** Who inserted each mention since the last save (mentioned user → the user whose socket sent it). */
+  mentionAuthors: Map<string, string>;
 }
 
 const rooms = new Map<string, Room>();
 
-/** Set by server/notifications.ts: called with people newly @mentioned when a page is saved. */
+/** Set by server/notifications.ts: called with people newly @mentioned when a page is saved, grouped by who added them (null = unknown). */
 let pageMentionHook: ((pageId: string, workspaceId: string, userIds: string[], actorId: string | null) => void) | null = null;
 export function onPageMentions(fn: typeof pageMentionHook) {
   pageMentionHook = fn;
@@ -141,7 +143,13 @@ function persist(room: Room) {
   syncPageTasks(room.pageId, room.workspaceId, taskIds);
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;
-  if (added.length) pageMentionHook?.(room.pageId, room.workspaceId, added, room.lastEditor);
+  const byActor = new Map<string | null, string[]>();
+  for (const id of added) {
+    const actor = room.mentionAuthors.get(id) ?? null;
+    byActor.set(actor, [...(byActor.get(actor) ?? []), id]);
+  }
+  room.mentionAuthors.clear();
+  for (const [actor, ids] of byActor) pageMentionHook?.(room.pageId, room.workspaceId, ids, actor);
   try {
     pageSavedHook?.(room.pageId, room.lastEditor);
   } catch (e) {
@@ -176,7 +184,24 @@ function getRoom(pageId: string, workspaceId: string): Room {
     dirtySince: 0,
     lastEditor: null,
     mentioned: extractDoc(doc.getXmlFragment('default')).mentionIds,
+    mentionAuthors: new Map(),
   };
+
+  // Attribute new @mentions to whoever's update inserted them (not just the last editor).
+  doc.getXmlFragment('default').observeDeep((events, tr) => {
+    const actor = tr.origin instanceof WebSocket ? connAuth.get(tr.origin)?.userId : undefined;
+    if (!actor) return;
+    const collect = (n: unknown) => {
+      if (!(n instanceof Y.XmlElement)) return;
+      if (n.nodeName === 'mention') {
+        const id = n.getAttribute('id');
+        if (typeof id === 'string' && id && !r.mentionAuthors.has(id)) r.mentionAuthors.set(id, actor);
+      }
+      for (const c of n.toArray()) collect(c);
+    };
+    for (const ev of events)
+      for (const item of ev.changes.added) for (const c of (item.content as { getContent(): unknown[] }).getContent()) collect(c);
+  });
 
   doc.on('update', (update: Uint8Array, origin: unknown) => {
     const enc = encoding.createEncoder();

@@ -1,5 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { APP_DESCRIPTION, APP_NAME } from './shared/config.ts';
 
 const api = process.env.API_URL ?? 'http://localhost:3001';
@@ -36,8 +38,25 @@ function appIdentity(): Plugin {
   };
 }
 
+/** Emits dist/sw.js from src/sw/sw.template.js with the build's file list and a content-derived version. */
+function serviceWorker(): Plugin {
+  return {
+    name: 'service-worker',
+    apply: 'build',
+    generateBundle(_opts, bundle) {
+      const files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'sw.js');
+      const precache = ['/index.html', '/icon.svg', ...files.filter((f) => f !== 'index.html').map((f) => `/${f}`)];
+      const version = createHash('sha256').update(files.sort().join('|')).update(JSON.stringify(precache)).digest('hex').slice(0, 12);
+      const source = readFileSync('src/sw/sw.template.js', 'utf8')
+        .replace('__VERSION__', version)
+        .replace('__PRECACHE__', JSON.stringify([...new Set(precache)]));
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), appIdentity()],
+  plugins: [react(), appIdentity(), serviceWorker()],
   server: {
     port: 5173,
     host: true,
