@@ -4,13 +4,15 @@
 import { InputRule, Node, mergeAttributes, type Editor } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { Selection, TextSelection } from '@tiptap/pm/state';
+import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useRef, useState } from 'react';
-import { GripVertical, Maximize2, FileX2 } from 'lucide-react';
+import { GripVertical, Maximize2, FileX2, Flag } from 'lucide-react';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
-import { AssigneeChip, DueChip, TaskCheckbox } from '../components/TaskControls.tsx';
+import { AssigneeChip, DueChip, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from '../components/TaskControls.tsx';
+import { Dropdown } from '../components/ui.tsx';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from '../components/TaskRow.tsx';
-import type { TaskPatch } from '../../shared/types.ts';
+import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
 
 export interface TaskRefOptions {
   pageId: string;
@@ -23,6 +25,13 @@ declare module '@tiptap/core' {
       insertTask: (title?: string, patch?: TaskPatch) => ReturnType;
       /** Turn the current line into a task. */
       convertBlockToTask: () => ReturnType;
+      /**
+       * Turn the current line, or every line in the selection, into tasks.
+       * Lines in bullet/numbered/check lists are flattened; checked items become done tasks;
+       * images, tables, code and other non-text blocks in the selection are kept as they are.
+       * Use `convertToTasks(editor)` to also get the new task ids.
+       */
+      convertToTask: () => ReturnType;
     };
   }
 }
@@ -36,7 +45,10 @@ function newTask(pageId: string, title = '', patch: TaskPatch = {}): string {
   const id = newTaskId();
   const me = useStore.getState().user?.id ?? null;
   if (!title) freshTasks.add(id);
-  void createTask({ id, title, pageId, assigneeId: me, ...patch });
+  const { status, ...rest } = patch;
+  const created = createTask({ id, title, pageId, assigneeId: me, ...rest });
+  // Creation always starts open; a checked checklist item becomes a completed task.
+  if (status === 'done') void created.then((t) => t && toggleTask(id));
   return id;
 }
 
@@ -95,35 +107,28 @@ export const TaskRef = Node.create<TaskRefOptions>({
           pendingFocus = id;
           return chain().insertContent({ type: this.name, attrs: { taskId: id } }).run();
         },
+      // Both run after the current transaction (they create tasks and may lift list items,
+      // which takes several steps); see convertToTasks() for a synchronous version.
+      convertToTask:
+        () =>
+        ({ editor, dispatch }) => {
+          if (!canConvert(editor)) return false;
+          if (dispatch) queueMicrotask(() => convertToTasks(editor));
+          return true;
+        },
       convertBlockToTask:
         () =>
-        ({ editor, state, chain }) => {
-          const { $from } = state.selection;
-          const block = $from.parent;
-          if (!block.isTextblock || block.type.name === 'codeBlock') return false;
-          // Lift out of lists first so the task becomes a top-level block.
-          let guard = 0;
-          while (guard++ < 5 && (editor.isActive('listItem') || editor.isActive('taskItem'))) {
-            const ok = editor.isActive('taskItem') ? editor.commands.liftListItem('taskItem') : editor.commands.liftListItem('listItem');
-            if (!ok) break;
-          }
-          const s = editor.state;
-          const $f = s.selection.$from;
-          const title = $f.parent.textContent.trim();
-          const id = newTask(this.options.pageId, title);
-          if (!title) pendingFocus = id;
-          const from = $f.before();
-          const to = $f.after();
-          return chain()
-            .insertContentAt({ from, to }, { type: this.name, attrs: { taskId: id } })
-            .run();
+        ({ editor, dispatch }) => {
+          if (!canConvert(editor)) return false;
+          if (dispatch) queueMicrotask(() => convertLine(editor));
+          return true;
         },
     };
   },
 
   addKeyboardShortcuts() {
     return {
-      'Mod-Enter': () => this.editor.commands.convertBlockToTask(),
+      'Mod-Enter': () => convertToTasks(this.editor).length > 0 || canConvert(this.editor),
     };
   },
 
@@ -260,6 +265,14 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
       e.preventDefault();
       commit();
       focusEditorAt(-1);
+    } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+      e.preventDefault();
+      commit();
+      focusEditorAt(-1);
+    } else if (e.key === 'ArrowRight' && e.currentTarget.selectionStart === title.length) {
+      e.preventDefault();
+      commit();
+      focusEditorAt(1);
     }
   };
 
@@ -289,8 +302,24 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
             commit();
           }}
           onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            // Pasting several lines: the first goes here, each other line becomes a task below.
+            const lines = e.clipboardData.getData('text/plain').split(/\r?\n/).map((l) => l.replace(/^\s*([-*•]|\[[ x]?\]|\d+[.)])\s+/i, '').trim()).filter(Boolean);
+            const p = pos();
+            if (lines.length < 2 || p === undefined) return;
+            e.preventDefault();
+            const input = e.currentTarget;
+            const next = title.slice(0, input.selectionStart ?? title.length) + lines[0] + title.slice(input.selectionEnd ?? title.length);
+            setTitle(next);
+            void updateTask(id, { title: next.trim() }, { silent: true });
+            freshTasks.delete(id);
+            const pageId = editor.extensionManager.extensions.find((x) => x.name === 'taskRef')!.options.pageId as string;
+            const nodes = lines.slice(1).map((l) => ({ type: 'taskRef', attrs: { taskId: newTask(pageId, l) } }));
+            editor.chain().insertContentAt(p + node.nodeSize, nodes).run();
+          }}
         />
         <div className="task-ref-meta">
+          <PriorityChip task={task} readOnly={!editable} onChange={(priority) => void updateTask(id, { priority })} />
           <DueChip task={task} readOnly={!editable} onChange={(dueDate) => void updateTask(id, { dueDate })} />
           <AssigneeChip task={task} readOnly={!editable} onChange={(assigneeId) => void updateTask(id, { assigneeId })} />
           <button className="icon-btn btn-ghost task-ref-open" title="Open task details" onClick={() => ui.openTask(id)}>
@@ -307,4 +336,131 @@ export function insertTaskAtEnd(editor: Editor, pageId: string) {
   const id = newTask(pageId);
   pendingFocus = id;
   editor.chain().insertContentAt(editor.state.doc.content.size, { type: 'taskRef', attrs: { taskId: id } }).run();
+}
+
+/** Can the selection be converted to tasks? (for enabling menu items) */
+export function canConvert(editor: Editor): boolean {
+  const { $from, empty } = editor.state.selection;
+  if (!editor.isEditable) return false;
+  if (empty || $from.sameParent(editor.state.selection.$to)) return $from.parent.isTextblock && $from.parent.type.name !== 'codeBlock';
+  return true;
+}
+
+const LISTS = new Set(['bulletList', 'orderedList', 'taskList']);
+
+const pageIdOf = (editor: Editor) =>
+  (editor.extensionManager.extensions.find((x) => x.name === 'taskRef')?.options as TaskRefOptions | undefined)?.pageId ?? '';
+
+/** Turn the line at the cursor into a task (lifting it out of lists first). Returns the new task id. */
+export function convertLine(editor: Editor): string | null {
+  if (!canConvert(editor)) return null;
+  const done = editor.isActive('taskItem', { checked: true });
+  // Lift out of lists first so the task becomes a top-level block. Each lift is its own transaction.
+  for (let guard = 0; guard < 5 && (editor.isActive('listItem') || editor.isActive('taskItem')); guard++) {
+    const ok = editor.isActive('taskItem') ? editor.commands.liftListItem('taskItem') : editor.commands.liftListItem('listItem');
+    if (!ok) break;
+  }
+  const $f = editor.state.selection.$from;
+  if (!$f.parent.isTextblock || $f.depth < 1) return null;
+  const title = $f.parent.textContent.trim();
+  const id = newTask(pageIdOf(editor), title, done ? { status: 'done' } : {});
+  if (!title) pendingFocus = id;
+  editor.chain().insertContentAt({ from: $f.before(), to: $f.after() }, { type: 'taskRef', attrs: { taskId: id } }).run();
+  return id;
+}
+
+/**
+ * Convert the current line or the selected lines to tasks (see the `convertToTask` command).
+ * Returns the ids of the tasks created, in document order. For agents/other areas:
+ *   import { convertToTasks } from '../editor/TaskRef.tsx';
+ *   const ids = convertToTasks(editor);
+ */
+export function convertToTasks(editor: Editor): string[] {
+  const { state } = editor;
+  const { selection } = state;
+  const pageId = pageIdOf(editor);
+  const taskType = state.schema.nodes.taskRef;
+  if (!editor.isEditable || !taskType) return [];
+
+  // A cursor or a selection inside one line: convert that line.
+  if (selection.empty || selection.$from.sameParent(selection.$to)) {
+    const id = convertLine(editor);
+    return id ? [id] : [];
+  }
+
+  // Several blocks: rebuild the top-level blocks the selection touches. Inside lists,
+  // only the items the selection overlaps become tasks; the others stay list items
+  // (a list is split around the converted items).
+  const selFrom = selection.from;
+  const selTo = selection.to;
+  const overlaps = (pos: number, node: PMNode) => pos < selTo && pos + node.nodeSize > selFrom;
+  const from = selection.$from.before(1);
+  const to = selection.$to.after(1);
+  const ids: string[] = [];
+  const out: PMNode[] = [];
+  const task = (text: string, done = false) => {
+    const title = text.trim();
+    if (!title) return false;
+    const id = newTask(pageId, title, done ? { status: 'done' } : {});
+    ids.push(id);
+    out.push(taskType.create({ taskId: id }));
+    return true;
+  };
+  /** Walk a list at `pos`; unselected runs of items are re-emitted as lists of the same type. */
+  const fromList = (list: PMNode, pos: number) => {
+    let keep: PMNode[] = [];
+    const flush = () => {
+      if (keep.length) out.push(list.type.create(list.attrs, keep));
+      keep = [];
+    };
+    list.forEach((item, offset) => {
+      const itemPos = pos + 1 + offset;
+      if (!overlaps(itemPos, item)) {
+        keep.push(item);
+        return;
+      }
+      flush();
+      const done = item.type.name === 'taskItem' && !!item.attrs.checked;
+      item.forEach((child, childOffset) => {
+        const childPos = itemPos + 1 + childOffset;
+        if (LISTS.has(child.type.name)) fromList(child, childPos);
+        else if (child.isTextblock) {
+          if (!overlaps(childPos, child) || !task(child.textContent, done)) out.push(child);
+        } else out.push(child);
+      });
+    });
+    flush();
+  };
+  state.doc.nodesBetween(from, to, (node, pos) => {
+    if (pos < from || pos >= to) return false;
+    if (node.type.name === 'taskRef') out.push(node);
+    else if (LISTS.has(node.type.name)) fromList(node, pos);
+    else if (node.isTextblock && node.type.name !== 'codeBlock') {
+      if (!task(node.textContent)) out.push(node);
+    } else out.push(node);
+    return false; // top-level only; lists are walked by fromList
+  });
+  if (!ids.length) return [];
+  editor.view.dispatch(state.tr.replaceWith(from, to, out).scrollIntoView());
+  return ids;
+}
+
+/** Priority flag: shown when set (p1–p3), and on hover to set one. */
+function PriorityChip({ task, onChange, readOnly }: { task: Task; onChange: (p: Priority) => void; readOnly?: boolean }) {
+  const set = task.priority < 4;
+  const flag = <Flag size={13} color={PRIORITY_COLORS[task.priority]} fill={set ? PRIORITY_COLORS[task.priority] : 'none'} />;
+  if (readOnly) return set ? <span className="chip" title={`Priority ${task.priority}`}>{flag}</span> : null;
+  return (
+    <Dropdown trigger={flag} buttonClass={`chip chip-btn ${set ? '' : 'chip-empty'}`} title={set ? `Priority ${task.priority}` : 'Set priority'} placement="bottom-end">
+      {(close) => (
+        <PriorityMenu
+          value={task.priority}
+          onChange={(p) => {
+            onChange(p);
+            close();
+          }}
+        />
+      )}
+    </Dropdown>
+  );
 }

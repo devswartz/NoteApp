@@ -99,7 +99,7 @@ src/               React web app
     events.ts      live event client
     toasts.ts, ui.ts  (ui.ts: overlay toggles + the light/dark/system theme, applied as <html data-theme>)
   components/      App shell, sidebar, command palette, quick add, task row/detail/controls, overlays, ui primitives
-  editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
+  editor/          The note editor (see "Editor" below); styles in src/styles/editor.css
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
 apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
@@ -180,6 +180,21 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 **Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
+## Editor (`src/editor/`)
+
+| File | What |
+|---|---|
+| `NoteEditor.tsx` | Builds the TipTap editor (extension list, paste/drop uploads, ⌘K), the formatting toolbar, table bar and block handle |
+| `collab.ts` | Y.Doc + `y-websocket` provider + `y-indexeddb` cache + presence, the Collaboration/caret extensions, and save-state tracking (`useCollab`, `collabExtensions`). The Collaboration agent works here |
+| `blocks.tsx` | Custom nodes: `callout`, `fileAttachment` (file card), `Image` (resizable; stores the API-relative `/uploads/…` src and resolves it with `fileUrl()`), `CodeBlock` (lowlight, language picker) |
+| `TaskRef.tsx` | The `taskRef` node (live task: checkbox, title, priority, due date, assignee), `[] ` input rule, `insertTask`, and **`convertToTask`** (command) / **`convertToTasks(editor)`** (returns the new ids): the current line or every line in a selection becomes a task |
+| `SlashMenu.tsx` | `/` menu: items, ranking, the suggestion plugin |
+| `LinkEditor.tsx` | Inline link editor (⌘K with a selection; ⌘K without one goes to the command palette) |
+| `IconPicker.tsx` | Emoji picker for page icons |
+| `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
+
+The document schema is ProseMirror's, stored in the Yjs `XmlFragment` named `default`. Node names that the server reads in `extractDoc` (`server/collab.ts`): every text node for search, and `taskRef[taskId]` for task reconcile. **Save state:** a local edit marks the page "Saving…"; it becomes "Saved" once the socket has flushed it and the server's 1 s save debounce has passed; with no connection it reads "Offline" (edits are already in IndexedDB).
+
 ## Real-time sync
 
 There are two channels:
@@ -211,7 +226,7 @@ All under `/api`, JSON, bearer token except where noted:
 | Area | Done | Stubbed / partial | Not started |
 |---|---|---|---|
 | Organisation | Workspaces, notebooks (shared/private), sections, pages; drag-and-drop reordering/moving in the sidebar | Page icons: `pages.icon` column and `PATCH /pages/:id {icon}` exist, no picker UI | |
-| Editor | Headings, bullet/numbered lists, checklists, tables, links, images, file attachments (as links), code blocks, quotes, dividers; slash menu; Markdown shortcuts; autosave via Yjs | | |
+| Editor | Headings, bullet/numbered lists, checklists, toggles, callouts, tables (add/remove rows and columns, header row), code blocks with highlighting and a language, quotes, dividers, links (⌘K, paste), resizable images, file cards; slash menu; Markdown shortcuts; formatting toolbar; block drag handles; page icons; autosave with a Saved/Saving…/Offline indicator | | |
 | Search | FTS5 page search + task search; ⌘K command palette | | |
 | Tasks | Inline tasks (`[] `), convert line to task (⌘↵ / bubble menu), standalone tasks, quick add with natural language, assignee, due date + time, priority, completion; editable from note or dashboard | | |
 | Dashboard | My Tasks, Today (incl. overdue), Upcoming, Team, All (filter/sort), Calendar, Completed | | |
