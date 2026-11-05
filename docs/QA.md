@@ -54,15 +54,6 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Open bugs
 
-### BUG-3: renaming a page and navigating away within ~0.4 s loses the new title
-- **Area / owner:** Editor & Notes (`src/pages/PageView.tsx`, page title effect: `setTimeout(patch, 400)` with `clearTimeout` on cleanup and no flush)
-- **Found on:** main @ 29daf5c, 2026-11-05 (3 out of 3 runs)
-- **Steps:** 1. Open a page. 2. Change its title. 3. Within ~0.4 s, click elsewhere (a sidebar link, a backlink, Today).
-- **Expected:** the new title is saved (and shown in the sidebar and in `[[links]]`).
-- **Actual:** the pending save is cancelled when the title component unmounts; the server keeps the old title, and the edit is silently lost.
-- **Suggested direction:** flush the pending patch in the effect cleanup (or on blur/unmount) instead of only clearing the timer.
-- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a page title typed just before navigating away is still saved" (`test.fixme`)
-
 ### BUG-4: a change made while the app is still connecting live events is never shown (until reload)
 - **Area / owner:** Collaboration (`src/store/events.ts`: on the *first* connect there is no `?since=` and no `resync()`. Catch-up only happens on reconnects.)
 - **Found on:** main @ 890bb6d, 2026-11-05 (3 out of 3 runs with the socket held for a moment; occasionally at random, it was the cause of a flake in a new test)
@@ -84,6 +75,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Fixed bugs
 
+- **BUG-3** (Editor & Notes): a page title typed just before navigating away was lost (debounced save cancelled on unmount). Fixed by #66; test `10-notes-edge` › "a page title typed just before navigating away is still saved" enabled.
 - **BUG-1** (Foundation, offline/PWA): reloading while offline showed the login screen, so cached notes couldn't open. Fixed by #35 (precached shell, offline cold start, read-only data cache); test `08-offline` › "…still opens after a reload while offline" enabled.
 - **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.
 - **BUG-2b** (Collaboration, client): after being demoted to viewer, an already-open page stayed editable (no "View only") until reload. Fixed by #41 (re-checks page edit rights when your role changes); its test is enabled.
