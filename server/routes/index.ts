@@ -11,6 +11,7 @@ import { pageRoutes } from './pages.ts';
 import { taskRoutes } from './tasks.ts';
 import { searchRoutes } from './search.ts';
 import { fileRoutes } from './files.ts';
+import { reminderRoutes } from './reminders.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
@@ -33,5 +34,6 @@ api.use(pageRoutes);
 api.use(taskRoutes);
 api.use(searchRoutes);
 api.use(fileRoutes);
+api.use(reminderRoutes);
 
 api.use(errorHandler);
