@@ -76,6 +76,13 @@ public class NoteAppNativePlugin extends Plugin {
         call.resolve();
     }
 
+    /** Settings the native side needs without the web view (the API origin, for snooze actions). */
+    @PluginMethod
+    public void setConfig(PluginCall call) {
+        SnoozeReceiver.setApiBase(getContext(), call.getString("apiBase"));
+        call.resolve();
+    }
+
     /** Shared items received since the last call. */
     @PluginMethod
     public synchronized void getPendingShares(PluginCall call) {

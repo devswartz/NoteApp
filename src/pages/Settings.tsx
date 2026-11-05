@@ -18,6 +18,7 @@ import { ShortcutList } from '../components/Overlays.tsx';
 import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx';
 import { platform, detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
+import { AvatarColorPicker, ChangePasswordForm } from '../components/AccountSettings.tsx';
 
 
 interface SectionDef {
@@ -195,6 +196,12 @@ function ProfileSection() {
             Save
           </Button>
         </form>
+      </Card>
+      <Card title="Avatar colour">
+        <AvatarColorPicker />
+      </Card>
+      <Card title="Password" description="Changing it signs you out on every other device.">
+        <ChangePasswordForm />
       </Card>
       <Card title="Session">
         <Button icon={<LogOut size={15} />} onClick={() => void signOut().then(() => navigate('/login'))}>

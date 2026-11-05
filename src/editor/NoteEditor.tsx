@@ -1,14 +1,17 @@
 import { useEffect, useRef } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
+import type { Extensions } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
+import { beginComment, useCommentBinding } from './collabComments.ts';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
-import { Placeholder, TrailingNode } from '@tiptap/extensions';
+import { Placeholder } from '@tiptap/extensions';
 import { TextSelection } from '@tiptap/pm/state';
 import {
+  MessageSquare,
   Bold,
   CircleCheck,
   Code,
@@ -59,10 +62,54 @@ interface Props {
   onStatus: (s: SyncStatus) => void;
   onPresence: (users: PresenceUser[]) => void;
   onSave?: (s: SaveState) => void;
+  /** Called once the server's copy of the page has been loaded. */
+  onServerSynced?: () => void;
   onReady: (editor: Editor) => void;
 }
 
-export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onReady }: Props) {
+/**
+ * The document schema and node views shared by the live editor and read-only views
+ * (version history preview): everything except collaboration and the slash menu.
+ */
+export function documentExtensions(pageId: string): Extensions {
+  return [
+    StarterKit.configure({
+      undoRedo: false, // Collaboration provides collaborative undo
+      codeBlock: false, // replaced by CodeBlock (syntax highlighting + language picker)
+      link: {
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        defaultProtocol: 'https',
+        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+      },
+      heading: { levels: [1, 2, 3] },
+    }),
+    Placeholder.configure({
+      includeChildren: true,
+      placeholder: ({ node, editor: e }) => {
+        if (node.type.name === 'heading') return `Heading ${node.attrs.level}`;
+        if (node.type.name === 'detailsSummary') return 'Toggle';
+        if (e.isActive('callout') || e.isActive('details')) return 'Type something…';
+        return "Type '/' for commands, '[]' for a task…";
+      },
+    }),
+    TaskList,
+    PlainTaskItem,
+    TableKit.configure({ table: { resizable: true } }),
+    Image,
+    CodeBlock,
+    Callout,
+    FileAttachment,
+    Details.configure({ persist: false, HTMLAttributes: { class: 'toggle' } }),
+    DetailsSummary,
+    DetailsContent,
+    TaskRef.configure({ pageId }),
+    PageLink.configure({ pageId }),
+  ];
+}
+
+export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
@@ -71,41 +118,8 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
     {
       editable: canEdit,
       extensions: [
-        StarterKit.configure({
-          undoRedo: false, // Collaboration provides collaborative undo
-          codeBlock: false, // replaced by CodeBlock (syntax highlighting + language picker)
-          link: {
-            openOnClick: false,
-            autolink: true,
-            linkOnPaste: true,
-            defaultProtocol: 'https',
-            HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-          },
-          heading: { levels: [1, 2, 3] },
-        }),
-        Placeholder.configure({
-          includeChildren: true,
-          placeholder: ({ node, editor: e }) => {
-            if (node.type.name === 'heading') return `Heading ${node.attrs.level}`;
-            if (node.type.name === 'detailsSummary') return 'Toggle';
-            if (e.isActive('callout') || e.isActive('details')) return 'Type something…';
-            return "Type '/' for commands, '[]' for a task…";
-          },
-        }),
-        TrailingNode, // always an empty line at the end, so you can type after a callout, code block or table
-        TaskList,
-        PlainTaskItem,
-        TableKit.configure({ table: { resizable: true } }),
-        Image,
-        CodeBlock,
-        Callout,
-        FileAttachment,
-        Details.configure({ persist: false, HTMLAttributes: { class: 'toggle' } }),
-        DetailsSummary,
-        DetailsContent,
-        TaskRef.configure({ pageId }),
-        UndoTasks,
-        PageLink.configure({ pageId }),
+        ...documentExtensions(pageId),
+        UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
         ...collabExtensions(session, user),
       ],
@@ -143,12 +157,17 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   editorRef.current = editor;
 
   useEffect(() => {
+    if (session.serverSynced) onServerSynced?.();
+  }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     editor?.setEditable(canEdit);
   }, [editor, canEdit]);
 
   useEffect(() => {
     if (editor) onReady(editor);
   }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
+  useCommentBinding(editor);
 
   // File pickers for the slash menu.
   useEffect(() => {
@@ -287,6 +306,9 @@ function FormattingMenu({ editor }: { editor: Editor }) {
         onClick={() => editor.chain().focus().convertToTask().run()}
       >
         <CircleCheck size={16} /> Task
+      </button>
+      <button type="button" className="bm-btn bm-text" title="Comment" onMouseDown={(e) => e.preventDefault()} onClick={() => beginComment(editor)}>
+        <MessageSquare size={16} /> Comment
       </button>
     </BubbleMenu>
   );
