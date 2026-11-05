@@ -3,15 +3,17 @@
 // The selected section is in the URL (?s=appearance) so it can be linked to.
 //
 // Other areas plug panels in here as components:
-//   Notifications → Recurrence & Reminders (replace <NotificationsPlaceholder />)
+//   Notifications → Recurrence & Reminders (NotificationSettingsPanel)
 //   Members       → Collaboration & Access (MembersPanel)
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Bell, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Trash2, User, Users, Building2 } from 'lucide-react';
+import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Trash2, User, Users, Building2 } from 'lucide-react';
 import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
 import { Avatar, Button, Input, useIsMobile } from '../components/ui.tsx';
 import { AppearanceSettings } from '../components/shell/AppearanceSettings.tsx';
+import { NotificationSettingsPanel } from '../components/notifications/index.ts';
+import { AppLockSettings, hasAppLock } from '../components/shell/AppLockSettings.tsx';
 import { ShortcutList } from '../components/Overlays.tsx';
 import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx';
 import { platform, detectPlatform } from '../platform/index.ts';
@@ -24,12 +26,21 @@ interface SectionDef {
   icon: ReactNode;
   group: 'Account' | 'Workspace' | 'App';
   render: () => ReactNode;
+  /** Show the section only when this returns true (checked at render, after platform init). */
+  when?: () => boolean;
 }
 
 const SECTIONS: SectionDef[] = [
   { id: 'profile', title: 'Profile', icon: <User size={16} />, group: 'Account', render: () => <ProfileSection /> },
   { id: 'appearance', title: 'Appearance', icon: <Palette size={16} />, group: 'Account', render: () => <AppearanceSettings /> },
-  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => <NotificationsPlaceholder /> },
+  { id: 'security', title: 'Security', icon: <Lock size={16} />, group: 'Account', render: () => <AppLockSettings />, when: hasAppLock },
+  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => (
+      <>
+        <DeviceNotifications />
+        <NotificationSettingsPanel onError={errorToast} onMessage={toast} />
+      </>
+    ),
+  },
   { id: 'workspace', title: 'General', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
   { id: 'members', title: 'Members', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
   { id: 'shortcuts', title: 'Keyboard shortcuts', icon: <Keyboard size={16} />, group: 'App', render: () => <ShortcutList columns={false} /> },
@@ -37,10 +48,11 @@ const SECTIONS: SectionDef[] = [
 ];
 
 export function Settings() {
+  const sections = SECTIONS.filter((x) => !x.when || x.when());
   const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
   const [params, setParams] = useSearchParams();
   const isMobile = useIsMobile();
-  const requested = SECTIONS.find((x) => x.id === params.get('s'));
+  const requested = sections.find((x) => x.id === params.get('s'));
   const [visible, setVisible] = useState<string>(SECTIONS[0].id);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -82,7 +94,7 @@ export function Settings() {
       {groups.map((g) => (
         <div key={g} className="settings-nav-group">
           <div className="settings-nav-heading">{g === 'Workspace' ? ws.name : g}</div>
-          {SECTIONS.filter((x) => x.group === g).map((x) => (
+          {sections.filter((x) => x.group === g).map((x) => (
             <button
               key={x.id}
               type="button"
@@ -126,7 +138,7 @@ export function Settings() {
       {nav}
       <div className="settings-content">
         <h1>Settings</h1>
-        {SECTIONS.map((x) => (
+        {sections.map((x) => (
           <section key={x.id} id={`settings-${x.id}`} className="settings-section" aria-labelledby={`settings-h-${x.id}`}>
             <h2 id={`settings-h-${x.id}`} className="settings-section-title">
               {x.title}
@@ -193,8 +205,8 @@ function ProfileSection() {
   );
 }
 
-/** Placeholder until the Reminders area's notification settings component lands. */
-function NotificationsPlaceholder() {
+/** Permission for system notifications on this device (the platform adapter); delivery settings are Reminders' panel below. */
+function DeviceNotifications() {
   const [notif, setNotif] = useState(platform.notifications.permission());
   return (
     <Card title="This device" description="Reminders appear as system notifications when the app is in the background, and in-app otherwise.">
