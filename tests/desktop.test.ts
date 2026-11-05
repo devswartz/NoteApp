@@ -8,6 +8,7 @@ import type { Platform } from '../src/platform/types.ts';
 import { fallbackPath } from '../src/platform/tauri/paths.ts';
 import { todayCount } from '../src/platform/tauri/badge.ts';
 import { probeServer } from '../src/platform/tauri/serverSetup.ts';
+import { SignedOut, describeFailure } from '../src/platform/tauri/captureErrors.ts';
 import { createClickTracker } from '../src/platform/tauri/notificationClicks.ts';
 import type { Task } from '../shared/types.ts';
 // @ts-expect-error plain .mjs build scripts, no type declarations
@@ -131,4 +132,11 @@ test('notification clicks: coming to the front soon after a background notificat
   t.shown(() => clicks.push('d'), true, 50_000);
   assert.equal(t.focused(200_000), false, 'too late: an unrelated return to the app');
   assert.deepEqual(clicks, ['b']);
+});
+
+test('quick capture failure messages', () => {
+  assert.match(describeFailure(new SignedOut(), true), /Sign in/);
+  assert.match(describeFailure(new TypeError('Failed to fetch'), true), /offline/);
+  assert.match(describeFailure(new Error('boom'), false), /offline/);
+  assert.equal(describeFailure(new Error('Not allowed'), true), 'Not allowed');
 });

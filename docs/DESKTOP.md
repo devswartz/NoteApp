@@ -32,10 +32,38 @@ In development the app uses the Vite proxy (same origin), so no server setup app
 - **Platform adapter** (`src/platform/tauri.ts`). `initPlatform()` sees `__TAURI_INTERNALS__` and dynamic-imports it, so the web build never downloads Tauri code. It provides: keychain storage; native notifications (`tauri-plugin-notification`; the plugin can't report clicks, so when the app comes to the front within a minute of a notification shown while it was in the background, that notification's `onClick` runs, see `tauri/notificationClicks.ts`); external links in the default browser (`tauri-plugin-opener`); file pickers (WebKit/WebView2 show the native panel for `<input type=file>`); drag-and-drop handled by the page (Tauri's own handler is off); deep links; Web Locks; window focus.
 - **Deep links.** `noteapp://page/<id>` and `noteapp://w/<ws>/…` arrive through `tauri-plugin-deep-link` (registered from `Info.plist` on macOS, in the registry by the installer on Windows). They go to `platform.deepLinks` and are routed by `components/DeepLinks.tsx`. `noteapp://task/<id>` is delivered too, but the shared parser doesn't handle it yet (requested from Foundation).
 - **Menu** (`menu.rs`). File / Edit / View / Go / Window / Help, plus the app menu on macOS. App items carry command ids from the command registry (`src/hooks/useShortcuts.ts`): `pages.new`, `tasks.new`, `app.palette`, `app.sidebar`, `app.theme`, `nav.today` … `nav.completed`, `nav.notes`, `nav.settings`, `app.shortcuts`. A click emits `menu-command` to the main window, which calls `runCommand(id)`. If that command isn't registered, `nav.*` items fall back to plain navigation. Edit items are the OS's own (undo, copy, paste…). Accelerators: ⌘N new page, ⇧⌘T new task, ⌘K palette, ⌘\ sidebar, ⌘1–8 views and notes, ⌘, settings, ⌘/ shortcuts.
-- **Quick capture.** ⌥⌘N (Ctrl+Alt+N on Windows), also File → Quick Capture and the tray, toggles a small always-on-top window (`quick.rs`, `src/platform/tauri/quickCapture.tsx`). It parses natural language like the in-app quick add (`shared/quickadd.ts`). Enter adds a task to the last-used workspace; Tab switches to a note, which creates a page in the first section and opens it in the main window. Esc or clicking away hides it.
+- **Quick capture.** ⌥⌘N (Ctrl+Alt+N on Windows), also File → Quick Capture and the tray, toggles a small always-on-top window (`quick.rs`, `src/platform/tauri/quickCapture.tsx`). It parses natural language like the in-app quick add (`shared/quickadd.ts`). Enter adds a task to the last-used workspace; Tab switches to a note, which creates a page in the first section and opens it in the main window. Esc or clicking away hides it (only after the window has actually had focus, so a slow activation can't hide it straight away). Signed out: it says so, and Enter opens the main window to sign in. Offline: it keeps the text and says to try again.
 - **Tray / menu-bar icon** (`tray.rs`). Shows how many of your tasks are due today or overdue, as text next to the icon on macOS and in the tooltip on Windows. The menu has Open, Quick Capture, Today, Upcoming, New Page and Quit. The same count is the **dock badge** on macOS (`src/platform/tauri/badge.ts` keeps it in sync with the task store). Windows has no taskbar badge API in Tauri yet.
-- **Window behaviour.** Size and position are saved (`tauri-plugin-window-state`). A second launch focuses the running app (`tauri-plugin-single-instance`; on Windows it also forwards the deep link). Closing the main window keeps the app running in the tray / menu bar; on macOS it hides the window and clicking the dock icon brings it back. Quit is in the menus.
+- **Window behaviour.** Size, position, maximised and full-screen state are saved (`tauri-plugin-window-state`); a position on a monitor that's gone falls back to the main screen. Visibility isn't saved, so the app always starts with its window showing. A second launch focuses the running app (`tauri-plugin-single-instance`; on Windows it also forwards the deep link). Closing the main window keeps the app running in the tray / menu bar; on macOS it hides the window and clicking the dock icon brings it back. Quit is in the menus.
 - **Auto-update** (`tauri-plugin-updater`). Configured only in builds made with the signing secrets below. The app checks at most once a day on launch, and on **Check for Updates…**, against `https://github.com/devswartz/NoteApp/releases/latest/download/latest.json`. If an update exists, it asks, installs and restarts.
+
+## First signed Mac build: checklist
+
+Do this once; later releases are just step 6 onwards. Allow about an hour, most of it Apple paperwork.
+
+1. **Make `main` the default branch** (GitHub → Settings → General → Default branch). Tag builds work without this, but **Actions → Desktop → Run workflow** only shows up for workflows on the default branch.
+2. **Developer ID certificate** (needs the Apple Developer Program; the Account Holder creates it):
+   - On a Mac, open Xcode → Settings → Accounts → your team → Manage Certificates → **+** → *Developer ID Application*. Alternatively use developer.apple.com → Certificates → **+** → *Developer ID Application* with a CSR from Keychain Access.
+   - In Keychain Access → *My Certificates*, right-click "Developer ID Application: …" → Export → `.p12`, and set a password.
+   - Run `base64 -i DeveloperID.p12 | pbcopy`. Save the result as secret `APPLE_CERTIFICATE`, and the password as `APPLE_CERTIFICATE_PASSWORD`.
+3. **Notarisation key** (recommended over Apple ID):
+   - App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → **+**, role *Developer*.
+   - Download the `.p8` file. It can only be downloaded once.
+   - Secrets: `APPLE_API_KEY` = the Key ID, `APPLE_API_ISSUER` = the Issuer ID shown above the table, `APPLE_API_KEY_P8` = the whole contents of the `.p8` file, including the BEGIN/END lines.
+4. **Updater signing key** (so installed apps can update themselves):
+   - Run `npx tauri signer generate -w ~/.tauri/noteapp.key` and choose a password.
+   - Secret `TAURI_SIGNING_PRIVATE_KEY` = the contents of `~/.tauri/noteapp.key`; secret `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` = the password.
+   - **Variable** (not secret) `TAURI_UPDATER_PUBKEY` = the contents of `~/.tauri/noteapp.key.pub`.
+   - Back up the private key and its password somewhere safe (a password manager).
+5. Check that **Settings → Secrets and variables → Actions** now lists 7 secrets and 1 variable: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_P8`, `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, and the variable `TAURI_UPDATER_PUBKEY`.
+6. **Tag a release from `main`:** `git checkout main && git pull && git tag v0.1.0 && git push origin v0.1.0`. Any `vX.Y.Z` works; it becomes the app's version.
+7. **Watch the build:** Actions → *Desktop* → the run for the tag. It takes about 20–40 minutes, and notarisation waits on Apple. The macOS log should show the app being signed with your Developer ID and a notarisation step that succeeds. The run fails loudly if the certificate is wrong. With no notarisation secrets it only warns.
+8. **Download:** Releases → the **draft** `v0.1.0` → `NoteApp_0.1.0_universal.dmg` (macOS, Apple Silicon + Intel), or `NoteApp_0.1.0_x64-setup.exe` / `.msi` (Windows). Install it, then check on a Mac:
+   - `spctl -a -vv /Applications/NoteApp.app` should say `accepted` / `source=Notarized Developer ID`;
+   - `xcrun stapler validate /Applications/NoteApp.app` should say "The validate action worked".
+9. **Publish the draft.** That makes it "latest", which is what installed apps check for updates.
+
+Installs from unsigned builds have no updater. Replace them once by hand with the first signed build; after that, updates are automatic. Windows installers stay unsigned (SmartScreen warns) until Windows code signing is added; see below.
 
 ## Releasing
 
@@ -79,5 +107,5 @@ With only the certificate, the app is signed but not notarised (CI warns), and G
 
 ## What's verified where
 
-- Linux container (each PR): `cargo check`, `cargo clippy` and `cargo test` (server URL normalisation) for the Rust crate; `npm run typecheck`, `npm test` (`tests/desktop.test.ts`: adapter selection, menu fallback, badge count, server probe, build/manifest scripts) and `npm run build`. A debug build of the app runs under Xvfb against a local server: sign-in, live sync, Go menu navigation and quick capture all work there.
+- Linux container (each PR): `cargo check`, `cargo clippy` and `cargo test` (server URL normalisation) for the Rust crate; `npm run typecheck`, `npm test` (`tests/desktop.test.ts`: adapter selection, menu fallback, badge count, server probe, build/manifest scripts) and `npm run build`. A debug build of the app runs under Xvfb against a local server: sign-in, live sync, Go menu navigation and quick capture all work there. So do offline start with the server down (the bundled app renders), and quick capture while signed out, offline, and again after reconnecting.
 - Only on real macOS / Windows (via `desktop.yml` or locally): bundling, signing and notarisation, the Keychain / Credential Manager backends, the dock badge, menu-bar text, deep-link registration and the updater.
