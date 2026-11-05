@@ -112,7 +112,7 @@ test.describe('inline tasks ↔ dashboard', () => {
     const detail = page.getByRole('dialog', { name: 'Task details' });
     await detail.locator('#task-title').fill('Final Q4 budget');
     await detail.locator('#task-title').press('Enter');
-    await detail.getByTitle('Close (Esc)').click();
+    await detail.getByRole('button', { name: 'Close (Esc)', exact: true }).click();
     await expect(taskRow(page, 'Final Q4 budget')).toBeVisible();
 
     await page.goto(pageUrl(user.wsId, pageId));

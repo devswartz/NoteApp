@@ -22,6 +22,7 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 - **Set up through the API, test through the UI.** `createUser`, `createTeam`, `createPage`, `createTask` in `helpers.ts` make users and data over REST. `signInContext(context, user)` signs a browser context in by seeding the refresh token (the app's normal session restore).
 - **Every test makes its own users**, with unique emails, so tests can run in parallel against one server.
 - **No fixed sleeps.** Wait on UI state (`expect(...).toBeVisible()`), or on server state with `eventually(() => listTasks(...), check)`.
+- **Selectors follow the UI primitives (#20):** menu entries are `getByRole('menuitem', { name })`, and icon buttons are `getByRole('button', { name })` (their name comes from `aria-label`/`title`). Use dialog/toolbar/radiogroup roles with their labels. Don't assert on toast wording; assert on the outcome.
 - Two users = two `browser.newContext()`s (see `03-collab.spec.ts`).
 - A feature that isn't on `main` yet: `test.fixme(true, 'waiting for feature: …')`. A known bug: `test.fixme(true, 'BUG-N: …')` plus an entry below.
 
@@ -60,6 +61,13 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 - **Test:** `tests/e2e/<file>` › "<test name>" (`test.fixme`)
 -->
 
+### BUG-2: a member demoted to viewer can keep editing a page they already have open
+- **Area / owner:** Collaboration & Access (`server/collab.ts` checks the role only when the socket connects; the client doesn't react to its own role change).
+- **Found on:** main @ 1b38732, 2026-11-05
+- **Steps:** 1. A (owner) and B (member) are in a team workspace; B opens a page. 2. A changes B's role to Viewer. 3. Without reloading, B types in the page.
+- **BUG-2a (server):** fixed by #12, see "Fixed bugs".
+- **BUG-2b (UI):** B's page stays editable, with no "View only" chip, until B reloads, so B's typing is silently discarded (once 2a is fixed). Expected: the page switches to read-only live (a `members` event for yourself → refetch the role → `editor.setEditable(false)`). Still present on #12 and #14. → Test `11-live-access` › "BUG-2b…" (`fixme`).
+
 ## Fixed bugs
 
-None yet.
+- **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.

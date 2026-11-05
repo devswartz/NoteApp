@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification small icon: a white check mark (Android tints it). Drawn from public/icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M150,140h150l62,62v170a20,20 0,0 1,-20 20H150a20,20 0,0 1,-20 -20V160a20,20 0,0 1,20 -20z M201,259l29,29l79,-88l22,20l-101,112l-50,-51z" />
+</vector>
