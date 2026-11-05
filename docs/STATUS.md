@@ -35,6 +35,7 @@
 | #77 | Foundation: workspace export/import + **seed.ts formatting fix** (#70 merged without it) | needs review |
 | #46 / #49 | Collab: input limits (approved, conflict resolved) / authz audit (needs rows for /auth/config, /admin/*) | |
 | #23 → #39, #33 | Collab: presence stack (fixed) → follow a collaborator; activity feed | need review |
+**UI hook-ups needed next round** (from Collab): mount `<NotificationBell/>` in the AppShell header (UI Shell); an Activity nav item once #33 merges (UI Shell); follow-a-collaborator wiring in PageView (patch in #39; Editor); `MentionNode` registered in the editor extensions so @mentions work in page text (Editor or Collab). The "Share with people…" item is already on main via #56. #49 is now green with rows for /auth/config and /admin/*.
 Known gaps: the **NotificationBell isn't mounted** in the UI yet (from #29); `platform.saveFile` is a web stopgap in the shells; Foundation's platform-gaps PR is not started.
 
 ### How to resume
