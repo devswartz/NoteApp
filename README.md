@@ -71,6 +71,7 @@ Desktop: `npm run desktop:dev` (needs Rust). Mobile: `npm run mobile:ios` / `npm
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | How to use the app: notes, tasks, views, quick add, reminders, sharing, shortcuts |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How it's built: stack, folder layout, data model, auth, sync, platform adapter, API |
 | [docs/DEPLOY_CONTRACT.md](docs/DEPLOY_CONTRACT.md) | The hosting interface: image, ports, environment, volumes, health check |
+| [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md) | Step by step from `main` to staging, prod v0.1.0, and the signed desktop and mobile apps |
 | [docs/RELEASING.md](docs/RELEASING.md) | Releasing the server image (CI, GHCR, staging and production) |
 | [docs/DESKTOP.md](docs/DESKTOP.md) | The macOS/Windows app: building, signing, notarisation, auto-update |
 | [docs/MOBILE.md](docs/MOBILE.md) | The iPhone/Android app: building, push, widgets, store secrets |
