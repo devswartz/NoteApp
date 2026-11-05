@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarDays, CircleCheck, FileText, Plus, Search, Settings, Sun, Inbox, Users, ListChecks, CalendarRange, CheckCircle2, Keyboard } from 'lucide-react';
+import { CircleCheck, FileText, Plus, Search } from 'lucide-react';
+import { formatKeys, isEnabled, useCommandList } from '../hooks/useShortcuts.ts';
 import { ui, useStore, toggleTask } from '../store.ts';
 import { get } from '../api.ts';
-import { Modal } from './ui.tsx';
+import { Kbd, Modal } from './ui.tsx';
 import type { SearchResult, Task } from '../../shared/types.ts';
 import { describeDue } from '../lib/format.ts';
 
@@ -14,6 +15,7 @@ interface Item {
   sub?: React.ReactNode;
   run: () => void;
   alt?: () => void;
+  match?: string;
 }
 
 export function CommandPalette() {
@@ -30,6 +32,7 @@ function PaletteInner() {
   const wsId = useStore((s) => s.wsId);
   const tree = useStore((s) => s.tree);
   const tasks = useStore((s) => s.tasks);
+  const commands = useCommandList();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [index, setIndex] = useState(0);
@@ -75,18 +78,20 @@ function PaletteInner() {
       alt: () => toggleTask(t.id),
     });
 
-    const actions: Item[] = [
-      { key: 'a-new-task', icon: <Plus size={16} />, label: 'New task', sub: 'Q', run: () => (ui.closePalette(), ui.openQuickAdd()) },
-      { key: 'a-today', icon: <Sun size={16} />, label: 'Go to Today', sub: 'G T', run: go(`/w/${wsId}/tasks/today`) },
-      { key: 'a-my', icon: <Inbox size={16} />, label: 'Go to My Tasks', sub: 'G M', run: go(`/w/${wsId}/tasks/my`) },
-      { key: 'a-up', icon: <CalendarRange size={16} />, label: 'Go to Upcoming', sub: 'G U', run: go(`/w/${wsId}/tasks/upcoming`) },
-      { key: 'a-team', icon: <Users size={16} />, label: 'Go to Team', sub: 'G E', run: go(`/w/${wsId}/tasks/team`) },
-      { key: 'a-all', icon: <ListChecks size={16} />, label: 'Go to All Tasks', sub: 'G A', run: go(`/w/${wsId}/tasks/all`) },
-      { key: 'a-cal', icon: <CalendarDays size={16} />, label: 'Go to Calendar', sub: 'G C', run: go(`/w/${wsId}/tasks/calendar`) },
-      { key: 'a-done', icon: <CheckCircle2 size={16} />, label: 'Go to Completed', sub: 'G D', run: go(`/w/${wsId}/tasks/completed`) },
-      { key: 'a-settings', icon: <Settings size={16} />, label: 'Workspace settings & members', sub: 'G S', run: go(`/w/${wsId}/settings`) },
-      { key: 'a-keys', icon: <Keyboard size={16} />, label: 'Keyboard shortcuts', sub: '?', run: () => (ui.closePalette(), ui.setShortcuts(true)) },
-    ];
+    const actions: Item[] = commands
+      .filter((c) => c.run && (c.palette ?? true) && isEnabled(c))
+      .map((c) => ({
+        key: `c-${c.id}`,
+        icon: c.icon,
+        label: c.title,
+        sub: c.keys ? <KeyHint keys={Array.isArray(c.keys) ? c.keys[0] : c.keys} /> : c.group,
+        match: `${c.title} ${c.group ?? ''} ${c.keywords ?? ''}`.toLowerCase(),
+        run: () => {
+          ui.closePalette();
+          // Let the palette close (and focus return) before the command runs.
+          setTimeout(() => void c.run!(), 0);
+        },
+      }));
 
     if (!needle) {
       const recent = [...tree.pages].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 6);
@@ -107,7 +112,7 @@ function PaletteInner() {
     return [
       { title: 'Pages', items: [...titleHits.map((p) => pageItem(p, crumb(p.sectionId))), ...contentHits.map((p) => pageItem(p, <span className="snippet">{highlightSnippet(p.snippet)}</span>))] },
       { title: 'Tasks', items: taskHits.map(taskItem) },
-      { title: 'Actions', items: actions.filter((a) => String(a.label).toLowerCase().includes(needle)) },
+      { title: 'Actions', items: actions.filter((a) => needle.split(/\s+/).every((w) => a.match!.includes(w))) },
       {
         title: '',
         items: [
@@ -127,7 +132,7 @@ function PaletteInner() {
         ],
       },
     ].filter((g) => g.items.length);
-  }, [q, tree, tasks, remote, wsId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, tree, tasks, remote, wsId, commands]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const flat = items.flatMap((g) => g.items);
   useEffect(() => setIndex(0), [q]);
@@ -183,5 +188,13 @@ function PaletteInner() {
         ↑↓ navigate · ↵ open · ⌘↵ complete task · esc close
       </div>
     </Modal>
+  );
+}
+
+function KeyHint({ keys }: { keys: string }) {
+  return (
+    <span className="key-hint">
+      {formatKeys(keys).map((k, i) => (k === 'then' ? null : <Kbd key={i}>{k}</Kbd>))}
+    </span>
   );
 }
