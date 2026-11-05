@@ -1,7 +1,9 @@
 // App-wide overlays: toasts, keyboard shortcut help, offline banner.
 import { X } from 'lucide-react';
 import { dismissToast, ui, useStore } from '../store.ts';
-import { Kbd, Modal, MOD } from './ui.tsx';
+import { useState } from 'react';
+import { Kbd, Modal } from './ui.tsx';
+import { formatKeys, isEnabled, useCommandList, type Command } from '../hooks/useShortcuts.ts';
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts);
@@ -30,56 +32,50 @@ export function Toasts() {
   );
 }
 
-const SHORTCUTS: [string, string[]][] = [
-  ['Search / command palette', [MOD, 'K']],
-  ['Quick add task', ['Q']],
-  ['New page in current section', ['N']],
-  ['Toggle sidebar', [MOD, '\\']],
-  ['Go to Today', ['G', 'T']],
-  ['Go to My Tasks', ['G', 'M']],
-  ['Go to Upcoming', ['G', 'U']],
-  ['Go to Team', ['G', 'E']],
-  ['Go to All Tasks', ['G', 'A']],
-  ['Go to Calendar', ['G', 'C']],
-  ['Go to Completed', ['G', 'D']],
-  ['Settings', ['G', 'S']],
-  ['Show shortcuts', ['?']],
-];
+const GROUP_ORDER = ['General', 'Create', 'Navigation'];
 
-const EDITOR_SHORTCUTS: [string, string[]][] = [
-  ['Insert block menu', ['/']],
-  ['New task', ['[', ']', 'Space']],
-  ['Turn line into task', [MOD, '↵']],
-  ['Bold / Italic / Underline', [MOD, 'B / I / U']],
-  ['Heading 1–3', ['#', 'Space']],
-  ['Bulleted / numbered list', ['-', 'or', '1.']],
-  ['Undo / Redo', [MOD, 'Z / ⇧Z']],
-];
+function Keys({ keys }: { keys: string }) {
+  return (
+    <span className="shortcut-keys">
+      {formatKeys(keys).map((k, i) => (k === 'then' ? <span key={i} className="muted small"> then </span> : <Kbd key={i}>{k}</Kbd>))}
+    </span>
+  );
+}
 
+/** The `?` overlay, generated from the command registry. */
 export function ShortcutsHelp() {
   const open = useStore((s) => s.shortcutsOpen);
+  const commands = useCommandList();
+  const [filter, setFilter] = useState('');
+  const groups = new Map<string, Command[]>();
+  const needle = filter.trim().toLowerCase();
+  for (const c of commands) {
+    if (!c.keys || c.help === false || !isEnabled(c)) continue;
+    if (needle && !`${c.title} ${c.group ?? ''}`.toLowerCase().includes(needle)) continue;
+    const g = c.group ?? 'Other';
+    groups.set(g, [...(groups.get(g) ?? []), c]);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
   return (
     <Modal open={open} onClose={() => ui.setShortcuts(false)} className="shortcuts" label="Keyboard shortcuts">
-      <h2>Keyboard shortcuts</h2>
+      <div className="shortcuts-head">
+        <h2>Keyboard shortcuts</h2>
+        <input className="input input-sm" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus aria-label="Filter shortcuts" />
+      </div>
       <div className="shortcut-cols">
-        <div>
-          <h4>Navigation</h4>
-          {SHORTCUTS.map(([label, keys]) => (
-            <div className="shortcut" key={label}>
-              <span>{label}</span>
-              <span>{keys.map((k, i) => <Kbd key={i}>{k}</Kbd>)}</span>
-            </div>
-          ))}
-        </div>
-        <div>
-          <h4>In a note</h4>
-          {EDITOR_SHORTCUTS.map(([label, keys]) => (
-            <div className="shortcut" key={label}>
-              <span>{label}</span>
-              <span>{keys.map((k, i) => (k === 'or' ? <span key={i} className="muted small"> or </span> : <Kbd key={i}>{k}</Kbd>))}</span>
-            </div>
-          ))}
-          <h4 style={{ marginTop: 20 }}>Quick add language</h4>
+        {ordered.map(([group, cmds]) => (
+          <div key={group} className="shortcut-group">
+            <h4>{group}</h4>
+            {cmds.map((c) => (
+              <div className="shortcut" key={c.id}>
+                <span>{c.title}</span>
+                <Keys keys={Array.isArray(c.keys) ? c.keys[0] : c.keys!} />
+              </div>
+            ))}
+          </div>
+        ))}
+        <div className="shortcut-group">
+          <h4>Quick add language</h4>
           <p className="muted small">
             Dates: <code>today</code>, <code>tomorrow</code>, <code>fri</code>, <code>next week</code>, <code>in 3 days</code>, <code>jan 15</code>
             <br />
@@ -94,6 +90,8 @@ export function ShortcutsHelp() {
     </Modal>
   );
 }
+
+const rank = (g: string) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
 
 export function OfflineBanner() {
   const online = useStore((s) => s.online);
