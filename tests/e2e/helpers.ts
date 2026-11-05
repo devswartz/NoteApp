@@ -22,11 +22,21 @@ export function uniqueEmail(prefix = 'user') {
 
 /** Thin JSON client for /api with a bearer token. Throws on non-2xx with the server's message. */
 export async function api<T = unknown>(request: APIRequestContext, method: string, path: string, token?: string, body?: unknown): Promise<T> {
-  const res = await request.fetch(`/api${path}`, {
-    method,
-    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' },
-    data: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const send = () =>
+    request.fetch(`/api${path}`, {
+      method,
+      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), 'content-type': 'application/json' },
+      data: body === undefined ? undefined : JSON.stringify(body),
+    });
+  let res;
+  try {
+    res = await send();
+  } catch (e) {
+    // A reused keep-alive connection can be closed by the server just as we send ("socket hang up").
+    // Safe to retry reads once; writes are not retried.
+    if (method !== 'GET' || !/socket hang up|ECONNRESET/.test(String(e))) throw e;
+    res = await send();
+  }
   const text = await res.text();
   if (!res.ok()) throw new Error(`${method} ${path} → ${res.status()} ${text}`);
   return (text ? JSON.parse(text) : undefined) as T;

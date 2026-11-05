@@ -161,6 +161,35 @@ export function revokeFamily(familyId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL').run(now(), familyId);
 }
 
+/** Revoke every sign-in of a user (after a password change or reset). */
+export function revokeAllForUser(userId: string) {
+  db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(now(), userId);
+}
+
+// ── Password reset tokens ──
+// Stateless: a JWT bound to a fingerprint of the user's current password hash.
+// Resetting (or changing) the password changes the hash, so a token works once
+// and every older token dies with it. No table needed.
+export const RESET_TTL_S = 60 * 60;
+const passwordFingerprint = (passwordHash: string) => crypto.createHash('sha256').update(passwordHash).digest('base64url').slice(0, 16);
+
+export function signResetToken(userId: string, passwordHash: string): string {
+  return jwt.sign({ sub: userId, typ: 'reset', pwf: passwordFingerprint(passwordHash) }, SECRET, { expiresIn: RESET_TTL_S });
+}
+
+/** The user id if the reset token is valid for the user's current password, else null. */
+export function verifyResetToken(token: unknown): string | null {
+  if (typeof token !== 'string') return null;
+  try {
+    const p = jwt.verify(token, SECRET) as { sub: string; typ?: string; pwf?: string };
+    if (p.typ !== 'reset') return null;
+    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(p.sub) as { password_hash: string } | undefined;
+    return row && passwordFingerprint(row.password_hash) === p.pwf ? p.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Sign out: revoke the sign-in this refresh token belongs to. */
 export function revokeRefreshToken(token: unknown) {
   if (typeof token !== 'string' || !token) return;

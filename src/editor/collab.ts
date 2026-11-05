@@ -18,6 +18,7 @@ import type { User } from '../../shared/types.ts';
 import { toast } from '../store/toasts.ts';
 import { platform } from '../platform/index.ts';
 import { docToMarkdown } from './collabExport.ts';
+import { CommentMark } from './collabComments.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 /** What the page header shows: is everything I typed safely on the server? */
@@ -44,6 +45,8 @@ export interface CollabSession {
   provider: WebsocketProvider;
   /** True once the doc has content from IndexedDB or the server. */
   synced: boolean;
+  /** True once the server's copy has been merged (so "empty" really means empty). */
+  serverSynced: boolean;
 }
 
 interface Callbacks {
@@ -60,6 +63,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     return { doc, provider };
   }, [pageId]);
   const [synced, setSynced] = useState(false);
+  const [serverSynced, setServerSynced] = useState(false);
 
   useEffect(() => {
     // Local cache for offline reading/editing; merges when the socket reconnects.
@@ -92,6 +96,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     const onSync = (s: boolean) => {
       if (!s) return;
       setSynced(true);
+      setServerSynced(true);
       // Offline edits were just pushed by the sync handshake.
       if (dirty) settle();
       else report();
@@ -164,7 +169,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     };
   }, [doc, provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { doc, provider, synced };
+  return { doc, provider, synced, serverSynced };
 }
 
 /**
@@ -258,6 +263,7 @@ export const SyncSizeGuard = Extension.create<{ doc: Y.Doc | null }>({
 export function collabExtensions(session: CollabSession, user: User): Extensions {
   return [
     SyncSizeGuard.configure({ doc: session.doc }),
+    CommentMark, // anchors of comment threads (./collabComments.ts)
     Collaboration.configure({ document: session.doc, field: 'default' }),
     CollaborationCaret.configure({
       provider: session.provider,

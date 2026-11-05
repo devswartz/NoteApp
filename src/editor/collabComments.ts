@@ -8,6 +8,7 @@
 // Mark styling comes from <CommentHighlights/> (collabCommentsPanel.tsx), so
 // resolved/deleted threads stop being highlighted without touching the doc.
 import { Mark, mergeAttributes, type Editor } from '@tiptap/core';
+import { useEffect } from 'react';
 import { create } from 'zustand';
 import { del, get, patch, post } from '../api.ts';
 import { errorToast } from '../store.ts';
@@ -216,4 +217,25 @@ export function threadAtSelection(editor: Editor): string | null {
   const marks = editor.state.selection.$from.marks();
   const m = marks.find((x) => x.type === type);
   return (m?.attrs.threadId as string) ?? null;
+}
+
+/**
+ * Wire an editor to the comments store: thread actions can update its anchors,
+ * and putting the cursor inside a commented range selects that thread.
+ *   useCommentBinding(editor)   // once, in NoteEditor
+ */
+export function useCommentBinding(editor: Editor | null) {
+  useEffect(() => {
+    bindCommentEditor(editor);
+    if (!editor) return;
+    const onSel = () => {
+      const id = threadAtSelection(editor);
+      if (id) focusThread(id, false);
+    };
+    editor.on('selectionUpdate', onSel);
+    return () => {
+      editor.off('selectionUpdate', onSel);
+      bindCommentEditor(null);
+    };
+  }, [editor]);
 }
