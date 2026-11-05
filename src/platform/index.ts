@@ -22,7 +22,7 @@ type ShellLoaders = Partial<Record<PlatformKind, () => Promise<Platform>>>;
 // the web app never downloads them.
 const shells: ShellLoaders = {
   tauri: () => import('./tauri.ts').then((m) => m.tauriPlatform),
-  //   capacitor: () => import('./capacitor.ts').then((m) => m.capacitorPlatform),
+  capacitor: () => import('./capacitor.ts').then((m) => m.loadCapacitorPlatform()),
 };
 
 /** The implementation for `kind`; the web one when there is no shell implementation. */

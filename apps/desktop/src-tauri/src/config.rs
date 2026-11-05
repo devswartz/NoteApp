@@ -66,8 +66,9 @@ pub fn save<R: Runtime>(app: &AppHandle<R>, url: &str) -> Result<String, String>
     Ok(url)
 }
 
-/// "notes.example.com/" → "https://notes.example.com". Only http(s) origins
-/// (plus an optional path prefix) are accepted. "" means same origin.
+/// "notes.example.com/" → "https://notes.example.com". Only https origins (plus
+/// an optional path prefix) are accepted; http only for localhost/127.0.0.1.
+/// "" means same origin.
 pub fn normalize(input: &str) -> Result<String, String> {
     let s = input.trim();
     if s.is_empty() {
@@ -75,11 +76,16 @@ pub fn normalize(input: &str) -> Result<String, String> {
     }
     let with_scheme = if s.contains("://") { s.to_string() } else { format!("https://{s}") };
     let u = url::Url::parse(&with_scheme).map_err(|_| "That doesn't look like a server address.".to_string())?;
-    if u.scheme() != "https" && u.scheme() != "http" {
-        return Err("The server address must start with https://".into());
-    }
-    if u.host_str().is_none() || u.query().is_some() || u.fragment().is_some() {
+    let host = u.host_str().ok_or("That doesn't look like a server address.")?;
+    if u.query().is_some() || u.fragment().is_some() {
         return Err("That doesn't look like a server address.".into());
+    }
+    // Tokens travel with every request, so plain http is only allowed to this machine.
+    let local = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+    match u.scheme() {
+        "https" => {}
+        "http" if local => {}
+        _ => return Err("The server address must start with https://".into()),
     }
     Ok(u.as_str().trim_end_matches('/').to_string())
 }
@@ -104,6 +110,9 @@ mod tests {
         assert_eq!(normalize("http://localhost:3001").unwrap(), "http://localhost:3001");
         assert_eq!(normalize("https://x.y/noteapp/").unwrap(), "https://x.y/noteapp");
         assert_eq!(normalize("").unwrap(), "");
+        assert_eq!(normalize("http://127.0.0.1:3001/").unwrap(), "http://127.0.0.1:3001");
+        assert!(normalize("http://notes.example.com").is_err());
+        assert!(normalize("http://localhost.evil.com").is_err());
         assert!(normalize("ftp://x.y").is_err());
         assert!(normalize("https://x.y/?a=1").is_err());
         assert!(normalize("javascript:alert(1)").is_err());

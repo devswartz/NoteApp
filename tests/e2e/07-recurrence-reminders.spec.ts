@@ -67,7 +67,7 @@ test('reminder can be set in task details and shows the bell on the row', async 
   await taskRow(page, 'Call the dentist').click();
   const detail = page.getByRole('dialog', { name: 'Task details' });
   await detail.locator('input[type="datetime-local"]').fill(`${isoDay(1)}T09:30`);
-  await detail.getByTitle('Close (Esc)').click();
+  await detail.getByRole('button', { name: 'Close (Esc)', exact: true }).click();
   await expect(taskRow(page, 'Call the dentist').getByLabel('Has reminder')).toBeVisible();
   await eventually(
     () => api<(FullTask & { reminderAt: string | null })[]>(request, 'GET', `/workspaces/${user.wsId}/tasks`, user.token),

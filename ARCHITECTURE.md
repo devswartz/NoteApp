@@ -102,6 +102,7 @@ src/               React web app
   editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
+apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
 public/            sw.js (offline shell), icon.svg (the manifest is generated from shared/config.ts)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
@@ -176,6 +177,8 @@ One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mob
 | `isHidden()`, `focus()` | notification vs in-app toast | `document.hidden`, `window.focus()` |
 
 Shells: `initPlatform()` picks the implementation from `detectPlatform()` through `loadPlatform()`, which dynamic-imports it, so the web bundle never loads shell code. **Desktop (Tauri)** is `src/platform/tauri.ts` (+ `tauri/` helpers: server setup, quick-capture window, dock badge, menu bridge, updater) over the Rust app in `apps/desktop/`; see `docs/DESKTOP.md`. To add Capacitor: implement `Platform` in `capacitor.ts` and add it to the `shells` map in `index.ts`.
+
+**Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
 ## Real-time sync
 

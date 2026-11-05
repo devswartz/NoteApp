@@ -8,10 +8,13 @@
 //   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
 //   tab and serialized across tabs, each reading the latest stored token.
 import type { AuthSession } from '../shared/types.ts';
-import { platform } from './platform/index.ts';
+import { detectPlatform, platform } from './platform/index.ts';
 
-// The desktop shell injects its configured server before any script runs.
-const shellApiUrl = (globalThis as { __NOTEAPP_API_URL__?: string }).__NOTEAPP_API_URL__;
+// The desktop shell injects its configured server before any script runs. Only
+// trusted inside Tauri and only as a string, so a DOM element with that id
+// (DOM clobbering) can't redirect the web build's API calls.
+const injectedApiUrl = (globalThis as { __NOTEAPP_API_URL__?: unknown }).__NOTEAPP_API_URL__;
+const shellApiUrl = detectPlatform() === 'tauri' && typeof injectedApiUrl === 'string' ? injectedApiUrl : undefined;
 const API_BASE = (shellApiUrl ?? import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 /** Absolute or same-origin URL for an API path ("/me" → ".../api/me"). */
