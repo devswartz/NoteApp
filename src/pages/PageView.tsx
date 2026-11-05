@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History } from 'lucide-react';
-import { get, patch, del, post } from '../api.ts';
+import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
+import { useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
@@ -36,6 +38,11 @@ export function PageView() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
   const [panelOpen, setPanelOpen] = useState(() => platform.kv.get('noteapp.taskPanel') !== '0');
+  // Starting a comment opens the side panel so the composer is visible.
+  const commentPending = useComments((s) => !!s.pending || !!s.activeId);
+  useEffect(() => {
+    if (commentPending) setPanelOpen(true);
+  }, [commentPending]);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -162,7 +169,8 @@ export function PageView() {
         </article>
       </div>
       <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
-      {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
+      <CommentHighlights />
+      {panelOpen && <PageTasksPanel pageId={pageId} canComment={!!canEdit} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
     </div>
   );
 }
@@ -234,14 +242,40 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   useEffect(() => {
     if (!focused.current) setTitle(remote);
   }, [remote]);
+  // Title saves are debounced while typing, but a pending save is never dropped: it's flushed
+  // when the page changes or unmounts (navigating away) and when the tab is hidden or closed
+  // (keepalive, so the request outlives the page). BUG-3.
+  const pending = useRef<string | null>(null);
+  const flush = useRef(() => {});
+  flush.current = () => {
+    const next = pending.current;
+    if (next === null) return;
+    pending.current = null;
+    useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title: next } : p)) } }));
+    api(`/pages/${pageId}`, { method: 'PATCH', json: { title: next }, keepalive: true }).catch(errorToast);
+  };
   useEffect(() => {
-    if (title === remote) return;
-    const t = setTimeout(() => {
-      patch(`/pages/${pageId}`, { title }).catch(errorToast);
-      useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title } : p)) } }));
-    }, 400);
+    if (title === remote) {
+      pending.current = null;
+      return;
+    }
+    pending.current = title;
+    const t = setTimeout(() => flush.current(), 400);
     return () => clearTimeout(t);
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onHide = () => flush.current();
+    const onVisibility = () => document.visibilityState === 'hidden' && flush.current();
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('beforeunload', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('beforeunload', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush.current(); // unmount: the component is keyed by page id, so this also covers switching pages
+    };
+  }, []);
   useEffect(() => {
     // Auto-size and focus new, empty pages.
     if (ref.current) {
@@ -402,7 +436,7 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
   );
 }
 
-function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: () => void; mobile: boolean }) {
+function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: string; canComment: boolean; onClose: () => void; mobile: boolean }) {
   const all = useStore((s) => s.tasks);
   const tasks = sortTasks(Object.values(all).filter((t) => t.pageId === pageId));
   const open = tasks.filter((t) => t.status === 'open');
@@ -441,6 +475,10 @@ function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: 
         )}
         {showDone && done.map((t) => <TaskRow key={t.id} task={t} showSource={false} />)}
       </div>
+      <div className="panel-head">
+        <strong>Comments</strong>
+      </div>
+      <CommentsPanel pageId={pageId} canComment={canComment} />
     </aside>
   );
 }
