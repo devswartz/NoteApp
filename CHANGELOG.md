@@ -56,7 +56,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Reliable live events: sequence numbers with catch-up replay and resync, plus `GET /workspaces/:id/team` (#18).
 - Comments hook-up on the collaboration side (#55); mounting the panel in the page view is pending in the editor.
 - Comments in the editor and page view: select text to start a thread, then reply, resolve or reopen (#62).
-- Notification inbox (bell) and @mentions in pages and comments (#29).
+- Notification inbox and @mentions (#29): mentions work in comments; the inbox bell isn't in the app shell yet.
 - Files on deleted pages become private to their uploader (#59).
 - 10-editor load test, and a fix so pages save while people keep typing (#38).
 
