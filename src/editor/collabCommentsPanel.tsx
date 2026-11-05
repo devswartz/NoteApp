@@ -3,7 +3,7 @@
 //
 //   <CommentsPanel pageId={pageId} canComment={canEdit} />
 //   <CommentHighlights />   // anywhere on the page view
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { Check, MessageSquare, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
 import { useStore } from '../store.ts';
@@ -21,6 +21,7 @@ import {
   useComments,
 } from './collabComments.ts';
 import type { CommentThread } from '../../shared/types.ts';
+import { matchMembers } from './collabMentions.ts';
 import './collab.css';
 
 const ago = (iso: string) => formatDistanceToNow(new Date(iso), { addSuffix: true });
@@ -81,17 +82,14 @@ function Composer({ quote }: { quote: string }) {
   return (
     <div className="comment-thread is-active">
       <blockquote className="comment-quote">{quote}</blockquote>
-      <textarea
-        className="input comment-input"
+      <MentionTextarea
         autoFocus
-        placeholder="Add a comment…"
+        placeholder="Add a comment… (@ to mention)"
         aria-label="New comment"
         value={body}
-        onChange={(e) => setBody(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void submit();
-          if (e.key === 'Escape') cancelComment();
-        }}
+        onChange={setBody}
+        onSubmit={() => void submit()}
+        onCancel={cancelComment}
       />
       <div className="row gap-8 comment-actions">
         <button className="btn btn-secondary btn-sm" onClick={cancelComment}>
@@ -197,7 +195,7 @@ function ThreadCard({ t, active, canComment }: { t: CommentThread; active: boole
             )}
             {editing === c.id ? (
               <div onClick={(e) => e.stopPropagation()}>
-                <textarea className="input comment-input" aria-label="Edit comment" value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
+                <MentionTextarea aria-label="Edit comment" value={draft} onChange={setDraft} autoFocus onCancel={() => setEditing(null)} />
                 <div className="row gap-8 comment-actions">
                   <button className="btn btn-secondary btn-sm" onClick={() => setEditing(null)}>
                     Cancel
@@ -212,22 +210,19 @@ function ThreadCard({ t, active, canComment }: { t: CommentThread; active: boole
                 </div>
               </div>
             ) : (
-              <p className="comment-body">{c.body}</p>
+              <CommentBody body={c.body} />
             )}
           </div>
         );
       })}
       {canComment && active && (
         <div onClick={(e) => e.stopPropagation()}>
-          <textarea
-            className="input comment-input"
-            placeholder={t.resolvedAt ? 'Reply to reopen…' : 'Reply…'}
+          <MentionTextarea
+            placeholder={t.resolvedAt ? 'Reply to reopen…' : 'Reply… (@ to mention)'}
             aria-label="Reply"
             value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && reply.trim()) void replyTo(t.id, reply).then(() => setReply(''));
-            }}
+            onChange={setReply}
+            onSubmit={() => reply.trim() && void replyTo(t.id, reply).then(() => setReply(''))}
           />
           {reply.trim() && (
             <div className="row gap-8 comment-actions">
@@ -236,6 +231,132 @@ function ThreadCard({ t, active, canComment }: { t: CommentThread; active: boole
               </button>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ───────────── Mentions in comments ─────────────
+// Stored as `@[Name](userId)`; the server notifies mentioned people.
+
+const MENTION_RE = /@\[([^\]\n]{1,100})\]\(([0-9a-f-]{36})\)/gi;
+
+/** Comment text with mentions rendered as chips. */
+export function CommentBody({ body }: { body: string }) {
+  const me = useStore((s) => s.user?.id);
+  const parts: (string | { name: string; id: string })[] = [];
+  let last = 0;
+  for (const m of body.matchAll(MENTION_RE)) {
+    parts.push(body.slice(last, m.index));
+    parts.push({ name: m[1], id: m[2] });
+    last = m.index! + m[0].length;
+  }
+  parts.push(body.slice(last));
+  return (
+    <p className="comment-body">
+      {parts.map((p, i) =>
+        typeof p === 'string' ? (
+          p
+        ) : (
+          <span key={i} className={`mention ${p.id === me ? 'is-me' : ''}`}>
+            @{p.name}
+          </span>
+        ),
+      )}
+    </p>
+  );
+}
+
+/** A textarea with "@" autocomplete over workspace members. */
+export function MentionTextarea({
+  value,
+  onChange,
+  onSubmit,
+  onCancel,
+  ...rest
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit?: () => void;
+  onCancel?: () => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+  'aria-label': string;
+}) {
+  const members = useStore((s) => s.members);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [query, setQuery] = useState<{ q: string; start: number } | null>(null);
+  const [index, setIndex] = useState(0);
+  const options = query ? matchMembers(members, query.q, 6) : [];
+
+  const detect = (text: string, caret: number) => {
+    const m = /(^|\s)@([\w.-]{0,30})$/.exec(text.slice(0, caret));
+    setQuery(m ? { q: m[2], start: caret - m[2].length - 1 } : null);
+    setIndex(0);
+  };
+  const insert = (name: string, id: string) => {
+    if (!query || !ref.current) return;
+    const caret = ref.current.selectionStart;
+    const token = `@[${name}](${id}) `;
+    const next = value.slice(0, query.start) + token + value.slice(caret);
+    onChange(next);
+    setQuery(null);
+    const pos = query.start + token.length;
+    requestAnimationFrame(() => ref.current?.setSelectionRange(pos, pos));
+  };
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (query && options.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setIndex((i) => (i + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        insert(options[index].name, options[index].id);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setQuery(null);
+        return;
+      }
+    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSubmit?.();
+    if (e.key === 'Escape') onCancel?.();
+  };
+  return (
+    <div className="mention-textarea">
+      <textarea
+        ref={ref}
+        className="input comment-input"
+        {...rest}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          detect(e.target.value, e.target.selectionStart);
+        }}
+        onKeyDown={onKeyDown}
+        onBlur={() => setTimeout(() => setQuery(null), 150)}
+      />
+      {query && options.length > 0 && (
+        <div className="mention-pop mention-pop-inline" role="listbox">
+          {options.map((m, i) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`mention-item ${i === index ? 'is-active' : ''}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                insert(m.name, m.id);
+              }}
+            >
+              <span className="mention-dot" style={{ background: m.color }} />
+              <span>{m.name}</span>
+              <span className="muted small">{m.email}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
