@@ -27,11 +27,12 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 > 1. **Port exposure rule (new, required):** the app port must be reachable **only through cloudflared**. No published host port on the LAN or internet; bind to `127.0.0.1` or the Docker network only. `deploy/compose.yaml` already binds `127.0.0.1:${HOST_PORT}`; confirm nothing else (firewall rules, a second compose file, a reverse proxy) exposes it.
 > 2. **`TRUST_PROXY_HEADER=cf`** in both `.env` files. Rate limiting then reads the client IP from `CF-Connecting-IP`. Only safe because of rule 1. Harmless before the rate-limit PR (#43) lands.
 > 3. **`ACCESS_TOKEN_TTL_S`:** leave **unset** (default 900 s; production clamps it to 60–3600).
-> 4. **iOS push (when the iOS app ships):** `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.devswartz.noteapp`, `APNS_PRIVATE_KEY` (the `.p8` contents, newlines as `\n`) and `APNS_ENV=production`. The values come from the user (see `docs/MOBILE.md` → *Server environment*).
+> 4. **iOS push (when the iOS app ships):** `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.devswartz.notivelo`, `APNS_PRIVATE_KEY` (the `.p8` contents, newlines as `\n`) and `APNS_ENV=production`. The values come from the user (see `docs/MOBILE.md` → *Server environment*).
 > 5. **Android push (when the Android app ships):** `FCM_SERVICE_ACCOUNT_JSON` (the Firebase service-account JSON, one line or base64).
 > 6. **App links (#57):** `ANDROID_CERT_SHA256` (comma-separated SHA-256 fingerprints of the Play app-signing and upload certs). `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) is used for the iOS `apple-app-site-association`. Verify with `curl -i https://notes.devswartz.com/.well-known/assetlinks.json` and `…/apple-app-site-association` (200, `application/json`, no redirect).
 > 7. **`ADMIN_EMAILS=<the user's email>` on staging AND prod, before anyone signs up** (#67). Without it, **the first account created becomes the instance admin** (who may call `GET /api/admin/stats`). Comma-separated if there's more than one admin. Admins can always sign up.
 > 7b. **`SIGNUP_MODE`:** leave **unset**. In production it defaults to `invite`: only people with a pending invite, plus the addresses in `ADMIN_EMAILS`, can create accounts. Set `SIGNUP_MODE=open` only if you ever want public sign-up. Logs also become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
+> 7c. **`MAIL_FROM` on prod (and staging) should say Notivelo**, e.g. `Notivelo <notes@devswartz.com>`. It is the sender name on invites and password resets and is set per environment in `.env`, so the rename alone doesn't change it. The address must stay one the SMTP provider has verified.
 > 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log. With #70, the *Demo Team* workspace shows off every feature (a notebook per area, every block type, subtasks, recurrence, links, comments, versions, a private notebook), which makes it a good tour for the team on staging.
 > 9. Unchanged from the brief: `NODE_ENV`, `PUBLIC_URL`, `JWT_SECRET` (per env), the SES SMTP settings (`SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`), VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `SEED_DEMO=1` on staging only, backups (`sqlite3 .backup` or Litestream, plus `/data/files/`, off the box), Cloudflare Access **off**.
 >
@@ -87,7 +88,7 @@ Rollback: `docs/RELEASING.md` → *Roll back* (pin `NOTEAPP_TAG` to the previous
   - Developer ID `.p12` and its password;
   - App Store Connect API key for notarisation;
   - Tauri updater key and its public key.
-- [ ] The `v0.1.0` tag (section 4) builds them. Download `NoteApp_0.1.0_universal.dmg` from the draft release, then check `spctl -a -vv` and `xcrun stapler validate`.
+- [ ] The `v0.1.0` tag (section 4) builds them. Download `Notivelo_0.1.0_universal.dmg` from the draft release, then check `spctl -a -vv` and `xcrun stapler validate`.
 - [ ] **Publish the draft release.** Installed apps only see updates from published releases.
 - Without the secrets the tag still builds **unsigned** installers: right-click → Open on a Mac, SmartScreen on Windows, and no auto-update.
 

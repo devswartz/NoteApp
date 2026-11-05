@@ -6,6 +6,10 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 
 The first version for day-to-day use by the team: web, desktop and mobile.
 
+### Renamed to Notivelo
+- The product is now **Notivelo** everywhere users see it (`APP_NAME` in `shared/config.ts`). Desktop: product name, identifier `com.devswartz.notivelo` and `notivelo://` links. Mobile: app id and bundle IDs `com.devswartz.notivelo` (plus `.ShareExtension` and `.TodayWidget`), app group and URL scheme. The AASA and `assetlinks.json` defaults follow.
+- Deliberately not renamed: the repo, the Docker image, `/data/noteapp.db`, the systemd units, and the `noteapp.*` browser storage keys (so nobody loses local data).
+
 ### Foundation and security
 - Working core flow on a clean base: per-area layout, token auth (short-lived access JWT + rotating refresh token, no cookies), configurable API URL, the `src/platform/` adapter for native shells, and the deploy contract (#2).
 - Security follow-ups:
@@ -88,7 +92,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
   - APNs/FCM push reminders with snooze;
   - deep links, app badge and haptics;
   - mobile CI.
-- Share to NoteApp (task or note), optional Face ID app lock, and a Today home-screen widget on iOS and Android (#36).
+- Share to Notivelo (task or note), optional Face ID app lock, and a Today home-screen widget on iOS and Android (#36).
 - Mobile visual QA: large-title top bar, and no floating add button on pages (#69).
 - APNs to both sandbox and production builds, `/.well-known` app-link files, Android snooze actions, and a server picker on first launch (runtime server URL) (#57).
 

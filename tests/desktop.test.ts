@@ -101,7 +101,7 @@ test('badge count: my open tasks due today or overdue', () => {
   assert.equal(todayCount(tasks, null, '2026-11-05'), 0);
 });
 
-test('probeServer accepts a NoteApp health response only', async () => {
+test('probeServer accepts a Notivelo health response only', async () => {
   const urls: string[] = [];
   const ok = (async (u: string) => {
     urls.push(u);
@@ -136,17 +136,17 @@ test('latest-json.mjs: lists signed bundles only', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bundles-'));
   mkdirSync(join(dir, 'mac'));
   mkdirSync(join(dir, 'win'));
-  const mac = join(dir, 'mac', 'NoteApp.app.tar.gz');
-  const exe = join(dir, 'win', 'NoteApp_1.2.3_x64-setup.exe');
-  const msi = join(dir, 'win', 'NoteApp_1.2.3_x64_en-US.msi');
+  const mac = join(dir, 'mac', 'Notivelo.app.tar.gz');
+  const exe = join(dir, 'win', 'Notivelo_1.2.3_x64-setup.exe');
+  const msi = join(dir, 'win', 'Notivelo_1.2.3_x64_en-US.msi');
   for (const f of [mac, exe, msi]) writeFileSync(f, 'x');
   writeFileSync(`${mac}.sig`, 'SIGMAC\n');
   writeFileSync(`${exe}.sig`, 'SIGWIN');
   const m = manifest([mac, `${mac}.sig`, exe, `${exe}.sig`, msi], 'o/r', 'v1.2.3', new Date('2026-01-01T00:00:00Z'));
   assert.equal(m.version, '1.2.3');
-  assert.deepEqual(m.platforms['darwin-aarch64'], { signature: 'SIGMAC', url: 'https://github.com/o/r/releases/download/v1.2.3/NoteApp.app.tar.gz' });
+  assert.deepEqual(m.platforms['darwin-aarch64'], { signature: 'SIGMAC', url: 'https://github.com/o/r/releases/download/v1.2.3/Notivelo.app.tar.gz' });
   assert.equal(m.platforms['darwin-x86_64'].url, m.platforms['darwin-aarch64'].url);
-  assert.deepEqual(m.platforms['windows-x86_64'], { signature: 'SIGWIN', url: 'https://github.com/o/r/releases/download/v1.2.3/NoteApp_1.2.3_x64-setup.exe' });
+  assert.deepEqual(m.platforms['windows-x86_64'], { signature: 'SIGWIN', url: 'https://github.com/o/r/releases/download/v1.2.3/Notivelo_1.2.3_x64-setup.exe' });
   assert.deepEqual(manifest([mac, exe], 'o/r', 'v1.2.3').platforms, {}, 'unsigned bundles are not offered as updates');
 });
 

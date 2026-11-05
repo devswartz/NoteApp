@@ -12,7 +12,7 @@ apps/mobile/
   ios/App/              Xcode project (Swift Package Manager, no CocoaPods)
     App/                app target: AppDelegate, MainViewController + NoteAppNativePlugin (the app's own plugin)
     Shared/             Swift shared by the app and its extensions (App Group store)
-    ShareExtension/     "Share to NoteApp"
+    ShareExtension/     "Share to Notivelo"
     TodayWidget/        WidgetKit "Today" widget
   scripts/xcode-extensions.rb  re-adds the extension targets if the Xcode project is ever regenerated
   android/              Gradle project
@@ -31,7 +31,7 @@ npm run mobile:android   # …and open Android Studio
 
 - **Server URL.** The build has a default server: `MOBILE_SERVER_URL`, default `https://notes.devswartz.com` (`mobile:build` turns it into `VITE_API_URL`). On first launch the app shows a **Connect to a server** screen with that default filled in. **Change server…** is in ⌘K; Settings and the login screen can call `platform.server.change()`. The rules match the desktop app (`src/platform/serverUrl.ts`): https only, with plain http allowed only for `localhost`/`127.0.0.1`; an optional path prefix; no query string. The address is checked with `GET /api/health` before it is saved. Picking a different server signs out of the old one and restarts the app. The choice is stored in the web view's localStorage (`noteapp.serverUrl`), and `src/api.ts` re-validates it at startup. Builds that load the Vite dev server (`CAP_SERVER_URL`) skip all of this.
 - **Live reload while developing:** run `npm run dev` with `API_URL` pointing at a server, then `CAP_SERVER_URL=http://<your-LAN-IP>:5173 npx cap sync` in `apps/mobile` and run the app. The app then loads the Vite dev server instead of the bundled files. Don't ship a build made this way.
-- **App id:** `com.devswartz.noteapp` (`APP_ID` in `capacitor.config.ts`). Changing it creates a different app in the stores.
+- **App id:** `com.devswartz.notivelo` (`APP_ID` in `capacitor.config.ts`). Changing it creates a different app in the stores.
 - **App name:** `APP_NAME` in `shared/config.ts`. `npm run mobile:sync` copies it into the native projects, so a rename stays a one-line change.
 - **Icons and splash** come from `public/icon.svg`. After changing it, run `npm run mobile:icons` (uses Playwright's Chromium and `npx @capacitor/assets`) and commit the generated files.
 - **Versions:** CI sets the version from the tag (`v1.2.3` or `mobile-v1.2.3` → `1.2.3`) and the build number from the workflow run number. Local builds are 0.1.0 (1).
@@ -44,16 +44,16 @@ npm run mobile:android   # …and open Android Studio
 |---|---|
 | Refresh token | Keychain (iOS, `afterFirstUnlockThisDeviceOnly`, never restored to another device) / Android Keystore-encrypted storage, via `@aparajita/capacitor-secure-storage`. Small preferences stay in the web view's `localStorage`. Android backups are off (`allowBackup="false"`). |
 | Push reminders | After sign-in the app asks for notification permission, registers with APNs (iOS) or FCM (Android) and sends the token to `POST /api/notifications/devices {platform, token}`. The server's reminder worker delivers through `server/reminders/apns.ts` / `fcm.ts`. On sign-out the app unregisters, which invalidates the token; the server drops it on the next delivery attempt. |
-| Tapping a reminder | The payload's `url` (an in-app path) becomes `noteapp://w/…` and goes through the normal deep-link router (`components/DeepLinks.tsx`). Only paths starting with `/` are accepted. |
+| Tapping a reminder | The payload's `url` (an in-app path) becomes `notivelo://w/…` and goes through the normal deep-link router (`components/DeepLinks.tsx`). Only paths starting with `/` are accepted. |
 | Snooze | Reminder notifications have *Snooze 10 minutes / 1 hour / Tomorrow morning* actions, which call `POST /api/reminders/snooze` with the notification's one-time snooze token. **iOS:** category `REMINDER`; the action opens the app, which makes the request. **Android:** reminders arrive as FCM data messages, `NoteAppMessagingService` builds the notification with the actions, and `SnoozeReceiver` makes the request in the background without opening the app (the adapter gives it the server URL through `NoteAppNative.setConfig`). |
 | Local notifications | `platform.notifications.show()` (reminders for a task while the app is open) uses `@capacitor/local-notifications`, Android channel `reminders`. |
-| Deep links | `noteapp://page/<id>`, `noteapp://w/<ws>/…` and the universal / app links `https://notes.devswartz.com/w/…` (see "Server files" below). Links that arrive before the router mounts (cold start from a notification) are queued. |
+| Deep links | `notivelo://page/<id>`, `notivelo://w/<ws>/…` and the universal / app links `https://notes.devswartz.com/w/…` (see "Server files" below). Links that arrive before the router mounts (cold start from a notification) are queued. |
 | App badge | The number of my open tasks due today or overdue in the current workspace, updated as tasks change (`@capawesome/capacitor-badge`). Cleared on sign-out. |
 | Haptics | A light tap whenever a checkbox (`input[type=checkbox]`, `[role=checkbox]`) or any `[data-haptic]` element is clicked. `platform.haptics.tap()` / `.success()` for app code (`'haptics' in platform`). |
 | Status bar / safe areas | The web view draws edge to edge on both platforms; the layout pads with `env(safe-area-inset-*)` (the `--safe-*` tokens in `src/styles.css`). Status bar text follows `<html data-theme>`. |
 | Keyboard | The web view resizes above the keyboard. iOS's prev/next/done accessory bar is hidden. While the keyboard is open `<html>` has class `keyboard-open` and `--keyboard-height` is set, so bottom bars can hide or move. |
 | Android back button | Goes back in history; at the root it backgrounds the app. |
-| Share to NoteApp | iOS: a Share Extension (`ios/App/ShareExtension`) with *Add as task* / *Save as note*. Android: two share targets, *Add task* and *Save as note* (activity-aliases of `MainActivity`). The item waits in the App Group (iOS) or in memory (Android) until the app is active, unlocked and someone is signed in. It belongs to whoever was signed in when it arrived (or, if nobody was, to the device's last user); if a different account signs in first, it is dropped. Then a **task** opens quick add, prefilled with the text (and link), on Today; a **note** becomes a new page in the workspace's section named *Inbox* (or the first section), with the text and link as its body. The body is written to the page's local Yjs cache, and the editor syncs it like an offline edit. iOS extensions can't open their app, so the share appears the next time you switch to NoteApp. |
+| Share to Notivelo | iOS: a Share Extension (`ios/App/ShareExtension`) with *Add as task* / *Save as note*. Android: two share targets, *Add task* and *Save as note* (activity-aliases of `MainActivity`). The item waits in the App Group (iOS) or in memory (Android) until the app is active, unlocked and someone is signed in. It belongs to whoever was signed in when it arrived (or, if nobody was, to the device's last user); if a different account signs in first, it is dropped. Then a **task** opens quick add, prefilled with the text (and link), on Today; a **note** becomes a new page in the workspace's section named *Inbox* (or the first section), with the text and link as its body. The body is written to the page's local Yjs cache, and the editor syncs it like an offline edit. iOS extensions can't open their app, so the share appears the next time you switch to Notivelo. |
 | Today widget | iOS: a WidgetKit extension (`ios/App/TodayWidget`), small/medium/large. Android: a home-screen widget (`TodayWidgetProvider`). Both show my open tasks due today or overdue in the current workspace, with priority and time; tapping opens Today, and tapping a row (iOS medium/large, Android) opens that task. The app writes a JSON snapshot (`WidgetSnapshot` in `capacitor.ts`) to the App Group (iOS) or SharedPreferences (Android) whenever tasks change and when it comes to the foreground; the widget never calls the server. After midnight, tasks from an older snapshot show as overdue until the app is opened. |
 | App lock | Optional. Turn it on with the ⌘K command *Lock app with Face ID* (or Touch ID / fingerprint / passcode). It asks to unlock on launch and after more than a minute in the background, falling back to the device passcode. While the app is in the background a cover hides its content from the app switcher. The lock screen always offers *Sign in with password instead*; if Face ID/passcode stop being available it does that automatically (turns the lock off and signs out, so the account password gets you back in). Shares are never saved while the app is locked. A Settings toggle can use `platform.appLock` (`method()`, `enabled()`, `setEnabled()`, `subscribe()`). Stored per device. |
 | Splash screen | Native splash (light and dark) until React's first render. |
@@ -78,7 +78,7 @@ Nothing below is needed to build or run debug builds. CI skips the steps whose s
 **iOS signing uses Xcode cloud signing**: the API key lets `xcodebuild -allowProvisioningUpdates` create the distribution certificate and the provisioning profiles for the app (and any extensions) itself, so there's no `.p12` or `.mobileprovision` to export. Create the key in App Store Connect → Users and Access → Integrations → App Store Connect API with the **Admin** role (cloud-managed certificates need it).
 
 One-time Apple setup:
-1. developer.apple.com → Identifiers: register `com.devswartz.noteapp` with **Push Notifications**, **Associated Domains** and **App Groups** (`group.com.devswartz.noteapp`) enabled, and `com.devswartz.noteapp.ShareExtension` (and `.TodayWidget`) with **App Groups**. Cloud signing in CI usually registers these on its own; doing it by hand avoids surprises.
+1. developer.apple.com → Identifiers: register `com.devswartz.notivelo` with **Push Notifications**, **Associated Domains** and **App Groups** (`group.com.devswartz.notivelo`) enabled, and `com.devswartz.notivelo.ShareExtension` (and `.TodayWidget`) with **App Groups**. Cloud signing in CI usually registers these on its own; doing it by hand avoids surprises.
 2. App Store Connect → Apps → New App with that bundle id (the name can be a placeholder and changed later).
 3. Keys → create an **APNs key** (.p8) for the server (below). It's a different key from the App Store Connect API key.
 
@@ -90,12 +90,12 @@ Set these on the server (`docs/DEPLOY_CONTRACT.md` lists the server env). Each c
 |---|---|
 | `APNS_KEY_ID` | The APNs key's id |
 | `APNS_TEAM_ID` | Team ID |
-| `APNS_BUNDLE_ID` | `com.devswartz.noteapp` |
+| `APNS_BUNDLE_ID` | `com.devswartz.notivelo` |
 | `APNS_PRIVATE_KEY` | Contents of the APNs `.p8` (newlines may be written as `\n`) |
 | `APNS_ENV` | Optional: which environment to try first, `production` (default) or `sandbox`. Builds run from Xcode get sandbox tokens and TestFlight/App Store builds get production ones. A token the first environment rejects (`BadDeviceToken`) is retried on the other, and the one that works is remembered, so one server reaches both kinds of build. |
 | `FCM_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts → Generate new private key (the JSON, raw or base64) |
 
-Firebase setup: create a Firebase project, add an Android app with package `com.devswartz.noteapp`, and download `google-services.json` (that's the GitHub secret above). iOS doesn't use Firebase; it talks to APNs directly.
+Firebase setup: create a Firebase project, add an Android app with package `com.devswartz.notivelo`, and download `google-services.json` (that's the GitHub secret above). iOS doesn't use Firebase; it talks to APNs directly.
 
 ### Universal links / app links (what you fill in)
 
@@ -105,11 +105,11 @@ Firebase setup: create a Firebase project, add an Android app with package `com.
 |---|---|---|
 | `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) | Your 10-character Apple Team ID | developer.apple.com → Membership. It is the same value the APNs push channel uses, so it's usually already set. |
 | `ANDROID_CERT_SHA256` | SHA-256 fingerprint(s) of the certificate(s) that sign the Android app, comma-separated (with or without colons) | Play Console → your app → Test and release → App integrity → **App signing key certificate** (and the upload key certificate, if you also install builds signed with your upload key). For a local keystore: `keytool -list -v -keystore upload.jks`. Debug builds are signed with `~/.android/debug.keystore`; add its fingerprint too if you want links to open debug builds. |
-| `APNS_BUNDLE_ID` / `ANDROID_PACKAGE` | Optional; default `com.devswartz.noteapp` | |
+| `APNS_BUNDLE_ID` / `ANDROID_PACKAGE` | Optional; default `com.devswartz.notivelo` | |
 
-Check it: `curl -i https://notes.devswartz.com/.well-known/apple-app-site-association` and `…/assetlinks.json` should return `200` with `application/json`. Apple caches the file through its CDN, so a new iOS install may take a while to pick it up. On Android, `adb shell pm get-app-links com.devswartz.noteapp` shows whether verification passed.
+Check it: `curl -i https://notes.devswartz.com/.well-known/apple-app-site-association` and `…/assetlinks.json` should return `200` with `application/json`. Apple caches the file through its CDN, so a new iOS install may take a while to pick it up. On Android, `adb shell pm get-app-links com.devswartz.notivelo` shows whether verification passed.
 
-Only `/w/…` paths are claimed. Login links and the API always stay in the browser. Until the variables are set, `noteapp://` links work and https links open in the browser.
+Only `/w/…` paths are claimed. Login links and the API always stay in the browser. Until the variables are set, `notivelo://` links work and https links open in the browser.
 
 ## CI
 

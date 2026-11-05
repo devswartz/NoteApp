@@ -23,7 +23,7 @@ export function safeLinkUrl(url: unknown): string {
   const u = url.trim();
   // Browsers treat "\" like "/" in URLs, so "/\evil.example" is protocol-relative ("//evil.example").
   const probe = u.replace(/[\u0000- \u007f-\u009f]/g, '').replace(/\\/g, '/').toLowerCase();
-  if (/^(https?:|mailto:|tel:|noteapp:)/.test(probe)) return u;
+  if (/^(https?:|mailto:|tel:|notivelo:)/.test(probe)) return u;
   if (/^\/(?!\/)/.test(probe) || probe.startsWith('#')) return u;
   return '';
 }

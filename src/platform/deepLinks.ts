@@ -1,6 +1,6 @@
 // Turning deep links into in-app paths. Shells deliver links such as
-//   noteapp://page/<pageId>            → a page (workspace looked up by the caller)
-//   noteapp://w/<wsId>/p/<pageId>      → any in-app path
+//   notivelo://page/<pageId>            → a page (workspace looked up by the caller)
+//   notivelo://w/<wsId>/p/<pageId>      → any in-app path
 //   https://<our host>/w/<wsId>/…      → universal / app links
 // The scheme is not checked, so renaming the app doesn't break old links.
 
@@ -13,7 +13,7 @@ export function parseDeepLink(link: string): DeepLinkTarget {
   } catch {
     return null;
   }
-  // For custom schemes the first segment parses as the host: noteapp://page/x → host "page", path "/x".
+  // For custom schemes the first segment parses as the host: notivelo://page/x → host "page", path "/x".
   const isWeb = url.protocol === 'http:' || url.protocol === 'https:';
   const parts = (isWeb ? url.pathname : `/${url.host}${url.pathname}`).split('/').filter(Boolean).map(decodeURIComponent);
   if (parts[0] === 'page' && parts[1]) return { kind: 'page', pageId: parts[1] };

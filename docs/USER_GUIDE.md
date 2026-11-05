@@ -1,6 +1,6 @@
 # User guide
 
-A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Linux, use Ctrl instead.
+A short tour of Notivelo for the team. Shortcuts use ⌘ (Mac). On Windows and Linux, use Ctrl instead.
 
 ## The basics: workspaces, notebooks, sections, pages
 
@@ -167,7 +167,7 @@ The **desktop app** adds menu shortcuts:
 - The same app in its own window. It starts instantly and opens offline. It runs on `https://notes.devswartz.com` by default; **Change Server…** in the menu points it elsewhere (e.g. staging).
 - **Menu bar / tray icon:** shows how many tasks are due today, with quick actions. On a Mac the same number is on the Dock icon.
 - **Quick capture:** ⌥⌘N, from anywhere (see Quick add).
-- Your sign-in is kept in the system keychain. `noteapp://` links open pages directly. The app updates itself (it asks before restarting).
+- Your sign-in is kept in the system keychain. `notivelo://` links open pages directly. The app updates itself (it asks before restarting).
 - Closing the window keeps the app running in the menu bar/tray. Quit from the menu.
 
 Downloads are on the GitHub Releases page. The first time you open an unsigned build on a Mac, right-click it and choose Open.
@@ -176,7 +176,7 @@ Downloads are on the GitHub Releases page. The first time you open an unsigned b
 
 - A layout made for phones: a bottom tab bar (Notes, Today, +, My Tasks, Search) and a full-screen editor.
 - **Push reminders** with snooze actions. The app icon badge shows what's due today.
-- **Share to NoteApp** from any app: *Add as task* or *Save as note* (notes go to a section called *Inbox* if you have one).
+- **Share to Notivelo** from any app: *Add as task* or *Save as note* (notes go to a section called *Inbox* if you have one).
 - **Today widget** for your home screen.
 - Optional **Face ID / fingerprint lock**: ⌘K → *Lock app with Face ID*.
 
