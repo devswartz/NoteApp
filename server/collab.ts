@@ -9,8 +9,8 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
-import { tokenFromUpgrade, verifyToken } from './auth.ts';
-import { pageAccess } from './access.ts';
+import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
+import { onAccessChange, pageAccess } from './access.ts';
 import { syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
 
@@ -29,6 +29,39 @@ interface Room {
 }
 
 const rooms = new Map<string, Room>();
+
+/** Who is on each socket, until when their token is valid, and whether they may edit. */
+interface ConnAuth {
+  userId: string;
+  expiresAt: number;
+  canEdit: boolean;
+}
+const connAuth = new WeakMap<WebSocket, ConnAuth>();
+const REVALIDATE_MS = 30_000;
+
+/**
+ * Re-check every open collab socket: close it with 4401 when its access token
+ * has expired (the client refreshes and reconnects) and with 4403 when the
+ * user lost access to the page; pick up edit/view-only changes.
+ */
+export function revalidateCollab() {
+  const t = Date.now();
+  for (const room of rooms.values()) {
+    for (const conn of [...room.conns.keys()]) {
+      const a = connAuth.get(conn);
+      if (!a) continue;
+      if (t >= a.expiresAt) {
+        conn.close(4401, 'Token expired');
+        continue;
+      }
+      const access = pageAccess(room.pageId, a.userId);
+      if (!access) conn.close(4403, 'Access revoked');
+      else a.canEdit = access.canEdit;
+    }
+  }
+}
+onAccessChange(revalidateCollab);
+setInterval(revalidateCollab, REVALIDATE_MS).unref();
 
 /** Walk a ProseMirror-shaped Y.XmlFragment and collect plain text and task references. */
 export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Set<string> } {
@@ -164,12 +197,19 @@ export function attachCollab(wss: WebSocketServer) {
     const url = new URL(req.url ?? '', 'http://x');
     // y-websocket connects to `${serverUrl}/${roomName}`; room = page id.
     const pageId = decodeURIComponent(url.pathname.split('/').pop() ?? '');
-    const user = verifyToken(tokenFromUpgrade(req));
-    const access = user ? pageAccess(pageId, user.id) : null;
-    if (!user || !access) {
+    const auth = verifyAccessToken(tokenFromUpgrade(req));
+    if (!auth) {
       conn.close(4401, 'Unauthorized');
       return;
     }
+    const user = auth.user;
+    const access = pageAccess(pageId, user.id);
+    if (!access) {
+      conn.close(4403, 'No access to this page');
+      return;
+    }
+    const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit };
+    connAuth.set(conn, state);
     conn.binaryType = 'arraybuffer';
     const room = getRoom(pageId, access.workspaceId);
     room.conns.set(conn, new Set());
@@ -191,7 +231,7 @@ export function attachCollab(wss: WebSocketServer) {
           encoding.writeVarUint(enc, MSG_SYNC);
           // Peek at the sync sub-type so read-only users can't push updates.
           const sub = decoding.peekVarUint(dec);
-          if (sub !== syncProtocol.messageYjsSyncStep1 && !access.canEdit) return;
+          if (sub !== syncProtocol.messageYjsSyncStep1 && !state.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
