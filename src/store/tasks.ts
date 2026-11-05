@@ -122,3 +122,30 @@ export async function deleteTask(id: string) {
     errorToast(e);
   }
 }
+
+/**
+ * Apply one patch to many tasks (bulk actions). Each task is updated
+ * optimistically on its own; one toast offers to undo the whole batch.
+ */
+export async function bulkUpdate(ids: string[], p: TaskPatch, label: string) {
+  const before = ids.map((id) => st().tasks[id]).filter((t): t is Task => !!t);
+  if (!before.length) return;
+  await Promise.all(before.map((t) => updateTask(t.id, p, { silent: true })));
+  toast(`${label} · ${before.length} task${before.length === 1 ? '' : 's'}`, {
+    action: {
+      label: 'Undo',
+      run: () => {
+        for (const t of before) {
+          const undo: TaskPatch = {};
+          for (const k of Object.keys(p) as (keyof TaskPatch)[]) (undo as Record<string, unknown>)[k] = t[k];
+          void updateTask(t.id, undo, { silent: true });
+        }
+      },
+    },
+  });
+}
+
+export async function bulkDelete(ids: string[]) {
+  await Promise.all(ids.map((id) => deleteTask(id)));
+  toast(`Deleted ${ids.length} task${ids.length === 1 ? '' : 's'}`);
+}

@@ -38,3 +38,21 @@ button.cal-more:hover { color: var(--accent); }
 /* Dashboard rows */
 .task-title-input { width: 100%; font: inherit; }
 .task-row:focus-visible { outline: none; background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.task-row:focus-within .task-meta .chip-empty { display: inline-flex; opacity: 1; }
+.task-row:focus-within .avatar-btn-empty { opacity: 1; }
+.task-row.is-selected { background: var(--accent-soft); }
+.task-row.is-selected:hover { background: var(--accent-soft); }
+
+/* Bulk actions */
+.bulk-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; z-index: 40;
+  display: flex; align-items: center; gap: 2px; padding: 6px 8px;
+  background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-lg, 0 8px 30px rgba(0,0,0,.18));
+  max-width: calc(100vw - 32px); overflow-x: auto;
+}
+.bulk-count { font-weight: 600; font-size: 13px; padding: 0 8px; white-space: nowrap; }
+.bulk-bar .btn-sm { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.bulk-bar .danger { color: var(--danger); }
+@media (max-width: 760px) {
+  .bulk-bar { bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom)); }
+}

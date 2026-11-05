@@ -6,6 +6,9 @@ import type { Priority, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
 import type { Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
+import { selection, useSelection } from '../pages/tasks/selection.ts';
+
+let lastG = 0;
 
 export const TaskRow = memo(function TaskRow({
   task,
@@ -24,13 +27,32 @@ export const TaskRow = memo(function TaskRow({
   // A click on the title waits briefly so a double-click can start renaming instead of opening the sheet.
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const rowRef = useRef<HTMLDivElement>(null);
+  const selected = useSelection((s) => s.ids.has(task.id));
   const done = task.status === 'done';
+  /** Open the row's due-date or assignee picker from the keyboard. */
+  const openPicker = (sel: string) => rowRef.current?.querySelector<HTMLButtonElement>(sel)?.click();
   return (
     <div
       ref={rowRef}
-      className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''}`}
+      data-task-id={task.id}
+      aria-selected={selected || undefined}
+      className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''} ${selected ? 'is-selected' : ''}`}
+      onMouseDown={(e) => {
+        if (e.shiftKey && canEdit) e.preventDefault(); // no text selection on Shift-click
+      }}
       onClick={(e) => {
         if (editing) return;
+        // Ctrl/⌘-click toggles, Shift-click selects a range (bulk actions).
+        if (canEdit && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+          e.preventDefault();
+          if (e.shiftKey) selection.extendTo(task.id);
+          else selection.toggle(task.id);
+          return;
+        }
+        if (useSelection.getState().ids.size) {
+          selection.toggle(task.id);
+          return;
+        }
         clearTimeout(clickTimer.current);
         if (canEdit && (e.target as HTMLElement).closest('.task-title')) {
           if (e.detail < 2) clickTimer.current = setTimeout(() => ui.openTask(task.id), 250);
@@ -47,6 +69,10 @@ export const TaskRow = memo(function TaskRow({
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
+        // Leave the second key of "G <letter>" navigation to the app shell.
+        const afterG = Date.now() - lastG < 1200;
+        if (e.key === 'g') lastG = Date.now();
+        if (afterG && /^[a-z]$/.test(e.key)) return;
         if (e.key === 'Enter') ui.openTask(task.id);
         if ((e.key === 'r' || e.key === 'F2') && canEdit) {
           e.preventDefault();
@@ -56,7 +82,19 @@ export const TaskRow = memo(function TaskRow({
           e.preventDefault();
           void updateTask(task.id, { priority: Number(e.key) as Priority });
         }
-        if (e.key === ' ' && canEdit) {
+        if (e.key === 'd' && canEdit) {
+          e.preventDefault();
+          openPicker('.task-meta .chip-due');
+        }
+        if (e.key === 'a' && canEdit) {
+          e.preventDefault();
+          openPicker('.task-side .avatar-btn');
+        }
+        if (e.key === 's' && canEdit) {
+          e.preventDefault();
+          selection.toggle(task.id);
+        }
+        if ((e.key === ' ' || e.key === 'x') && canEdit) {
           e.preventDefault();
           toggleTask(task.id);
         }

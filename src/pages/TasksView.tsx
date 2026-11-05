@@ -8,6 +8,7 @@ import { AllView } from './tasks/AllView.tsx';
 import { CompletedView } from './tasks/CompletedView.tsx';
 import { CalendarView } from './tasks/CalendarView.tsx';
 import '../styles/tasks.css';
+import { BulkBar } from './tasks/BulkBar.tsx';
 
 export function TasksView() {
   const { view } = useParams() as { view: ViewId };
@@ -32,6 +33,7 @@ export function TasksView() {
           {view === 'completed' && <CompletedView />}
         </div>
       )}
+      {view !== 'calendar' && <BulkBar />}
     </div>
   );
 }
