@@ -8,6 +8,7 @@ import { rowToTask } from '../tasks.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
 import type { Access } from '../access.ts';
 import { HttpError, h, param } from '../http.ts';
+import { backlinks } from '../links.ts';
 
 export const pageRoutes = Router();
 
@@ -41,6 +42,16 @@ pageRoutes.get(
       )
       .get(id);
     return { page, workspaceId: a.workspaceId, canEdit: a.canEdit };
+  }),
+);
+
+/** GET /pages/:id/backlinks → Backlink[]: visible pages that link here with [[…]], most recently edited first. */
+pageRoutes.get(
+  '/pages/:id/backlinks',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(pageAccess(id, req.user.id));
+    return backlinks(id, a.workspaceId, req.user.id);
   }),
 );
 

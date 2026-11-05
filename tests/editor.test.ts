@@ -29,3 +29,18 @@ test('slash menu ranks title prefixes first and matches keywords', () => {
   assert.ok(filterSlash('pdf').some((i) => i.title === 'File attachment'));
   assert.deepEqual(filterSlash('zzzz'), []);
 });
+
+test('[[ page suggestions: prefix first, current page excluded, "Create" when no exact match', async () => {
+  const { pageItems } = await import('../src/editor/pageItems.ts');
+  const pg = (id: string, title: string, updatedAt = '2026-01-01') => ({ id, sectionId: 's', title, icon: null, kind: 'document' as const, position: 1, updatedAt, updatedBy: null });
+  const tree = {
+    notebooks: [{ id: 'n', workspaceId: 'w', name: 'Work', color: '', visibility: 'shared' as const, createdBy: 'u', position: 1 }],
+    sections: [{ id: 's', notebookId: 'n', name: 'Notes', color: '', position: 1 }],
+    pages: [pg('1', 'Project plan'), pg('2', 'Plan B'), pg('3', 'Roadmap'), pg('4', 'Current')],
+  };
+  const items = pageItems('plan', '4', tree);
+  assert.deepEqual(items.map((i) => (i.kind === 'page' ? i.page.title : `+${i.title}`)), ['Plan B', 'Project plan', '+plan']);
+  assert.equal(items[0].kind === 'page' && items[0].crumb, 'Work › Notes');
+  assert.ok(!pageItems('', '4', tree).some((i) => i.kind === 'page' && i.page.id === '4'));
+  assert.ok(!pageItems('roadmap', '4', tree).some((i) => i.kind === 'create'));
+});
