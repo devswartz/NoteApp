@@ -310,7 +310,6 @@
   .task-ref-inner { margin-left: 0; padding-left: 0; }
   .ProseMirror .code-block pre { padding-top: 12px; }
 }
-}
 
 /* ───────── Full width & outline ───────── */
 .page-scroll { position: relative; container-type: inline-size; }
