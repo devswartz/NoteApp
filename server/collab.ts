@@ -38,6 +38,12 @@ export function onPageMentions(fn: typeof pageMentionHook) {
   pageMentionHook = fn;
 }
 
+/** Set by the activity feed: called after a page's content is saved, with who edited it last. */
+let pageSavedHook: ((pageId: string, actorId: string | null) => void) | null = null;
+export function onPageSaved(fn: typeof pageSavedHook) {
+  pageSavedHook = fn;
+}
+
 /** Walk a ProseMirror-shaped Y.XmlFragment and collect plain text and task references. */
 export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Set<string>; mentionIds: Set<string> } {
   const taskIds = new Set<string>();
@@ -90,6 +96,11 @@ function persist(room: Room) {
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;
   if (added.length) pageMentionHook?.(room.pageId, room.workspaceId, added, room.lastEditor);
+  try {
+    pageSavedHook?.(room.pageId, room.lastEditor);
+  } catch (e) {
+    console.error('page saved hook', e);
+  }
   publish({ type: 'tree', workspaceId: room.workspaceId });
 }
 
