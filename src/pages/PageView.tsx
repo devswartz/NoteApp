@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History } from 'lucide-react';
 import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
+import { TemplatePicker } from '../editor/TemplatePicker.tsx';
+import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -24,6 +26,12 @@ export function PageView() {
   const [canEdit, setCanEdit] = useState<boolean | null>(null);
   const [status, setStatus] = useState<SyncStatus>('connecting');
   const [save, setSave] = useState<SaveState>('saved');
+  const [synced, setSynced] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => {
+    setSynced(false);
+    setHistoryOpen(false);
+  }, [pageId]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
@@ -121,7 +129,7 @@ export function PageView() {
             >
               {isMobile ? <ListTodo size={18} /> : <PanelRight size={18} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} />}
+            {canEdit && <PageMenu pageId={pageId} wsId={wsId} onHistory={() => setHistoryOpen(true)} />}
           </div>
         </header>
 
@@ -140,16 +148,20 @@ export function PageView() {
             canEdit={canEdit}
             onStatus={setStatus}
             onSave={setSave}
+            onServerSynced={() => setSynced(true)}
             onPresence={setPresence}
             onReady={onReady}
           />
+          {canEdit && editor && synced && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
           {canEdit && editor && (
             <button className="add-task-end" onClick={() => insertTaskAtEnd(editor, pageId)}>
               <Plus size={15} /> Add a task to this page
             </button>
           )}
+          <Backlinks pageId={pageId} wsId={wsId} />
         </article>
       </div>
+      <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
     </div>
   );
@@ -261,7 +273,7 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({ pageId, wsId }: { pageId: string; wsId: string }) {
+function PageMenu({ pageId, wsId, onHistory }: { pageId: string; wsId: string; onHistory: () => void }) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -297,6 +309,9 @@ function PageMenu({ pageId, wsId }: { pageId: string; wsId: string }) {
             }}
           >
             Duplicate
+          </MenuItem>
+          <MenuItem icon={<History size={15} />} onSelect={onHistory}>
+            Version history
           </MenuItem>
           <MenuSeparator />
           <div className="seg page-menu-seg" role="tablist">
@@ -341,6 +356,49 @@ function PageMenu({ pageId, wsId }: { pageId: string; wsId: string }) {
         </div>
       )}
     </Dropdown>
+  );
+}
+
+interface Backlink {
+  id: string;
+  title: string;
+  icon: string | null;
+  sectionName: string;
+  notebookName: string;
+}
+
+/** "Linked from": pages that link here with [[…]]. Refreshes when the tree changes (any page saved). */
+function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
+  const [links, setLinks] = useState<Backlink[] | null>(null);
+  const version = useStore((s) => s.tree.pages.reduce((m, p) => (p.updatedAt > m ? p.updatedAt : m), ''));
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(() => {
+      get<Backlink[]>(`/pages/${pageId}/backlinks`)
+        .then((r) => !cancelled && setLinks(r))
+        .catch(() => {});
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [pageId, version]);
+  if (!links?.length) return null;
+  return (
+    <section className="backlinks" aria-label="Linked from">
+      <h4 className="backlinks-title">
+        Linked from {links.length} {links.length === 1 ? 'page' : 'pages'}
+      </h4>
+      {links.map((l) => (
+        <Link key={l.id} to={`/w/${wsId}/p/${l.id}`} className="backlink">
+          <span className="backlink-icon">{l.icon || <FileText size={15} />}</span>
+          <span className="truncate">{l.title || 'Untitled'}</span>
+          <span className="muted small truncate">
+            {l.notebookName} › {l.sectionName}
+          </span>
+        </Link>
+      ))}
+    </section>
   );
 }
 

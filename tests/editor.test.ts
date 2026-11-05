@@ -30,6 +30,21 @@ test('slash menu ranks title prefixes first and matches keywords', () => {
   assert.deepEqual(filterSlash('zzzz'), []);
 });
 
+test('[[ page suggestions: prefix first, current page excluded, "Create" when no exact match', async () => {
+  const { pageItems } = await import('../src/editor/pageItems.ts');
+  const pg = (id: string, title: string, updatedAt = '2026-01-01') => ({ id, sectionId: 's', title, icon: null, kind: 'document' as const, position: 1, updatedAt, updatedBy: null });
+  const tree = {
+    notebooks: [{ id: 'n', workspaceId: 'w', name: 'Work', color: '', visibility: 'shared' as const, createdBy: 'u', position: 1 }],
+    sections: [{ id: 's', notebookId: 'n', name: 'Notes', color: '', position: 1 }],
+    pages: [pg('1', 'Project plan'), pg('2', 'Plan B'), pg('3', 'Roadmap'), pg('4', 'Current')],
+  };
+  const items = pageItems('plan', '4', tree);
+  assert.deepEqual(items.map((i) => (i.kind === 'page' ? i.page.title : `+${i.title}`)), ['Plan B', 'Project plan', '+plan']);
+  assert.equal(items[0].kind === 'page' && items[0].crumb, 'Work › Notes');
+  assert.ok(!pageItems('', '4', tree).some((i) => i.kind === 'page' && i.page.id === '4'));
+  assert.ok(!pageItems('roadmap', '4', tree).some((i) => i.kind === 'create'));
+});
+
 test('safeFileUrl allows upload paths and http(s) only', async () => {
   const { safeFileUrl } = await import('../src/editor/urls.ts');
   assert.equal(safeFileUrl('/uploads/0123456789abcdef0123456789abcdef.pdf'), '/uploads/0123456789abcdef0123456789abcdef.pdf');
@@ -37,4 +52,16 @@ test('safeFileUrl allows upload paths and http(s) only', async () => {
   for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,x', '//evil.com/x', '/uploads/../../x', '/api/me', 'https://a b', 42, null]) {
     assert.equal(safeFileUrl(bad), '', String(bad));
   }
+});
+
+test('templates: titles use the date, content uses only known node types', async () => {
+  const { TEMPLATES, templateById } = await import('../src/editor/templates.ts');
+  const known = new Set(['paragraph', 'text', 'heading', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'callout', 'table', 'tableRow', 'tableHeader', 'tableCell', 'details', 'detailsSummary', 'detailsContent']);
+  const d = new Date(2026, 10, 5);
+  assert.deepEqual(TEMPLATES.map((t) => t.id), ['meeting', 'project', 'journal']);
+  assert.match(templateById('journal')!.title(d), /2026/);
+  assert.match(templateById('meeting')!.title(d), /^Meeting · /);
+  type J = { type?: string; content?: J[] };
+  const walk = (n: J): string[] => [n.type ?? '', ...(n.content ?? []).flatMap(walk)];
+  for (const t of TEMPLATES) for (const type of t.content(d).flatMap(walk)) assert.ok(known.has(type), `${t.id}: ${type}`);
 });

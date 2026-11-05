@@ -28,17 +28,22 @@ export function fcmConfig(): FcmConfig | null {
 
 type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ status: number; text(): Promise<string> }>;
 
-/** FCM data values must be strings. */
+/**
+ * A data-only message: the Android app builds the notification itself
+ * (NoteAppMessagingService) so it can add snooze actions, as on iOS. High
+ * priority wakes the app's messaging service even when the app isn't running.
+ * FCM data values must be strings.
+ */
 export function fcmMessage(token: string, n: Notice) {
-  const data: Record<string, string> = { url: n.path };
+  const data: Record<string, string> = { title: n.title, body: n.body, url: n.path };
   if (n.taskId) data.taskId = n.taskId;
   if (n.snoozeToken) data.snoozeToken = n.snoozeToken;
+  if (n.tag) data.tag = n.tag;
   return {
     message: {
       token,
-      notification: { title: n.title, body: n.body },
       data,
-      android: { priority: 'high', ttl: '43200s', notification: { tag: n.tag, click_action: n.snoozeToken ? 'REMINDER' : undefined } },
+      android: { priority: 'high', ttl: '43200s', ...(n.tag ? { collapse_key: n.tag.slice(0, 64) } : {}) },
     },
   };
 }
