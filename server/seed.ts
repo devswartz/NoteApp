@@ -63,7 +63,7 @@ export function seedWorkspace(workspaceId: string, userId: string, personal: boo
     priority: 2,
   });
   const t2 = createTask(userId, workspaceId, {
-    title: 'Type [] at the start of a line to create a task',
+    title: 'Type /task on a new line to create a task',
     pageId,
     assigneeId: userId,
     dueDate: addDays(today(), 1),

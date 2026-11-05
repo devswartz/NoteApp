@@ -89,7 +89,7 @@ export const TEMPLATES: PageTemplate[] = [
         ['', '', ''],
       ]),
       h(2, 'Tasks'),
-      muted('Type [] to add a task, with dates and owners: “Draft spec friday p2 @sam”.'),
+      muted('Type /task to add a task, with dates and owners: “Draft spec friday p2 @sam”.'),
       p(),
       h(2, 'Open questions'),
       bullets(''),
