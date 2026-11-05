@@ -8,6 +8,10 @@
 //   GET    /notifications/quiet-hours             → QuietHours[] (yours, per workspace)
 //   PUT    /workspaces/:id/quiet-hours            { start, end } (HH:mm) → QuietHours
 //   DELETE /workspaces/:id/quiet-hours
+//   GET    /calendar-feed                         → { enabled }
+//   POST   /calendar-feed                         → { enabled, path } (new secret URL; resets the old one)
+//   DELETE /calendar-feed
+//   GET    /calendar/<token>.ics                  (no auth; text/calendar)
 //   POST   /notifications/devices                 { platform: 'ios'|'android', token } (mobile app)
 //   DELETE /notifications/devices                 { token }
 //   POST   /notifications/test                    → sends a test notice to yourself
@@ -28,6 +32,7 @@ import { mailConfigured } from '../mail.ts';
 import { snooze } from '../reminders/snooze.ts';
 import { deleteDeviceToken, saveDeviceToken } from '../reminders/devices.ts';
 import { clearQuietHours, listQuietHours, setQuietHours } from '../reminders/quiet.ts';
+import { buildCalendar, calendarFeedEnabled, disableCalendarFeed, feedUser, resetCalendarFeed } from '../reminders/ics.ts';
 
 export const reminderRoutes = Router();
 
@@ -41,6 +46,17 @@ publicReminderRoutes.post(
     return r;
   }),
 );
+
+/** The private calendar feed; the token in the URL is the credential. */
+publicReminderRoutes.get('/calendar/:file', (req, res) => {
+  const m = /^([\w-]+)\.ics$/.exec(param(req, 'file'));
+  const userId = m && feedUser(m[1]);
+  if (!userId) return void res.status(404).type('text/plain').send('Not found');
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.setHeader('Content-Disposition', 'inline; filename="tasks.ics"');
+  res.send(buildCalendar(userId));
+});
 
 reminderRoutes.get('/notifications/settings', h((req) => getSettings(req.user.id)));
 reminderRoutes.patch('/notifications/settings', h((req) => updateSettings(req.user.id, req.body ?? {})));
@@ -68,6 +84,17 @@ reminderRoutes.delete(
 );
 
 const lastTest = new Map<string, number>();
+
+reminderRoutes.get('/calendar-feed', h((req) => ({ enabled: calendarFeedEnabled(req.user.id) })));
+/** Creates or resets the feed; the URL (path under /api) is only returned here. */
+reminderRoutes.post('/calendar-feed', h((req) => ({ enabled: true, path: resetCalendarFeed(req.user.id) })));
+reminderRoutes.delete(
+  '/calendar-feed',
+  h((req) => {
+    disableCalendarFeed(req.user.id);
+    return { enabled: false };
+  }),
+);
 
 reminderRoutes.get('/notifications/quiet-hours', h((req) => listQuietHours(req.user.id)));
 reminderRoutes.put(

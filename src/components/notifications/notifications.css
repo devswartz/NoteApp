@@ -28,6 +28,8 @@
 .ns-text { flex: 1; min-width: 0; }
 .ns-tz { max-width: 220px; }
 .ns-test { margin-top: 12px; }
+.ns-feed { display: flex; gap: 6px; margin-top: 6px; }
+.ns-feed .input { flex: 1; min-width: 0; font-family: var(--font-mono, monospace); font-size: 12px; }
 .ns-range { display: inline-flex; align-items: center; gap: 4px; }
 .link-btn { color: var(--accent); font-size: inherit; padding: 0; background: none; }
 .ns-switch {

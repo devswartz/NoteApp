@@ -444,3 +444,44 @@ test('quiet hours: window math (wraps midnight, DST) and reminders held until th
   assert.equal((await app.call('DELETE', `/workspaces/${u.wsId}/quiet-hours`, u.token)).status, 200);
   assert.deepEqual((await app.call('GET', '/notifications/quiet-hours', u.token)).data, []);
 });
+
+test('calendar feed: secret URL, events for my dated open tasks, RRULE, reset/disable', async () => {
+  const { toRRule } = await import('../server/reminders/ics.ts');
+  const u = await setup('Calendar', 'Europe/London');
+  for (const t of (await app.call<Task[]>('GET', `/workspaces/${u.wsId}/tasks`, u.token)).data) await app.call('DELETE', `/tasks/${t.id}`, u.token);
+  await task(u, { title: 'Dentist, 2nd floor; bring card', dueDate: '2026-12-01', dueTime: '14:30' });
+  await task(u, { title: 'Pay rent', dueDate: '2026-12-01', recurrence: { freq: 'month', interval: 1, byMonthDay: 1 } });
+  await task(u, { title: 'No date' });
+  const done = await task(u, { title: 'Finished', dueDate: '2026-11-01' });
+  await app.call('PATCH', `/tasks/${done.id}`, u.token, { status: 'done' });
+
+  assert.deepEqual((await app.call('GET', '/calendar-feed', u.token)).data, { enabled: false });
+  const created = await app.call<{ path: string }>('POST', '/calendar-feed', u.token);
+  assert.match(created.data.path, /^\/calendar\/[\w-]{30,}\.ics$/);
+  const res = await fetch(`${app.origin}/api${created.data.path}`); // no auth header
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type')!, /text\/calendar/);
+  const ics = await res.text();
+  assert.match(ics, /^BEGIN:VCALENDAR\r\n/);
+  assert.match(ics, /SUMMARY:Dentist\\, 2nd floor\; bring card\r\n/);
+  assert.match(ics, /DTSTART;TZID=Europe\/London:20261201T143000\r\n/);
+  assert.match(ics, /DTSTART;VALUE=DATE:20261201\r\nDTEND;VALUE=DATE:20261202/);
+  assert.match(ics, /RRULE:FREQ=MONTHLY;BYMONTHDAY=1\r\n/);
+  assert.doesNotMatch(ics, /No date|Finished/);
+  assert.ok(ics.split('\r\n').every((l) => Buffer.byteLength(l) <= 75), 'lines folded');
+
+  // Someone else's token / garbage → 404. Reset kills the old URL.
+  assert.equal((await fetch(`${app.origin}/api/calendar/${'x'.repeat(32)}.ics`)).status, 404);
+  const again = await app.call<{ path: string }>('POST', '/calendar-feed', u.token);
+  assert.equal((await fetch(`${app.origin}/api${created.data.path}`)).status, 404);
+  assert.equal((await fetch(`${app.origin}/api${again.data.path}`)).status, 200);
+  await app.call('DELETE', '/calendar-feed', u.token);
+  assert.equal((await fetch(`${app.origin}/api${again.data.path}`)).status, 404);
+
+  assert.equal(toRRule({ freq: 'week', interval: 2, byWeekday: [4, 1] }), 'FREQ=WEEKLY;INTERVAL=2;BYDAY=TH,MO');
+  assert.equal(toRRule({ freq: 'weekday' }), 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
+  assert.equal(toRRule({ freq: 'month', interval: 1, byNthWeekday: { n: -1, weekday: 5 } }), 'FREQ=MONTHLY;BYDAY=-1FR');
+  assert.equal(toRRule({ freq: 'day', interval: 1, count: 5 }, 2), 'FREQ=DAILY;COUNT=3');
+  assert.equal(toRRule({ freq: 'day', interval: 1, until: '2027-01-31' }), 'FREQ=DAILY;UNTIL=20270131');
+  assert.equal(toRRule({ freq: 'day', interval: 3, basis: 'completion' }), null);
+});

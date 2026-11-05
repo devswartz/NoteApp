@@ -6,12 +6,13 @@
 // useAutoTimeZone() stores the browser's time zone the first time a user
 // still has the default (UTC), so due times are interpreted locally.
 import { useEffect, useState } from 'react';
-import { Bell, Mail, Clock, Globe, Send, Moon } from 'lucide-react';
+import { Bell, Mail, Clock, Globe, Send, Moon, CalendarDays } from 'lucide-react';
 import { notificationsApi, type PushInfo } from './api.ts';
 import { currentPush, pushSupported, subscribePush, unsubscribePush } from './push.ts';
 import { allTimeZones, browserTimeZone } from './timezones.ts';
 import { platform } from '../../platform/index.ts';
 import { useStore } from '../../store.ts';
+import { apiUrl } from '../../api.ts';
 import type { NotificationSettings, QuietHours } from '../../../shared/types.ts';
 import './notifications.css';
 
@@ -176,11 +177,75 @@ export function NotificationSettingsPanel({ onError, onMessage }: { onError?: (e
       </div>
 
       <QuietHoursRows onError={fail} />
+      <CalendarFeedRow onError={fail} />
 
       <button type="button" className="btn btn-secondary btn-sm ns-test" onClick={() => void sendTest()}>
         <Send size={14} /> Send a test notification
       </button>
     </section>
+  );
+}
+
+/** Private .ics feed of your dated tasks, for Apple / Google Calendar. */
+function CalendarFeedRow({ onError }: { onError: (e: unknown) => void }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    notificationsApi
+      .calendarFeed()
+      .then((r) => setEnabled(r.enabled))
+      .catch(onError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const create = async () => {
+    try {
+      const r = await notificationsApi.resetCalendarFeed();
+      setEnabled(true);
+      setUrl(new URL(apiUrl(r.path), document.baseURI).href);
+    } catch (e) {
+      onError(e);
+    }
+  };
+  const disable = async () => {
+    try {
+      await notificationsApi.disableCalendarFeed();
+      setEnabled(false);
+      setUrl(null);
+    } catch (e) {
+      onError(e);
+    }
+  };
+  if (enabled === null) return null;
+  return (
+    <div className="ns-row">
+      <CalendarDays size={16} />
+      <div className="ns-text">
+        <div>Calendar feed</div>
+        <div className="muted small">
+          {url
+            ? 'Copy this private link into Apple or Google Calendar (“subscribe by URL”). It is shown only now; anyone with it can see your dated tasks.'
+            : enabled
+              ? 'On. Reset the link to see it again (the old one stops working).'
+              : 'Subscribe to your tasks with due dates from any calendar app'}
+        </div>
+        {url && (
+          <div className="ns-feed">
+            <input className="input input-sm" readOnly value={url} aria-label="Calendar feed URL" onFocus={(e) => e.currentTarget.select()} />
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => platform.openExternal(url.replace(/^https?:/, 'webcal:'))}>
+              Subscribe
+            </button>
+          </div>
+        )}
+      </div>
+      {enabled && (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void disable()}>
+          Turn off
+        </button>
+      )}
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => void create()}>
+        {enabled ? 'Reset link' : 'Create link'}
+      </button>
+    </div>
   );
 }
 
