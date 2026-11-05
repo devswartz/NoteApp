@@ -22,7 +22,7 @@ taskRoutes.get(
   }),
 );
 
-// Empty titles are allowed: typing "[] " in a note creates the task before its title is typed.
+// Empty titles are allowed: inserting a task in a note (/task) creates it before its title is typed.
 taskRoutes.post(
   '/workspaces/:id/tasks',
   h((req) => {

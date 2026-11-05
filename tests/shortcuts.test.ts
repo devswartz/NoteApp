@@ -14,7 +14,7 @@ test('parseKeys handles sequences and modifiers', () => {
 test('formatKeys renders display labels (non-Apple in node)', () => {
   assert.deepEqual(formatKeys('mod+k'), ['Ctrl', 'K']);
   assert.deepEqual(formatKeys('g t'), ['G', 'then', 'T']);
-  assert.deepEqual(formatKeys('mod+shift+enter'), ['Ctrl', '⇧', '↵']);
+  assert.deepEqual(formatKeys('mod+shift+enter'), ['Ctrl', 'Shift', '↵']);
   assert.deepEqual(formatKeys('?'), ['?']);
 });
 
