@@ -29,7 +29,7 @@ npm run mobile:ios       # …and open Xcode   (Run on a simulator or a device)
 npm run mobile:android   # …and open Android Studio
 ```
 
-- **Server URL.** The web app is bundled into the app (instant start, opens offline) and talks to the server at `VITE_API_URL`. `mobile:build` sets that from `MOBILE_SERVER_URL`, default `https://notes.devswartz.com`. For staging: `MOBILE_SERVER_URL=https://notes-staging.devswartz.com npm run mobile:sync`. It's fixed per build; a runtime "server" field on the login screen is a possible follow-up (it needs a change in `src/api.ts`).
+- **Server URL.** The build has a default server: `MOBILE_SERVER_URL`, default `https://notes.devswartz.com` (`mobile:build` turns it into `VITE_API_URL`). On first launch the app shows a **Connect to a server** screen with that default filled in. **Change server…** is in ⌘K; Settings and the login screen can call `platform.server.change()`. The rules match the desktop app (`src/platform/serverUrl.ts`): https only, with plain http allowed only for `localhost`/`127.0.0.1`; an optional path prefix; no query string. The address is checked with `GET /api/health` before it is saved. Picking a different server signs out of the old one and restarts the app. The choice is stored in the web view's localStorage (`noteapp.serverUrl`), and `src/api.ts` re-validates it at startup. Builds that load the Vite dev server (`CAP_SERVER_URL`) skip all of this.
 - **Live reload while developing:** run `npm run dev` with `API_URL` pointing at a server, then `CAP_SERVER_URL=http://<your-LAN-IP>:5173 npx cap sync` in `apps/mobile` and run the app. The app then loads the Vite dev server instead of the bundled files. Don't ship a build made this way.
 - **App id:** `com.devswartz.noteapp` (`APP_ID` in `capacitor.config.ts`). Changing it creates a different app in the stores.
 - **App name:** `APP_NAME` in `shared/config.ts`. `npm run mobile:sync` copies it into the native projects, so a rename stays a one-line change.
@@ -45,7 +45,7 @@ npm run mobile:android   # …and open Android Studio
 | Refresh token | Keychain (iOS, `afterFirstUnlockThisDeviceOnly`, never restored to another device) / Android Keystore-encrypted storage, via `@aparajita/capacitor-secure-storage`. Small preferences stay in the web view's `localStorage`. Android backups are off (`allowBackup="false"`). |
 | Push reminders | After sign-in the app asks for notification permission, registers with APNs (iOS) or FCM (Android) and sends the token to `POST /api/notifications/devices {platform, token}`. The server's reminder worker delivers through `server/reminders/apns.ts` / `fcm.ts`. On sign-out the app unregisters, which invalidates the token; the server drops it on the next delivery attempt. |
 | Tapping a reminder | The payload's `url` (an in-app path) becomes `noteapp://w/…` and goes through the normal deep-link router (`components/DeepLinks.tsx`). Only paths starting with `/` are accepted. |
-| Snooze | iOS reminder notifications (category `REMINDER`) have *Snooze 10 minutes / 1 hour / Tomorrow* actions; the app opens and calls `POST /api/reminders/snooze`. FCM notifications on Android show no actions yet. |
+| Snooze | Reminder notifications have *Snooze 10 minutes / 1 hour / Tomorrow morning* actions, which call `POST /api/reminders/snooze` with the notification's one-time snooze token. **iOS:** category `REMINDER`; the action opens the app, which makes the request. **Android:** reminders arrive as FCM data messages, `NoteAppMessagingService` builds the notification with the actions, and `SnoozeReceiver` makes the request in the background without opening the app (the adapter gives it the server URL through `NoteAppNative.setConfig`). |
 | Local notifications | `platform.notifications.show()` (reminders for a task while the app is open) uses `@capacitor/local-notifications`, Android channel `reminders`. |
 | Deep links | `noteapp://page/<id>`, `noteapp://w/<ws>/…` and the universal / app links `https://notes.devswartz.com/w/…` (see "Server files" below). Links that arrive before the router mounts (cold start from a notification) are queued. |
 | App badge | The number of my open tasks due today or overdue in the current workspace, updated as tasks change (`@capawesome/capacitor-badge`). Cleared on sign-out. |
@@ -92,21 +92,24 @@ Set these on the server (`docs/DEPLOY_CONTRACT.md` lists the server env). Each c
 | `APNS_TEAM_ID` | Team ID |
 | `APNS_BUNDLE_ID` | `com.devswartz.noteapp` |
 | `APNS_PRIVATE_KEY` | Contents of the APNs `.p8` (newlines may be written as `\n`) |
-| `APNS_ENV` | `production` for TestFlight/App Store builds (default); `sandbox` for builds run from Xcode |
+| `APNS_ENV` | Optional: which environment to try first, `production` (default) or `sandbox`. Builds run from Xcode get sandbox tokens and TestFlight/App Store builds get production ones. A token the first environment rejects (`BadDeviceToken`) is retried on the other, and the one that works is remembered, so one server reaches both kinds of build. |
 | `FCM_SERVICE_ACCOUNT_JSON` | Firebase console → Project settings → Service accounts → Generate new private key (the JSON, raw or base64) |
 
 Firebase setup: create a Firebase project, add an Android app with package `com.devswartz.noteapp`, and download `google-services.json` (that's the GitHub secret above). iOS doesn't use Firebase; it talks to APNs directly.
 
-### Server files for universal links / app links
+### Universal links / app links (what you fill in)
 
-For `https://notes.devswartz.com/w/…` links to open the app, the server must serve (not done yet; requested from the server owner):
+`https://notes.devswartz.com/w/…` and `https://notes-staging.devswartz.com/w/…` links open the app instead of the browser. The app side is already set up: Associated Domains in `App.entitlements`, and an `autoVerify` intent filter in `AndroidManifest.xml`. The server (`server/wellKnown.ts`) serves the two verification files. They are public JSON with no redirect, and return 404 until you set these variables on **both** prod and staging:
 
-- `/.well-known/apple-app-site-association` (`application/json`, no redirect):
-  `{"applinks":{"details":[{"appIDs":["<TEAM_ID>.com.devswartz.noteapp"],"components":[{"/":"/w/*"}]}]}}`
-- `/.well-known/assetlinks.json`:
-  `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.devswartz.noteapp","sha256_cert_fingerprints":["<SHA-256 of the signing cert>"]}}]`
+| Server env | Value | Where to find it |
+|---|---|---|
+| `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) | Your 10-character Apple Team ID | developer.apple.com → Membership. It is the same value the APNs push channel uses, so it's usually already set. |
+| `ANDROID_CERT_SHA256` | SHA-256 fingerprint(s) of the certificate(s) that sign the Android app, comma-separated (with or without colons) | Play Console → your app → Test and release → App integrity → **App signing key certificate** (and the upload key certificate, if you also install builds signed with your upload key). For a local keystore: `keytool -list -v -keystore upload.jks`. Debug builds are signed with `~/.android/debug.keystore`; add its fingerprint too if you want links to open debug builds. |
+| `APNS_BUNDLE_ID` / `ANDROID_PACKAGE` | Optional; default `com.devswartz.noteapp` | |
 
-Until then, `noteapp://` links work and https links open in the browser.
+Check it: `curl -i https://notes.devswartz.com/.well-known/apple-app-site-association` and `…/assetlinks.json` should return `200` with `application/json`. Apple caches the file through its CDN, so a new iOS install may take a while to pick it up. On Android, `adb shell pm get-app-links com.devswartz.noteapp` shows whether verification passed.
+
+Only `/w/…` paths are claimed. Login links and the API always stay in the browser. Until the variables are set, `noteapp://` links work and https links open in the browser.
 
 ## CI
 

@@ -1,9 +1,11 @@
 // Live event client: applies server-pushed task/tree/member changes.
+// Tracks the server's boot id + last sequence number, and reconnects with
+// ?since= so missed events are replayed; on `resync` it reloads everything.
 import { backoffMs, freshAccessToken, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import { set, st } from './state.ts';
 import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
-import type { ServerEvent } from '../../shared/types.ts';
+import type { EventMessage, ServerEvent } from '../../shared/types.ts';
 import { commentsChanged } from '../editor/collabComments.ts';
 import { receiveNotification } from '../components/sharing/inbox.ts';
 import { toast } from './toasts.ts';
@@ -12,6 +14,8 @@ let socket: WebSocket | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let attempts = 0;
 let wanted = false;
+/** Last event seen, for catch-up on reconnect. Reset when the server restarts. */
+let cursor: { boot: string; seq: number } | null = null;
 /** Backoff resets only after a socket has stayed up a while (the server may accept, then close with 4401). */
 let healthyTimer: ReturnType<typeof setTimeout> | null = null;
 const HEALTHY_AFTER_MS = 10_000;
@@ -32,6 +36,7 @@ export function disconnectEvents() {
 /** Open the live event socket; reconnects with backoff until disconnectEvents(). */
 export function connectEvents() {
   disconnectEvents();
+  cursor = null; // new session: start fresh (bootstrap loads everything)
   wanted = true;
   attempts = 0;
   void open(true);
@@ -41,16 +46,15 @@ async function open(first: boolean) {
   if (!wanted) return;
   await freshAccessToken();
   if (!wanted || socket) return;
-  const ws = new WebSocket(wsUrl('/api/events'), wsProtocols());
+  const since = !first && cursor ? `?since=${cursor.boot}:${cursor.seq}` : '';
+  // Without a cursor (very first connect, or the first hello never arrived) we can't catch up: reload once open.
+  const reloadOnOpen = !first && !cursor;
+  const ws = new WebSocket(wsUrl(`/api/events${since}`), wsProtocols());
   socket = ws;
   ws.onopen = () => {
     healthyTimer = setTimeout(() => (attempts = 0), HEALTHY_AFTER_MS);
     set({ online: true });
-    // After a reconnect, resync anything we may have missed.
-    if (!first && st().wsId) {
-      void loadTree();
-      void loadTasks();
-    }
+    if (reloadOnOpen) resync();
   };
   ws.onclose = (e) => {
     if (healthyTimer) clearTimeout(healthyTimer);
@@ -66,7 +70,21 @@ async function open(first: boolean) {
     }
     schedule();
   };
-  ws.onmessage = (m) => handle(JSON.parse(String(m.data)) as ServerEvent);
+  ws.onmessage = (m) => {
+    let msg: EventMessage;
+    try {
+      msg = JSON.parse(String(m.data)) as EventMessage;
+    } catch {
+      return;
+    }
+    if (msg.type === 'hello') {
+      // Sent after any replay (or `resync`): from here on we're up to date.
+      cursor = { boot: msg.boot, seq: msg.seq };
+      return;
+    }
+    if (typeof msg.seq === 'number' && cursor) cursor.seq = Math.max(cursor.seq, msg.seq);
+    handle(msg);
+  };
 }
 
 function schedule() {
@@ -74,9 +92,21 @@ function schedule() {
   retryTimer = setTimeout(() => void open(false), backoffMs(attempts++));
 }
 
+/** Reload everything the event channel feeds (after a gap we can't replay). */
+function resync() {
+  void loadWorkspaces();
+  if (!st().wsId) return;
+  void loadTree();
+  void loadTasks();
+  void loadMembers();
+}
+
 function handle(ev: ServerEvent) {
   const { wsId } = st();
   switch (ev.type) {
+    case 'resync':
+      resync();
+      break;
     case 'task':
       if (ev.task.workspaceId === wsId) upsertTask(ev.task);
       break;
