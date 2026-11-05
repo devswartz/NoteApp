@@ -185,11 +185,29 @@ export function visibleTemplate(id: string, userId: string): TemplateRow | null 
   return r;
 }
 
+/** True if every member of the workspace can see the task: not owner-only, and not on a page in a private notebook. */
+function pageInSharedNotebook(pageId: string): boolean {
+  return !!db
+    .prepare(`SELECT 1 FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ? AND n.visibility = 'shared'`)
+    .get(pageId);
+}
+
+function visibleToWorkspace(taskId: string): boolean {
+  return !!db
+    .prepare(
+      `SELECT 1 FROM tasks t WHERE t.id = ? AND t.private_owner_only = 0 AND (t.page_id IS NULL OR EXISTS (
+         SELECT 1 FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id
+         WHERE p.id = t.page_id AND n.visibility = 'shared'))`,
+    )
+    .get(taskId);
+}
+
 /**
  * Build and store a template from a page's editor JSON.
  * Tasks: each taskRef the user can see becomes a snapshot (title, description, priority and subtasks),
  * everything else about the task (done state, due date, recurrence, reminder, assignee, page) is not kept.
  * Refs to tasks that are missing, in another workspace or not visible to the user are dropped.
+ * A template that keeps a task or file not everyone in the workspace can see is saved private to its creator.
  * Files: each referenced upload the user can see in this workspace is copied; others drop their node.
  */
 export function createTemplate(opts: {
@@ -205,6 +223,10 @@ export function createTemplate(opts: {
   const count = (db.prepare('SELECT COUNT(*) AS n FROM templates WHERE workspace_id = ?').get(opts.workspaceId) as { n: number }).n;
   if (count >= MAX_TEMPLATES_PER_WORKSPACE) throw new HttpError(409, `A workspace can have up to ${MAX_TEMPLATES_PER_WORKSPACE} templates`);
 
+  // A workspace template is readable by every member, so it must not carry a task or file they couldn't see
+  // (owner-only tasks, or anything on a page in a private notebook the saver merely has access to).
+  let visibility = opts.visibility;
+
   // Files: resolve and copy.
   const urls = new Set<string>();
   uploadUrls(doc, urls);
@@ -216,6 +238,7 @@ export function createTemplate(opts: {
     if (!row || row.ext !== (m[2] ?? '') || row.workspace_id !== opts.workspaceId || !opts.canSeeFile(row)) continue;
     if (!fs.existsSync(path.join(FILES_DIR, row.id + row.ext))) continue;
     resolved.set(url, row);
+    if (row.page_id && !pageInSharedNotebook(row.page_id)) visibility = 'private';
     bytes += row.size;
   }
   if (resolved.size > MAX_TEMPLATE_FILES) throw new HttpError(413, `A template can include up to ${MAX_TEMPLATE_FILES} attachments`);
@@ -231,6 +254,7 @@ export function createTemplate(opts: {
       | { title: string; description: string; priority: number }
       | undefined;
     if (!t || !taskVisible(id, opts.userId)) return null;
+    if (!visibleToWorkspace(id)) visibility = 'private';
     if (tasks.length >= MAX_TEMPLATE_TASKS || tasks.length + subtotal >= MAX_TEMPLATE_TASKS_TOTAL)
       throw new HttpError(413, `A template can include up to ${MAX_TEMPLATE_TASKS} tasks (${MAX_TEMPLATE_TASKS_TOTAL} with subtasks)`);
     const subs = db
@@ -258,13 +282,14 @@ export function createTemplate(opts: {
       db.prepare(
         `INSERT INTO templates (id, workspace_id, name, icon, visibility, content, tasks, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, '{}', '[]', ?, ?, ?)`,
-      ).run(templateId, opts.workspaceId, opts.name, opts.icon, opts.visibility, opts.userId, ts, ts);
+      ).run(templateId, opts.workspaceId, opts.name, opts.icon, visibility, opts.userId, ts, ts);
       for (const [url, row] of resolved) {
         const c = copyFile(row, { workspaceId: opts.workspaceId, pageId: null, templateId, userId: opts.userId });
         written.push(c.path);
         newUrl.set(url, c.url);
       }
       const out = walk(doc, { file: (u) => newUrl.get(u) ?? null, task: taskKey, resetChecks: true }, 0);
+      db.prepare('UPDATE templates SET visibility = ? WHERE id = ?').run(visibility, templateId);
       const content = JSON.stringify(out);
       if (Buffer.byteLength(content) > MAX_TEMPLATE_CONTENT_BYTES) throw new HttpError(413, 'That page is too large for a template');
       db.prepare('UPDATE templates SET content = ?, tasks = ? WHERE id = ?').run(content, JSON.stringify(tasks), templateId);

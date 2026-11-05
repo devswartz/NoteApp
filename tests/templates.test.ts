@@ -256,6 +256,36 @@ test('workspace scoping: foreign tasks and files are not captured; templates onl
   assert.ok(!(await list(other, other.wsId)).some((t) => t.id === saved.data.id));
 });
 
+test('a template that keeps a task or file from a private notebook is saved private, not to the workspace', async () => {
+  // The owner's private-notebook task is assigned to the member, so the member can see it (and so could snapshot it).
+  const secret = await mkTask(owner, priv.page, { title: 'Salary review', description: 'confidential' });
+  assert.equal((await app.call('PATCH', `/tasks/${secret}`, owner.token, { assigneeId: member.user.id })).status, 200);
+  const visible = await mkTask(owner, shared.page, { title: 'Public task' });
+
+  const r = await save(member, shared.page, doc(ref(visible), ref(secret)), 'Has private task');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.taskCount, 2);
+  assert.equal(r.data.visibility, 'private');
+  for (const u of [owner, admin, viewer]) assert.ok(!(await list(u)).some((t) => t.id === r.data.id), 'other members never see it');
+  assert.equal((await app.call('POST', `/templates/${r.data.id}/use`, owner.token, { pageId: shared.page })).status, 404);
+  assert.ok((await list(member)).some((t) => t.id === r.data.id), 'its creator still does');
+
+  // A file on a private-notebook page that the saver has access to behaves the same way.
+  const file = await upload(owner.token, ws, priv.page);
+  await app.call('PUT', `/notebooks/${priv.nb}/shares`, owner.token, { userIds: [member.user.id] });
+  const f = await save(member, shared.page, doc({ type: 'fileAttachment', attrs: { url: file.url } }), 'Has private file');
+  assert.equal(f.status, 200);
+  assert.equal(f.data.fileCount, 1);
+  assert.equal(f.data.visibility, 'private');
+  assert.ok(!(await list(admin)).some((t) => t.id === f.data.id));
+
+  // Only shared-notebook tasks: stays workspace-visible.
+  const ok = await save(member, shared.page, doc(ref(visible)), 'Public only');
+  assert.equal(ok.data.visibility, 'workspace');
+  assert.ok((await list(admin)).some((t) => t.id === ok.data.id));
+  await app.call('PUT', `/notebooks/${priv.nb}/shares`, owner.token, { userIds: [] });
+});
+
 test('limits: name, content shape and size, attachment and template counts', async () => {
   const p = shared.page;
   assert.equal((await save(member, p, doc(), 'n'.repeat(101))).status, 400);

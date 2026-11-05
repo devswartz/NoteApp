@@ -332,7 +332,15 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
     });
     if (!name) return;
     saveAsTemplate(editor, pageId, name, current?.icon)
-      .then(() => toast(inPrivate ? 'Template saved (only you can see it)' : 'Template saved for the workspace'))
+      .then((t) =>
+        toast(
+          t.visibility === 'private'
+            ? inPrivate
+              ? 'Template saved (only you can see it)'
+              : 'Template saved, but only you can see it: it includes private tasks or files'
+            : 'Template saved for the workspace',
+        ),
+      )
       .catch(errorToast);
   };
   const run = (sectionId: string, label: string) => {
