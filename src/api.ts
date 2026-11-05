@@ -103,6 +103,25 @@ export function refreshSession(): Promise<AuthSession | null> {
   return refreshing;
 }
 
+/**
+ * After a socket was rejected with 4401: refresh the session. 'signed-out'
+ * means the refresh token was definitively rejected (the app is told to sign
+ * out); 'retry' means the server couldn't be reached and the caller should
+ * back off and try again.
+ */
+export async function reauthorize(): Promise<'ok' | 'signed-out' | 'retry'> {
+  try {
+    if (await refreshSession()) return 'ok';
+    notifyUnauthorized();
+    return 'signed-out';
+  } catch {
+    return 'retry';
+  }
+}
+
+/** Exponential backoff with jitter: ~1 s, 2 s, 4 s … capped at 30 s. */
+export const backoffMs = (attempt: number) => Math.min(30_000, 1000 * 2 ** attempt) * (0.75 + Math.random() / 2);
+
 /** A valid access token, refreshing first if it is about to expire. */
 export async function freshAccessToken(): Promise<string | null> {
   if (access && access.expiresAt - Date.now() > 30_000) return access.token;
