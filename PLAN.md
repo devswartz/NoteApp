@@ -1,6 +1,6 @@
 # NoteApp — Project Plan
 
-Status: **draft for review**. No further feature work starts until this is approved.
+Status: **approved 2026-11-05**. Live progress is in `docs/STATUS.md`.
 
 ## 1. Product scope
 
@@ -90,7 +90,7 @@ A **manager session** coordinates and reviews; it doesn't write feature code. Up
 
 | # | Agent | Owns | Phase |
 |---|---|---|---|
-| 1 | **Foundation** (the existing builder session) | Repo layout, `server/db*`, `server/auth*`, `shared/types.ts`, the `src/platform/` adapter, conventions; afterwards owns **merging and resolving conflicts in shared files** | 0, then 1 |
+| 1 | **Foundation** (the existing builder session) | Repo layout, `server/db*`, `server/auth*`, `shared/types.ts`, the `src/platform/` adapter, conventions; afterwards owns the API client, offline/PWA and fixes when merges break `main` | 0, then 1 |
 | 2 | **Editor & Notes** | `src/editor/**`, page view, page tree drag-and-drop, attachments/images (`server/files*`), search (FTS) | 1 |
 | 3 | **Tasks & Dashboard** | `server/tasks*`, `shared/quickadd.ts`, `src/pages/Tasks*`, calendar, filters, task detail panel | 1 |
 | 4 | **Collaboration & Access** | `server/collab*`, `server/access*`, `server/events*`, presence/cursors, sharing UI, invites, roles | 1 |
@@ -105,10 +105,10 @@ Phase 1 runs agents 1–8 in parallel (8 sessions). Agents 9 and 10 start once P
 
 **Working rules**
 - `main` is the integration branch. Each agent works on `feat/<area>` and opens PRs into `main`. Keep PRs small and frequent; rebase on `main` daily.
-- Change only paths you own. If you need a change in shared code (`shared/types.ts`, the DB schema, `App.tsx` routes), make a small, separate PR for it and say so in its description. Agent 1 lands those first.
+- Change only paths you own. If you need a change in shared code (`shared/types.ts`, the DB schema, `App.tsx` routes), make a small, separate PR for it and say so in its description. The manager merges those first.
 - DB schema changes are new migrations only; never edit an existing one.
 - Every PR has passing CI and a short "what changed / how I tested it" note.
-- The manager reviews PRs. **The user approves merges** (or tells the manager it can merge).
+- The manager reviews and merges PRs once CI is green.
 - Each agent keeps a short status section in its PR description, so the manager can track progress without reading transcripts.
 
 ## 7. Risks
@@ -122,9 +122,10 @@ Phase 1 runs agents 1–8 in parallel (8 sessions). Agents 9 and 10 start once P
 | Merge conflicts across 8 parallel agents | Path ownership, a shared-change PR lane run by agent 1, daily rebases |
 | Homelab outage | Offline cache for reading notes; backups copied off the box; documented restore |
 
-## 8. Open decisions for the user
-1. Final domain: `notes.devswartz.com`?
-2. SMTP provider for invites and reminder emails (e.g. Resend, Postmark, or Gmail SMTP).
-3. Apple Developer account ($99/yr) — needed for Mac notarisation (Phase 2) and TestFlight (Phase 3).
-4. App name and icon (currently "NoteApp").
-5. Which Proxmox host / CTID to use, and the backup destination.
+## 8. Decisions (settled 2026-11-05)
+1. Domain: `notes.devswartz.com` (prod), `notes-staging.devswartz.com` (staging).
+2. Email: AWS SES via SMTP.
+3. Apple Developer account: available (Phase 2/3).
+4. Name: "NoteApp" for now; it will be renamed, so keep the name in one config constant.
+5. Homelab: set up by a separate homelab agent from `docs/HOMELAB_BRIEF.md`, against `docs/DEPLOY_CONTRACT.md`. Deploys are pull-based (GHCR).
+6. The manager merges PRs after review + green CI. About 4–5 worker sessions at a time.
