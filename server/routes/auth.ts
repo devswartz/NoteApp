@@ -29,8 +29,9 @@ publicAuthRoutes.post(
       db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
         id, email, name, bcrypt.hashSync(password, 10), color, ts,
       );
-      // Accept any pending invitations for this email.
-      const invites = db.prepare('SELECT workspace_id, role FROM workspace_invites WHERE email = ?').all(email) as {
+      // Accept any pending, unexpired invitations for this email (expired ones stay listed for admins to resend).
+      const live = '(expires_at IS NULL OR expires_at > ?)';
+      const invites = db.prepare(`SELECT workspace_id, role FROM workspace_invites WHERE email = ? AND ${live}`).all(email, ts) as {
         workspace_id: string;
         role: Role;
       }[];
@@ -40,7 +41,7 @@ publicAuthRoutes.post(
         );
         publish({ type: 'members', workspaceId: inv.workspace_id });
       }
-      db.prepare('DELETE FROM workspace_invites WHERE email = ?').run(email);
+      db.prepare(`DELETE FROM workspace_invites WHERE email = ? AND ${live}`).run(email, ts);
       createWorkspace(id, `${name.split(' ')[0]}'s Space`, true);
     })();
     return { ...issueSession(id, req.get('user-agent') ?? null), user: { id, email, name, color } } satisfies AuthSession;

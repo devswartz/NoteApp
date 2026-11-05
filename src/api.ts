@@ -1,15 +1,21 @@
 // API client: base URL, bearer-token session (access + rotating refresh token),
 // JSON fetch wrapper with one transparent refresh-and-retry on 401.
 //
-// - The API base is VITE_API_URL (native shells, other origins) or the page's
-//   own origin. WebSocket URLs are derived from it.
+// - The API base is the server the desktop shell injects (__NOTEAPP_API_URL__),
+//   else VITE_API_URL (other shells, other origins), else the page's own
+//   origin. WebSocket URLs are derived from it.
 // - The access token lives only in memory. The refresh token is persisted
 //   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
 //   tab and serialized across tabs, each reading the latest stored token.
 import type { AuthSession } from '../shared/types.ts';
-import { platform } from './platform/index.ts';
+import { detectPlatform, platform } from './platform/index.ts';
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
+// The desktop shell injects its configured server before any script runs. Only
+// trusted inside Tauri and only as a string, so a DOM element with that id
+// (DOM clobbering) can't redirect the web build's API calls.
+const injectedApiUrl = (globalThis as { __NOTEAPP_API_URL__?: unknown }).__NOTEAPP_API_URL__;
+const shellApiUrl = detectPlatform() === 'tauri' && typeof injectedApiUrl === 'string' ? injectedApiUrl : undefined;
+const API_BASE = (shellApiUrl ?? import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 /** Absolute or same-origin URL for an API path ("/me" → ".../api/me"). */
 export const apiUrl = (path: string) => `${API_BASE}/api${path}`;

@@ -5,12 +5,15 @@ import { requireAuth } from '../auth.ts';
 import { errorHandler } from '../http.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
 import { healthRoutes } from './health.ts';
-import { workspaceRoutes } from './workspaces.ts';
+import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
 import { taskRoutes } from './tasks.ts';
 import { searchRoutes } from './search.ts';
 import { fileRoutes } from './files.ts';
+import { commentRoutes } from './comments.ts';
+import { notificationRoutes } from './notifications.ts';
+import { activityRecorder, activityRoutes } from './activity.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
@@ -21,11 +24,13 @@ api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, n
 // No token needed.
 api.use(healthRoutes);
 api.use(publicAuthRoutes);
+api.use(publicWorkspaceRoutes);
 
 // The live event stream (/api/events) is a WebSocket: see server/events.ts and server/app.ts.
 
 // Everything below requires a signed-in user.
 api.use(requireAuth);
+api.use(activityRecorder); // activity feed: observes mutating requests, never blocks them
 api.use(authRoutes);
 api.use(workspaceRoutes);
 api.use(treeRoutes);
@@ -33,5 +38,8 @@ api.use(pageRoutes);
 api.use(taskRoutes);
 api.use(searchRoutes);
 api.use(fileRoutes);
+api.use(commentRoutes);
+api.use(notificationRoutes);
+api.use(activityRoutes);
 
 api.use(errorHandler);
