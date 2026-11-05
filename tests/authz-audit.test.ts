@@ -10,6 +10,7 @@
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import WS from 'ws';
+import crypto from 'node:crypto';
 import { startTestApp, type TestApp, type TestUser } from './helpers/app.ts';
 
 type Who = 'anon' | 'stranger' | 'viewer' | 'member' | 'private';
@@ -24,6 +25,9 @@ before(async () => {
 after(() => app.close());
 
 interface Fx {
+  /** Comment thread + its first comment on `page` (when the comments routes exist). */
+  thread: string;
+  comment: string;
   ws: string;
   nb: string;
   sec: string;
@@ -62,7 +66,14 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
     const page = (await app.call('POST', `/sections/${sec}/pages`, o, { title: 'Page' })).data.id;
     const task = (await app.call('POST', `/workspaces/${ws}/tasks`, o, { title: 'Task', pageId: page })).data.id;
     const file = (await upload(o, ws, page)).data.id;
-    return { ws, nb, sec, page, task, file, target: target.user.id, email, invite };
+    let thread = 'no-comments-route';
+    let comment = 'no-comments-route';
+    if ((await registeredRoutes()).has('POST /pages/:id/comments')) {
+      const t = await app.call('POST', `/pages/${page}/comments`, o, { threadId: crypto.randomUUID(), quote: 'q', body: 'Owner comment' });
+      thread = t.data.id;
+      comment = t.data.comments[0].id;
+    }
+    return { ws, nb, sec, page, task, file, thread, comment, target: target.user.id, email, invite };
   };
   return { shared: await make('shared'), priv: await make('private') };
 }
@@ -141,6 +152,19 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
   { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: inPrivate(WRITE) },
   { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: inPrivate(WRITE) },
+  // Team view (#18), comments (#28), notifications (#29), activity (#33): audited as soon as they're registered.
+  { method: 'GET', route: '/workspaces/:id/team', path: (f) => `/workspaces/${f.ws}/team`, expect: READ },
+  { method: 'GET', route: '/workspaces/:id/activity', path: (f) => `/workspaces/${f.ws}/activity`, expect: READ },
+  { method: 'GET', route: '/notifications', path: () => '/notifications', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/notifications/read-all', path: () => '/notifications/read-all', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/notifications/:id/read', path: () => `/notifications/${crypto.randomUUID()}/read`, expect: { stranger: 200, ...READ } }, // only ever touches your own
+  { method: 'GET', route: '/pages/:id/comments', path: (f) => `/pages/${f.page}/comments`, expect: inPrivate(READ) },
+  { method: 'POST', route: '/pages/:id/comments', path: (f) => `/pages/${f.page}/comments`, body: () => ({ threadId: crypto.randomUUID(), body: 'Hi' }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/comment-threads/:id/replies', path: (f) => `/comment-threads/${f.thread}/replies`, body: () => ({ body: 'Reply' }), expect: inPrivate(WRITE) },
+  { method: 'PATCH', route: '/comment-threads/:id', path: (f) => `/comment-threads/${f.thread}`, body: () => ({ resolved: true }), expect: inPrivate(WRITE) },
+  { method: 'DELETE', route: '/comment-threads/:id', path: (f) => `/comment-threads/${f.thread}`, expect: inPrivate(ADMIN) }, // creator or admin
+  { method: 'PATCH', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, body: () => ({ body: 'Edit' }), expect: inPrivate(ADMIN) }, // author only
+  { method: 'DELETE', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, expect: inPrivate(ADMIN) }, // author or admin
   {
     method: 'GET',
     route: '/files/:id',
@@ -166,8 +190,24 @@ async function run(r: Row, f: Fx, who: Who): Promise<number> {
   return (await app.call(r.method, r.path(f), token, r.body?.(f))).status;
 }
 
+/** Every (METHOD path) registered on the real /api router, walking mounted routers recursively. */
+async function registeredRoutes(): Promise<Set<string>> {
+  const { api } = await import('../server/routes/index.ts');
+  type Layer = { route?: { path: string; methods: Record<string, boolean> }; handle?: { stack?: Layer[] } };
+  const out = new Set<string>();
+  const walk = (stack: Layer[]) => {
+    for (const layer of stack) {
+      if (layer.route) for (const m of Object.keys(layer.route.methods)) out.add(`${m.toUpperCase()} ${layer.route.path}`);
+      else if (layer.handle?.stack) walk(layer.handle.stack);
+    }
+  };
+  walk((api as unknown as { stack: Layer[] }).stack);
+  return out;
+}
+
 for (const r of ROWS) {
-  test(`authz: ${r.method} ${r.route}`, { todo: r.known }, async () => {
+  test(`authz: ${r.method} ${r.route}`, { todo: r.known }, async (t) => {
+    if (!(await registeredRoutes()).has(`${r.method} ${r.route}`)) return t.skip('route not registered on this branch');
     const got: string[] = [];
     for (const who of WHO) {
       const { shared, priv } = await fixture();
@@ -179,15 +219,8 @@ for (const r of ROWS) {
   });
 }
 
-test('authz: every registered REST route is in the audit table', async () => {
-  const mods = await Promise.all(
-    ['auth', 'health', 'workspaces', 'tree', 'pages', 'tasks', 'search', 'files'].map((m) => import(`../server/routes/${m}.ts`)),
-  );
-  const registered = new Set<string>();
-  for (const mod of mods)
-    for (const router of Object.values(mod))
-      for (const layer of ((router as { stack?: { route?: { path: string; methods: Record<string, boolean> } }[] }).stack ?? []))
-        if (layer.route) for (const m of Object.keys(layer.route.methods)) registered.add(`${m.toUpperCase()} ${layer.route.path}`);
+test('authz: every route registered on the /api router is in the audit table', async () => {
+  const registered = await registeredRoutes();
   const audited = new Set(ROWS.map((r) => `${r.method} ${r.route}`));
   const missing = [...registered].filter((r) => !audited.has(r));
   assert.deepEqual(missing, [], `routes missing from the authorization audit: ${missing.join(', ')}`);
