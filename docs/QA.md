@@ -25,6 +25,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 - **Every test makes its own users**, with unique emails, so tests can run in parallel against one server.
 - **No fixed sleeps.** Wait on UI state (`expect(...).toBeVisible()`), or on server state with `eventually(() => listTasks(...), check)`.
 - **Selectors follow the UI primitives (#20):** menu entries are `getByRole('menuitem', { name })`, and icon buttons are `getByRole('button', { name })` (their name comes from `aria-label`/`title`). Use dialog/toolbar/radiogroup roles with their labels. Don't assert on toast wording; assert on the outcome.
+- **Avoid hover-revealed buttons** when there's another way in: right-click the sidebar row (same menu as the ⋯ button) or use the command palette. Hover reveals can animate and never settle under load, so Playwright's stability check times out.
 - Two users = two `browser.newContext()`s (see `03-collab.spec.ts`).
 - A feature that isn't on `main` yet: `test.fixme(true, 'waiting for feature: …')`. A known bug: `test.fixme(true, 'BUG-N: …')` plus an entry below.
 
@@ -49,20 +50,13 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
 | 16 | Page links (#25): `[[` to an existing page, open it, "Linked from" backlink, rename shows through, create from `[[`. Callout + toggle blocks persist (#21) | `16-links-blocks.spec.ts` | ✅ |
 | 17 | Live-event catch-up after a dropped socket (#18): tasks created, edited or completed while away appear on reconnect without a reload. Version history restore (#37). "Meeting notes" template on an empty page (#27). Change password (#61) | `17-sync-history-account.spec.ts` | ✅ |
-| 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages | `18-sidebar.spec.ts` | ✅ |
+| 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages ; New notebook dialog with the "Team project" template (#71) | `18-sidebar.spec.ts` | ✅ |
 | 19 | Invite-only sign-up (#67, `SIGNUP_MODE=invite`): an `ADMIN_EMAILS` account can bootstrap; strangers see "Sign-up is by invitation" and get 403 from the API; an invited email signs up through the invite link and lands in the team | `19-signup.invite.spec.ts` | ✅ |
-| 21 | Comment threads (#28/#55/#62): select text → bubble menu Comment → highlight; another member sees it live and replies; resolve hides it under "Show 1 resolved" (live for others); reopen | `21-comments.spec.ts` | ✅ |
+| 21 | Comment threads (#28/#55/#62): select text → bubble menu Comment → highlight; another member sees it live and replies; resolve hides it under "Show 1 resolved" (live for others); reopen ; @mention in a comment notifies the person (#29, inbox API) | `21-comments.spec.ts` | ✅ / bell in header: fixme (`NotificationBell` not mounted yet) |
 
 ## Open bugs
 
-### BUG-4: a change made while the app is still connecting live events is never shown (until reload)
-- **Area / owner:** Collaboration (`src/store/events.ts`: on the *first* connect there is no `?since=` and no `resync()`. Catch-up only happens on reconnects.)
-- **Found on:** main @ 890bb6d, 2026-11-05 (3 out of 3 runs with the socket held for a moment; occasionally at random, it was the cause of a flake in a new test)
-- **Steps:** 1. B opens the dashboard; tasks load over REST. 2. Before B's `/api/events` socket is open (slow network, or a token refresh first), A assigns B a task. 3. The socket opens and later changes arrive live.
-- **Expected:** B sees A's task: changes between the initial load and the first `hello` are caught up.
-- **Actual:** that task never appears for B until a reload, though everything after it does.
-- **Suggested direction:** include the event cursor (`boot:seq`) in the initial REST loads and connect with `?since=`, or simply `resync()` once after the first `hello`.
-- **Test:** `tests/e2e/17-sync-history-account.spec.ts` › "a change made while the app is still connecting its live events is not lost" (`test.fixme`; deterministic: it holds the socket until the dashboard has loaded)
+None open.
 
 <!-- Template:
 ### BUG-N: short title
@@ -76,6 +70,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Fixed bugs
 
+- **BUG-4** (Collaboration): a change made while the app was still opening its first live-events connection was never shown until a reload. Fixed by #76 (reload once the first hello arrives); test `17-sync-history-account` › "a change made while the app is still connecting its live events is not lost" enabled.
 - **BUG-3** (Editor & Notes): a page title typed just before navigating away was lost (debounced save cancelled on unmount). Fixed by #66; test `10-notes-edge` › "a page title typed just before navigating away is still saved" enabled.
 - **BUG-1** (Foundation, offline/PWA): reloading while offline showed the login screen, so cached notes couldn't open. Fixed by #35 (precached shell, offline cold start, read-only data cache); test `08-offline` › "…still opens after a reload while offline" enabled.
 - **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.
