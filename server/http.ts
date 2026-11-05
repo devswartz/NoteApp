@@ -32,6 +32,8 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
   if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.parse.failed')
     return res.status(400).json({ error: 'Invalid JSON' });
+  if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.too.large')
+    return res.status(413).json({ error: 'Request is too large' });
   console.error(err);
   res.status(500).json({ error: 'Something went wrong' });
 }

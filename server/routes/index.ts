@@ -15,7 +15,8 @@ import { fileRoutes } from './files.ts';
 export { UPLOAD_DIR } from './files.ts';
 
 export const api = Router();
-const json = express.json({ limit: '1mb' });
+// JSON bodies are small: the largest field is a task description (50 000 chars, up to ~200 KB of UTF-8). Uploads are raw, not JSON.
+const json = express.json({ limit: '512kb' });
 api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, next)));
 
 // No token needed.
