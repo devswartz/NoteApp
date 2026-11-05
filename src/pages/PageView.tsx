@@ -127,6 +127,7 @@ export function PageView() {
           <NoteEditor
             key={`editor-${pageId}`}
             pageId={pageId}
+            workspaceId={wsId}
             user={user}
             canEdit={canEdit}
             onStatus={setStatus}
