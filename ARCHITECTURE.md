@@ -59,6 +59,7 @@ server/
   routes/          REST API, one Router per area, registered in routes/index.ts
     index.ts       Registration: public routes, then requireAuth, then each area (add one line per area)
     auth.ts        /auth/register, /auth/login, /auth/verify-email, /auth/resend-verification, /me
+    clientErrors.ts  POST /client-errors (public; logs a warn line, stores nothing)
     workspaces.ts  /workspaces, members, invites
     tree.ts        /workspaces/:id/tree, notebooks, sections
     pages.ts       /sections/:id/pages, /pages/:id
@@ -197,6 +198,7 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 - **Server logs** (`server/log.ts`): `log.info/warn/error(msg, fields)`. In production each line is one JSON object on stdout/stderr; in dev the lines are readable. `LOG_LEVEL` (default `info` in production, `debug` in dev) sets the threshold. Use it instead of `console.*` in new server code.
 - **Request ids** (`server/requests.ts`): every `/api` request gets an id (a sane incoming `X-Request-Id` is kept), echoed in the `X-Request-Id` response header and logged with method, path (never the query string), status, time and user. 5xx responses are logged at `error` and return `{error, requestId}`, with no internals. The client shows `(ref xxxxxxxx)` in the error toast so a report can be matched to the log.
+- **Client error reports** (`src/lib/errorReporting.ts` + `errorFilter.ts`, `server/routes/clientErrors.ts`): the browser and native shells report uncaught errors (`error` event), unhandled rejections and React render errors (`ErrorBoundary`) to `POST /api/client-errors` (API base URL logic from `src/api.ts`, so desktop/mobile shells reach their configured server; `fetch` with `keepalive`, no retries, bearer token attached when signed in). The client sends at most 5 a minute, de-duplicates identical message+stack for a minute, never reports offline, and ignores ResizeObserver noise, opaque cross-origin "Script error.", aborts/failed fetches, extension code and API answers below 500. The server needs no auth (a bad or expired token is just anonymous), rate limits per IP (20, then 10/min) and server-wide (300, then 5/s) with 429 + `Retry-After`, caps the body at 16 KB (413), validates and truncates the fields, strips query strings and fragments from URLs (and masks `/invite/<token>`), answers 204 and **writes nothing to the database**. Each report is one log line at `warn` with `event: "client_error"`: `serverVersion` (`GIT_SHA`), `clientVersion`, `userId` or null, `requestId`, `kind` (`error`, `unhandledrejection`, `react`), `message`, `stack`, `componentStack`, `source`, `line`, `col`, `url`, `userAgent`. Read them with `docker logs <container> 2>&1 | grep '"event":"client_error"' | jq .` (warn goes to stderr, hence `2>&1`); group by `message` or filter by `userId` to follow one person. The client version is the build's `GIT_SHA` if set, else the package version.
 - **Client:** `ErrorBoundary` wraps the app (full-page fallback), and `RouteBoundary` wraps each workspace screen, resetting on navigation, so one broken view doesn't take down the shell. GET/HEAD requests retry network errors and 502/503/504 twice with backoff (not when the browser is known to be offline). Writes are never retried. Unhandled API rejections become toasts. `errorMessage(e)` in the store gives user-facing text.
 - **Admin:** instance admins are the emails in `ADMIN_EMAILS` (comma-separated), or the first account ever created if that's unset. `GET /api/admin/stats` returns version, uptime, memory, DB size and row counts, live sessions, open sockets (collab pages/connections, event sockets) and request counts with p50/p95/p99 latency. Everyone else gets 403.
 
@@ -243,7 +245,7 @@ Client-side task writes are optimistic with rollback (`createTask`, `updateTask`
 All under `/api`, JSON, bearer token except where noted:
 
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` → `AuthSession`; `POST /auth/logout` (no access token needed); `POST /auth/verify-email {token}` (public) and `POST /auth/resend-verification` (signed in; the only routes besides `GET /me` open to an unverified user)
-- `GET /health` (no auth)
+- `GET /health` (no auth); `POST /client-errors` (no auth, optional bearer, 204: browser error reports, logged only, see "Errors, logging and admin")
 - `GET/PATCH /me`; live events are the `/api/events` WebSocket, not REST
 - `GET/POST /workspaces`, `PATCH/DELETE /workspaces/:id`, members: `GET/POST /workspaces/:id/members`, `PATCH/DELETE /workspaces/:id/members/:userId`, `DELETE /workspaces/:id/invites/:email`
 - Tree: `GET /workspaces/:id/tree`, `POST /workspaces/:id/notebooks`, `PATCH/DELETE /notebooks/:id`, `POST /notebooks/:id/sections`, `PATCH/DELETE /sections/:id`, `POST /sections/:id/pages`, `GET/PATCH/DELETE /pages/:id`

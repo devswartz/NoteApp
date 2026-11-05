@@ -26,6 +26,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Security headers: strict CSP, HSTS, framing, and referrer and permissions policies (#51).
 - Password reset by email, change password, and an avatar colour. Auth hardening: constant-time checks, async bcrypt, and the 72-byte password limit (#61).
 - Error handling, request IDs, structured JSON logs and admin stats (`ADMIN_EMAILS`), and **invite-only sign-up in production** (`SIGNUP_MODE`) (#67).
+- Client error reporting: the app reports uncaught errors, unhandled rejections and React render errors to `POST /api/client-errors`, which is rate limited, size capped and only writes a structured `client_error` warn log line (nothing is stored). Throttled and de-duplicated on the client; query strings are never sent or logged.
 - Offline/PWA: precached app shell with an update prompt, offline cold start, and a read-only data cache for tasks (fixes BUG-1) (#35).
 
 ### Notes and editor

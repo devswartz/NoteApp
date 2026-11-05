@@ -103,6 +103,9 @@ export const LIMITS = {
   resendUserMinute: { capacity: 1, perMinute: 1 }, // per user: one a minute …
   resendUserHour: { capacity: 5, perMinute: 5 / 60 }, // … and five an hour
   resendIp: { capacity: 10, perMinute: 0.5 }, // per IP, across accounts: 10, then one every two minutes
+  // Client error reports (POST /client-errors, no auth): a crash loop on one device must not flood the log.
+  clientErrorIp: { capacity: 20, perMinute: 10 },
+  clientErrorGlobal: { capacity: 300, perMinute: 300 }, // whole server: 5/s sustained
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -227,6 +230,21 @@ export function takeResend(req: Request, userId: string): number {
   }
   if (wait) taken.forEach((c) => limiters[c.limiter].refund(c.key));
   return wait;
+}
+
+/**
+ * Rate limit for POST /client-errors (public): per IP and server-wide. Returns 0 if allowed, else seconds to wait.
+ * A refused request costs nothing. Follows the usual loopback exemption.
+ */
+export function takeClientError(req: Request): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { ip, loopback } = clientIp(req);
+  if (loopback && process.env.RATE_LIMIT_LOOPBACK !== '1') return 0;
+  const wait = limiters.clientErrorIp.take(ip);
+  if (wait) return wait;
+  const g = limiters.clientErrorGlobal.take('all');
+  if (g) limiters.clientErrorIp.refund(ip);
+  return g;
 }
 
 export function refuse(res: Response, wait: number) {
