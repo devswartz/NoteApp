@@ -17,7 +17,7 @@ test('a viewer can read but not edit pages or tasks', async ({ page, context, re
   await expect(page.locator('.page-title')).toHaveAttribute('readonly', '');
 
   // No create affordances in the sidebar.
-  await expect(page.getByTitle('New notebook')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New notebook', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Add task' })).toHaveCount(0);
 
   // Tasks are visible but their checkboxes are disabled.
@@ -89,8 +89,8 @@ test('a private notebook is hidden from other members', async ({ browser, reques
   await expect(bSidebar.getByText('Team Wiki')).toBeVisible();
   const nbRow = a.locator('.sb-row', { hasText: 'Alice Diary' });
   await nbRow.hover();
-  await nbRow.getByTitle('Notebook options').click();
-  await a.getByRole('button', { name: 'Share with workspace' }).click();
+  await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
+  await a.getByRole('menuitem', { name: 'Share with workspace' }).click();
   await expect(bSidebar.getByText('Alice Diary')).toBeVisible();
   await ac.close();
   await bc.close();

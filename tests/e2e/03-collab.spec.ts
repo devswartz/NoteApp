@@ -17,7 +17,7 @@ test('invite by email → invitee signs up and lands in the team workspace', asy
   await a.page.goto(`/w/${teamId}/settings`);
   await a.page.getByPlaceholder('teammate@company.com').fill(inviteeEmail);
   await a.page.getByRole('button', { name: 'Invite', exact: true }).click();
-  await expect(a.page.locator('.toast')).toContainText('Invitation saved');
+  await expect(a.page.locator('.toast')).toContainText(inviteeEmail); // wording varies; it names the invitee
   const pending = a.page.locator('.member-row', { hasText: inviteeEmail });
   await expect(pending).toContainText('Invited');
 
@@ -31,7 +31,7 @@ test('invite by email → invitee signs up and lands in the team workspace', asy
   await b.getByLabel('Password').fill(PASSWORD);
   await b.getByRole('button', { name: 'Create account' }).click();
   await b.locator('.ws-switch').click();
-  await b.locator('.menu').getByRole('button', { name: /Invite Team/ }).click();
+  await b.locator('.menu').getByRole('menuitem', { name: /Invite Team/ }).click();
   await expect(b.locator('.ws-switch')).toContainText('Invite Team');
 
   // The owner's member list turns the invite into a member, live.
