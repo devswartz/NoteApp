@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom';
-import { Menu, Sun, Inbox, Search, Plus, BookOpen, PanelLeftOpen } from 'lucide-react';
+import { Navigate, Outlet, useParams } from 'react-router-dom';
+import { PanelLeftOpen } from 'lucide-react';
 import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
 import { DialogHost } from './shell/dialogs.tsx';
+import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
@@ -34,6 +35,7 @@ export function AppShell() {
   useShellCommands(wsId);
   useShortcutListener(overlayOpen);
   useReminders();
+  useDrawerSwipe(isMobile);
 
   if (!valid) return <Navigate to="/" replace />;
 
@@ -57,47 +59,6 @@ export function AppShell() {
       <ShortcutsHelp />
       <DialogHost />
     </div>
-  );
-}
-
-function MobileTopBar() {
-  const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
-  return (
-    <div className="mobile-top">
-      <button className="btn-ghost icon-btn" onClick={() => ui.setSidebar(true)} aria-label="Open menu">
-        <Menu size={20} />
-      </button>
-      <span className="truncate">{ws?.name}</span>
-      <button className="btn-ghost icon-btn" onClick={ui.openPalette} aria-label="Search">
-        <Search size={19} />
-      </button>
-    </div>
-  );
-}
-
-function MobileTabBar({ wsId }: { wsId: string }) {
-  const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
-  const tab = (to: string, icon: React.ReactNode, label: string) => (
-    <NavLink to={to} className={({ isActive }) => `tab ${isActive ? 'is-active' : ''}`}>
-      {icon}
-      <span>{label}</span>
-    </NavLink>
-  );
-  return (
-    <nav className="tabbar" aria-label="Primary">
-      {tab(`/w/${wsId}/notes`, <BookOpen size={21} />, 'Notes')}
-      {tab(`/w/${wsId}/tasks/today`, <Sun size={21} />, 'Today')}
-      {canEdit && (
-        <button className="tab tab-add" onClick={() => ui.openQuickAdd()} aria-label="Add task">
-          <Plus size={24} />
-        </button>
-      )}
-      {tab(`/w/${wsId}/tasks/my`, <Inbox size={21} />, 'My Tasks')}
-      <button className="tab" onClick={ui.openPalette}>
-        <Search size={21} />
-        <span>Search</span>
-      </button>
-    </nav>
   );
 }
 

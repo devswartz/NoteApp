@@ -109,6 +109,7 @@ export function useContextMenu(render: (close: () => void) => ReactNode) {
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const close = () => setPoint(null);
   const longPress = useRef<number | undefined>(undefined);
+  const pressed = useRef(false);
   const bind = {
     onContextMenu: (e: React.MouseEvent) => {
       e.preventDefault();
@@ -118,14 +119,32 @@ export function useContextMenu(render: (close: () => void) => ReactNode) {
     // Touch: long-press opens the menu (iOS Safari doesn't fire contextmenu).
     onTouchStart: (e: React.TouchEvent) => {
       const t = e.touches[0];
+      pressed.current = false;
       window.clearTimeout(longPress.current);
-      longPress.current = window.setTimeout(() => setPoint({ x: t.clientX, y: t.clientY }), 500);
+      longPress.current = window.setTimeout(() => {
+        pressed.current = true;
+        setPoint({ x: t.clientX, y: t.clientY });
+      }, 500);
     },
-    onTouchEnd: () => window.clearTimeout(longPress.current),
+    // The finger lifting after a long-press must not also "tap" the row.
+    onClickCapture: (e: React.MouseEvent) => {
+      if (!pressed.current) return;
+      pressed.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      window.clearTimeout(longPress.current);
+      // After a long-press, cancel the click the browser would synthesize on release
+      // (it could land on an item of the menu that just opened under the finger).
+      if (pressed.current) e.preventDefault();
+    },
     onTouchMove: () => window.clearTimeout(longPress.current),
   };
+  // On phones the menu opens as a bottom sheet (bigger targets, thumb reach).
+  const sheet = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px) and (pointer: coarse)').matches;
   const menu = (
-    <Popover anchor={anchor} point={point} open={!!point} onClose={close}>
+    <Popover anchor={anchor} point={point} open={!!point} onClose={close} className={sheet ? 'as-sheet' : undefined}>
       {point ? render(close) : null}
     </Popover>
   );

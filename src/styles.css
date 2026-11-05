@@ -1327,6 +1327,31 @@ body.is-resizing .sidebar { transition: none; }
 /* ───────────────────────── Mobile ───────────────────────── */
 .mobile-top, .tabbar, .drawer-backdrop { display: none; }
 
+/* SwipeRow (shell/SwipeRow.tsx) */
+.swipe-row { position: relative; overflow: hidden; touch-action: pan-y; }
+.swipe-content { position: relative; background: var(--bg); will-change: transform; }
+.swipe-content.is-settling { transition: transform var(--dur) var(--ease-out); }
+.swipe-action {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-5);
+  color: #fff;
+  font-weight: 600;
+  font-size: var(--text-sm);
+  opacity: 0.75;
+  transition: opacity var(--dur-fast);
+}
+.swipe-action.from-right { justify-content: flex-end; }
+.swipe-action.is-armed { opacity: 1; }
+.swipe-action.is-armed svg { transform: scale(1.15); transition: transform var(--dur-fast) var(--ease-spring); }
+.swipe-action.tone-success { background: var(--success); }
+.swipe-action.tone-accent { background: var(--accent-solid); }
+.swipe-action.tone-warn { background: var(--warn); }
+.swipe-action.tone-danger { background: var(--danger); }
+
 @media (max-width: 760px) {
   body { font-size: 15px; }
   .app { flex-direction: column; }
@@ -1353,14 +1378,21 @@ body.is-resizing .sidebar { transition: none; }
   .mobile-top {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: calc(48px + var(--safe-top));
-    padding: var(--safe-top) 8px 0;
+    gap: var(--space-1);
+    height: calc(var(--topbar-h) + var(--safe-top));
+    padding: var(--safe-top) calc(var(--space-1) + var(--safe-right)) 0 calc(var(--space-1) + var(--safe-left));
     border-bottom: 1px solid var(--border);
-    font-weight: 600;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: saturate(1.6) blur(14px);
+    -webkit-backdrop-filter: saturate(1.6) blur(14px);
     flex: none;
+    position: relative;
+    z-index: var(--z-sticky);
   }
-  .mobile-top .truncate { flex: 1; text-align: center; }
+  .mobile-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+  .mobile-title > .truncate { max-width: 100%; font-weight: 600; font-size: var(--text-md); }
+  .mobile-subtitle { max-width: 100%; font-size: var(--text-2xs); color: var(--text-muted); }
+  .icon-btn.touch { width: var(--touch); height: var(--touch); border-radius: var(--radius-lg); }
   .tabbar {
     display: flex;
     position: fixed;
@@ -1369,14 +1401,70 @@ body.is-resizing .sidebar { transition: none; }
     right: 0;
     z-index: var(--z-tabbar);
     height: calc(var(--tabbar-h) + var(--safe-bottom));
-    padding-bottom: var(--safe-bottom);
-    background: color-mix(in srgb, var(--bg) 92%, transparent);
-    backdrop-filter: blur(12px);
+    padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: saturate(1.6) blur(14px);
+    -webkit-backdrop-filter: saturate(1.6) blur(14px);
     border-top: 1px solid var(--border);
   }
-  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10.5px; font-weight: 500; color: var(--text-muted); }
+  .tab {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    color: var(--text-muted);
+    transition: color var(--dur-fast);
+  }
+  .tab:active { opacity: 0.6; }
   .tab.is-active { color: var(--accent); }
-  .tab-add { flex: none; width: 48px; height: 48px; margin: 6px 6px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: var(--shadow); }
+  .tab.is-active svg { stroke-width: 2.3; }
+  .fab {
+    position: absolute;
+    right: calc(var(--space-4) + var(--safe-right));
+    bottom: calc(100% + var(--space-4));
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-solid);
+    color: var(--text-on-accent);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--accent-solid) 45%, transparent), var(--shadow);
+    transition: transform var(--dur-fast) var(--ease-spring);
+  }
+  .fab:active { transform: scale(0.92); }
+  /* Keep the last rows of a list reachable above the floating button. */
+  .tasks-inner { padding-bottom: 96px !important; }
+
+  .sb-item, .sb-row { height: var(--touch); font-size: var(--text-md); }
+  .page-row { height: 40px; }
+  .sb-resizer { display: none; }
+  /* The tab bar already has Search and Add task; keyboard hints mean nothing here. */
+  .sb-actions .sb-item:not(:last-child), .sidebar .kbd { display: none; }
+  .sidebar { padding-left: var(--safe-left); }
+  .menu-item { min-height: var(--touch); }
+
+  /* Menus open as bottom sheets on phones. */
+  .popover.as-sheet {
+    top: auto !important;
+    left: var(--space-2) !important;
+    right: var(--space-2);
+    bottom: calc(var(--space-2) + var(--safe-bottom));
+    max-width: none;
+    padding: var(--space-2);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 0 0 100vmax var(--bg-overlay), var(--shadow-lg);
+    animation: sheet-up var(--dur) var(--ease-out);
+  }
+  .popover.as-sheet .menu-item { font-size: var(--text-md); }
+  .popover.as-sheet .swatch { width: 32px; height: 32px; }
+  .popover.as-sheet .color-row { gap: var(--space-3); padding: var(--space-3) var(--space-2); }
 
   .page-topbar { padding: 0 8px 0 16px; height: 44px; }
   .sync-label, .crumbs { display: none; }
