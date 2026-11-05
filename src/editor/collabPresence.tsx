@@ -26,7 +26,21 @@ export function useAwarenessPresence(awareness: Awareness | null | undefined, se
   return list;
 }
 
-export function PresenceStack({ users, max = 4, size = 24 }: { users: PagePresence[]; max?: number; size?: number }) {
+export function PresenceStack({
+  users,
+  max = 4,
+  size = 24,
+  following,
+  onFollow,
+}: {
+  users: PagePresence[];
+  max?: number;
+  size?: number;
+  /** User id currently followed (see ./collabFollow.ts). */
+  following?: string | null;
+  /** Called to follow/unfollow someone; enables "Follow" in the list. */
+  onFollow?: (u: { id: string; name: string }) => void;
+}) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
   if (!users.length) return null;
@@ -35,18 +49,38 @@ export function PresenceStack({ users, max = 4, size = 24 }: { users: PagePresen
   const label = users.length === 1 ? `${users[0].name} is here` : `${users.length} people are here`;
   return (
     <>
-      <button ref={anchor} type="button" className="presence presence-btn" aria-label={label} title={label} onClick={() => setOpen((o) => !o)}>
-        {shown.map((u) => (
-          <span key={u.id} className="presence-avatar" style={{ ['--ring' as string]: u.color }}>
-            <Avatar user={u} size={size} title={u.name} />
-          </span>
-        ))}
-        {extra > 0 && (
-          <span className="avatar presence-more" style={{ width: size, height: size, fontSize: size * 0.4 }}>
-            +{extra}
-          </span>
+      <div className="presence presence-btn" role="group" aria-label={label}>
+        {shown.map((u) =>
+          onFollow ? (
+            <button
+              key={u.id}
+              type="button"
+              className={`presence-avatar ${following === u.id ? 'is-following' : ''}`}
+              style={{ ['--ring' as string]: u.color }}
+              title={following === u.id ? `Following ${u.name} — click to stop` : `${u.name} — click to jump to them`}
+              aria-pressed={following === u.id}
+              onClick={() => onFollow(u)}
+            >
+              <Avatar user={u} size={size} title={u.name} />
+            </button>
+          ) : (
+            <span key={u.id} className="presence-avatar" style={{ ['--ring' as string]: u.color }}>
+              <Avatar user={u} size={size} title={u.name} />
+            </span>
+          ),
         )}
-      </button>
+        <button
+          ref={anchor}
+          type="button"
+          className="avatar presence-more"
+          style={{ width: size, height: size, fontSize: size * 0.4 }}
+          title={`${label} — show everyone`}
+          aria-label={`${label}; show everyone`}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {extra > 0 ? `+${extra}` : users.length}
+        </button>
+      </div>
       <Popover anchor={anchor} open={open} onClose={() => setOpen(false)} placement="bottom-end" className="presence-pop">
         <div className="menu-label-row">On this page now</div>
         {users.map((u) => (
@@ -57,6 +91,19 @@ export function PresenceStack({ users, max = 4, size = 24 }: { users: PagePresen
               {u.canEdit ? 'editing' : 'viewing'}
               {u.sessions > 1 ? ` · ${u.sessions} tabs` : ''}
             </span>
+            {onFollow && (
+              <button
+                type="button"
+                className={`btn-ghost btn-sm ${following === u.id ? 'is-active' : ''}`}
+                title={following === u.id ? 'Stop following' : `Jump to ${u.name} and follow along`}
+                onClick={() => {
+                  onFollow(u);
+                  setOpen(false);
+                }}
+              >
+                {following === u.id ? 'Following' : 'Follow'}
+              </button>
+            )}
           </div>
         ))}
       </Popover>
