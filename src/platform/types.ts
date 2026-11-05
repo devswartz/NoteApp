@@ -54,6 +54,12 @@ export interface Platform {
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
 
   /**
+   * Save a file to the user's device (a download on the web). Optional: shells
+   * without it get a clipboard fallback from the caller.
+   */
+  saveFile?(name: string, data: Blob): Promise<void>;
+
+  /**
    * New app versions. Web: a new service worker is waiting; Tauri: the
    * auto-updater. The callback gets `apply()`, which switches to the new
    * version (reloading or restarting). Late subscribers still get a pending update.
