@@ -5,14 +5,14 @@
 #   gem install xcodeproj && ruby apps/mobile/scripts/xcode-extensions.rb
 #
 # Targets:
-#   ShareExtension  "Share to NoteApp" (ios/App/ShareExtension)
+#   ShareExtension  "Share to Notivelo" (ios/App/ShareExtension)
 #   TodayWidget     WidgetKit "Today" widget (ios/App/TodayWidget), if that folder exists
 # Both share ios/App/Shared/*.swift with the app and use the App Group in
 # their .entitlements files.
 require 'xcodeproj'
 
 ROOT = File.expand_path('../ios/App', __dir__)
-BUNDLE_ID = 'com.devswartz.noteapp'
+BUNDLE_ID = 'com.devswartz.notivelo'
 DEPLOYMENT_TARGET = '15.0'
 
 proj = Xcodeproj::Project.open(File.join(ROOT, 'App.xcodeproj'))

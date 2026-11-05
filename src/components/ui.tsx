@@ -385,6 +385,10 @@ export function Kbd({ children }: { children: ReactNode }) {
 
 export const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 export const MOD = isMac ? '⌘' : 'Ctrl';
+export const SHIFT = isMac ? '⇧' : 'Shift';
+export const ENTER = isMac ? '↵' : 'Enter';
+/** A shortcut as the platform writes it: "⌘⇧S" on a Mac, "Ctrl+Shift+S" elsewhere. */
+export const keyLabel = (...keys: string[]) => keys.join(isMac ? '' : '+');
 
 export function useMediaQuery(q: string): boolean {
   const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);

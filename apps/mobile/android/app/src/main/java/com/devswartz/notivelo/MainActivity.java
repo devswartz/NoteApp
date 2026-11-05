@@ -1,4 +1,4 @@
-package com.devswartz.noteapp;
+package com.devswartz.notivelo;
 
 import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;

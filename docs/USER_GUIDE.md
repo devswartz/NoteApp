@@ -1,6 +1,6 @@
 # User guide
 
-A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Linux, use Ctrl instead.
+A short tour of Notivelo for the team. Shortcuts use ⌘ (Mac). On Windows and Linux, use Ctrl instead.
 
 ## The basics: workspaces, notebooks, sections, pages
 
@@ -15,7 +15,8 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 - Just type. Everything saves automatically ("Saved" at the top right), and other people's edits and cursors show up live.
 - Press **/** for the block menu: text, headings 1–3, bulleted, numbered and checklist lists, task, table, callout, toggle, quote, code block, divider, image, file attachment and link.
 - Markdown shortcuts work: `#`, `##`, `###` for headings, `-` or `*` for bullets, `1.` for numbers, `>` for quotes, ``` for code.
-- A new, empty page offers **Start with a template**: meeting notes, project, or daily journal.
+- A new, empty page offers **Start with a template**: meeting notes, project, or daily journal, followed by **Your templates**, the ones saved in this workspace.
+- **Save your own template:** open the page's ⋯ menu and choose **Save as template…**. Everyone in the workspace can then use it (a page in a *private* notebook makes a template only you can see). Tasks on the page become **new tasks** each time the template is used (title, priority, notes and subtasks only, open, assigned to you, no due date), and attachments are copied. The original page and tasks are never touched. In the picker, the pencil renames a template and the bin deletes it; only its creator or a workspace admin sees those buttons. Pages already made from it keep their content.
 - Type **`[[`** to link to another page: pick one, or type a new title to create that page. Each page's **Linked from** panel lists the pages that link to it.
 - **⌘K** while text is selected makes a web link. Drag the handle at the left of a block to move it. Drag an image's corner to resize it.
 - **Version history:** the page's ⋯ menu → *Version history* lists automatic snapshots. Preview any of them and **Restore** it; restoring is one edit that everyone sees, and it can be undone.
@@ -28,7 +29,7 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 
 ## Tasks inside notes
 
-- Type **`[]` then space** at the start of a line to make a task, or put the cursor on any line and press **⌘↵** to turn it into one.
+- Type **`/task`** and press Enter to insert a task, or put the cursor on any line and press **⌘↵** to turn it into one.
 - A task in a note is **the real task**. Its due date, assignee, priority and done state are the same wherever it appears: in the note, on Today, on the calendar. Check it off anywhere and it's done everywhere.
 - Click a task's chips (date, flag, avatar) to change them, or open it for details: description, reminders and recurrence.
 - The **Tasks on this page** panel (the icon at the top right of a page) lists the page's tasks.
@@ -87,6 +88,7 @@ The sidebar counts show how many tasks are in Today, My Tasks and Upcoming.
 
 - **Settings → Profile:** your name, avatar colour and password (*Change password*).
 - **Forgot your password?** Use the link on the sign-in screen. You'll get an email with a reset link.
+- **Confirm your email:** when you create an account on a server with open sign-up, we email you a link ("Confirm your email for Notivelo"). Until you open it you only see a **Check your email** screen: tap **Resend email** if it hasn't arrived (you can ask once a minute; the newest link is the only one that works), **I've verified, continue** after opening the link (on any device), or **Sign out** if you typed the wrong address. The link works once, for 24 hours. If you were invited to a workspace, you join it as soon as your email is confirmed. Accounts made by invitation-only sign-up, and accounts that existed before this feature, don't need this step.
 
 ## Sharing and roles
 
@@ -166,7 +168,7 @@ The **desktop app** adds menu shortcuts:
 - The same app in its own window. It starts instantly and opens offline. It runs on `https://notes.devswartz.com` by default; **Change Server…** in the menu points it elsewhere (e.g. staging).
 - **Menu bar / tray icon:** shows how many tasks are due today, with quick actions. On a Mac the same number is on the Dock icon.
 - **Quick capture:** ⌥⌘N, from anywhere (see Quick add).
-- Your sign-in is kept in the system keychain. `noteapp://` links open pages directly. The app updates itself (it asks before restarting).
+- Your sign-in is kept in the system keychain. `notivelo://` links open pages directly. The app updates itself (it asks before restarting).
 - Closing the window keeps the app running in the menu bar/tray. Quit from the menu.
 
 Downloads are on the GitHub Releases page. The first time you open an unsigned build on a Mac, right-click it and choose Open.
@@ -175,7 +177,7 @@ Downloads are on the GitHub Releases page. The first time you open an unsigned b
 
 - A layout made for phones: a bottom tab bar (Notes, Today, +, My Tasks, Search) and a full-screen editor.
 - **Push reminders** with snooze actions. The app icon badge shows what's due today.
-- **Share to NoteApp** from any app: *Add as task* or *Save as note* (notes go to a section called *Inbox* if you have one).
+- **Share to Notivelo** from any app: *Add as task* or *Save as note* (notes go to a section called *Inbox* if you have one).
 - **Today widget** for your home screen.
 - Optional **Face ID / fingerprint lock**: ⌘K → *Lock app with Face ID*.
 
