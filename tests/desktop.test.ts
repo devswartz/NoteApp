@@ -5,7 +5,10 @@ import assert from 'node:assert/strict';
 import { detectPlatform, loadPlatform } from '../src/platform/index.ts';
 import { webPlatform } from '../src/platform/web.ts';
 import type { Platform } from '../src/platform/types.ts';
+import { readFileSync } from 'node:fs';
 import { fallbackPath } from '../src/platform/tauri/paths.ts';
+import { DESKTOP_SHORTCUTS } from '../src/platform/tauri/shortcuts.ts';
+import { parseKeys } from '../src/hooks/useShortcuts.ts';
 import { todayCount } from '../src/platform/tauri/badge.ts';
 import { probeServer } from '../src/platform/tauri/serverSetup.ts';
 import { SignedOut, describeFailure } from '../src/platform/tauri/captureErrors.ts';
@@ -50,6 +53,36 @@ test('menu fallback navigation', () => {
   assert.equal(fallbackPath('nav.notes', '/w/ws1'), '/w/ws1/notes');
   assert.equal(fallbackPath('nav.today', '/login'), null);
   assert.equal(fallbackPath('pages.new', '/w/ws1'), null);
+});
+
+test('menu-less desktop (Windows/Linux): every macOS menu accelerator still has a shortcut', () => {
+  const rust = readFileSync(new URL('../apps/desktop/src-tauri/src/menu.rs', import.meta.url), 'utf8');
+  // ("pages.new", "New Page", Some("CmdOrCtrl+N")) → { command: 'pages.new', keys: 'mod+n' }
+  const menu = [...rust.matchAll(/\("([\w.]+)",\s*"[^"]*",\s*Some\("CmdOrCtrl\+([^"]+)"\)\)/g)].map(([, command, accel]) => ({
+    command,
+    keys: `mod+${accel}`.toLowerCase(),
+  }));
+  assert.ok(menu.length >= 10, 'found the menu accelerators in menu.rs');
+  // ⌘K and ⌘\ are handled by the web app itself (components/shell/commands.tsx).
+  const inWebApp = new Set(['app.palette', 'app.sidebar']);
+  for (const { command, keys } of menu) {
+    if (inWebApp.has(command)) continue;
+    assert.ok(
+      DESKTOP_SHORTCUTS.some((d) => d.command === command && d.keys === keys),
+      `${command} (${keys}) needs an entry in src/platform/tauri/shortcuts.ts`,
+    );
+  }
+  // Settings and Quick Capture are declared separately in menu.rs; Settings is ⌘, on every platform.
+  assert.ok(DESKTOP_SHORTCUTS.some((d) => d.command === 'nav.settings' && d.keys === 'mod+,'));
+});
+
+test('desktop shortcuts: valid key syntax, no duplicates', () => {
+  const keys = DESKTOP_SHORTCUTS.map((d) => d.keys);
+  assert.equal(new Set(keys).size, keys.length);
+  for (const k of keys) {
+    const [step] = parseKeys(k);
+    assert.ok(step.mod, `${k} uses the platform modifier`);
+  }
 });
 
 test('badge count: my open tasks due today or overdue', () => {
