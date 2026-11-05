@@ -2,11 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { createTask, createUser, eventually, isoDay, listTasks, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
-const FEATURE = !!process.env.E2E_ENABLE_PR16;
-
 test.describe('bulk task actions', () => {
-  test.fixme(!FEATURE, 'waiting for feature: bulk actions + row keys (Tasks PR #16)');
-
   test('Ctrl/⌘-click and Shift-click select rows; bulk complete and set priority', async ({ page, context, request }) => {
     const user = await createUser(request, 'Bulk Betty');
     for (const t of ['Bulk A', 'Bulk B', 'Bulk C', 'Bulk D']) await createTask(request, user, user.wsId, { title: t, dueDate: isoDay(1) });
