@@ -195,7 +195,7 @@ All under `/api`, JSON, bearer token except where noted:
 - Tasks: `GET /workspaces/:id/tasks` (open + completed in the last 30 days), `GET /workspaces/:id/tasks/completed?before=`, `POST /workspaces/:id/tasks`, `PATCH/DELETE /tasks/:id`
 - Moves/copies: `POST /pages/:id/move {sectionId?, index?}`, `POST /pages/:id/copy {sectionId?, title?}` → `{id}` (embedded tasks are duplicated, so the copy never steals the original's tasks), `POST /sections/:id/move {notebookId?, index?}`, `POST /sections/:id/copy {notebookId?, name?}`, `POST /notebooks/:id/move {index}`. `index` is the 0-based slot among the destination's siblings (omit for the end).
 - `GET /workspaces/:id/search?q=&limit=` → `SearchResult`: FTS5 over page title + text (`pages_fts`) and task title + description (`tasks_fts`, trigger-maintained, migration 003). Terms are prefix-matched and stemmed, all must match, title hits rank 10× body hits; snippets mark hits with `«…»`.
-- Files: `POST /workspaces/:id/files?pageId=` (raw body as `application/octet-stream`, `X-Filename` URI-encoded, `X-File-Type` mime) → `UploadedFile`; `GET /files/:id` (metadata); legacy `POST /uploads`. Bytes at `$DATA_DIR/files/<id><ext>`, metadata in `files`, served at `/uploads/<id><ext>` without auth (128-bit random ids; HTML/SVG/JS are stored as `.bin` so they download instead of running).
+- Files: `POST /workspaces/:id/files?type=<mime>&pageId=` (raw body as `application/octet-stream`, `X-Filename` URI-encoded) → `UploadedFile`; `GET /files/:id` (metadata); legacy `POST /uploads`. Bytes at `$DATA_DIR/files/<id><ext>`, metadata in `files`, served at `/uploads/<id><ext>` without auth (128-bit random ids; HTML/SVG/JS are stored as `.bin` so they download instead of running).
 
 ## Status against `PLAN.md` §1
 

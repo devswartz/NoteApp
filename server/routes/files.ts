@@ -1,8 +1,9 @@
 // File uploads (images and attachments). Owner: Editor & Notes.
 //
-//   POST /api/workspaces/:id/files?pageId=<optional>
+//   POST /api/workspaces/:id/files?type=<mime type>&pageId=<optional>
 //     body: the raw bytes, sent as Content-Type: application/octet-stream
-//     headers: X-Filename: <URI-encoded original name>, X-File-Type: <mime type, optional>
+//     header: X-Filename: <URI-encoded original name>
+//     (the type is a query param, not a header, so cross-origin shells need no extra CORS header)
 //     → UploadedFile { id, url, name, mime, size }
 //   GET  /api/files/:id → UploadedFile (metadata; members of the file's workspace only)
 //   POST /api/uploads   legacy, same body and headers, no workspace
@@ -56,7 +57,7 @@ function cleanName(req: Request): string {
 }
 
 function mimeOf(req: Request, name: string): string {
-  const declared = String(req.headers['x-file-type'] ?? '').toLowerCase();
+  const declared = String(req.query.type ?? req.headers['x-file-type'] ?? '').toLowerCase();
   const ct = String(req.headers['content-type'] ?? '').toLowerCase().split(';')[0];
   const m = /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(declared) ? declared : ct && ct !== 'application/octet-stream' ? ct : '';
   if (m && /^[a-z0-9.+-]+\/[a-z0-9.+-]+$/.test(m)) return m;
