@@ -238,7 +238,8 @@ export const Image = ImageExt.extend({
 export const lowlight = createLowlight(common);
 
 export const CODE_LANGUAGES: { id: string; label: string }[] = [
-  { id: '', label: 'Plain text' },
+  { id: '', label: 'Auto-detect' },
+  { id: 'plaintext', label: 'Plain text' },
   { id: 'bash', label: 'Bash' },
   { id: 'c', label: 'C' },
   { id: 'cpp', label: 'C++' },
