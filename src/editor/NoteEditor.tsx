@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
-import { refreshSession, upload, wsProtocols, wsUrl } from '../api.ts';
+import { backoffMs, reauthorize, upload, wsProtocols, wsUrl } from '../api.ts';
 import { errorToast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
@@ -80,13 +80,26 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
     idb.once('synced', () => setSynced(true));
     provider.on('status', onStatusEv);
     provider.on('sync', onSync);
+    // 4401 (token expired/rejected): refresh, then reconnect with backoff. The
+    // counter resets only after the socket has stayed up for a while, because
+    // the server accepts the socket before rejecting it.
+    let authFailures = 0;
+    let healthy: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let destroyed = false;
+    provider.on('status', ({ status }: { status: string }) => {
+      clearTimeout(healthy);
+      if (status === 'connected') healthy = setTimeout(() => (authFailures = 0), 10_000);
+    });
     provider.on('connection-close', (ev: CloseEvent | null) => {
       if (ev?.code === 4401) {
-        // Access token expired or rejected: refresh, then reconnect with the new one.
         provider.shouldConnect = false;
-        refreshSession()
-          .then((s) => s && provider.connect())
-          .catch(() => provider.connect());
+        const delay = authFailures === 0 ? 0 : backoffMs(authFailures);
+        authFailures++;
+        retry = setTimeout(async () => {
+          const r = await reauthorize();
+          if (!destroyed && r !== 'signed-out') provider.connect();
+        }, delay);
       } else if (ev?.code === 4403) {
         provider.shouldConnect = false; // no access to this page
         onStatus('offline');
@@ -102,6 +115,9 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
     };
     provider.awareness.on('change', onAwareness);
     return () => {
+      destroyed = true;
+      clearTimeout(healthy);
+      clearTimeout(retry);
       provider.awareness.off('change', onAwareness);
       provider.destroy();
       void idb.destroy();

@@ -6,7 +6,7 @@ import type { IncomingMessage } from 'node:http';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
 import { pageAccess, taskVisible } from './access.ts';
-import { tokenFromUpgrade, verifyToken } from './auth.ts';
+import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import type { ServerEvent } from '../shared/types.ts';
 
 const clients = new Map<string, Set<WebSocket>>(); // userId -> open sockets
@@ -23,12 +23,17 @@ function addClient(userId: string, ws: WebSocket) {
 
 export function attachEvents(wss: WebSocketServer) {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    const user = verifyToken(tokenFromUpgrade(req));
-    if (!user) {
+    const auth = verifyAccessToken(tokenFromUpgrade(req));
+    if (!auth) {
       ws.close(4401, 'Unauthorized');
       return;
     }
-    addClient(user.id, ws);
+    addClient(auth.user.id, ws);
+    // Close when the access token lapses; the client refreshes, reconnects and resyncs.
+    const expiry = setTimeout(() => {
+      ws.close(4401, 'Token expired');
+      setTimeout(() => ws.readyState !== WebSocket.CLOSED && ws.terminate(), 2000).unref();
+    }, Math.max(0, auth.expiresAt - Date.now()));
     // Detect dead connections (and keep proxies from closing idle ones).
     let alive = true;
     ws.on('pong', () => (alive = true));
@@ -37,7 +42,10 @@ export function attachEvents(wss: WebSocketServer) {
       alive = false;
       ws.ping();
     }, 25_000);
-    ws.on('close', () => clearInterval(ping));
+    ws.on('close', () => {
+      clearInterval(ping);
+      clearTimeout(expiry);
+    });
     ws.on('error', () => ws.terminate());
   });
 }
