@@ -15,7 +15,8 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 - Just type. Everything saves automatically ("Saved" at the top right), and other people's edits and cursors show up live.
 - Press **/** for the block menu: text, headings 1–3, bulleted, numbered and checklist lists, task, table, callout, toggle, quote, code block, divider, image, file attachment and link.
 - Markdown shortcuts work: `#`, `##`, `###` for headings, `-` or `*` for bullets, `1.` for numbers, `>` for quotes, ``` for code.
-- A new, empty page offers **Start with a template**: meeting notes, project, or daily journal.
+- A new, empty page offers **Start with a template**: meeting notes, project, or daily journal, followed by **Your templates**, the ones saved in this workspace.
+- **Save your own template:** open the page's ⋯ menu and choose **Save as template…**. Everyone in the workspace can then use it (a page in a *private* notebook makes a template only you can see). Tasks on the page become **new tasks** each time the template is used (title, priority, notes and subtasks only, open, assigned to you, no due date), and attachments are copied. The original page and tasks are never touched. In the picker, the pencil renames a template and the bin deletes it; only its creator or a workspace admin sees those buttons. Pages already made from it keep their content.
 - Type **`[[`** to link to another page: pick one, or type a new title to create that page. Each page's **Linked from** panel lists the pages that link to it.
 - **⌘K** while text is selected makes a web link. Drag the handle at the left of a block to move it. Drag an image's corner to resize it.
 - **Version history:** the page's ⋯ menu → *Version history* lists automatic snapshots. Preview any of them and **Restore** it; restoring is one edit that everyone sees, and it can be undone.

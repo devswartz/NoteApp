@@ -34,6 +34,8 @@ interface Fx {
   /** Comment thread + its first comment on `page` (when the comments routes exist). */
   thread: string;
   comment: string;
+  /** The owner's template saved from `page` (visible to everyone for the shared notebook, owner-only for the private one). */
+  template: string;
   ws: string;
   nb: string;
   sec: string;
@@ -91,7 +93,11 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
       });
       version = (await app.call('POST', `/pages/${page}/versions`, o, {})).data?.id ?? 'no-version';
     }
-    return { ws, nb, sec, page, task, file, thread, comment, reminder, version, target: target.user.id, email, invite };
+    let template = 'no-templates-route';
+    if ((await registeredRoutes()).has('POST /pages/:id/templates')) {
+      template = (await app.call('POST', `/pages/${page}/templates`, o, { name: 'Tpl', content: { type: 'doc', content: [{ type: 'paragraph' }] } })).data?.id ?? 'no-template';
+    }
+    return { ws, nb, sec, page, task, file, thread, comment, template, reminder, version, target: target.user.id, email, invite };
   };
   return { shared: await make('shared'), priv: await make('private') };
 }
@@ -223,6 +229,12 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, body: () => ({ body: 'Edit' }), expect: inPrivate(ADMIN) }, // author only
   { method: 'DELETE', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, expect: inPrivate(ADMIN) }, // author or admin
   { method: 'GET', route: '/files/:id', path: (f) => `/files/${f.file}`, expect: inPrivate(READ) }, // AUTHZ-1, fixed in #52
+  // User templates: workspace members list them; a template saved from a private page is visible to its creator (the owner) only.
+  { method: 'GET', route: '/workspaces/:id/templates', path: (f) => `/workspaces/${f.ws}/templates`, expect: READ },
+  { method: 'POST', route: '/pages/:id/templates', path: (f) => `/pages/${f.page}/templates`, body: () => ({ name: 'T', content: { type: 'doc', content: [] } }), expect: inPrivate(WRITE) },
+  { method: 'PATCH', route: '/templates/:id', path: (f) => `/templates/${f.template}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(ADMIN) }, // creator or admin only
+  { method: 'DELETE', route: '/templates/:id', path: (f) => `/templates/${f.template}`, expect: inPrivate(ADMIN) }, // creator or admin only
+  { method: 'POST', route: '/templates/:id/use', path: (f) => `/templates/${f.template}/use`, body: (f) => ({ pageId: f.page }), expect: inPrivate(WRITE) },
 ];
 
 const tokenOf = (who: Who) => (who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : member.token);

@@ -7,6 +7,7 @@ import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
 import type { EventMessage, ServerEvent } from '../../shared/types.ts';
 import { commentsChanged } from '../editor/collabComments.ts';
+import { loadUserTemplates } from '../editor/userTemplates.ts';
 import { receiveNotification } from '../components/sharing/inbox.ts';
 import { toast } from './toasts.ts';
 
@@ -103,6 +104,7 @@ function resync() {
   void loadTree();
   void loadTasks();
   void loadMembers();
+  void loadUserTemplates();
 }
 
 function handle(ev: ServerEvent) {
@@ -130,6 +132,9 @@ function handle(ev: ServerEvent) {
       receiveNotification(ev.notification);
       if (ev.notification.kind === 'mention' || ev.notification.kind === 'shared' || ev.notification.kind === 'assigned')
         toast(ev.notification.title);
+      break;
+    case 'templates':
+      if (ev.workspaceId === wsId) debounce('templates', () => void loadUserTemplates(ev.workspaceId));
       break;
     case 'workspaces':
       debounce('ws', () => void loadWorkspaces());

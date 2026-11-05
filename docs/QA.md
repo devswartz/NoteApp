@@ -53,6 +53,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages ; New notebook dialog with the "Team project" template (#71) | `18-sidebar.spec.ts` | ✅ |
 | 19 | Invite-only sign-up (#67, `SIGNUP_MODE=invite`): an `ADMIN_EMAILS` account can bootstrap; strangers see "Sign-up is by invitation" and get 403 from the API; an invited email signs up through the invite link and lands in the team | `19-signup.invite.spec.ts` | ✅ |
 | 21 | Comment threads (#28/#55/#62): select text → bubble menu Comment → highlight; another member sees it live and replies; resolve hides it under "Show 1 resolved" (live for others); reopen ; @mention in a comment notifies the person (#29, inbox API) | `21-comments.spec.ts` | ✅ / bell in header: fixme (`NotificationBell` not mounted yet) |
+| 22 | User templates: page menu → Save as template… (workspace-visible, tasks and attachments captured); a new empty page lists it under the built-ins; inserting it creates a NEW task (different id, original untouched, completing the copy leaves the original open) and a copied attachment; rename and delete from the picker; pages made from it keep working after the template is deleted | `22-user-templates.spec.ts` | ✅ |
 
 ## Open bugs
 
