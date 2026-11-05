@@ -1,7 +1,7 @@
 // Today, My Tasks, Upcoming and Team views.
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store.ts';
-import { TaskGroups, TaskRow } from '../../components/TaskRow.tsx';
+import { RowList, TaskGroups } from '../../components/TaskRow.tsx';
 import { Avatar } from '../../components/ui.tsx';
 import { groupBy, isMine, memberStats, productivity, sortTasks, todayGroups, upcomingGroups, type GroupKey } from '../../lib/taskViews.ts';
 import { addDays, parseISODate, today } from '../../../shared/dates.ts';
@@ -134,9 +134,7 @@ export function TeamView() {
               {p.name}
               <span className="group-count">{list.length || ''}</span>
             </h3>
-            {list.map((t) => (
-              <TaskRow key={t.id} task={t} />
-            ))}
+            <RowList tasks={list} />
             {!list.length && <p className="muted small pad">No open tasks.</p>}
           </section>
         );

@@ -1,5 +1,5 @@
 // All Tasks: search, filter, sort and group everything in the workspace.
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { useStore } from '../../store.ts';
 import { TaskGroups } from '../../components/TaskRow.tsx';
@@ -17,13 +17,15 @@ export function AllView() {
   const [sort, setSort] = useState<SortKey>('due');
   const [group, setGroup] = useState<GroupKey>('none');
   const [showFilters, setShowFilters] = useState(false);
+  // Filtering thousands of tasks shouldn't block typing in the search box.
+  const deferred = useDeferredValue(filters);
   // "Open" reads from the open list so just-completed tasks linger for their check animation.
   const filtered = useMemo(
     () =>
-      filters.status === 'open'
-        ? applyFilters(open, { ...filters, status: 'any' }, me, tree)
-        : applyFilters(Object.values(tasks), filters, me, tree),
-    [open, tasks, filters, me, tree],
+      deferred.status === 'open'
+        ? applyFilters(open, { ...deferred, status: 'any' }, me, tree)
+        : applyFilters(Object.values(tasks), deferred, me, tree),
+    [open, tasks, deferred, me, tree],
   );
   const groups = useMemo(() => groupBy(filtered, group, sort, { members, tree }), [filtered, group, sort, members, tree]);
   // Search text and status have their own controls in the toolbar; don't count them on the Filters button.

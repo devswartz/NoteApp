@@ -2,13 +2,21 @@ import { memo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { FileText, AlignLeft, Bell, Plus } from 'lucide-react';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
-import type { Priority, Task } from '../../shared/types.ts';
+import type { PageMeta, Priority, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
 import type { Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { selection, useSelection } from '../pages/tasks/selection.ts';
 
 let lastG = 0;
+
+/** id → page, cached per tree.pages array so each row's lookup is O(1). */
+const pageMaps = new WeakMap<PageMeta[], Map<string, PageMeta>>();
+function pageIndex(pages: PageMeta[]) {
+  let m = pageMaps.get(pages);
+  if (!m) pageMaps.set(pages, (m = new Map(pages.map((p) => [p.id, p]))));
+  return m;
+}
 
 export const TaskRow = memo(function TaskRow({
   task,
@@ -20,7 +28,7 @@ export const TaskRow = memo(function TaskRow({
   draggable?: boolean;
 }) {
   const { wsId } = useParams();
-  const page = useStore((s) => (task.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
+  const page = useStore((s) => (task.pageId ? pageIndex(s.tree.pages).get(task.pageId) : undefined));
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const lingering = useStore((s) => !!s.lingering[task.id]);
   const [editing, setEditing] = useState(false);
@@ -273,13 +281,34 @@ export function TaskGroups({
               <span className="group-count">{g.tasks.length || ''}</span>
             </h3>
           )}
-          {g.tasks.map((t) => (
-            <TaskRow key={t.id} task={t} showSource={showSource} />
-          ))}
+          <RowList tasks={g.tasks} showSource={showSource} />
           {addable && g.key !== 'overdue' && g.key !== '!overdue' && <InlineAdd group={g} />}
         </section>
       ))}
       {total === 0 && !addable && <div className="empty">{emptyText}</div>}
     </div>
+  );
+}
+
+const PAGE = 150;
+
+/**
+ * Renders task rows a page at a time, so views with thousands of tasks stay
+ * fast. The rest appear behind a "Show more" button (keyboard reachable).
+ */
+export function RowList({ tasks, showSource }: { tasks: Task[]; showSource?: boolean }) {
+  const [limit, setLimit] = useState(PAGE);
+  const shown = tasks.length > limit ? tasks.slice(0, limit) : tasks;
+  return (
+    <>
+      {shown.map((t) => (
+        <TaskRow key={t.id} task={t} showSource={showSource} />
+      ))}
+      {tasks.length > limit && (
+        <button className="inline-add show-more" onClick={() => setLimit((n) => n + PAGE * 2)}>
+          Show {Math.min(PAGE * 2, tasks.length - limit)} more of {tasks.length - limit}
+        </button>
+      )}
+    </>
   );
 }
