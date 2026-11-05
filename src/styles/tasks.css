@@ -56,3 +56,18 @@ button.cal-more:hover { color: var(--accent); }
 @media (max-width: 760px) {
   .bulk-bar { bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom)); }
 }
+
+/* Productivity strip (Today) */
+.prod-strip {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 24px; margin: 4px 0 20px; padding: 14px 16px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-elevated); position: relative;
+}
+.prod-stat { display: grid; gap: 2px; }
+.prod-stat b { font-size: 22px; line-height: 1; letter-spacing: -0.02em; }
+.prod-stat span { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.prod-week { display: flex; gap: 6px; margin-left: auto; }
+.prod-day { display: grid; justify-items: center; gap: 3px; font-size: 10.5px; color: var(--text-muted); }
+.prod-bar { width: 10px; height: 32px; border-radius: 3px; background: var(--bg-hover); display: flex; align-items: flex-end; overflow: hidden; }
+.prod-bar div { width: 100%; background: var(--text-muted); border-radius: 3px; }
+.prod-bar div.is-today { background: var(--accent); }
+.prod-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 0 0 var(--radius-lg) var(--radius-lg); }

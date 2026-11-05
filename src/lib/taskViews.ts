@@ -177,3 +177,35 @@ export function memberStats(all: Task[], memberId: string | null): MemberStats {
   }
   return s;
 }
+
+export interface Productivity {
+  /** Tasks I completed today. */
+  doneToday: number;
+  /** My open tasks due today or overdue. */
+  left: number;
+  /** Consecutive days (ending today, or yesterday if nothing is done yet today) with at least one completion by me. */
+  streak: number;
+  /** Completions per day for the last 7 days, oldest first. */
+  week: number[];
+}
+
+/** Stats for the strip on Today. Only sees what the client has loaded (30 days of completions). */
+export function productivity(all: Task[], me: string, now = new Date()): Productivity {
+  const t = today(now);
+  const perDay = new Map<string, number>();
+  let left = 0;
+  for (const x of all) {
+    if (x.status === 'done' && x.completedBy === me && x.completedAt) {
+      const d = today(new Date(x.completedAt));
+      perDay.set(d, (perDay.get(d) ?? 0) + 1);
+    } else if (x.status === 'open' && isMine(x, me) && x.dueDate && x.dueDate <= t) left++;
+  }
+  let streak = 0;
+  let d = perDay.get(t) ? t : addDays(t, -1);
+  while (perDay.get(d)) {
+    streak++;
+    d = addDays(d, -1);
+  }
+  const week = Array.from({ length: 7 }, (_, i) => perDay.get(addDays(t, i - 6)) ?? 0);
+  return { doneToday: perDay.get(t) ?? 0, left, streak, week };
+}

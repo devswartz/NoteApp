@@ -110,3 +110,18 @@ test('quick add: connectors, noon, relative and absolute dates, recurrence', () 
 function pick(r: ReturnType<typeof parseQuickAdd>) {
   return [r.title, r.dueDate, r.dueTime];
 }
+
+test('productivity: done today, tasks left, streak and week', async () => {
+  const { productivity } = await import('../src/lib/taskViews.ts');
+  const now = new Date(2026, 10, 5, 15, 0);
+  const at = (daysAgo: number) => new Date(2026, 10, 5 - daysAgo, 10, 0).toISOString();
+  const done = (daysAgo: number, by = ME) => task({ status: 'done', completedBy: by, completedAt: at(daysAgo) });
+  const list = [done(0), done(0), done(1), done(2), done(4), done(0, 'sam'), task({ dueDate: '2026-11-04' }), task({ dueDate: '2026-11-05' }), task({ dueDate: '2026-11-06' })];
+  const p = productivity(list, ME, now);
+  assert.equal(p.doneToday, 2);
+  assert.equal(p.left, 2);
+  assert.equal(p.streak, 3, 'today, yesterday, the day before; the gap at 3 days ago ends it');
+  assert.deepEqual(p.week, [0, 0, 1, 0, 1, 1, 2]);
+  // Nothing yet today: the streak still counts up to yesterday.
+  assert.equal(productivity([done(1), done(2)], ME, now).streak, 2);
+});
