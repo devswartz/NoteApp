@@ -9,6 +9,8 @@
 //   deep links         noteapp://… and https://notes.devswartz.com/w/… (universal/app links)
 //   app badge          number of my open tasks due today or overdue
 //   haptics            light tap on checkbox toggles and [data-haptic] elements; platform.haptics
+//   share capture      "Share to NoteApp" (iOS Share Extension, Android share targets): a task opens
+//                      quick add prefilled, a note becomes a new page in the workspace's Inbox section
 //   app lock           optional Face ID / Touch ID / fingerprint lock (platform.appLock), with a
 //                      privacy cover while the app is in the background
 //   system UI          status bar text follows the theme, splash hidden after first render,
@@ -27,7 +29,7 @@ import type { SplashScreenPlugin } from '@capacitor/splash-screen';
 import type { SystemBarsStyle, SystemBarsStyleOptions } from '@capacitor/core';
 import type { SecureStoragePlugin } from '@aparajita/capacitor-secure-storage';
 import type { BadgePlugin } from '@capawesome/capacitor-badge';
-import type { Task } from '../../shared/types.ts';
+import type { Task, Tree } from '../../shared/types.ts';
 import type { NotificationPermission, Platform } from './types.ts';
 import { webPlatform } from './web.ts';
 
@@ -51,6 +53,11 @@ export interface NativePlugins {
   SystemBars: { setStyle(options: SystemBarsStyleOptions): Promise<void> };
   SecureStorage: Pick<SecureStoragePlugin, 'getItem' | 'setItem' | 'removeItem' | 'setDefaultKeychainAccess'>;
   Badge: Pick<BadgePlugin, 'set' | 'clear'>;
+  /** The app's own plugin (apps/mobile/ios/App/App/NoteAppNativePlugin.swift, android/…/NoteAppNativePlugin.java). */
+  NoteAppNative: {
+    getPendingShares(): Promise<{ items: SharedItem[] }>;
+    addListener(event: 'shareReceived', fn: () => void): Promise<unknown>;
+  };
   BiometricAuth: {
     checkBiometry(): Promise<{ isAvailable: boolean; biometryType: number; deviceIsSecure: boolean }>;
     authenticate(options?: {
@@ -71,6 +78,8 @@ export interface AppBridge {
   onTasks(cb: (tasks: Task[], userId: string | null) => void): void;
   post(path: string, body: unknown): Promise<unknown>;
   del(path: string, body: unknown): Promise<unknown>;
+  /** Handles a shared item once someone is signed in. Resolves to an in-app path to open, if any. */
+  capture(item: SharedItem): Promise<string | null>;
   /** Adds commands to the ⌘K palette (src/hooks/useShortcuts.ts). */
   registerCommands(cmds: { id: string; title: string; group?: string; keywords?: string; run: () => void; when?: () => boolean }[]): void;
 }
@@ -117,6 +126,55 @@ export function notificationId(tag: string | undefined): number {
   let h = 0;
   for (let i = 0; i < tag.length; i++) h = (Math.imul(h, 31) + tag.charCodeAt(i)) | 0;
   return (Math.abs(h) % 2 ** 30) + 1;
+}
+
+/** Something shared into the app from another app's share sheet. */
+export interface SharedItem {
+  kind: 'task' | 'note';
+  text?: string;
+  url?: string;
+  title?: string;
+}
+
+export interface ShareContent {
+  /** Prefill for quick add (kind 'task'). */
+  quickAdd: string;
+  /** Page title and body paragraphs (kind 'note'); the link, if any, is its own last paragraph. */
+  title: string;
+  paragraphs: string[];
+  url: string | null;
+}
+
+/** Splits a shared item into a task line or a note's title and body. */
+export function shareContent(item: SharedItem): ShareContent {
+  const url = item.url && /^https?:\/\//i.test(item.url) ? item.url : null;
+  const lines = (item.text ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const explicitTitle = item.title?.trim();
+  let host = '';
+  try {
+    host = url ? new URL(url).host.replace(/^www\./, '') : '';
+  } catch {
+    /* ignore */
+  }
+  const firstLine = lines[0] ?? '';
+  const title = (explicitTitle || firstLine || host || 'Shared note').slice(0, 120);
+  const paragraphs = explicitTitle ? lines : lines.slice(1);
+  if (!explicitTitle && firstLine.length > 120) paragraphs.unshift(firstLine);
+  const head = explicitTitle || firstLine || '';
+  const quickAdd = [head.slice(0, 200), url].filter(Boolean).join(' ');
+  return { quickAdd, title, paragraphs, url };
+}
+
+/** Where shared notes go: a section called "Inbox" if there is one, else the first section. */
+export function inboxSection(tree: Tree): string | null {
+  const nbPos = new Map(tree.notebooks.map((n) => [n.id, n.position]));
+  const sections = [...tree.sections]
+    .filter((s) => nbPos.has(s.notebookId))
+    .sort((a, b) => nbPos.get(a.notebookId)! - nbPos.get(b.notebookId)! || a.position - b.position);
+  return (sections.find((s) => s.name.trim().toLowerCase() === 'inbox') ?? sections[0])?.id ?? null;
 }
 
 /** Lock again after the app has been in the background this long. */
@@ -345,6 +403,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     const previous = currentUser;
     currentUser = userId;
     if (userId) {
+      void drainShares();
       await registerPush().catch((e) => console.warn('Push registration failed', e));
       await sendToken();
     } else if (previous) {
@@ -363,6 +422,31 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     const token = (data as { snoozeToken?: unknown } | null)?.snoozeToken;
     if (typeof token !== 'string' || !app) return;
     await app.post('/reminders/snooze', { token, option }).catch((e) => console.warn('Snooze failed', e));
+  }
+
+  // ── Share capture ──
+  const shareQueue: SharedItem[] = [];
+  let draining = false;
+  async function drainShares() {
+    try {
+      const { items } = await native.NoteAppNative.getPendingShares();
+      shareQueue.push(...items);
+    } catch {
+      /* plugin missing (e.g. live-reload dev build) */
+    }
+    if (draining || !app || !currentUser) return;
+    draining = true;
+    try {
+      while (shareQueue.length && currentUser) {
+        const path = await app.capture(shareQueue.shift()!).catch((e) => {
+          console.warn('Could not save the shared item', e);
+          return null;
+        });
+        if (path) emitLink(`noteapp:/${path}`);
+      }
+    } finally {
+      draining = false;
+    }
   }
 
   // ── Badge ──
@@ -397,6 +481,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
         if (isActive) {
           appLock.foreground();
           void refreshPermission();
+          void drainShares();
         } else appLock.background();
       });
       void native.App.addListener('backButton', ({ canGoBack }) => {
@@ -429,6 +514,8 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
         const link = notificationLink(notification.data);
         if (link) emitLink(link);
       });
+
+      void native.NoteAppNative.addListener('shareReceived', () => void drainShares()).catch(() => {});
 
       installSystemUi(native, haptics);
 
@@ -582,7 +669,71 @@ async function loadAppBridge(): Promise<AppBridge> {
     post: (path, body) => api.post(path, body),
     del: (path, body) => api.api(path, { method: 'DELETE', json: body }),
     registerCommands: (cmds) => void shortcuts.registerCommands(cmds),
+    async capture(item) {
+      const ws = await workspaceReady(useStore);
+      if (!ws) return null;
+      const c = shareContent(item);
+      const { ui } = await import('../store/ui.ts');
+      const section = item.kind === 'note' ? inboxSection(useStore.getState().tree) : null;
+      if (!section) {
+        // A task, or a note with nowhere to go: quick add, prefilled, on Today.
+        ui.openQuickAdd({ text: c.quickAdd });
+        return `/w/${ws}/tasks/today`;
+      }
+      const { id } = await api.post<{ id: string }>(`/sections/${section}/pages`, { title: c.title });
+      await seedPage(id, c);
+      return `/w/${ws}/p/${id}`;
+    },
   };
+}
+
+/** Waits (up to 15 s) until a workspace and its tree are loaded; resolves to its id. */
+function workspaceReady(useStore: typeof import('../store/state.ts').useStore): Promise<string | null> {
+  const ready = () => {
+    const s = useStore.getState();
+    return s.user && s.wsId && s.treeLoaded ? s.wsId : null;
+  };
+  const now = ready();
+  if (now) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      off();
+      resolve(null);
+    }, 15_000);
+    const off = useStore.subscribe(() => {
+      const id = ready();
+      if (!id) return;
+      clearTimeout(timer);
+      off();
+      resolve(id);
+    });
+  });
+}
+
+/**
+ * Writes a new page's body into its local Yjs cache (the same IndexedDB
+ * database NoteEditor opens: noteapp-page-<id>). The editor loads it when the
+ * page opens and syncs it to the server like any offline edit.
+ */
+async function seedPage(pageId: string, c: ShareContent) {
+  const [Y, { IndexeddbPersistence }] = await Promise.all([import('yjs'), import('y-indexeddb')]);
+  const doc = new Y.Doc();
+  const frag = doc.getXmlFragment('default');
+  const paragraph = (text: string, marks?: Record<string, object>) => {
+    const p = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, text, marks);
+    p.insert(0, [t]);
+    return p;
+  };
+  const blocks = c.paragraphs.map((t) => paragraph(t));
+  if (c.url) blocks.push(paragraph(c.url, { link: { href: c.url } }));
+  if (!blocks.length) return;
+  frag.insert(0, blocks);
+  const idb = new IndexeddbPersistence(`noteapp-page-${pageId}`, doc);
+  await idb.whenSynced;
+  await idb.destroy(); // closes the database; the stored update stays
+  doc.destroy();
 }
 
 /** The real plugins. Imported dynamically so tests (and the web bundle) never load them. */
@@ -600,6 +751,7 @@ async function loadPlugins(): Promise<NativePlugins> {
     import('@capawesome/capacitor-badge'),
     import('@aparajita/capacitor-biometric-auth'),
   ]);
+  const NoteAppNative = core.registerPlugin<NativePlugins['NoteAppNative']>('NoteAppNative');
   return {
     os: core.Capacitor.getPlatform() === 'android' ? 'android' : 'ios',
     App: app.App,
@@ -613,6 +765,7 @@ async function loadPlugins(): Promise<NativePlugins> {
     SecureStorage: secure.SecureStorage,
     Badge: badge.Badge,
     BiometricAuth: biometric.BiometricAuth,
+    NoteAppNative,
   };
 }
 

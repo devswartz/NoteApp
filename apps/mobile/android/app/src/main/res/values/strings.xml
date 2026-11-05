@@ -4,4 +4,6 @@
     <string name="title_activity_main">NoteApp</string>
     <string name="package_name">com.devswartz.noteapp</string>
     <string name="custom_url_scheme">com.devswartz.noteapp</string>
+    <string name="share_as_task">Add task</string>
+    <string name="share_as_note">Save as note</string>
 </resources>

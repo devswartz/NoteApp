@@ -7,6 +7,9 @@ import {
   biometryLabel,
   createAppLock,
   createCapacitorPlatform,
+  inboxSection,
+  shareContent,
+  type SharedItem,
   dueTodayCount,
   notificationId,
   notificationLink,
@@ -42,7 +45,7 @@ function task(over: Partial<Task>): Task {
 }
 
 /** Fake plugins: records calls, lets the test fire native events. */
-function fakes(opts: { receive?: string; display?: string; launchUrl?: string } = {}) {
+function fakes(opts: { receive?: string; display?: string; launchUrl?: string; shares?: SharedItem[] } = {}) {
   const calls: [string, unknown?][] = [];
   const handlers = new Map<string, (e: never) => void>();
   const store = new Map<string, string>();
@@ -86,6 +89,9 @@ function fakes(opts: { receive?: string; display?: string; launchUrl?: string } 
       removeItem: async (k: string) => void store.delete(k),
     }),
     Badge: plugin('Badge'),
+    NoteAppNative: plugin('Native', {
+      getPendingShares: async () => ({ items: (opts.shares ?? []).splice(0) }),
+    }),
   } as unknown as NativePlugins;
   const fire = (key: string, event: unknown) => handlers.get(key)!(event as never);
   return { native, calls, fire, store };
@@ -93,6 +99,7 @@ function fakes(opts: { receive?: string; display?: string; launchUrl?: string } 
 
 function fakeBridge() {
   const posts: [string, unknown][] = [];
+  const captured: SharedItem[] = [];
   let userCb: (u: string | null) => void = () => {};
   let tasksCb: (t: Task[], u: string | null) => void = () => {};
   const bridge: AppBridge = {
@@ -101,8 +108,12 @@ function fakeBridge() {
     post: async (path, body) => void posts.push([path, body]),
     del: async (path, body) => void posts.push([`DELETE ${path}`, body]),
     registerCommands: () => {},
+    capture: async (item) => {
+      captured.push(item);
+      return item.kind === 'note' ? '/w/ws/p/new-page' : '/w/ws/tasks/today';
+    },
   };
-  return { bridge, posts, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null) => tasksCb(t, u) };
+  return { bridge, posts, captured, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null) => tasksCb(t, u) };
 }
 
 test('mobile: notification payloads become safe in-app deep links', () => {
@@ -293,4 +304,65 @@ test('mobile: app lock — opt-in, needs a successful unlock to change, relocks 
 
   assert.equal(await lock.api.setEnabled(false), false);
   assert.equal(kv.get('noteapp.appLock'), null);
+});
+
+test('mobile: shared items become a quick-add line or a note title + body', () => {
+  assert.deepEqual(shareContent({ kind: 'task', text: 'Call the plumber tomorrow' }), {
+    quickAdd: 'Call the plumber tomorrow',
+    title: 'Call the plumber tomorrow',
+    paragraphs: [],
+    url: null,
+  });
+  const link = shareContent({ kind: 'note', title: 'Yjs docs', text: 'Read this\n\nSecond para', url: 'https://www.yjs.dev/docs' });
+  assert.equal(link.title, 'Yjs docs');
+  assert.deepEqual(link.paragraphs, ['Read this', 'Second para']);
+  assert.equal(link.quickAdd, 'Yjs docs https://www.yjs.dev/docs');
+  assert.equal(shareContent({ kind: 'note', url: 'https://www.example.com/a' }).title, 'example.com');
+  assert.equal(shareContent({ kind: 'note', url: 'javascript:alert(1)' }).url, null, 'only web links');
+  const long = 'x'.repeat(300);
+  const c = shareContent({ kind: 'note', text: long });
+  assert.equal(c.title.length, 120);
+  assert.deepEqual(c.paragraphs, [long], 'a long first line is kept in full in the body');
+});
+
+test('mobile: shared notes go to the Inbox section, else the first section', () => {
+  const tree = {
+    notebooks: [
+      { id: 'nb2', position: 2 },
+      { id: 'nb1', position: 1 },
+    ],
+    sections: [
+      { id: 's-b', notebookId: 'nb1', name: 'Work', position: 2 },
+      { id: 's-a', notebookId: 'nb1', name: 'Ideas', position: 1 },
+      { id: 's-inbox', notebookId: 'nb2', name: ' inbox ', position: 1 },
+    ],
+    pages: [],
+  } as never;
+  assert.equal(inboxSection(tree), 's-inbox');
+  (tree as { sections: { name: string }[] }).sections[2].name = 'Later';
+  assert.equal(inboxSection(tree), 's-a');
+  assert.equal(inboxSection({ notebooks: [], sections: [], pages: [] }), null);
+});
+
+test('mobile: shares wait for sign-in, then open where they were saved', async () => {
+  const shares: SharedItem[] = [{ kind: 'note', text: 'From Safari' }];
+  const f = fakes({ shares });
+  const b = fakeBridge();
+  const p = createCapacitorPlatform(f.native, async () => b.bridge);
+  await p.init();
+  await tick();
+  const links: string[] = [];
+  p.deepLinks.subscribe((u) => links.push(u));
+  f.fire('App.appStateChange', { isActive: true });
+  await tick();
+  assert.equal(b.captured.length, 0, 'signed out: kept for later');
+  b.setUser('u1');
+  await tick();
+  assert.deepEqual(b.captured, [{ kind: 'note', text: 'From Safari' }]);
+  assert.deepEqual(links, ['noteapp://w/ws/p/new-page']);
+  shares.push({ kind: 'task', text: 'Buy milk' });
+  f.fire('Native.shareReceived', {});
+  await tick();
+  assert.equal(b.captured.length, 2);
+  assert.equal(links.at(-1), 'noteapp://w/ws/tasks/today');
 });
