@@ -113,7 +113,12 @@ export function groupBy(
       }
     }
   }
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, g]) => g);
+  return [...map.entries()].sort(([a], [b]) => groupKeyRank(a) - groupKeyRank(b) || a.localeCompare(b)).map(([, g]) => g);
+}
+
+/** Group keys starting with "!" sort first (Overdue), "~" last (No date, Unassigned, Not in a note). */
+function groupKeyRank(k: string) {
+  return k.startsWith('!') ? 0 : k.startsWith('~') ? 2 : 1;
 }
 
 export interface Filters {
@@ -123,9 +128,10 @@ export interface Filters {
   due: 'any' | 'overdue' | 'today' | 'week' | 'none';
   source: 'any' | 'notes' | 'standalone';
   notebookId: 'any' | string;
+  status: 'open' | 'done' | 'any';
 }
 
-export const DEFAULT_FILTERS: Filters = { q: '', assignee: 'any', priority: 'any', due: 'any', source: 'any', notebookId: 'any' };
+export const DEFAULT_FILTERS: Filters = { q: '', assignee: 'any', priority: 'any', due: 'any', source: 'any', notebookId: 'any', status: 'open' };
 
 export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree): Task[] {
   const t = today();
@@ -133,6 +139,7 @@ export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree): 
   const sectionNotebook = new Map(tree.sections.map((s) => [s.id, s.notebookId]));
   const pageNotebook = new Map(tree.pages.map((p) => [p.id, sectionNotebook.get(p.sectionId)]));
   return list.filter((x) => {
+    if (f.status !== 'any' && x.status !== f.status) return false;
     if (q && !x.title.toLowerCase().includes(q) && !x.description.toLowerCase().includes(q)) return false;
     if (f.assignee === 'me' && !isMine(x, me)) return false;
     if (f.assignee === 'unassigned' && x.assigneeId) return false;

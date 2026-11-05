@@ -217,3 +217,15 @@ export function TaskCheckbox({ task, onToggle, disabled }: { task: Task; onToggl
     </button>
   );
 }
+
+/** Compact priority flag that opens the priority menu. Hidden for "no priority" until hover. */
+export function PriorityChip({ task, onChange, readOnly }: { task: Task; onChange: (p: Priority) => void; readOnly?: boolean }) {
+  const p = task.priority;
+  const label = <Flag size={13} color={PRIORITY_COLORS[p]} fill={p < 4 ? PRIORITY_COLORS[p] : 'none'} aria-label={p < 4 ? `Priority ${p}` : 'No priority'} />;
+  if (readOnly) return p < 4 ? <span className="chip">{label}</span> : null;
+  return (
+    <Dropdown trigger={label} buttonClass={`chip chip-btn ${p < 4 ? '' : 'chip-empty'}`} title={p < 4 ? `Priority ${p}` : 'Set priority'}>
+      <PriorityMenu value={p} onChange={onChange} />
+    </Dropdown>
+  );
+}
