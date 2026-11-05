@@ -20,7 +20,7 @@ test('sign up, sign out and sign back in', async ({ page }) => {
   await expect(page.locator('.ws-switch')).toContainText("Ada's Space");
 
   await page.locator('.ws-switch').click();
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 
   await page.getByLabel('Email').fill(email);
@@ -57,11 +57,11 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
 
   await page.goto('/');
   await page.locator('.ws-switch').click();
-  await page.getByRole('button', { name: 'New workspace' }).click();
+  await page.getByRole('menuitem', { name: 'New workspace' }).click();
   await expect(page.locator('.ws-switch')).toContainText('Rocket Team');
 
   // A new notebook comes with a "General" section and opens a fresh page.
-  await page.getByTitle('New notebook').click();
+  await page.getByRole('button', { name: 'New notebook' }).click();
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar.getByText('Launch Plans')).toBeVisible();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
@@ -70,7 +70,7 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
   const nbRow = page.locator('.sb-row', { hasText: 'Launch Plans' });
   await nbRow.hover();
   await nbRow.getByTitle('Notebook options').click();
-  await page.getByRole('button', { name: 'New section' }).click();
+  await page.getByRole('menuitem', { name: 'New section' }).click();
   const secRow = page.locator('.sec-row', { hasText: 'Q4' });
   await expect(secRow).toBeVisible();
 
