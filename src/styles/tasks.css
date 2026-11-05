@@ -1,0 +1,36 @@
+/* Task dashboard styles (Tasks & Dashboard area). Global tokens and base classes live in src/styles.css. */
+
+/* Calendar: layout with the "No date" tray */
+.cal-body { display: flex; gap: 16px; flex: 1; min-height: 0; }
+.cal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cal-tray {
+  width: 220px; flex-shrink: 0; align-self: flex-start; position: sticky; top: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 8px; max-height: 70vh; overflow: auto;
+}
+.cal-tray.is-drop { background: var(--accent-soft); border-color: var(--accent); }
+.cal-tray .group-title { margin: 0 0 6px; }
+button.cal-more { text-align: left; background: none; border: 0; cursor: pointer; }
+button.cal-more:hover { color: var(--accent); }
+.cal-task.is-full { white-space: normal; padding: 4px 6px; }
+.cal-task:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Week layout: tall day columns, every task visible */
+.cal-week .cal-days { grid-auto-rows: minmax(360px, 1fr); }
+.cal-week .cal-date > span:first-child { display: none; }
+.cal-week .cal-date { justify-content: flex-end; }
+.cal-wdate { margin-left: 6px; color: var(--text); }
+.cal-wdate.is-today { background: var(--accent); color: #fff; border-radius: 10px; padding: 0 7px; }
+.cal-mobile-label { display: none; }
+
+@media (max-width: 760px) {
+  .cal-body { flex-direction: column; }
+  .cal-tray { width: auto; position: static; max-height: none; align-self: stretch; }
+  /* Week becomes an agenda list on phones */
+  .cal-week .cal-weekdays { display: none; }
+  .cal-week .cal-days { grid-template-columns: 1fr; grid-auto-rows: auto; }
+  .cal-week .cal-day { min-height: 64px; }
+  .cal-week .cal-date { justify-content: space-between; }
+  .cal-week .cal-date > span:first-child { display: inline; }
+  .cal-week .cal-mobile-label { display: inline; }
+  .cal-week .cal-day.is-today .cal-date span { background: none; color: var(--accent); padding: 0; }
+}
