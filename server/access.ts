@@ -44,10 +44,17 @@ export function requireRole(workspaceId: string, userId: string, min: Role): Rol
 }
 
 /**
- * SQL predicate: notebook `n` is visible to user `?`.
- * Shared notebooks are visible to all members; private ones only to their creator.
+ * SQL predicate: notebook `n` is visible to user `@userId` (workspace membership is checked separately).
+ * Shared notebooks are visible to all members; private ones only to their creator and the
+ * people it was shared with (notebook_shares).
  */
-export const NOTEBOOK_VISIBLE = `(n.visibility = 'shared' OR n.created_by = @userId)`;
+export const NOTEBOOK_VISIBLE = `(n.visibility = 'shared' OR n.created_by = @userId
+  OR EXISTS (SELECT 1 FROM notebook_shares nsh WHERE nsh.notebook_id = n.id AND nsh.user_id = @userId))`;
+
+/** True if `userId` was given access to private notebook `notebookId`. */
+export function isSharedWith(notebookId: string, userId: string): boolean {
+  return !!db.prepare('SELECT 1 FROM notebook_shares WHERE notebook_id = ? AND user_id = ?').get(notebookId, userId);
+}
 
 interface NotebookCtx {
   workspaceId: string;
@@ -78,7 +85,7 @@ function accessFor(ctx: NotebookCtx | null, userId: string): Access | null {
   if (!ctx) return null;
   const role = roleIn(ctx.workspaceId, userId);
   if (!role) return null;
-  if (ctx.visibility === 'private' && ctx.createdBy !== userId) return null;
+  if (ctx.visibility === 'private' && ctx.createdBy !== userId && !isSharedWith(ctx.notebookId, userId)) return null;
   return {
     workspaceId: ctx.workspaceId,
     notebookId: ctx.notebookId,
