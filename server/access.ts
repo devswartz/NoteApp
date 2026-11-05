@@ -4,6 +4,20 @@ import type { Role } from '../shared/types.ts';
 
 const RANK: Record<Role, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
+// ── Access changes ──
+// Call accessChanged() after anything that can take access away: role or
+// membership changes, a workspace or notebook deleted, a notebook made
+// private, a page moved. Live connections (collab sockets) subscribe and
+// re-check themselves, so this is the one place routes need to call.
+const accessListeners = new Set<() => void>();
+export function onAccessChange(fn: () => void): () => void {
+  accessListeners.add(fn);
+  return () => accessListeners.delete(fn);
+}
+export function accessChanged() {
+  for (const fn of accessListeners) fn();
+}
+
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
     super(message);
