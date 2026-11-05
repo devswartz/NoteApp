@@ -15,6 +15,7 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 - Just type. Everything saves automatically ("Saved" at the top right), and other people's edits and cursors show up live.
 - Press **/** for the block menu: text, headings 1–3, bulleted, numbered and checklist lists, task, table, callout, toggle, quote, code block, divider, image, file attachment and link.
 - Markdown shortcuts work: `#`, `##`, `###` for headings, `-` or `*` for bullets, `1.` for numbers, `>` for quotes, ``` for code.
+- A new, empty page offers **Start with a template**: meeting notes, project, or daily journal.
 - Type **`[[`** to link to another page: pick one, or type a new title to create that page. Each page's **Linked from** panel lists the pages that link to it.
 - **⌘K** while text is selected makes a web link. Drag the handle at the left of a block to move it. Drag an image's corner to resize it.
 - The app opens offline, even from a cold start. Pages you've opened stay editable offline and sync when you reconnect; tasks are read-only offline. A banner tells you when you're offline, and a prompt offers to reload when a new version of the app is available.
