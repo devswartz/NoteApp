@@ -1,0 +1,187 @@
+name: Mobile
+
+# iPhone + Android builds of the Capacitor shell (apps/mobile). Separate from
+# ci.yml so the main PR check stays fast: PRs run this only when they touch the
+# mobile project. Secrets are optional and documented in docs/MOBILE.md; steps
+# that need a missing secret are skipped, never failed.
+on:
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload the iOS build to TestFlight (needs the App Store Connect secrets)
+        type: boolean
+        default: false
+      server_url:
+        description: Server the app talks to
+        default: https://notes.devswartz.com
+  push:
+    tags: ['v*.*.*', 'mobile-v*']
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - 'src/platform/capacitor.ts'
+      - '.github/workflows/mobile.yml'
+
+permissions:
+  contents: read
+
+# `shell: bash` runs with -o pipefail, so `xcodebuild … | tail` still fails the step.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: mobile-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MOBILE_SERVER_URL: ${{ inputs.server_url || 'https://notes.devswartz.com' }}
+  BUILD_NUMBER: ${{ github.run_number }}
+
+jobs:
+  android:
+    name: android (debug APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HAS_FIREBASE: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON != '' }}
+      HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Version
+        run: |
+          v=$(node -p "process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME.replace(/^(mobile-)?v/, '') : require('./package.json').version")
+          echo "VERSION_NAME=$v" >> "$GITHUB_ENV"
+
+      - name: Build web app and sync
+        run: |
+          npm run mobile:build
+          cd apps/mobile && npx cap sync android && node scripts/identity.mjs
+
+      - name: Firebase config (push notifications)
+        if: env.HAS_FIREBASE == 'true'
+        run: printf '%s' "$GOOGLE_SERVICES" > apps/mobile/android/app/google-services.json
+        env:
+          GOOGLE_SERVICES: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+
+      - name: Debug APK
+        working-directory: apps/mobile/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noteapp-android-debug-${{ env.VERSION_NAME }}-${{ github.run_number }}
+          path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      - name: Signed release bundle (Play internal testing)
+        if: env.HAS_KEYSTORE == 'true' && github.event_name != 'pull_request'
+        working-directory: apps/mobile/android
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks" ./gradlew --no-daemon bundleRelease
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEYSTORE == 'true' && github.event_name != 'pull_request'
+        with:
+          name: noteapp-android-release-${{ env.VERSION_NAME }}-${{ github.run_number }}
+          path: apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 30
+
+  ios:
+    name: ios (simulator build; TestFlight when configured)
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+      UPLOAD: ${{ github.event_name == 'push' || inputs.testflight }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Newest stable Xcode on the image (App Store uploads need the current SDK).
+      - name: Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -1)"
+          xcodebuild -version
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Version
+        run: |
+          v=$(node -p "process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME.replace(/^(mobile-)?v/, '') : require('./package.json').version")
+          echo "VERSION_NAME=$v" >> "$GITHUB_ENV"
+
+      - name: Build web app and sync
+        run: |
+          npm run mobile:build
+          cd apps/mobile && npx cap sync ios && node scripts/identity.mjs
+
+      # Unsigned: proves the project, Swift code and extensions compile.
+      - name: Simulator build
+        working-directory: apps/mobile/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 80
+
+      # Archive + upload with Xcode's cloud-managed signing: the App Store
+      # Connect API key lets xcodebuild create/download the certificate and the
+      # profiles for the app and its extensions. No .p12 or .mobileprovision secrets.
+      - name: Archive and upload to TestFlight
+        if: env.HAS_ASC == 'true' && env.UPLOAD == 'true'
+        working-directory: apps/mobile/ios/App
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY_P8" > "$KEY"
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            "${AUTH[@]}" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 80
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"
+          rm -f "$KEY"
+
+      - name: TestFlight skipped
+        if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
+        run: echo "::notice::App Store Connect secrets are not set; skipped the TestFlight upload (see docs/MOBILE.md)."

@@ -9,8 +9,8 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
-import { tokenFromUpgrade, verifyToken } from './auth.ts';
-import { pageAccess } from './access.ts';
+import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
+import { onAccessChange, pageAccess } from './access.ts';
 import { syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
 
@@ -24,17 +24,52 @@ interface Room {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   conns: Map<WebSocket, Set<number>>; // socket -> awareness client ids it controls
-  peers: Map<WebSocket, Peer>; // socket -> who it is and what it may do
   saveTimer: NodeJS.Timeout | null;
   lastEditor: string | null;
 }
 
-interface Peer {
+const rooms = new Map<string, Room>();
+
+/** Who is on each socket, until when their token is valid, and whether they may edit. */
+interface ConnAuth {
   userId: string;
+  expiresAt: number;
   canEdit: boolean;
 }
+const connAuth = new WeakMap<WebSocket, ConnAuth>();
+const REVALIDATE_MS = 30_000;
 
-const rooms = new Map<string, Room>();
+/**
+ * Re-check every open collab socket: close it with 4401 when its access token
+ * has expired (the client refreshes and reconnects) and with 4403 when the
+ * user lost access to the page; pick up edit/view-only changes.
+ */
+export function revalidateCollab() {
+  const t = Date.now();
+  for (const room of rooms.values()) {
+    for (const conn of [...room.conns.keys()]) {
+      const a = connAuth.get(conn);
+      if (!a) continue;
+      if (t >= a.expiresAt) {
+        revoke(conn, a, 4401, 'Token expired');
+        continue;
+      }
+      const access = pageAccess(room.pageId, a.userId);
+      if (!access) revoke(conn, a, 4403, 'Access revoked');
+      else a.canEdit = access.canEdit;
+    }
+  }
+}
+/** Stop accepting edits from this socket now, ask it to close, and cut it off if it doesn't. */
+function revoke(conn: WebSocket, a: ConnAuth, code: number, reason: string) {
+  a.canEdit = false;
+  a.expiresAt = 0;
+  conn.close(code, reason);
+  setTimeout(() => conn.readyState !== WebSocket.CLOSED && conn.terminate(), 2000).unref();
+}
+
+onAccessChange(revalidateCollab);
+setInterval(revalidateCollab, REVALIDATE_MS).unref();
 
 /** Walk a ProseMirror-shaped Y.XmlFragment and collect plain text and task references. */
 export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Set<string> } {
@@ -95,7 +130,7 @@ function getRoom(pageId: string, workspaceId: string): Room {
   if (row?.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
-  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), peers: new Map(), saveTimer: null, lastEditor: null };
+  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), saveTimer: null, lastEditor: null };
 
   doc.on('update', (update: Uint8Array, origin: unknown) => {
     const enc = encoding.createEncoder();
@@ -135,7 +170,6 @@ function closeConn(room: Room, conn: WebSocket) {
   const ids = room.conns.get(conn);
   if (!ids) return;
   room.conns.delete(conn);
-  room.peers.delete(conn);
   awarenessProtocol.removeAwarenessStates(room.awareness, [...ids], null);
   if (room.conns.size === 0) {
     if (room.saveTimer) {
@@ -148,35 +182,11 @@ function closeConn(room: Room, conn: WebSocket) {
   conn.close();
 }
 
-/**
- * Call after a page is deleted, moved or its access changes: disconnects (4403)
- * every socket on it that no longer has access, and updates the edit flag of
- * the rest. With `userId`, only that user's sockets are checked.
- */
-export function closeRoom(pageId: string, userId?: string) {
+/** Force-disconnect everyone from a page (e.g. after it is deleted or access changes). */
+export function closeRoom(pageId: string) {
   const room = rooms.get(pageId);
-  if (room) recheckRoom(room, userId);
-}
-
-function recheckRoom(room: Room, userId?: string) {
-  for (const [c, peer] of [...room.peers]) {
-    if (userId && peer.userId !== userId) continue;
-    const a = pageAccess(room.pageId, peer.userId);
-    if (!a) c.close(4403, 'Access revoked');
-    else peer.canEdit = a.canEdit;
-  }
-}
-
-/**
- * Re-check every open connection after permissions change (role change,
- * notebook made private or unshared). Sockets that lost access are closed
- * with 4403; others get their read-only/edit flag updated in place.
- */
-export function recheckAccess(filter: { workspaceId?: string; userId?: string } = {}) {
-  for (const room of rooms.values()) {
-    if (filter.workspaceId && room.workspaceId !== filter.workspaceId) continue;
-    recheckRoom(room, filter.userId);
-  }
+  if (!room) return;
+  for (const c of [...room.conns.keys()]) c.close(4403, 'Access revoked');
 }
 
 /** Seed an empty page with initial content (used for onboarding pages). */
@@ -195,17 +205,24 @@ export function attachCollab(wss: WebSocketServer) {
     const url = new URL(req.url ?? '', 'http://x');
     // y-websocket connects to `${serverUrl}/${roomName}`; room = page id.
     const pageId = decodeURIComponent(url.pathname.split('/').pop() ?? '');
-    const user = verifyToken(tokenFromUpgrade(req));
-    const access = user ? pageAccess(pageId, user.id) : null;
-    if (!user || !access) {
+    const auth = verifyAccessToken(tokenFromUpgrade(req));
+    if (!auth) {
       conn.close(4401, 'Unauthorized');
       return;
     }
+    const user = auth.user;
+    const access = pageAccess(pageId, user.id);
+    if (!access) {
+      conn.close(4403, 'No access to this page');
+      return;
+    }
+    const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit };
+    connAuth.set(conn, state);
+    // Close exactly when the token lapses (the 30 s sweep is a backstop).
+    const expiry = setTimeout(() => revoke(conn, state, 4401, 'Token expired'), Math.max(0, auth.expiresAt - Date.now()));
     conn.binaryType = 'arraybuffer';
     const room = getRoom(pageId, access.workspaceId);
     room.conns.set(conn, new Set());
-    const peer: Peer = { userId: user.id, canEdit: access.canEdit };
-    room.peers.set(conn, peer);
 
     let alive = true;
     conn.on('pong', () => (alive = true));
@@ -224,11 +241,12 @@ export function attachCollab(wss: WebSocketServer) {
           encoding.writeVarUint(enc, MSG_SYNC);
           // Peek at the sync sub-type so read-only users can't push updates.
           const sub = decoding.peekVarUint(dec);
-          if (sub !== syncProtocol.messageYjsSyncStep1 && !peer.canEdit) return;
+          if (sub !== syncProtocol.messageYjsSyncStep1 && !state.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
         } else if (type === MSG_AWARENESS) {
+          if (state.expiresAt === 0) return; // revoked, closing
           awarenessProtocol.applyAwarenessUpdate(room.awareness, decoding.readVarUint8Array(dec), conn);
         }
       } catch (err) {
@@ -238,6 +256,7 @@ export function attachCollab(wss: WebSocketServer) {
 
     conn.on('close', () => {
       clearInterval(ping);
+      clearTimeout(expiry);
       closeConn(room, conn);
     });
 

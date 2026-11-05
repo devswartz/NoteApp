@@ -14,7 +14,7 @@ import crypto from 'node:crypto';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
 import { taskVisible } from './access.ts';
-import { tokenFromUpgrade, verifyToken } from './auth.ts';
+import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import type { EventMessage, ServerEvent } from '../shared/types.ts';
 
 /** Identifies this server process; sequence numbers are only comparable within one boot. */
@@ -50,14 +50,19 @@ function parseSince(req: IncomingMessage): { boot: string; seq: number } | null 
 
 export function attachEvents(wss: WebSocketServer) {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    const user = verifyToken(tokenFromUpgrade(req));
-    if (!user) {
+    const auth = verifyAccessToken(tokenFromUpgrade(req));
+    if (!auth) {
       ws.close(4401, 'Unauthorized');
       return;
     }
-    addClient(user.id, ws);
+    addClient(auth.user.id, ws);
+    // Close when the access token lapses; the client refreshes, reconnects and catches up.
+    const expiry = setTimeout(() => {
+      ws.close(4401, 'Token expired');
+      setTimeout(() => ws.readyState !== WebSocket.CLOSED && ws.terminate(), 2000).unref();
+    }, Math.max(0, auth.expiresAt - Date.now()));
     const since = parseSince(req);
-    if (since) catchUp(ws, user.id, since);
+    if (since) catchUp(ws, auth.user.id, since);
     // After any replay: the client adopts this as its cursor. If the socket drops before
     // hello arrives, the client still has its old cursor and the replay simply repeats.
     raw(ws, { type: 'hello', boot: BOOT, seq });
@@ -69,7 +74,10 @@ export function attachEvents(wss: WebSocketServer) {
       alive = false;
       ws.ping();
     }, 25_000);
-    ws.on('close', () => clearInterval(ping));
+    ws.on('close', () => {
+      clearInterval(ping);
+      clearTimeout(expiry);
+    });
     ws.on('error', () => ws.terminate());
   });
 }

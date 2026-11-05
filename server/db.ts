@@ -15,8 +15,12 @@ db.pragma('foreign_keys = ON');
 export const newId = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 
-// Schema migrations live in server/migrations/NNN-name.sql and are applied in
-// order. The number of the last applied migration is kept in PRAGMA user_version.
+// Schema migrations live in server/migrations/NNN-name.sql. Each one is
+// recorded in schema_migrations when applied; any not yet applied run in
+// numeric order at startup, one transaction each. Numbers must be unique but
+// may have gaps, because numbers are reserved per PR and can merge out of
+// order (a later-numbered migration landing first doesn't make an earlier one
+// get skipped). So migrations must not depend on a higher-numbered one.
 const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
 
 export interface Migration {
@@ -31,20 +35,42 @@ export function loadMigrations(dir = MIGRATIONS_DIR): Migration[] {
     .filter((f) => /^\d{3}-[\w-]+\.sql$/.test(f))
     .map((f) => ({ version: Number(f.slice(0, 3)), name: f, sql: fs.readFileSync(path.join(dir, f), 'utf8') }))
     .sort((a, b) => a.version - b.version);
-  list.forEach((m, i) => {
-    if (m.version !== i + 1) throw new Error(`Migrations must be numbered 001, 002, … without gaps or duplicates (found ${m.name})`);
-  });
+  for (let i = 1; i < list.length; i++) {
+    if (list[i].version === list[i - 1].version)
+      throw new Error(`Two migrations share number ${list[i].version}: ${list[i - 1].name} and ${list[i].name}. Renumber one.`);
+  }
   return list;
 }
 
 export function migrate(database: Database.Database, migrations = loadMigrations()) {
-  const version = database.pragma('user_version', { simple: true }) as number;
+  const now = () => new Date().toISOString();
+  // BEGIN IMMEDIATE takes the write lock up front, so two processes starting
+  // at once can't both apply the same migration: the second waits, then sees
+  // it recorded and skips it.
+  database
+    .transaction(() => {
+      const fresh = !database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'").get();
+      if (!fresh) return;
+      database.exec('CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)');
+      // Databases from before this table tracked progress in user_version, with
+      // migrations 1..N applied contiguously. Record those as applied, in the
+      // same transaction as creating the table, so a crash can't half-do it.
+      const legacy = database.pragma('user_version', { simple: true }) as number;
+      const mark = database.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)');
+      for (const m of migrations) if (m.version <= legacy) mark.run(m.version, m.name, now());
+    })
+    .immediate();
+
   for (const m of migrations) {
-    if (m.version <= version) continue;
-    database.transaction(() => {
-      database.exec(m.sql);
-      database.pragma(`user_version = ${m.version}`);
-    })();
+    database
+      .transaction(() => {
+        if (database.prepare('SELECT 1 FROM schema_migrations WHERE version = ?').get(m.version)) return;
+        database.exec(m.sql);
+        database.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(m.version, m.name, now());
+        // Kept for tools that read it: the highest applied number.
+        database.pragma(`user_version = ${Math.max(m.version, database.pragma('user_version', { simple: true }) as number)}`);
+      })
+      .immediate();
   }
 }
 
