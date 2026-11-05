@@ -29,3 +29,12 @@ test('slash menu ranks title prefixes first and matches keywords', () => {
   assert.ok(filterSlash('pdf').some((i) => i.title === 'File attachment'));
   assert.deepEqual(filterSlash('zzzz'), []);
 });
+
+test('safeFileUrl allows upload paths and http(s) only', async () => {
+  const { safeFileUrl } = await import('../src/editor/urls.ts');
+  assert.equal(safeFileUrl('/uploads/0123456789abcdef0123456789abcdef.pdf'), '/uploads/0123456789abcdef0123456789abcdef.pdf');
+  assert.equal(safeFileUrl('https://example.com/a.pdf'), 'https://example.com/a.pdf');
+  for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,x', '//evil.com/x', '/uploads/../../x', '/api/me', 'https://a b', 42, null]) {
+    assert.equal(safeFileUrl(bad), '', String(bad));
+  }
+});

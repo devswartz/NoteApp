@@ -388,34 +388,56 @@ export function convertToTasks(editor: Editor): string[] {
     return id ? [id] : [];
   }
 
-  // Several blocks: rebuild the top-level blocks the selection touches.
+  // Several blocks: rebuild the top-level blocks the selection touches. Inside lists,
+  // only the items the selection overlaps become tasks; the others stay list items
+  // (a list is split around the converted items).
+  const selFrom = selection.from;
+  const selTo = selection.to;
+  const overlaps = (pos: number, node: PMNode) => pos < selTo && pos + node.nodeSize > selFrom;
   const from = selection.$from.before(1);
   const to = selection.$to.after(1);
   const ids: string[] = [];
   const out: PMNode[] = [];
   const task = (text: string, done = false) => {
     const title = text.trim();
-    if (!title) return;
+    if (!title) return false;
     const id = newTask(pageId, title, done ? { status: 'done' } : {});
     ids.push(id);
     out.push(taskType.create({ taskId: id }));
+    return true;
   };
-  const fromList = (list: PMNode) => {
-    list.forEach((item) => {
+  /** Walk a list at `pos`; unselected runs of items are re-emitted as lists of the same type. */
+  const fromList = (list: PMNode, pos: number) => {
+    let keep: PMNode[] = [];
+    const flush = () => {
+      if (keep.length) out.push(list.type.create(list.attrs, keep));
+      keep = [];
+    };
+    list.forEach((item, offset) => {
+      const itemPos = pos + 1 + offset;
+      if (!overlaps(itemPos, item)) {
+        keep.push(item);
+        return;
+      }
+      flush();
       const done = item.type.name === 'taskItem' && !!item.attrs.checked;
-      item.forEach((child) => {
-        if (LISTS.has(child.type.name)) fromList(child);
-        else if (child.isTextblock) task(child.textContent, done);
-        else out.push(child);
+      item.forEach((child, childOffset) => {
+        const childPos = itemPos + 1 + childOffset;
+        if (LISTS.has(child.type.name)) fromList(child, childPos);
+        else if (child.isTextblock) {
+          if (!overlaps(childPos, child) || !task(child.textContent, done)) out.push(child);
+        } else out.push(child);
       });
     });
+    flush();
   };
   state.doc.nodesBetween(from, to, (node, pos) => {
     if (pos < from || pos >= to) return false;
     if (node.type.name === 'taskRef') out.push(node);
-    else if (LISTS.has(node.type.name)) fromList(node);
-    else if (node.isTextblock && node.type.name !== 'codeBlock') task(node.textContent);
-    else out.push(node);
+    else if (LISTS.has(node.type.name)) fromList(node, pos);
+    else if (node.isTextblock && node.type.name !== 'codeBlock') {
+      if (!task(node.textContent)) out.push(node);
+    } else out.push(node);
     return false; // top-level only; lists are walked by fromList
   });
   if (!ids.length) return [];
