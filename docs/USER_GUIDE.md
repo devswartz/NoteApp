@@ -18,6 +18,7 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 - A new, empty page offers **Start with a template**: meeting notes, project, or daily journal.
 - Type **`[[`** to link to another page: pick one, or type a new title to create that page. Each page's **Linked from** panel lists the pages that link to it.
 - **⌘K** while text is selected makes a web link. Drag the handle at the left of a block to move it. Drag an image's corner to resize it.
+- **Version history:** the page's ⋯ menu → *Version history* lists automatic snapshots. Preview any of them and **Restore** it; restoring is one edit that everyone sees, and it can be undone.
 - The app opens offline, even from a cold start. Pages you've opened stay editable offline and sync when you reconnect; tasks are read-only offline. A banner tells you when you're offline, and a prompt offers to reload when a new version of the app is available.
 
 ## Tasks inside notes

@@ -16,6 +16,7 @@ Built for a small team (about 2–10 people). Self-hosted, invite-only, and avai
 - Workspaces → notebooks → sections → pages, with drag-and-drop reordering and moving. Favourites, recent pages, context menus and a resizable sidebar.
 - Block editor: headings, lists, checklists, tables, callouts, toggles, quotes, dividers, code blocks with highlighting, links (⌘K), images (resizable) and file attachments.
 - Page templates (meeting notes, project, daily journal), `[[` page links with backlinks ("Linked from"), `/` slash menu, Markdown shortcuts, block drag handles, page icons, autosave with a save-status indicator, and page move and copy.
+- Page version history with preview and restore.
 - Real-time co-editing with live cursors and presence.
 - Works offline: the app opens without a connection, notes stay editable and sync when you reconnect, and tasks are readable from a local cache.
 

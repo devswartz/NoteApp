@@ -25,6 +25,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
   - ⌘K links, block drag handles and convert-to-task;
   - a page header with save status, icon and move/copy (#21).
 - Page links and backlinks: `[[` links to a page or creates one, and each page has a "Linked from" panel (#25).
+- Page version history: automatic snapshots, preview and restore (#37).
 - Page templates: meeting notes, project, daily journal, and "Start with a template" on empty pages (#27).
 
 ### Tasks and dashboard
