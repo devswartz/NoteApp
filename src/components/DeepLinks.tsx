@@ -1,4 +1,4 @@
-// Routes deep links from the native shells (noteapp://…, universal links) into the app.
+// Routes deep links from the native shells (notivelo://…, universal links) into the app.
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get } from '../api.ts';

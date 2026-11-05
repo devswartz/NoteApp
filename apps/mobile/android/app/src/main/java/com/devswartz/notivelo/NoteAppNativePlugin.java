@@ -1,4 +1,4 @@
-package com.devswartz.noteapp;
+package com.devswartz.notivelo;
 
 import android.content.ComponentName;
 import android.content.Intent;

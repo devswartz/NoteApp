@@ -6,6 +6,15 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 
 The first version for day-to-day use by the team: web, desktop and mobile.
 
+### Renamed to Notivelo
+- The product is now **Notivelo** everywhere users see it (`APP_NAME` in `shared/config.ts`). Desktop: product name, identifier `com.devswartz.notivelo` and `notivelo://` links. Mobile: app id and bundle IDs `com.devswartz.notivelo` (plus `.ShareExtension` and `.TodayWidget`), app group and URL scheme. The AASA and `assetlinks.json` defaults follow.
+- Deliberately not renamed: the repo, the Docker image, `/data/noteapp.db`, the systemd units, and the `noteapp.*` browser storage keys (so nobody loses local data).
+
+### Email verification (for open sign-up)
+- New accounts must confirm their email before using the app when the server can send mail: a single-use, 24-hour link ("Confirm your email for Notivelo"), resend limited to one a minute and five an hour, and a **Check your email** screen until confirmed. This is what makes `SIGNUP_MODE=open` safe to switch on; production still defaults to `invite`. See `docs/LAUNCH_CHECKLIST.md` section 5b.
+- Pending workspace invites for an address are applied when its email is confirmed, not at sign-up. Existing accounts (migration 012), bootstrap accounts (the first account and `ADMIN_EMAILS`) and every account on a server without SMTP are treated as confirmed.
+- Unverified users get `403 email_unverified` on every API route except `GET /me` and resend, and their WebSockets are refused (4403).
+
 ### Foundation and security
 - Working core flow on a clean base: per-area layout, token auth (short-lived access JWT + rotating refresh token, no cookies), configurable API URL, the `src/platform/` adapter for native shells, and the deploy contract (#2).
 - Security follow-ups:
@@ -28,6 +37,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Page links and backlinks: `[[` links to a page or creates one, and each page has a "Linked from" panel (#25).
 - Page version history: automatic snapshots, preview and restore (#37).
 - Page templates: meeting notes, project, daily journal, and "Start with a template" on empty pages (#27).
+- User templates: **Save as template…** in the page menu; workspace templates are listed under the built-ins with rename and delete. Using one creates new tasks and copies attachments (migration 011). Templates saved from a private notebook are visible only to their creator.
 - `SEED_DEMO` showcase: a *Demo Team* workspace with a notebook per area, every block type, tasks with subtasks and recurrence, links, comments, versions and a private notebook (#70).
 
 ### Tasks and dashboard
@@ -87,7 +97,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
   - APNs/FCM push reminders with snooze;
   - deep links, app badge and haptics;
   - mobile CI.
-- Share to NoteApp (task or note), optional Face ID app lock, and a Today home-screen widget on iOS and Android (#36).
+- Share to Notivelo (task or note), optional Face ID app lock, and a Today home-screen widget on iOS and Android (#36).
 - Mobile visual QA: large-title top bar, and no floating add button on pages (#69).
 - APNs to both sandbox and production builds, `/.well-known` app-link files, Android snooze actions, and a server picker on first launch (runtime server URL) (#57).
 

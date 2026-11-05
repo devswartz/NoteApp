@@ -1,7 +1,7 @@
 // The REST API: one router per area, registered here. To add an area, create
 // server/routes/<area>.ts exporting a Router and add one line below.
 import express, { Router } from 'express';
-import { requireAuth } from '../auth.ts';
+import { requireAuth, requireVerifiedEmail } from '../auth.ts';
 import { errorHandler } from '../http.ts';
 import { authRateLimit } from '../ratelimit.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
@@ -16,6 +16,7 @@ import { publicReminderRoutes, reminderRoutes } from './reminders.ts';
 import { commentRoutes } from './comments.ts';
 import { notificationRoutes } from './notifications.ts';
 import { activityRecorder, activityRoutes } from './activity.ts';
+import { templateRoutes } from './templates.ts';
 
 import { adminRoutes } from './admin.ts';
 
@@ -37,6 +38,7 @@ api.use(publicWorkspaceRoutes);
 
 // Everything below requires a signed-in user.
 api.use(requireAuth);
+api.use(requireVerifiedEmail); // unverified users get 403 email_unverified on everything below except GET /me and POST /auth/resend-verification
 api.use(activityRecorder); // activity feed: observes mutating requests, never blocks them
 api.use(authRoutes);
 api.use(workspaceRoutes);
@@ -49,6 +51,7 @@ api.use(reminderRoutes);
 api.use(commentRoutes);
 api.use(notificationRoutes);
 api.use(activityRoutes);
+api.use(templateRoutes);
 
 api.use(adminRoutes);
 

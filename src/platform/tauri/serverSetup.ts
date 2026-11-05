@@ -3,6 +3,7 @@
 // this is the UI: a first-run screen and "Change Server…" in the app menu.
 import { invoke } from '@tauri-apps/api/core';
 import { button, openDialog } from './dialogs.ts';
+import { APP_NAME } from '../../../shared/config.ts';
 
 export interface ServerInfo {
   url: string;
@@ -23,7 +24,7 @@ export async function probeServer(url: string, fetchImpl: typeof fetch = fetch):
   try {
     const r = await fetchImpl(`${base}/api/health`, { signal: ctrl.signal });
     const body = (await r.json().catch(() => null)) as { ok?: boolean } | null;
-    return r.ok && body?.ok ? null : 'That server didn’t answer like a NoteApp server.';
+    return r.ok && body?.ok ? null : `That server didn’t answer like a ${APP_NAME} server.`;
   } catch {
     return 'Couldn’t reach that server. Check the address and your connection.';
   } finally {
