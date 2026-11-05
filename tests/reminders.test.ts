@@ -207,17 +207,23 @@ test('legacy tasks.reminder_at is mirrored for the assignee/creator', async () =
 
 test('web push: subscriptions per device, payload, expired endpoints removed, skipped without VAPID', async () => {
   const u = await setup('Push', 'UTC');
-  const sub = (n: number) => ({ endpoint: `https://push.example.com/send/${u.user.id}/${n}`, keys: { p256dh: 'p'.repeat(20), auth: 'a'.repeat(10) } });
+  const sub = (n: number) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${u.user.id}-${n}`, keys: { p256dh: 'p'.repeat(20), auth: 'a'.repeat(10) } });
   assert.equal((await app.call('POST', '/notifications/push-subscriptions', u.token, sub(1))).status, 200);
   assert.equal((await app.call('POST', '/notifications/push-subscriptions', u.token, sub(2))).status, 200);
   assert.equal((await app.call('POST', '/notifications/push-subscriptions', u.token, sub(1))).status, 200); // same device again
   assert.equal((await app.call('POST', '/notifications/push-subscriptions', u.token, { endpoint: 'http://x' })).status, 400);
+  // Not a push service (would let the server be used to call internal hosts).
+  const internal = { ...sub(3), endpoint: 'https://192.168.1.10/admin' };
+  assert.equal((await app.call('POST', '/notifications/push-subscriptions', u.token, internal)).status, 400);
+  assert.ok(push.isPushEndpoint('https://web.push.apple.com/QGx'));
+  assert.ok(!push.isPushEndpoint('https://fcm.googleapis.com.evil.com/x'));
+  assert.ok(!push.isPushEndpoint('https://fcm.googleapis.com:8443/x'));
   assert.equal((await app.call('GET', '/notifications/push', u.token)).data.devices, 2);
 
   const calls: { endpoint: string; payload: string }[] = [];
   const channel = push.webPushChannel((async (s: { endpoint: string }, payload: string) => {
     calls.push({ endpoint: s.endpoint, payload });
-    if (s.endpoint.endsWith('/2')) throw Object.assign(new Error('gone'), { statusCode: 410 });
+    if (s.endpoint.endsWith('-2')) throw Object.assign(new Error('gone'), { statusCode: 410 });
     return {};
   }) as never);
   assert.equal(channel.available(), false, 'no VAPID keys → skipped');

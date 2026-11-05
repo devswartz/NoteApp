@@ -22,6 +22,25 @@ function configure() {
   configured = key;
 }
 
+// Only real push services: the server POSTs to the endpoint, so an arbitrary
+// URL would let a user make it call internal hosts.
+const PUSH_HOSTS = [
+  /^fcm\.googleapis\.com$/,
+  /^android\.googleapis\.com$/,
+  /^updates\.push\.services\.mozilla\.com$/,
+  /(^|\.)push\.apple\.com$/,
+  /(^|\.)notify\.windows\.com$/,
+];
+
+export function isPushEndpoint(endpoint: string): boolean {
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === 'https:' && !u.port && PUSH_HOSTS.some((re) => re.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
 interface SubRow {
   id: string;
   endpoint: string;
@@ -33,7 +52,7 @@ export function saveSubscription(userId: string, sub: PushSubscriptionInput, use
   if (
     !sub ||
     typeof sub.endpoint !== 'string' ||
-    !/^https:\/\//.test(sub.endpoint) ||
+    !isPushEndpoint(sub.endpoint) ||
     sub.endpoint.length > 2000 ||
     typeof sub.keys?.p256dh !== 'string' ||
     typeof sub.keys?.auth !== 'string' ||

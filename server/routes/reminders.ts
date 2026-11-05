@@ -47,9 +47,14 @@ reminderRoutes.delete(
   }),
 );
 
+const lastTest = new Map<string, number>();
+
 reminderRoutes.post(
   '/notifications/test',
   h(async (req) => {
+    const prev = lastTest.get(req.user.id) ?? 0;
+    if (Date.now() - prev < 10_000) throw new HttpError(429, 'Please wait a few seconds before sending another test');
+    lastTest.set(req.user.id, Date.now());
     const report = await deliver(
       {
         key: `test:${req.user.id}:${Date.now()}`,
