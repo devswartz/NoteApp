@@ -11,11 +11,18 @@ import type { InviteInfo } from '../../../shared/types.ts';
 
 const PENDING_KEY = 'noteapp.pendingInvite';
 
-/** The invite token to resume after signing in, if any (cleared when read). */
+/**
+ * Where to go after signing in from an invite link, if anywhere (cleared when read):
+ * straight into the workspace when sign-up already joined it (invites for your
+ * email are applied at sign-up), else back to the invite page to accept it.
+ */
 export function takePendingInvite(): string | null {
-  const t = platform.kv.get(PENDING_KEY);
-  if (t) platform.kv.remove(PENDING_KEY);
-  return t;
+  const raw = platform.kv.get(PENDING_KEY);
+  if (!raw) return null;
+  platform.kv.remove(PENDING_KEY);
+  const [token, workspaceId] = raw.split(' ');
+  if (workspaceId && useStore.getState().workspaces.some((w) => w.id === workspaceId)) return `/w/${workspaceId}`;
+  return `/invite/${token}`;
 }
 
 export function InvitePage() {
@@ -35,6 +42,10 @@ export function InvitePage() {
   const accept = async () => {
     setBusy(true);
     try {
+      if (info && useStore.getState().workspaces.some((w) => w.id === info.workspaceId)) {
+        navigate(`/w/${info.workspaceId}`, { replace: true }); // already a member
+        return;
+      }
       const r = await post<{ workspaceId: string }>(`/invites/${encodeURIComponent(token)}/accept`);
       await loadWorkspaces();
       navigate(`/w/${r.workspaceId}`, { replace: true });
@@ -45,7 +56,7 @@ export function InvitePage() {
   };
 
   const signInFirst = () => {
-    platform.kv.set(PENDING_KEY, token);
+    platform.kv.set(PENDING_KEY, `${token} ${info?.workspaceId ?? ''}`);
     navigate('/login', { replace: true });
   };
 
