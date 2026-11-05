@@ -8,7 +8,7 @@ How NoteApp is built today. Read `PLAN.md` for what we're building and `docs/AGE
 
 | Layer | Choice |
 |---|---|
-| Web client | React 19, Vite 8, TypeScript, React Router 7, Zustand 5, lucide-react icons, hand-written CSS (`src/styles.css`) |
+| Web client | React 19, Vite 8, TypeScript, React Router 7, Zustand 5, lucide-react icons, hand-written CSS (`src/styles.css`; design tokens at its top: colour, type, spacing, radius, motion, z-index, safe areas — use the variables, not literal values) |
 | Editor | TipTap 3 (ProseMirror) with a custom `taskRef` node, bound to a Yjs doc with `@tiptap/extension-collaboration` |
 | Real-time | Yjs over a custom y-websocket-protocol server (`server/collab.ts`); y-indexeddb for the local cache |
 | Server | Node 22, Express 5, `ws`, run directly from TypeScript with `tsx` (no compile step) |
@@ -97,7 +97,7 @@ src/               React web app
     workspace.ts   workspaces, tree, members
     tasks.ts       task list + optimistic create/update/toggle/delete
     events.ts      live event client
-    toasts.ts, ui.ts
+    toasts.ts, ui.ts  (ui.ts: overlay toggles + the light/dark/system theme, applied as <html data-theme>)
   components/      App shell, sidebar, command palette, quick add, task row/detail/controls, overlays, ui primitives
   editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
