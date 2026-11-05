@@ -37,7 +37,6 @@ test('edits from a member demoted while the page is open are not saved (BUG-2a, 
 });
 
 test('BUG-2b: a member demoted while the page is open sees it become read-only without a reload', async ({ browser, request }) => {
-  test.fixme(true, 'BUG-2b (docs/QA.md): the open page stays editable after demotion until reload (also on #12 and #14)');
   const { bc, b, editor } = await demoteWhileOpen(browser, request);
   await expect(b.locator('.page-topbar')).toContainText('View only', { timeout: 10_000 });
   await expect(editor).toHaveAttribute('contenteditable', 'false');
