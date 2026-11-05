@@ -206,6 +206,22 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
   return data as T;
 }
 
+/** Authenticated binary download: the body plus the server's suggested file name. */
+export async function download(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const send = async () =>
+    fetchWithRetry(apiUrl(path), { headers: { Authorization: `Bearer ${(await freshAccessToken()) ?? ''}` } });
+  let res = await send();
+  if (res.status === 401 && (await refreshSession().catch(() => null))) res = await send();
+  if (!res.ok) {
+    const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+    throw new ApiError(res.status, data?.error ?? `Download failed (${res.status})`, data?.requestId ?? res.headers.get('x-request-id'));
+  }
+  const cd = res.headers.get('content-disposition') ?? '';
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+  const plain = /filename="([^"]+)"/i.exec(cd);
+  return { blob: await res.blob(), filename: star ? decodeURIComponent(star[1]) : (plain?.[1] ?? null) };
+}
+
 export const get = <T,>(p: string) => api<T>(p);
 export const post = <T,>(p: string, json?: unknown) => api<T>(p, { method: 'POST', json: json ?? {} });
 export const patch = <T,>(p: string, json: unknown) => api<T>(p, { method: 'PATCH', json });

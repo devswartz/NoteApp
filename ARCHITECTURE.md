@@ -190,6 +190,14 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 - **Client:** `ErrorBoundary` wraps the app (full-page fallback), and `RouteBoundary` wraps each workspace screen, resetting on navigation, so one broken view doesn't take down the shell. GET/HEAD requests retry network errors and 502/503/504 twice with backoff (not when the browser is known to be offline). Writes are never retried. Unhandled API rejections become toasts. `errorMessage(e)` in the store gives user-facing text.
 - **Admin:** instance admins are the emails in `ADMIN_EMAILS` (comma-separated), or the first account ever created if that's unset. `GET /api/admin/stats` returns version, uptime, memory, DB size and row counts, live sessions, open sockets (collab pages/connections, event sockets) and request counts with p50/p95/p99 latency. Everyone else gets 403.
 
+## Export and import
+
+`server/export.ts` (routes in `server/routes/export.ts`, UI in `components/WorkspaceData.tsx` on the Settings page).
+- `GET /api/workspaces/:id/export` (owners/admins) → a `.zip` holding `workspace.json` (format `noteapp-workspace`, version 1: notebooks, sections, pages with their Yjs state in base64, tasks, files, members), a Markdown copy of each page under `pages/<Notebook>/<Section>/<Title>.md` (`server/markdown.ts`), and attachments under `files/`. Only what the exporter can see is included, so other people's private notebooks are left out.
+- `POST /api/workspaces/import` (any user; body = that zip) creates a **new** workspace owned by the importer, with fresh ids everywhere. `taskRef` ids inside page documents are rewritten. Attachments keep their ids, so image URLs stay valid. Assignees map to the importer when the email matches; anyone else is dropped. Pages are indexed for search.
+- `server/zip.ts` is a small dependency-free zip writer and reader (deflate, CRC-checked, size-capped).
+- Files are saved through `platform.saveFile()` (a download on the web, a save dialog in the shells).
+
 ## Offline
 
 - **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view (names are immutable). `/api/*` and `/collab/*` are never cached.

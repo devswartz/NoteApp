@@ -734,6 +734,9 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     // bundle inside it ships with each native release, so nothing to prompt.
     appUpdates: { subscribe: () => () => {} },
 
+    // TODO(Mobile): save via @capacitor/filesystem + share sheet; the web download is a stopgap.
+    saveFile: (name, data) => webPlatform.saveFile(name, data),
+
     async init() {
       // Keychain items readable after the first unlock (so a background token
       // refresh works) and never restored onto another device from a backup.

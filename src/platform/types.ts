@@ -50,6 +50,9 @@ export interface Platform {
     subscribe(onLink: (url: string) => void): () => void;
   };
 
+  /** Hand the user a file to keep (download on the web, a save dialog in the shells). */
+  saveFile(name: string, data: Blob): Promise<void>;
+
   /** Let the user pick files. Resolves to [] if they cancel. */
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
 

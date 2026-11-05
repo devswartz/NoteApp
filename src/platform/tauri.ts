@@ -37,6 +37,10 @@ export const tauriPlatform: Platform = {
   // start and from "Check for Updates…" in the menu), with its own dialog.
   appUpdates: { subscribe: () => () => {} },
 
+  // TODO(Desktop): native save dialog (tauri-plugin-dialog + fs). The webview
+  // download works on Windows (WebView2); macOS WKWebView may ignore it.
+  saveFile: (name, data) => webPlatform.saveFile(name, data),
+
   async init() {
     const win = getCurrentWindow();
 

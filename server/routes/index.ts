@@ -17,12 +17,13 @@ import { notificationRoutes } from './notifications.ts';
 import { activityRecorder, activityRoutes } from './activity.ts';
 
 import { adminRoutes } from './admin.ts';
+import { exportRoutes } from './export.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
 export const api = Router();
 const json = express.json({ limit: '1mb' });
-api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, next)));
+api.use((req, res, next) => (req.path === '/uploads' || req.path === '/workspaces/import' ? next() : json(req, res, next)));
 
 // No token needed.
 api.use(healthRoutes);
@@ -36,6 +37,7 @@ api.use(publicWorkspaceRoutes);
 api.use(requireAuth);
 api.use(activityRecorder); // activity feed: observes mutating requests, never blocks them
 api.use(authRoutes);
+api.use(exportRoutes); // before workspaceRoutes: /workspaces/import must not hit /workspaces/:id
 api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);

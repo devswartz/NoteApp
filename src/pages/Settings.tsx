@@ -19,6 +19,7 @@ import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx'
 import { platform, detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
 import { AvatarColorPicker, ChangePasswordForm } from '../components/AccountSettings.tsx';
+import { WorkspaceData } from '../components/WorkspaceData.tsx';
 
 
 interface SectionDef {
@@ -272,6 +273,16 @@ function WorkspaceSection() {
         <p className="muted small">
           Your role: <strong>{ws.role}</strong> — {ROLE_HELP[ws.role]}
         </p>
+      </Card>
+      <Card
+        title="Backup and import"
+        description={
+          isAdmin
+            ? 'Export downloads a .zip with every page as Markdown, all tasks, attachments and a full backup. Import creates a new workspace from such a .zip.'
+            : 'Import creates a new workspace from an exported .zip.'
+        }
+      >
+        <WorkspaceData wsId={ws.id} canExport={isAdmin} />
       </Card>
       {ws.role === 'owner' && (
         <Card title="Danger zone" tone="danger" description="Deleting a workspace removes every notebook, page and task in it for everyone. This can’t be undone.">
