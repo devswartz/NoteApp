@@ -170,3 +170,25 @@ test('describeRecurrence', () => {
   assert.equal(describeRecurrence({ freq: 'day', interval: 3, basis: 'completion', count: 4 }), 'Every 3 days after completion, 4 times');
   assert.equal(describeRecurrence({ freq: 'year', interval: 1 }, '2026-02-14'), 'Every year on Feb 14');
 });
+
+test('quick add uses parseRecurrence: rule, first date, title stripped', async () => {
+  const { parseQuickAdd } = await import('../shared/quickadd.ts');
+  const NOW = new Date(2026, 10, 5, 9, 0); // Thu 5 Nov 2026, local
+  const q = (s: string) => {
+    const r = parseQuickAdd(s, NOW);
+    return [r.title, r.dueDate, r.recurrence];
+  };
+  assert.deepEqual(q('Gym every 2 weeks on mon,thu'), ['Gym', '2026-11-05', { freq: 'week', interval: 2, byWeekday: [1, 4] }]);
+  assert.deepEqual(q('Pay rent every month on the 15th p1'), ['Pay rent', '2026-11-15', { freq: 'month', interval: 1, byMonthDay: 15 }]);
+  assert.deepEqual(q('Team review every 2nd tuesday'), ['Team review', '2026-11-10', { freq: 'month', interval: 1, byNthWeekday: { n: 2, weekday: 2 } }]);
+  assert.deepEqual(q('Standup every weekday'), ['Standup', '2026-11-05', { freq: 'weekday' }]);
+  assert.deepEqual(q('Chores every saturday'), ['Chores', '2026-11-07', { freq: 'week', interval: 1, byWeekday: [6] }]);
+  // An explicit date wins and pins a monthly rule's day.
+  assert.deepEqual(q('Invoice every month starting Nov 30'.replace(' starting', '')), ['Invoice', '2026-11-30', { freq: 'month', interval: 1, byMonthDay: 30 }]);
+  assert.deepEqual(q('Water plants every 3 days after completion'), ['Water plants', '2026-11-05', { freq: 'day', interval: 3, basis: 'completion' }]);
+  const r = parseQuickAdd('Report every friday 4pm @sam', NOW);
+  assert.equal(r.title, 'Report');
+  assert.equal(r.dueTime, '16:00');
+  assert.equal(r.assignee, 'sam');
+  assert.ok(r.tokens.some((t) => t.kind === 'recurrence'));
+});

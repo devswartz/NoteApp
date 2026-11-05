@@ -16,16 +16,17 @@
 //   DELETE /notifications/devices                 { token }
 //   POST   /notifications/test                    → sends a test notice to yourself
 //   POST   /reminders/snooze                      { token, option: '10m'|'1h'|'tomorrow' } (no auth; token from the push)
+//   GET    /workspaces/:id/reminders              → { taskId: nextFireAt } (yours, upcoming; for row indicators)
 //   GET    /tasks/:id/reminders                   → Reminder[] (yours)
 //   POST   /tasks/:id/reminders                   ReminderSpec → Reminder
 //   PATCH  /reminders/:id                         ReminderSpec → Reminder
 //   DELETE /reminders/:id                         → { ok }
 import { Router } from 'express';
 import { h, param } from '../http.ts';
-import { HttpError } from '../access.ts';
+import { HttpError, requireRole } from '../access.ts';
 import { getSettings, updateSettings } from '../reminders/settings.ts';
 import { countSubscriptions, deleteSubscription, saveSubscription, vapidPublicKey } from '../reminders/push.ts';
-import { createReminder, deleteReminder, listReminders, updateReminder } from '../reminders/store.ts';
+import { createReminder, deleteReminder, listReminders, reminderIndex, updateReminder } from '../reminders/store.ts';
 import { defaultChannels, pokeScheduler } from '../reminders/scheduler.ts';
 import { deliver } from '../reminders/deliver.ts';
 import { mailConfigured } from '../mail.ts';
@@ -144,6 +145,14 @@ reminderRoutes.post(
       defaultChannels(),
     );
     return report;
+  }),
+);
+
+reminderRoutes.get(
+  '/workspaces/:id/reminders',
+  h((req) => {
+    requireRole(param(req, 'id'), req.user.id, 'viewer');
+    return reminderIndex(param(req, 'id'), req.user.id);
   }),
 );
 

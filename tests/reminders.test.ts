@@ -93,6 +93,9 @@ test('reminder CRUD computes next_fire_at in the user time zone', async () => {
   await app.call('PATCH', `/tasks/${t.id}`, u.token, { dueDate: '2030-07-11' });
   const list = await app.call<Reminder[]>('GET', `/tasks/${t.id}/reminders`, u.token);
   assert.equal(list.data[0].nextFireAt, '2030-07-11T07:00:00.000Z');
+  const index = await app.call('GET', `/workspaces/${u.wsId}/reminders`, u.token);
+  assert.equal(index.data[t.id], '2030-07-11T07:00:00.000Z');
+  assert.equal((await app.call('GET', `/workspaces/${u.wsId}/reminders`, (await app.signUp('Outsider')).token)).status, 404);
   // Update and delete; validation; other users can't see it.
   const upd = await app.call<Reminder>('PATCH', `/reminders/${r.id}`, u.token, { kind: 'at', at: '2030-07-01T12:00:00Z' });
   assert.equal(upd.data.nextFireAt, '2030-07-01T12:00:00.000Z');

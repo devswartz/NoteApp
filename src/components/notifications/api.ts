@@ -23,6 +23,7 @@ export const notificationsApi = {
   quietHours: () => get<QuietHours[]>('/notifications/quiet-hours'),
   setQuietHours: (workspaceId: string, start: string, end: string) => api<QuietHours>(`/workspaces/${workspaceId}/quiet-hours`, { method: 'PUT', json: { start, end } }),
   clearQuietHours: (workspaceId: string) => del<{ ok: true }>(`/workspaces/${workspaceId}/quiet-hours`),
+  reminderIndex: (workspaceId: string) => get<Record<string, string>>(`/workspaces/${workspaceId}/reminders`),
   reminders: (taskId: string) => get<Reminder[]>(`/tasks/${taskId}/reminders`),
   addReminder: (taskId: string, spec: ReminderSpec) => post<Reminder>(`/tasks/${taskId}/reminders`, spec),
   updateReminder: (id: string, spec: ReminderSpec) => patch<Reminder>(`/reminders/${id}`, spec),

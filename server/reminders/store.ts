@@ -88,6 +88,19 @@ export function listReminders(taskId: string, userId: string): Reminder[] {
   return rows.map(rowToReminder);
 }
 
+/** Your upcoming reminders in a workspace, for task-row indicators: taskId → earliest next fire time. */
+export function reminderIndex(workspaceId: string, userId: string): Record<string, string> {
+  syncReminders();
+  const rows = db
+    .prepare(
+      `SELECT r.task_id, MIN(r.next_fire_at) AS next FROM task_reminders r JOIN tasks t ON t.id = r.task_id
+       WHERE t.workspace_id = @workspaceId AND r.user_id = @userId AND r.next_fire_at IS NOT NULL AND ${TASK_VISIBLE}
+       GROUP BY r.task_id`,
+    )
+    .all({ workspaceId, userId }) as { task_id: string; next: string }[];
+  return Object.fromEntries(rows.map((r) => [r.task_id, r.next]));
+}
+
 export function createReminder(taskId: string, userId: string, input: ReminderSpec & { id?: string }): Reminder {
   requireVisibleTask(taskId, userId);
   const spec = validateSpec(input);

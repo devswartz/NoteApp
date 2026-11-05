@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bell, Plus, Trash2 } from 'lucide-react';
 import { notificationsApi } from './api.ts';
+import { refreshReminderIndex } from './reminderIndex.ts';
 import type { Reminder, ReminderSpec, Task } from '../../../shared/types.ts';
 import './notifications.css';
 
@@ -68,6 +69,7 @@ export function ReminderPicker({ task, disabled, onError }: { task: Pick<Task, '
       const r = await notificationsApi.addReminder(task.id, spec);
       setList((xs) => [...(xs ?? []), r]);
       setAdding(false);
+      refreshReminderIndex();
     } catch (e) {
       fail(e);
     }
@@ -77,6 +79,7 @@ export function ReminderPicker({ task, disabled, onError }: { task: Pick<Task, '
     setList((xs) => xs?.filter((x) => x.id !== id) ?? null);
     try {
       await notificationsApi.deleteReminder(id);
+      refreshReminderIndex();
     } catch (e) {
       setList(prev);
       fail(e);

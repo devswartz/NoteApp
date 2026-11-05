@@ -49,3 +49,4 @@
   .ns-tz { max-width: 100%; flex: 1 1 100%; }
   .rp-custom { max-width: none; }
 }
+.task-ind { display: inline-flex; align-items: center; }
