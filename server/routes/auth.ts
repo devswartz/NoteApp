@@ -21,7 +21,7 @@ import type { AuthSession } from '../../shared/types.ts';
 import { adminEmails } from '../admin.ts';
 import { refuse, takeAccountDelete, takeResend } from '../ratelimit.ts';
 import { deleteAccount, deletionPreview } from '../accounts.ts';
-import { acceptPendingInvites, consumeVerificationToken, sendVerificationEmail, startsVerified } from '../verification.ts';
+import { acceptPendingInvites, consumeVerificationToken, markVerifiedByReset, sendVerificationEmail, startsVerified } from '../verification.ts';
 
 /** bcrypt only uses the first 72 bytes; anything longer would be silently truncated. */
 export const MAX_PASSWORD_BYTES = 72;
@@ -196,6 +196,7 @@ publicAuthRoutes.post(
       if (verifyResetToken(req.body.token) !== userId) throw invalid();
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
       revokeAllForUser(userId);
+      markVerifiedByReset(userId); // the link was emailed to the address, so using it proves the mailbox
     })();
     return { ok: true };
   }),
