@@ -46,7 +46,7 @@ test.describe('dashboard', () => {
 
     // Add from a calendar day pre-fills that date.
     await page.locator('.cal-day.is-today').hover();
-    await page.locator('.cal-day.is-today').getByRole('button', { name: 'Add task', exact: true }).click();
+    await page.locator('.cal-day.is-today').getByRole('button', { name: 'Add task', exact: true }).click({ force: true }); // hover-revealed
     const qa = page.getByRole('dialog', { name: 'Quick add task' });
     await expect(qa.locator('.qa-chips')).toContainText('Today');
     await qa.locator('.qa-input').fill('Added from calendar');
