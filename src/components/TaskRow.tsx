@@ -1,10 +1,10 @@
 import { memo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileText, AlignLeft, Bell, Plus } from 'lucide-react';
+import { FileText, AlignLeft, Bell, CornerDownRight, ListChecks, Plus } from 'lucide-react';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
 import type { PageMeta, Priority, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
-import type { Group } from '../lib/taskViews.ts';
+import { subtaskIndex, type Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { selection, useSelection } from '../pages/tasks/selection.ts';
 
@@ -36,6 +36,9 @@ export const TaskRow = memo(function TaskRow({
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const rowRef = useRef<HTMLDivElement>(null);
   const selected = useSelection((s) => s.ids.has(task.id));
+  const subs = useStore((s) => subtaskIndex(s.tasks).get(task.id));
+  const subsDone = subs?.filter((x) => x.status === 'done').length ?? 0;
+  const parent = useStore((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
   const done = task.status === 'done';
   /** Open the row's due-date or assignee picker from the keyboard. */
   const openPicker = (sel: string) => rowRef.current?.querySelector<HTMLButtonElement>(sel)?.click();
@@ -135,6 +138,23 @@ export const TaskRow = memo(function TaskRow({
         <div className="task-meta">
           <DueChip task={task} readOnly={!canEdit} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
           <PriorityChip task={task} readOnly={!canEdit} onChange={(priority) => void updateTask(task.id, { priority })} />
+          {subs && subs.length > 0 && (
+            <span className={`chip ${subsDone === subs.length ? 'chip-active' : ''}`} title={`${subsDone} of ${subs.length} subtasks done`}>
+              <ListChecks size={12} /> {subsDone}/{subs.length}
+            </span>
+          )}
+          {parent && (
+            <button
+              className="chip chip-btn chip-parent"
+              title={`Subtask of “${parent.title || 'Untitled'}”`}
+              onClick={(e) => {
+                e.stopPropagation();
+                ui.openTask(parent.id);
+              }}
+            >
+              <CornerDownRight size={12} /> <span className="truncate">{parent.title || 'Untitled'}</span>
+            </button>
+          )}
           {task.description && <AlignLeft size={13} className="muted" aria-label="Has description" />}
           {task.reminderAt && task.status === 'open' && <Bell size={12} className="muted" aria-label="Has reminder" />}
           {showSource && page && (

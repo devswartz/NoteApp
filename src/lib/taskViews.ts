@@ -209,3 +209,16 @@ export function productivity(all: Task[], me: string, now = new Date()): Product
   const week = Array.from({ length: 7 }, (_, i) => perDay.get(addDays(t, i - 6)) ?? 0);
   return { doneToday: perDay.get(t) ?? 0, left, streak, week };
 }
+
+const subtaskCache = new WeakMap<Record<string, Task>, Map<string, Task[]>>();
+
+/** parentId → its subtasks (oldest first), cached per tasks map. */
+export function subtaskIndex(tasks: Record<string, Task>): Map<string, Task[]> {
+  let m = subtaskCache.get(tasks);
+  if (m) return m;
+  m = new Map();
+  for (const t of Object.values(tasks)) if (t.parentId) m.set(t.parentId, [...(m.get(t.parentId) ?? []), t]);
+  for (const list of m.values()) list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  subtaskCache.set(tasks, m);
+  return m;
+}

@@ -115,11 +115,13 @@ export function toggleTask(id: string) {
 
 export async function deleteTask(id: string) {
   const prev = st().tasks[id];
+  const children = Object.values(st().tasks).filter((t) => t.parentId === id);
   removeTaskLocal(id);
+  for (const c of children) removeTaskLocal(c.id); // the server deletes subtasks with their parent
   try {
     await del(`/tasks/${id}`);
   } catch (e) {
-    if (prev) set((s) => ({ tasks: { ...s.tasks, [id]: prev } }));
+    if (prev) set((s) => ({ tasks: { ...s.tasks, [id]: prev, ...Object.fromEntries(children.map((c) => [c.id, c])) } }));
     errorToast(e);
   }
 }

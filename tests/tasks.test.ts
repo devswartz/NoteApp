@@ -345,3 +345,50 @@ test('tasks expose parentId (migration 005); top-level tasks have none', async (
   const idx = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'").all() as { name: string }[]).map((r) => r.name);
   assert.ok(idx.includes('tasks_parent') && idx.includes('tasks_ws_completed'));
 });
+
+// ───────────── Subtasks ─────────────
+
+test('subtasks: one level, follow the parent’s note, deleted with the parent', async () => {
+  const u = await app.signUp('Subber');
+  const { syncPageTasks, getTask } = await import('../server/tasks.ts');
+  const p1 = (await makePage(u, u.wsId)).pageId;
+  const p2 = (await makePage(u, u.wsId)).pageId;
+  const parent = (await create(u, u.wsId, { title: 'Parent', pageId: p1 })).data;
+  const child = (await create(u, u.wsId, { title: 'Child', parentId: parent.id, pageId: p2 })).data;
+  assert.equal(child.parentId, parent.id);
+  assert.equal(child.pageId, p1, 'a subtask lives in its parent’s note, whatever the client sent');
+
+  assert.equal((await create(u, u.wsId, { title: 'Grandchild', parentId: child.id })).status, 400, 'one level only');
+  assert.equal((await app.call('PATCH', `/tasks/${parent.id}`, u.token, { parentId: parent.id })).status, 400);
+  const other = (await create(u, u.wsId, { title: 'Other' })).data;
+  assert.equal((await app.call('PATCH', `/tasks/${parent.id}`, u.token, { parentId: other.id })).status, 400, 'a parent cannot become a subtask');
+  assert.equal((await app.call('PATCH', `/tasks/${child.id}`, u.token, { pageId: p2 })).status, 400, 'a subtask cannot leave its parent’s note');
+
+  // Saving p1 (which embeds only the parent) must not detach the subtask.
+  syncPageTasks(p1, u.wsId, new Set([parent.id]));
+  assert.equal(getTask(child.id)!.pageId, p1);
+  // Moving the parent to p2 moves the subtask too.
+  syncPageTasks(p2, u.wsId, new Set([parent.id]));
+  syncPageTasks(p1, u.wsId, new Set());
+  assert.equal(getTask(parent.id)!.pageId, p2);
+  assert.equal(getTask(child.id)!.pageId, p2);
+
+  // Promote back to a top-level standalone task.
+  const promoted = await app.call<Task>('PATCH', `/tasks/${child.id}`, u.token, { parentId: null });
+  assert.equal(promoted.data.parentId, null);
+  assert.equal(promoted.data.pageId, null);
+  // Re-parent onto `other`, then delete `other`: the subtask goes with it.
+  assert.equal((await app.call<Task>('PATCH', `/tasks/${child.id}`, u.token, { parentId: other.id })).data.parentId, other.id);
+  assert.equal((await app.call('DELETE', `/tasks/${other.id}`, u.token)).status, 200);
+  assert.equal(getTask(child.id), null);
+});
+
+test('subtasks of a private-notebook task are as private as their parent', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const parent = (await create(owner, wsId, { title: 'Secret parent', pageId })).data;
+  const child = (await create(owner, wsId, { title: 'Secret child', parentId: parent.id })).data;
+  const seen = (await list(other, wsId)).data.map((t) => t.id);
+  assert.ok(!seen.includes(parent.id) && !seen.includes(child.id));
+  assert.equal((await create(other, wsId, { title: 'Sneaky', parentId: parent.id })).status, 400, 'cannot attach to an invisible parent');
+});

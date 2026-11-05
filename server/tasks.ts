@@ -97,8 +97,34 @@ function validate(p: TaskPatch, workspaceId: string) {
       (['day', 'week', 'month', 'year'].includes(r.freq) && Number.isInteger(r.interval) && r.interval >= 1 && r.interval <= 365);
     if (!ok) throw new HttpError(400, 'Invalid recurrence');
   }
-  if (p.parentId !== undefined && p.parentId !== null) throw new HttpError(400, 'Subtasks are not supported yet');
+  if (p.parentId !== undefined && p.parentId !== null && typeof p.parentId !== 'string') throw new HttpError(400, 'Invalid parent');
   if (p.assigneeId && !roleIn(workspaceId, p.assigneeId)) throw new HttpError(400, 'Assignee is not a workspace member');
+}
+
+/** A valid parent for a subtask: same workspace, visible, and itself top-level (one level only). */
+function resolveParent(userId: string, workspaceId: string, parentId: string, selfId?: string): Task {
+  const parent = getTask(parentId);
+  if (!parent || parent.workspaceId !== workspaceId || !taskVisibleTo(parentId, userId)) throw new HttpError(400, 'Invalid parent task');
+  if (parent.id === selfId) throw new HttpError(400, 'A task cannot be its own subtask');
+  if (parent.parentId) throw new HttpError(400, 'Subtasks cannot have subtasks');
+  return parent;
+}
+
+function taskVisibleTo(id: string, userId: string) {
+  return !!db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId });
+}
+
+function childIds(parentId: string): string[] {
+  return (db.prepare('SELECT id FROM tasks WHERE parent_id = ?').all(parentId) as { id: string }[]).map((r) => r.id);
+}
+
+/** Subtasks live in their parent's note (and so share its visibility). Returns the children that moved. */
+function cascadePage(parentId: string, pageId: string | null): string[] {
+  const ids = (
+    db.prepare('SELECT id FROM tasks WHERE parent_id = ? AND page_id IS NOT ?').all(parentId, pageId) as { id: string }[]
+  ).map((r) => r.id);
+  if (ids.length) db.prepare('UPDATE tasks SET page_id = ?, updated_at = ? WHERE parent_id = ?').run(pageId, now(), parentId);
+  return ids;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -116,17 +142,21 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
       return existing;
     }
   }
-  if (input.pageId) {
-    const a = pageAccess(input.pageId, userId);
+  let pageId = input.pageId ?? null;
+  const parentId = input.parentId ?? null;
+  if (parentId) {
+    pageId = resolveParent(userId, workspaceId, parentId).pageId;
+  } else if (pageId) {
+    const a = pageAccess(pageId, userId);
     if (!a || a.workspaceId !== workspaceId || !a.canEdit) throw new HttpError(400, 'Invalid page');
   }
   const id = input.id ?? newId();
   const ts = now();
   db.prepare(
     `INSERT INTO tasks (id, workspace_id, title, description, priority, due_date, due_time, recurrence, reminder_at,
-       assignee_id, created_by, page_id, created_at, updated_at)
+       assignee_id, created_by, page_id, parent_id, created_at, updated_at)
      VALUES (@id, @workspaceId, @title, @description, @priority, @dueDate, @dueTime, @recurrence, @reminderAt,
-       @assigneeId, @userId, @pageId, @ts, @ts)`,
+       @assigneeId, @userId, @pageId, @parentId, @ts, @ts)`,
   ).run({
     id,
     workspaceId,
@@ -140,7 +170,8 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
     recurrence: input.recurrence ? JSON.stringify(input.recurrence) : null,
     reminderAt: input.reminderAt ?? null,
     assigneeId: input.assigneeId === undefined ? null : input.assigneeId,
-    pageId: input.pageId ?? null,
+    pageId,
+    parentId,
   });
   const task = getTask(id)!;
   publish({ type: 'task', task });
@@ -161,7 +192,8 @@ const COLUMNS: Record<keyof TaskPatch, string> = {
   parentId: 'parent_id',
 };
 
-export function updateTask(userId: string, id: string, patch: TaskPatch): Task {
+export function updateTask(userId: string, id: string, input: TaskPatch): Task {
+  const patch: TaskPatch = { ...input };
   const task = getTask(id);
   if (!task || !db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId }))
     throw new HttpError(404, 'Task not found');
@@ -170,6 +202,15 @@ export function updateTask(userId: string, id: string, patch: TaskPatch): Task {
   if (patch.pageId) {
     const a = pageAccess(patch.pageId, userId);
     if (!a || a.workspaceId !== task.workspaceId || !a.canEdit) throw new HttpError(400, 'Invalid page');
+  }
+  if (patch.parentId) {
+    const parent = resolveParent(userId, task.workspaceId, patch.parentId, id);
+    if (childIds(id).length) throw new HttpError(400, 'A task with subtasks cannot become a subtask');
+    patch.pageId = parent.pageId;
+  } else if (patch.parentId === null && task.parentId) {
+    patch.pageId ??= null; // leaving the parent's note too: it becomes a standalone task
+  } else if (task.parentId && patch.pageId !== undefined && patch.pageId !== task.pageId) {
+    throw new HttpError(400, 'A subtask stays in its parent’s note');
   }
 
   const ts = now();
@@ -224,6 +265,7 @@ export function updateTask(userId: string, id: string, patch: TaskPatch): Task {
 
   const updated = getTask(id)!;
   publish({ type: 'task', task: updated });
+  if (updated.pageId !== task.pageId) for (const c of cascadePage(id, updated.pageId)) publish({ type: 'task', task: getTask(c)! });
   return updated;
 }
 
@@ -232,8 +274,9 @@ export function deleteTask(userId: string, id: string) {
   if (!task || !db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId }))
     throw new HttpError(404, 'Task not found');
   requireRole(task.workspaceId, userId, 'member');
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
-  publish({ type: 'task-deleted', id, workspaceId: task.workspaceId });
+  const children = childIds(id);
+  db.prepare('DELETE FROM tasks WHERE id = ?').run(id); // subtasks go with it (ON DELETE CASCADE)
+  for (const c of [id, ...children]) publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId });
 }
 
 /**
@@ -247,7 +290,7 @@ export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<
   const changed: string[] = [];
   db.transaction(() => {
     const current = db
-      .prepare(`SELECT id FROM tasks WHERE page_id = ? AND occurrence_of IS NULL`)
+      .prepare(`SELECT id FROM tasks WHERE page_id = ? AND occurrence_of IS NULL AND parent_id IS NULL`)
       .all(pageId) as { id: string }[];
     for (const { id } of current) {
       if (!taskIds.has(id)) {
@@ -256,10 +299,12 @@ export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<
       }
     }
     for (const id of taskIds) {
-      const r = db.prepare('UPDATE tasks SET page_id = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND (page_id IS NOT ? OR page_id IS NULL)')
+      const r = db.prepare('UPDATE tasks SET page_id = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND parent_id IS NULL AND (page_id IS NOT ? OR page_id IS NULL)')
         .run(pageId, now(), id, workspaceId, pageId);
       if (r.changes) changed.push(id);
     }
+    // Subtasks follow their parent between notes.
+    for (const id of [...changed]) changed.push(...cascadePage(id, (getTask(id)?.pageId ?? null)));
   })();
   for (const id of changed) {
     const t = getTask(id);
