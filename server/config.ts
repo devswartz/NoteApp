@@ -17,3 +17,17 @@ export const PUBLIC_URL = (process.env.PUBLIC_URL || (IS_PROD ? '' : 'http://loc
 export const VERSION = process.env.GIT_SHA || 'dev';
 /** Load demo content into an empty database on startup (staging only). */
 export const SEED_DEMO = process.env.SEED_DEMO === '1';
+
+/**
+ * Who may create an account (PLAN.md: invite-only).
+ *   invite — only people with a pending invite, plus bootstrap (the first
+ *            account, or an email listed in ADMIN_EMAILS)
+ *   open   — anyone
+ * Default: invite in production, open in local development. Read on each call
+ * so tests can switch it.
+ */
+export function signupMode(): 'invite' | 'open' {
+  const v = process.env.SIGNUP_MODE;
+  if (v === 'open' || v === 'invite') return v;
+  return process.env.NODE_ENV === 'production' ? 'invite' : 'open';
+}

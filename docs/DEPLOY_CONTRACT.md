@@ -33,6 +33,8 @@ This is the fixed interface between the code in this repo and the homelab that r
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | yes for web push | generate once per environment: `npx web-push generate-vapid-keys` |
 | `VAPID_SUBJECT` | yes for web push | `mailto:<admin address>` |
 | `SEED_DEMO` | no | `1` on staging only: loads demo content on an empty DB |
+| `SIGNUP_MODE` | no | `invite` (default in production): only people with a pending invite can create an account, plus bootstrap (the first account, or an email in `ADMIN_EMAILS`). `open`: anyone can sign up |
+| `ADMIN_EMAILS` | no | comma-separated instance admins (`/api/admin/stats`); they can always sign up. Unset: the first account is the admin |
 | `TRUST_PROXY_HEADER` | yes (staging + prod) | `cf`: read the client IP from `CF-Connecting-IP` for rate limiting. **Only set this when the app port is reachable solely through cloudflared**; otherwise clients could forge their IP. Default off. |
 | `ACCESS_TOKEN_TTL_S` | no | access-token lifetime; production clamps it to 60–3600 s (default 900). Leave unset. |
 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY` / `APNS_ENV` | for iOS push | APNs token auth (`.p8` key contents in `APNS_PRIVATE_KEY`; `APNS_ENV` = `production` or `sandbox`). Optional until the iOS app ships. |

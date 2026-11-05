@@ -12,12 +12,13 @@ import {
   verifyResetToken,
 } from '../auth.ts';
 import { escapeHtml, sendMail } from '../mail.ts';
-import { PUBLIC_URL } from '../config.ts';
+import { PUBLIC_URL, signupMode } from '../config.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { publish } from '../events.ts';
 import { createWorkspace } from '../workspaces.ts';
 import { HttpError, h, str } from '../http.ts';
 import type { AuthSession, Role } from '../../shared/types.ts';
+import { adminEmails } from '../admin.ts';
 
 /** bcrypt only uses the first 72 bytes; anything longer would be silently truncated. */
 export const MAX_PASSWORD_BYTES = 72;
@@ -48,6 +49,18 @@ async function setPassword(userId: string, password: string) {
   })();
 }
 
+/**
+ * In invite mode an account can be created only with a pending, unexpired
+ * invite for that email, or to bootstrap the server: the very first account,
+ * or an email listed in ADMIN_EMAILS.
+ */
+function maySignUp(email: string): boolean {
+  if (signupMode() === 'open') return true;
+  if (!db.prepare('SELECT 1 FROM users LIMIT 1').get()) return true;
+  if (adminEmails().includes(email)) return true;
+  return !!db.prepare('SELECT 1 FROM workspace_invites WHERE email = ? AND (expires_at IS NULL OR expires_at > ?)').get(email, now());
+}
+
 /** Routes that work without a token. */
 export const publicAuthRoutes = Router();
 /** Routes for the signed-in user. */
@@ -62,6 +75,7 @@ publicAuthRoutes.post(
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address');
     validPassword(password);
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
+    if (!maySignUp(email)) throw new HttpError(403, 'Sign-up is by invitation only. Ask a workspace admin to invite you, then use the link in the email.');
     const id = newId();
     const ts = now();
     const color = pickColor();
@@ -170,6 +184,16 @@ publicAuthRoutes.post(
     })();
     return { ok: true };
   }),
+);
+
+// What the sign-in page should offer. `signupOpen` is true when anyone may
+// create an account (open mode, or nobody has signed up yet).
+publicAuthRoutes.get(
+  '/auth/config',
+  h(() => ({
+    signupMode: signupMode(),
+    signupOpen: signupMode() === 'open' || !db.prepare('SELECT 1 FROM users LIMIT 1').get(),
+  })),
 );
 
 authRoutes.get('/me', h((req) => req.user));
