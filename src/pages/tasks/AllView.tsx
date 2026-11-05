@@ -16,12 +16,18 @@ export function AllView() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sort, setSort] = useState<SortKey>('due');
   const [group, setGroup] = useState<GroupKey>('none');
-  const [showDone, setShowDone] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const source = showDone ? Object.values(tasks) : open;
-  const filtered = useMemo(() => applyFilters(source, filters, me, tree), [source, filters, me, tree]);
+  // "Open" reads from the open list so just-completed tasks linger for their check animation.
+  const filtered = useMemo(
+    () =>
+      filters.status === 'open'
+        ? applyFilters(open, { ...filters, status: 'any' }, me, tree)
+        : applyFilters(Object.values(tasks), filters, me, tree),
+    [open, tasks, filters, me, tree],
+  );
   const groups = useMemo(() => groupBy(filtered, group, sort, { members, tree }), [filtered, group, sort, members, tree]);
-  const active = Object.entries(filters).filter(([k, v]) => v !== DEFAULT_FILTERS[k as keyof Filters]).length;
+  // Search text and status have their own controls in the toolbar; don't count them on the Filters button.
+  const active = Object.entries(filters).filter(([k, v]) => k !== 'q' && k !== 'status' && v !== DEFAULT_FILTERS[k as keyof Filters]).length;
   const f = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((x) => ({ ...x, [k]: v }));
   if (!loaded) return <Loading />;
   return (
@@ -50,8 +56,13 @@ export function AllView() {
             <option value="priority">Priority</option>
           </select>
         </label>
-        <label className="check-label">
-          <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Show completed
+        <label className="select-label">
+          Status
+          <select className="input input-sm" value={filters.status} onChange={(e) => f('status', e.target.value as Filters['status'])}>
+            <option value="open">Open</option>
+            <option value="done">Completed</option>
+            <option value="any">All</option>
+          </select>
         </label>
       </div>
       {showFilters && (
@@ -109,7 +120,7 @@ export function AllView() {
             </select>
           </label>
           {active > 0 && (
-            <button className="btn-ghost btn-sm" onClick={() => setFilters(DEFAULT_FILTERS)}>
+            <button className="btn-ghost btn-sm" onClick={() => setFilters((x) => ({ ...DEFAULT_FILTERS, q: x.q, status: x.status }))}>
               <X size={14} /> Clear
             </button>
           )}

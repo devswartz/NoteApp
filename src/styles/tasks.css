@@ -34,3 +34,6 @@ button.cal-more:hover { color: var(--accent); }
   .cal-week .cal-mobile-label { display: inline; }
   .cal-week .cal-day.is-today .cal-date span { background: none; color: var(--accent); padding: 0; }
 }
+
+/* Dashboard rows */
+.task-title-input { width: 100%; font: inherit; }

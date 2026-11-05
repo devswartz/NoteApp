@@ -128,9 +128,10 @@ export interface Filters {
   due: 'any' | 'overdue' | 'today' | 'week' | 'none';
   source: 'any' | 'notes' | 'standalone';
   notebookId: 'any' | string;
+  status: 'open' | 'done' | 'any';
 }
 
-export const DEFAULT_FILTERS: Filters = { q: '', assignee: 'any', priority: 'any', due: 'any', source: 'any', notebookId: 'any' };
+export const DEFAULT_FILTERS: Filters = { q: '', assignee: 'any', priority: 'any', due: 'any', source: 'any', notebookId: 'any', status: 'open' };
 
 export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree): Task[] {
   const t = today();
@@ -138,6 +139,7 @@ export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree): 
   const sectionNotebook = new Map(tree.sections.map((s) => [s.id, s.notebookId]));
   const pageNotebook = new Map(tree.pages.map((p) => [p.id, sectionNotebook.get(p.sectionId)]));
   return list.filter((x) => {
+    if (f.status !== 'any' && x.status !== f.status) return false;
     if (q && !x.title.toLowerCase().includes(q) && !x.description.toLowerCase().includes(q)) return false;
     if (f.assignee === 'me' && !isMine(x, me)) return false;
     if (f.assignee === 'unassigned' && x.assigneeId) return false;

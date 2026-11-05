@@ -1,9 +1,9 @@
-import { memo, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { FileText, AlignLeft, Bell, Plus } from 'lucide-react';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
 import type { Task } from '../../shared/types.ts';
-import { AssigneeChip, DueChip, TaskCheckbox } from './TaskControls.tsx';
+import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
 import type { Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 
@@ -20,11 +20,22 @@ export const TaskRow = memo(function TaskRow({
   const page = useStore((s) => (task.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const lingering = useStore((s) => !!s.lingering[task.id]);
+  const [editing, setEditing] = useState(false);
+  // A click on the title waits briefly so a double-click can start renaming instead of opening the sheet.
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const done = task.status === 'done';
   return (
     <div
       className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''}`}
-      onClick={() => ui.openTask(task.id)}
+      onClick={(e) => {
+        if (editing) return;
+        clearTimeout(clickTimer.current);
+        if (canEdit && (e.target as HTMLElement).closest('.task-title')) {
+          if (e.detail < 2) clickTimer.current = setTimeout(() => ui.openTask(task.id), 250);
+          return;
+        }
+        ui.openTask(task.id);
+      }}
       draggable={draggable}
       onDragStart={(e) => {
         e.dataTransfer.setData('application/x-task', task.id);
@@ -33,7 +44,12 @@ export const TaskRow = memo(function TaskRow({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter') ui.openTask(task.id);
+        if ((e.key === 'e' || e.key === 'F2') && canEdit) {
+          e.preventDefault();
+          setEditing(true);
+        }
         if (e.key === ' ' && canEdit) {
           e.preventDefault();
           toggleTask(task.id);
@@ -42,9 +58,25 @@ export const TaskRow = memo(function TaskRow({
     >
       <TaskCheckbox task={task} onToggle={() => toggleTask(task.id)} disabled={!canEdit} />
       <div className="task-main">
-        <div className="task-title">{task.title || <span className="muted">Untitled task</span>}</div>
+        {editing ? (
+          <TitleEditor task={task} onDone={() => setEditing(false)} />
+        ) : (
+          <div
+            className="task-title"
+            title={canEdit ? 'Double-click (or press E) to rename' : undefined}
+            onDoubleClick={(e) => {
+              if (!canEdit) return;
+              e.stopPropagation();
+              clearTimeout(clickTimer.current);
+              setEditing(true);
+            }}
+          >
+            {task.title || <span className="muted">Untitled task</span>}
+          </div>
+        )}
         <div className="task-meta">
           <DueChip task={task} readOnly={!canEdit} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
+          <PriorityChip task={task} readOnly={!canEdit} onChange={(priority) => void updateTask(task.id, { priority })} />
           {task.description && <AlignLeft size={13} className="muted" aria-label="Has description" />}
           {task.reminderAt && task.status === 'open' && <Bell size={12} className="muted" aria-label="Has reminder" />}
           {showSource && page && (
@@ -66,6 +98,40 @@ export const TaskRow = memo(function TaskRow({
     </div>
   );
 });
+
+/** In-place title editor for a dashboard row: Enter or blur saves, Escape cancels. */
+function TitleEditor({ task, onDone }: { task: Task; onDone: () => void }) {
+  const [value, setValue] = useState(task.title);
+  const commit = () => {
+    const v = value.trim();
+    if (v && v !== task.title) void updateTask(task.id, { title: v });
+    onDone();
+  };
+  return (
+    <input
+      autoFocus
+      className="input input-sm task-title-input"
+      value={value}
+      aria-label="Task title"
+      maxLength={1000}
+      onFocus={(e) => e.target.select()}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onDone();
+        }
+      }}
+    />
+  );
+}
 
 /** Inline "Add task" row inside a group; inherits the group's date/assignee. */
 export function InlineAdd({ group, defaults }: { group?: Group; defaults?: { pageId?: string; assigneeId?: string | null } }) {

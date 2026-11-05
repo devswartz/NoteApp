@@ -79,7 +79,9 @@ test('All-view filters: text, assignee, priority, due, notebook, status', () => 
   assert.deepEqual(f({ due: 'overdue' }), [inNote.id]);
   assert.deepEqual(f({ due: 'week' }), [inNote.id, standalone.id]);
   assert.deepEqual(f({ notebookId: 'nb1' }), [inNote.id]);
-  assert.deepEqual(f({ source: 'standalone' }), [standalone.id, done.id]);
+  assert.deepEqual(f({ source: 'standalone' }), [standalone.id]);
+  assert.deepEqual(f({ status: 'done' }), [done.id]);
+  assert.deepEqual(f({ status: 'any', source: 'standalone' }), [standalone.id, done.id]);
 });
 
 const NOW = new Date(2026, 10, 5, 9, 0); // Thu 5 Nov 2026
