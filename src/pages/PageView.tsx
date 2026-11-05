@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History } from 'lucide-react';
-import { get, patch, del, post } from '../api.ts';
+import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
@@ -234,14 +234,40 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   useEffect(() => {
     if (!focused.current) setTitle(remote);
   }, [remote]);
+  // Title saves are debounced while typing, but a pending save is never dropped: it's flushed
+  // when the page changes or unmounts (navigating away) and when the tab is hidden or closed
+  // (keepalive, so the request outlives the page). BUG-3.
+  const pending = useRef<string | null>(null);
+  const flush = useRef(() => {});
+  flush.current = () => {
+    const next = pending.current;
+    if (next === null) return;
+    pending.current = null;
+    useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title: next } : p)) } }));
+    api(`/pages/${pageId}`, { method: 'PATCH', json: { title: next }, keepalive: true }).catch(errorToast);
+  };
   useEffect(() => {
-    if (title === remote) return;
-    const t = setTimeout(() => {
-      patch(`/pages/${pageId}`, { title }).catch(errorToast);
-      useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title } : p)) } }));
-    }, 400);
+    if (title === remote) {
+      pending.current = null;
+      return;
+    }
+    pending.current = title;
+    const t = setTimeout(() => flush.current(), 400);
     return () => clearTimeout(t);
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onHide = () => flush.current();
+    const onVisibility = () => document.visibilityState === 'hidden' && flush.current();
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('beforeunload', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('beforeunload', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush.current(); // unmount: the component is keyed by page id, so this also covers switching pages
+    };
+  }, []);
   useEffect(() => {
     // Auto-size and focus new, empty pages.
     if (ref.current) {
