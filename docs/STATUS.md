@@ -31,8 +31,7 @@
 4. Update this file and push it. Schedule the next check-in (`send_later`, 15 min).
 
 ### Queue (not started yet)
-1. **Desktop / Tauri 2 (agent 9)**: owns `apps/desktop/**` and the Tauri implementation of `src/platform/`. Start at ~07:30 or when a slot frees up.
-2. **Mobile / Capacitor (agent 10)**: owns `apps/mobile/**`, the Capacitor platform implementation, APNs/FCM wiring (server side from Reminders' channel interface) and the Today widget. Start when a slot frees up after Desktop.
+1. **Mobile / Capacitor (agent 10)**: owns `apps/mobile/**`, the Capacitor platform implementation, APNs/FCM wiring (server side from Reminders' channel interface) and the Today widget. Start when a slot frees up after Desktop.
 - Stretch backlogs were sent to Foundation, Tasks, Editor, Collaboration and Reminders at 04:17 (the details are in each kickoff/follow-up message; their PRs' "Status of my area" sections track progress).
 
 ## Session roster
@@ -45,6 +44,7 @@
 | 3 Tasks & Dashboard | session_019dirnRfdDtEARpJKN6JxyV | feat/tasks | task server/routes, dashboard views, calendar, quick add | started 04:15 |
 | 2 Editor & Notes | session_019dirnQJdPWZ1xg1q9wPn2Q | feat/editor | `src/editor/**` (not collab*), PageView/NotesHome, files, FTS search, tree moves | started 04:15 |
 | 4 Collaboration & Access | session_019dirnPr6xS49fYWnMwkTgE | feat/collab | collab/access/events/workspaces, cursors/presence, invites, `server/mail.ts`, sharing UI | started 04:15 |
+| 9 Desktop / Tauri 2 | session_019dirnS7qJeVB9Nazida4y7 | feat/desktop | `apps/desktop/**`, `src/platform/tauri.ts`, `.github/workflows/desktop.yml`, `docs/DESKTOP.md` | started 04:40 |
 | 8 QA / E2E | session_019dirnSs9HgWLitSESbPuyD | feat/e2e | `tests/e2e/**`, playwright config, `docs/QA.md` (bug list; doesn't fix app code) | started 04:17 |
 | 5 Recurrence & Reminders | session_019dirnS55cMN1UvQo2atin9 | feat/reminders | `shared/recurrence.ts`, `server/reminders/**`, web push + email, notification settings | started 04:15 |
 | Original builder | session_019dirnQSpFWbj8dPFQkoUjf | claude/initial-app | wrote the initial work-in-progress (now the base of `main`) | paused/idle; not used further (its session is tied to pushing `master`) |
@@ -61,6 +61,10 @@
 | 04:33 | #9 tasks: validation, week calendar, TasksView split | Tasks | merged |
 | 04:28 | #13 infra: manual publish only from main | Infra | merged |
 | — | #12 foundation security follow-ups + new migration runner | Foundation | migration renamed to 006; runner now records applied migrations in `schema_migrations` (any order, duplicates still fail). Waiting on fixes: refresh replay `used_at`, revoke canEdit/terminate, reconnect backoff. Then a re-review of the runner. |
+| 04:36 | #17 ui: design tokens + light/dark/system theme | UI Shell | merged (follow-ups: no-flash inline script, readPref after platform init) |
+| — | #15 QA E2E suite (37 tests) | QA | in review; BUG-1 (offline reload → login) sent to Foundation |
+| — | #16 tasks keyboard nav, #19 ui shortcut registry, ui primitives PR | Tasks / UI | in review (#16 vs #19 overlap being checked) |
+| — | #14 collab sharing, #18 collab events | Collab | in review along with the #7/#11/#4 chain |
 | — | #7 [shared] collab migration | Collab | waiting: rename to **004**, then merge |
 | — | #4 [shared] reminders migration | Reminders | waiting: after #7, rename to **005** and resolve types.ts |
 | 04:33 | #10 editor: ranked FTS search, uploads, move/copy | Editor | merged after a security re-review (actively attacked uploads; all held) |
@@ -76,3 +80,4 @@
 - **2026-11-05 04:33** Reviewed 9 PRs with 3 parallel reviewer subagents. Merged #8, #3, #6, #5, #9. Migration-number ordering: 003 editor, 004 collab, 005 reminders. #10 blocked for upload XSS. **Workers DO have send_message**: Infra pinged the manager; all workers told to ping session_019dirnRG6rqRQKiaYoYvd2H.
 - **2026-11-05 04:28** Merged #13; Infra done. Started UI Shell (agent 6) in its slot. Migration numbers reserved: 004 collab, 005 reminders, 006 foundation. **Rule: a migration takes the next free number on main at rebase time; the manager assigns numbers.**
 - **2026-11-05 04:34** Merged #10. #12 reviewed: migration renamed to 006, follow-ups sent. Foundation is replacing the contiguous `user_version` migration runner with a `schema_migrations` table, so numbers no longer need to land in order.
+- **2026-11-05 04:40** Batch of 9 PRs sent to 4 parallel reviewer subagents. Reminders finished its stretch backlog (snooze, APNs/FCM channels, quiet hours, .ics) inside #4; given one last job (wire its pickers into TaskDetail/TaskRow/quickadd), then done. Started Desktop (agent 9) early so no slot sits idle. **#4 lists new env vars for DEPLOY_CONTRACT: APNS_KEY_ID/TEAM_ID/BUNDLE_ID/PRIVATE_KEY/ENV, FCM_SERVICE_ACCOUNT_JSON — add them to the contract when #4 merges.**
