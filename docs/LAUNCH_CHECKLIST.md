@@ -30,13 +30,13 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 > 4. **iOS push (when the iOS app ships):** `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.devswartz.noteapp`, `APNS_PRIVATE_KEY` (the `.p8` contents, newlines as `\n`) and `APNS_ENV=production`. The values come from the user (see `docs/MOBILE.md` → *Server environment*).
 > 5. **Android push (when the Android app ships):** `FCM_SERVICE_ACCOUNT_JSON` (the Firebase service-account JSON, one line or base64).
 > 6. **(open PR #57) App links:** `ANDROID_CERT_SHA256` (comma-separated SHA-256 fingerprints of the Play app-signing and upload certs). `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) is used for the iOS `apple-app-site-association`. Verify with `curl -i https://notes.devswartz.com/.well-known/assetlinks.json` and `…/apple-app-site-association` (200, `application/json`, no redirect).
-> 7. **(open PR #67) Admin and logs:** `ADMIN_EMAILS=<the user's email>` (who may call `GET /api/admin/stats`). Logs become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
+> 7. **`ADMIN_EMAILS=<the user's email>` on staging AND prod, before anyone signs up** (#67). Without it, **the first account created becomes the instance admin** (who may call `GET /api/admin/stats`). Comma-separated if there's more than one admin. Logs also become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
 > 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log.
 > 9. Unchanged from the brief: `NODE_ENV`, `PUBLIC_URL`, `JWT_SECRET` (per env), the SES SMTP settings (`SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`), VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `SEED_DEMO=1` on staging only, backups (`sqlite3 .backup` or Litestream, plus `/data/files/`, off the box), Cloudflare Access **off**.
 >
 > `deploy/.env.example` lists all of these as commented lines.
 
-- [ ] Homelab agent confirms: port only via cloudflared, `TRUST_PROXY_HEADER=cf` set, both stacks restarted, and backups running with one test restore done.
+- [ ] Homelab agent confirms: `ADMIN_EMAILS` set on both environments **before the first sign-up**, port only via cloudflared, `TRUST_PROXY_HEADER=cf` set, both stacks restarted, and backups running with one test restore done.
 - [ ] **SES:** out of the sandbox, or your address verified, so invite emails arrive. If it's still in the sandbox, only verified addresses receive mail.
 
 ## 3. Verify staging (~15 min)
@@ -45,7 +45,7 @@ Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and 
 
 - [ ] **Health:** `curl -s https://notes-staging.devswartz.com/api/health` → `{"ok":true,"version":"<sha>"}`, where `<sha>` matches the latest `main` commit (`git rev-parse --short origin/main`).
 - [ ] **Security headers:** `curl -sI https://notes-staging.devswartz.com/ | grep -iE "strict-transport|content-security"` shows both (#51).
-- [ ] **Sign up** with your real email in a private window, check that you land in your workspace, then sign out and back in.
+- [ ] **Sign up** (only after `ADMIN_EMAILS` is set, section 2) with your real email in a private window, check that you land in your workspace, then sign out and back in.
 - [ ] **Invite email (SES):** Settings → Members → invite a second address you own as *Member*. The email arrives (check spam), the link opens the invite page, and signing up with that address joins the workspace. If no email arrives, check the staging log for `mail:` warnings and the SES sending statistics.
 - [ ] **Web push reminder:**
   1. Settings → Notifications → allow notifications in the browser.
@@ -60,7 +60,7 @@ Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and 
 ## 4. Production v0.1.0 (~10 min)
 
 - [ ] Staging has passed section 3 on the exact commit you're releasing.
-- [ ] **Prod `.env`:** `SEED_DEMO` removed (or `0`), and its own `JWT_SECRET` and VAPID keys (never staging's).
+- [ ] **Prod `.env`:** `SEED_DEMO` removed (or `0`), its own `JWT_SECRET` and VAPID keys (never staging's), and `ADMIN_EMAILS` set.
 - [ ] **Tag it** (see `docs/RELEASING.md` → *Cut a production release*):
   ```sh
   git fetch origin main
@@ -73,7 +73,7 @@ Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and 
   - **Mobile**: the Android APK/AAB and the iOS build, uploaded to TestFlight if its secrets exist (section 5).
 - [ ] Wait for the CI run's `publish` job to go green. Prod pulls `:prod` on its next timer run, or right away with `sudo systemctl start noteapp-update@prod.service`.
 - [ ] `curl -s https://notes.devswartz.com/api/health` → `"version"` matches the tagged commit.
-- [ ] Sign up on prod with your real email. **Do this first:** without `ADMIN_EMAILS` (#67), the first account becomes the instance admin. Create the team workspace and invite the team.
+- [ ] Check that `ADMIN_EMAILS` is set in prod's `.env` (otherwise the first account to sign up becomes the instance admin). Then sign up with your real email, create the team workspace, and invite the team.
 - [ ] Move `CHANGELOG.md`'s `v0.1.0 (unreleased)` heading to `v0.1.0 (2026-11-xx)` in a small PR.
 
 Rollback: `docs/RELEASING.md` → *Roll back* (pin `NOTEAPP_TAG` to the previous tag; restore `/data` if a migration ran).
