@@ -10,6 +10,10 @@ apps/mobile/
   scripts/icons.mjs     regenerates assets/ and every native icon/splash size
   scripts/identity.mjs  copies APP_NAME into strings.xml / Info.plist (run by mobile:sync)
   ios/App/              Xcode project (Swift Package Manager, no CocoaPods)
+    App/                app target: AppDelegate, MainViewController + NoteAppNativePlugin (the app's own plugin)
+    Shared/             Swift shared by the app and its extensions (App Group store)
+    ShareExtension/     "Share to NoteApp"
+  scripts/xcode-extensions.rb  re-adds the extension targets if the Xcode project is ever regenerated
   android/              Gradle project
 ```
 
@@ -48,6 +52,8 @@ npm run mobile:android   # …and open Android Studio
 | Status bar / safe areas | The web view draws edge to edge on both platforms; the layout pads with `env(safe-area-inset-*)` (the `--safe-*` tokens in `src/styles.css`). Status bar text follows `<html data-theme>`. |
 | Keyboard | The web view resizes above the keyboard. iOS's prev/next/done accessory bar is hidden. While the keyboard is open `<html>` has class `keyboard-open` and `--keyboard-height` is set, so bottom bars can hide or move. |
 | Android back button | Goes back in history; at the root it backgrounds the app. |
+| Share to NoteApp | iOS: a Share Extension (`ios/App/ShareExtension`) with *Add as task* / *Save as note*. Android: two share targets, *Add task* and *Save as note* (activity-aliases of `MainActivity`). The item waits in the App Group (iOS) or in memory (Android) until the app is active and someone is signed in. Then a **task** opens quick add, prefilled with the text (and link), on Today; a **note** becomes a new page in the workspace's section named *Inbox* (or the first section), with the text and link as its body. The body is written to the page's local Yjs cache, and the editor syncs it like an offline edit. iOS extensions can't open their app, so the share appears the next time you switch to NoteApp. |
+| App lock | Optional. Turn it on with the ⌘K command *Lock app with Face ID* (or Touch ID / fingerprint / passcode). It asks to unlock on launch and after more than a minute in the background, falling back to the device passcode. While the app is in the background a cover hides its content from the app switcher. A Settings toggle can use `platform.appLock` (`method()`, `enabled()`, `setEnabled()`, `subscribe()`). Stored per device. |
 | Splash screen | Native splash (light and dark) until React's first render. |
 | `<html>` classes | `native`, plus `native-ios` or `native-android`, for any shell-only CSS. |
 
@@ -70,7 +76,7 @@ Nothing below is needed to build or run debug builds. CI skips the steps whose s
 **iOS signing uses Xcode cloud signing**: the API key lets `xcodebuild -allowProvisioningUpdates` create the distribution certificate and the provisioning profiles for the app (and any extensions) itself, so there's no `.p12` or `.mobileprovision` to export. Create the key in App Store Connect → Users and Access → Integrations → App Store Connect API with the **Admin** role (cloud-managed certificates need it).
 
 One-time Apple setup:
-1. developer.apple.com → Identifiers: register `com.devswartz.noteapp` with **Push Notifications** and **Associated Domains** enabled.
+1. developer.apple.com → Identifiers: register `com.devswartz.noteapp` with **Push Notifications**, **Associated Domains** and **App Groups** (`group.com.devswartz.noteapp`) enabled, and `com.devswartz.noteapp.ShareExtension` (and `.TodayWidget`) with **App Groups**. Cloud signing in CI usually registers these on its own; doing it by hand avoids surprises.
 2. App Store Connect → Apps → New App with that bundle id (the name can be a placeholder and changed later).
 3. Keys → create an **APNs key** (.p8) for the server (below). It's a different key from the App Store Connect API key.
 
