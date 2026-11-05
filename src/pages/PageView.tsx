@@ -34,9 +34,12 @@ export function PageView() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
+  // Re-checked when your role changes (a live `workspaces` event reloads it), so a member
+  // demoted to viewer goes read-only without a reload (BUG-2b).
+  const role = useStore((s) => s.workspaces.find((w) => w.id === wsId)?.role);
+  useEffect(() => setCanEdit(null), [pageId]);
   useEffect(() => {
     let cancelled = false;
-    setCanEdit(null);
     get<{ canEdit: boolean }>(`/pages/${pageId}`)
       .then((r) => !cancelled && setCanEdit(r.canEdit))
       .catch(() => !cancelled && setCanEdit(false));
@@ -44,7 +47,7 @@ export function PageView() {
     return () => {
       cancelled = true;
     };
-  }, [pageId, wsId]);
+  }, [pageId, wsId, role]);
 
   // Deep link to a task inside the note (?task=id): scroll to it and flash.
   const focusTask = params.get('task');

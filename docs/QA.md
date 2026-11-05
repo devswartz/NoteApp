@@ -12,7 +12,7 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 ```
 
 - Each run uses a fresh, throwaway `DATA_DIR` (and a fixed test-only `JWT_SECRET`), so tests never touch `./data`.
-- Projects: `chromium` (desktop, every `*.spec.ts`) and `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`).
+- Projects: `chromium` (desktop, every `*.spec.ts`), `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`) and `short-tokens` (only `*.tokens.spec.ts`, against a second server on port+1 started with `ACCESS_TOKEN_TTL_S=6`, so access tokens expire mid-test).
 - The browser runs in UTC (`timezoneId`), so "today" in tests matches `isoDay()` in `helpers.ts`.
 - On failure, a trace and a screenshot land in `test-results/`; in CI the HTML report is uploaded as the `playwright-report` artifact.
 - CI: the `e2e` job in `.github/workflows/ci.yml` runs `npx playwright test` after `check`; `publish` waits for it.
@@ -39,6 +39,10 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 | 7 | Daily and weekly recurrence roll forward with a completed copy; Repeat from task details; reminder time + bell; Settings "Enable notifications"; in-app reminder toast | `07-recurrence-reminders.spec.ts` | ✅ (push/email settings: fixme, waiting for feature) |
 | 8 | Offline edit → reconnect → synced to server and another device; reload while offline | `08-offline.spec.ts` | ✅ / reload: fixme BUG-1 |
 | 9 | iPhone 13: tab bar, quick add, tap to complete, drawer sidebar → note, no horizontal scroll, editing, search | `09-mobile.mobile.spec.ts` | ✅ |
+| 10 | Notes edge cases: ⌘↵ convert line to task, move page (tasks stay linked), delete page/notebook keeps tasks, live rename for others, theme | `10-notes-edge.spec.ts` | ✅ |
+| 11 | Live access changes: notebook made private, member removed, member demoted (server rejects edits; UI read-only live) | `11-live-access.spec.ts` | ✅ / UI part: fixme BUG-2b |
+| 12 | Bulk task actions + row keys (#16) | `12-bulk-tasks.spec.ts` | fixme until #16 merges (verified on its branch) |
+| 13 | Token refresh mid-session: editing, REST and live events survive repeated 6 s access-token expiries (collab 4401 → refresh → reconnect); reload after expiry restores the session | `13-token-refresh.tokens.spec.ts` | ✅ |
 
 ## Open bugs
 
