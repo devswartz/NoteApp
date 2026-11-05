@@ -1,14 +1,13 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { FileText, AlignLeft, Bell, CornerDownRight, ListChecks, Plus } from 'lucide-react';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
-import type { PageMeta, Priority, Task } from '../../shared/types.ts';
+import type { PageMeta, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
 import { subtaskIndex, type Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { selection, useSelection } from '../pages/tasks/selection.ts';
-
-let lastG = 0;
+import { RENAME_EVENT } from '../pages/tasks/commands.tsx';
 
 /** id → page, cached per tree.pages array so each row's lookup is O(1). */
 const pageMaps = new WeakMap<PageMeta[], Map<string, PageMeta>>();
@@ -40,8 +39,14 @@ export const TaskRow = memo(function TaskRow({
   const subsDone = subs?.filter((x) => x.status === 'done').length ?? 0;
   const parent = useStore((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
   const done = task.status === 'done';
-  /** Open the row's due-date or assignee picker from the keyboard. */
-  const openPicker = (sel: string) => rowRef.current?.querySelector<HTMLButtonElement>(sel)?.click();
+  // The R shortcut (pages/tasks/commands.tsx) asks the focused row to rename itself.
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || !canEdit) return;
+    const start = () => setEditing(true);
+    el.addEventListener(RENAME_EVENT, start);
+    return () => el.removeEventListener(RENAME_EVENT, start);
+  }, [canEdit]);
   return (
     <div
       ref={rowRef}
@@ -79,33 +84,10 @@ export const TaskRow = memo(function TaskRow({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        // Other row keys (X, D, A, R, S, 1–4, J/K) are registered as shortcuts in pages/tasks/commands.tsx.
         if (e.target !== e.currentTarget) return;
-        // Leave the second key of "G <letter>" navigation to the app shell.
-        const afterG = Date.now() - lastG < 1200;
-        if (e.key === 'g') lastG = Date.now();
-        if (afterG && /^[a-z]$/.test(e.key)) return;
         if (e.key === 'Enter') ui.openTask(task.id);
-        if ((e.key === 'r' || e.key === 'F2') && canEdit) {
-          e.preventDefault();
-          setEditing(true);
-        }
-        if (['1', '2', '3', '4'].includes(e.key) && canEdit) {
-          e.preventDefault();
-          void updateTask(task.id, { priority: Number(e.key) as Priority });
-        }
-        if (e.key === 'd' && canEdit) {
-          e.preventDefault();
-          openPicker('.task-meta .chip-due');
-        }
-        if (e.key === 'a' && canEdit) {
-          e.preventDefault();
-          openPicker('.task-side .avatar-btn');
-        }
-        if (e.key === 's' && canEdit) {
-          e.preventDefault();
-          selection.toggle(task.id);
-        }
-        if ((e.key === ' ' || e.key === 'x') && canEdit) {
+        if (e.key === ' ' && canEdit) {
           e.preventDefault();
           toggleTask(task.id);
         }

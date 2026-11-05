@@ -20,23 +20,6 @@ export function BulkBar() {
     const t = setTimeout(() => selection.prune(), 0);
     return () => clearTimeout(t);
   }, [tasks]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el?.closest('input, textarea, select, [contenteditable="true"]')) return;
-      const s = useStore.getState();
-      if (s.paletteOpen || s.quickAdd || s.taskDetailId) return;
-      if (e.key === 'Escape' && useSelection.getState().ids.size) {
-        e.preventDefault();
-        selection.clear();
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && el?.closest('.tasks-page, body')) {
-        e.preventDefault();
-        selection.selectAll();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
 
   if (!ids.size || !canEdit) return null;
   const list = [...ids];
