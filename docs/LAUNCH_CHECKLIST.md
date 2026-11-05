@@ -31,7 +31,7 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 > 5. **Android push (when the Android app ships):** `FCM_SERVICE_ACCOUNT_JSON` (the Firebase service-account JSON, one line or base64).
 > 6. **App links (#57):** `ANDROID_CERT_SHA256` (comma-separated SHA-256 fingerprints of the Play app-signing and upload certs). `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) is used for the iOS `apple-app-site-association`. Verify with `curl -i https://notes.devswartz.com/.well-known/assetlinks.json` and `…/apple-app-site-association` (200, `application/json`, no redirect).
 > 7. **`ADMIN_EMAILS=<the user's email>` on staging AND prod, before anyone signs up** (#67). Without it, **the first account created becomes the instance admin** (who may call `GET /api/admin/stats`). Comma-separated if there's more than one admin. Logs also become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
-> 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log.
+> 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log. With #70, the *Demo Team* workspace shows off every feature (a notebook per area, every block type, subtasks, recurrence, links, comments, versions, a private notebook), which makes it a good tour for the team on staging.
 > 9. Unchanged from the brief: `NODE_ENV`, `PUBLIC_URL`, `JWT_SECRET` (per env), the SES SMTP settings (`SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`), VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `SEED_DEMO=1` on staging only, backups (`sqlite3 .backup` or Litestream, plus `/data/files/`, off the box), Cloudflare Access **off**.
 >
 > `deploy/.env.example` lists all of these as commented lines.
@@ -126,7 +126,7 @@ As of 2026-11-05 ~11:30 UTC (`docs/STATUS.md`, open PRs).
   - accessibility (#68);
   - the BUG-3 title-loss fix (#66).
 - Tasks staying private when they leave a private notebook (#63, migration 010).
-- Web icon set and favicons (#73); notebook templates (#71); a richer demo workspace (#70); mobile visual QA (#69); editor E2E (#72).
+- Web icon set and favicons (#73); notebook templates (#71); mobile visual QA (#69); editor E2E (#72).
 
 **Known gaps (not planned for v0.1.0)**
 - Desktop and mobile builds have **never run on real macOS/Windows/iOS hardware**. The first tag is their first real build, so watch those workflow runs.

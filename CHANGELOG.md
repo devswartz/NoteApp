@@ -27,6 +27,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Page links and backlinks: `[[` links to a page or creates one, and each page has a "Linked from" panel (#25).
 - Page version history: automatic snapshots, preview and restore (#37).
 - Page templates: meeting notes, project, daily journal, and "Start with a template" on empty pages (#27).
+- `SEED_DEMO` showcase: a *Demo Team* workspace with a notebook per area, every block type, tasks with subtasks and recurrence, links, comments, versions and a private notebook (#70).
 
 ### Tasks and dashboard
 - Validation fixes and tests, a week view for the calendar, and the task views split into modules (#9).
