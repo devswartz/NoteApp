@@ -18,10 +18,10 @@
 - **The manager may merge PRs into `main`** after review + green CI.
 - Concurrency: **balanced, about 4–5 worker sessions at once.**
 - A homelab agent is run separately by the user from `docs/HOMELAB_BRIEF.md`; it reports back through the user or with a PR adding `docs/HOMELAB.md`.
-- The user asked the manager to work independently and to document as it goes. **Updated 04:10: aim to finish v1 (Phase 1) in about 4 hours, i.e. by about 08:15 UTC; agents' feature deadline is 07:30 UTC.** Check agents every 15–20 minutes.
+- The user asked the manager to work independently and to document as it goes. **Updated 04:10: aim to finish v1 (Phase 1) in about 4 hours, i.e. by about 08:15 UTC; agents' feature deadline is 07:30 UTC.** Check agents every 15–20 minutes. **Updated 04:17: the user is away until about 12:30 UTC — keep every worker busy (each has a stretch backlog after its main list); check in every 10 min.** After Phase 1 converges (~07:30), start Phase 2 (Tauri desktop) and Phase 3 (Capacitor mobile) agents in freed slots.
 
 ## Manager automation
-- The manager checks in every ~15 minutes through a chain of `send_later` reminders into the manager session; each check-in schedules the next. (The old hourly scheduled task `trig_01QRki933W6e6bsvS4Jau21s` is deleted.) A resuming manager should run `list_triggers` and keep at most one pending check-in.
+- The manager checks in every ~15 minutes through a chain of `send_later` reminders (every 10 min) into the manager session; each check-in schedules the next. Workers have no `send_message` tool, so they can't ping the manager; the manager polls `get_session` status instead. (The old hourly scheduled task `trig_01QRki933W6e6bsvS4Jau21s` is deleted.) A resuming manager should run `list_triggers` and keep at most one pending check-in.
 - The manager commits `docs/STATUS.md` updates directly to `main`; all other changes go through PRs.
 
 ### Check-in procedure
@@ -31,9 +31,10 @@
 4. Update this file and push it. Schedule the next check-in (`send_later`, 15 min).
 
 ### Queue (not started yet)
-1. **QA / E2E (agent 8)**: owns `tests/e2e/**`; Playwright multi-user flows; reports bugs to owners through PR notes. Start when Infra finishes.
-2. **UI Shell & Design System (agent 6)**: owns `src/styles*`, `src/components/{AppShell,Sidebar,CommandPalette,Overlays,ui}.tsx`, `src/pages/Settings.tsx` layout, keyboard shortcuts, the mobile layout, sidebar drag-and-drop UI. Start when the next slot frees up.
-3. Phase 2/3 (Tauri, Capacitor): only if Phase 1 lands early.
+1. **UI Shell & Design System (agent 6)**: owns `src/styles*`, `src/components/{AppShell,Sidebar,CommandPalette,Overlays,ui}.tsx`, `src/pages/Settings.tsx` layout, keyboard shortcuts, the mobile layout, sidebar drag-and-drop UI. Start when the next slot frees up.
+2. **Desktop / Tauri 2 (agent 9)**: owns `apps/desktop/**` and the Tauri implementation of `src/platform/`. Start at ~07:30 or when a slot frees up.
+3. **Mobile / Capacitor (agent 10)**: owns `apps/mobile/**`, the Capacitor platform implementation, APNs/FCM wiring (server side from Reminders' channel interface) and the Today widget. Start when a slot frees up after Desktop.
+- Stretch backlogs were sent to Foundation, Tasks, Editor, Collaboration and Reminders at 04:17 (the details are in each kickoff/follow-up message; their PRs' "Status of my area" sections track progress).
 
 ## Session roster
 | Agent | Session ID | Branch | Owns | State |
@@ -44,6 +45,7 @@
 | 3 Tasks & Dashboard | session_019dirnRfdDtEARpJKN6JxyV | feat/tasks | task server/routes, dashboard views, calendar, quick add | started 04:15 |
 | 2 Editor & Notes | session_019dirnQJdPWZ1xg1q9wPn2Q | feat/editor | `src/editor/**` (not collab*), PageView/NotesHome, files, FTS search, tree moves | started 04:15 |
 | 4 Collaboration & Access | session_019dirnPr6xS49fYWnMwkTgE | feat/collab | collab/access/events/workspaces, cursors/presence, invites, `server/mail.ts`, sharing UI | started 04:15 |
+| 8 QA / E2E | session_019dirnSs9HgWLitSESbPuyD | feat/e2e | `tests/e2e/**`, playwright config, `docs/QA.md` (bug list; doesn't fix app code) | started 04:17 |
 | 5 Recurrence & Reminders | session_019dirnS55cMN1UvQo2atin9 | feat/reminders | `shared/recurrence.ts`, `server/reminders/**`, web push + email, notification settings | started 04:15 |
 | Original builder | session_019dirnQSpFWbj8dPFQkoUjf | claude/initial-app | wrote the initial work-in-progress (now the base of `main`) | paused/idle; not used further (its session is tied to pushing `master`) |
 
@@ -59,3 +61,4 @@
 - **2026-11-05 03:19** Started Foundation (agent 1) and Infra (agent 7). Phase 1 agents start once Foundation PR 1 merges. Hourly check-in scheduled.
 - **2026-11-05 04:10** User asked for check-ins every 15–20 min and v1 done in about 4 hours. Hourly scheduled task deleted in favour of a 15-min chain.
 - **2026-11-05 04:15** Merged #1 and #2. Sent follow-ups to Foundation and Infra. Started Tasks (3), Editor (2), Collaboration (4) and Reminders (5).
+- **2026-11-05 04:17** User away for 8 hours: keep everyone busy. Sent stretch backlogs to all feature agents, started QA (agent 8), switched check-ins to every 10 min. Workers can't message the manager; the manager polls.
