@@ -29,20 +29,20 @@ const shot = (p, n) => p.screenshot({ path: require('path').join(require('os').t
     });
     await shot(page, '01-after-signup');
     await step('create notebook', async () => {
-      await page.getByTitle('New notebook').click();
+      await page.getByRole('button', { name: 'New notebook' }).click();
       await page.getByText('Smoke Notebook').first().waitFor();
     });
     await step('create section', async () => {
       const row = page.locator('.sb-row', { hasText: 'Smoke Notebook' }).first();
       await row.hover();
-      await row.getByTitle('Notebook options').click();
+      await row.getByRole('button', { name: 'Notebook options' }).click();
       await page.getByRole('menuitem', { name: /section/i }).first().click().catch(async () => { await page.getByText(/New section|Add section/).first().click(); });
       await page.getByText('Smoke Section').first().waitFor();
     });
     await step('create page', async () => {
       const row = page.locator('.sb-row', { hasText: 'Smoke Section' }).first();
       await row.hover();
-      await row.getByTitle('New page').click();
+      await row.getByRole('button', { name: 'New page' }).click();
       await page.waitForURL(/\/p\//);
       await page.locator('.ProseMirror').waitFor();
     });
