@@ -56,8 +56,8 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === null, 'task detached on page delete');
 
   const nbRow = page.locator('.sb-row', { hasText: 'Second Notebook' });
-  await nbRow.hover();
-  await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
+  // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
+  await nbRow.locator('.sb-label').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete notebook' }).click();
   // The sidebar confirms in the app's own dialog (not window.confirm).
   await page.getByRole('dialog', { name: /Delete/ }).getByRole('button', { name: 'Delete notebook' }).click();
@@ -112,8 +112,8 @@ test('theme preference: dark mode applies and persists', async ({ page, context,
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
+// BUG-3 (docs/QA.md), fixed: the debounced title save is flushed when leaving the page.
 test('a page title typed just before navigating away is still saved', async ({ page, context, request }) => {
-  test.fixme(true, 'BUG-3 (docs/QA.md): the debounced title save is cancelled on unmount, so the rename is lost');
   const user = await createUser(request, 'Quick Renamer');
   const { pageId } = await createPage(request, user, { page: 'Original title' });
   await signInContext(context, user);

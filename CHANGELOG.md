@@ -16,6 +16,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - File metadata follows page access (AUTHZ-1), and notebook/section colours are validated (#52).
 - Security headers: strict CSP, HSTS, framing, and referrer and permissions policies (#51).
 - Password reset by email, change password, and an avatar colour. Auth hardening: constant-time checks, async bcrypt, and the 72-byte password limit (#61).
+- Error handling, request IDs, structured JSON logs and admin stats (`ADMIN_EMAILS`), and **invite-only sign-up in production** (`SIGNUP_MODE`) (#67).
 - Offline/PWA: precached app shell with an update prompt, offline cold start, and a read-only data cache for tasks (fixes BUG-1) (#35).
 
 ### Notes and editor
@@ -27,6 +28,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Page links and backlinks: `[[` links to a page or creates one, and each page has a "Linked from" panel (#25).
 - Page version history: automatic snapshots, preview and restore (#37).
 - Page templates: meeting notes, project, daily journal, and "Start with a template" on empty pages (#27).
+- `SEED_DEMO` showcase: a *Demo Team* workspace with a notebook per area, every block type, tasks with subtasks and recurrence, links, comments, versions and a private notebook (#70).
 
 ### Tasks and dashboard
 - Validation fixes and tests, a week view for the calendar, and the task views split into modules (#9).
@@ -35,6 +37,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Inline rename, a Status filter in All Tasks, and saved views (#16).
 - A productivity strip on Today: done today, left, streak, last 7 days (#16).
 - Subtasks, one level deep, with progress (migration 007) (#16).
+- Tasks stay private when they leave a private notebook (migration 010) (#63).
 - Fast with thousands of tasks: incremental rendering and deferred filtering (#16).
 
 ### Recurrence and reminders
@@ -47,10 +50,13 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Email invites with accept links, a pending-invites list and a members panel (#11; migration #7).
 - Private notebooks shared with chosen people, live access re-checks on open pages, a two-client co-editing test and a permission matrix (#14).
 - Groundwork for comments, notifications and activity: migration 008, types and route stubs (#26).
-- Comment threads on text selections: API with permissions, live events, the comment mark and a side panel (#28). The panel isn't in the page view yet.
+- Comment threads on text selections: API with permissions, live events, the comment mark and a side panel (#28). 
 - Groundwork for page version history: the `page_versions` migration (#31).
+- Rate limiting on auth endpoints, per IP and per account, with 429 + Retry-After (#43).
 - Reliable live events: sequence numbers with catch-up replay and resync, plus `GET /workspaces/:id/team` (#18).
 - Comments hook-up on the collaboration side (#55); mounting the panel in the page view is pending in the editor.
+- Comments in the editor and page view: select text to start a thread, then reply, resolve or reopen (#62).
+- Notification inbox and @mentions (#29): mentions work in comments; the inbox bell isn't in the app shell yet.
 - Files on deleted pages become private to their uploader (#59).
 - 10-editor load test, and a fix so pages save while people keep typing (#38).
 
@@ -61,6 +67,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Sectioned Settings page (#34).
 - Sidebar context menus, favourites, recent pages, resizing and a drag-and-drop tree (#40).
 - Entry points: "Share with people…" in the notebook menu, and notification settings in Settings (#56).
+- "New notebook" with starting templates: Personal, Team project, Meetings, Studies (#71).
 
 ### Desktop app (macOS, Windows)
 - Tauri 2 app wrapping the web build (#32):
@@ -81,6 +88,8 @@ The first version for day-to-day use by the team: web, desktop and mobile.
   - deep links, app badge and haptics;
   - mobile CI.
 - Share to NoteApp (task or note), optional Face ID app lock, and a Today home-screen widget on iOS and Android (#36).
+- Mobile visual QA: large-title top bar, and no floating add button on pages (#69).
+- APNs to both sandbox and production builds, `/.well-known` app-link files, Android snooze actions, and a server picker on first launch (runtime server URL) (#57).
 
 ### Infrastructure and deploy
 - CI, the Docker image, GHCR publishing and homelab deploy templates (#1). Publishing only after CI passes, with `JWT_SECRET` required (#8). Publishing from `main` by manual dispatch (#13).
@@ -92,6 +101,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - E2E test for token refresh mid-session (#42).
 - E2E tests for invite links, sharing with people and the command registry (#54).
 - Remaining E2E fixmes enabled, with page-link and callout/toggle tests; BUG-1 fixed, BUG-3 found (#64).
+- Fix BUG-3: a page title typed just before navigating away is saved (#66).
 
 ### Docs
 - `README.md`, `docs/USER_GUIDE.md` and this changelog.

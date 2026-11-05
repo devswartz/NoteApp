@@ -110,10 +110,11 @@ export const webPlatform: Platform = {
     const a = document.createElement('a');
     a.href = url;
     a.download = name;
-    document.body.appendChild(a);
+    a.style.display = 'none';
+    document.body.append(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   },
 
   pickFiles({ accept, multiple } = {}) {
