@@ -73,8 +73,8 @@ test('reminder can be set in task details and shows the bell on the row', async 
   await detail.getByRole('button', { name: 'At a time' }).click();
   await detail.getByLabel('Reminder time').fill(`${isoDay(1)}T09:30`);
   await detail.getByRole('button', { name: 'Add', exact: true }).click();
-  await expect(detail.locator('.rm-item')).toHaveCount(1);
-  await detail.getByTitle('Close (Esc)').click();
+  await expect(detail.getByRole('button', { name: 'Remove reminder' })).toHaveCount(1);
+  await detail.getByRole('button', { name: 'Close (Esc)', exact: true }).click();
   await expect(taskRow(page, 'Call the dentist').getByLabel('Has reminder')).toBeVisible();
   await eventually(
     () => api<{ kind: string; at?: string; nextFireAt: string | null }[]>(request, 'GET', `/tasks/${t.id}/reminders`, user.token),
