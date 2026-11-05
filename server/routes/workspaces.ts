@@ -1,7 +1,7 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { accessChanged, mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
+import { TASK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import {
@@ -14,7 +14,7 @@ import {
   upsertInvite,
 } from '../workspaces.ts';
 import { HttpError, ROLES, h, param, str } from '../http.ts';
-import type { Member, PendingInvite, Role, Workspace } from '../../shared/types.ts';
+import type { Member, PendingInvite, Role, TeamMember, Workspace } from '../../shared/types.ts';
 
 export const workspaceRoutes = Router();
 /** Routes that work without a token (the invite landing page). */
@@ -285,5 +285,32 @@ workspaceRoutes.put(
       refreshTasksForNotebook(id);
     }
     return { userIds: notebookShares(id) };
+  }),
+);
+
+// ───────────── Team view ─────────────
+// Members plus their open task load, for the Tasks dashboard's Team view.
+// Counts only tasks the caller can see (private notebooks stay private).
+// `?today=YYYY-MM-DD` is the caller's local date (defaults to the server's UTC date).
+workspaceRoutes.get(
+  '/workspaces/:id/team',
+  h((req) => {
+    const wsId = param(req, 'id');
+    requireRole(wsId, req.user.id, 'viewer');
+    const q = String(req.query.today ?? '');
+    const today = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : new Date().toISOString().slice(0, 10);
+    return db
+      .prepare(
+        `SELECT u.id, u.email, u.name, u.color, m.role,
+           COUNT(t.id) AS openTasks,
+           COALESCE(SUM(t.due_date < @today), 0) AS overdueTasks,
+           COALESCE(SUM(t.due_date = @today), 0) AS dueTodayTasks
+         FROM workspace_members m JOIN users u ON u.id = m.user_id
+         LEFT JOIN tasks t ON t.workspace_id = m.workspace_id AND t.assignee_id = m.user_id AND t.status = 'open'
+           AND ${TASK_VISIBLE}
+         WHERE m.workspace_id = @wsId
+         GROUP BY u.id ORDER BY u.name COLLATE NOCASE`,
+      )
+      .all({ wsId, today, userId: req.user.id }) as TeamMember[];
   }),
 );
