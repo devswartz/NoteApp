@@ -3,7 +3,7 @@
 // The selected section is in the URL (?s=appearance) so it can be linked to.
 //
 // Other areas plug panels in here as components:
-//   Notifications → Recurrence & Reminders (replace <NotificationsPlaceholder />)
+//   Notifications → Recurrence & Reminders (NotificationSettingsPanel)
 //   Members       → Collaboration & Access (MembersPanel)
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -12,10 +12,11 @@ import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
 import { Avatar, Button, Input, useIsMobile } from '../components/ui.tsx';
 import { AppearanceSettings } from '../components/shell/AppearanceSettings.tsx';
+import { NotificationSettingsPanel } from '../components/notifications/index.ts';
 import { AppLockSettings, hasAppLock } from '../components/shell/AppLockSettings.tsx';
 import { ShortcutList } from '../components/Overlays.tsx';
 import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx';
-import { platform, detectPlatform } from '../platform/index.ts';
+import { detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
 
 
@@ -33,7 +34,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'profile', title: 'Profile', icon: <User size={16} />, group: 'Account', render: () => <ProfileSection /> },
   { id: 'appearance', title: 'Appearance', icon: <Palette size={16} />, group: 'Account', render: () => <AppearanceSettings /> },
   { id: 'security', title: 'Security', icon: <Lock size={16} />, group: 'Account', render: () => <AppLockSettings />, when: hasAppLock },
-  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => <NotificationsPlaceholder /> },
+  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => <NotificationSettingsPanel onError={errorToast} onMessage={toast} /> },
   { id: 'workspace', title: 'General', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
   { id: 'members', title: 'Members', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
   { id: 'shortcuts', title: 'Keyboard shortcuts', icon: <Keyboard size={16} />, group: 'App', render: () => <ShortcutList columns={false} /> },
@@ -195,34 +196,6 @@ function ProfileSection() {
         </Button>
       </Card>
     </>
-  );
-}
-
-/** Placeholder until the Reminders area's notification settings component lands. */
-function NotificationsPlaceholder() {
-  const [notif, setNotif] = useState(platform.notifications.permission());
-  return (
-    <Card title="This device" description="Reminders appear as system notifications when the app is in the background, and in-app otherwise.">
-      <div className="setting-row">
-        <div className="grow">
-          <div className="setting-title">Task reminders</div>
-          <div className="muted small">
-            {notif === 'granted'
-              ? 'Enabled on this device'
-              : notif === 'denied'
-                ? 'Blocked in your browser settings — reminders show in-app only'
-                : notif === 'unsupported'
-                  ? 'Not supported here — reminders show in-app only'
-                  : 'Allow notifications to get reminders when the app is in the background'}
-          </div>
-        </div>
-        {notif === 'default' && (
-          <Button size="sm" onClick={() => void platform.notifications.request().then(setNotif)}>
-            Enable notifications
-          </Button>
-        )}
-      </div>
-    </Card>
   );
 }
 

@@ -34,6 +34,7 @@ import {
   Sun,
   Trash2,
   Users,
+  UserPlus,
 } from 'lucide-react';
 import { del, patch, post } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, ui, useStore } from '../store.ts';
@@ -45,6 +46,7 @@ import { sidebar, useSidebar, SIDEBAR_MAX, SIDEBAR_MIN } from './shell/sidebarSt
 import { byPos, dragProps, dropClass, dropProps, moveNotebook, movePage, moveSection, useDnd } from './shell/treeDnd.ts';
 import { confirmDialog, promptDialog } from './shell/dialogs.tsx';
 import { MoveDialog } from './shell/MoveDialog.tsx';
+import { openShareDialog } from './sharing/ShareDialog.tsx';
 import { runCommand } from '../hooks/useShortcuts.ts';
 
 const NONE: string[] = [];
@@ -467,6 +469,11 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
           }
         >
           {nb.visibility === 'private' ? 'Share with workspace' : 'Make private'}
+        </MenuItem>
+      )}
+      {isMine && (
+        <MenuItem icon={<UserPlus size={15} />} onSelect={() => openShareDialog(nb.id)}>
+          Share with people…
         </MenuItem>
       )}
       {p.canEdit && <ColorRow value={nb.color} onPick={(color) => patch(`/notebooks/${nb.id}`, { color }).catch(errorToast)} />}
