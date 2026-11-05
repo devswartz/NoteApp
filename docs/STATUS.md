@@ -21,7 +21,7 @@
 - The user asked the manager to work independently and to document as it goes. **Updated 04:10: aim to finish v1 (Phase 1) in about 4 hours, i.e. by about 08:15 UTC; agents' feature deadline is 07:30 UTC.** Check agents every 15–20 minutes. **Updated 04:17: the user is away until about 12:30 UTC — keep every worker busy (each has a stretch backlog after its main list); check in every 10 min.** After Phase 1 converges (~07:30), start Phase 2 (Tauri desktop) and Phase 3 (Capacitor mobile) agents in freed slots.
 
 ## Manager automation
-- The manager checks in every ~15 minutes through a chain of `send_later` reminders (every 10 min) into the manager session; each check-in schedules the next. Workers have no `send_message` tool, so they can't ping the manager; the manager polls `get_session` status instead. (The old hourly scheduled task `trig_01QRki933W6e6bsvS4Jau21s` is deleted.) A resuming manager should run `list_triggers` and keep at most one pending check-in.
+- The manager checks in every ~15 minutes through a chain of `send_later` reminders (every 10 min) into the manager session; each check-in schedules the next. Workers can ping the manager with `send_message` (notifications arrive in the manager session); the manager also polls `get_session`. (The old hourly scheduled task `trig_01QRki933W6e6bsvS4Jau21s` is deleted.) A resuming manager should run `list_triggers` and keep at most one pending check-in.
 - The manager commits `docs/STATUS.md` updates directly to `main`; all other changes go through PRs.
 
 ### Check-in procedure
@@ -54,6 +54,15 @@
 |---|---|---|---|
 | 04:13 | #1 infra: CI, Docker, GHCR publish, deploy templates, RELEASING.md | Infra | squash-merged (review: no blockers; follow-ups sent) |
 | 04:13 | #2 Phase 0 foundation (core flow, area split, contract, token auth, platform adapter) | Foundation | squash-merged (27/27 tests, smoke ok; security follow-ups sent) |
+| 04:30 | #8 infra: CI-gated publish, JWT_SECRET required | Infra | merged; `:staging` image confirmed in GHCR (public) |
+| 04:30 | #3 server/mail.ts | Collab | merged; follow-ups sent (don't log bodies in prod; MAIL_FROM warning) |
+| 04:30 | #6 [shared] Playwright dependency + test:e2e | QA | merged |
+| 04:31 | #5 [shared] migration 003 (FTS + files) | Editor | merged |
+| 04:33 | #9 tasks: validation, week calendar, TasksView split | Tasks | merged |
+| — | #7 [shared] collab migration | Collab | waiting: rename to **004**, then merge |
+| — | #4 [shared] reminders migration | Reminders | waiting: after #7, rename to **005** and resolve types.ts |
+| — | #10 editor: search, uploads, move/copy | Editor | **blocked**: upload XSS (allow-list + nosniff/sandbox/attachment), page-copy task clone check |
+| — | #11 collab invites | Collab | waiting on #7; decided: invite accept requires a matching email; signup auto-join respects expiry; PUBLIC_URL required in prod |
 
 ## Log
 - **2026-11-05 03:00** Found the builder session mid-build; paused it; planned with the user; wrote `PLAN.md`.
@@ -62,3 +71,4 @@
 - **2026-11-05 04:10** User asked for check-ins every 15–20 min and v1 done in about 4 hours. Hourly scheduled task deleted in favour of a 15-min chain.
 - **2026-11-05 04:15** Merged #1 and #2. Sent follow-ups to Foundation and Infra. Started Tasks (3), Editor (2), Collaboration (4) and Reminders (5).
 - **2026-11-05 04:17** User away for 8 hours: keep everyone busy. Sent stretch backlogs to all feature agents, started QA (agent 8), switched check-ins to every 10 min. Workers can't message the manager; the manager polls.
+- **2026-11-05 04:33** Reviewed 9 PRs with 3 parallel reviewer subagents. Merged #8, #3, #6, #5, #9. Migration-number ordering: 003 editor, 004 collab, 005 reminders. #10 blocked for upload XSS. **Workers DO have send_message**: Infra pinged the manager; all workers told to ping session_019dirnRG6rqRQKiaYoYvd2H.
