@@ -5,6 +5,7 @@ import { patch } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { platform } from '../platform/index.ts';
 import { fileName, splitTitle } from './markdownUtils.ts';
+import { sanitizeContent } from './urls.ts';
 
 /**
  * Hand a generated file to the user. The platform adapter has no "save file" yet,
@@ -27,7 +28,10 @@ export async function saveFile(name: string, text: string, type: string) {
 
 export function pageMarkdown(editor: Editor, title: string, icon: string | null) {
   const heading = `# ${icon ? `${icon} ` : ''}${title || 'Untitled'}`;
-  return `${heading}\n\n${editor.getMarkdown().trim()}\n`;
+  // Serialise a sanitised copy: an unsafe link or image never reaches the exported file.
+  const json = sanitizeContent(editor.getJSON());
+  const body = editor.markdown ? editor.markdown.serialize(json) : editor.getMarkdown();
+  return `${heading}\n\n${body.trim()}\n`;
 }
 
 export async function exportMarkdown(editor: Editor, pageId: string) {
@@ -60,11 +64,13 @@ export async function importMarkdown(editor: Editor, pageId: string) {
         patch(`/pages/${pageId}`, { title }).catch(errorToast);
       }
       const md = i === 0 && title && !meta?.title ? body : title ? `## ${title}\n\n${body}` : body;
-      if (editor.isDestroyed) return;
+      if (editor.isDestroyed || !editor.markdown) return;
+      // Parse first, then drop javascript:/data: links and images before anything enters the document.
+      const doc = sanitizeContent(editor.markdown.parse(md));
       const empty = editor.isEmpty;
       const chain = editor.chain().focus('end');
-      if (empty) chain.setContent(md, { contentType: 'markdown' });
-      else chain.insertContentAt(editor.state.doc.content.size, md, { contentType: 'markdown' });
+      if (empty) chain.setContent(doc);
+      else chain.insertContentAt(editor.state.doc.content.size, doc.content ?? []);
       chain.run();
       toast(`Imported ${file.name}`);
     } catch (e) {
