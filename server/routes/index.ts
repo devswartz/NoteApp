@@ -16,6 +16,8 @@ import { commentRoutes } from './comments.ts';
 import { notificationRoutes } from './notifications.ts';
 import { activityRecorder, activityRoutes } from './activity.ts';
 
+import { adminRoutes } from './admin.ts';
+
 export { UPLOAD_DIR } from './files.ts';
 
 export const api = Router();
@@ -44,5 +46,7 @@ api.use(reminderRoutes);
 api.use(commentRoutes);
 api.use(notificationRoutes);
 api.use(activityRoutes);
+
+api.use(adminRoutes);
 
 api.use(errorHandler);
