@@ -10,6 +10,8 @@ export interface Toast {
   message: string;
   action?: { label: string; run: () => void };
   tone?: 'error' | 'info';
+  /** Stays until dismissed or its action runs. */
+  sticky?: boolean;
 }
 
 export interface QuickAddDefaults {

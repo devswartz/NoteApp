@@ -1,10 +1,12 @@
 import { useEffect } from 'react';
-import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom';
-import { Menu, Sun, Inbox, Search, Plus, BookOpen, PanelLeftOpen } from 'lucide-react';
+import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
+import { PanelLeftOpen } from 'lucide-react';
 import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
 import { DialogHost } from './shell/dialogs.tsx';
+import { syncThemePref } from '../store/ui.ts';
+import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
@@ -25,6 +27,7 @@ export function AppShell() {
   const workspaces = useStore((s) => s.workspaces);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const isMobile = useIsMobile();
+  const location = useLocation();
   const valid = workspaces.some((w) => w.id === wsId);
 
   useEffect(() => {
@@ -32,10 +35,14 @@ export function AppShell() {
   }, [wsId, valid]);
 
   useShellCommands(wsId);
+  useEffect(syncThemePref, []); // the shell's storage is ready now (see store/ui.ts)
   useShortcutListener(overlayOpen);
   useReminders();
+  useDrawerSwipe(isMobile);
 
   if (!valid) return <Navigate to="/" replace />;
+  // Fade between screens (tasks, notes, settings), not between pages of the same kind.
+  const routeKey = location.pathname.split('/')[3] ?? '';
 
   return (
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'is-mobile' : ''}`}>
@@ -48,7 +55,9 @@ export function AppShell() {
             <PanelLeftOpen size={18} />
           </IconButton>
         )}
-        <Outlet />
+        <div className="route" key={routeKey}>
+          <Outlet />
+        </div>
       </main>
       {isMobile && <MobileTabBar wsId={wsId} />}
       <TaskDetail />
@@ -57,47 +66,6 @@ export function AppShell() {
       <ShortcutsHelp />
       <DialogHost />
     </div>
-  );
-}
-
-function MobileTopBar() {
-  const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
-  return (
-    <div className="mobile-top">
-      <button className="btn-ghost icon-btn" onClick={() => ui.setSidebar(true)} aria-label="Open menu">
-        <Menu size={20} />
-      </button>
-      <span className="truncate">{ws?.name}</span>
-      <button className="btn-ghost icon-btn" onClick={ui.openPalette} aria-label="Search">
-        <Search size={19} />
-      </button>
-    </div>
-  );
-}
-
-function MobileTabBar({ wsId }: { wsId: string }) {
-  const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
-  const tab = (to: string, icon: React.ReactNode, label: string) => (
-    <NavLink to={to} className={({ isActive }) => `tab ${isActive ? 'is-active' : ''}`}>
-      {icon}
-      <span>{label}</span>
-    </NavLink>
-  );
-  return (
-    <nav className="tabbar" aria-label="Primary">
-      {tab(`/w/${wsId}/notes`, <BookOpen size={21} />, 'Notes')}
-      {tab(`/w/${wsId}/tasks/today`, <Sun size={21} />, 'Today')}
-      {canEdit && (
-        <button className="tab tab-add" onClick={() => ui.openQuickAdd()} aria-label="Add task">
-          <Plus size={24} />
-        </button>
-      )}
-      {tab(`/w/${wsId}/tasks/my`, <Inbox size={21} />, 'My Tasks')}
-      <button className="tab" onClick={ui.openPalette}>
-        <Search size={21} />
-        <span>Search</span>
-      </button>
-    </nav>
   );
 }
 

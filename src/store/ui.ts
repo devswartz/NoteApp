@@ -67,6 +67,19 @@ export function setThemePref(pref: ThemePref) {
   applyTheme(resolved, true);
 }
 
+/**
+ * Re-read the stored preference. The store first reads it when the module
+ * loads, which can be before initPlatform() swaps in a shell's storage, so the
+ * app shell calls this once after start-up.
+ */
+export function syncThemePref() {
+  const pref = readPref();
+  if (pref === useTheme.getState().pref) return;
+  const resolved = resolve(pref);
+  useTheme.setState({ pref, resolved });
+  applyTheme(resolved, false);
+}
+
 /** Cycles light → dark → system (for the command palette / shortcut). */
 export function cycleTheme() {
   const order: ThemePref[] = ['light', 'dark', 'system'];

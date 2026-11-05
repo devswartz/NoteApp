@@ -606,6 +606,10 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     haptics,
     appLock: appLock.api,
 
+    // The native app updates through the App Store / Play Store; the web
+    // bundle inside it ships with each native release, so nothing to prompt.
+    appUpdates: { subscribe: () => () => {} },
+
     async init() {
       // Keychain items readable after the first unlock (so a background token
       // refresh works) and never restored onto another device from a backup.
