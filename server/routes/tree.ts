@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { db, newId, now, pickColor } from '../db.ts';
 import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import { detachPagesTasks, nextPos, refreshTasksForNotebook } from '../tree.ts';
+import { copyPage, detachPagesTasks, nextPos, positionAt, refreshTasksForNotebook } from '../tree.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
 
@@ -116,12 +116,7 @@ treeRoutes.patch(
     const b = req.body;
     if (b.name !== undefined) db.prepare('UPDATE sections SET name = ? WHERE id = ?').run(str(b.name, 'Name', 100), id);
     if (b.color !== undefined) db.prepare('UPDATE sections SET color = ? WHERE id = ?').run(String(b.color), id);
-    if (b.notebookId !== undefined) {
-      const t = mustAccess(notebookAccess(b.notebookId, req.user.id), true);
-      if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
-      db.prepare('UPDATE sections SET notebook_id = ? WHERE id = ?').run(b.notebookId, id);
-      if (t.notebookId !== a.notebookId) accessChanged();
-    }
+    if (b.notebookId !== undefined && b.notebookId !== a.notebookId) moveSectionTo(id, a, String(b.notebookId), req.user.id);
     if (typeof b.position === 'number') db.prepare('UPDATE sections SET position = ? WHERE id = ?').run(b.position, id);
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };
@@ -137,5 +132,67 @@ treeRoutes.delete(
     detachPagesTasks(pages.map((p) => p.id), () => db.prepare('DELETE FROM sections WHERE id = ?').run(id));
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };
+  }),
+);
+
+/** Move a section (with its pages) into another notebook of the same workspace. */
+function moveSectionTo(id: string, a: { workspaceId: string; notebookId: string }, notebookId: string, userId: string) {
+  const t = mustAccess(notebookAccess(notebookId, userId), true);
+  if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
+  db.prepare('UPDATE sections SET notebook_id = ? WHERE id = ?').run(notebookId, id);
+  // Visibility may differ between the two notebooks.
+  accessChanged(); // collaborators may have lost access to its pages
+  refreshTasksForNotebook(notebookId);
+}
+
+/** POST /notebooks/:id/move { index } — reorder notebooks in the sidebar. */
+treeRoutes.post(
+  '/notebooks/:id/move',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(notebookAccess(id, req.user.id), true);
+    const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
+    const position = positionAt('notebooks', 'workspace_id', a.workspaceId, index, id);
+    db.prepare('UPDATE notebooks SET position = ? WHERE id = ?').run(position, id);
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { ok: true, position };
+  }),
+);
+
+/** POST /sections/:id/move { notebookId?, index? } — reorder, or move into another notebook. */
+treeRoutes.post(
+  '/sections/:id/move',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(sectionAccess(id, req.user.id), true);
+    const notebookId = typeof req.body.notebookId === 'string' ? req.body.notebookId : a.notebookId;
+    if (notebookId !== a.notebookId) moveSectionTo(id, a, notebookId, req.user.id);
+    const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
+    const position = positionAt('sections', 'notebook_id', notebookId, index, id);
+    db.prepare('UPDATE sections SET position = ? WHERE id = ?').run(position, id);
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { ok: true, notebookId, position };
+  }),
+);
+
+/** POST /sections/:id/copy { notebookId?, name? } → { id } — duplicate a section and all its pages (and their tasks). */
+treeRoutes.post(
+  '/sections/:id/copy',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(sectionAccess(id, req.user.id));
+    const notebookId = typeof req.body.notebookId === 'string' ? req.body.notebookId : a.notebookId;
+    const t = mustAccess(notebookAccess(notebookId, req.user.id), true);
+    if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot copy between workspaces');
+    const src = db.prepare('SELECT name, color FROM sections WHERE id = ?').get(id) as { name: string; color: string };
+    const name = typeof req.body.name === 'string' && req.body.name.trim() ? str(req.body.name, 'Name', 100) : notebookId === a.notebookId ? `${src.name} (copy)` : src.name;
+    const newSection = newId();
+    db.prepare('INSERT INTO sections (id, notebook_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+      newSection, notebookId, name, src.color, nextPos('sections', 'notebook_id', notebookId), now(),
+    );
+    const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? ORDER BY position').all(id) as { id: string; position: number }[];
+    for (const p of pages) copyPage(p.id, newSection, req.user.id, { position: p.position });
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { id: newSection };
   }),
 );

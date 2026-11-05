@@ -60,10 +60,10 @@
 | 04:31 | #5 [shared] migration 003 (FTS + files) | Editor | merged |
 | 04:33 | #9 tasks: validation, week calendar, TasksView split | Tasks | merged |
 | 04:28 | #13 infra: manual publish only from main | Infra | merged |
-| — | #12 foundation security follow-ups | Foundation | in review; its migration must become **006** (after 004/005) |
+| — | #12 foundation security follow-ups + new migration runner | Foundation | migration renamed to 006; runner now records applied migrations in `schema_migrations` (any order, duplicates still fail). Waiting on fixes: refresh replay `used_at`, revoke canEdit/terminate, reconnect backoff. Then a re-review of the runner. |
 | — | #7 [shared] collab migration | Collab | waiting: rename to **004**, then merge |
 | — | #4 [shared] reminders migration | Reminders | waiting: after #7, rename to **005** and resolve types.ts |
-| — | #10 editor: search, uploads, move/copy | Editor | **blocked**: upload XSS (allow-list + nosniff/sandbox/attachment), page-copy task clone check |
+| 04:33 | #10 editor: ranked FTS search, uploads, move/copy | Editor | merged after a security re-review (actively attacked uploads; all held) |
 | — | #11 collab invites | Collab | waiting on #7; decided: invite accept requires a matching email; signup auto-join respects expiry; PUBLIC_URL required in prod |
 
 ## Log
@@ -75,3 +75,4 @@
 - **2026-11-05 04:17** User away for 8 hours: keep everyone busy. Sent stretch backlogs to all feature agents, started QA (agent 8), switched check-ins to every 10 min. Workers can't message the manager; the manager polls.
 - **2026-11-05 04:33** Reviewed 9 PRs with 3 parallel reviewer subagents. Merged #8, #3, #6, #5, #9. Migration-number ordering: 003 editor, 004 collab, 005 reminders. #10 blocked for upload XSS. **Workers DO have send_message**: Infra pinged the manager; all workers told to ping session_019dirnRG6rqRQKiaYoYvd2H.
 - **2026-11-05 04:28** Merged #13; Infra done. Started UI Shell (agent 6) in its slot. Migration numbers reserved: 004 collab, 005 reminders, 006 foundation. **Rule: a migration takes the next free number on main at rebase time; the manager assigns numbers.**
+- **2026-11-05 04:34** Merged #10. #12 reviewed: migration renamed to 006, follow-ups sent. Foundation is replacing the contiguous `user_version` migration runner with a `schema_migrations` table, so numbers no longer need to land in order.
