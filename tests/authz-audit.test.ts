@@ -17,14 +17,16 @@ type Who = 'anon' | 'stranger' | 'viewer' | 'member' | 'private';
 const WHO: Who[] = ['anon', 'stranger', 'viewer', 'member', 'private'];
 
 let app: TestApp;
-let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser;
+let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser, target: TestUser;
 before(async () => {
   app = await startTestApp();
-  [owner, stranger, viewer, member] = await Promise.all(['Owner', 'Stranger', 'Viewer', 'Member'].map((n) => app.signUp(`Az${n}`)));
+  [owner, stranger, viewer, member, target] = await Promise.all(['Owner', 'Stranger', 'Viewer', 'Member', 'Target'].map((n) => app.signUp(`Az${n}`)));
 });
 after(() => app.close());
 
 interface Fx {
+  /** A saved version of `page` (when the versions routes exist). */
+  version: string;
   /** The owner's own reminder on `task` (reminders are personal). */
   reminder: string;
   /** Comment thread + its first comment on `page` (when the comments routes exist). */
@@ -58,7 +60,6 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
   const ws = (await app.call('POST', '/workspaces', o, { name: `Audit ${n}` })).data.id as string;
   await app.call('POST', `/workspaces/${ws}/members`, o, { email: viewer.user.email, role: 'viewer' });
   await app.call('POST', `/workspaces/${ws}/members`, o, { email: member.user.email, role: 'member' });
-  const target = await app.signUp(`AzTarget${n}`);
   await app.call('POST', `/workspaces/${ws}/members`, o, { email: target.user.email, role: 'member' });
   const email = `pending-${n}@example.com`;
   const invite = (await app.call('POST', `/workspaces/${ws}/members`, o, { email, role: 'member' })).data.inviteUrl.split('/invite/')[1] as string;
@@ -76,7 +77,19 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
       comment = t.data.comments[0].id;
     }
     const reminder = (await app.call('POST', `/tasks/${task}/reminders`, o, { kind: 'before', minutes: 10 })).data?.id ?? 'no-reminders-route';
-    return { ws, nb, sec, page, task, file, thread, comment, reminder, target: target.user.id, email, invite };
+    let version = 'no-versions-route';
+    if ((await registeredRoutes()).has('POST /pages/:id/versions')) {
+      // Versions snapshot real content, so give the page some first.
+      const { seedPageDoc } = await import('../server/collab.ts');
+      const Y = await import('yjs');
+      seedPageDoc(page, (frag) => {
+        const p = new Y.XmlElement('paragraph');
+        p.insert(0, [new Y.XmlText('Versioned content')]);
+        frag.insert(0, [p]);
+      });
+      version = (await app.call('POST', `/pages/${page}/versions`, o, {})).data?.id ?? 'no-version';
+    }
+    return { ws, nb, sec, page, task, file, thread, comment, reminder, version, target: target.user.id, email, invite };
   };
   return { shared: await make('shared'), priv: await make('private') };
 }
@@ -110,12 +123,16 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/auth/login', path: () => '/auth/login', body: () => ({ email: 'nobody@example.com', password: 'wrong-password' }), expect: { anon: 401, stranger: 401, viewer: 401, member: 401, private: 401 } },
   { method: 'POST', route: '/auth/refresh', path: () => '/auth/refresh', body: () => ({ refreshToken: 'not-a-token' }), expect: { anon: 401, stranger: 401, viewer: 401, member: 401, private: 401 } },
   { method: 'POST', route: '/auth/logout', path: () => '/auth/logout', body: () => ({ refreshToken: 'not-a-token' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'POST', route: '/auth/forgot', path: () => '/auth/forgot', body: () => ({ email: 'nobody@example.com' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } }, // never reveals whether the email exists
+  { method: 'POST', route: '/auth/reset', path: () => '/auth/reset', body: () => ({ token: 'not-a-token', password: 'password1234' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
   { method: 'GET', route: '/invites/:token', path: (f) => `/invites/${f.invite}`, expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
 
   // ── The signed-in user ──
   { method: 'GET', route: '/me', path: () => '/me', expect: { stranger: 200, ...READ } },
   { method: 'PATCH', route: '/me', path: () => '/me', body: () => ({ name: 'Same Name' }), expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'GET', route: '/workspaces', path: () => '/workspaces', expect: { stranger: 200, ...READ } },
+  // Changing your own password needs the current one (wrong here, so 400 for every signed-in user).
+  { method: 'POST', route: '/me/password', path: () => '/me/password', body: () => ({ currentPassword: 'wrong-current', newPassword: 'another-password-1' }), expect: { stranger: 400, viewer: 400, member: 400 } },
   { method: 'POST', route: '/workspaces', path: () => '/workspaces', body: () => ({ name: 'Mine' }), expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'POST', route: '/uploads', path: () => '/uploads', raw: true, expect: { stranger: 200, viewer: 200, member: 200 } }, // personal, unscoped upload
   // Invite acceptance requires the invited email: nobody in this table has it.
@@ -150,6 +167,9 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/sections/:id/copy', path: (f) => `/sections/${f.sec}/copy`, body: () => ({}), expect: inPrivate(WRITE) },
   { method: 'POST', route: '/sections/:id/pages', path: (f) => `/sections/${f.sec}/pages`, body: () => ({ title: 'P2' }), expect: inPrivate(WRITE) },
   { method: 'GET', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: inPrivate(READ) },
+  { method: 'GET', route: '/pages/:id/versions', path: (f) => `/pages/${f.page}/versions`, expect: inPrivate(READ) },
+  { method: 'GET', route: '/pages/:id/versions/:vid', path: (f) => `/pages/${f.page}/versions/${f.version}`, expect: inPrivate(READ) },
+  { method: 'POST', route: '/pages/:id/versions', path: (f) => `/pages/${f.page}/versions`, body: () => ({}), expect: inPrivate(WRITE) },
   { method: 'GET', route: '/pages/:id/backlinks', path: (f) => `/pages/${f.page}/backlinks`, expect: inPrivate(READ) },
   { method: 'PATCH', route: '/pages/:id', path: (f) => `/pages/${f.page}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
   { method: 'POST', route: '/pages/:id/move', path: (f) => `/pages/${f.page}/move`, body: () => ({ index: 0 }), expect: inPrivate(WRITE) },
