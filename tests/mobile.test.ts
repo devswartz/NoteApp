@@ -3,6 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  RELOCK_AFTER_MS,
+  biometryLabel,
+  createAppLock,
   createCapacitorPlatform,
   dueTodayCount,
   notificationId,
@@ -97,6 +100,7 @@ function fakeBridge() {
     onTasks: (cb) => void (tasksCb = cb),
     post: async (path, body) => void posts.push([path, body]),
     del: async (path, body) => void posts.push([`DELETE ${path}`, body]),
+    registerCommands: () => {},
   };
   return { bridge, posts, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null) => tasksCb(t, u) };
 }
@@ -219,4 +223,74 @@ test('mobile: local notifications run their click handler; badge follows tasks',
   b.setTasks([task({ dueDate: '2000-01-01' }), task({ dueDate: '2000-01-02' })], 'me');
   await tick(600);
   assert.deepEqual(f.calls.filter(([c]) => c === 'Badge.set').at(-1), ['Badge.set', { count: 2 }]);
+});
+
+function memoryKv() {
+  const m = new Map<string, string>();
+  return { get: (k: string) => m.get(k) ?? null, set: (k: string, v: string) => void m.set(k, v), remove: (k: string) => void m.delete(k) };
+}
+
+test('mobile: biometry labels', () => {
+  assert.equal(biometryLabel(2, 'ios', true), 'Face ID');
+  assert.equal(biometryLabel(1, 'ios', true), 'Touch ID');
+  assert.equal(biometryLabel(3, 'android', true), 'Fingerprint');
+  assert.equal(biometryLabel(0, 'ios', true), 'Passcode');
+  assert.equal(biometryLabel(0, 'android', false), null);
+});
+
+test('mobile: app lock — opt-in, needs a successful unlock to change, relocks after a minute away', async () => {
+  let authOk = true;
+  let prompts = 0;
+  const native = {
+    os: 'ios',
+    BiometricAuth: {
+      checkBiometry: async () => ({ isAvailable: true, biometryType: 2, deviceIsSecure: true }),
+      authenticate: async () => {
+        prompts++;
+        if (!authOk) throw new Error('userCancel');
+      },
+    },
+  } as unknown as NativePlugins;
+  const kv = memoryKv();
+  let clock = 0;
+  const lock = createAppLock(native, kv, () => clock);
+  assert.equal(await lock.api.method(), 'Face ID');
+
+  lock.start();
+  assert.equal(lock.locked(), false, 'off by default');
+  assert.equal(prompts, 0);
+
+  const seen: boolean[] = [];
+  lock.api.subscribe((on) => seen.push(on));
+  authOk = false;
+  assert.equal(await lock.api.setEnabled(true), false, 'cancelled prompt leaves it off');
+  authOk = true;
+  assert.equal(await lock.api.setEnabled(true), true);
+  assert.deepEqual(seen, [true]);
+
+  lock.start(); // next cold start
+  assert.equal(lock.locked(), true);
+  await tick();
+  assert.equal(lock.locked(), false, 'unlocked after Face ID');
+
+  const before = prompts;
+  lock.background();
+  clock += 5_000;
+  lock.foreground();
+  assert.equal(prompts, before, 'a quick app switch does not prompt');
+
+  lock.background();
+  clock += RELOCK_AFTER_MS;
+  authOk = false;
+  lock.foreground();
+  assert.equal(lock.locked(), true);
+  await tick();
+  assert.equal(lock.locked(), true, 'stays locked when Face ID is cancelled');
+  authOk = true;
+  lock.foreground();
+  await tick();
+  assert.equal(lock.locked(), false);
+
+  assert.equal(await lock.api.setEnabled(false), false);
+  assert.equal(kv.get('noteapp.appLock'), null);
 });

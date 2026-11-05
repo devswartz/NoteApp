@@ -9,6 +9,8 @@
 //   deep links         noteapp://… and https://notes.devswartz.com/w/… (universal/app links)
 //   app badge          number of my open tasks due today or overdue
 //   haptics            light tap on checkbox toggles and [data-haptic] elements; platform.haptics
+//   app lock           optional Face ID / Touch ID / fingerprint lock (platform.appLock), with a
+//                      privacy cover while the app is in the background
 //   system UI          status bar text follows the theme, splash hidden after first render,
 //                      keyboard height exposed as --keyboard-height + html.keyboard-open,
 //                      Android back button walks history
@@ -49,6 +51,16 @@ export interface NativePlugins {
   SystemBars: { setStyle(options: SystemBarsStyleOptions): Promise<void> };
   SecureStorage: Pick<SecureStoragePlugin, 'getItem' | 'setItem' | 'removeItem' | 'setDefaultKeychainAccess'>;
   Badge: Pick<BadgePlugin, 'set' | 'clear'>;
+  BiometricAuth: {
+    checkBiometry(): Promise<{ isAvailable: boolean; biometryType: number; deviceIsSecure: boolean }>;
+    authenticate(options?: {
+      reason?: string;
+      cancelTitle?: string;
+      allowDeviceCredential?: boolean;
+      androidTitle?: string;
+      androidSubtitle?: string;
+    }): Promise<void>;
+  };
 }
 
 /** What the adapter needs from the app (wired to the store and API client in loadAppBridge()). */
@@ -59,6 +71,8 @@ export interface AppBridge {
   onTasks(cb: (tasks: Task[], userId: string | null) => void): void;
   post(path: string, body: unknown): Promise<unknown>;
   del(path: string, body: unknown): Promise<unknown>;
+  /** Adds commands to the ⌘K palette (src/hooks/useShortcuts.ts). */
+  registerCommands(cmds: { id: string; title: string; group?: string; keywords?: string; run: () => void; when?: () => boolean }[]): void;
 }
 
 /** Native capabilities beyond the shared Platform interface (feature-detect with `'haptics' in platform`). */
@@ -66,6 +80,16 @@ export interface MobileExtras {
   haptics: {
     tap(): void;
     success(): void;
+  };
+  /** Optional biometric lock. Settings can offer a toggle when `'appLock' in platform`. */
+  appLock: {
+    /** What the device offers: "Face ID", "Touch ID", "Fingerprint", "Passcode", or null if nothing is set up. */
+    method(): Promise<string | null>;
+    enabled(): boolean;
+    /** Turning it on asks for one successful unlock first. Resolves to the new state. */
+    setEnabled(on: boolean): Promise<boolean>;
+    /** Notifies when the setting changes (for a Settings toggle). */
+    subscribe(cb: (enabled: boolean) => void): () => void;
   };
 }
 
@@ -95,6 +119,28 @@ export function notificationId(tag: string | undefined): number {
   return (Math.abs(h) % 2 ** 30) + 1;
 }
 
+/** Lock again after the app has been in the background this long. */
+export const RELOCK_AFTER_MS = 60_000;
+export const APP_LOCK_KEY = 'noteapp.appLock';
+
+/** Human name for the device's unlock method (BiometryType from @aparajita/capacitor-biometric-auth). */
+export function biometryLabel(type: number, os: MobileOS, deviceIsSecure: boolean): string | null {
+  switch (type) {
+    case 1:
+      return 'Touch ID';
+    case 2:
+      return 'Face ID';
+    case 3:
+      return 'Fingerprint';
+    case 4:
+      return os === 'ios' ? 'Face ID' : 'Face unlock';
+    case 5:
+      return 'Iris unlock';
+    default:
+      return deviceIsSecure ? (os === 'ios' ? 'Passcode' : 'Screen lock') : null;
+  }
+}
+
 /** Local YYYY-MM-DD. */
 export function localDate(d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -110,6 +156,128 @@ export function dueTodayCount(tasks: Iterable<Task>, me: string | null, today = 
     if (mine && t.status === 'open' && t.dueDate && t.dueDate <= today) n++;
   }
   return n;
+}
+
+// ───────────── App lock ─────────────
+
+/**
+ * The biometric lock. While locked, a full-screen cover (outside React's root)
+ * hides the app; it is also shown as soon as the app goes to the background,
+ * so the app switcher never shows note contents.
+ */
+export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = () => Date.now()) {
+  const listeners = new Set<(on: boolean) => void>();
+  let cover: HTMLElement | null = null;
+  let locked = false;
+  let prompting = false;
+  let backgroundedAt: number | null = null;
+  const enabled = () => kv.get(APP_LOCK_KEY) === '1';
+
+  const showCover = (withButton: boolean) => {
+    if (typeof document === 'undefined') return;
+    if (!cover) {
+      cover = document.createElement('div');
+      cover.className = 'app-lock';
+      cover.setAttribute('role', 'dialog');
+      cover.setAttribute('aria-label', 'Locked');
+      cover.style.cssText =
+        'position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;' +
+        'background:var(--bg, #fff);color:var(--text, #18181b);font:inherit;padding:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left)';
+      const icon = document.createElement('img');
+      icon.src = '/icon.svg';
+      icon.alt = '';
+      icon.width = icon.height = 72;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-primary';
+      button.textContent = 'Unlock';
+      button.addEventListener('click', () => void unlock());
+      cover.append(icon, button);
+      document.body.appendChild(cover);
+    }
+    (cover.lastElementChild as HTMLElement).style.visibility = withButton ? 'visible' : 'hidden';
+    cover.hidden = false;
+  };
+  const hideCover = () => {
+    if (cover) cover.hidden = true;
+  };
+
+  async function authenticate(reason: string): Promise<boolean> {
+    try {
+      await native.BiometricAuth.authenticate({
+        reason,
+        cancelTitle: 'Cancel',
+        allowDeviceCredential: true, // fall back to the passcode, never lock the user out
+        androidTitle: 'Unlock',
+        androidSubtitle: reason,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function unlock() {
+    if (prompting) return;
+    prompting = true;
+    const ok = await authenticate('Unlock your notes');
+    prompting = false;
+    if (ok) {
+      locked = false;
+      hideCover();
+    } else showCover(true); // cancelled: offer a button to try again
+  }
+
+  const lock = {
+    locked: () => locked,
+    /** Cold start. */
+    start() {
+      if (!enabled()) return;
+      locked = true;
+      showCover(false);
+      void unlock();
+    },
+    background() {
+      if (!enabled()) return;
+      backgroundedAt ??= now();
+      if (!locked) showCover(false);
+    },
+    foreground() {
+      if (!enabled()) return;
+      const away = backgroundedAt === null ? 0 : now() - backgroundedAt;
+      backgroundedAt = null;
+      if (locked || away >= RELOCK_AFTER_MS) {
+        locked = true;
+        showCover(false);
+        void unlock();
+      } else if (!prompting) hideCover();
+    },
+    api: {
+      async method() {
+        try {
+          const r = await native.BiometricAuth.checkBiometry();
+          return biometryLabel(r.isAvailable ? r.biometryType : 0, native.os, r.deviceIsSecure);
+        } catch {
+          return null;
+        }
+      },
+      enabled,
+      async setEnabled(on: boolean) {
+        if (on === enabled()) return on;
+        // Prove it works before relying on it (and when turning it off, that it's really you).
+        if (!(await authenticate(on ? 'Turn on app lock' : 'Turn off app lock'))) return enabled();
+        if (on) kv.set(APP_LOCK_KEY, '1');
+        else kv.remove(APP_LOCK_KEY);
+        listeners.forEach((l) => l(on));
+        return on;
+      },
+      subscribe(cb: (on: boolean) => void) {
+        listeners.add(cb);
+        return () => void listeners.delete(cb);
+      },
+    } satisfies MobileExtras['appLock'],
+  };
+  return lock;
 }
 
 // ───────────── The adapter ─────────────
@@ -131,6 +299,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   };
 
   const localClicks = new Map<number, () => void>();
+  const appLock = createAppLock(native, kv);
 
   const haptics: MobileExtras['haptics'] = {
     tap: () => void native.Haptics.selectionChanged().catch(() => {}),
@@ -212,18 +381,23 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   const platform: Platform & MobileExtras = {
     kind: 'capacitor',
     haptics,
+    appLock: appLock.api,
 
     async init() {
       // Keychain items readable after the first unlock (so a background token
       // refresh works) and never restored onto another device from a backup.
       await native.SecureStorage.setDefaultKeychainAccess(3 /* afterFirstUnlockThisDeviceOnly */).catch(() => {});
       await refreshPermission();
+      appLock.start(); // before the first render, so nothing shows through
 
       // Deep links: custom scheme + universal/app links.
       void native.App.addListener('appUrlOpen', ({ url }) => emitLink(url));
       void native.App.addListener('appStateChange', ({ isActive }) => {
         hidden = !isActive;
-        if (isActive) void refreshPermission();
+        if (isActive) {
+          appLock.foreground();
+          void refreshPermission();
+        } else appLock.background();
       });
       void native.App.addListener('backButton', ({ canGoBack }) => {
         if (canGoBack) history.back();
@@ -263,6 +437,13 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
         app = b;
         b.onUser((u) => void onUser(u));
         b.onTasks(scheduleBadge);
+        void appLock.api.method().then((label) => {
+          if (!label) return;
+          b.registerCommands([
+            { id: 'mobile.appLockOn', title: `Lock app with ${label}`, group: 'Settings', keywords: 'face id touch id biometric security', run: () => void appLock.api.setEnabled(true), when: () => !appLock.api.enabled() },
+            { id: 'mobile.appLockOff', title: `Stop locking app with ${label}`, group: 'Settings', keywords: 'face id touch id biometric security', run: () => void appLock.api.setEnabled(false), when: () => appLock.api.enabled() },
+          ]);
+        });
       });
     },
 
@@ -380,7 +561,7 @@ function installSystemUi(native: NativePlugins, haptics: MobileExtras['haptics']
 
 /** Wires the adapter to the store and API client (loaded after them, so no import cycle at startup). */
 async function loadAppBridge(): Promise<AppBridge> {
-  const [{ useStore }, api] = await Promise.all([import('../store/state.ts'), import('../api.ts')]);
+  const [{ useStore }, api, shortcuts] = await Promise.all([import('../store/state.ts'), import('../api.ts'), import('../hooks/useShortcuts.ts')]);
   return {
     onUser(cb) {
       cb(useStore.getState().user?.id ?? null);
@@ -400,12 +581,13 @@ async function loadAppBridge(): Promise<AppBridge> {
     },
     post: (path, body) => api.post(path, body),
     del: (path, body) => api.api(path, { method: 'DELETE', json: body }),
+    registerCommands: (cmds) => void shortcuts.registerCommands(cmds),
   };
 }
 
 /** The real plugins. Imported dynamically so tests (and the web bundle) never load them. */
 async function loadPlugins(): Promise<NativePlugins> {
-  const [core, app, browser, haptics, keyboard, local, push, splash, secure, badge] = await Promise.all([
+  const [core, app, browser, haptics, keyboard, local, push, splash, secure, badge, biometric] = await Promise.all([
     import('@capacitor/core'),
     import('@capacitor/app'),
     import('@capacitor/browser'),
@@ -416,6 +598,7 @@ async function loadPlugins(): Promise<NativePlugins> {
     import('@capacitor/splash-screen'),
     import('@aparajita/capacitor-secure-storage'),
     import('@capawesome/capacitor-badge'),
+    import('@aparajita/capacitor-biometric-auth'),
   ]);
   return {
     os: core.Capacitor.getPlatform() === 'android' ? 'android' : 'ios',
@@ -429,6 +612,7 @@ async function loadPlugins(): Promise<NativePlugins> {
     SystemBars: core.SystemBars,
     SecureStorage: secure.SecureStorage,
     Badge: badge.Badge,
+    BiometricAuth: biometric.BiometricAuth,
   };
 }
 
