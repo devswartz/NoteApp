@@ -1075,10 +1075,16 @@ select.input { padding-right: 4px; }
 .snippet { font-size: 12px; }
 .palette-foot { border-top: 1px solid var(--border); padding: 8px 14px; }
 
-.shortcuts { max-width: 760px; padding: 22px 26px; }
-.shortcuts h2 { margin: 0 0 12px; font-size: 18px; }
+.shortcuts { max-width: 820px; padding: var(--space-6) var(--space-6) var(--space-4); max-height: 80vh; display: flex; flex-direction: column; }
+.shortcuts-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.shortcuts-head h2 { margin: 0; font-size: var(--text-lg); flex: 1; }
+.shortcuts-head .input { width: 180px; }
+.shortcut-cols { overflow-y: auto; }
+.shortcut-group { break-inside: avoid; margin-bottom: var(--space-5); }
+.shortcut-keys { display: inline-flex; align-items: center; gap: 2px; flex: none; }
+.key-hint { display: inline-flex; gap: 2px; }
 .shortcuts h4 { margin: 8px 0; font-size: 12px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.04em; }
-.shortcut-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.shortcut-cols { columns: 2; column-gap: var(--space-8); }
 .shortcut { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; gap: 8px; }
 .shortcuts p { line-height: 1.9; }
 
@@ -1201,7 +1207,7 @@ select.input { padding-right: 4px; }
   .sheet-body { padding: 16px; }
   .prop { grid-template-columns: 110px 1fr; min-height: 44px; }
   .palette-list { max-height: 60vh; }
-  .shortcut-cols { grid-template-columns: 1fr; }
+  .shortcut-cols { columns: 1; }
   .toasts { bottom: calc(var(--tabbar-h) + 16px + var(--safe-bottom)); }
   .input { height: 40px; font-size: 16px; } /* 16px avoids iOS zoom on focus */
   .input-sm { height: 34px; font-size: 16px; }

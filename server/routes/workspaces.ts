@@ -155,13 +155,16 @@ publicWorkspaceRoutes.get(
   }),
 );
 
-// Accept an invite link as the signed-in user (any account: the link is the credential).
+// Accept an invite link as the signed-in user. The link alone isn't enough:
+// the account's email must be the one that was invited.
 workspaceRoutes.post(
   '/invites/:token/accept',
   h((req) => {
     const inv = findInvite(param(req, 'token'));
     if (!inv) throw new HttpError(404, 'This invite link is no longer valid');
     if (inv.expired) throw new HttpError(410, 'This invite has expired. Ask for a new one.');
+    if (req.user.email.toLowerCase() !== inv.email.toLowerCase())
+      throw new HttpError(403, `This invite was sent to ${inv.email}. Sign in with that email address to accept it.`);
     db.transaction(() => {
       if (!roleIn(inv.workspaceId, req.user.id))
         db.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)').run(
