@@ -9,7 +9,7 @@ import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { OfflineBanner, ShortcutsHelp } from './Overlays.tsx';
-import { MOD, useIsMobile } from './ui.tsx';
+import { IconButton, MOD, useIsMobile } from './ui.tsx';
 import { platform } from '../platform/index.ts';
 
 /** True while a modal-like overlay is open; plain shortcuts pause then. */
@@ -43,9 +43,9 @@ export function AppShell() {
       <Sidebar />
       <main className="main">
         {isMobile ? <MobileTopBar /> : !sidebarOpen && (
-          <button className="btn-ghost icon-btn sidebar-reveal" onClick={ui.toggleSidebar} title={`Show sidebar (${MOD}\\)`}>
+          <IconButton label="Show sidebar" shortcut={`${MOD}\\`} className="sidebar-reveal" onClick={ui.toggleSidebar}>
             <PanelLeftOpen size={18} />
-          </button>
+          </IconButton>
         )}
         <Outlet />
       </main>

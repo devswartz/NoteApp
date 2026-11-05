@@ -60,15 +60,18 @@
 | 04:31 | #5 [shared] migration 003 (FTS + files) | Editor | merged |
 | 04:33 | #9 tasks: validation, week calendar, TasksView split | Tasks | merged |
 | 04:28 | #13 infra: manual publish only from main | Infra | merged |
-| — | #12 foundation security follow-ups + new migration runner | Foundation | migration renamed to 006; runner now records applied migrations in `schema_migrations` (any order, duplicates still fail). Waiting on fixes: refresh replay `used_at`, revoke canEdit/terminate, reconnect backoff. Then a re-review of the runner. |
+| — | #12 foundation security follow-ups + new migration runner | Foundation | migration renamed to 006; runner now records applied migrations in `schema_migrations` (any order, duplicates still fail). Runner verified solid. **Blocked** (resent at 04:46): refresh replay `used_at`, revoke canEdit + terminate, reconnect backoff/401 sign-out; plus wrap the runner backfill in a transaction and use BEGIN IMMEDIATE. |
 | 04:36 | #17 ui: design tokens + light/dark/system theme | UI Shell | merged (follow-ups: no-flash inline script, readPref after platform init) |
-| — | #15 QA E2E suite (37 tests) | QA | in review; BUG-1 (offline reload → login) sent to Foundation |
-| — | #16 tasks keyboard nav, #19 ui shortcut registry, ui primitives PR | Tasks / UI | in review (#16 vs #19 overlap being checked) |
-| — | #14 collab sharing, #18 collab events | Collab | in review along with the #7/#11/#4 chain |
+| 04:41 | #15 QA E2E suite (37 tests, about 50 s, no flakes) | QA | merged; e2e now gates PRs and publish. BUG-1 (offline reload → login) is with Foundation |
+| 04:43 | #19 ui: shortcut/command registry | UI Shell | merged |
+| 04:45 | #7 [shared] collab migration 004 + types | Collab | merged |
+| — | #16 tasks keyboard nav + bulk actions | Tasks | changes requested: move raw window keydown listeners onto the registry; scope ⌘A |
+| — | ui primitives PR | UI Shell | in review |
+| — | #14 collab sharing, #18 collab events | Collab | approved; must rebase after #11. Order: #11 → #14 → #18 |
 | — | #7 [shared] collab migration | Collab | waiting: rename to **004**, then merge |
-| — | #4 [shared] reminders migration | Reminders | waiting: after #7, rename to **005** and resolve types.ts |
+| — | #4 reminders v1 (whole stack) | Reminders | approved; merging main and resolving types.ts now that #7 is in |
 | 04:33 | #10 editor: ranked FTS search, uploads, move/copy | Editor | merged after a security re-review (actively attacked uploads; all held) |
-| — | #11 collab invites | Collab | waiting on #7; decided: invite accept requires a matching email; signup auto-join respects expiry; PUBLIC_URL required in prod |
+| — | #11 collab invites | Collab | **blocked** (resent): invite accept requires a matching email; signup auto-join respects expiry; PUBLIC_URL required in prod (Origin fallback leaks the token) |
 
 ## Log
 - **2026-11-05 03:00** Found the builder session mid-build; paused it; planned with the user; wrote `PLAN.md`.
@@ -81,3 +84,4 @@
 - **2026-11-05 04:28** Merged #13; Infra done. Started UI Shell (agent 6) in its slot. Migration numbers reserved: 004 collab, 005 reminders, 006 foundation. **Rule: a migration takes the next free number on main at rebase time; the manager assigns numbers.**
 - **2026-11-05 04:34** Merged #10. #12 reviewed: migration renamed to 006, follow-ups sent. Foundation is replacing the contiguous `user_version` migration runner with a `schema_migrations` table, so numbers no longer need to land in order.
 - **2026-11-05 04:40** Batch of 9 PRs sent to 4 parallel reviewer subagents. Reminders finished its stretch backlog (snooze, APNs/FCM channels, quiet hours, .ics) inside #4; given one last job (wire its pickers into TaskDetail/TaskRow/quickadd), then done. Started Desktop (agent 9) early so no slot sits idle. **#4 lists new env vars for DEPLOY_CONTRACT: APNS_KEY_ID/TEAM_ID/BUNDLE_ID/PRIVATE_KEY/ENV, FCM_SERVICE_ACCOUNT_JSON — add them to the contract when #4 merges.**
+- **2026-11-05 04:46** Merged #15, #19, #7. Two agents (Collab #11, Foundation #12) hadn't applied requested follow-ups, probably because the messages crossed with their pushes; resent with a request to confirm. Lesson: ask agents to acknowledge follow-up lists.
