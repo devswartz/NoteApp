@@ -13,7 +13,7 @@ import { searchRoutes } from './search.ts';
 import { fileRoutes } from './files.ts';
 import { commentRoutes } from './comments.ts';
 import { notificationRoutes } from './notifications.ts';
-import { activityRoutes } from './activity.ts';
+import { activityRecorder, activityRoutes } from './activity.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
@@ -29,6 +29,7 @@ api.use(publicAuthRoutes);
 
 // Everything below requires a signed-in user.
 api.use(requireAuth);
+api.use(activityRecorder); // activity feed: observes mutating requests, never blocks them
 api.use(authRoutes);
 api.use(workspaceRoutes);
 api.use(treeRoutes);
