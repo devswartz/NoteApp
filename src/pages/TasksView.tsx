@@ -6,9 +6,12 @@ import { AllView } from './tasks/AllView.tsx';
 import { CompletedView } from './tasks/CompletedView.tsx';
 import { CalendarView } from './tasks/CalendarView.tsx';
 import '../styles/tasks.css';
+import { BulkBar } from './tasks/BulkBar.tsx';
+import { useTaskListCommands } from './tasks/commands.tsx';
 
 export function TasksView() {
   const { view } = useParams() as { view: ViewId };
+  useTaskListCommands();
   if (!VIEWS.some((v) => v.id === view)) return <Navigate to="../today" replace />;
   const label = VIEWS.find((v) => v.id === view)!.label;
   return (
@@ -29,6 +32,7 @@ export function TasksView() {
           {view === 'completed' && <CompletedView />}
         </div>
       )}
+      {view !== 'calendar' && <BulkBar />}
     </div>
   );
 }

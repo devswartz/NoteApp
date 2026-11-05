@@ -9,6 +9,34 @@ function storage(): Storage | null {
   }
 }
 
+// ── Service worker and update prompt ──
+const updateListeners = new Set<(apply: () => void) => void>();
+let pendingUpdate: (() => void) | null = null;
+
+function announceUpdate(worker: ServiceWorker) {
+  pendingUpdate = () => {
+    navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload(), { once: true });
+    worker.postMessage('skipWaiting');
+  };
+  for (const fn of updateListeners) fn(pendingUpdate);
+}
+
+async function registerServiceWorker() {
+  const reg = await navigator.serviceWorker.register('/sw.js');
+  // Only an update if a version is already controlling this page.
+  const watch = (w: ServiceWorker | null) => {
+    if (!w) return;
+    const check = () => w.state === 'installed' && navigator.serviceWorker.controller && announceUpdate(w);
+    check();
+    w.addEventListener('statechange', check);
+  };
+  watch(reg.waiting);
+  reg.addEventListener('updatefound', () => watch(reg.installing));
+  // Look for new deploys every 30 minutes and when the app comes back into view.
+  setInterval(() => void reg.update().catch(() => {}), 30 * 60_000);
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && void reg.update().catch(() => {}));
+}
+
 const notificationsSupported = () => typeof window !== 'undefined' && 'Notification' in window;
 
 export const webPlatform: Platform = {
@@ -16,7 +44,7 @@ export const webPlatform: Platform = {
 
   async init() {
     if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+      window.addEventListener('load', () => void registerServiceWorker().catch(() => {}));
     }
   },
 
@@ -96,6 +124,14 @@ export const webPlatform: Platform = {
       document.body.appendChild(input);
       input.click();
     });
+  },
+
+  appUpdates: {
+    subscribe(fn) {
+      updateListeners.add(fn);
+      if (pendingUpdate) fn(pendingUpdate);
+      return () => updateListeners.delete(fn);
+    },
   },
 
   withLock(name, fn) {
