@@ -30,6 +30,7 @@ import {
   PanelTop,
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
+import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
@@ -102,6 +103,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         DetailsSummary,
         DetailsContent,
         TaskRef.configure({ pageId }),
+        UndoTasks,
         SlashCommand,
         ...collabExtensions(session, user),
       ],
