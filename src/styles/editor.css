@@ -250,3 +250,23 @@
 .backlink:hover { background: var(--bg-hover); }
 .backlink-icon { flex: none; width: 18px; display: inline-flex; justify-content: center; color: var(--text-muted); }
 .backlink .muted { margin-left: auto; flex: none; max-width: 45%; }
+
+/* ───────── Templates ───────── */
+.template-picker { margin-top: -150px; margin-bottom: 110px; position: relative; z-index: 1; pointer-events: none; }
+.template-picker > * { pointer-events: auto; }
+.template-picker-label { display: block; font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
+.template-picker-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.template-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 14px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.template-card:hover { background: var(--bg-subtle); border-color: var(--border-strong); color: var(--text); }
+.template-icon { font-size: 18px; line-height: 1; }
