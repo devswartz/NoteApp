@@ -56,7 +56,6 @@ test('edits made offline sync when the connection comes back', async ({ browser,
 });
 
 test('a page opened before going offline still opens after a reload while offline', async ({ browser, request }) => {
-  test.fixme(true, 'BUG-1 (docs/QA.md): reloading while offline shows the login screen instead of the cached note');
   const user = await createUser(request, 'Olive Cache');
   const { pageId } = await createPage(request, user, { page: 'Cached page' });
   const ctx = await browser.newContext();
