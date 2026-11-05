@@ -113,7 +113,7 @@ docs/              Plan-adjacent docs: agent guide, deploy contract, homelab bri
 - **A REST endpoint:** put it in your area's `server/routes/<area>.ts`. A new area gets a new file plus one `api.use(...)` line in `server/routes/index.ts` (a `[shared]` change).
 - **A screen:** one line in `src/routes.tsx`.
 - **Client state for a new area:** create your own small zustand store in your area's folder. Add to `src/store/state.ts` only for genuinely global state.
-- **A schema change:** a new file `server/migrations/NNN-name.sql`, using the next number. Never edit a merged migration. If two PRs pick the same number, the server refuses to start ("numbered … without gaps or duplicates"), and the second PR to merge renumbers its file.
+- **A schema change:** a new file `server/migrations/NNN-name.sql`, with the number the manager reserves for your PR. Never edit a merged migration. If two PRs end up with the same number, the server refuses to start ("Two migrations share number …"), and the second PR to merge renumbers its file.
 - **Route tests:** `import { startTestApp } from './helpers/app.ts'`. It starts the real server (API + WebSockets) on a random port with an in-memory DB and has `call(method, path, token, body)` and `signUp(name)`. See `tests/server.test.ts`.
 
 ## Data model
@@ -130,7 +130,7 @@ pages_fts (FTS5: page_id, title, text)
 ```
 
 - **Hierarchy:** workspace → notebook → section → page. Ordering uses a `position REAL` column per level (insert between two items by averaging).
-- **Migrations:** `server/migrations/NNN-name.sql`, applied in order at startup inside a transaction each. The last applied number is stored in `PRAGMA user_version`. `001-initial.sql` is the original schema.
+- **Migrations:** `server/migrations/NNN-name.sql`, applied at startup in numeric order, one transaction each, and recorded in `schema_migrations`. Numbers are **reserved per PR by the manager** and may merge out of order, so gaps are allowed: a lower number that lands after a higher one still runs. Duplicate numbers stop the server. A migration must not depend on a higher-numbered one. Databases created before `schema_migrations` existed are backfilled from `PRAGMA user_version`.
 - **Permissions** live in `server/access.ts`. Workspace roles: viewers read, members and up edit, admins manage members, owners manage everything. A private notebook (and its pages and tasks) is visible only to its creator, except that a task's assignee and creator can always see it (`TASK_VISIBLE`).
 - **Tasks are the single source of truth.** A page never stores task fields. The page document contains `taskRef` nodes holding only a `taskId`; the editor renders each one from the client task store (`src/editor/TaskRef.tsx`). So a task edited on the dashboard updates every note it appears in, and the reverse.
   - Clients create a task with a client-chosen UUID first (`POST /workspaces/:id/tasks` with `id`), then insert the `taskRef` node, so the node never points at a missing row. Retrying with the same id is idempotent.
