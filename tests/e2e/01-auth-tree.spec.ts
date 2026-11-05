@@ -48,20 +48,22 @@ test('sign-up validation: duplicate email and short password', async ({ page, re
 test('create a workspace, notebook, section and page from the UI', async ({ page, context, request }) => {
   const user = await createUser(request, 'Tree Builder');
   await signInContext(context, user);
-  const answers: Record<string, string> = {
-    'Name your new team workspace': 'Rocket Team',
-    'Notebook name': 'Launch Plans',
-    'Section name': 'Q4',
+  // Names are asked for in the app's own dialog (not window.prompt).
+  const answer = async (title: string | RegExp, value: string) => {
+    const dlg = page.getByRole('dialog', { name: title });
+    await dlg.getByRole('textbox').fill(value);
+    await dlg.getByRole('button', { name: 'Create' }).click();
   };
-  page.on('dialog', (d) => void d.accept(answers[d.message()] ?? ''));
 
   await page.goto('/');
   await page.locator('.ws-switch').click();
   await page.getByRole('menuitem', { name: 'New workspace' }).click();
+  await answer('New team workspace', 'Rocket Team');
   await expect(page.locator('.ws-switch')).toContainText('Rocket Team');
 
   // A new notebook comes with a "General" section and opens a fresh page.
   await page.getByRole('button', { name: 'New notebook', exact: true }).click();
+  await answer('New notebook', 'Launch Plans');
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar.getByText('Launch Plans')).toBeVisible();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
@@ -71,6 +73,7 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
   await nbRow.hover();
   await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New section' }).click();
+  await answer(/New section/, 'Q4');
   const secRow = page.locator('.sec-row', { hasText: 'Q4' });
   await expect(secRow).toBeVisible();
 
