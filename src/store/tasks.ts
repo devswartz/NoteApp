@@ -1,5 +1,6 @@
 // Task state and optimistic task actions.
-import { del, get, patch, post } from '../api.ts';
+import { del, patch, post } from '../api.ts';
+import { cached } from './cache.ts';
 import { describeDue } from '../lib/format.ts';
 import { set, st } from './state.ts';
 import { errorToast, toast } from './toasts.ts';
@@ -8,7 +9,7 @@ import type { Task, TaskPatch } from '../../shared/types.ts';
 export async function loadTasks() {
   const wsId = st().wsId;
   if (!wsId) return;
-  const list = await get<Task[]>(`/workspaces/${wsId}/tasks`);
+  const list = await cached<Task[]>(`tasks:${wsId}`, `/workspaces/${wsId}/tasks`);
   if (st().wsId !== wsId) return;
   const tasks: Record<string, Task> = {};
   for (const t of list) tasks[t.id] = t;
@@ -53,6 +54,7 @@ export async function createTask(input: TaskPatch & { title: string; id?: string
     assigneeId: input.assigneeId ?? null,
     createdBy: user.id,
     pageId: input.pageId ?? null,
+    parentId: input.parentId ?? null,
     completedAt: null,
     completedBy: null,
     createdAt: ts,
@@ -114,11 +116,40 @@ export function toggleTask(id: string) {
 
 export async function deleteTask(id: string) {
   const prev = st().tasks[id];
+  const children = Object.values(st().tasks).filter((t) => t.parentId === id);
   removeTaskLocal(id);
+  for (const c of children) removeTaskLocal(c.id); // the server deletes subtasks with their parent
   try {
     await del(`/tasks/${id}`);
   } catch (e) {
-    if (prev) set((s) => ({ tasks: { ...s.tasks, [id]: prev } }));
+    if (prev) set((s) => ({ tasks: { ...s.tasks, [id]: prev, ...Object.fromEntries(children.map((c) => [c.id, c])) } }));
     errorToast(e);
   }
+}
+
+/**
+ * Apply one patch to many tasks (bulk actions). Each task is updated
+ * optimistically on its own; one toast offers to undo the whole batch.
+ */
+export async function bulkUpdate(ids: string[], p: TaskPatch, label: string) {
+  const before = ids.map((id) => st().tasks[id]).filter((t): t is Task => !!t);
+  if (!before.length) return;
+  await Promise.all(before.map((t) => updateTask(t.id, p, { silent: true })));
+  toast(`${label} · ${before.length} task${before.length === 1 ? '' : 's'}`, {
+    action: {
+      label: 'Undo',
+      run: () => {
+        for (const t of before) {
+          const undo: TaskPatch = {};
+          for (const k of Object.keys(p) as (keyof TaskPatch)[]) (undo as Record<string, unknown>)[k] = t[k];
+          void updateTask(t.id, undo, { silent: true });
+        }
+      },
+    },
+  });
+}
+
+export async function bulkDelete(ids: string[]) {
+  await Promise.all(ids.map((id) => deleteTask(id)));
+  toast(`Deleted ${ids.length} task${ids.length === 1 ? '' : 's'}`);
 }
