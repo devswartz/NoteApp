@@ -5,7 +5,7 @@ import { PASSWORD, api, createPage, createTask, createTeam, createUser, eventual
 
 /**
  * Waits until the page's live-events socket is really delivering: creates marker tasks for `to` until one shows up.
- * (Needed because of BUG-4: changes made before the first connect completes are not caught up.)
+ * (So assertions on live delivery don't race the socket's first connect.)
  */
 async function waitForLiveEvents(page: Page, request: APIRequestContext, by: TestUser, wsId: string, to: TestUser) {
   let n = 0;
@@ -60,7 +60,6 @@ test('events missed while disconnected are caught up on reconnect, without a rel
 });
 
 test('a change made while the app is still connecting its live events is not lost', async ({ browser, request }) => {
-  test.fixme(true, 'BUG-4 (docs/QA.md): the first events connection neither replays nor refetches, so a change in the gap after the initial load is lost until a reload');
   const alice = await createUser(request, 'Alice Early');
   const bob = await createUser(request, 'Bob Startup');
   const teamId = await createTeam(request, alice, [{ user: bob, role: 'member' }]);
