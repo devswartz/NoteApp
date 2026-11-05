@@ -74,3 +74,35 @@ test('APNs: sandbox (Xcode) and production (TestFlight) tokens both delivered; t
   assert.equal(r2.sent, 2);
   assert.deepEqual(hostsFor(devToken), [APNS_HOSTS.sandbox], 'next time it goes straight to sandbox');
 });
+
+test('/.well-known: universal-link and app-link files, public JSON, 404 until configured', async () => {
+  const { appleAppSiteAssociation, assetLinks, normalizeFingerprint, wellKnownConfig } = await import('../server/wellKnown.ts');
+  const fp = 'ab'.repeat(32);
+  assert.equal(normalizeFingerprint(fp), 'AB:'.repeat(31) + 'AB');
+  assert.equal(normalizeFingerprint('AB:CD'), null);
+  const c = wellKnownConfig({ APNS_TEAM_ID: 'ABCDE12345', ANDROID_CERT_SHA256: `${fp}, nonsense ,${'CD:'.repeat(31)}CD` });
+  assert.deepEqual(appleAppSiteAssociation(c)!.applinks.details[0].appIDs, ['ABCDE12345.com.devswartz.noteapp']);
+  assert.deepEqual(appleAppSiteAssociation(c)!.applinks.details[0].components, [{ '/': '/w/*', comment: 'Workspace pages and tasks' }]);
+  assert.equal(assetLinks(c)![0].target.package_name, 'com.devswartz.noteapp');
+  assert.equal(assetLinks(c)![0].target.sha256_cert_fingerprints.length, 2, 'invalid fingerprints dropped');
+  assert.equal(appleAppSiteAssociation(wellKnownConfig({ APNS_TEAM_ID: 'bad id' })), null);
+
+  // Over HTTP: the test server has neither configured, then both.
+  for (const path of ['/.well-known/apple-app-site-association', '/.well-known/assetlinks.json'])
+    assert.equal((await fetch(app.origin + path)).status, 404, path);
+  process.env.APNS_TEAM_ID = 'ABCDE12345';
+  process.env.ANDROID_CERT_SHA256 = fp;
+  try {
+    const aasa = await fetch(app.origin + '/.well-known/apple-app-site-association', { redirect: 'manual' });
+    assert.equal(aasa.status, 200);
+    assert.match(aasa.headers.get('content-type')!, /^application\/json/);
+    assert.equal((await aasa.json()).applinks.details[0].appIDs[0], 'ABCDE12345.com.devswartz.noteapp');
+    const links = await fetch(app.origin + '/.well-known/assetlinks.json');
+    assert.equal(links.status, 200);
+    assert.match(links.headers.get('content-type')!, /^application\/json/);
+    assert.equal((await links.json())[0].target.sha256_cert_fingerprints[0], normalizeFingerprint(fp));
+  } finally {
+    delete process.env.APNS_TEAM_ID;
+    delete process.env.ANDROID_CERT_SHA256;
+  }
+});

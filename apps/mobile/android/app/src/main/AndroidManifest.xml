@@ -27,13 +27,14 @@
                 <data android:scheme="noteapp" />
             </intent-filter>
 
-            <!-- App links: https://notes.devswartz.com/w/… opens the app once the server
-                 serves /.well-known/assetlinks.json (docs/MOBILE.md). -->
+            <!-- App links: https://notes(-staging).devswartz.com/w/… opens the app. The server serves
+                 /.well-known/assetlinks.json once ANDROID_CERT_SHA256 is set (docs/MOBILE.md). -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="notes.devswartz.com" android:pathPrefix="/w/" />
+                <data android:scheme="https" android:host="notes-staging.devswartz.com" android:pathPrefix="/w/" />
             </intent-filter>
         </activity>
 

@@ -97,16 +97,19 @@ Set these on the server (`docs/DEPLOY_CONTRACT.md` lists the server env). Each c
 
 Firebase setup: create a Firebase project, add an Android app with package `com.devswartz.noteapp`, and download `google-services.json` (that's the GitHub secret above). iOS doesn't use Firebase; it talks to APNs directly.
 
-### Server files for universal links / app links
+### Universal links / app links (what you fill in)
 
-For `https://notes.devswartz.com/w/…` links to open the app, the server must serve (not done yet; requested from the server owner):
+`https://notes.devswartz.com/w/…` and `https://notes-staging.devswartz.com/w/…` links open the app instead of the browser. The app side is already set up: Associated Domains in `App.entitlements`, and an `autoVerify` intent filter in `AndroidManifest.xml`. The server (`server/wellKnown.ts`) serves the two verification files. They are public JSON with no redirect, and return 404 until you set these variables on **both** prod and staging:
 
-- `/.well-known/apple-app-site-association` (`application/json`, no redirect):
-  `{"applinks":{"details":[{"appIDs":["<TEAM_ID>.com.devswartz.noteapp"],"components":[{"/":"/w/*"}]}]}}`
-- `/.well-known/assetlinks.json`:
-  `[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"com.devswartz.noteapp","sha256_cert_fingerprints":["<SHA-256 of the signing cert>"]}}]`
+| Server env | Value | Where to find it |
+|---|---|---|
+| `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) | Your 10-character Apple Team ID | developer.apple.com → Membership. It is the same value the APNs push channel uses, so it's usually already set. |
+| `ANDROID_CERT_SHA256` | SHA-256 fingerprint(s) of the certificate(s) that sign the Android app, comma-separated (with or without colons) | Play Console → your app → Test and release → App integrity → **App signing key certificate** (and the upload key certificate, if you also install builds signed with your upload key). For a local keystore: `keytool -list -v -keystore upload.jks`. Debug builds are signed with `~/.android/debug.keystore`; add its fingerprint too if you want links to open debug builds. |
+| `APNS_BUNDLE_ID` / `ANDROID_PACKAGE` | Optional; default `com.devswartz.noteapp` | |
 
-Until then, `noteapp://` links work and https links open in the browser.
+Check it: `curl -i https://notes.devswartz.com/.well-known/apple-app-site-association` and `…/assetlinks.json` should return `200` with `application/json`. Apple caches the file through its CDN, so a new iOS install may take a while to pick it up. On Android, `adb shell pm get-app-links com.devswartz.noteapp` shows whether verification passed.
+
+Only `/w/…` paths are claimed. Login links and the API always stay in the browser. Until the variables are set, `noteapp://` links work and https links open in the browser.
 
 ## CI
 

@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
 import { api } from './routes/index.ts';
 import { serveUploads } from './routes/files.ts';
+import { wellKnownRoutes } from './wellKnown.ts';
 import { attachCollab } from './collab.ts';
 import { attachEvents } from './events.ts';
 import { handleProtocols } from './auth.ts';
@@ -33,6 +34,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
     res.status(204).end();
   });
   app.use('/api', api);
+  app.use('/.well-known', wellKnownRoutes()); // universal / app links for the mobile apps (docs/MOBILE.md)
   app.use('/uploads', serveUploads); // nosniff + sandbox CSP + attachment disposition (routes/files.ts)
 
   // In production the server also serves the built web app.
