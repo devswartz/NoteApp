@@ -103,7 +103,7 @@ src/               React web app
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
 apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
-public/            icon.svg (manifest and sw.js are generated at build time; see Offline)
+public/            icon.svg (the icon source), icons/ (PNG/ICO set generated from it: `npm run web:icons`), theme-init.js (pre-paint theme); manifest and sw.js are generated at build time (see Offline)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
 apps/desktop/      Tauri 2 desktop app (Rust in src-tauri/, build scripts, icon sources); docs/DESKTOP.md

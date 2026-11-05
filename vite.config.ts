@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { APP_DESCRIPTION, APP_NAME } from './shared/config.ts';
 
 const api = process.env.API_URL ?? 'http://localhost:3001';
@@ -18,7 +18,14 @@ function appIdentity(): Plugin {
       display: 'standalone',
       background_color: '#ffffff',
       theme_color: '#4f46e5',
-      icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
+      // Generated from public/icon.svg by `npm run web:icons` (scripts/web-icons.mjs).
+      icons: [
+        { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icons/maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+        { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+      ],
     },
     null,
     2,
@@ -45,7 +52,12 @@ function serviceWorker(): Plugin {
     apply: 'build',
     generateBundle(_opts, bundle) {
       const files = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'sw.js');
-      const precache = ['/index.html', '/icon.svg', ...files.filter((f) => f !== 'index.html').map((f) => `/${f}`)];
+      // public/ files aren't in the bundle: list the ones the shell needs offline.
+      // (Only existing ones: one missing file would make the whole install fail.)
+      const publicFiles = ['/icon.svg', '/theme-init.js', '/icons/favicon.ico', '/icons/favicon-32.png', '/icons/icon-192.png', '/icons/apple-touch-icon.png'].filter((f) =>
+        existsSync(`public${f}`),
+      );
+      const precache = ['/index.html', ...publicFiles, ...files.filter((f) => f !== 'index.html').map((f) => `/${f}`)];
       const version = createHash('sha256').update(files.sort().join('|')).update(JSON.stringify(precache)).digest('hex').slice(0, 12);
       const source = readFileSync('src/sw/sw.template.js', 'utf8')
         .replace('__VERSION__', version)
