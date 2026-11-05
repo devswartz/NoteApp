@@ -18,7 +18,7 @@ import { countSubscriptions, deleteSubscription, saveSubscription, vapidPublicKe
 import { createReminder, deleteReminder, listReminders, updateReminder } from '../reminders/store.ts';
 import { defaultChannels, pokeScheduler } from '../reminders/scheduler.ts';
 import { deliver } from '../reminders/deliver.ts';
-import { mailEnabled } from '../mail.ts';
+import { mailConfigured } from '../mail.ts';
 
 export const reminderRoutes = Router();
 
@@ -27,7 +27,7 @@ reminderRoutes.patch('/notifications/settings', h((req) => updateSettings(req.us
 
 reminderRoutes.get(
   '/notifications/push',
-  h((req) => ({ publicKey: vapidPublicKey(), emailAvailable: mailEnabled(), devices: countSubscriptions(req.user.id) })),
+  h((req) => ({ publicKey: vapidPublicKey(), emailAvailable: mailConfigured(), devices: countSubscriptions(req.user.id) })),
 );
 
 reminderRoutes.post(

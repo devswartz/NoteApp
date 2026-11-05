@@ -14,7 +14,7 @@ import { syncReminders } from './store.ts';
 import { deliver, pruneNotificationLog } from './deliver.ts';
 import { dueDigests } from './digest.ts';
 import { emailChannel } from './email.ts';
-import { mailEnabled } from '../mail.ts';
+import { mailConfigured } from '../mail.ts';
 import { vapidPublicKey, webPushChannel } from './push.ts';
 import type { DeliveryChannel, Notice } from './channels.ts';
 
@@ -156,7 +156,7 @@ let instance: ReminderScheduler | null = null;
 /** Called from server/index.ts. Returns a stop function. */
 export function startReminderScheduler(opts?: SchedulerOptions): () => void {
   if (!vapidPublicKey()) console.warn('Web push is disabled (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set)');
-  if (!mailEnabled()) console.warn('Reminder email is disabled (SMTP_HOST / MAIL_FROM not set)');
+  if (!mailConfigured()) console.warn('Reminder email is disabled (SMTP_HOST not set)');
   instance = new ReminderScheduler(opts);
   instance.start();
   return () => instance?.stop();

@@ -11,7 +11,6 @@ let sched: typeof import('../server/reminders/scheduler.ts');
 let deliverMod: typeof import('../server/reminders/deliver.ts');
 let push: typeof import('../server/reminders/push.ts');
 let email: typeof import('../server/reminders/email.ts');
-let mail: typeof import('../server/mail.ts');
 let store: typeof import('../server/reminders/store.ts');
 
 before(async () => {
@@ -23,7 +22,6 @@ before(async () => {
   deliverMod = await import('../server/reminders/deliver.ts');
   push = await import('../server/reminders/push.ts');
   email = await import('../server/reminders/email.ts');
-  mail = await import('../server/mail.ts');
   store = await import('../server/reminders/store.ts');
 });
 after(() => app.close());
@@ -249,10 +247,17 @@ test('email channel and daily digest', async () => {
   await task(u, { title: 'Today <thing>', dueDate: '2036-06-03', dueTime: '14:00' });
   await task(u, { title: 'Tomorrow thing', dueDate: '2036-06-04' });
   const mails: { to: string; subject: string; text: string; html?: string }[] = [];
-  mail.setMailSinkForTests((m) => mails.push(m));
-  try {
+  {
     assert.equal(email.emailChannel().available(), false, 'no SMTP → skipped');
-    const channels = [email.emailChannel({ force: true })];
+    const channels = [
+      email.emailChannel({
+        force: true,
+        send: async (m) => {
+          mails.push(m);
+          return { sent: true };
+        },
+      }),
+    ];
     const clock = new Clock(Date.parse('2036-06-03T06:00:00Z')); // 07:00 BST: too early
     const s = new sched.ReminderScheduler({ now: clock.now, channels });
     await s.tick();
@@ -272,8 +277,6 @@ test('email channel and daily digest', async () => {
     clock.set('2036-06-04T06:31:00Z');
     await s.tick();
     assert.equal(mails.filter((m) => m.to === u.user.email).length, 1);
-  } finally {
-    mail.setMailSinkForTests(null);
   }
 });
 
