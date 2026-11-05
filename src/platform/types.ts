@@ -53,6 +53,15 @@ export interface Platform {
   /** Let the user pick files. Resolves to [] if they cancel. */
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
 
+  /**
+   * New app versions. Web: a new service worker is waiting; Tauri: the
+   * auto-updater. The callback gets `apply()`, which switches to the new
+   * version (reloading or restarting). Late subscribers still get a pending update.
+   */
+  appUpdates: {
+    subscribe(onAvailable: (apply: () => void) => void): () => void;
+  };
+
   /** Run fn while holding a named lock shared by every window/tab of the app. */
   withLock<T>(name: string, fn: () => Promise<T>): Promise<T>;
 
