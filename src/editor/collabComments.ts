@@ -201,10 +201,10 @@ export async function deleteComment(threadId: string, commentId: string) {
   }
 }
 
-/** Select a thread: highlight it and scroll its anchor into view. */
-export function focusThread(threadId: string | null) {
-  set({ activeId: threadId });
-  if (!threadId || typeof document === 'undefined') return;
+/** Select a thread: highlight it and (from the panel) scroll its anchor into view. */
+export function focusThread(threadId: string | null, scroll = true) {
+  if (st().activeId !== threadId) set({ activeId: threadId });
+  if (!threadId || !scroll || typeof document === 'undefined') return;
   const el = document.querySelector(`.ProseMirror [data-thread-id="${CSS.escape(threadId)}"]`);
   el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
