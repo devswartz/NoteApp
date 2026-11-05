@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ApiError, get, post } from '../../api.ts';
-import { loadWorkspaces, useStore } from '../../store.ts';
+import { loadWorkspaces, signOut, useStore } from '../../store.ts';
 import { platform } from '../../platform/index.ts';
 import { APP_NAME } from '../../../shared/config.ts';
 import type { InviteInfo } from '../../../shared/types.ts';
@@ -78,15 +78,25 @@ export function InvitePage() {
               {info.invitedByName} invited <strong>{info.email}</strong> to join as {info.role === 'admin' ? 'an' : 'a'}{' '}
               <strong>{info.role}</strong>.
             </p>
-            {user ? (
+            {user && user.email.toLowerCase() !== info.email.toLowerCase() ? (
               <>
-                {user.email.toLowerCase() !== info.email.toLowerCase() && (
-                  <p className="muted small">You’re signed in as {user.email}. Joining adds this account.</p>
-                )}
-                <button className="btn btn-primary btn-lg invite-cta" disabled={busy} onClick={accept}>
-                  {busy ? 'Joining…' : `Join ${info.workspaceName}`}
+                <p className="muted small">
+                  You’re signed in as {user.email}. This invite is for {info.email}, so sign in (or create an account) with
+                  that address to accept it.
+                </p>
+                <button
+                  className="btn btn-primary btn-lg invite-cta"
+                  onClick={() => {
+                    void signOut().then(signInFirst);
+                  }}
+                >
+                  Switch account
                 </button>
               </>
+            ) : user ? (
+              <button className="btn btn-primary btn-lg invite-cta" disabled={busy} onClick={accept}>
+                {busy ? 'Joining…' : `Join ${info.workspaceName}`}
+              </button>
             ) : (
               <button className="btn btn-primary btn-lg invite-cta" onClick={signInFirst}>
                 Sign in or create an account
