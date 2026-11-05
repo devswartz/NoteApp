@@ -111,6 +111,10 @@ The sidebar counts show how many tasks are in Today, My Tasks and Upcoming.
 - **⌘K** opens the palette. Type to search page titles, page text and tasks (best matches first), or run any command (*New page*, *Go to Calendar*, *Switch theme*, …).
 - **?** shows every keyboard shortcut.
 
+## Send feedback
+
+Found a bug, or have an idea? Press **⌘K**, run **Send feedback** (or use the *Send feedback* link at the bottom of the **?** overlay or Settings → Keyboard shortcuts), write your message (up to 4000 characters) and press **Send**. It goes to people who run your Notivelo along with your name and email, the page you are on (no search text), your app version and device type, and they can reply to your email. If sending fails, your text stays in the box so you can try again. You can send up to 5 messages an hour.
+
 ## Keyboard shortcuts
 
 Generated from the app's command registry (the `?` overlay). ⌘ = Ctrl on Windows and Linux.

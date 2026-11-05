@@ -106,6 +106,9 @@ export const LIMITS = {
   // Client error reports (POST /client-errors, no auth): a crash loop on one device must not flood the log.
   clientErrorIp: { capacity: 20, perMinute: 10 },
   clientErrorGlobal: { capacity: 300, perMinute: 300 }, // whole server: 5/s sustained
+  // Feedback emails to the admins (signed in; see takeFeedback): five an hour per user, plus a server-wide cap.
+  feedbackUser: { capacity: 5, perMinute: 5 / 60 },
+  feedbackGlobal: { capacity: 60, perMinute: 60 / 60 },
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -244,6 +247,16 @@ export function takeClientError(req: Request): number {
   if (wait) return wait;
   const g = limiters.clientErrorGlobal.take('all');
   if (g) limiters.clientErrorIp.refund(ip);
+  return g;
+}
+
+/** Rate limit for POST /feedback, called by the handler: per user and server-wide. 0 if allowed, else seconds to wait. */
+export function takeFeedback(userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const w = limiters.feedbackUser.take(userId);
+  if (w) return w;
+  const g = limiters.feedbackGlobal.take('all');
+  if (g) limiters.feedbackUser.refund(userId);
   return g;
 }
 
