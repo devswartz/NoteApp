@@ -4,7 +4,7 @@ import type { Editor } from '@tiptap/core';
 import { patch } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { platform } from '../platform/index.ts';
-import { fileName, splitTitle } from './markdownUtils.ts';
+import { fileName, liftInlineImages, splitTitle } from './markdownUtils.ts';
 import { sanitizeContent } from './urls.ts';
 
 /**
@@ -66,7 +66,7 @@ export async function importMarkdown(editor: Editor, pageId: string) {
       const md = i === 0 && title && !meta?.title ? body : title ? `## ${title}\n\n${body}` : body;
       if (editor.isDestroyed || !editor.markdown) return;
       // Parse first, then drop javascript:/data: links and images before anything enters the document.
-      const doc = sanitizeContent(editor.markdown.parse(md));
+      const doc = liftInlineImages(sanitizeContent(editor.markdown.parse(md)));
       const empty = editor.isEmpty;
       const chain = editor.chain().focus('end');
       if (empty) chain.setContent(doc);

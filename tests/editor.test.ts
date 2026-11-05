@@ -106,3 +106,38 @@ test('link and image URL checks, and sanitizeContent for imported/exported docum
   assert.equal(para[1].marks![0].attrs!.href, 'https://ok.example');
   assert.deepEqual(out.content!.slice(1).map((n) => n.attrs!.src ?? n.type), ['/uploads/abc.png']);
 });
+
+test('backslash tricks are protocol-relative links and are rejected', async () => {
+  const { safeLinkUrl, safeImageUrl } = await import('../src/editor/urls.ts');
+  for (const bad of ['/\\evil.example', '\\\\evil.example', '\\/evil.example', '/\\/evil.example', ' /\t\\evil.example']) {
+    assert.equal(safeLinkUrl(bad), '', JSON.stringify(bad));
+    assert.equal(safeImageUrl(bad), '', JSON.stringify(bad));
+  }
+  assert.equal(safeLinkUrl('/w/1/p/2'), '/w/1/p/2');
+});
+
+test('liftInlineImages splits text blocks around images, at any depth', async () => {
+  const { liftInlineImages } = await import('../src/editor/markdownUtils.ts');
+  const img = (src: string) => ({ type: 'image', attrs: { src } });
+  const t = (text: string) => ({ type: 'text', text });
+  const doc = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [t('See '), img('a.png'), t(' here')] },
+      { type: 'paragraph', content: [img('b.png')] },
+      { type: 'paragraph', content: [t('plain')] },
+      { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [img('c.png'), t('  ')] }] }] },
+    ],
+  };
+  const out = liftInlineImages(doc);
+  const shape = (n: { type?: string; content?: unknown[]; attrs?: { src?: string } }): unknown =>
+    n.type === 'image' ? `img:${n.attrs!.src}` : n.type === 'text' ? (n as { text: string }).text : { [n.type!]: (n.content ?? []).map((c) => shape(c as never)) };
+  assert.deepEqual(out.content!.map((n) => shape(n as never)), [
+    { paragraph: ['See '] },
+    'img:a.png',
+    { paragraph: [' here'] },
+    'img:b.png',
+    { paragraph: ['plain'] },
+    { bulletList: [{ listItem: [{ paragraph: [] }, 'img:c.png'] }] },
+  ]);
+});
