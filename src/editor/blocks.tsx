@@ -81,13 +81,14 @@ function CalloutView({ node, updateAttributes, editor }: ReactNodeViewProps) {
   return (
     <NodeViewWrapper className="callout" data-type="callout">
       <span contentEditable={false} className="callout-emoji-wrap">
-        <Dropdown trigger={node.attrs.emoji as string} buttonClass="callout-emoji" title="Change icon" disabled={!editor.isEditable}>
+        <Dropdown trigger={node.attrs.emoji as string} buttonClass="callout-emoji" title="Change callout icon" disabled={!editor.isEditable}>
           {(close) => (
             <div className="emoji-grid">
               {CALLOUT_EMOJIS.map((e) => (
                 <button
                   key={e}
                   type="button"
+                  aria-label={`Use ${e}`}
                   className="emoji-btn"
                   onClick={() => {
                     updateAttributes({ emoji: e });
@@ -196,7 +197,9 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
   return (
     <NodeViewWrapper className={`file-card ${selected ? 'is-selected' : ''}`} data-type="file" data-drag-handle>
       <div className="file-card-inner" contentEditable={false}>
-        <span className="file-card-icon">{fileIcon(a.mime, a.name)}</span>
+        <span className="file-card-icon" aria-hidden="true">
+          {fileIcon(a.mime, a.name)}
+        </span>
         {href ? (
           <a className="file-card-name" href={href} target="_blank" rel="noopener noreferrer" title={`Open ${a.name}`}>
             {a.name}
@@ -208,7 +211,7 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
         )}
         <span className="file-card-size">{formatSize(a.size)}</span>
         {href && (
-          <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download">
+          <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download" aria-label={`Download ${a.name}`}>
             <Download size={15} />
           </a>
         )}

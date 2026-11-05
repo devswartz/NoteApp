@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
@@ -7,7 +7,7 @@ import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import { Placeholder, TrailingNode } from '@tiptap/extensions';
-import { TextSelection } from '@tiptap/pm/state';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import {
   Bold,
   CircleCheck,
@@ -30,6 +30,7 @@ import {
   PanelTop,
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
+import { BlockMove } from './blockMove.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
@@ -98,16 +99,46 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         CodeBlock,
         Callout,
         FileAttachment,
-        Details.configure({ persist: false, HTMLAttributes: { class: 'toggle' } }),
+        Details.configure({
+          persist: false,
+          HTMLAttributes: { class: 'toggle' },
+          // The toggle button is a real <button>: give it a name and its state for screen readers.
+          renderToggleButton: ({ element, isOpen }) => {
+            // Outside the editable text, so it takes keyboard focus and Enter/Space toggle it.
+            element.contentEditable = 'false';
+            element.type = 'button';
+            // ProseMirror listens for keys on the editor root; handle Enter/Space here first.
+            element.onkeydown = (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                element.click();
+              }
+            };
+            element.setAttribute('aria-expanded', String(isOpen));
+            element.setAttribute('aria-label', isOpen ? 'Collapse toggle' : 'Expand toggle');
+            element.title = isOpen ? 'Collapse' : 'Expand';
+          },
+        }),
         DetailsSummary,
         DetailsContent,
         TaskRef.configure({ pageId }),
+        BlockMove,
         SlashCommand,
         ...collabExtensions(session, user),
       ],
       editorProps: {
-        attributes: { class: 'prose', spellcheck: 'true' },
+        attributes: { class: 'prose', spellcheck: 'true', 'aria-label': 'Page content', 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => {
+          // Alt+F10 moves focus into the formatting toolbar (WAI-ARIA toolbar pattern).
+          if (event.altKey && event.key === 'F10') {
+            const first = document.querySelector<HTMLButtonElement>('.bubble-menu[role="toolbar"] button');
+            if (first) {
+              event.preventDefault();
+              first.focus();
+              return true;
+            }
+          }
           // ⌘K with text selected (or inside a link) edits the link; otherwise it opens the command palette.
           if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k' && !event.shiftKey && editorRef.current) {
             if (openLinkEditor(editorRef.current)) {
@@ -161,6 +192,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
     <div className={`editor-wrap ${session.synced ? '' : 'is-loading'}`}>
       {editor && canEdit && <FormattingMenu editor={editor} />}
       {editor && canEdit && <TableBar editor={editor} />}
+      {editor && canEdit && <ImageBar editor={editor} />}
       {editor && canEdit && <BlockHandle editor={editor} />}
       <EditorContent editor={editor} />
       <SlashMenuView />
@@ -204,6 +236,7 @@ function BlockHandle({ editor }: { editor: Editor }) {
         type="button"
         className="block-handle-btn"
         title="Insert below"
+        aria-label="Insert a block below"
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           const c = current.current;
@@ -223,7 +256,7 @@ function BlockHandle({ editor }: { editor: Editor }) {
       >
         <Plus size={15} />
       </button>
-      <span className="block-handle-btn block-handle-grip" title="Drag to move · click to select" data-drag-handle>
+      <span className="block-handle-btn block-handle-grip" title="Drag to move (or Alt+Shift+↑/↓)" aria-hidden="true" data-drag-handle>
         <GripVertical size={15} />
       </span>
     </DragHandle>
@@ -247,7 +280,16 @@ function FormattingMenu({ editor }: { editor: Editor }) {
     }),
   });
   const btn = (active: boolean, title: string, onClick: () => void, icon: React.ReactNode) => (
-    <button type="button" className={`bm-btn ${active ? 'is-active' : ''}`} title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
+    <button
+      type="button"
+      className={`bm-btn ${active ? 'is-active' : ''}`}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      tabIndex={-1}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+    >
       {icon}
     </button>
   );
@@ -255,9 +297,15 @@ function FormattingMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       className="bubble-menu"
+      role="toolbar"
+      aria-label="Formatting"
+      aria-orientation="horizontal"
+      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => toolbarKeys(e, editor)}
       shouldShow={({ editor: e, state }) => {
         const { empty } = state.selection;
-        if (empty || !e.isEditable || !e.view.hasFocus()) return false;
+        // Keep showing while keyboard focus is inside the toolbar itself.
+        const inToolbar = !!document.activeElement?.closest('.bubble-menu');
+        if (empty || !e.isEditable || !(e.view.hasFocus() || inToolbar)) return false;
         if (state.selection instanceof TextSelection === false) return false; // node selections (images, files, tasks)
         return !e.isActive('codeBlock');
       }}
@@ -278,6 +326,7 @@ function FormattingMenu({ editor }: { editor: Editor }) {
         type="button"
         className="bm-btn bm-text"
         title="Turn into task (⌘↵)"
+        tabIndex={-1}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().convertToTask().run()}
       >
@@ -287,16 +336,78 @@ function FormattingMenu({ editor }: { editor: Editor }) {
   );
 }
 
+/** When an image is selected: edit its description (alt text) for screen readers. */
+function ImageBar({ editor }: { editor: Editor }) {
+  const image = useEditorState({
+    editor,
+    selector: ({ editor: e }) => {
+      const sel = e.state.selection;
+      return sel instanceof NodeSelection && sel.node.type.name === 'image' ? { pos: sel.from, alt: String(sel.node.attrs.alt ?? '') } : null;
+    },
+  });
+  const [value, setValue] = useState('');
+  useEffect(() => setValue(image?.alt ?? ''), [image?.pos, image?.alt]);
+  if (!image) return null;
+  const save = () => {
+    if (value !== image.alt) editor.chain().setNodeSelection(image.pos).updateAttributes('image', { alt: value.trim() }).run();
+  };
+  return (
+    <div className="table-bar image-bar" contentEditable={false}>
+      <label className="image-alt">
+        <span>Alt text</span>
+        <input
+          className="input"
+          aria-label="Image description (alt text)"
+          placeholder="Describe the image for people who can't see it"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              save();
+              editor.commands.focus();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              setValue(image.alt);
+              editor.commands.focus();
+            }
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
+/** Toolbar keyboard pattern: ←/→ (and Home/End) move between buttons, Escape returns to the text. */
+function toolbarKeys(e: React.KeyboardEvent<HTMLDivElement>, editor: Editor) {
+  const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+  const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  if (i < 0) return;
+  const go = (n: number) => {
+    e.preventDefault();
+    buttons[(n + buttons.length) % buttons.length].focus();
+  };
+  if (e.key === 'ArrowRight') go(i + 1);
+  else if (e.key === 'ArrowLeft') go(i - 1);
+  else if (e.key === 'Home') go(0);
+  else if (e.key === 'End') go(buttons.length - 1);
+  else if (e.key === 'Escape') {
+    e.preventDefault();
+    editor.commands.focus();
+  }
+}
+
 function TableBar({ editor }: { editor: Editor }) {
   const inTable = useEditorState({ editor, selector: ({ editor: e }) => e.isActive('table') });
   if (!inTable) return null;
   const b = (title: string, fn: () => void, icon: React.ReactNode, label = title) => (
-    <button type="button" className="btn-ghost btn-sm" title={title} onMouseDown={(e) => e.preventDefault()} onClick={fn}>
+    <button type="button" className="btn-ghost btn-sm" title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={fn}>
       {icon} {label}
     </button>
   );
   return (
-    <div className="table-bar" contentEditable={false}>
+    <div className="table-bar" contentEditable={false} role="toolbar" aria-label="Table">
       {b('Add row below', () => editor.chain().focus().addRowAfter().run(), <ArrowDownToLine size={14} />, 'Row')}
       {b('Add column right', () => editor.chain().focus().addColumnAfter().run(), <ArrowRightToLine size={14} />, 'Column')}
       {b('Toggle header row', () => editor.chain().focus().toggleHeaderRow().run(), <PanelTop size={14} />, 'Header')}

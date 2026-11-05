@@ -282,9 +282,9 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
       className={`task-ref ${done ? 'is-done' : ''} ${selected ? 'is-selected' : ''}`}
       data-task-id={id}
     >
-      <div contentEditable={false} className="task-ref-inner">
+      <div contentEditable={false} className="task-ref-inner" role="group" aria-label={`Task: ${task.title || 'untitled'}${done ? ', done' : ''}`}>
         {editable && (
-          <span className="drag-handle" data-drag-handle title="Drag to move">
+          <span className="drag-handle" data-drag-handle title="Drag to move" aria-hidden="true">
             <GripVertical size={14} />
           </span>
         )}
@@ -292,6 +292,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
         <input
           ref={inputRef}
           className="task-ref-title"
+          aria-label="Task title"
           value={title}
           placeholder="Task name — e.g. “Draft agenda tomorrow p2 @sam”"
           readOnly={!editable}
@@ -322,7 +323,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           <PriorityChip task={task} readOnly={!editable} onChange={(priority) => void updateTask(id, { priority })} />
           <DueChip task={task} readOnly={!editable} onChange={(dueDate) => void updateTask(id, { dueDate })} />
           <AssigneeChip task={task} readOnly={!editable} onChange={(assigneeId) => void updateTask(id, { assigneeId })} />
-          <button className="icon-btn btn-ghost task-ref-open" title="Open task details" onClick={() => ui.openTask(id)}>
+          <button className="icon-btn btn-ghost task-ref-open" title="Open task details" aria-label="Open task details" onClick={() => ui.openTask(id)}>
             <Maximize2 size={13} />
           </button>
         </div>
