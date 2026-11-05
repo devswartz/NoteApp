@@ -51,9 +51,6 @@ test('a socket closes with 4401 when its access token expires', async () => {
 
   const collab = new WebSocket(`${app.wsOrigin}/collab/${tree.data.pages[0].id}`, ['noteapp.v1', `bearer.${shortToken()}`]);
   await opened(collab);
-  const closed = closeCode(collab);
-  await new Promise((r) => setTimeout(r, 2100));
-  const { revalidateCollab } = await import('../server/collab.ts');
-  revalidateCollab(); // also runs every 30 s on its own
-  assert.equal(await closed, 4401);
+  // Closed by the socket's own expiry timer, without waiting for the 30 s sweep.
+  assert.equal(await closeCode(collab), 4401);
 });

@@ -44,3 +44,23 @@ test('legacy DBs tracked by user_version are not re-migrated', () => {
   migrate(db, loadMigrations(dir({ '001-a.sql': 'CREATE TABLE t1 (x);', '002-b.sql': 'CREATE TABLE t2 (x);', '003-c.sql': 'CREATE TABLE t3 (x);' })));
   assert.deepEqual(tables(db), ['t1', 't2', 't3']);
 });
+
+test('a failing migration rolls back and is retried on the next start', () => {
+  const d = dir({ '001-a.sql': 'CREATE TABLE t1 (x);', '002-bad.sql': 'CREATE TABLE t2 (x); SELECT * FROM nope;' });
+  const db = new Database(':memory:');
+  assert.throws(() => migrate(db, loadMigrations(d)));
+  assert.deepEqual(tables(db), ['t1'], '002 rolled back entirely');
+  fs.writeFileSync(path.join(d, '002-bad.sql'), 'CREATE TABLE t2 (x);');
+  migrate(db, loadMigrations(d));
+  assert.deepEqual(tables(db), ['t1', 't2']);
+});
+
+test('two connections migrating the same file DB apply each migration once', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'migdb-')), 'x.db');
+  const d = dir({ '001-a.sql': 'CREATE TABLE t1 (x);', '002-b.sql': 'CREATE TABLE t2 (x);' });
+  const a = new Database(file);
+  const b = new Database(file);
+  migrate(a, loadMigrations(d));
+  migrate(b, loadMigrations(d)); // would throw "table t1 already exists" if it re-applied
+  assert.equal((b.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number }).n, 2);
+});

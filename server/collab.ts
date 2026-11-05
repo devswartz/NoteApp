@@ -51,15 +51,23 @@ export function revalidateCollab() {
       const a = connAuth.get(conn);
       if (!a) continue;
       if (t >= a.expiresAt) {
-        conn.close(4401, 'Token expired');
+        revoke(conn, a, 4401, 'Token expired');
         continue;
       }
       const access = pageAccess(room.pageId, a.userId);
-      if (!access) conn.close(4403, 'Access revoked');
+      if (!access) revoke(conn, a, 4403, 'Access revoked');
       else a.canEdit = access.canEdit;
     }
   }
 }
+/** Stop accepting edits from this socket now, ask it to close, and cut it off if it doesn't. */
+function revoke(conn: WebSocket, a: ConnAuth, code: number, reason: string) {
+  a.canEdit = false;
+  a.expiresAt = 0;
+  conn.close(code, reason);
+  setTimeout(() => conn.readyState !== WebSocket.CLOSED && conn.terminate(), 2000).unref();
+}
+
 onAccessChange(revalidateCollab);
 setInterval(revalidateCollab, REVALIDATE_MS).unref();
 
@@ -210,6 +218,8 @@ export function attachCollab(wss: WebSocketServer) {
     }
     const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit };
     connAuth.set(conn, state);
+    // Close exactly when the token lapses (the 30 s sweep is a backstop).
+    const expiry = setTimeout(() => revoke(conn, state, 4401, 'Token expired'), Math.max(0, auth.expiresAt - Date.now()));
     conn.binaryType = 'arraybuffer';
     const room = getRoom(pageId, access.workspaceId);
     room.conns.set(conn, new Set());
@@ -236,6 +246,7 @@ export function attachCollab(wss: WebSocketServer) {
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
         } else if (type === MSG_AWARENESS) {
+          if (state.expiresAt === 0) return; // revoked, closing
           awarenessProtocol.applyAwarenessUpdate(room.awareness, decoding.readVarUint8Array(dec), conn);
         }
       } catch (err) {
@@ -245,6 +256,7 @@ export function attachCollab(wss: WebSocketServer) {
 
     conn.on('close', () => {
       clearInterval(ping);
+      clearTimeout(expiry);
       closeConn(room, conn);
     });
 

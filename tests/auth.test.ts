@@ -57,6 +57,17 @@ test('replays inside the grace window get the same replacement, never a second c
   assert.equal((await app.call('POST', '/auth/refresh', undefined, { refreshToken: a.data.refreshToken })).status, 200);
 });
 
+test('a replay inside the grace window returns the newest token of the chain, not a used one', async () => {
+  const u = await app.signUp('Eli');
+  const r1 = await app.call('POST', '/auth/refresh', undefined, { refreshToken: u.refreshToken });
+  const r2 = await app.call('POST', '/auth/refresh', undefined, { refreshToken: r1.data.refreshToken });
+  // A late retry of the very first refresh (e.g. its response was lost).
+  const replay = await app.call('POST', '/auth/refresh', undefined, { refreshToken: u.refreshToken });
+  assert.equal(replay.status, 200);
+  assert.equal(replay.data.refreshToken, r2.data.refreshToken, 'current head of the chain');
+  assert.equal((await app.call('POST', '/auth/refresh', undefined, { refreshToken: replay.data.refreshToken })).status, 200, 'and it is usable');
+});
+
 test('logout revokes the refresh token', async () => {
   const u = await app.signUp('Eve');
   assert.equal((await app.call('POST', '/auth/logout', undefined, { refreshToken: u.refreshToken })).status, 200);

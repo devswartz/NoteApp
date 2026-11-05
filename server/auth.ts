@@ -115,23 +115,40 @@ export function rotateRefreshToken(token: unknown, userAgent: string | null = nu
     if (!row || row.revoked_at || row.expires_at < now()) return null;
     if (!getUser(row.user_id)) return null;
     if (row.used_at) {
-      // Already rotated. Inside the grace window, hand back the same replacement
-      // (no new chain); otherwise assume theft and end the sign-in.
+      // Already rotated. Inside the grace window, hand back the current head of
+      // the chain (no new chain); otherwise assume theft and end the sign-in.
       const inGrace = Date.now() - Date.parse(row.used_at) <= REUSE_GRACE_S * 1000;
-      const replacement = inGrace && row.replacement_enc ? openReplacement(token, row.replacement_enc) : null;
-      const live =
-        replacement &&
-        (db.prepare('SELECT 1 FROM refresh_tokens WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?').get(hash(replacement), now()));
-      if (!replacement || !live) {
+      const head = inGrace ? chainHead(token, row) : null;
+      if (!head) {
         revokeFamily(row.family_id);
         return null;
       }
-      return { userId: row.user_id, ...session(row.user_id, replacement) };
+      return { userId: row.user_id, ...session(row.user_id, head) };
     }
     const next = insertRefreshToken(row.user_id, row.family_id, userAgent);
     db.prepare('UPDATE refresh_tokens SET used_at = ?, replacement_enc = ? WHERE id = ?').run(now(), sealReplacement(token, next), row.id);
     return { userId: row.user_id, ...session(row.user_id, next) };
   })();
+}
+
+/**
+ * Follow a rotated token's replacements to the newest one that hasn't been
+ * used yet. Each replacement is sealed with the token before it, so only the
+ * holder of the replayed token can walk the chain. Null if any link is
+ * missing, revoked or expired.
+ */
+function chainHead(token: string, row: RefreshRow): string | null {
+  let current = token;
+  let r: RefreshRow | undefined = row;
+  for (let i = 0; i < 20 && r; i++) {
+    if (r.revoked_at || r.expires_at < now()) return null;
+    if (!r.used_at) return current;
+    const next = r.replacement_enc ? openReplacement(current, r.replacement_enc) : null;
+    if (!next) return null;
+    current = next;
+    r = db.prepare('SELECT * FROM refresh_tokens WHERE token_hash = ?').get(hash(current)) as RefreshRow | undefined;
+  }
+  return null;
 }
 
 export function revokeFamily(familyId: string) {

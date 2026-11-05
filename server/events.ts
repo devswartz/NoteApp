@@ -30,7 +30,10 @@ export function attachEvents(wss: WebSocketServer) {
     }
     addClient(auth.user.id, ws);
     // Close when the access token lapses; the client refreshes, reconnects and resyncs.
-    const expiry = setTimeout(() => ws.close(4401, 'Token expired'), Math.max(0, auth.expiresAt - Date.now()));
+    const expiry = setTimeout(() => {
+      ws.close(4401, 'Token expired');
+      setTimeout(() => ws.readyState !== WebSocket.CLOSED && ws.terminate(), 2000).unref();
+    }, Math.max(0, auth.expiresAt - Date.now()));
     // Detect dead connections (and keep proxies from closing idle ones).
     let alive = true;
     ws.on('pong', () => (alive = true));
