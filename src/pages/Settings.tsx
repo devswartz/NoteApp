@@ -4,6 +4,7 @@ import { Bell, Trash2, LogOut } from 'lucide-react';
 import { del, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
 import { Avatar } from '../components/ui.tsx';
+import { AppearanceSettings } from '../components/shell/AppearanceSettings.tsx';
 import { platform } from '../platform/index.ts';
 import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx';
 
@@ -60,6 +61,11 @@ export function Settings() {
         <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={() => void signOut().then(() => navigate('/login'))}>
           <LogOut size={15} /> Sign out
         </button>
+      </section>
+
+      <section className="card">
+        <h2>Appearance</h2>
+        <AppearanceSettings />
       </section>
 
       <section className="card">
