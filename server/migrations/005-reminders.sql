@@ -57,3 +57,34 @@ CREATE TABLE notification_log (
   created_at TEXT NOT NULL,
   PRIMARY KEY (key, channel, target)
 );
+
+-- Single-purpose tokens carried by notifications, e.g. "snooze" from a push
+-- notification (the service worker has no access token). Only a hash is stored.
+CREATE TABLE action_tokens (
+  token_hash TEXT PRIMARY KEY,
+  purpose TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX action_tokens_expiry ON action_tokens(expires_at);
+
+-- Quiet hours per user and workspace: reminders for that workspace's tasks
+-- that come due inside the window are held until it ends (HH:mm, local time;
+-- start > end wraps past midnight).
+CREATE TABLE quiet_hours (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, workspace_id)
+);
+
+-- Private iCalendar feed per user (/api/calendar/<token>.ics). Only a hash of the token is stored.
+CREATE TABLE calendar_feeds (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);

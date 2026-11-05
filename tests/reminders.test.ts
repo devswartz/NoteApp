@@ -305,3 +305,38 @@ test('nextDueDate (for server/tasks.ts): user time zone and count from recorded 
   assert.equal(nextDueDate({ freq: 'day', interval: 1, count: 1 }, '2026-11-05', t.id, u.user.id, at), null);
   assert.equal(nextDueDate({ freq: 'day', interval: 1, count: 2 }, '2026-11-05', t.id, u.user.id, at), '2026-11-06');
 });
+
+test('snooze from a push notification: token in the payload, +1 h / tomorrow, expiry, no auth needed', async () => {
+  const u = await setup('Snooze', 'Europe/London');
+  const t = await task(u, { title: 'Pay rent', dueDate: '2037-01-05', dueTime: '09:00' });
+  await remind(u, t.id, { kind: 'before', minutes: 0 });
+  const { ch, sent } = fakeChannel();
+  const clock = new Clock(Date.parse('2037-01-05T09:00:05Z'));
+  const s = new sched.ReminderScheduler({ now: clock.now, channels: [ch] });
+  await s.tick();
+  const n = sent.find((x) => x.notice.taskId === t.id)!.notice;
+  assert.ok(n.snoozeToken && n.snoozeToken.length >= 30);
+
+  const snoozeMod = await import('../server/reminders/snooze.ts');
+  // Via HTTP without an access token.
+  const bad = await app.call('POST', '/reminders/snooze', undefined, { token: 'nope', option: '1h' });
+  assert.equal(bad.status, 404);
+  assert.equal((await app.call('POST', '/reminders/snooze', undefined, { token: n.snoozeToken, option: '2h' })).status, 400);
+  const ok = await app.call('POST', '/reminders/snooze', undefined, { token: n.snoozeToken, option: '1h' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.taskId, t.id);
+  // Deterministic version with the fake clock: snooze 1 h from 09:00:05 → fires at 10:00:05, once.
+  const r = snoozeMod.snooze(n.snoozeToken, '1h', clock.t);
+  assert.equal(r.until, '2037-01-05T10:00:05.000Z');
+  clock.set('2037-01-05T10:00:06Z');
+  await s.tick();
+  await s.tick();
+  assert.equal(sent.filter((x) => x.notice.taskId === t.id).length, 2);
+  // The snooze shows in the task's reminders.
+  const list = await app.call<Reminder[]>('GET', `/tasks/${t.id}/reminders`, u.token);
+  assert.equal(list.data.length, 2);
+  // Tomorrow = default reminder time (09:00 local) the next day.
+  assert.equal(snoozeMod.snoozeUntil('tomorrow', u.user.id, Date.parse('2037-07-05T22:30:00Z')).toISOString(), '2037-07-06T08:00:00.000Z');
+  // Expired after 7 days.
+  assert.throws(() => snoozeMod.snooze(n.snoozeToken, '10m', clock.t + 8 * 864e5), /expired/);
+});

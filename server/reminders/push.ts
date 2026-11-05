@@ -83,6 +83,8 @@ export interface PushPayload {
   url: string;
   tag?: string;
   taskId?: string;
+  /** POST /api/reminders/snooze { token, option } — see public/sw-push.js. */
+  snoozeToken?: string;
 }
 
 export function webPushChannel(send: typeof webpush.sendNotification = webpush.sendNotification): DeliveryChannel {
@@ -95,7 +97,7 @@ export function webPushChannel(send: typeof webpush.sendNotification = webpush.s
       const row = db.prepare('SELECT * FROM push_subscriptions WHERE endpoint = ?').get(endpoint) as SubRow | undefined;
       if (!row) throw new TargetGoneError('Subscription removed');
       configure();
-      const payload: PushPayload = { title: n.title, body: n.body, url: n.path, tag: n.tag, taskId: n.taskId };
+      const payload: PushPayload = { title: n.title, body: n.body, url: n.path, tag: n.tag, taskId: n.taskId, snoozeToken: n.snoozeToken };
       try {
         await send({ endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, JSON.stringify(payload), { TTL: 12 * 3600, urgency: 'high' });
       } catch (e) {

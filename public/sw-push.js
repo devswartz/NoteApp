@@ -2,10 +2,11 @@
 // service worker with importScripts('/sw-push.js') (public/sw.js, Foundation).
 //
 // The server (server/reminders/push.ts) sends JSON:
-//   { title, body, url, tag?, taskId? }
-// The notification has an "Open task" action; clicking it (or the
-// notification) focuses an open app window and navigates it to `url`, or
-// opens a new window there.
+//   { title, body, url, tag?, taskId?, snoozeToken? }
+// Clicking the notification focuses an open app window and navigates it to
+// `url`, or opens a new window there. Reminders carry a snoozeToken and get
+// "Snooze 10 min" / "Snooze 1 hour" / "Tomorrow" actions (browsers show as
+// many as Notification.maxActions allows), which POST /api/reminders/snooze.
 
 self.addEventListener('push', (event) => {
   let data = {};
@@ -21,14 +22,35 @@ self.addEventListener('push', (event) => {
     renotify: !!data.tag,
     icon: '/icon.svg',
     badge: '/icon.svg',
-    data: { url: data.url || '/', taskId: data.taskId || null },
-    actions: data.taskId ? [{ action: 'open', title: 'Open task' }] : [],
+    data: { url: data.url || '/', taskId: data.taskId || null, snoozeToken: data.snoozeToken || null },
+    // Browsers show up to 2 actions (Notification.maxActions); clicking the body opens the task.
+    actions: data.snoozeToken
+      ? [
+          { action: 'snooze-10m', title: 'Snooze 10 min' },
+          { action: 'snooze-1h', title: 'Snooze 1 hour' },
+          { action: 'snooze-tomorrow', title: 'Tomorrow' },
+        ]
+      : data.taskId
+        ? [{ action: 'open', title: 'Open task' }]
+        : [],
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const d = event.notification.data || {};
+  if (event.action && event.action.startsWith('snooze-') && d.snoozeToken) {
+    const option = event.action.slice('snooze-'.length);
+    event.waitUntil(
+      fetch('/api/reminders/snooze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: d.snoozeToken, option }),
+      }).catch(() => {}),
+    );
+    return;
+  }
   const path = (event.notification.data && event.notification.data.url) || '/';
   const target = new URL(path, self.location.origin).href;
   event.waitUntil(

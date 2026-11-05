@@ -11,7 +11,7 @@ import { pageRoutes } from './pages.ts';
 import { taskRoutes } from './tasks.ts';
 import { searchRoutes } from './search.ts';
 import { fileRoutes } from './files.ts';
-import { reminderRoutes } from './reminders.ts';
+import { publicReminderRoutes, reminderRoutes } from './reminders.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
@@ -22,6 +22,7 @@ api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, n
 // No token needed.
 api.use(healthRoutes);
 api.use(publicAuthRoutes);
+api.use(publicReminderRoutes);
 
 // The live event stream (/api/events) is a WebSocket: see server/events.ts and server/app.ts.
 

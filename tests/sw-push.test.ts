@@ -21,7 +21,12 @@ function load() {
       openWindow: async (url: string) => void opened.push(url),
     },
   };
-  vm.runInNewContext(fs.readFileSync('public/sw-push.js', 'utf8'), { self, URL });
+  const fetched: { url: string; body: string }[] = [];
+  const fetch = async (url: string, init: { body: string }) => {
+    fetched.push({ url, body: init.body });
+    return { ok: true };
+  };
+  vm.runInNewContext(fs.readFileSync('public/sw-push.js', 'utf8'), { self, URL, fetch, JSON });
   const fire = async (type: string, e: Record<string, unknown>) => {
     let p: Promise<unknown> = Promise.resolve();
     handlers[type]({ ...e, waitUntil: (x: Promise<unknown>) => (p = x) });
@@ -44,7 +49,7 @@ function load() {
     windows.push(w);
     return w;
   };
-  return { fire, shown, opened, addWindow };
+  return { fire, shown, opened, addWindow, fetched };
 }
 
 test('push shows a notification with an Open task action', async () => {
@@ -55,7 +60,7 @@ test('push shows a notification with an Open task action', async () => {
   assert.equal(sw.shown[0].title, 'Call the bank');
   assert.equal(sw.shown[0].options.body, 'Due 2031-01-15 at 10:00');
   assert.equal(sw.shown[0].options.tag, 'task-t1');
-  assert.deepEqual(plain(sw.shown[0].options.data), { url: '/w/1/tasks/today?task=t1', taskId: 't1' });
+  assert.deepEqual(plain(sw.shown[0].options.data), { url: '/w/1/tasks/today?task=t1', taskId: 't1', snoozeToken: null });
   assert.equal((sw.shown[0].options.actions as { action: string }[])[0].action, 'open');
 });
 
@@ -77,4 +82,21 @@ test('push with a non-JSON payload still shows something', async () => {
   await sw.fire('push', { data: { json: () => JSON.parse('nope'), text: () => 'hello' } });
   assert.equal(sw.shown[0].title, 'Reminder');
   assert.equal(sw.shown[0].options.body, 'hello');
+});
+
+test('snooze actions post the token and option without opening the app', async () => {
+  const sw = load();
+  const payload = { title: 'Pay rent', body: 'Due', url: '/w/1/tasks/today?task=t1', taskId: 't1', snoozeToken: 'tok' };
+  await sw.fire('push', { data: { json: () => payload, text: () => '' } });
+  const actions = plain(sw.shown[0].options.actions).map((a: { action: string }) => a.action);
+  assert.deepEqual(actions, ['snooze-10m', 'snooze-1h', 'snooze-tomorrow']);
+  const notification = { close() {}, data: sw.shown[0].options.data };
+  await sw.fire('notificationclick', { notification, action: 'snooze-1h' });
+  assert.equal(sw.fetched.length, 1);
+  assert.equal(sw.fetched[0].url, '/api/reminders/snooze');
+  assert.deepEqual(JSON.parse(sw.fetched[0].body), { token: 'tok', option: '1h' });
+  assert.equal(sw.opened.length, 0);
+  // Clicking the body still opens the task.
+  await sw.fire('notificationclick', { notification, action: '' });
+  assert.equal(sw.opened.length, 1);
 });

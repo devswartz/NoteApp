@@ -6,6 +6,7 @@
 //   POST   /notifications/push-subscriptions      PushSubscriptionInput → { ok }
 //   DELETE /notifications/push-subscriptions      { endpoint } → { ok }
 //   POST   /notifications/test                    → sends a test notice to yourself
+//   POST   /reminders/snooze                      { token, option: '10m'|'1h'|'tomorrow' } (no auth; token from the push)
 //   GET    /tasks/:id/reminders                   → Reminder[] (yours)
 //   POST   /tasks/:id/reminders                   ReminderSpec → Reminder
 //   PATCH  /reminders/:id                         ReminderSpec → Reminder
@@ -19,8 +20,20 @@ import { createReminder, deleteReminder, listReminders, updateReminder } from '.
 import { defaultChannels, pokeScheduler } from '../reminders/scheduler.ts';
 import { deliver } from '../reminders/deliver.ts';
 import { mailConfigured } from '../mail.ts';
+import { snooze } from '../reminders/snooze.ts';
 
 export const reminderRoutes = Router();
+
+/** No access token: called by the service worker from a push notification's action. */
+export const publicReminderRoutes = Router();
+publicReminderRoutes.post(
+  '/reminders/snooze',
+  h((req) => {
+    const r = snooze(req.body?.token, req.body?.option);
+    pokeScheduler();
+    return r;
+  }),
+);
 
 reminderRoutes.get('/notifications/settings', h((req) => getSettings(req.user.id)));
 reminderRoutes.patch('/notifications/settings', h((req) => updateSettings(req.user.id, req.body ?? {})));

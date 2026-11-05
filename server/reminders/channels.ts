@@ -17,6 +17,8 @@ export interface Notice {
   tag?: string;
   /** Optional HTML body for email. */
   html?: string;
+  /** Lets the push notification snooze the reminder without an access token (snooze.ts). */
+  snoozeToken?: string;
   /** Only deliver through these channels (e.g. the digest is email only). */
   channels?: string[];
 }

@@ -13,6 +13,7 @@ import { TASK_VISIBLE } from '../access.ts';
 import { syncReminders } from './store.ts';
 import { deliver, pruneNotificationLog } from './deliver.ts';
 import { dueDigests } from './digest.ts';
+import { createSnoozeToken, pruneActionTokens } from './snooze.ts';
 import { emailChannel } from './email.ts';
 import { mailConfigured } from '../mail.ts';
 import { vapidPublicKey, webPushChannel } from './push.ts';
@@ -97,7 +98,7 @@ export class ReminderScheduler {
       }
       if (!visible.get({ taskId: r.task_id, userId: r.user_id })) continue; // lost access
       report.fired++;
-      notices.push(reminderNotice(r));
+      notices.push({ ...reminderNotice(r), snoozeToken: createSnoozeToken(r.user_id, r.task_id, nowMs) });
     }
     for (const n of dueDigests(nowMs, this.catchUpMs)) {
       report.digests++;
@@ -111,6 +112,7 @@ export class ReminderScheduler {
     if (nowMs - this.lastPrune > 6 * 3600_000) {
       this.lastPrune = nowMs;
       pruneNotificationLog(30 * 864e5, nowMs);
+      pruneActionTokens(nowMs);
     }
     return report;
   }
