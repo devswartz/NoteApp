@@ -4,6 +4,7 @@ import { Menu, Sun, Inbox, Search, Plus, BookOpen, PanelLeftOpen } from 'lucide-
 import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
+import { DialogHost } from './shell/dialogs.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
@@ -54,6 +55,7 @@ export function AppShell() {
       <QuickAdd />
       <CommandPalette />
       <ShortcutsHelp />
+      <DialogHost />
     </div>
   );
 }
