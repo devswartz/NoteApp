@@ -642,7 +642,7 @@ select.input { padding-right: 4px; }
 .main { flex: 1; min-width: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .route { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: route-in var(--dur) var(--ease-out); }
 @keyframes route-in { from { opacity: 0; transform: translateY(4px); } }
-.sidebar-reveal { position: absolute; top: 10px; left: 10px; z-index: 5; }
+.sidebar-reveal { position: absolute; top: 10px; left: 10px; z-index: 5; display: flex; gap: 2px; }
 
 .sidebar {
   width: var(--sidebar-w);
@@ -828,7 +828,7 @@ body.is-resizing .sidebar { transition: none; }
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(10px);
 }
-.sidebar-closed:not(.is-mobile) .page-topbar { padding-left: 56px; }
+.sidebar-closed:not(.is-mobile) .page-topbar { padding-left: 92px; }
 .crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: 13px; }
 .crumb { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
@@ -1423,6 +1423,10 @@ body.is-resizing .sidebar { transition: none; }
   }
   .mobile-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
   .mobile-title > .truncate { max-width: 100%; font-weight: 600; font-size: var(--text-md); }
+  .mobile-top-actions { display: flex; align-items: center; }
+  /* Two buttons on the right, one on the left: keep the title centred. */
+  .mobile-top > .icon-btn:first-child { margin-right: var(--touch); }
+  .mobile-top-actions .bell-btn { width: var(--touch); height: var(--touch); border-radius: var(--radius-lg); }
   .mobile-title.has-title { animation: fade var(--dur) var(--ease-out); }
   .mobile-subtitle { max-width: 100%; font-size: var(--text-2xs); color: var(--text-muted); }
   .icon-btn.touch { width: var(--touch); height: var(--touch); border-radius: var(--radius-lg); }

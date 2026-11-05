@@ -9,6 +9,7 @@ import { NewNotebookHost } from './shell/NewNotebookDialog.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { NotificationBell } from './sharing/NotificationBell.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
@@ -52,9 +53,12 @@ export function AppShell() {
       <Sidebar />
       <main className="main">
         {isMobile ? <MobileTopBar /> : !sidebarOpen && (
-          <IconButton label="Show sidebar" shortcut={`${MOD}\\`} className="sidebar-reveal" onClick={ui.toggleSidebar}>
-            <PanelLeftOpen size={18} />
-          </IconButton>
+          <div className="sidebar-reveal">
+            <IconButton label="Show sidebar" shortcut={`${MOD}\\`} onClick={ui.toggleSidebar}>
+              <PanelLeftOpen size={18} />
+            </IconButton>
+            <NotificationBell />
+          </div>
         )}
         <div className="route" key={routeKey}>
           <Outlet />
