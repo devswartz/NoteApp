@@ -26,12 +26,12 @@
 
 ### Check-in procedure
 1. `get_session` for each active worker (status_detail only). Read transcripts only if a worker failed or is stuck (list_events kinds ["assistant"], limit 3).
-2. `list_pull_requests` (open, base main). For each PR whose CI has finished: a general-purpose subagent reviews it (tests in a scratch worktree, a diff read against docs/AGENT_GUIDE.md) and returns a verdict of at most 200 words. Squash-merge the good ones (`[shared]` first, with expectedHeadSha). Send follow-ups or fixes to the author with `send_message`.
+2. **Merge rule (added 04:55): never merge a PR whose e2e hasn't run green against current main.** Branches older than a new test suite must merge main first. `list_pull_requests` (open, base main). For each PR whose CI has finished: a general-purpose subagent reviews it (tests in a scratch worktree, a diff read against docs/AGENT_GUIDE.md) and returns a verdict of at most 200 words. Squash-merge the good ones (`[shared]` first, with expectedHeadSha). Send follow-ups or fixes to the author with `send_message`.
 3. Keep 5–6 workers busy; when one finishes, start the next from the queue below.
 4. Update this file and push it. Schedule the next check-in (`send_later`, 15 min).
 
 ### Queue (not started yet)
-1. **Mobile / Capacitor (agent 10)**: owns `apps/mobile/**`, the Capacitor platform implementation, APNs/FCM wiring (server side from Reminders' channel interface) and the Today widget. Start when a slot frees up after Desktop.
+1. (empty: all 10 agents have started.) Candidates if slots free up: a security/perf hardening reviewer, docs/onboarding, a second QA.
 - Stretch backlogs were sent to Foundation, Tasks, Editor, Collaboration and Reminders at 04:17 (the details are in each kickoff/follow-up message; their PRs' "Status of my area" sections track progress).
 
 ## Session roster
@@ -45,8 +45,9 @@
 | 2 Editor & Notes | session_019dirnQJdPWZ1xg1q9wPn2Q | feat/editor | `src/editor/**` (not collab*), PageView/NotesHome, files, FTS search, tree moves | started 04:15 |
 | 4 Collaboration & Access | session_019dirnPr6xS49fYWnMwkTgE | feat/collab | collab/access/events/workspaces, cursors/presence, invites, `server/mail.ts`, sharing UI | started 04:15 |
 | 9 Desktop / Tauri 2 | session_019dirnS7qJeVB9Nazida4y7 | feat/desktop | `apps/desktop/**`, `src/platform/tauri.ts`, `.github/workflows/desktop.yml`, `docs/DESKTOP.md` | started 04:40 |
+| 10 Mobile / Capacitor | session_019dirnRUobcNENy5tRL3crU | feat/mobile | `apps/mobile/**`, `src/platform/capacitor.ts`, APNs/FCM channel files in server/reminders, `docs/MOBILE.md`, `.github/workflows/mobile.yml` | started 04:47 |
 | 8 QA / E2E | session_019dirnSs9HgWLitSESbPuyD | feat/e2e | `tests/e2e/**`, playwright config, `docs/QA.md` (bug list; doesn't fix app code) | started 04:17 |
-| 5 Recurrence & Reminders | session_019dirnS55cMN1UvQo2atin9 | feat/reminders | `shared/recurrence.ts`, `server/reminders/**`, web push + email, notification settings | started 04:15 |
+| 5 Recurrence & Reminders | session_019dirnS55cMN1UvQo2atin9 | feat/reminders | `shared/recurrence.ts`, `server/reminders/**`, web push + email, notification settings | **done**; everything is in #4 (final head d9e6680) |
 | Original builder | session_019dirnQSpFWbj8dPFQkoUjf | claude/initial-app | wrote the initial work-in-progress (now the base of `main`) | paused/idle; not used further (its session is tied to pushing `master`) |
 
 ## PR / merge log
@@ -60,7 +61,7 @@
 | 04:31 | #5 [shared] migration 003 (FTS + files) | Editor | merged |
 | 04:33 | #9 tasks: validation, week calendar, TasksView split | Tasks | merged |
 | 04:28 | #13 infra: manual publish only from main | Infra | merged |
-| — | #12 foundation security follow-ups + new migration runner | Foundation | migration renamed to 006; runner now records applied migrations in `schema_migrations` (any order, duplicates still fail). Runner verified solid. **Blocked** (resent at 04:46): refresh replay `used_at`, revoke canEdit + terminate, reconnect backoff/401 sign-out; plus wrap the runner backfill in a transaction and use BEGIN IMMEDIATE. |
+| 05:01 | #12 foundation security follow-ups + new migration runner + e2e selector fix | Foundation | **merged** (verified; main's e2e back to green). Old row: | migration renamed to 006; runner now records applied migrations in `schema_migrations` (any order, duplicates still fail). Runner verified solid. **Blocked** (resent at 04:46): refresh replay `used_at`, revoke canEdit + terminate, reconnect backoff/401 sign-out; plus wrap the runner backfill in a transaction and use BEGIN IMMEDIATE. |
 | 04:36 | #17 ui: design tokens + light/dark/system theme | UI Shell | merged (follow-ups: no-flash inline script, readPref after platform init) |
 | 04:41 | #15 QA E2E suite (37 tests, about 50 s, no flakes) | QA | merged; e2e now gates PRs and publish. BUG-1 (offline reload → login) is with Foundation |
 | 04:43 | #19 ui: shortcut/command registry | UI Shell | merged |
@@ -85,3 +86,6 @@
 - **2026-11-05 04:34** Merged #10. #12 reviewed: migration renamed to 006, follow-ups sent. Foundation is replacing the contiguous `user_version` migration runner with a `schema_migrations` table, so numbers no longer need to land in order.
 - **2026-11-05 04:40** Batch of 9 PRs sent to 4 parallel reviewer subagents. Reminders finished its stretch backlog (snooze, APNs/FCM channels, quiet hours, .ics) inside #4; given one last job (wire its pickers into TaskDetail/TaskRow/quickadd), then done. Started Desktop (agent 9) early so no slot sits idle. **#4 lists new env vars for DEPLOY_CONTRACT: APNS_KEY_ID/TEAM_ID/BUNDLE_ID/PRIVATE_KEY/ENV, FCM_SERVICE_ACCOUNT_JSON — add them to the contract when #4 merges.**
 - **2026-11-05 04:46** Merged #15, #19, #7. Two agents (Collab #11, Foundation #12) hadn't applied requested follow-ups, probably because the messages crossed with their pushes; resent with a request to confirm. Lesson: ask agents to acknowledge follow-up lists.
+- **2026-11-05 04:48** Merged #20 (ui primitives; a11y follow-ups sent). #21 (editor blocks + page header) in review; #11 being verified; #4's final delta + #24 in review. Reminders done; Mobile (agent 10) started in its slot. Migrations: 007 tasks subtasks, 008 collab comments. **Messages to workers arrive 20–30 min late** (delivered at end of their turns); workers are told to check PR state themselves.
+- **2026-11-05 04:55** ⚠️ main's CI e2e is red since #20 merged (5 tests wait for 'New workspace'/'Sign out'); the manager merged #20 before e2e existed on its branch. UI Shell is fixing it as top priority (QA may fix selectors if that's all it is). Staging publish is blocked until it's green. New merge rule added to the procedure. #11's security fixes are verified; #11 waits on #22 (test wording). #21 needs 2 fixes (partial-selection convert; file-card URL validation).
+- **2026-11-05 05:01** Merged #12: refresh-chain fixes, socket revoke/terminate, reconnect backoff, a `schema_migrations` runner (gaps and out-of-order allowed; duplicates fail; BEGIN IMMEDIATE) and the e2e selector fix for #20. main is green. Told all PR authors to merge main. Next merges in order: #22 → #11 → #14 → #18; #4 (after its e2e picker fix); #16 (rename to 007); #21 (2 fixes); #24 (approved, waiting on green e2e). Selector convention: getByRole('menuitem') for menus, button name from aria-label.
