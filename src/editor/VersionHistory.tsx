@@ -31,7 +31,20 @@ function decode(b64: string): Uint8Array {
 const fmt = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
-export function VersionHistory({ pageId, editor, open, onClose }: { pageId: string; editor: Editor | null; open: boolean; onClose: () => void }) {
+export function VersionHistory({
+  pageId,
+  editor,
+  open,
+  onClose,
+  othersEditing = 0,
+}: {
+  pageId: string;
+  editor: Editor | null;
+  open: boolean;
+  onClose: () => void;
+  /** People other than me on the page right now (presence). */
+  othersEditing?: number;
+}) {
   const [versions, setVersions] = useState<VersionMeta[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const members = useStore((s) => s.members);
@@ -76,14 +89,14 @@ export function VersionHistory({ pageId, editor, open, onClose }: { pageId: stri
           })}
         </aside>
         <section className="history-preview">
-          {selected ? <Preview key={selected} pageId={pageId} versionId={selected} live={editor} onRestored={onClose} /> : <div className="history-placeholder muted">Select a version</div>}
+          {selected ? <Preview key={selected} pageId={pageId} versionId={selected} live={editor} onRestored={onClose} othersEditing={othersEditing} /> : <div className="history-placeholder muted">Select a version</div>}
         </section>
       </div>
     </Modal>
   );
 }
 
-function Preview({ pageId, versionId, live, onRestored }: { pageId: string; versionId: string; live: Editor | null; onRestored: () => void }) {
+function Preview({ pageId, versionId, live, onRestored, othersEditing }: { pageId: string; versionId: string; live: Editor | null; onRestored: () => void; othersEditing: number }) {
   const doc = useMemo(() => new Y.Doc(), []);
   const [loaded, setLoaded] = useState<VersionMeta | null>(null);
   const [busy, setBusy] = useState(false);
@@ -116,6 +129,14 @@ function Preview({ pageId, versionId, live, onRestored }: { pageId: string; vers
 
   const restore = async () => {
     if (!live || !preview || live.isDestroyed) return;
+    if (othersEditing > 0) {
+      const who = othersEditing === 1 ? '1 other person is' : `${othersEditing} other people are`;
+      const ok = confirm(
+        `${who} editing this page. Restoring will replace their current changes too. ` +
+          `Nothing is lost: the current page is saved as a “before restore” version first. Restore anyway?`,
+      );
+      if (!ok) return;
+    }
     setBusy(true);
     try {
       // Keep the current state as a version too, so the restore can be undone from here.

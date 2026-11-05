@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { Check, Copy, Download, File, FileArchive, FileAudio, FileImage, FileSpreadsheet, FileText, FileVideo } from 'lucide-react';
 import { fileUrl } from '../api.ts';
 import { Dropdown } from '../components/ui.tsx';
-import { safeFileUrl } from './urls.ts';
+import { safeFileUrl, safeImageUrl } from './urls.ts';
 
 /** Absolute URL for exports (uploads are stored API-relative). */
 export const absoluteUrl = (u: string) => {
@@ -254,11 +254,20 @@ export const Image = ImageExt.extend({
     const parent = this.parent?.() ?? {};
     return {
       ...parent,
-      src: { default: null, renderHTML: (a: Record<string, unknown>) => ({ src: a.src ? fileUrl(String(a.src)) : null }) },
+      src: {
+        default: null,
+        // Only our uploads and http(s) images: never javascript:/data: from pasted HTML or imports.
+        parseHTML: (el: HTMLElement) => safeImageUrl(el.getAttribute('src')) || null,
+        renderHTML: (a: Record<string, unknown>) => {
+          const src = safeImageUrl(a.src);
+          return { src: src ? fileUrl(src) : null };
+        },
+      },
     };
   },
   renderMarkdown(node) {
-    const src = node.attrs?.src ? absoluteUrl(String(node.attrs.src)) : '';
+    const safe = safeImageUrl(node.attrs?.src);
+    const src = safe ? absoluteUrl(safe) : '';
     const alt = String(node.attrs?.alt ?? '').replace(/[[\]]/g, '');
     return `![${alt}](${src})`;
   },

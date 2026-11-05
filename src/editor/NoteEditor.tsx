@@ -37,6 +37,7 @@ import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
+import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
@@ -78,6 +79,8 @@ export function documentExtensions(pageId: string): Extensions {
         autolink: true,
         linkOnPaste: true,
         defaultProtocol: 'https',
+        // One rule for pasted HTML, typed links, imports and rendering (see urls.ts).
+        isAllowedUri: (url) => !!safeLinkUrl(url),
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       },
       heading: { levels: [1, 2, 3] },
