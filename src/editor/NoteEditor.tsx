@@ -135,13 +135,10 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         attributes: { class: 'prose', spellcheck: 'true', 'aria-label': 'Page content', 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => {
           // Alt+F10 moves focus into the formatting toolbar (WAI-ARIA toolbar pattern).
-          if (event.altKey && event.key === 'F10') {
-            const first = document.querySelector<HTMLButtonElement>('.bubble-menu[role="toolbar"] button');
-            if (first) {
-              event.preventDefault();
-              first.focus();
-              return true;
-            }
+          if (event.altKey && event.key === 'F10' && !_view.state.selection.empty) {
+            event.preventDefault();
+            focusToolbar();
+            return true;
           }
           // ⌘K with text selected (or inside a link) edits the link; otherwise it opens the command palette.
           if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k' && !event.shiftKey && editorRef.current) {
@@ -306,10 +303,6 @@ function FormattingMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       className="bubble-menu"
-      role="toolbar"
-      aria-label="Formatting"
-      aria-orientation="horizontal"
-      onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => toolbarKeys(e, editor)}
       shouldShow={({ editor: e, state }) => {
         const { empty } = state.selection;
         // Keep showing while keyboard focus is inside the toolbar itself.
@@ -319,6 +312,8 @@ function FormattingMenu({ editor }: { editor: Editor }) {
         return !e.isActive('codeBlock');
       }}
     >
+      {/* BubbleMenu renders its own container; the toolbar semantics and keys live on this one. */}
+      <div className="bubble-menu-bar" role="toolbar" aria-label="Formatting" aria-orientation="horizontal" onKeyDown={(e) => toolbarKeys(e, editor)}>
       {btn(s.h1, 'Heading 1', () => editor.chain().focus().toggleHeading({ level: 1 }).run(), <Heading1 size={16} />)}
       {btn(s.h2, 'Heading 2', () => editor.chain().focus().toggleHeading({ level: 2 }).run(), <Heading2 size={16} />)}
       {btn(s.h3, 'Heading 3', () => editor.chain().focus().toggleHeading({ level: 3 }).run(), <Heading3 size={16} />)}
@@ -341,6 +336,7 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       >
         <CircleCheck size={16} /> Task
       </button>
+      </div>
     </BubbleMenu>
   );
 }
@@ -386,6 +382,18 @@ function ImageBar({ editor }: { editor: Editor }) {
       </label>
     </div>
   );
+}
+
+/**
+ * Move focus into the formatting toolbar. It appears shortly after a selection is made,
+ * and a hidden element can't take focus, so retry for a few frames until it's visible.
+ */
+function focusToolbar(attempt = 0) {
+  const bar = document.querySelector<HTMLElement>('.bubble-menu [role="toolbar"]');
+  const first = bar?.querySelector<HTMLButtonElement>('button');
+  const visible = !!bar && bar.getBoundingClientRect().width > 0 && getComputedStyle(bar).visibility !== 'hidden';
+  if (first && visible) first.focus();
+  else if (attempt < 30) requestAnimationFrame(() => focusToolbar(attempt + 1));
 }
 
 /** Toolbar keyboard pattern: ←/→ (and Home/End) move between buttons, Escape returns to the text. */

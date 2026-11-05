@@ -204,6 +204,14 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 | `IconPicker.tsx` | Emoji picker for page icons |
 | `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
 
+**Accessibility:** every block works from the keyboard.
+- Alt+Shift+↑/↓ moves the block, or list item, at the cursor (`blockMove.ts`).
+- Alt+F10 enters the formatting toolbar: ←/→ to move, Esc to go back.
+- Toggles are real buttons with `aria-expanded`.
+- An image's alt text is editable when it's selected.
+- The slash menu is a listbox; task refs are labelled groups.
+- `tests/e2e/22-editor-a11y.spec.ts` runs axe on a page with every block type and allows no serious or critical violations.
+
 The document schema is ProseMirror's, stored in the Yjs `XmlFragment` named `default`. Node names that the server reads in `extractDoc` (`server/collab.ts`): every text node for search, and `taskRef[taskId]` for task reconcile. **Save state:** a local edit marks the page "Saving…"; it becomes "Saved" once the socket has flushed it and the server's 1 s save debounce has passed; with no connection it reads "Offline" (edits are already in IndexedDB).
 
 ## Real-time sync

@@ -45,10 +45,12 @@ async function slash(page: Page, query: string) {
   return menu;
 }
 
-/** Next empty line at the end of the page. */
+/** Put the cursor on an empty line at the end of the page (there's always a trailing paragraph). */
 async function nextLine(page: Page) {
-  await focusEnd(page);
-  await page.keyboard.press('Enter');
+  const last = page.locator('.ProseMirror > p').last();
+  await last.click();
+  await page.keyboard.press('End');
+  if ((await last.textContent())?.trim()) await page.keyboard.press('Enter');
 }
 
 async function buildEveryBlock(page: Page) {
@@ -67,18 +69,14 @@ async function buildEveryBlock(page: Page) {
   await nextLine(page);
   await page.keyboard.type('- bullet');
   await nextLine(page);
-  await page.keyboard.press('Enter');
   await page.keyboard.type('1. numbered');
   await nextLine(page);
-  await page.keyboard.press('Enter');
   await slash(page, 'checklist');
   await page.keyboard.press('Enter');
   await page.keyboard.type('check item');
   await nextLine(page);
-  await page.keyboard.press('Enter');
   await page.keyboard.type('> quoted');
   await nextLine(page);
-  await page.keyboard.press('Enter');
   await slash(page, 'callout');
   await page.keyboard.press('Enter');
   await page.keyboard.type('Callout text');

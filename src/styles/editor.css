@@ -304,3 +304,8 @@
 }
 .template-card:hover { background: var(--bg-subtle); border-color: var(--border-strong); color: var(--text); }
 .template-icon { font-size: 18px; line-height: 1; }
+
+/* The formatting toolbar's inner element (role=toolbar) lays out like the menu itself. */
+.bubble-menu-bar { display: flex; align-items: center; gap: 1px; }
+/* Code language picker: small text needs 4.5:1. */
+.code-lang { color: var(--text-2); }
