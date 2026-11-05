@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileText, AlignLeft, Bell, CornerDownRight, ListChecks, Plus } from 'lucide-react';
+import { FileText, AlignLeft, CornerDownRight, ListChecks, Plus } from 'lucide-react';
+import { TaskIndicators } from './notifications/TaskIndicators.tsx';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
 import type { PageMeta, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
@@ -138,7 +139,7 @@ export const TaskRow = memo(function TaskRow({
             </button>
           )}
           {task.description && <AlignLeft size={13} className="muted" aria-label="Has description" />}
-          {task.reminderAt && task.status === 'open' && <Bell size={12} className="muted" aria-label="Has reminder" />}
+          <TaskIndicators task={task} />
           {showSource && page && (
             <Link
               to={`/w/${wsId}/p/${page.id}?task=${task.id}`}

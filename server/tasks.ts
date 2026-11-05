@@ -2,7 +2,8 @@
 import { db, newId, now } from './db.ts';
 import { HttpError, TASK_VISIBLE, pageAccess, requireRole, roleIn } from './access.ts';
 import { publish } from './events.ts';
-import { nextOccurrence } from '../shared/dates.ts';
+import { recurrenceError } from '../shared/recurrence.ts';
+import { nextDueDate } from './reminders/recurring.ts';
 import type { Priority, Recurrence, Task, TaskPatch } from '../shared/types.ts';
 
 interface TaskRow {
@@ -91,11 +92,8 @@ function validate(p: TaskPatch, workspaceId: string) {
   if (p.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(p.dueDate)) throw new HttpError(400, 'Invalid due date');
   if (p.dueTime && !/^\d{2}:\d{2}$/.test(p.dueTime)) throw new HttpError(400, 'Invalid due time');
   if (p.recurrence) {
-    const r = p.recurrence;
-    const ok =
-      r.freq === 'weekday' ||
-      (['day', 'week', 'month', 'year'].includes(r.freq) && Number.isInteger(r.interval) && r.interval >= 1 && r.interval <= 365);
-    if (!ok) throw new HttpError(400, 'Invalid recurrence');
+    const err = recurrenceError(p.recurrence);
+    if (err) throw new HttpError(400, err);
   }
   if (p.parentId !== undefined && p.parentId !== null && typeof p.parentId !== 'string') throw new HttpError(400, 'Invalid parent');
   if (p.assigneeId && !roleIn(workspaceId, p.assigneeId)) throw new HttpError(400, 'Assignee is not a workspace member');
@@ -230,9 +228,12 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   const recurrence = patch.recurrence !== undefined ? patch.recurrence : task.recurrence;
 
   db.transaction(() => {
-    if (completing && recurrence) {
-      // Recurring: record a completed occurrence for history, then roll the
-      // original forward to its next due date and keep it open.
+    // Recurring: the next due date in the completing user's time zone, or null
+    // when the series has ended (until / count) and the task completes for good.
+    const dueDate = completing && recurrence ? nextDueDate(recurrence, patch.dueDate ?? task.dueDate, id, userId) : null;
+    if (completing && recurrence && dueDate) {
+      // Record a completed occurrence for history, then roll the original
+      // forward to its next due date and keep it open (docs/REMINDERS.md).
       const occId = newId();
       db.prepare(
         `INSERT INTO tasks (id, workspace_id, title, description, status, priority, due_date, due_time, assignee_id,
@@ -240,7 +241,6 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
          SELECT @occId, workspace_id, title, description, 'done', priority, due_date, due_time, assignee_id,
            created_by, NULL, id, @ts, @userId, @ts, @ts FROM tasks WHERE id = @id`,
       ).run({ occId, id, ts, userId });
-      const dueDate = nextOccurrence(recurrence, patch.dueDate ?? task.dueDate);
       // Shift the reminder by the same offset relative to the due date.
       let reminderAt = task.reminderAt;
       if (reminderAt && task.dueDate) {
