@@ -18,25 +18,44 @@
 - **The manager may merge PRs into `main`** after review + green CI.
 - Concurrency: **balanced, about 4–5 worker sessions at once.**
 - A homelab agent is run separately by the user from `docs/HOMELAB_BRIEF.md`; it reports back through the user or with a PR adding `docs/HOMELAB.md`.
-- The user asked the manager to work independently for 12 hours (until about 2026-11-05 15:30 UTC) and to document as it goes.
+- The user asked the manager to work independently and to document as it goes. **Updated 04:10: aim to finish v1 (Phase 1) in about 4 hours, i.e. by about 08:15 UTC; agents' feature deadline is 07:30 UTC.** Check agents every 15–20 minutes.
 
 ## Manager automation
-- Hourly check-in scheduled task `trig_01QRki933W6e6bsvS4Jau21s` (fires at :19 each hour into the manager session). It disables itself after 2026-11-05 15:45 UTC. **A resuming manager should check it with `list_triggers`, and disable or replace it.**
+- The manager checks in every ~15 minutes through a chain of `send_later` reminders into the manager session; each check-in schedules the next. (The old hourly scheduled task `trig_01QRki933W6e6bsvS4Jau21s` is deleted.) A resuming manager should run `list_triggers` and keep at most one pending check-in.
 - The manager commits `docs/STATUS.md` updates directly to `main`; all other changes go through PRs.
+
+### Check-in procedure
+1. `get_session` for each active worker (status_detail only). Read transcripts only if a worker failed or is stuck (list_events kinds ["assistant"], limit 3).
+2. `list_pull_requests` (open, base main). For each PR whose CI has finished: a general-purpose subagent reviews it (tests in a scratch worktree, a diff read against docs/AGENT_GUIDE.md) and returns a verdict of at most 200 words. Squash-merge the good ones (`[shared]` first, with expectedHeadSha). Send follow-ups or fixes to the author with `send_message`.
+3. Keep 5–6 workers busy; when one finishes, start the next from the queue below.
+4. Update this file and push it. Schedule the next check-in (`send_later`, 15 min).
+
+### Queue (not started yet)
+1. **QA / E2E (agent 8)**: owns `tests/e2e/**`; Playwright multi-user flows; reports bugs to owners through PR notes. Start when Infra finishes.
+2. **UI Shell & Design System (agent 6)**: owns `src/styles*`, `src/components/{AppShell,Sidebar,CommandPalette,Overlays,ui}.tsx`, `src/pages/Settings.tsx` layout, keyboard shortcuts, the mobile layout, sidebar drag-and-drop UI. Start when the next slot frees up.
+3. Phase 2/3 (Tauri, Capacitor): only if Phase 1 lands early.
 
 ## Session roster
 | Agent | Session ID | Branch | Owns | State |
 |---|---|---|---|---|
 | Manager | session_019dirnRG6rqRQKiaYoYvd2H | claude/practical-albattani-3z93fy | coordination, docs/STATUS.md | active |
-| 1 Foundation | session_019dirnRD8GTtbGrFh37NAfG | feat/foundation | build health, ARCHITECTURE.md, file splits, deploy-contract server side, token auth, `src/platform/`, then API client/offline | started 03:19 |
-| 7 Infra & Deploy | session_019dirnSW7khFtAuDrTTCCDN | feat/infra | `Dockerfile`, `.github/**`, `deploy/**`, `docs/RELEASING.md` | started 03:19 |
+| 1 Foundation | session_019dirnRD8GTtbGrFh37NAfG | feat/foundation | auth/security follow-ups, API client, offline/PWA, keeping main green | PR #2 merged; on follow-ups |
+| 7 Infra & Deploy | session_019dirnSW7khFtAuDrTTCCDN | feat/infra | `Dockerfile`, `.github/**`, `deploy/**`, `docs/RELEASING.md` | PR #1 merged; doing small follow-ups, then done |
+| 3 Tasks & Dashboard | session_019dirnRfdDtEARpJKN6JxyV | feat/tasks | task server/routes, dashboard views, calendar, quick add | started 04:15 |
+| 2 Editor & Notes | session_019dirnQJdPWZ1xg1q9wPn2Q | feat/editor | `src/editor/**` (not collab*), PageView/NotesHome, files, FTS search, tree moves | started 04:15 |
+| 4 Collaboration & Access | session_019dirnPr6xS49fYWnMwkTgE | feat/collab | collab/access/events/workspaces, cursors/presence, invites, `server/mail.ts`, sharing UI | started 04:15 |
+| 5 Recurrence & Reminders | session_019dirnS55cMN1UvQo2atin9 | feat/reminders | `shared/recurrence.ts`, `server/reminders/**`, web push + email, notification settings | started 04:15 |
 | Original builder | session_019dirnQSpFWbj8dPFQkoUjf | claude/initial-app | wrote the initial work-in-progress (now the base of `main`) | paused/idle; not used further (its session is tied to pushing `master`) |
 
 ## PR / merge log
 | When (UTC) | PR | Area | Result |
 |---|---|---|---|
+| 04:13 | #1 infra: CI, Docker, GHCR publish, deploy templates, RELEASING.md | Infra | squash-merged (review: no blockers; follow-ups sent) |
+| 04:13 | #2 Phase 0 foundation (core flow, area split, contract, token auth, platform adapter) | Foundation | squash-merged (27/27 tests, smoke ok; security follow-ups sent) |
 
 ## Log
 - **2026-11-05 03:00** Found the builder session mid-build; paused it; planned with the user; wrote `PLAN.md`.
 - **2026-11-05 ~03:45** Plan approved. Wrote the deploy contract, homelab brief, agent guide and this log. Created `main` from `claude/initial-app` + docs. Next: start Phase 0 (Foundation + Infra).
 - **2026-11-05 03:19** Started Foundation (agent 1) and Infra (agent 7). Phase 1 agents start once Foundation PR 1 merges. Hourly check-in scheduled.
+- **2026-11-05 04:10** User asked for check-ins every 15–20 min and v1 done in about 4 hours. Hourly scheduled task deleted in favour of a 15-min chain.
+- **2026-11-05 04:15** Merged #1 and #2. Sent follow-ups to Foundation and Infra. Started Tasks (3), Editor (2), Collaboration (4) and Reminders (5).
