@@ -1,0 +1,198 @@
+import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Bell, CalendarDays, Clock, FileText, Flag, Repeat, Trash2, UserRound, X } from 'lucide-react';
+import { deleteTask, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { Avatar, Dropdown, Modal } from './ui.tsx';
+import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu, RecurrenceMenu, TaskCheckbox } from './TaskControls.tsx';
+import { describeDue, dueTone, PRIORITY_LABEL, relativeTime } from '../lib/format.ts';
+import { describeRecurrence, today } from '../../shared/dates.ts';
+
+/** Side sheet (desktop) / bottom sheet (mobile) for viewing and editing one task. */
+export function TaskDetail() {
+  const id = useStore((s) => s.taskDetailId);
+  const task = useStore((s) => (id ? s.tasks[id] : undefined));
+  const wsId = useStore((s) => s.wsId);
+  const page = useStore((s) => (task?.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
+  const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
+  const members = useStore((s) => s.members);
+  const [title, setTitle] = useState('');
+  const [desc, setDesc] = useState('');
+  const titleRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sync local fields when switching tasks or when a remote change arrives
+  // (but not while the user is typing in that field).
+  useEffect(() => {
+    if (!task) return;
+    if (document.activeElement?.id !== 'task-title') setTitle(task.title);
+    if (document.activeElement?.id !== 'task-desc') setDesc(task.description);
+  }, [task?.id, task?.title, task?.description]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (id && !task) ui.openTask(null); // deleted or no longer visible
+  }, [id, task]);
+
+  if (!task) return null;
+  const close = () => ui.openTask(null);
+  const commitTitle = () => title.trim() !== task.title && title.trim() && void updateTask(task.id, { title: title.trim() });
+  const commitDesc = () => desc !== task.description && void updateTask(task.id, { description: desc });
+  const creator = members.find((m) => m.id === task.createdBy);
+  const completer = memberById(task.completedBy);
+  const assignee = memberById(task.assigneeId);
+
+  return (
+    <Modal open onClose={close} className="sheet" label="Task details">
+      <div className="sheet-head">
+        <div className="sheet-crumb">
+          {page ? (
+            <Link to={`/w/${wsId}/p/${page.id}?task=${task.id}`} className="chip chip-link" onClick={close}>
+              <FileText size={13} /> <span className="truncate">{page.title || 'Untitled'}</span>
+            </Link>
+          ) : (
+            <span className="muted small">Standalone task</span>
+          )}
+        </div>
+        {canEdit && (
+          <button
+            className="btn-ghost icon-btn"
+            title="Delete task"
+            onClick={() => {
+              if (confirm(page ? 'Delete this task? It will also be removed from its note.' : 'Delete this task?')) {
+                void deleteTask(task.id);
+                close();
+              }
+            }}
+          >
+            <Trash2 size={16} />
+          </button>
+        )}
+        <button className="btn-ghost icon-btn" onClick={close} title="Close (Esc)">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="sheet-body">
+        <div className="row gap-10 align-start">
+          <div style={{ paddingTop: 6 }}>
+            <TaskCheckbox task={task} onToggle={() => toggleTask(task.id)} disabled={!canEdit} />
+          </div>
+          <textarea
+            id="task-title"
+            ref={titleRef}
+            className={`detail-title ${task.status === 'done' ? 'is-done' : ''}`}
+            value={title}
+            rows={1}
+            readOnly={!canEdit}
+            onChange={(e) => setTitle(e.target.value.replace(/\n/g, ''))}
+            onBlur={commitTitle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                (e.target as HTMLTextAreaElement).blur();
+              }
+            }}
+          />
+        </div>
+
+        <div className="props">
+          <Prop icon={<UserRound size={15} />} label="Assignee">
+            <Dropdown
+              disabled={!canEdit}
+              buttonClass="prop-btn"
+              trigger={assignee ? <><Avatar user={assignee} size={18} /> {assignee.name}</> : <span className="muted">Unassigned</span>}
+            >
+              <AssigneeMenu value={task.assigneeId} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
+            </Dropdown>
+          </Prop>
+          <Prop icon={<CalendarDays size={15} />} label="Due date">
+            <Dropdown
+              disabled={!canEdit}
+              buttonClass={`prop-btn due-${task.status === 'done' ? 'none' : dueTone(task.dueDate)}`}
+              trigger={task.dueDate ? describeDue(task.dueDate) : <span className="muted">No date</span>}
+            >
+              <DueMenu value={task.dueDate} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
+            </Dropdown>
+          </Prop>
+          <Prop icon={<Clock size={15} />} label="Time">
+            <input
+              type="time"
+              className="prop-input"
+              disabled={!canEdit}
+              value={task.dueTime ?? ''}
+              onChange={(e) => void updateTask(task.id, { dueTime: e.target.value || null, ...(e.target.value && !task.dueDate ? { dueDate: today() } : {}) })}
+            />
+          </Prop>
+          <Prop icon={<Flag size={15} />} label="Priority">
+            <Dropdown
+              disabled={!canEdit}
+              buttonClass="prop-btn"
+              trigger={<><Flag size={14} color={PRIORITY_COLORS[task.priority]} fill={task.priority < 4 ? PRIORITY_COLORS[task.priority] : 'none'} /> {PRIORITY_LABEL[task.priority]}</>}
+            >
+              <PriorityMenu value={task.priority} onChange={(priority) => void updateTask(task.id, { priority })} />
+            </Dropdown>
+          </Prop>
+          <Prop icon={<Repeat size={15} />} label="Repeat">
+            <Dropdown
+              disabled={!canEdit}
+              buttonClass="prop-btn"
+              trigger={task.recurrence ? describeRecurrence(task.recurrence) : <span className="muted">Does not repeat</span>}
+            >
+              <RecurrenceMenu
+                value={task.recurrence}
+                onChange={(recurrence) =>
+                  void updateTask(task.id, { recurrence, ...(recurrence && !task.dueDate ? { dueDate: today() } : {}) })
+                }
+              />
+            </Dropdown>
+          </Prop>
+          <Prop icon={<Bell size={15} />} label="Reminder">
+            <input
+              type="datetime-local"
+              className="prop-input"
+              disabled={!canEdit}
+              value={task.reminderAt ? toLocalInput(task.reminderAt) : ''}
+              onChange={(e) => void updateTask(task.id, { reminderAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
+            />
+          </Prop>
+        </div>
+
+        <textarea
+          id="task-desc"
+          className="detail-desc"
+          placeholder={canEdit ? 'Add details…' : 'No details'}
+          value={desc}
+          readOnly={!canEdit}
+          onChange={(e) => setDesc(e.target.value)}
+          onBlur={commitDesc}
+        />
+
+        <div className="detail-foot muted small">
+          Created by {creator?.name ?? 'someone'} · {relativeTime(task.createdAt)}
+          {task.status === 'done' && task.completedAt && (
+            <>
+              <br />
+              Completed by {completer?.name ?? 'someone'} · {relativeTime(task.completedAt)}
+            </>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function Prop({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="prop">
+      <div className="prop-label">
+        {icon}
+        {label}
+      </div>
+      <div className="prop-value">{children}</div>
+    </div>
+  );
+}
+
+function toLocalInput(iso: string) {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
