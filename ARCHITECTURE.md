@@ -112,6 +112,7 @@ docs/              Plan-adjacent docs: agent guide, deploy contract, homelab bri
 
 - **A REST endpoint:** put it in your area's `server/routes/<area>.ts`. A new area gets a new file plus one `api.use(...)` line in `server/routes/index.ts` (a `[shared]` change).
 - **A screen:** one line in `src/routes.tsx`.
+- **A command or keyboard shortcut:** `useCommands(() => [{ id, title, group, keys, icon, run, when }], deps)` from `src/hooks/useShortcuts.ts` inside your component. The ⌘K palette, the `?` overlay and the global key listener all read that one registry (`listCommands()` / `runCommand(id)` are there for the desktop menu). Don't add your own `window` keydown listeners for app-wide shortcuts.
 - **Client state for a new area:** create your own small zustand store in your area's folder. Add to `src/store/state.ts` only for genuinely global state.
 - **A schema change:** a new file `server/migrations/NNN-name.sql`, with the number the manager reserves for your PR. Never edit a merged migration. If two PRs end up with the same number, the server refuses to start ("Two migrations share number …"), and the second PR to merge renumbers its file.
 - **Route tests:** `import { startTestApp } from './helpers/app.ts'`. It starts the real server (API + WebSockets) on a random port with an in-memory DB and has `call(method, path, token, body)` and `signUp(name)`. See `tests/server.test.ts`.
