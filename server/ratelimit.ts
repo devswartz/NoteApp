@@ -98,6 +98,11 @@ export const LIMITS = {
   resetAccount: { capacity: 3, perMinute: 0.1 }, // /auth/forgot per address (no mail-bombing one inbox)
   resetConfirmIp: { capacity: 10, perMinute: 1 }, // /auth/reset per IP (tokens are unguessable; this caps scanning)
   inviteIp: { capacity: 20, perMinute: 2 }, // invite lookups + accepts (tokens are unguessable; this caps scanning)
+  verifyIp: { capacity: 20, perMinute: 2 }, // /auth/verify-email per IP (tokens are unguessable; this caps scanning)
+  // Resending the confirmation email (signed in; see takeResend): no mail-bombing one inbox or the SMTP quota.
+  resendUserMinute: { capacity: 1, perMinute: 1 }, // per user: one a minute …
+  resendUserHour: { capacity: 5, perMinute: 5 / 60 }, // … and five an hour
+  resendIp: { capacity: 10, perMinute: 0.5 }, // per IP, across accounts: 10, then one every two minutes
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -193,12 +198,38 @@ function checksFor(req: Request, ip: string): Check[] {
     }
     case '/auth/reset':
       return [{ limiter: 'resetConfirmIp', key: ip }];
+    case '/auth/verify-email':
+      return [{ limiter: 'verifyIp', key: ip }];
   }
   if (/^\/invites\/[^/]+(\/accept)?$/.test(p)) return [{ limiter: 'inviteIp', key: ip }];
   return [];
 }
 
-function refuse(res: Response, wait: number) {
+/**
+ * Rate limit for POST /auth/resend-verification, called by the handler (the user is only known after sign-in).
+ * Returns 0 if allowed, else seconds to wait. The per-user caps always apply; the per-IP cap follows the
+ * usual loopback exemption. A refused request costs nothing.
+ */
+export function takeResend(req: Request, userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { ip, loopback } = clientIp(req);
+  const checks: Check[] = [
+    { limiter: 'resendUserMinute', key: userId },
+    { limiter: 'resendUserHour', key: userId },
+    ...(loopback && process.env.RATE_LIMIT_LOOPBACK !== '1' ? [] : [{ limiter: 'resendIp' as const, key: ip }]),
+  ];
+  let wait = 0;
+  const taken: Check[] = [];
+  for (const c of checks) {
+    const w = limiters[c.limiter].take(c.key);
+    if (w) wait = Math.max(wait, w);
+    else taken.push(c);
+  }
+  if (wait) taken.forEach((c) => limiters[c.limiter].refund(c.key));
+  return wait;
+}
+
+export function refuse(res: Response, wait: number) {
   res.setHeader('Retry-After', String(wait));
   res.status(429).json({ error: `Too many attempts. Try again in ${wait < 60 ? `${wait} seconds` : `${Math.ceil(wait / 60)} minutes`}.` });
 }

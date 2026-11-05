@@ -1,6 +1,6 @@
 // Signing in and out.
 import { endSession, get, post, refreshSession, startSession } from '../api.ts';
-import { emptyTree, set } from './state.ts';
+import { emptyTree, set, useStore } from './state.ts';
 import { clearLocalUserData, isNetworkError, offlineCache } from '../lib/offlineCache.ts';
 import { LAST_USER_KEY } from './cache.ts';
 import { errorToast } from './toasts.ts';
@@ -36,11 +36,35 @@ export async function bootstrap(): Promise<boolean> {
     set({ online: false });
   }
   set({ user });
+  if (user.emailVerified === false) return true; // only the "check your email" screen until confirmed
   try {
     await loadWorkspaces();
   } catch {
     /* no cached workspaces yet: the app shows its empty state until online */
   }
+  connectEvents();
+  return true;
+}
+
+/** The server said this account's email isn't confirmed (403 email_unverified): show the "check your email" screen. */
+export function markEmailUnverified() {
+  const user = useStore.getState().user;
+  if (!user || user.emailVerified === false) return;
+  disconnectEvents();
+  set({ user: { ...user, emailVerified: false } });
+}
+
+/**
+ * Ask the server whether the signed-in user has confirmed their email (e.g. in another tab or on another
+ * device). If so, load the app. Returns whether the email is now confirmed.
+ */
+export async function recheckEmailVerified(): Promise<boolean> {
+  const me = await get<User>('/me');
+  if (!me.emailVerified) return false;
+  // Joining workspaces from pending invites happened when the email was confirmed: load them before showing the app.
+  const workspaces = await get<Workspace[]>('/workspaces');
+  void offlineCache.set(LAST_USER_KEY, me);
+  set({ user: me, workspaces });
   connectEvents();
   return true;
 }
@@ -56,6 +80,10 @@ export async function signIn(mode: 'login' | 'register', body: Record<string, st
   await offlineCache.set(LAST_USER_KEY, s.user);
   // Load workspaces before publishing the user, so the first signed-in render
   // already knows where to route (the /login route then redirects to /).
+  if (s.user.emailVerified === false) {
+    set({ user: s.user, workspaces: [] }); // the app shows "check your email" until the address is confirmed
+    return;
+  }
   const workspaces = await get<Workspace[]>('/workspaces');
   set({ user: s.user, workspaces });
   connectEvents();

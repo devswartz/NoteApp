@@ -55,6 +55,10 @@ export function attachEvents(wss: WebSocketServer) {
       ws.close(4401, 'Unauthorized');
       return;
     }
+    if (!auth.user.emailVerified) {
+      ws.close(4403, 'Email not verified');
+      return;
+    }
     addClient(auth.user.id, ws);
     // Close when the access token lapses; the client refreshes, reconnects and catches up.
     const expiry = setTimeout(() => {
