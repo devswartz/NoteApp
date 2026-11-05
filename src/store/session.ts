@@ -47,8 +47,13 @@ export async function bootstrap(): Promise<boolean> {
 
 export async function signIn(mode: 'login' | 'register', body: Record<string, string>) {
   const s = await post<AuthSession>(`/auth/${mode}`, body);
+  // A different person signing in on this device must not inherit the previous
+  // user's cached notes and files (they survive if that session ended without a
+  // sign-out, e.g. the server was down at startup).
+  const last = await offlineCache.get<User>(LAST_USER_KEY);
+  if (last && last.id !== s.user.id) await clearLocalUserData();
   await startSession(s);
-  void offlineCache.set(LAST_USER_KEY, s.user);
+  await offlineCache.set(LAST_USER_KEY, s.user);
   // Load workspaces before publishing the user, so the first signed-in render
   // already knows where to route (the /login route then redirects to /).
   const workspaces = await get<Workspace[]>('/workspaces');
