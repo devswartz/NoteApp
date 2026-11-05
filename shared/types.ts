@@ -46,6 +46,27 @@ export interface Member extends User {
 export interface PendingInvite {
   email: string;
   role: Role;
+  invitedBy?: string | null;
+  createdAt?: string;
+  /** When the emailed link stops working (the admin can resend). */
+  expiresAt?: string | null;
+}
+
+/** GET /invites/:token (no auth): what the invite link is for. */
+export interface InviteInfo {
+  workspaceId: string;
+  workspaceName: string;
+  invitedByName: string;
+  email: string;
+  role: Role;
+  expired: boolean;
+}
+
+/** GET /workspaces/:id/team: members plus their task load (for the Team view). */
+export interface TeamMember extends Member {
+  openTasks: number;
+  overdueTasks: number;
+  dueTodayTasks: number;
 }
 
 export interface Notebook {
@@ -56,6 +77,8 @@ export interface Notebook {
   visibility: Visibility;
   createdBy: string;
   position: number;
+  /** Private notebooks: user ids it is shared with (besides its creator). */
+  sharedWith?: string[];
 }
 
 export interface Section {
@@ -137,4 +160,13 @@ export type ServerEvent =
   | { type: 'task-deleted'; id: string; workspaceId: string }
   | { type: 'tree'; workspaceId: string }
   | { type: 'members'; workspaceId: string }
-  | { type: 'workspaces' };
+  | { type: 'workspaces' }
+  /** The server can't replay what was missed: reload tree, tasks and members. */
+  | { type: 'resync' };
+
+/**
+ * Envelope on the /api/events WebSocket. `seq` increases per server process;
+ * a client reconnects with `?since=<boot>:<seq>` to get missed events replayed
+ * (or a `resync` if they're no longer buffered). `hello` is sent on connect.
+ */
+export type EventMessage = (ServerEvent & { seq?: number }) | { type: 'hello'; boot: string; seq: number };
