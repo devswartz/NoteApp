@@ -1,9 +1,8 @@
 // Workspace tree: notebooks and sections (pages are in pages.ts). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now, pickColor } from '../db.ts';
-import { NOTEBOOK_VISIBLE, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
+import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import { closeRoom } from '../collab.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt, refreshTasksForNotebook } from '../tree.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
@@ -73,10 +72,7 @@ treeRoutes.patch(
       if (!a.isNotebookOwner) throw new HttpError(403, 'Only the notebook creator can change its visibility');
       if (!['shared', 'private'].includes(b.visibility)) throw new HttpError(400, 'Invalid visibility');
       db.prepare('UPDATE notebooks SET visibility = ? WHERE id = ?').run(b.visibility, id);
-      if (b.visibility === 'private') {
-        const pages = db.prepare('SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id WHERE s.notebook_id = ?').all(id) as { id: string }[];
-        for (const p of pages) closeRoom(p.id);
-      }
+      accessChanged(); // collaborators may have lost access
       refreshTasksForNotebook(id);
     }
     publish({ type: 'tree', workspaceId: a.workspaceId });
@@ -145,7 +141,7 @@ function moveSectionTo(id: string, a: { workspaceId: string; notebookId: string 
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
   db.prepare('UPDATE sections SET notebook_id = ? WHERE id = ?').run(notebookId, id);
   // Visibility may differ between the two notebooks.
-  for (const p of db.prepare('SELECT id FROM pages WHERE section_id = ?').all(id) as { id: string }[]) closeRoom(p.id);
+  accessChanged(); // collaborators may have lost access to its pages
   refreshTasksForNotebook(notebookId);
 }
 

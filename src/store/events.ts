@@ -1,7 +1,7 @@
 // Live event client: applies server-pushed task/tree/member changes.
 // Tracks the server's boot id + last sequence number, and reconnects with
 // ?since= so missed events are replayed; on `resync` it reloads everything.
-import { freshAccessToken, notifyUnauthorized, refreshSession, wsProtocols, wsUrl } from '../api.ts';
+import { backoffMs, freshAccessToken, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import { set, st } from './state.ts';
 import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
@@ -13,6 +13,9 @@ let attempts = 0;
 let wanted = false;
 /** Last event seen, for catch-up on reconnect. Reset when the server restarts. */
 let cursor: { boot: string; seq: number } | null = null;
+/** Backoff resets only after a socket has stayed up a while (the server may accept, then close with 4401). */
+let healthyTimer: ReturnType<typeof setTimeout> | null = null;
+const HEALTHY_AFTER_MS = 10_000;
 const debounced = new Map<string, ReturnType<typeof setTimeout>>();
 function debounce(key: string, fn: () => void, ms = 250) {
   clearTimeout(debounced.get(key));
@@ -46,20 +49,20 @@ async function open(first: boolean) {
   const ws = new WebSocket(wsUrl(`/api/events${since}`), wsProtocols());
   socket = ws;
   ws.onopen = () => {
-    attempts = 0;
+    healthyTimer = setTimeout(() => (attempts = 0), HEALTHY_AFTER_MS);
     set({ online: true });
     if (reloadOnOpen) resync();
   };
   ws.onclose = (e) => {
+    if (healthyTimer) clearTimeout(healthyTimer);
     if (socket !== ws) return; // replaced or disconnected deliberately
     socket = null;
     set({ online: false });
     if (!wanted) return;
     if (e.code === 4401) {
-      // Access token rejected: refresh and retry once; if that fails the session is gone.
-      refreshSession()
-        .then((ok) => (ok ? void open(false) : notifyUnauthorized()))
-        .catch(() => schedule());
+      // Access token expired or rejected: refresh, then reconnect with backoff
+      // (so a server that keeps rejecting can't cause a tight loop).
+      void reauthorize().then((r) => r !== 'signed-out' && schedule());
       return;
     }
     schedule();
@@ -82,8 +85,8 @@ async function open(first: boolean) {
 }
 
 function schedule() {
-  const delay = Math.min(30_000, 1000 * 2 ** attempts++) * (0.75 + Math.random() / 2);
-  retryTimer = setTimeout(() => void open(false), delay);
+  if (!wanted) return;
+  retryTimer = setTimeout(() => void open(false), backoffMs(attempts++));
 }
 
 /** Reload everything the event channel feeds (after a gap we can't replay). */
