@@ -1,0 +1,116 @@
+// Desktop shell (Tauri): platform selection and the pure helpers behind the
+// adapter, the menu, the badge, server setup and the release scripts.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { detectPlatform, loadPlatform } from '../src/platform/index.ts';
+import { webPlatform } from '../src/platform/web.ts';
+import type { Platform } from '../src/platform/types.ts';
+import { fallbackPath } from '../src/platform/tauri/paths.ts';
+import { todayCount } from '../src/platform/tauri/badge.ts';
+import { probeServer } from '../src/platform/tauri/serverSetup.ts';
+import type { Task } from '../shared/types.ts';
+// @ts-expect-error plain .mjs build scripts, no type declarations
+import { manifest } from '../apps/desktop/scripts/latest-json.mjs';
+// @ts-expect-error plain .mjs build scripts, no type declarations
+import { appName, computedConfig } from '../apps/desktop/scripts/tauri.mjs';
+
+test('detectPlatform: web by default, tauri when the Tauri globals exist', () => {
+  assert.equal(detectPlatform(), 'web');
+  const g = globalThis as Record<string, unknown>;
+  g.__TAURI_INTERNALS__ = {};
+  try {
+    assert.equal(detectPlatform(), 'tauri');
+  } finally {
+    delete g.__TAURI_INTERNALS__;
+  }
+});
+
+test('loadPlatform: loads the shell implementation lazily, web otherwise', async () => {
+  const fake = { ...webPlatform, kind: 'tauri' } as Platform;
+  let loaded = 0;
+  const loaders = {
+    tauri: async () => {
+      loaded++;
+      return fake;
+    },
+  };
+  assert.equal(await loadPlatform('web', loaders), webPlatform);
+  assert.equal(loaded, 0, 'the web build must not load the shell module');
+  assert.equal(await loadPlatform('tauri', loaders), fake);
+  assert.equal(loaded, 1);
+  // No implementation yet (Capacitor) → web.
+  assert.equal(await loadPlatform('capacitor', loaders), webPlatform);
+});
+
+test('menu fallback navigation', () => {
+  assert.equal(fallbackPath('nav.today', '/w/ws1/p/abc'), '/w/ws1/tasks/today');
+  assert.equal(fallbackPath('nav.completed', '/w/ws1/tasks/my'), '/w/ws1/tasks/completed');
+  assert.equal(fallbackPath('nav.notes', '/w/ws1'), '/w/ws1/notes');
+  assert.equal(fallbackPath('nav.today', '/login'), null);
+  assert.equal(fallbackPath('pages.new', '/w/ws1'), null);
+});
+
+test('badge count: my open tasks due today or overdue', () => {
+  const base = { status: 'open', assigneeId: null, createdBy: 'me', dueDate: '2026-11-05' } as Partial<Task>;
+  const t = (o: Partial<Task>) => ({ ...base, ...o }) as Task;
+  const tasks = [
+    t({}), // today, mine (creator, unassigned)
+    t({ dueDate: '2026-11-01' }), // overdue
+    t({ dueDate: '2026-11-06' }), // tomorrow
+    t({ dueDate: null }), // no date
+    t({ status: 'done' }), // completed
+    t({ assigneeId: 'sam' }), // someone else's
+    t({ assigneeId: 'me', createdBy: 'sam' }), // assigned to me
+  ];
+  assert.equal(todayCount(tasks, 'me', '2026-11-05'), 3);
+  assert.equal(todayCount(tasks, null, '2026-11-05'), 0);
+});
+
+test('probeServer accepts a NoteApp health response only', async () => {
+  const urls: string[] = [];
+  const ok = (async (u: string) => {
+    urls.push(u);
+    return new Response('{"ok":true,"version":"x"}', { status: 200 });
+  }) as unknown as typeof fetch;
+  assert.equal(await probeServer('notes.example.com/', ok), null);
+  assert.deepEqual(urls, ['https://notes.example.com/api/health']);
+  const html = (async () => new Response('<html>', { status: 200 })) as unknown as typeof fetch;
+  assert.match((await probeServer('https://x.y', html))!, /didn’t answer/);
+  const down = (async () => {
+    throw new TypeError('network');
+  }) as unknown as typeof fetch;
+  assert.match((await probeServer('https://x.y', down))!, /Couldn’t reach/);
+});
+
+test('tauri.mjs: app name from shared/config.ts, updater only with signing secrets', () => {
+  assert.equal(appName("export const APP_NAME = 'Foo Notes';"), 'Foo Notes');
+  const plain = computedConfig({});
+  assert.equal(typeof plain.productName, 'string');
+  assert.equal(plain.plugins, undefined);
+  assert.equal(computedConfig({ TAURI_SIGNING_PRIVATE_KEY: 'k' }).plugins, undefined, 'needs the public key too');
+  const signed = computedConfig({ TAURI_SIGNING_PRIVATE_KEY: 'k', TAURI_UPDATER_PUBKEY: 'pub', GITHUB_REPOSITORY: 'o/r', APP_VERSION: 'v1.2.3' });
+  assert.equal(signed.version, '1.2.3');
+  assert.equal(signed.bundle.createUpdaterArtifacts, true);
+  assert.deepEqual(signed.plugins.updater, { pubkey: 'pub', endpoints: ['https://github.com/o/r/releases/latest/download/latest.json'] });
+});
+
+test('latest-json.mjs: lists signed bundles only', async () => {
+  const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'bundles-'));
+  mkdirSync(join(dir, 'mac'));
+  mkdirSync(join(dir, 'win'));
+  const mac = join(dir, 'mac', 'NoteApp.app.tar.gz');
+  const exe = join(dir, 'win', 'NoteApp_1.2.3_x64-setup.exe');
+  const msi = join(dir, 'win', 'NoteApp_1.2.3_x64_en-US.msi');
+  for (const f of [mac, exe, msi]) writeFileSync(f, 'x');
+  writeFileSync(`${mac}.sig`, 'SIGMAC\n');
+  writeFileSync(`${exe}.sig`, 'SIGWIN');
+  const m = manifest([mac, `${mac}.sig`, exe, `${exe}.sig`, msi], 'o/r', 'v1.2.3', new Date('2026-01-01T00:00:00Z'));
+  assert.equal(m.version, '1.2.3');
+  assert.deepEqual(m.platforms['darwin-aarch64'], { signature: 'SIGMAC', url: 'https://github.com/o/r/releases/download/v1.2.3/NoteApp.app.tar.gz' });
+  assert.equal(m.platforms['darwin-x86_64'].url, m.platforms['darwin-aarch64'].url);
+  assert.deepEqual(m.platforms['windows-x86_64'], { signature: 'SIGWIN', url: 'https://github.com/o/r/releases/download/v1.2.3/NoteApp_1.2.3_x64-setup.exe' });
+  assert.deepEqual(manifest([mac, exe], 'o/r', 'v1.2.3').platforms, {}, 'unsigned bundles are not offered as updates');
+});
