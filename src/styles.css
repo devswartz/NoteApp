@@ -1404,6 +1404,7 @@ body.is-resizing .sidebar { transition: none; }
   }
   .mobile-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
   .mobile-title > .truncate { max-width: 100%; font-weight: 600; font-size: var(--text-md); }
+  .mobile-title.has-title { animation: fade var(--dur) var(--ease-out); }
   .mobile-subtitle { max-width: 100%; font-size: var(--text-2xs); color: var(--text-muted); }
   .icon-btn.touch { width: var(--touch); height: var(--touch); border-radius: var(--radius-lg); }
   .tabbar {
