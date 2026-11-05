@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import type { Extensions } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
+import { beginComment, useCommentBinding } from './collabComments.ts';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
@@ -10,6 +11,7 @@ import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-detai
 import { Placeholder } from '@tiptap/extensions';
 import { TextSelection } from '@tiptap/pm/state';
 import {
+  MessageSquare,
   Bold,
   CircleCheck,
   Code,
@@ -164,6 +166,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   useEffect(() => {
     if (editor) onReady(editor);
   }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
+  useCommentBinding(editor);
 
   // File pickers for the slash menu.
   useEffect(() => {
@@ -302,6 +305,9 @@ function FormattingMenu({ editor }: { editor: Editor }) {
         onClick={() => editor.chain().focus().convertToTask().run()}
       >
         <CircleCheck size={16} /> Task
+      </button>
+      <button type="button" className="bm-btn bm-text" title="Comment" onMouseDown={(e) => e.preventDefault()} onClick={() => beginComment(editor)}>
+        <MessageSquare size={16} /> Comment
       </button>
     </BubbleMenu>
   );
