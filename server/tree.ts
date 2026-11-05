@@ -1,5 +1,6 @@
 // Tree helpers (notebooks / sections / pages) used by more than one route module.
 import * as Y from 'yjs';
+import { HttpError } from './access.ts';
 import { db, newId, now } from './db.ts';
 import { publish } from './events.ts';
 import { rowToTask } from './tasks.ts';
@@ -124,4 +125,14 @@ export function copyPage(pageId: string, sectionId: string, userId: string, opts
     publish({ type: 'task', task: rowToTask(r) });
   }
   return { id, taskIds: newTasks };
+}
+
+/**
+ * Notebook/section colours are rendered into styles, so only "#rrggbb" is accepted.
+ * A missing value takes `fallback()` (a random palette colour on create; updates pass one that throws).
+ */
+export function validColor(v: unknown, fallback: () => string): string {
+  if (v === undefined || v === null || v === '') return fallback();
+  if (typeof v !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v.trim())) throw new HttpError(400, 'Colour must look like #4f46e5');
+  return v.trim().toLowerCase();
 }
