@@ -20,7 +20,8 @@ const tmp = () => (process.env.TEST_WORKER_INDEX ? '' : mkdtempSync(join(tmpdir(
 const dataDir = process.env.E2E_DATA_DIR ?? tmp();
 const shortDataDir = tmp();
 const ci = !!process.env.CI;
-const serverEnv = { JWT_SECRET: 'e2e-only-secret-not-used-anywhere-else-0123456789', GIT_SHA: 'e2e' };
+// SIGNUP_MODE=open: tests create many users directly (production defaults to invite-only).
+const serverEnv = { JWT_SECRET: 'e2e-only-secret-not-used-anywhere-else-0123456789', GIT_SHA: 'e2e', SIGNUP_MODE: 'open' };
 
 export default defineConfig({
   testDir: 'tests/e2e',
