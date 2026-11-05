@@ -401,7 +401,10 @@ test('APNs and FCM channels (fakes): auth, payloads, dead tokens removed', async
   assert.equal(calls[1].headers.authorization, 'Bearer ya29.fake');
   const msg = JSON.parse(calls[1].body).message;
   assert.equal(msg.token, android);
-  assert.deepEqual(msg.data, { url: '/w/1/tasks/today?task=t1', taskId: 't1', snoozeToken: 'snz' });
+  // Data-only, so the Android app can build the notification with snooze actions (NoteAppMessagingService).
+  assert.deepEqual(msg.data, { title: 'Pay rent', body: 'Due today', url: '/w/1/tasks/today?task=t1', taskId: 't1', snoozeToken: 'snz', tag: 'task-t1' });
+  assert.equal(msg.notification, undefined);
+  assert.equal(msg.android.priority, 'high');
   // Unregistered token → removed.
   const gone = fcmChannel(async (url, init) => (url === fcmCfg.tokenUri ? fakeFetch(url, init) : { status: 404, text: async () => '{"error":{"status":"NOT_FOUND","details":[{"errorCode":"UNREGISTERED"}]}}' }), () => fcmCfg);
   const rg = await deliverMod.deliver({ ...notice, key: `native2:${u.user.id}` }, [gone]);

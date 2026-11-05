@@ -118,6 +118,37 @@ test('a due reminder shows an in-app toast while the app is open', async ({ page
   await expect(page.locator('.toast', { hasText: 'Stretch break' })).toBeVisible();
 });
 
-test('reminder delivery settings (web push / email) in Settings', async () => {
-  test.fixme(true, 'server side and <NotificationSettingsPanel> are in #4; waiting for UI shell to render the panel on the Settings page');
+test('reminder delivery settings (email, digest, default time, quiet hours) save to the server', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Dee Digest');
+  await signInContext(context, user);
+  await page.goto(`/w/${user.wsId}/settings?s=notifications`);
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+
+  const email = page.getByRole('switch', { name: 'Email reminders' });
+  const digest = page.getByRole('switch', { name: 'Daily digest' });
+  if ((await email.getAttribute('aria-checked')) !== 'true') await email.click();
+  await expect(email).toHaveAttribute('aria-checked', 'true');
+  await expect(digest).toBeEnabled();
+  await digest.click();
+  await expect(digest).toHaveAttribute('aria-checked', 'true');
+  await page.getByLabel('Default reminder time').fill('08:15');
+  await page.getByRole('switch', { name: `Quiet hours for ${"Dee's Space"}` }).click();
+
+  await eventually(
+    () => api<{ emailEnabled: boolean; digestEnabled: boolean; defaultReminderTime: string }>(request, 'GET', '/notifications/settings', user.token),
+    (s) => s.emailEnabled && s.digestEnabled && s.defaultReminderTime === '08:15',
+    'notification settings saved',
+  );
+  await eventually(
+    () => api<{ workspaceId: string; start: string; end: string }[]>(request, 'GET', '/notifications/quiet-hours', user.token),
+    (q) => q.some((x) => x.workspaceId === user.wsId),
+    'quiet hours saved',
+  );
+
+  // Survives a reload; turning email off disables the digest switch.
+  await page.reload();
+  await expect(email).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByLabel('Default reminder time')).toHaveValue('08:15');
+  await email.click();
+  await expect(digest).toBeDisabled();
 });
