@@ -21,7 +21,13 @@ import { DATA_DIR, IS_PROD } from './config.ts';
 import type { AuthSession, User } from '../shared/types.ts';
 
 // ACCESS_TOKEN_TTL_S is a testing knob (e.g. short tokens to exercise refresh); not part of the deploy contract.
-export const ACCESS_TTL_S = Number(process.env.ACCESS_TOKEN_TTL_S) || 15 * 60;
+// Invalid, zero or negative values mean the default; production clamps it to 1–60 minutes.
+export function accessTtlFromEnv(raw = process.env.ACCESS_TOKEN_TTL_S, prod = process.env.NODE_ENV === 'production'): number {
+  const n = Number(raw);
+  if (!raw || !Number.isFinite(n) || n <= 0) return 15 * 60;
+  return prod ? Math.min(3600, Math.max(60, Math.floor(n))) : Math.floor(n) || 1;
+}
+export const ACCESS_TTL_S = accessTtlFromEnv();
 export const REFRESH_TTL_DAYS = 30;
 const REUSE_GRACE_S = 60;
 /** WebSocket subprotocol carrying the access token: `bearer.<jwt>`. */

@@ -78,3 +78,12 @@ test('/collab refuses a giant Yjs update (1009) without applying it, and a huge 
   ws2.send(encoding.toUint8Array(a));
   assert.equal(await code2, 1009);
 });
+
+test('ACCESS_TOKEN_TTL_S: bad values use the default; production clamps to 60–3600 s', async () => {
+  const { accessTtlFromEnv } = await import('../server/auth.ts');
+  for (const v of [undefined, '', '0', '-5', 'abc', 'Infinity']) assert.equal(accessTtlFromEnv(v, true), 900, String(v));
+  assert.equal(accessTtlFromEnv('5', true), 60);
+  assert.equal(accessTtlFromEnv('999999', true), 3600);
+  assert.equal(accessTtlFromEnv('1800', true), 1800);
+  assert.equal(accessTtlFromEnv('5', false), 5, 'tests may use short tokens outside production');
+});
