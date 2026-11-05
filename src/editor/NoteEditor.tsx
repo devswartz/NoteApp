@@ -35,7 +35,7 @@ import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
-import { errorToast } from '../store.ts';
+import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
 import '../styles/editor.css';
@@ -173,6 +173,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
 export async function insertFiles(editor: Editor, files: File[], pos: number, at: { pageId: string; workspaceId: string }) {
   for (const file of files) {
     try {
+      if (file.size > 1024 * 1024) toast(`Uploading ${file.name}…`);
       const r = await uploadFile(file, at.workspaceId, at.pageId);
       if (editor.isDestroyed) return;
       const p = Math.min(pos, editor.state.doc.content.size);
