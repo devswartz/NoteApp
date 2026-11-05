@@ -37,6 +37,7 @@ import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
+import { MentionNode } from './collabMentions.ts';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { errorToast, toast } from '../store.ts';
@@ -105,6 +106,7 @@ export function documentExtensions(pageId: string): Extensions {
     DetailsContent,
     TaskRef.configure({ pageId }),
     PageLink.configure({ pageId }),
+    MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
   ];
 }
 
