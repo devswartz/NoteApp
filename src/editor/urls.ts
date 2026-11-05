@@ -21,7 +21,8 @@ export function safeLinkUrl(url: unknown): string {
   if (typeof url !== 'string') return '';
   // Browsers ignore control characters and whitespace inside schemes ("java\nscript:").
   const u = url.trim();
-  const probe = u.replace(/[\u0000- \u007f-\u009f]/g, '').toLowerCase();
+  // Browsers treat "\" like "/" in URLs, so "/\evil.example" is protocol-relative ("//evil.example").
+  const probe = u.replace(/[\u0000- \u007f-\u009f]/g, '').replace(/\\/g, '/').toLowerCase();
   if (/^(https?:|mailto:|tel:|noteapp:)/.test(probe)) return u;
   if (/^\/(?!\/)/.test(probe) || probe.startsWith('#')) return u;
   return '';
@@ -31,7 +32,7 @@ export function safeLinkUrl(url: unknown): string {
 export function safeImageUrl(url: unknown): string {
   if (typeof url !== 'string') return '';
   const u = url.trim();
-  const probe = u.replace(/[\u0000- \u007f-\u009f]/g, '').toLowerCase();
+  const probe = u.replace(/[\u0000- \u007f-\u009f]/g, '').replace(/\\/g, '/').toLowerCase();
   if (/^\/(uploads|files)\/[\w.-]+$/.test(u)) return u;
   if (/^https?:\/\//.test(probe) && !/\s/.test(u)) return u;
   return '';
