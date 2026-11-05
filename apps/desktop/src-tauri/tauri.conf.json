@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NoteApp",
+  "version": "../../../package.json",
+  "identifier": "com.devswartz.noteapp",
+  "build": {
+    "frontendDist": "../../../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": { "script": "npm run dev", "cwd": "../../..", "wait": false },
+    "beforeBuildCommand": { "script": "npm run build", "cwd": "../../.." }
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": {
+        "default-src": "'self' ipc: http://ipc.localhost",
+        "connect-src": "'self' ipc: http://ipc.localhost https: wss: http: ws:",
+        "img-src": "'self' asset: http://asset.localhost https: http: data: blob:",
+        "media-src": "'self' https: http: data: blob:",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "script-src": "'self'",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "frame-src": "'none'"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis", "msi"],
+    "category": "Productivity",
+    "shortDescription": "Collaborative notes with built-in task management",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true
+    },
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["noteapp"] }
+    }
+  }
+}
