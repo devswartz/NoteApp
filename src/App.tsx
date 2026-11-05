@@ -54,7 +54,7 @@ export function App() {
 function Home() {
   const workspaces = useStore((s) => s.workspaces);
   const [invite] = useState(takePendingInvite); // signed in from an invite link: finish joining
-  if (invite) return <Navigate to={`/invite/${invite}`} replace />;
+  if (invite) return <Navigate to={invite} replace />;
   const last = platform.kv.get('noteapp.lastWs');
   const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];
   if (!ws) return <div className="empty-page">You don’t belong to any workspace yet.</div>;

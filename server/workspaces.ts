@@ -1,6 +1,7 @@
 // Workspace helpers used by more than one route module.
 import { db, newId, now } from './db.ts';
 import { seedWorkspace } from './seed.ts';
+import { IS_PROD } from './config.ts';
 import crypto from 'node:crypto';
 import { escapeHtml, sendMail } from './mail.ts';
 import { APP_NAME } from '../shared/config.ts';
@@ -32,9 +33,18 @@ export const INVITE_TTL_DAYS = 14;
 
 export const hashInviteToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
-/** The web app's origin for links in emails: PUBLIC_URL, else the caller's Origin, else localhost. */
+if (IS_PROD && !process.env.PUBLIC_URL)
+  console.warn('[invites] PUBLIC_URL is not set: invite emails will contain relative links. Set it (see docs/DEPLOY_CONTRACT.md).');
+
+/**
+ * The web app's origin for links in emails. Production uses PUBLIC_URL only:
+ * the request's Origin header is caller-controlled, and trusting it would let a
+ * forged request send the invite token to another host. In development the
+ * caller's Origin (the Vite dev server) is used when PUBLIC_URL isn't set.
+ */
 export function publicUrl(origin?: string | null): string {
-  return (process.env.PUBLIC_URL || origin || 'http://localhost:5173').replace(/\/+$/, '');
+  const base = process.env.PUBLIC_URL || (IS_PROD ? '' : origin || 'http://localhost:5173');
+  return base.replace(/\/+$/, '');
 }
 
 /** Create or refresh the invite for `email` with a new token. Returns the raw token (for the link). */
