@@ -485,3 +485,38 @@ test('calendar feed: secret URL, events for my dated open tasks, RRULE, reset/di
   assert.equal(toRRule({ freq: 'day', interval: 1, until: '2027-01-31' }), 'FREQ=DAILY;UNTIL=20270131');
   assert.equal(toRRule({ freq: 'day', interval: 3, basis: 'completion' }), null);
 });
+
+test('review fixes: due date moved earlier re-fires; endpoint moves between users; digest skipped without email', async () => {
+  const u = await setup('Earlier', 'UTC');
+  const t = await task(u, { dueDate: '2039-03-10', dueTime: '12:00' });
+  await remind(u, t.id, { kind: 'before', minutes: 0 });
+  const { ch, sent } = fakeChannel();
+  const clock = new Clock(Date.parse('2039-03-10T12:00:05Z'));
+  const s = new sched.ReminderScheduler({ now: clock.now, channels: [ch] });
+  await s.tick();
+  // Move the due date around after it fired: each new instant is scheduled.
+  await app.call('PATCH', `/tasks/${t.id}`, u.token, { dueDate: '2039-03-12' });
+  await app.call('PATCH', `/tasks/${t.id}`, u.token, { dueDate: '2039-03-11', dueTime: '09:00' });
+  let list = await app.call<Reminder[]>('GET', `/tasks/${t.id}/reminders`, u.token);
+  assert.equal(list.data[0].nextFireAt, '2039-03-11T09:00:00.000Z');
+  clock.set('2039-03-11T09:00:05Z');
+  await s.tick();
+  assert.equal(sent.filter((x) => x.notice.taskId === t.id).length, 2);
+  // Moving back to an instant earlier than the last fire also schedules it again.
+  await app.call('PATCH', `/tasks/${t.id}`, u.token, { dueDate: '2039-03-11', dueTime: '08:30' });
+  list = await app.call<Reminder[]>('GET', `/tasks/${t.id}/reminders`, u.token);
+  assert.equal(list.data[0].nextFireAt, '2039-03-11T08:30:00.000Z');
+
+  const a = await setup('EndpointA', 'UTC');
+  const b = await setup('EndpointB', 'UTC');
+  const sub = { endpoint: `https://fcm.googleapis.com/fcm/send/shared-${a.user.id}`, keys: { p256dh: 'p'.repeat(20), auth: 'a'.repeat(10) } };
+  await app.call('POST', '/notifications/push-subscriptions', a.token, sub);
+  await app.call('POST', '/notifications/push-subscriptions', b.token, sub);
+  assert.equal((await app.call('GET', '/notifications/push', a.token)).data.devices, 0);
+  assert.equal((await app.call('GET', '/notifications/push', b.token)).data.devices, 1);
+
+  const d = await setup('NoEmailDigest', 'UTC');
+  await app.call('PATCH', '/notifications/settings', d.token, { digestEnabled: true, digestTime: '06:00' });
+  const r = await new sched.ReminderScheduler({ now: () => Date.parse('2039-03-11T06:01:00Z'), channels: [ch] }).tick();
+  assert.equal(r.digests, 0);
+});

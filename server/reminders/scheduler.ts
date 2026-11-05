@@ -116,7 +116,9 @@ export class ReminderScheduler {
       report.fired++;
       notices.push({ ...reminderNotice(r), snoozeToken: createSnoozeToken(r.user_id, r.task_id, nowMs) });
     }
-    for (const n of dueDigests(nowMs, this.catchUpMs)) {
+    // The digest is email only: don't query for it when email can't be sent.
+    const emailUp = this.channels.some((c) => c.name === 'email' && c.available());
+    for (const n of emailUp ? dueDigests(nowMs, this.catchUpMs) : []) {
       report.digests++;
       notices.push(n);
     }

@@ -54,8 +54,10 @@ export function computeFireAt(r: Pick<ReminderRow, 'kind' | 'at' | 'minutes' | '
   }
   if (!at || Number.isNaN(Date.parse(at))) return null;
   at = new Date(at).toISOString();
-  // Fired already for this instant (e.g. the due date hasn't moved since).
-  if (r.last_fired_at && Date.parse(at) <= Date.parse(r.last_fired_at)) return null;
+  // Already fired for exactly this instant (the due date hasn't moved since).
+  // A different instant — later, or earlier because the due date moved back —
+  // is a new occurrence; notification_log keys on the instant, so it's sent once.
+  if (r.last_fired_at && Date.parse(at) === Date.parse(r.last_fired_at)) return null;
   return at;
 }
 

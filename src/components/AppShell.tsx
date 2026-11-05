@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { NavLink, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, Navigate, Outlet, useParams } from 'react-router-dom';
 import { Menu, Sun, Inbox, Search, Plus, BookOpen, PanelLeftOpen } from 'lucide-react';
-import { post } from '../api.ts';
 import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
+import { useShortcutListener } from '../hooks/useShortcuts.ts';
+import { useShellCommands } from './shell/commands.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
@@ -10,6 +11,12 @@ import { CommandPalette } from './CommandPalette.tsx';
 import { OfflineBanner, ShortcutsHelp } from './Overlays.tsx';
 import { MOD, useIsMobile } from './ui.tsx';
 import { platform } from '../platform/index.ts';
+
+/** True while a modal-like overlay is open; plain shortcuts pause then. */
+const overlayOpen = () => {
+  const s = useStore.getState();
+  return s.paletteOpen || !!s.quickAdd || !!s.taskDetailId || s.shortcutsOpen;
+};
 
 /** Layout for everything inside a workspace. */
 export function AppShell() {
@@ -23,7 +30,8 @@ export function AppShell() {
     if (valid) selectWorkspace(wsId).catch(errorToast);
   }, [wsId, valid]);
 
-  useGlobalShortcuts(wsId);
+  useShellCommands(wsId);
+  useShortcutListener(overlayOpen);
   useReminders();
 
   if (!valid) return <Navigate to="/" replace />;
@@ -89,89 +97,6 @@ function MobileTabBar({ wsId }: { wsId: string }) {
       </button>
     </nav>
   );
-}
-
-function isTyping(e: KeyboardEvent) {
-  const el = e.target as HTMLElement;
-  return el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
-}
-
-function useGlobalShortcuts(wsId: string) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const pending = useRef<{ key: string; at: number } | null>(null);
-  const locRef = useRef(location.pathname);
-  locRef.current = location.pathname;
-
-  useEffect(() => {
-    const onKey = async (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        const s = useStore.getState();
-        if (s.paletteOpen) ui.closePalette();
-        else ui.openPalette();
-        return;
-      }
-      if (mod && e.key === '\\') {
-        e.preventDefault();
-        ui.toggleSidebar();
-        return;
-      }
-      if (mod || e.altKey || isTyping(e)) return;
-      const s = useStore.getState();
-      if (s.paletteOpen || s.quickAdd || s.taskDetailId || s.shortcutsOpen) return;
-
-      const k = e.key.toLowerCase();
-      if (pending.current?.key === 'g' && Date.now() - pending.current.at < 1200) {
-        pending.current = null;
-        const dest: Record<string, string> = {
-          t: 'tasks/today',
-          m: 'tasks/my',
-          u: 'tasks/upcoming',
-          e: 'tasks/team',
-          a: 'tasks/all',
-          c: 'tasks/calendar',
-          d: 'tasks/completed',
-          s: 'settings',
-          n: 'notes',
-        };
-        if (dest[k]) {
-          e.preventDefault();
-          navigate(`/w/${wsId}/${dest[k]}`);
-        }
-        return;
-      }
-      if (k === 'g') {
-        pending.current = { key: 'g', at: Date.now() };
-        return;
-      }
-      const canEdit = s.workspaces.find((w) => w.id === wsId)?.role !== 'viewer';
-      if (k === 'q' && canEdit) {
-        e.preventDefault();
-        const m = locRef.current.match(/\/p\/([^/]+)/);
-        ui.openQuickAdd(m ? { pageId: m[1] } : {});
-      } else if (e.key === '?') {
-        e.preventDefault();
-        ui.setShortcuts(true);
-      } else if (k === 'n' && canEdit) {
-        // New page in the current page's section (or the first section).
-        e.preventDefault();
-        const m = locRef.current.match(/\/p\/([^/]+)/);
-        const current = m ? s.tree.pages.find((p) => p.id === m[1]) : undefined;
-        const sectionId = current?.sectionId ?? s.tree.sections[0]?.id;
-        if (!sectionId) return toast('Create a notebook first');
-        try {
-          const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
-          navigate(`/w/${wsId}/p/${id}`);
-        } catch (err) {
-          errorToast(err);
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [wsId, navigate]);
 }
 
 /**

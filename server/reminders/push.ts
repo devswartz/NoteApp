@@ -60,7 +60,13 @@ export function saveSubscription(userId: string, sub: PushSubscriptionInput, use
     sub.keys.auth.length > 200
   )
     throw new HttpError(400, 'Invalid push subscription');
-  // An endpoint belongs to one browser; if another user signs in there, it moves to them.
+  // An endpoint belongs to one browser. If another user signs in there, the
+  // old owner's row is removed so their reminders stop going to this browser.
+  const prev = db.prepare('SELECT user_id FROM push_subscriptions WHERE endpoint = ?').get(sub.endpoint) as { user_id: string } | undefined;
+  if (prev && prev.user_id !== userId) {
+    db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(sub.endpoint);
+    console.info('Push subscription re-registered by a different user; removed it from the previous user');
+  }
   db.prepare(
     `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh, auth, user_agent, created_at)
      VALUES (@id, @userId, @endpoint, @p256dh, @auth, @ua, @ts)
