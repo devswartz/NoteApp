@@ -1,0 +1,13 @@
+# Runs noteapp-update@<env>.service every 5 minutes.
+#   systemctl enable --now noteapp-update@staging.timer
+[Unit]
+Description=Update NoteApp (%i) every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
