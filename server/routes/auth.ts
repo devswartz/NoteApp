@@ -49,6 +49,8 @@ async function setPassword(userId: string, password: string) {
   })();
 }
 
+const SIGNUP_CLOSED = 'Sign-up is by invitation only. Ask a workspace admin to invite you, then use the link in the email.';
+
 /**
  * In invite mode an account can be created only with a pending, unexpired
  * invite for that email, or to bootstrap the server: the very first account,
@@ -75,7 +77,7 @@ publicAuthRoutes.post(
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address');
     validPassword(password);
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
-    if (!maySignUp(email)) throw new HttpError(403, 'Sign-up is by invitation only. Ask a workspace admin to invite you, then use the link in the email.');
+    if (!maySignUp(email)) throw new HttpError(403, SIGNUP_CLOSED); // fail fast, before the slow hash
     const id = newId();
     const ts = now();
     const color = pickColor();
@@ -83,6 +85,10 @@ publicAuthRoutes.post(
     db.transaction(() => {
       // Re-check: another sign-up with this email may have landed while hashing.
       if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
+      // And re-check permission here, atomically with the insert: two concurrent sign-ups on an
+      // empty server must not both count as "the first account", and an invite revoked or
+      // expired while hashing must not still work. The invite is consumed below, in this transaction.
+      if (!maySignUp(email)) throw new HttpError(403, SIGNUP_CLOSED);
       db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
         id, email, name, hash, color, ts,
       );
