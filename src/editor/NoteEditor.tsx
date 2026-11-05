@@ -33,6 +33,7 @@ import {
   PanelTop,
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
+import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
@@ -125,6 +126,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
       editable: canEdit,
       extensions: [
         ...documentExtensions(pageId),
+        UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
         ...collabExtensions(session, user),
       ],

@@ -13,6 +13,7 @@ import { Dropdown } from '../components/ui.tsx';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from '../components/TaskRow.tsx';
 import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
+import { markCreatedHere } from './undoTasks.ts';
 
 export interface TaskRefOptions {
   pageId: string;
@@ -43,6 +44,7 @@ const freshTasks = new Set<string>();
 
 function newTask(pageId: string, title = '', patch: TaskPatch = {}): string {
   const id = newTaskId();
+  markCreatedHere(id);
   const me = useStore.getState().user?.id ?? null;
   if (!title) freshTasks.add(id);
   const { status, ...rest } = patch;
