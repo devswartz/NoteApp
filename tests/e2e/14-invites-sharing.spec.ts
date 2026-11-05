@@ -109,7 +109,6 @@ test.describe('sharing a private notebook with people', () => {
   });
 
   test('the share dialog is reachable from the notebook menu', async ({ page, context, request }) => {
-    test.fixme(true, 'waiting for feature: ShareDialog (#14) has no entry point; openShareDialog() is never called (sidebar notebook menu still offers only Make private/Share with workspace)');
     const alice = await createUser(request, 'Alice Dialog');
     await createPage(request, alice, { notebook: 'Dialog Notebook', visibility: 'private' });
     await signInContext(context, alice);
@@ -117,7 +116,7 @@ test.describe('sharing a private notebook with people', () => {
     const nbRow = page.locator('.sb-row', { hasText: 'Dialog Notebook' });
     await nbRow.hover();
     await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
-    await page.getByRole('menuitem', { name: /Share/ }).first().click();
+    await page.getByRole('menuitem', { name: 'Share with people…' }).click();
     await expect(page.getByRole('dialog', { name: 'Share Dialog Notebook' })).toBeVisible();
   });
 });

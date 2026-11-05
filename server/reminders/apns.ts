@@ -4,7 +4,11 @@
 //   APNS_TEAM_ID      Apple developer team id
 //   APNS_BUNDLE_ID    the iOS app's bundle id (the apns-topic)
 //   APNS_PRIVATE_KEY  contents of the .p8 file (newlines may be written as \n)
-//   APNS_ENV          'production' (default) or 'sandbox' (development builds)
+//   APNS_ENV          the environment to try first: 'production' (default) or 'sandbox'.
+//                     Builds run from Xcode get sandbox tokens and TestFlight/App
+//                     Store builds production tokens; a token the first environment
+//                     rejects as BadDeviceToken is retried on the other one, and the
+//                     one that works is remembered, so both kinds of build get pushes.
 import http2 from 'node:http2';
 import jwt from 'jsonwebtoken';
 import { TargetGoneError, type DeliveryChannel, type Notice } from './channels.ts';
@@ -26,7 +30,7 @@ export function apnsConfig(): ApnsConfig | null {
     teamId: APNS_TEAM_ID,
     bundleId: APNS_BUNDLE_ID,
     privateKey: pem(APNS_PRIVATE_KEY),
-    host: APNS_ENV === 'sandbox' ? 'api.sandbox.push.apple.com' : 'api.push.apple.com',
+    host: APNS_ENV === 'sandbox' ? APNS_HOSTS.sandbox : APNS_HOSTS.production,
   };
 }
 
@@ -71,8 +75,13 @@ export function apnsPayload(n: Notice) {
   };
 }
 
+export const APNS_HOSTS = { production: 'api.push.apple.com', sandbox: 'api.sandbox.push.apple.com' } as const;
+const otherHost = (host: string) => (host === APNS_HOSTS.sandbox ? APNS_HOSTS.production : APNS_HOSTS.sandbox);
+
 export function apnsChannel(send: ApnsSender = http2Send, config: () => ApnsConfig | null = apnsConfig): DeliveryChannel {
   let cached: { token: string; at: number; key: string } | null = null;
+  /** Device token → the APNs host that accepted it (sandbox vs production build). */
+  const hostFor = new Map<string, string>();
   const authToken = (c: ApnsConfig) => {
     // Apple wants the token refreshed at most every 20 min and at least every hour.
     const key = `${c.keyId}|${c.teamId}`;
@@ -96,18 +105,35 @@ export function apnsChannel(send: ApnsSender = http2Send, config: () => ApnsConf
         'apns-expiration': String(Math.floor(Date.now() / 1000) + 12 * 3600),
       };
       if (n.tag) headers['apns-collapse-id'] = n.tag.slice(0, 64);
-      const res = await send({ host: c.host, path: `/3/device/${token}`, headers, body: JSON.stringify(apnsPayload(n)) });
-      if (res.status === 200) return markDeviceSuccess(token);
-      let reason = '';
-      try {
-        reason = JSON.parse(res.body).reason ?? '';
-      } catch {
-        /* empty body */
+      const reasonOf = (body: string) => {
+        try {
+          return (JSON.parse(body).reason as string | undefined) ?? '';
+        } catch {
+          return ''; // empty body
+        }
+      };
+      const attempt = (host: string) => send({ host, path: `/3/device/${token}`, headers, body: JSON.stringify(apnsPayload(n)) });
+      const known = hostFor.get(token);
+      let host = known ?? c.host;
+      let res = await attempt(host);
+      let reason = res.status === 200 ? '' : reasonOf(res.body);
+      // A sandbox token sent to production (or the reverse) is "BadDeviceToken": try the other environment once.
+      if (!known && res.status === 400 && reason === 'BadDeviceToken') {
+        host = otherHost(host);
+        res = await attempt(host);
+        reason = res.status === 200 ? '' : reasonOf(res.body);
+      }
+      if (res.status === 200) {
+        hostFor.set(token, host);
+        return markDeviceSuccess(token);
       }
       if (res.status === 410 || reason === 'BadDeviceToken' || reason === 'Unregistered' || reason === 'DeviceTokenNotForTopic')
         throw new TargetGoneError(`APNs: ${reason || res.status}`);
       throw new Error(`APNs ${res.status} ${reason}`);
     },
-    forget: forgetDeviceToken,
+    forget: (token) => {
+      hostFor.delete(token);
+      forgetDeviceToken(token);
+    },
   };
 }
