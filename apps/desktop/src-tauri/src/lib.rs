@@ -1,4 +1,4 @@
-//! NoteApp desktop shell. The window loads the bundled web app (dist/), so it
+//! Notivelo desktop shell. The window loads the bundled web app (dist/), so it
 //! starts instantly and opens offline; only the API is remote (see config.rs).
 //! Everything app-specific happens in the web app; this side adds what a
 //! browser can't: keychain, app menu (macOS), tray, global hotkey, deep links,

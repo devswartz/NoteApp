@@ -1,4 +1,4 @@
-# NoteApp
+# Notivelo
 
 Collaborative notes with built-in task management. Notebooks, sections and pages like OneNote, a block editor like Notion, and tasks like Todoist. **A task you write inside a note is a real task**: it shows up on your dashboard, stays linked to its note, and stays in sync everywhere it appears.
 
