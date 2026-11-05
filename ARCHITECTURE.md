@@ -200,6 +200,8 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 | `TaskRef.tsx` | The `taskRef` node (live task: checkbox, title, priority, due date, assignee), `[] ` input rule, `insertTask`, and **`convertToTask`** (command) / **`convertToTasks(editor)`** (returns the new ids): the current line or every line in a selection becomes a task |
 | `SlashMenu.tsx` | `/` menu: items, ranking, the suggestion plugin |
 | `LinkEditor.tsx` | Inline link editor (⌘K with a selection; ⌘K without one goes to the command palette) |
+| `PageLink.tsx`, `pageItems.ts` | `[[` page links: inline `pageLink[pageId]` node showing the page's live title and icon; the `[[` picker (search pages, or create one). Backlinks: `GET /pages/:id/backlinks` (`server/links.ts`, a lazily rebuilt in-memory index keyed by `pages.updated_at`) |
+| `templates.ts`, `TemplatePicker.tsx` | Built-in page templates (ProseMirror JSON) and the "Start with a template" row on empty pages (shown only after the server copy has synced). `applyTemplate(editor, pageId, template)` sets content, title and icon |
 | `IconPicker.tsx` | Emoji picker for page icons |
 | `upload.ts` | `uploadFile()` → `POST /workspaces/:id/files` |
 
