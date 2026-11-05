@@ -1,12 +1,12 @@
 // Workspaces and the current workspace's tree and members.
-import { get } from '../api.ts';
 import { emptyTree, set, st } from './state.ts';
 import { loadTasks } from './tasks.ts';
+import { cached } from './cache.ts';
 import type { Member, PendingInvite, Tree, Workspace } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
 
 export async function loadWorkspaces() {
-  const workspaces = await get<Workspace[]>('/workspaces');
+  const workspaces = await cached<Workspace[]>('workspaces', '/workspaces');
   set({ workspaces });
   return workspaces;
 }
@@ -21,14 +21,14 @@ export async function selectWorkspace(wsId: string) {
 export async function loadTree() {
   const wsId = st().wsId;
   if (!wsId) return;
-  const tree = await get<Tree>(`/workspaces/${wsId}/tree`);
+  const tree = await cached<Tree>(`tree:${wsId}`, `/workspaces/${wsId}/tree`);
   if (st().wsId === wsId) set({ tree, treeLoaded: true });
 }
 
 export async function loadMembers() {
   const wsId = st().wsId;
   if (!wsId) return;
-  const r = await get<{ members: Member[]; invites: PendingInvite[] }>(`/workspaces/${wsId}/members`);
+  const r = await cached<{ members: Member[]; invites: PendingInvite[] }>(`members:${wsId}`, `/workspaces/${wsId}/members`);
   if (st().wsId === wsId) set({ members: r.members, invites: r.invites });
 }
 

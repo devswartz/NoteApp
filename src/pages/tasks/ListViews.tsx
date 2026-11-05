@@ -1,9 +1,10 @@
 // Today, My Tasks, Upcoming and Team views.
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store.ts';
-import { TaskGroups, TaskRow } from '../../components/TaskRow.tsx';
+import { RowList, TaskGroups } from '../../components/TaskRow.tsx';
 import { Avatar } from '../../components/ui.tsx';
-import { groupBy, isMine, memberStats, sortTasks, todayGroups, upcomingGroups, type GroupKey } from '../../lib/taskViews.ts';
+import { groupBy, isMine, memberStats, productivity, sortTasks, todayGroups, upcomingGroups, type GroupKey } from '../../lib/taskViews.ts';
+import { addDays, parseISODate, today } from '../../../shared/dates.ts';
 import { Loading, Segmented, useOpen } from './common.tsx';
 
 export function TodayView() {
@@ -15,6 +16,7 @@ export function TodayView() {
   const empty = groups.every((g) => !g.tasks.length);
   return (
     <>
+      <ProductivityStrip />
       <TaskGroups groups={groups} emptyText="" />
       {empty && (
         <div className="empty-state">
@@ -132,13 +134,59 @@ export function TeamView() {
               {p.name}
               <span className="group-count">{list.length || ''}</span>
             </h3>
-            {list.map((t) => (
-              <TaskRow key={t.id} task={t} />
-            ))}
+            <RowList tasks={list} />
             {!list.length && <p className="muted small pad">No open tasks.</p>}
           </section>
         );
       })}
     </>
+  );
+}
+
+/** Done today, what's left, completion streak and the last 7 days. */
+function ProductivityStrip() {
+  const tasks = useStore((s) => s.tasks);
+  const me = useStore((s) => s.user!.id);
+  const p = useMemo(() => productivity(Object.values(tasks), me), [tasks, me]);
+  const total = p.doneToday + p.left;
+  const max = Math.max(1, ...p.week);
+  const dayName = new Intl.DateTimeFormat(undefined, { weekday: 'narrow' });
+  const t = today();
+  return (
+    <div className="prod-strip" aria-label="Your progress">
+      <div className="prod-stat">
+        <b>{p.doneToday}</b>
+        <span>done today</span>
+      </div>
+      <div className="prod-stat">
+        <b>{p.left}</b>
+        <span>left</span>
+      </div>
+      <div className="prod-stat" title="Days in a row with at least one completed task">
+        <b>
+          {p.streak}
+          {p.streak >= 30 ? '+' : ''}
+        </b>
+        <span>day streak{p.streak >= 3 ? ' 🔥' : ''}</span>
+      </div>
+      <div className="prod-week" aria-label="Completed per day, last 7 days">
+        {p.week.map((n, i) => {
+          const d = addDays(t, i - 6);
+          return (
+            <div key={d} className="prod-day" title={`${n} completed`}>
+              <div className="prod-bar">
+                <div style={{ height: `${(n / max) * 100}%` }} className={d === t ? 'is-today' : ''} />
+              </div>
+              <span>{dayName.format(parseISODate(d))}</span>
+            </div>
+          );
+        })}
+      </div>
+      {total > 0 && (
+        <div className="progress prod-progress" title={`${p.doneToday} of ${total} for today`}>
+          <div style={{ width: `${(p.doneToday / total) * 100}%` }} />
+        </div>
+      )}
+    </div>
   );
 }

@@ -5,6 +5,7 @@ import { setUnauthorizedHandler } from './api.ts';
 import { AppShell } from './components/AppShell.tsx';
 import { Toasts } from './components/Overlays.tsx';
 import { DeepLinks } from './components/DeepLinks.tsx';
+import { AppUpdates } from './components/AppUpdates.tsx';
 import { Login } from './pages/Login.tsx';
 import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
 import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
@@ -46,6 +47,7 @@ export function App() {
       </Routes>
       <Toasts />
       {user && <DeepLinks />}
+      <AppUpdates />
       {user && <ShareDialogHost />}
     </BrowserRouter>
   );

@@ -281,3 +281,151 @@ test('task changes are pushed live to other members; hidden tasks arrive as task
     sock.close();
   }
 });
+
+test('reconcile through the collab socket: removing a taskRef detaches it, adding one links it', async () => {
+  const u = await app.signUp('Collab');
+  const Y = await import('yjs');
+  const { WebsocketProvider } = await import('y-websocket');
+  const { seedPageDoc, flushAll } = await import('../server/collab.ts');
+  const { getTask } = await import('../server/tasks.ts');
+  const { pageId } = await makePage(u, u.wsId);
+  const inNote = (await create(u, u.wsId, { title: 'In note', pageId })).data;
+  const loose = (await create(u, u.wsId, { title: 'Loose' })).data;
+  seedPageDoc(pageId, (frag) => {
+    const ref = new Y.XmlElement('taskRef');
+    ref.setAttribute('taskId', inNote.id);
+    frag.insert(0, [ref]);
+  });
+
+  const token = u.token;
+  class AuthedWS extends WebSocket {
+    constructor(url: string) {
+      super(url, ['noteapp.v1', `bearer.${token}`]);
+    }
+  }
+  const doc = new Y.Doc();
+  const provider = new WebsocketProvider(`${app.wsOrigin}/collab`, pageId, doc, {
+    WebSocketPolyfill: AuthedWS as unknown as typeof globalThis.WebSocket,
+    disableBc: true,
+  });
+  try {
+    await new Promise<void>((res, rej) => {
+      const t = setTimeout(() => rej(new Error('collab sync timed out')), 3000);
+      provider.once('sync', () => (clearTimeout(t), res()));
+    });
+    const frag = doc.getXmlFragment('default');
+    assert.equal((frag.get(0) as InstanceType<typeof Y.XmlElement>).getAttribute('taskId'), inNote.id);
+    doc.transact(() => {
+      frag.delete(0, 1);
+      const ref = new Y.XmlElement('taskRef');
+      ref.setAttribute('taskId', loose.id);
+      frag.insert(0, [ref]);
+    });
+    // Wait for the server to receive the update, then save without waiting for the debounce.
+    for (let i = 0; i < 50 && getTask(loose.id)!.pageId !== pageId; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      flushAll();
+    }
+    assert.equal(getTask(loose.id)!.pageId, pageId, 'task added to the note is linked to it');
+    assert.equal(getTask(inNote.id)!.pageId, null, 'task removed from the note becomes standalone');
+  } finally {
+    const sock = provider.ws as unknown as WebSocket | null;
+    provider.destroy();
+    provider.awareness.destroy(); // its check interval would keep the test process alive
+    doc.destroy();
+    if (sock && sock.readyState !== WebSocket.CLOSED) await new Promise((r) => sock.once('close', r));
+  }
+});
+
+test('tasks expose parentId (migration 007); top-level tasks have none', async () => {
+  const u = await app.signUp('Parent');
+  const t = (await create(u, u.wsId, { title: 'Top' })).data;
+  assert.equal(t.parentId, null);
+  const { db } = await import('../server/db.ts');
+  const idx = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'").all() as { name: string }[]).map((r) => r.name);
+  assert.ok(idx.includes('tasks_parent') && idx.includes('tasks_ws_completed'));
+});
+
+// ───────────── Subtasks ─────────────
+
+test('subtasks: one level, follow the parent’s note, deleted with the parent', async () => {
+  const u = await app.signUp('Subber');
+  const { syncPageTasks, getTask } = await import('../server/tasks.ts');
+  const p1 = (await makePage(u, u.wsId)).pageId;
+  const p2 = (await makePage(u, u.wsId)).pageId;
+  const parent = (await create(u, u.wsId, { title: 'Parent', pageId: p1 })).data;
+  const child = (await create(u, u.wsId, { title: 'Child', parentId: parent.id, pageId: p2 })).data;
+  assert.equal(child.parentId, parent.id);
+  assert.equal(child.pageId, p1, 'a subtask lives in its parent’s note, whatever the client sent');
+
+  assert.equal((await create(u, u.wsId, { title: 'Grandchild', parentId: child.id })).status, 400, 'one level only');
+  assert.equal((await app.call('PATCH', `/tasks/${parent.id}`, u.token, { parentId: parent.id })).status, 400);
+  const other = (await create(u, u.wsId, { title: 'Other' })).data;
+  assert.equal((await app.call('PATCH', `/tasks/${parent.id}`, u.token, { parentId: other.id })).status, 400, 'a parent cannot become a subtask');
+  assert.equal((await app.call('PATCH', `/tasks/${child.id}`, u.token, { pageId: p2 })).status, 400, 'a subtask cannot leave its parent’s note');
+
+  // Saving p1 (which embeds only the parent) must not detach the subtask.
+  syncPageTasks(p1, u.wsId, new Set([parent.id]));
+  assert.equal(getTask(child.id)!.pageId, p1);
+  // Moving the parent to p2 moves the subtask too.
+  syncPageTasks(p2, u.wsId, new Set([parent.id]));
+  syncPageTasks(p1, u.wsId, new Set());
+  assert.equal(getTask(parent.id)!.pageId, p2);
+  assert.equal(getTask(child.id)!.pageId, p2);
+
+  // Promote back to a top-level standalone task.
+  const promoted = await app.call<Task>('PATCH', `/tasks/${child.id}`, u.token, { parentId: null });
+  assert.equal(promoted.data.parentId, null);
+  assert.equal(promoted.data.pageId, null);
+  // Re-parent onto `other`, then delete `other`: the subtask goes with it.
+  assert.equal((await app.call<Task>('PATCH', `/tasks/${child.id}`, u.token, { parentId: other.id })).data.parentId, other.id);
+  assert.equal((await app.call('DELETE', `/tasks/${other.id}`, u.token)).status, 200);
+  assert.equal(getTask(child.id), null);
+});
+
+test('subtasks of a private-notebook task are as private as their parent', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const parent = (await create(owner, wsId, { title: 'Secret parent', pageId })).data;
+  const child = (await create(owner, wsId, { title: 'Secret child', parentId: parent.id })).data;
+  const seen = (await list(other, wsId)).data.map((t) => t.id);
+  assert.ok(!seen.includes(parent.id) && !seen.includes(child.id));
+  assert.equal((await create(other, wsId, { title: 'Sneaky', parentId: parent.id })).status, 400, 'cannot attach to an invisible parent');
+});
+
+test('completion history of a recurring private-note task stays private', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const t = (await create(owner, wsId, { title: 'Secret recurring', pageId, dueDate: '2026-11-05', recurrence: { freq: 'week', interval: 1 } })).data;
+  assert.equal((await app.call('PATCH', `/tasks/${t.id}`, owner.token, { status: 'done' })).status, 200);
+  const mine = (await app.call<Task[]>('GET', `/workspaces/${wsId}/tasks/completed`, owner.token)).data;
+  const history = mine.find((x) => x.title === 'Secret recurring' && x.status === 'done');
+  assert.ok(history, 'the owner sees the completed occurrence');
+  assert.equal(history!.pageId, pageId, 'history keeps the note');
+  for (const path of [`/workspaces/${wsId}/tasks`, `/workspaces/${wsId}/tasks/completed`]) {
+    const seen = (await app.call<Task[]>('GET', path, other.token)).data;
+    assert.ok(!seen.some((x) => x.title === 'Secret recurring'), `hidden from other members in ${path}`);
+  }
+  // Reconciling the note doesn't detach the history row (it isn't embedded).
+  const { syncPageTasks, getTask } = await import('../server/tasks.ts');
+  syncPageTasks(pageId, wsId, new Set([t.id]));
+  assert.equal(getTask(history!.id)!.pageId, pageId);
+});
+
+test('subtasks need edit access to the parent’s note; recurring parents reopen their subtasks', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const assigned = (await create(owner, wsId, { title: 'Yours, in my private note', pageId, assigneeId: other.user.id })).data;
+  assert.equal((await create(other, wsId, { title: 'Sneaky sub', parentId: assigned.id })).status, 400, 'same rule as a top-level task in that note');
+  assert.equal((await create(owner, wsId, { title: 'Owner sub', parentId: assigned.id })).status, 200);
+
+  const parent = (await create(owner, wsId, { title: 'Weekly review', dueDate: '2026-11-05', recurrence: { freq: 'week', interval: 1 } })).data;
+  const sub = (await create(owner, wsId, { title: 'Collect numbers', parentId: parent.id })).data;
+  await app.call('PATCH', `/tasks/${sub.id}`, owner.token, { status: 'done' });
+  const rolled = (await app.call<Task>('PATCH', `/tasks/${parent.id}`, owner.token, { status: 'done' })).data;
+  assert.equal(rolled.status, 'open');
+  assert.ok(rolled.dueDate! > '2026-11-05');
+  const { getTask } = await import('../server/tasks.ts');
+  assert.equal(getTask(sub.id)!.status, 'open', 'subtask reopened for the next occurrence');
+  assert.equal(getTask(sub.id)!.completedAt, null);
+});
