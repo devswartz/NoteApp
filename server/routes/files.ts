@@ -24,7 +24,7 @@ import path from 'node:path';
 import { HttpError, h, param } from '../http.ts';
 import { DATA_DIR, FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
-import { pageAccess, requireRole } from '../access.ts';
+import { pageAccess, requireRole, roleIn } from '../access.ts';
 import type { UploadedFile } from '../../shared/types.ts';
 
 // Dev databases created before DATA_DIR kept files in data/uploads.
@@ -138,11 +138,18 @@ fileRoutes.get(
   '/files/:id',
   h((req) => {
     const row = db.prepare('SELECT * FROM files WHERE id = ?').get(param(req, 'id')) as
-      | { id: string; workspace_id: string | null; name: string; ext: string; mime: string; size: number; created_by: string }
+      | { id: string; workspace_id: string | null; page_id: string | null; name: string; ext: string; mime: string; size: number; created_by: string }
       | undefined;
     if (!row) throw new HttpError(404, 'Not found');
-    if (row.workspace_id) requireRole(row.workspace_id, req.user.id, 'viewer');
-    else if (row.created_by !== req.user.id) throw new HttpError(404, 'Not found');
+    // A file attached to a page is visible exactly to the people who can view that page
+    // (private notebooks included); otherwise to workspace members, or for legacy
+    // workspace-less uploads only to the uploader. Always 404, never 403, so ids can't be probed.
+    const visible = row.page_id
+      ? !!pageAccess(row.page_id, req.user.id)
+      : row.workspace_id
+        ? roleIn(row.workspace_id, req.user.id) !== null
+        : row.created_by === req.user.id;
+    if (!visible) throw new HttpError(404, 'Not found');
     return { id: row.id, url: `/uploads/${row.id}${row.ext}`, name: row.name, mime: row.mime, size: row.size } satisfies UploadedFile;
   }),
 );
