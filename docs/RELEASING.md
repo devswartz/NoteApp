@@ -11,10 +11,18 @@ Images live at `ghcr.io/devswartz/noteapp` and are built by
 
 `GET /api/health` reports the git SHA the running image was built from.
 
-Images are published by the `publish` job in the **CI** workflow, and only after
-`check`, `docker` (and `e2e`, once it exists) pass. To re-publish `:staging`
-by hand, run **Publish image** from the Actions tab on `main`. Note that this
-skips CI, and runs on any other branch do nothing.
+Images are published by the `publish` job in the **CI** workflow
+(`.github/workflows/ci.yml`, which calls `publish.yml`), and only after `check`,
+`docker` and `e2e` pass. To re-publish `:staging` by hand, run **Publish image**
+from the Actions tab on `main`. Note that this skips CI, and runs on any other
+branch do nothing.
+
+A version tag `vX.Y.Z` also starts the **Desktop** workflow (macOS/Windows
+installers in a draft GitHub Release; see `docs/DESKTOP.md`) and the **Mobile**
+workflow (Android build, iOS build, TestFlight when its secrets exist; see
+`docs/MOBILE.md`). They run independently of the image and don't block it.
+Pre-release tags (`vX.Y.Z-rc.N`) start them too. `mobile-vX.Y.Z` builds only
+the mobile apps.
 
 ## Staging
 Merge a PR into `main`. CI publishes `:staging`, and the homelab timer
@@ -29,12 +37,15 @@ Check: `curl -s https://notes-staging.devswartz.com/api/health`.
    git tag -a v1.2.3 -m "v1.2.3" <sha>    # usually origin/main
    git push origin v1.2.3
    ```
-3. Wait for the **Publish image** workflow to finish (Actions tab). It pushes `:v1.2.3` and moves `:prod`.
+3. Wait for the **CI** run for the tag to finish (Actions tab): `check` → `docker` → `e2e` → `publish`. The `publish` job pushes `:v1.2.3` and moves `:prod`; if any check fails, nothing is published.
 4. Prod picks it up on the next timer run, or right away with:
    `sudo systemctl start noteapp-update@prod.service`
 5. Check: `curl -s https://notes.devswartz.com/api/health`.
 
+6. Desktop: check the **Desktop** run, review its draft release, and **publish** it. That's what ships the update to installed apps.
+
 Versions follow semver: `vMAJOR.MINOR.PATCH`. Never re-push an existing tag.
+The first release, with every one-time setup step, is walked through in `docs/LAUNCH_CHECKLIST.md`.
 
 ## Roll back
 On the homelab, pin the previous good tag for that environment:

@@ -1,20 +1,24 @@
 // API client: base URL, bearer-token session (access + rotating refresh token),
 // JSON fetch wrapper with one transparent refresh-and-retry on 401.
 //
-// - The API base is the server the desktop shell injects (__NOTEAPP_API_URL__),
-//   else VITE_API_URL (other shells, other origins), else the page's own
+// - The API base is the server the desktop shell injects (__NOTEAPP_API_URL__)
+//   or the one picked in the mobile app, else VITE_API_URL (other shells, other origins), else the page's own
 //   origin. WebSocket URLs are derived from it.
 // - The access token lives only in memory. The refresh token is persisted
 //   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
 //   tab and serialized across tabs, each reading the latest stored token.
 import type { AuthSession } from '../shared/types.ts';
 import { detectPlatform, platform } from './platform/index.ts';
+import { storedServerUrl } from './platform/serverUrl.ts';
 
 // The desktop shell injects its configured server before any script runs. Only
 // trusted inside Tauri and only as a string, so a DOM element with that id
 // (DOM clobbering) can't redirect the web build's API calls.
 const injectedApiUrl = (globalThis as { __NOTEAPP_API_URL__?: unknown }).__NOTEAPP_API_URL__;
-const shellApiUrl = detectPlatform() === 'tauri' && typeof injectedApiUrl === 'string' ? injectedApiUrl : undefined;
+// The mobile shell keeps the server the user picked (src/platform/serverUrl.ts); re-validated here.
+const kind = detectPlatform();
+const shellApiUrl =
+  kind === 'tauri' && typeof injectedApiUrl === 'string' ? injectedApiUrl : kind === 'capacitor' ? (storedServerUrl() ?? undefined) : undefined;
 const API_BASE = (shellApiUrl ?? import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 /** Absolute or same-origin URL for an API path ("/me" → ".../api/me"). */
@@ -140,8 +144,38 @@ export async function freshAccessToken(): Promise<string | null> {
 
 // ───────────── Requests ─────────────
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  /** Server request id (X-Request-Id), to match a report with the server log. */
+  requestId?: string;
+  constructor(public status: number, message: string, requestId?: string | null) {
     super(message);
+    this.requestId = requestId ?? undefined;
+  }
+}
+
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * fetch with retries for safe requests (GET/HEAD): network errors and
+ * 502/503/504 (a restarting server or proxy) are retried twice with backoff.
+ * Writes are never retried, so they can't be applied twice.
+ */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  const tries = method === 'GET' || method === 'HEAD' ? 3 : 1;
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (i + 1 < tries && RETRYABLE_STATUS.has(res.status)) {
+        await sleep(400 * 3 ** i);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      // Known offline: fail fast so the offline cache can answer.
+      if (i + 1 >= tries || (typeof navigator !== 'undefined' && !navigator.onLine)) throw e;
+      await sleep(400 * 3 ** i);
+    }
   }
 }
 
@@ -162,13 +196,13 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     headers.set('Content-Type', 'application/json');
     body = JSON.stringify(init.json);
   }
-  const res = await fetch(apiUrl(path), { ...init, headers, body });
+  const res = await fetchWithRetry(apiUrl(path), { ...init, headers, body });
   if (res.status === 401 && !isAuth) {
     if (retry && (await refreshSession().catch(() => null))) return api<T>(path, init, false);
     onUnauthorized();
   }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`, data?.requestId ?? res.headers.get('x-request-id'));
   return data as T;
 }
 

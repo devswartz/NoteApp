@@ -11,7 +11,23 @@ export const DB_FILE = process.env.DB_FILE ?? path.join(DATA_DIR, 'noteapp.db');
 export const FILES_DIR = path.join(DATA_DIR, 'files');
 
 export const PORT = Number(process.env.PORT ?? 3001);
+/** Public origin of the web app, used in emailed links. Required in production (contract). */
+export const PUBLIC_URL = (process.env.PUBLIC_URL || (IS_PROD ? '' : 'http://localhost:5173')).replace(/\/+$/, '');
 /** Build identifier reported by /api/health: the git SHA or tag baked in at image build time. */
 export const VERSION = process.env.GIT_SHA || 'dev';
 /** Load demo content into an empty database on startup (staging only). */
 export const SEED_DEMO = process.env.SEED_DEMO === '1';
+
+/**
+ * Who may create an account (PLAN.md: invite-only).
+ *   invite — only people with a pending invite, plus bootstrap (the first
+ *            account, or an email listed in ADMIN_EMAILS)
+ *   open   — anyone
+ * Default: invite in production, open in local development. Read on each call
+ * so tests can switch it.
+ */
+export function signupMode(): 'invite' | 'open' {
+  const v = process.env.SIGNUP_MODE;
+  if (v === 'open' || v === 'invite') return v;
+  return process.env.NODE_ENV === 'production' ? 'invite' : 'open';
+}

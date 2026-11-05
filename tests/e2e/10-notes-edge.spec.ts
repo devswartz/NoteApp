@@ -111,3 +111,20 @@ test('theme preference: dark mode applies and persists', async ({ page, context,
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
+
+// BUG-3 (docs/QA.md), fixed: the debounced title save is flushed when leaving the page.
+test('a page title typed just before navigating away is still saved', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Quick Renamer');
+  const { pageId } = await createPage(request, user, { page: 'Original title' });
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  await page.locator('.page-title').fill('Renamed right before leaving');
+  await page.getByRole('link', { name: 'Today' }).click();
+  await expect(page).toHaveURL(/\/tasks\/today$/);
+  await eventually(
+    () => api<{ page: { title: string } }>(request, 'GET', `/pages/${pageId}`, user.token),
+    (r) => r.page.title === 'Renamed right before leaving',
+    'rename saved despite navigating away',
+  );
+  await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Renamed right before leaving')).toBeVisible();
+});
