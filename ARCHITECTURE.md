@@ -145,7 +145,7 @@ files (uploads: workspace_id, page_id, name, mime, size)
     - tasks in the set get `page_id = this page` (e.g. moved or pasted from another note);
     - tasks that had `page_id = this page` but are no longer in the doc become standalone (`page_id = NULL`). They are never deleted silently.
     - Each changed task is broadcast as a `task` event.
-  - Deleting a page, section or notebook detaches its tasks (they become standalone) rather than deleting them.
+  - Deleting a page, section or notebook detaches its tasks (they become standalone) rather than deleting them. Tasks that leave a page in a **private** notebook this way (page deleted, or the `taskRef` removed) keep `private_owner_only = 1` (migration 010): they stay visible only to their creator and assignee until they're placed in a note again. Subtasks and recurring-completion history share their task's `page_id`, so they follow the same rule.
   - Recurring tasks: completing one inserts a completed copy (`occurrence_of` = original) for history and rolls the original forward to the next due date (`shared/dates.ts → nextOccurrence`), shifting `reminder_at` by the same offset.
 
 ## Auth
