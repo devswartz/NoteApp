@@ -5,17 +5,19 @@ name: Publish image
 #   tag vX.Y.Z        -> ghcr.io/devswartz/noteapp:vX.Y.Z  + :prod
 #   (a pre-release tag like v1.2.0-rc.1 gets its own tag but never :prod)
 
+# Called by ci.yml after CI passes on a push to main or a vX.Y.Z tag, so a
+# broken build is never published. workflow_dispatch re-publishes by hand
+# (run it on main to refresh :staging).
 on:
-  push:
-    branches: [main]
-    tags: ['v*.*.*']
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
   packages: write
 
-# Don't cancel: every merge should leave its :sha-<short> tag behind for rollbacks.
+# One publish at a time per ref, in order, so :staging always ends on the
+# newest commit. Never cancel a publish that has started.
 concurrency:
   group: publish-${{ github.ref }}
   cancel-in-progress: false
@@ -26,6 +28,8 @@ env:
 jobs:
   publish:
     name: publish
+    # Manual runs only publish from main (other refs would get no tags).
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

@@ -25,6 +25,8 @@ services:
       NODE_ENV: production
       PORT: "3001"
       DATA_DIR: /data
+      # Fails `docker compose up` if JWT_SECRET is missing or blank in .env.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env (openssl rand -base64 64)}
     volumes:
       - data:/data
     ports:

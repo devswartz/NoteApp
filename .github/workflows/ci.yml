@@ -4,14 +4,16 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*.*.*']
 
 permissions:
   contents: read
 
-# A new push to the same PR/branch cancels the run already in progress.
+# A new push to a PR cancels that PR's run in progress. Pushes to main and
+# tags never cancel each other (each one may publish an image).
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Require this job ("check") in branch protection for `main`.
@@ -97,3 +99,18 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # Publishes to GHCR only after every check above passed (e2e may be skipped
+  # while the suite doesn't exist). main -> :staging + :sha-<short>;
+  # tag vX.Y.Z -> :vX.Y.Z + :prod. See .github/workflows/publish.yml.
+  publish:
+    name: publish
+    needs: [check, docker, e2e]
+    if: >-
+      github.event_name == 'push' && !cancelled() &&
+      needs.check.result == 'success' && needs.docker.result == 'success' &&
+      (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
