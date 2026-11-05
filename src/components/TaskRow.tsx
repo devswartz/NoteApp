@@ -1,8 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileText, AlignLeft, CornerDownRight, ListChecks, Plus } from 'lucide-react';
+import { FileText, AlignLeft, CalendarClock, Check, CornerDownRight, ListChecks, Plus, RotateCcw } from 'lucide-react';
+import { SwipeRow } from './shell/SwipeRow.tsx';
 import { TaskIndicators } from './notifications/TaskIndicators.tsx';
-import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { createTask, toast, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { addDays, today } from '../../shared/dates.ts';
 import type { PageMeta, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
 import { subtaskIndex, type Group } from '../lib/taskViews.ts';
@@ -49,116 +51,130 @@ export const TaskRow = memo(function TaskRow({
     return () => el.removeEventListener(RENAME_EVENT, start);
   }, [canEdit]);
   return (
-    <div
-      ref={rowRef}
-      data-task-id={task.id}
-      aria-selected={selected || undefined}
-      className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''} ${selected ? 'is-selected' : ''}`}
-      onMouseDown={(e) => {
-        if (e.shiftKey && canEdit) e.preventDefault(); // no text selection on Shift-click
-      }}
-      onClick={(e) => {
-        if (editing) return;
-        // Ctrl/⌘-click toggles, Shift-click selects a range (bulk actions).
-        if (canEdit && (e.metaKey || e.ctrlKey || e.shiftKey)) {
-          e.preventDefault();
-          if (e.shiftKey) selection.extendTo(task.id);
-          else selection.toggle(task.id);
-          return;
-        }
-        if (useSelection.getState().ids.size) {
-          selection.toggle(task.id);
-          return;
-        }
-        clearTimeout(clickTimer.current);
-        if (canEdit && (e.target as HTMLElement).closest('.task-title')) {
-          if (e.detail < 2) clickTimer.current = setTimeout(() => ui.openTask(task.id), 250);
-          return;
-        }
-        ui.openTask(task.id);
-      }}
-      draggable={draggable}
-      onDragStart={(e) => {
-        e.dataTransfer.setData('application/x-task', task.id);
-        e.dataTransfer.effectAllowed = 'move';
-      }}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        // Other row keys (X, D, A, R, S, 1–4, J/K) are registered as shortcuts in pages/tasks/commands.tsx.
-        if (e.target !== e.currentTarget) return;
-        if (e.key === 'Enter') ui.openTask(task.id);
-        if (e.key === ' ' && canEdit) {
-          e.preventDefault();
-          toggleTask(task.id);
-        }
-      }}
+    <SwipeRow
+      disabled={!canEdit || editing}
+      right={{ label: done ? 'Reopen' : 'Complete', icon: done ? <RotateCcw size={18} /> : <Check size={18} />, tone: 'success', onTrigger: () => toggleTask(task.id) }}
+      left={{ label: 'Tomorrow', icon: <CalendarClock size={18} />, tone: 'accent', onTrigger: () => moveToTomorrow(task) }}
     >
-      <TaskCheckbox task={task} onToggle={() => toggleTask(task.id)} disabled={!canEdit} />
-      <div className="task-main">
-        {editing ? (
-          <TitleEditor
-            task={task}
-            onDone={(viaKey) => {
-              setEditing(false);
-              if (viaKey) rowRef.current?.focus();
-            }}
-          />
-        ) : (
-          <div
-            className="task-title"
-            title={canEdit ? 'Double-click (or press R) to rename' : undefined}
-            onDoubleClick={(e) => {
-              if (!canEdit) return;
-              e.stopPropagation();
-              clearTimeout(clickTimer.current);
-              setEditing(true);
-            }}
-          >
-            {task.title || <span className="muted">Untitled task</span>}
-          </div>
-        )}
-        <div className="task-meta">
-          <DueChip task={task} readOnly={!canEdit} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
-          <PriorityChip task={task} readOnly={!canEdit} onChange={(priority) => void updateTask(task.id, { priority })} />
-          {subs && subs.length > 0 && (
-            <span className={`chip ${subsDone === subs.length ? 'chip-active' : ''}`} title={`${subsDone} of ${subs.length} subtasks done`}>
-              <ListChecks size={12} /> {subsDone}/{subs.length}
-            </span>
-          )}
-          {parent && (
+      <div
+        ref={rowRef}
+        data-task-id={task.id}
+        className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''} ${selected ? 'is-selected' : ''}`}
+        onMouseDown={(e) => {
+          if (e.shiftKey && canEdit) e.preventDefault(); // no text selection on Shift-click
+        }}
+        onClick={(e) => {
+          if (editing) return;
+          // Ctrl/⌘-click toggles, Shift-click selects a range (bulk actions).
+          if (canEdit && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+            e.preventDefault();
+            if (e.shiftKey) selection.extendTo(task.id);
+            else selection.toggle(task.id);
+            return;
+          }
+          if (useSelection.getState().ids.size) {
+            selection.toggle(task.id);
+            return;
+          }
+          clearTimeout(clickTimer.current);
+          if (canEdit && (e.target as HTMLElement).closest('.task-title')) {
+            if (e.detail < 2) clickTimer.current = setTimeout(() => ui.openTask(task.id), 250);
+            return;
+          }
+          ui.openTask(task.id);
+        }}
+        draggable={draggable}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/x-task', task.id);
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+      >
+        <TaskCheckbox task={task} onToggle={() => toggleTask(task.id)} disabled={!canEdit} />
+        <div className="task-main">
+          {editing ? (
+            <TitleEditor
+              task={task}
+              onDone={(viaKey) => {
+                setEditing(false);
+                if (viaKey) setTimeout(() => rowRef.current?.querySelector<HTMLElement>('.task-title-btn')?.focus());
+              }}
+            />
+          ) : (
+            // The row is a plain container; the title is its one primary control (no
+            // interactive element nested in another). J/K focus it; the other row keys
+            // (X, D, A, R, S, 1–4) are shortcuts in pages/tasks/commands.tsx.
             <button
-              className="chip chip-btn chip-parent"
-              title={`Subtask of “${parent.title || 'Untitled'}”`}
-              onClick={(e) => {
+              type="button"
+              className="task-title task-title-btn"
+              title={canEdit ? 'Double-click (or press R) to rename' : undefined}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  ui.openTask(task.id);
+                } else if (e.key === ' ' && canEdit) {
+                  e.preventDefault();
+                  toggleTask(task.id);
+                }
+              }}
+              onDoubleClick={(e) => {
+                if (!canEdit) return;
                 e.stopPropagation();
-                ui.openTask(parent.id);
+                clearTimeout(clickTimer.current);
+                setEditing(true);
               }}
             >
-              <CornerDownRight size={12} /> <span className="truncate">{parent.title || 'Untitled'}</span>
+              {task.title || <span className="muted">Untitled task</span>}
             </button>
           )}
-          {task.description && <AlignLeft size={13} className="muted" aria-label="Has description" />}
-          <TaskIndicators task={task} />
-          {showSource && page && (
-            <Link
-              to={`/w/${wsId}/p/${page.id}?task=${task.id}`}
-              className="chip chip-link"
-              onClick={(e) => e.stopPropagation()}
-              title="Open in note"
-            >
-              <FileText size={12} />
-              <span className="truncate">{page.title || 'Untitled'}</span>
-            </Link>
-          )}
+          <div className="task-meta">
+            <DueChip task={task} readOnly={!canEdit} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
+            <PriorityChip task={task} readOnly={!canEdit} onChange={(priority) => void updateTask(task.id, { priority })} />
+            {subs && subs.length > 0 && (
+              <span className={`chip ${subsDone === subs.length ? 'chip-active' : ''}`} title={`${subsDone} of ${subs.length} subtasks done`}>
+                <ListChecks size={12} /> {subsDone}/{subs.length}
+              </span>
+            )}
+            {parent && (
+              <button
+                className="chip chip-btn chip-parent"
+                title={`Subtask of “${parent.title || 'Untitled'}”`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ui.openTask(parent.id);
+                }}
+              >
+                <CornerDownRight size={12} /> <span className="truncate">{parent.title || 'Untitled'}</span>
+              </button>
+            )}
+            {task.description && <AlignLeft size={13} className="muted" aria-label="Has description" />}
+            <TaskIndicators task={task} />
+            {showSource && page && (
+              <Link
+                to={`/w/${wsId}/p/${page.id}?task=${task.id}`}
+                className="chip chip-link"
+                onClick={(e) => e.stopPropagation()}
+                title="Open in note"
+              >
+                <FileText size={12} />
+                <span className="truncate">{page.title || 'Untitled'}</span>
+              </Link>
+            )}
+          </div>
+        </div>
+        <div className="task-side">
+          <AssigneeChip task={task} readOnly={!canEdit} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
         </div>
       </div>
-      <div className="task-side">
-        <AssigneeChip task={task} readOnly={!canEdit} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
-      </div>
-    </div>
+    </SwipeRow>
   );
 });
+
+/** Swipe-left action on touch screens: due tomorrow, with Undo. */
+function moveToTomorrow(task: Task) {
+  const prev = { dueDate: task.dueDate, dueTime: task.dueTime };
+  void updateTask(task.id, { dueDate: addDays(today(), 1) });
+  toast('Moved to tomorrow', { action: { label: 'Undo', run: () => void updateTask(task.id, prev) } });
+}
 
 /** In-place title editor for a dashboard row: Enter or blur saves, Escape cancels. */
 function TitleEditor({ task, onDone }: { task: Task; onDone: (viaKey: boolean) => void }) {

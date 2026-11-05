@@ -37,7 +37,9 @@ button.cal-more:hover { color: var(--accent); }
 
 /* Dashboard rows */
 .task-title-input { width: 100%; font: inherit; }
-.task-row:focus-visible { outline: none; background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.task-title-btn { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.task-title-btn:focus-visible { outline: none; }
+.task-row:has(.task-title-btn:focus-visible) { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
 .task-row:focus-within .task-meta .chip-empty { display: inline-flex; opacity: 1; }
 .task-row:focus-within .avatar-btn-empty { opacity: 1; }
 .task-row.is-selected { background: var(--accent-soft); }
@@ -90,3 +92,8 @@ button.cal-more:hover { color: var(--accent); }
 .subtask-add { display: flex; align-items: center; gap: 10px; padding: 4px 2px; }
 .subtask-add .prop-input { flex: 1; }
 .chip-parent { max-width: 220px; }
+.cal-hint-touch { display: none; }
+@media (hover: none), (max-width: 760px) {
+  .cal-hint-pointer { display: none; }
+  .cal-hint-touch { display: block; }
+}
