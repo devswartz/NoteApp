@@ -54,13 +54,40 @@ test('one IP guessing one account is limited (429 + Retry-After); the owner can 
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, '10.9.9.9')).status, 200);
 });
 
-test('a distributed attack on one account only slows logins down; it never locks the owner out', async () => {
+test('300 parallel wrong passwords from 300 IPs: most refused before bcrypt; the owner from a known IP gets in within ~1 s', async () => {
   const u = await app.signUp('Dina');
-  for (let i = 0; i < 40; i++) assert.equal((await post('/auth/login', { email: u.user.email, password: 'nope-nope' }, `172.16.${i}.1`)).status, 401);
+  const home = '172.31.0.1';
+  assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, home)).status, 200); // known-good from now on
+  const attack = Array.from({ length: 300 }, (_, i) => post('/auth/login', { email: u.user.email, password: 'nope-nope' }, `172.16.${i >> 8}.${i & 255}`).then((r) => r.status));
+  await new Promise((r) => setTimeout(r, 20)); // the attack is already in progress
   const t = Date.now();
-  const ok = await post('/auth/login', { email: u.user.email, password: 'password123' }, '172.31.0.1');
-  assert.equal(ok.status, 200);
-  assert.ok(Date.now() - t >= 1900, 'slowed down by the per-account delay');
+  const owner = await post('/auth/login', { email: u.user.email, password: 'password123' }, home);
+  const ownerMs = Date.now() - t;
+  const codes = await Promise.all(attack);
+  assert.equal(owner.status, 200);
+  assert.ok(ownerMs < 1500, `owner waited ${ownerMs} ms`);
+  const reachedBcrypt = codes.filter((c) => c === 401).length;
+  assert.ok(reachedBcrypt <= 20, `${reachedBcrypt} of 300 attack attempts reached a password check`);
+  assert.equal(codes.filter((c) => c === 429).length, 300 - reachedBcrypt);
+  // The account budget is spent: a new, unknown IP is refused even with the right password; the known one still works.
+  assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, '172.30.0.9')).status, 429);
+  assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, home)).status, 200);
+});
+
+test('server-wide budget for password checks across many accounts', async () => {
+  // Real accounts (an unknown email skips bcrypt), one attempt each from its own IP.
+  const users = await Promise.all(Array.from({ length: 12 }, (_, i) => app.signUp(`Cap${i}`)));
+  resetRateLimits(); // sign-ups above don't count (they come from loopback anyway)
+  const t = Date.now();
+  const codes = await Promise.all(
+    users.flatMap((u, i) => [0, 1, 2, 3].map((j) => post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.${j}`).then((r) => r.status))),
+  );
+  const secs = (Date.now() - t) / 1000;
+  const ran = codes.filter((c) => c === 401).length;
+  assert.ok(ran >= 30, `the burst runs (${ran})`);
+  assert.ok(ran <= 30 + Math.ceil(secs * 5) + 1, `no more than burst + 5/s ran (${ran} in ${secs.toFixed(1)} s)`);
+  assert.equal(codes.filter((c) => c === 429).length, 48 - ran, 'the rest are refused at once, not queued');
+  assert.ok(ran < 48);
 });
 
 test('CF-Connecting-IP is ignored unless TRUST_PROXY_HEADER=cf (it could be forged)', async () => {
