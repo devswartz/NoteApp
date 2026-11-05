@@ -4,6 +4,8 @@ import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus } from 'lucide-react';
 import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
+import { useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
@@ -28,6 +30,11 @@ export function PageView() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
   const [panelOpen, setPanelOpen] = useState(() => platform.kv.get('noteapp.taskPanel') !== '0');
+  // Starting a comment opens the side panel so the composer is visible.
+  const commentPending = useComments((s) => !!s.pending || !!s.activeId);
+  useEffect(() => {
+    if (commentPending) setPanelOpen(true);
+  }, [commentPending]);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -150,7 +157,8 @@ export function PageView() {
           )}
         </article>
       </div>
-      {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
+      <CommentHighlights />
+      {panelOpen && <PageTasksPanel pageId={pageId} canComment={!!canEdit} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
     </div>
   );
 }
@@ -344,7 +352,7 @@ function PageMenu({ pageId, wsId }: { pageId: string; wsId: string }) {
   );
 }
 
-function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: () => void; mobile: boolean }) {
+function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: string; canComment: boolean; onClose: () => void; mobile: boolean }) {
   const all = useStore((s) => s.tasks);
   const tasks = sortTasks(Object.values(all).filter((t) => t.pageId === pageId));
   const open = tasks.filter((t) => t.status === 'open');
@@ -383,6 +391,10 @@ function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: 
         )}
         {showDone && done.map((t) => <TaskRow key={t.id} task={t} showSource={false} />)}
       </div>
+      <div className="panel-head">
+        <strong>Comments</strong>
+      </div>
+      <CommentsPanel pageId={pageId} canComment={canComment} />
     </aside>
   );
 }
