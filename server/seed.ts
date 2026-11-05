@@ -18,7 +18,9 @@ function text(...parts: Inline[]) {
   let i = 0;
   for (const p of parts) {
     if (typeof p === 'string') {
-      t.insert(i, p);
+      // Without an attributes argument Yjs inherits the previous run's formatting,
+      // so the bold/code before this plain text would run on to the end of the line.
+      t.insert(i, p, {});
       i += p.length;
     } else {
       t.insert(i, p.text, p.marks);
