@@ -33,6 +33,7 @@ import { TaskRef } from './TaskRef.tsx';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
+import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { errorToast, toast } from '../store.ts';
@@ -57,10 +58,12 @@ interface Props {
   onStatus: (s: SyncStatus) => void;
   onPresence: (users: PresenceUser[]) => void;
   onSave?: (s: SaveState) => void;
+  /** Called once the server's copy of the page has been loaded. */
+  onServerSynced?: () => void;
   onReady: (editor: Editor) => void;
 }
 
-export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onReady }: Props) {
+export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
@@ -102,6 +105,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         DetailsSummary,
         DetailsContent,
         TaskRef.configure({ pageId }),
+        PageLink.configure({ pageId }),
         SlashCommand,
         ...collabExtensions(session, user),
       ],
@@ -139,6 +143,10 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   editorRef.current = editor;
 
   useEffect(() => {
+    if (session.serverSynced) onServerSynced?.();
+  }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     editor?.setEditable(canEdit);
   }, [editor, canEdit]);
 
@@ -164,6 +172,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
       {editor && canEdit && <BlockHandle editor={editor} />}
       <EditorContent editor={editor} />
       <SlashMenuView />
+      <PageLinkMenuView />
       <LinkEditorView />
     </div>
   );
@@ -257,7 +266,7 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       className="bubble-menu"
       shouldShow={({ editor: e, state }) => {
         const { empty } = state.selection;
-        if (empty || !e.isEditable || !e.view.hasFocus()) return false;
+        if (empty || e.isDestroyed || !e.isEditable || !e.isFocused) return false;
         if (state.selection instanceof TextSelection === false) return false; // node selections (images, files, tasks)
         return !e.isActive('codeBlock');
       }}
