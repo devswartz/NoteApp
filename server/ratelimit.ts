@@ -99,12 +99,19 @@ export const LIMITS = {
   inviteIp: { capacity: 20, perMinute: 2 }, // invite lookups + accepts (tokens are unguessable; this caps scanning)
 } satisfies Record<string, BucketSpec>;
 
-const limiters = Object.fromEntries(Object.entries(LIMITS).map(([k, v]) => [k, new Limiter(v)])) as Record<keyof typeof LIMITS, Limiter>;
+let clock: () => number = Date.now;
+const now = () => clock();
+/** Tests only: freeze or move the limiters' clock (undefined restores Date.now). */
+export function setRateLimitClock(fn: (() => number) | undefined) {
+  clock = fn ?? Date.now;
+}
+
+const limiters = Object.fromEntries(Object.entries(LIMITS).map(([k, v]) => [k, new Limiter(v, now)])) as Record<keyof typeof LIMITS, Limiter>;
 setInterval(() => Object.values(limiters).forEach((l) => l.prune()), 10 * 60_000).unref();
 
 /** Tests only: start from full buckets. */
 export function resetRateLimits() {
-  for (const k of Object.keys(limiters) as (keyof typeof LIMITS)[]) limiters[k] = new Limiter(LIMITS[k]);
+  for (const k of Object.keys(limiters) as (keyof typeof LIMITS)[]) limiters[k] = new Limiter(LIMITS[k], now);
   knownGood.clear();
 }
 

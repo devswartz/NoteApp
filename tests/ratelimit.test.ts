@@ -2,7 +2,7 @@
 import { before, after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestApp, type TestApp } from './helpers/app.ts';
-import { Limiter, resetRateLimits } from '../server/ratelimit.ts';
+import { Limiter, resetRateLimits, setRateLimitClock } from '../server/ratelimit.ts';
 
 let app: TestApp;
 before(async () => {
@@ -78,16 +78,17 @@ test('server-wide budget for password checks across many accounts', async () => 
   // Real accounts (an unknown email skips bcrypt), one attempt each from its own IP.
   const users = await Promise.all(Array.from({ length: 12 }, (_, i) => app.signUp(`Cap${i}`)));
   resetRateLimits(); // sign-ups above don't count (they come from loopback anyway)
-  const t = Date.now();
-  const codes = await Promise.all(
-    users.flatMap((u, i) => [0, 1, 2, 3].map((j) => post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.${j}`).then((r) => r.status))),
-  );
-  const secs = (Date.now() - t) / 1000;
-  const ran = codes.filter((c) => c === 401).length;
-  assert.ok(ran >= 30, `the burst runs (${ran})`);
-  assert.ok(ran <= 30 + Math.ceil(secs * 5) + 1, `no more than burst + 5/s ran (${ran} in ${secs.toFixed(1)} s)`);
-  assert.equal(codes.filter((c) => c === 429).length, 48 - ran, 'the rest are refused at once, not queued');
-  assert.ok(ran < 48);
+  const frozen = Date.now();
+  setRateLimitClock(() => frozen); // no refill during the burst, however slow bcrypt is on this machine
+  try {
+    const codes = await Promise.all(
+      users.flatMap((u, i) => [0, 1, 2, 3].map((j) => post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.${j}`).then((r) => r.status))),
+    );
+    assert.equal(codes.filter((c) => c === 401).length, 30, 'exactly the server-wide burst of password checks runs');
+    assert.equal(codes.filter((c) => c === 429).length, 18, 'the rest are refused at once, not queued');
+  } finally {
+    setRateLimitClock(undefined);
+  }
 });
 
 test('CF-Connecting-IP is ignored unless TRUST_PROXY_HEADER=cf (it could be forged)', async () => {
