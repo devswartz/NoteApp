@@ -20,10 +20,16 @@
 - A homelab agent is run separately by the user from `docs/HOMELAB_BRIEF.md`; it reports back through the user or with a PR adding `docs/HOMELAB.md`.
 - The user asked the manager to work independently for 12 hours (until about 2026-11-05 15:30 UTC) and to document as it goes.
 
+## Manager automation
+- Hourly check-in scheduled task `trig_01QRki933W6e6bsvS4Jau21s` (fires at :19 each hour into the manager session). It disables itself after 2026-11-05 15:45 UTC. **A resuming manager should check it with `list_triggers`, and disable or replace it.**
+- The manager commits `docs/STATUS.md` updates directly to `main`; all other changes go through PRs.
+
 ## Session roster
 | Agent | Session ID | Branch | Owns | State |
 |---|---|---|---|---|
 | Manager | session_019dirnRG6rqRQKiaYoYvd2H | claude/practical-albattani-3z93fy | coordination, docs/STATUS.md | active |
+| 1 Foundation | session_019dirnRD8GTtbGrFh37NAfG | feat/foundation | build health, ARCHITECTURE.md, file splits, deploy-contract server side, token auth, `src/platform/`, then API client/offline | started 03:19 |
+| 7 Infra & Deploy | session_019dirnSW7khFtAuDrTTCCDN | feat/infra | `Dockerfile`, `.github/**`, `deploy/**`, `docs/RELEASING.md` | started 03:19 |
 | Original builder | session_019dirnQSpFWbj8dPFQkoUjf | claude/initial-app | wrote the initial work-in-progress (now the base of `main`) | paused/idle; not used further (its session is tied to pushing `master`) |
 
 ## PR / merge log
@@ -33,3 +39,4 @@
 ## Log
 - **2026-11-05 03:00** Found the builder session mid-build; paused it; planned with the user; wrote `PLAN.md`.
 - **2026-11-05 ~03:45** Plan approved. Wrote the deploy contract, homelab brief, agent guide and this log. Created `main` from `claude/initial-app` + docs. Next: start Phase 0 (Foundation + Infra).
+- **2026-11-05 03:19** Started Foundation (agent 1) and Infra (agent 7). Phase 1 agents start once Foundation PR 1 merges. Hourly check-in scheduled.

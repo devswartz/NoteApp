@@ -1,21 +1,20 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { signIn } from '../store.ts';
+import { APP_NAME } from '../../shared/config.ts';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (
     <div className="auth">
       <div className="auth-card">
         <div className="auth-logo">
-          <span className="ws-logo lg">N</span>
-          <span>Noteworthy</span>
+          <span className="ws-logo lg">{APP_NAME[0]}</span>
+          <span>{APP_NAME}</span>
         </div>
         <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
         <p className="muted">Notes and tasks, connected — for you and your team.</p>
@@ -26,7 +25,7 @@ export function Login() {
             setError('');
             try {
               await signIn(mode, mode === 'login' ? { email: form.email, password: form.password } : form);
-              navigate('/', { replace: true });
+              // The /login route redirects to / once the user is set.
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Something went wrong');
             } finally {

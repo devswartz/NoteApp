@@ -1,38 +1,41 @@
-import express from 'express';
-import http from 'node:http';
-import path from 'node:path';
-import fs from 'node:fs';
-import { WebSocketServer } from 'ws';
-import { api, UPLOAD_DIR } from './routes.ts';
-import { attachCollab, flushAll } from './collab.ts';
+import { createServer } from './app.ts';
+import { shutdownCollab } from './collab.ts';
+import { closeAllEvents } from './events.ts';
+import { db } from './db.ts';
+import { PORT, VERSION, DATA_DIR, SEED_DEMO } from './config.ts';
+import { seedDemoIfEmpty } from './demo.ts';
+import { pruneRefreshTokens } from './auth.ts';
+import { APP_NAME } from '../shared/config.ts';
 
-const PORT = Number(process.env.PORT ?? 3001);
-const app = express();
-app.disable('x-powered-by');
+if (SEED_DEMO) seedDemoIfEmpty();
+pruneRefreshTokens();
+setInterval(pruneRefreshTokens, 6 * 3600_000).unref();
 
-app.use('/api', api);
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
+const { server } = createServer();
+server.listen(PORT, () => console.log(`${APP_NAME} ${VERSION} listening on http://localhost:${PORT} (data: ${DATA_DIR})`));
 
-// In production the server also serves the built web app.
-const dist = path.resolve('dist');
-if (fs.existsSync(dist)) {
-  app.use(express.static(dist, { index: false, maxAge: '1h' }));
-  app.get(/^(?!\/api|\/uploads|\/collab).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+// Graceful shutdown (contract: exit within 10 s of SIGTERM): stop accepting
+// connections, save open documents, close sockets and the database.
+let stopping = false;
+function shutdown(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  console.log(`${signal} received, shutting down`);
+  setTimeout(() => {
+    console.error('Shutdown timed out; exiting');
+    process.exit(1);
+  }, 8000).unref();
+  server.close();
+  try {
+    shutdownCollab();
+    closeAllEvents();
+    server.closeAllConnections();
+    db.close();
+  } catch (e) {
+    console.error('Error during shutdown', e);
+    process.exit(1);
+  }
+  process.exit(0);
 }
-
-const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
-attachCollab(wss);
-server.on('upgrade', (req, socket, head) => {
-  if (!req.url?.startsWith('/collab')) return socket.destroy();
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
-});
-
-server.listen(PORT, () => console.log(`NoteApp server listening on http://localhost:${PORT}`));
-
-for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(sig, () => {
-    flushAll();
-    process.exit(0);
-  });
-}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

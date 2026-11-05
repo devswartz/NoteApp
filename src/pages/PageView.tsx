@@ -10,6 +10,7 @@ import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator, useIsMobile } fro
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
+import { platform } from '../platform/index.ts';
 
 export function PageView() {
   const { wsId, pageId } = useParams() as { wsId: string; pageId: string };
@@ -24,13 +25,7 @@ export function PageView() {
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
-  const [panelOpen, setPanelOpen] = useState(() => {
-    try {
-      return localStorage.getItem('noteapp.taskPanel') !== '0';
-    } catch {
-      return true;
-    }
-  });
+  const [panelOpen, setPanelOpen] = useState(() => platform.kv.get('noteapp.taskPanel') !== '0');
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -40,11 +35,7 @@ export function PageView() {
     get<{ canEdit: boolean }>(`/pages/${pageId}`)
       .then((r) => !cancelled && setCanEdit(r.canEdit))
       .catch(() => !cancelled && setCanEdit(false));
-    try {
-      localStorage.setItem(`noteapp.lastPage.${wsId}`, pageId);
-    } catch {
-      /* ignore */
-    }
+    platform.kv.set(`noteapp.lastPage.${wsId}`, pageId);
     return () => {
       cancelled = true;
     };
@@ -116,11 +107,7 @@ export function PageView() {
               title="Tasks on this page"
               onClick={() => {
                 setPanelOpen((o) => {
-                  try {
-                    localStorage.setItem('noteapp.taskPanel', o ? '0' : '1');
-                  } catch {
-                    /* ignore */
-                  }
+                  platform.kv.set('noteapp.taskPanel', o ? '0' : '1');
                   return !o;
                 });
               }}
@@ -132,13 +119,13 @@ export function PageView() {
         </header>
 
         <article className="page-article">
-          <TitleInput key={pageId} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
+          <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
             Edited {relativeTime(meta.updatedAt)}
             {updatedBy ? ` by ${updatedBy.id === user.id ? 'you' : updatedBy.name}` : ''}
           </div>
           <NoteEditor
-            key={pageId}
+            key={`editor-${pageId}`}
             pageId={pageId}
             user={user}
             canEdit={canEdit}

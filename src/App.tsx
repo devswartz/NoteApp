@@ -4,12 +4,11 @@ import { bootstrap, signOut, useStore } from './store.ts';
 import { setUnauthorizedHandler } from './api.ts';
 import { AppShell } from './components/AppShell.tsx';
 import { Toasts } from './components/Overlays.tsx';
+import { DeepLinks } from './components/DeepLinks.tsx';
 import { Login } from './pages/Login.tsx';
-import { PageView } from './pages/PageView.tsx';
-import { TasksView } from './pages/TasksView.tsx';
-import { Settings } from './pages/Settings.tsx';
-import { NotesHome } from './pages/NotesHome.tsx';
+import { workspaceRoutes } from './routes.tsx';
 import { useIsMobile } from './components/ui.tsx';
+import { platform } from './platform/index.ts';
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -31,10 +30,9 @@ export function App() {
             <Route path="/" element={<Home />} />
             <Route path="/w/:wsId" element={<AppShell />}>
               <Route index element={<WorkspaceIndex />} />
-              <Route path="p/:pageId" element={<PageView />} />
-              <Route path="tasks/:view" element={<TasksView />} />
-              <Route path="notes" element={<NotesHome />} />
-              <Route path="settings" element={<Settings />} />
+              {workspaceRoutes.map((r) => (
+                <Route key={r.path} path={r.path} element={r.element} />
+              ))}
               <Route path="*" element={<Navigate to="tasks/today" replace />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
@@ -44,18 +42,14 @@ export function App() {
         )}
       </Routes>
       <Toasts />
+      {user && <DeepLinks />}
     </BrowserRouter>
   );
 }
 
 function Home() {
   const workspaces = useStore((s) => s.workspaces);
-  let last: string | null = null;
-  try {
-    last = localStorage.getItem('noteapp.lastWs');
-  } catch {
-    /* ignore */
-  }
+  const last = platform.kv.get('noteapp.lastWs');
   const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];
   if (!ws) return <div className="empty-page">You don’t belong to any workspace yet.</div>;
   return <Navigate to={`/w/${ws.id}`} replace />;
@@ -69,12 +63,7 @@ function WorkspaceIndex() {
   const loaded = useStore((s) => s.treeLoaded);
   if (isMobile) return <Navigate to="tasks/today" replace />;
   if (!loaded) return null;
-  let last: string | null = null;
-  try {
-    last = localStorage.getItem(`noteapp.lastPage.${wsId}`);
-  } catch {
-    /* ignore */
-  }
+  const last = platform.kv.get(`noteapp.lastPage.${wsId}`);
   const page = pages.find((p) => p.id === last) ?? pages[0];
   return <Navigate to={page ? `p/${page.id}` : 'tasks/today'} replace />;
 }

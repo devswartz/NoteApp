@@ -1,6 +1,6 @@
 // Minimal offline shell: cache the app's static assets so it opens offline.
 // Note content is cached separately in IndexedDB by the editor (y-indexeddb).
-const CACHE = 'noteworthy-v1';
+const CACHE = 'app-shell-v2';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/icon.svg', '/manifest.webmanifest'])));
@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/collab')) return;
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/collab/') || url.pathname.startsWith('/uploads/')) return;
   // Navigations: network first, fall back to the cached shell.
   if (e.request.mode === 'navigate') {
     e.respondWith(fetch(e.request).catch(() => caches.match('/')));
