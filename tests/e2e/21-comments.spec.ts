@@ -1,6 +1,6 @@
 // Comment threads on selected text (#28, #55, #62): add, see live as another member, reply, resolve.
 import { expect, test } from '@playwright/test';
-import { createPage, createTeam, createUser, focusEnd, openPage, signInContext } from './helpers.ts';
+import { api, createPage, createTeam, createUser, focusEnd, openPage, signInContext } from './helpers.ts';
 
 test('comment on a selection; another member sees it live, replies; resolve', async ({ browser, request }) => {
   const alice = await createUser(request, 'Alice Commenter');
@@ -51,4 +51,29 @@ test('comment on a selection; another member sees it live, replies; resolve', as
   await expect(a.getByRole('button', { name: 'Resolve thread' })).toBeVisible();
   await ac.close();
   await bc.close();
+});
+
+test('notification bell in the app header shows unread mentions', async ({ page, context, request }) => {
+  const alice = await createUser(request, 'Alice Mentioner');
+  const bob = await createUser(request, 'Bob Mentioned');
+  const teamId = await createTeam(request, alice, [{ user: bob, role: 'member' }]);
+  const { pageId } = await createPage(request, alice, { wsId: teamId, page: 'Launch plan' });
+  // Alice @mentions Bob in a comment on the page.
+  await api(request, 'POST', `/pages/${pageId}/comments`, alice.token, { body: `@[${bob.name}](${bob.id}) can you check the dates?`, quote: '' });
+
+  await signInContext(context, bob);
+  await page.goto(`/w/${teamId}/tasks/today`);
+  const bell = page.getByRole('button', { name: 'Notifications, 1 unread' });
+  await expect(bell).toBeVisible();
+  await bell.click();
+  const item = page.locator('.inbox-row', { hasText: 'mentioned you' });
+  await expect(item).toContainText('Launch plan');
+  await item.click();
+  await expect(page).toHaveURL(new RegExp(`/p/${pageId}`));
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
+
+  // Still reachable while the sidebar is hidden.
+  await page.keyboard.press('ControlOrMeta+Backslash');
+  await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
 });
