@@ -134,6 +134,15 @@ const rules: Rule[] = [
     },
   },
   {
+    re: /\b(?:at\s+)?(noon|midday|midnight)\b/i,
+    kind: 'time',
+    apply: (m, r, base) => {
+      r.dueTime = m[1].toLowerCase() === 'midnight' ? '00:00' : '12:00';
+      r.dueDate = r.dueDate ?? base;
+      return true;
+    },
+  },
+  {
     re: /\b(today|tod|tonight)\b/i,
     kind: 'date',
     apply: (_m, r, base) => ((r.dueDate = base), true),
@@ -236,6 +245,11 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
       if (consumed.slice(start, end).some(Boolean)) continue;
       const snapshot = { ...r };
       if (rule.apply(m, r, base)) {
+        // Swallow a dangling connector before a date/time: "Ship by Friday", "due tomorrow".
+        if (rule.kind === 'date' || rule.kind === 'time') {
+          const lead = /(?:^|\s)((?:by|due|on|at)\s+)$/i.exec(input.slice(0, start));
+          if (lead && !consumed.slice(start - lead[1].length, start).some(Boolean)) start -= lead[1].length;
+        }
         for (let i = start; i < end; i++) consumed[i] = true;
         r.tokens.push({ start, end, kind: rule.kind });
         seen.add(rule.kind);
