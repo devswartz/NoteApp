@@ -113,7 +113,12 @@ export function groupBy(
       }
     }
   }
-  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, g]) => g);
+  return [...map.entries()].sort(([a], [b]) => groupKeyRank(a) - groupKeyRank(b) || a.localeCompare(b)).map(([, g]) => g);
+}
+
+/** Group keys starting with "!" sort first (Overdue), "~" last (No date, Unassigned, Not in a note). */
+function groupKeyRank(k: string) {
+  return k.startsWith('!') ? 0 : k.startsWith('~') ? 2 : 1;
 }
 
 export interface Filters {

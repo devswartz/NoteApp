@@ -77,7 +77,13 @@ export function listCompleted(workspaceId: string, userId: string, before: strin
 }
 
 function validate(p: TaskPatch, workspaceId: string) {
-  if (p.title !== undefined && typeof p.title !== 'string') throw new HttpError(400, 'Invalid title');
+  if (p.title !== undefined && (typeof p.title !== 'string' || p.title.length > 1000)) throw new HttpError(400, 'Invalid title');
+  if (p.description !== undefined && (typeof p.description !== 'string' || p.description.length > 50_000))
+    throw new HttpError(400, 'Invalid description');
+  if (p.reminderAt && (typeof p.reminderAt !== 'string' || Number.isNaN(Date.parse(p.reminderAt))))
+    throw new HttpError(400, 'Invalid reminder');
+  if (p.assigneeId !== undefined && p.assigneeId !== null && typeof p.assigneeId !== 'string') throw new HttpError(400, 'Invalid assignee');
+  if (p.pageId !== undefined && p.pageId !== null && typeof p.pageId !== 'string') throw new HttpError(400, 'Invalid page');
   if (p.priority !== undefined && ![1, 2, 3, 4].includes(p.priority)) throw new HttpError(400, 'Invalid priority');
   if (p.status !== undefined && !['open', 'done'].includes(p.status)) throw new HttpError(400, 'Invalid status');
   if (p.dueDate && !/^\d{4}-\d{2}-\d{2}$/.test(p.dueDate)) throw new HttpError(400, 'Invalid due date');
@@ -159,7 +165,7 @@ export function updateTask(userId: string, id: string, patch: TaskPatch): Task {
   validate(patch, task.workspaceId);
   if (patch.pageId) {
     const a = pageAccess(patch.pageId, userId);
-    if (!a || a.workspaceId !== task.workspaceId) throw new HttpError(400, 'Invalid page');
+    if (!a || a.workspaceId !== task.workspaceId || !a.canEdit) throw new HttpError(400, 'Invalid page');
   }
 
   const ts = now();
