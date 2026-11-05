@@ -13,7 +13,7 @@ function task(p: Partial<Task> = {}): Task {
   return {
     id: `t${seq}`, workspaceId: 'w', title: `Task ${seq}`, description: '', status: 'open', priority: 4,
     dueDate: null, dueTime: null, recurrence: null, reminderAt: null, assigneeId: ME, createdBy: ME,
-    pageId: null, completedAt: null, completedBy: null, createdAt: ts, updatedAt: ts, ...p,
+    pageId: null, parentId: null, completedAt: null, completedBy: null, createdAt: ts, updatedAt: ts, ...p,
   };
 }
 const T = today();

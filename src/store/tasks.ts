@@ -53,6 +53,7 @@ export async function createTask(input: TaskPatch & { title: string; id?: string
     assigneeId: input.assigneeId ?? null,
     createdBy: user.id,
     pageId: input.pageId ?? null,
+    parentId: input.parentId ?? null,
     completedAt: null,
     completedBy: null,
     createdAt: ts,

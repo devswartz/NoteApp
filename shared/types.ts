@@ -127,6 +127,8 @@ export interface Task {
   createdBy: string;
   /** Source note. null = standalone task (or removed from its note). */
   pageId: string | null;
+  /** Parent task for a subtask (one level deep); null for top-level tasks. */
+  parentId: string | null;
   completedAt: string | null;
   completedBy: string | null;
   createdAt: string;
@@ -146,6 +148,7 @@ export type TaskPatch = Partial<
     | 'reminderAt'
     | 'assigneeId'
     | 'pageId'
+    | 'parentId'
   >
 >;
 

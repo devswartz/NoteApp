@@ -336,3 +336,12 @@ test('reconcile through the collab socket: removing a taskRef detaches it, addin
     if (sock && sock.readyState !== WebSocket.CLOSED) await new Promise((r) => sock.once('close', r));
   }
 });
+
+test('tasks expose parentId (migration 005); top-level tasks have none', async () => {
+  const u = await app.signUp('Parent');
+  const t = (await create(u, u.wsId, { title: 'Top' })).data;
+  assert.equal(t.parentId, null);
+  const { db } = await import('../server/db.ts');
+  const idx = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'").all() as { name: string }[]).map((r) => r.name);
+  assert.ok(idx.includes('tasks_parent') && idx.includes('tasks_ws_completed'));
+});

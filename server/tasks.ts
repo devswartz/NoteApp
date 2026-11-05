@@ -19,6 +19,7 @@ interface TaskRow {
   assignee_id: string | null;
   created_by: string;
   page_id: string | null;
+  parent_id: string | null;
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
@@ -40,6 +41,7 @@ export function rowToTask(r: TaskRow): Task {
     assigneeId: r.assignee_id,
     createdBy: r.created_by,
     pageId: r.page_id,
+    parentId: r.parent_id ?? null,
     completedAt: r.completed_at,
     completedBy: r.completed_by,
     createdAt: r.created_at,
@@ -95,6 +97,7 @@ function validate(p: TaskPatch, workspaceId: string) {
       (['day', 'week', 'month', 'year'].includes(r.freq) && Number.isInteger(r.interval) && r.interval >= 1 && r.interval <= 365);
     if (!ok) throw new HttpError(400, 'Invalid recurrence');
   }
+  if (p.parentId !== undefined && p.parentId !== null) throw new HttpError(400, 'Subtasks are not supported yet');
   if (p.assigneeId && !roleIn(workspaceId, p.assigneeId)) throw new HttpError(400, 'Assignee is not a workspace member');
 }
 
@@ -155,6 +158,7 @@ const COLUMNS: Record<keyof TaskPatch, string> = {
   reminderAt: 'reminder_at',
   assigneeId: 'assignee_id',
   pageId: 'page_id',
+  parentId: 'parent_id',
 };
 
 export function updateTask(userId: string, id: string, patch: TaskPatch): Task {
