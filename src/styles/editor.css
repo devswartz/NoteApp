@@ -252,8 +252,9 @@
 .backlink .muted { margin-left: auto; flex: none; max-width: 45%; }
 
 /* ───────── Templates ───────── */
-.template-picker { margin-top: -150px; margin-bottom: 110px; position: relative; z-index: 1; pointer-events: none; }
-.template-picker > * { pointer-events: auto; }
+.template-picker { margin: 18px 0 8px; }
+/* While the picker is offered the page is empty: don't reserve the editor's usual blank area. */
+.page-article:has(.template-picker) .ProseMirror { min-height: 2em; }
 .template-picker-label { display: block; font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
 .template-picker-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .template-card {
