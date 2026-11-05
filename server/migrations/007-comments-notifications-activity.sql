@@ -54,6 +54,9 @@ CREATE TABLE activity (
   summary TEXT NOT NULL,
   notebook_id TEXT,
   task_id TEXT,
+  -- 1 if the notebook was private when this happened: hidden from everyone but
+  -- the actor once the notebook no longer exists (nothing left to check against).
+  private INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE INDEX activity_ws ON activity(workspace_id, id);
