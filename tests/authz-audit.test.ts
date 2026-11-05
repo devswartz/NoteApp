@@ -19,6 +19,8 @@ const WHO: Who[] = ['anon', 'stranger', 'viewer', 'member', 'private'];
 let app: TestApp;
 let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser, target: TestUser;
 before(async () => {
+  // Admin routes: with ADMIN_EMAILS unset the first account would be admin, so name an address no persona uses.
+  process.env.ADMIN_EMAILS = 'site-admin@example.com';
   app = await startTestApp();
   [owner, stranger, viewer, member, target] = await Promise.all(['Owner', 'Stranger', 'Viewer', 'Member', 'Target'].map((n) => app.signUp(`Az${n}`)));
 });
@@ -123,6 +125,7 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/auth/login', path: () => '/auth/login', body: () => ({ email: 'nobody@example.com', password: 'wrong-password' }), expect: { anon: 401, stranger: 401, viewer: 401, member: 401, private: 401 } },
   { method: 'POST', route: '/auth/refresh', path: () => '/auth/refresh', body: () => ({ refreshToken: 'not-a-token' }), expect: { anon: 401, stranger: 401, viewer: 401, member: 401, private: 401 } },
   { method: 'POST', route: '/auth/logout', path: () => '/auth/logout', body: () => ({ refreshToken: 'not-a-token' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'GET', route: '/auth/config', path: () => '/auth/config', expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
   { method: 'POST', route: '/auth/forgot', path: () => '/auth/forgot', body: () => ({ email: 'nobody@example.com' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } }, // never reveals whether the email exists
   { method: 'POST', route: '/auth/reset', path: () => '/auth/reset', body: () => ({ token: 'not-a-token', password: 'password1234' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
   { method: 'GET', route: '/invites/:token', path: (f) => `/invites/${f.invite}`, expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
@@ -137,6 +140,10 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/uploads', path: () => '/uploads', raw: true, expect: { stranger: 200, viewer: 200, member: 200 } }, // personal, unscoped upload
   // Invite acceptance requires the invited email: nobody in this table has it.
   { method: 'POST', route: '/invites/:token/accept', path: (f) => `/invites/${f.invite}/accept`, expect: { stranger: 403, viewer: 403, member: 403 } },
+
+  // ── Site admin (ADMIN_EMAILS): nobody in this table is one ──
+  { method: 'GET', route: '/admin/stats', path: () => '/admin/stats', expect: { stranger: 403, viewer: 403, member: 403 } },
+  { method: 'GET', route: '/admin/me', path: () => '/admin/me', expect: { stranger: 403, viewer: 403, member: 403 } },
 
   // ── Workspace ──
   { method: 'PATCH', route: '/workspaces/:id', path: (f) => `/workspaces/${f.ws}`, body: () => ({ name: 'Renamed' }), expect: ADMIN },
@@ -327,4 +334,10 @@ test('authz: /api/events socket only delivers what each user may see', async () 
   assert.ok(sawTask('viewer', shared.task) && sawTask('member', shared.task));
   assert.ok(!sawTask('viewer', priv.task) && !sawTask('member', priv.task), 'private task never sent');
   for (const l of listeners) l.ws.terminate();
+});
+
+test('authz: the configured site admin can use the admin routes', async () => {
+  const admin = await app.signUp('SiteAdmin', 'site-admin@example.com');
+  assert.equal((await app.call('GET', '/admin/me', admin.token)).status, 200);
+  assert.equal((await app.call('GET', '/admin/stats', admin.token)).status, 200);
 });
