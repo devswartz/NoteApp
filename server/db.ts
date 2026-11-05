@@ -4,10 +4,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const file = process.env.DB_FILE ?? path.resolve('data/noteapp.db');
-if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
+import { DB_FILE } from './config.ts';
 
-export const db = new Database(file);
+if (DB_FILE !== ':memory:') fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
+
+export const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

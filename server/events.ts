@@ -1,25 +1,56 @@
-// Server-sent events hub: pushes task/tree changes to every connected client
-// that is allowed to see them, so the dashboard and notes stay in sync live.
-import type { Response } from 'express';
+// Live event hub: pushes task/tree/member changes over the /api/events
+// WebSocket to every connected client allowed to see them, so the dashboard
+// and open notes stay in sync. Server → client only; messages are JSON
+// ServerEvent objects (shared/types.ts).
+import type { IncomingMessage } from 'node:http';
+import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
 import { taskVisible } from './access.ts';
+import { verifyToken } from './auth.ts';
 import type { ServerEvent } from '../shared/types.ts';
 
-const clients = new Map<string, Set<Response>>(); // userId -> open streams
+const clients = new Map<string, Set<WebSocket>>(); // userId -> open sockets
 
-export function addClient(userId: string, res: Response) {
+function addClient(userId: string, ws: WebSocket) {
   let set = clients.get(userId);
   if (!set) clients.set(userId, (set = new Set()));
-  set.add(res);
-  res.on('close', () => {
-    set!.delete(res);
+  set.add(ws);
+  ws.on('close', () => {
+    set!.delete(ws);
     if (!set!.size) clients.delete(userId);
   });
 }
 
+export function attachEvents(wss: WebSocketServer) {
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    const url = new URL(req.url ?? '', 'http://x');
+    const user = verifyToken(url.searchParams.get('token'));
+    if (!user) {
+      ws.close(4401, 'Unauthorized');
+      return;
+    }
+    addClient(user.id, ws);
+    // Detect dead connections (and keep proxies from closing idle ones).
+    let alive = true;
+    ws.on('pong', () => (alive = true));
+    const ping = setInterval(() => {
+      if (!alive) return ws.terminate();
+      alive = false;
+      ws.ping();
+    }, 25_000);
+    ws.on('close', () => clearInterval(ping));
+    ws.on('error', () => ws.terminate());
+  });
+}
+
+/** Close every event socket (on shutdown). 1012 = service restart; clients reconnect. */
+export function closeAllEvents() {
+  for (const set of clients.values()) for (const ws of set) ws.close(1012, 'Server restarting');
+}
+
 function send(userId: string, ev: ServerEvent) {
-  const data = `data: ${JSON.stringify(ev)}\n\n`;
-  for (const res of clients.get(userId) ?? []) res.write(data);
+  const data = JSON.stringify(ev);
+  for (const ws of clients.get(userId) ?? []) if (ws.readyState === WebSocket.OPEN) ws.send(data);
 }
 
 function membersOf(workspaceId: string): string[] {
@@ -45,8 +76,3 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
     send(userId, ev);
   }
 }
-
-// Keep proxies from closing idle streams.
-setInterval(() => {
-  for (const set of clients.values()) for (const res of set) res.write(': ping\n\n');
-}, 25_000).unref();

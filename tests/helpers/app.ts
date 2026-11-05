@@ -1,5 +1,5 @@
 // Test helper: starts the real server (API + collab WebSocket) on a random
-// port with an in-memory SQLite database and a temporary upload directory.
+// port with an in-memory SQLite database and a temporary DATA_DIR.
 //
 //   import { startTestApp } from './helpers/app.ts';
 //   const app = await startTestApp();          // in before()
@@ -32,7 +32,7 @@ export async function startTestApp() {
   // Must be set before the server modules are first imported.
   process.env.DB_FILE = ':memory:';
   process.env.JWT_SECRET ??= 'test-secret';
-  process.env.UPLOAD_DIR = path.join(tmp, 'uploads');
+  process.env.DATA_DIR = tmp;
 
   const { createServer } = await import('../../server/app.ts');
   const { server } = createServer({ serveWeb: false });

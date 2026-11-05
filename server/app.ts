@@ -1,5 +1,11 @@
-// Builds the HTTP server: REST API, uploads, the built web app and WebSocket
-// upgrades. server/index.ts starts it; tests start it on a random port.
+// Builds the HTTP server: REST API, uploads, the built web app and both
+// WebSocket endpoints, all on one port (docs/DEPLOY_CONTRACT.md):
+//   /api/*        REST
+//   /api/events   WebSocket: live task/tree/member events (server/events.ts)
+//   /collab/<id>  WebSocket: Yjs sync for one page (server/collab.ts)
+//   /uploads/*    uploaded files
+//   everything else: the web app (dist/), with index.html as the SPA fallback
+// server/index.ts starts it; tests start it on a random port.
 import express from 'express';
 import http from 'node:http';
 import path from 'node:path';
@@ -7,10 +13,12 @@ import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
 import { api, UPLOAD_DIR } from './routes/index.ts';
 import { attachCollab } from './collab.ts';
+import { attachEvents } from './events.ts';
 
 export function createServer(opts: { serveWeb?: boolean } = {}) {
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', 'loopback'); // behind the Cloudflare tunnel / reverse proxy
 
   app.use('/api', api);
   app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
@@ -18,16 +26,22 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   // In production the server also serves the built web app.
   const dist = path.resolve('dist');
   if (opts.serveWeb !== false && fs.existsSync(dist)) {
-    app.use(express.static(dist, { index: false, maxAge: '1h' }));
-    app.get(/^(?!\/api|\/uploads|\/collab).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+    // Hashed assets can be cached forever; index.html and sw.js must revalidate.
+    app.use('/assets', express.static(path.join(dist, 'assets'), { maxAge: '1y', immutable: true }));
+    app.use(express.static(dist, { index: false, maxAge: 0 }));
+    app.get(/^(?!\/api\/|\/uploads\/|\/collab\/).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
   }
 
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ noServer: true });
-  attachCollab(wss);
+  const collab = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
+  const events = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  attachCollab(collab);
+  attachEvents(events);
   server.on('upgrade', (req, socket, head) => {
-    if (!req.url?.startsWith('/collab')) return socket.destroy();
+    const pathname = new URL(req.url ?? '/', 'http://x').pathname;
+    const wss = pathname === '/api/events' ? events : pathname.startsWith('/collab/') ? collab : null;
+    if (!wss) return socket.destroy();
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
-  return { app, server, wss };
+  return { app, server, collab, events };
 }

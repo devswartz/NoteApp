@@ -4,12 +4,17 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.ts';
+import { DATA_DIR, IS_PROD } from './config.ts';
 import type { User } from '../shared/types.ts';
 
 function loadSecret(): string {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  // Persist a generated secret next to the database so sessions survive restarts.
-  const file = path.resolve('data/.jwt-secret');
+  if (IS_PROD) {
+    console.error('JWT_SECRET must be set in production');
+    process.exit(1);
+  }
+  // Dev: persist a generated secret next to the database so sessions survive restarts.
+  const file = path.join(DATA_DIR, '.jwt-secret');
   try {
     return fs.readFileSync(file, 'utf8');
   } catch {

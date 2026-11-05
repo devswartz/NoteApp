@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { signIn } from '../store.ts';
+import { APP_NAME } from '../../shared/config.ts';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -12,8 +13,8 @@ export function Login() {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-logo">
-          <span className="ws-logo lg">N</span>
-          <span>Noteworthy</span>
+          <span className="ws-logo lg">{APP_NAME[0]}</span>
+          <span>{APP_NAME}</span>
         </div>
         <h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1>
         <p className="muted">Notes and tasks, connected — for you and your team.</p>

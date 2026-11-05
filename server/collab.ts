@@ -229,3 +229,9 @@ export function flushAll() {
     persist(room);
   }
 }
+
+/** Save every open document and disconnect its clients (on shutdown). 1012 = service restart; clients reconnect. */
+export function shutdownCollab() {
+  flushAll();
+  for (const room of rooms.values()) for (const c of room.conns.keys()) c.close(1012, 'Server restarting');
+}

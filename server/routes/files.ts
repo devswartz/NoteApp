@@ -4,9 +4,15 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { HttpError, h } from '../http.ts';
+import { DATA_DIR, FILES_DIR } from '../config.ts';
 
-export const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR ?? 'data/uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// Dev databases created before DATA_DIR kept files in data/uploads.
+const legacy = path.join(DATA_DIR, 'uploads');
+if (!fs.existsSync(FILES_DIR) && fs.existsSync(legacy)) fs.renameSync(legacy, FILES_DIR);
+fs.mkdirSync(FILES_DIR, { recursive: true });
+
+/** Files are stored on disk in FILES_DIR and served at /uploads/<name>. */
+export const UPLOAD_DIR = FILES_DIR;
 
 export const fileRoutes = Router();
 

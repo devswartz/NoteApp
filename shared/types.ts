@@ -120,7 +120,7 @@ export interface SearchResult {
   tasks: Task[];
 }
 
-/** Messages pushed to clients over the server-sent event stream. */
+/** Messages pushed to clients over the /api/events WebSocket. */
 export type ServerEvent =
   | { type: 'task'; task: Task }
   | { type: 'task-deleted'; id: string; workspaceId: string }

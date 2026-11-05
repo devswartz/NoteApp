@@ -4,7 +4,7 @@ import express, { Router } from 'express';
 import { requireAuth } from '../auth.ts';
 import { errorHandler } from '../http.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
-import { eventRoutes } from './events.ts';
+import { healthRoutes } from './health.ts';
 import { workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
@@ -19,12 +19,14 @@ const json = express.json({ limit: '1mb' });
 api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, next)));
 
 // No token needed.
+api.use(healthRoutes);
 api.use(publicAuthRoutes);
+
+// The live event stream (/api/events) is a WebSocket: see server/events.ts and server/app.ts.
 
 // Everything below requires a signed-in user.
 api.use(requireAuth);
 api.use(authRoutes);
-api.use(eventRoutes);
 api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);
