@@ -1,7 +1,9 @@
 // Signing in and out.
 import { endSession, get, post, refreshSession, startSession } from '../api.ts';
 import { emptyTree, set } from './state.ts';
-import { offlineCache } from '../lib/offlineCache.ts';
+import { clearLocalUserData, isNetworkError, offlineCache } from '../lib/offlineCache.ts';
+import { LAST_USER_KEY } from './cache.ts';
+import { errorToast } from './toasts.ts';
 import { loadWorkspaces } from './workspace.ts';
 import { connectEvents, disconnectEvents } from './events.ts';
 import type { AuthSession, User, Workspace } from '../../shared/types.ts';
@@ -16,11 +18,20 @@ export async function bootstrap(): Promise<boolean> {
   let user: User | null = null;
   try {
     const s = await refreshSession();
-    if (!s) return false;
+    if (!s) {
+      // No session, or the server rejected the refresh token: forget this device's copy.
+      await clearLocalUserData();
+      return false;
+    }
     user = s.user;
-    void offlineCache.set('user', user);
-  } catch {
-    user = await offlineCache.get<User>('user');
+    void offlineCache.set(LAST_USER_KEY, user);
+  } catch (e) {
+    if (!isNetworkError(e)) {
+      // The server answered with an error (e.g. 5xx): say so rather than pretending to be offline.
+      errorToast(e);
+      return false;
+    }
+    user = await offlineCache.get<User>(LAST_USER_KEY);
     if (!user) return false;
     set({ online: false });
   }
@@ -37,7 +48,7 @@ export async function bootstrap(): Promise<boolean> {
 export async function signIn(mode: 'login' | 'register', body: Record<string, string>) {
   const s = await post<AuthSession>(`/auth/${mode}`, body);
   await startSession(s);
-  void offlineCache.set('user', s.user);
+  void offlineCache.set(LAST_USER_KEY, s.user);
   // Load workspaces before publishing the user, so the first signed-in render
   // already knows where to route (the /login route then redirects to /).
   const workspaces = await get<Workspace[]>('/workspaces');
@@ -46,16 +57,13 @@ export async function signIn(mode: 'login' | 'register', body: Record<string, st
 }
 
 export async function signOut() {
-  disconnectEvents();
-  await endSession();
-  await offlineCache.clear();
-  // Clear locally cached note content.
   try {
-    const dbs = await indexedDB.databases?.();
-    for (const d of dbs ?? []) if (d.name?.startsWith('noteapp-page-')) indexedDB.deleteDatabase(d.name);
-  } catch {
-    /* ignore */
+    disconnectEvents();
+    await endSession();
+  } finally {
+    // Always wipe this device's copy of the user's data, even if a step above failed.
+    await clearLocalUserData();
+    platform.kv.remove('noteapp.lastWs');
+    set({ user: null, workspaces: [], wsId: null, tree: emptyTree, tasks: {}, members: [], treeLoaded: false, tasksLoaded: false });
   }
-  platform.kv.remove('noteapp.lastWs');
-  set({ user: null, workspaces: [], wsId: null, tree: emptyTree, tasks: {}, members: [], treeLoaded: false, tasksLoaded: false });
 }

@@ -102,6 +102,7 @@ src/               React web app
   editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
+apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
 public/            icon.svg (manifest and sw.js are generated at build time; see Offline)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
@@ -175,6 +176,8 @@ One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mob
 | `isHidden()`, `focus()` | notification vs in-app toast | `document.hidden`, `window.focus()` |
 
 To add a shell: implement `Platform` in `src/platform/tauri.ts` or `capacitor.ts` and load it in `initPlatform()` when `detectPlatform()` matches (the stub is commented there). Shell builds also set `VITE_API_URL`.
+
+**Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
 ## Offline
 

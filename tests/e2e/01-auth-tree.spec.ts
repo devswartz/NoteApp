@@ -61,7 +61,7 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
   await expect(page.locator('.ws-switch')).toContainText('Rocket Team');
 
   // A new notebook comes with a "General" section and opens a fresh page.
-  await page.getByRole('button', { name: 'New notebook' }).click();
+  await page.getByRole('button', { name: 'New notebook', exact: true }).click();
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar.getByText('Launch Plans')).toBeVisible();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
@@ -69,14 +69,14 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
 
   const nbRow = page.locator('.sb-row', { hasText: 'Launch Plans' });
   await nbRow.hover();
-  await nbRow.getByTitle('Notebook options').click();
+  await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New section' }).click();
   const secRow = page.locator('.sec-row', { hasText: 'Q4' });
   await expect(secRow).toBeVisible();
 
   const firstPageUrl = page.url();
   await secRow.hover();
-  await secRow.getByTitle('New page').click();
+  await secRow.getByRole('button', { name: 'New page', exact: true }).click();
   await expect(page).not.toHaveURL(firstPageUrl);
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const pageId = page.url().split('/p/')[1];

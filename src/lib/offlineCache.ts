@@ -42,7 +42,31 @@ export const offlineCache = {
   clear: () => run('readwrite', (s) => s.clear()).then(() => undefined),
 };
 
-/** True for errors that mean "couldn't reach the server" rather than "the server said no". */
+/**
+ * True only when the request never got an answer (fetch rejects with a
+ * TypeError: offline, DNS, connection refused). A server error (5xx) is an
+ * answer and is NOT treated as offline.
+ */
 export function isNetworkError(e: unknown): boolean {
-  return e instanceof TypeError || (typeof navigator !== 'undefined' && !navigator.onLine);
+  return e instanceof TypeError;
+}
+
+/**
+ * Remove everything this device keeps for the signed-in user: the read-only
+ * data cache, cached note documents (y-indexeddb) and cached uploaded files
+ * (Cache Storage). Each step runs even if another fails. The app shell cache
+ * holds no user data and stays.
+ */
+export async function clearLocalUserData(): Promise<void> {
+  await Promise.allSettled([
+    offlineCache.clear(),
+    (async () => {
+      const dbs = await indexedDB.databases?.();
+      for (const d of dbs ?? []) if (d.name?.startsWith('noteapp-page-')) indexedDB.deleteDatabase(d.name);
+    })(),
+    (async () => {
+      if (typeof caches === 'undefined') return;
+      for (const k of await caches.keys()) if (k.startsWith('uploads-')) await caches.delete(k);
+    })(),
+  ]);
 }

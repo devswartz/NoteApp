@@ -33,7 +33,7 @@ export function PageView() {
     let cancelled = false;
     setCanEdit(null);
     // Remember edit rights so a page opened offline stays editable (changes sync on reconnect).
-    const key = `noteapp.canEdit.${pageId}`;
+    const key = `noteapp.canEdit.${user.id}.${pageId}`;
     get<{ canEdit: boolean }>(`/pages/${pageId}`)
       .then((r) => {
         platform.kv.set(key, r.canEdit ? '1' : '0');
