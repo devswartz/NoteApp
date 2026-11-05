@@ -5,9 +5,10 @@
 //   tokenFromUpgrade). Never stored server-side.
 // - Refresh token: random opaque string, REFRESH_TTL_DAYS lifetime, stored as a
 //   hash. Each use returns a new pair and retires the old token (rotation).
-//   Reusing a retired token after REUSE_GRACE_S revokes the whole sign-in
-//   (family), since it may have been stolen. The grace window covers two tabs
-//   or a flaky network refreshing at the same moment.
+//   Presenting a retired token again within REUSE_GRACE_S (a lost response, a
+//   retry, two windows racing) returns the *same* replacement token, so no
+//   second chain is ever created. After that, reuse revokes the whole sign-in
+//   (family), since the token may have been stolen.
 // No cookies are used anywhere, so native shells and other origins work the same.
 import type { NextFunction, Request, Response } from 'express';
 import type { IncomingMessage } from 'node:http';
@@ -28,12 +29,15 @@ export const WS_TOKEN_PREFIX = 'bearer.';
 /** Subprotocol the server selects; clients offer it alongside the token. */
 export const WS_PROTOCOL = 'noteapp.v1';
 
+const MIN_SECRET_BYTES = 32;
+
 function loadSecret(): string {
-  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  if (IS_PROD) {
-    console.error('JWT_SECRET must be set in production');
+  const env = process.env.JWT_SECRET;
+  if (IS_PROD && (!env || Buffer.byteLength(env) < MIN_SECRET_BYTES)) {
+    console.error(`JWT_SECRET must be set to at least ${MIN_SECRET_BYTES} bytes in production`);
     process.exit(1);
   }
+  if (env) return env;
   // Dev: persist a generated secret next to the database so sessions survive restarts.
   const file = path.join(DATA_DIR, '.jwt-secret');
   try {
@@ -79,6 +83,28 @@ interface RefreshRow {
   expires_at: string;
   used_at: string | null;
   revoked_at: string | null;
+  replacement_enc: string | null;
+}
+
+// The replacement token is encrypted with a key only the holder of the old token can derive.
+const replayKey = (oldToken: string) => crypto.createHash('sha256').update(`noteapp-refresh-replay:${oldToken}`).digest();
+
+function sealReplacement(oldToken: string, replacement: string): string {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', replayKey(oldToken), iv);
+  const ct = Buffer.concat([c.update(replacement, 'utf8'), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64url');
+}
+
+function openReplacement(oldToken: string, sealed: string): string | null {
+  try {
+    const b = Buffer.from(sealed, 'base64url');
+    const d = crypto.createDecipheriv('aes-256-gcm', replayKey(oldToken), b.subarray(0, 12));
+    d.setAuthTag(b.subarray(12, 28));
+    return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
 }
 
 /** Exchange a refresh token for a new pair. Returns null if it is invalid, expired, revoked or replayed. */
@@ -87,15 +113,42 @@ export function rotateRefreshToken(token: unknown, userAgent: string | null = nu
   return db.transaction(() => {
     const row = db.prepare('SELECT * FROM refresh_tokens WHERE token_hash = ?').get(hash(token)) as RefreshRow | undefined;
     if (!row || row.revoked_at || row.expires_at < now()) return null;
-    if (row.used_at && Date.now() - Date.parse(row.used_at) > REUSE_GRACE_S * 1000) {
-      // Replay of a token that was rotated a while ago: assume theft and end the sign-in.
-      revokeFamily(row.family_id);
-      return null;
-    }
-    if (!row.used_at) db.prepare('UPDATE refresh_tokens SET used_at = ? WHERE id = ?').run(now(), row.id);
     if (!getUser(row.user_id)) return null;
-    return { userId: row.user_id, ...session(row.user_id, insertRefreshToken(row.user_id, row.family_id, userAgent)) };
+    if (row.used_at) {
+      // Already rotated. Inside the grace window, hand back the current head of
+      // the chain (no new chain); otherwise assume theft and end the sign-in.
+      const inGrace = Date.now() - Date.parse(row.used_at) <= REUSE_GRACE_S * 1000;
+      const head = inGrace ? chainHead(token, row) : null;
+      if (!head) {
+        revokeFamily(row.family_id);
+        return null;
+      }
+      return { userId: row.user_id, ...session(row.user_id, head) };
+    }
+    const next = insertRefreshToken(row.user_id, row.family_id, userAgent);
+    db.prepare('UPDATE refresh_tokens SET used_at = ?, replacement_enc = ? WHERE id = ?').run(now(), sealReplacement(token, next), row.id);
+    return { userId: row.user_id, ...session(row.user_id, next) };
   })();
+}
+
+/**
+ * Follow a rotated token's replacements to the newest one that hasn't been
+ * used yet. Each replacement is sealed with the token before it, so only the
+ * holder of the replayed token can walk the chain. Null if any link is
+ * missing, revoked or expired.
+ */
+function chainHead(token: string, row: RefreshRow): string | null {
+  let current = token;
+  let r: RefreshRow | undefined = row;
+  for (let i = 0; i < 20 && r; i++) {
+    if (r.revoked_at || r.expires_at < now()) return null;
+    if (!r.used_at) return current;
+    const next = r.replacement_enc ? openReplacement(current, r.replacement_enc) : null;
+    if (!next) return null;
+    current = next;
+    r = db.prepare('SELECT * FROM refresh_tokens WHERE token_hash = ?').get(hash(current)) as RefreshRow | undefined;
+  }
+  return null;
 }
 
 export function revokeFamily(familyId: string) {
@@ -115,15 +168,21 @@ export function pruneRefreshTokens() {
   db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ? OR revoked_at < ?').run(now(), cutoff);
 }
 
-export function verifyToken(token: string | undefined | null): User | null {
+/** Verify an access token. `expiresAt` (ms) lets long-lived sockets close when it lapses. */
+export function verifyAccessToken(token: string | undefined | null): { user: User; expiresAt: number } | null {
   if (!token) return null;
   try {
-    const p = jwt.verify(token, SECRET) as { sub: string; typ?: string };
+    const p = jwt.verify(token, SECRET) as { sub: string; typ?: string; exp: number };
     if (p.typ !== 'access') return null;
-    return getUser(p.sub);
+    const user = getUser(p.sub);
+    return user ? { user, expiresAt: p.exp * 1000 } : null;
   } catch {
     return null;
   }
+}
+
+export function verifyToken(token: string | undefined | null): User | null {
+  return verifyAccessToken(token)?.user ?? null;
 }
 
 export function getUser(id: string): User | null {
@@ -133,8 +192,8 @@ export function getUser(id: string): User | null {
 /**
  * Access token for a WebSocket upgrade. Browsers can't set headers on
  * WebSockets, so clients send `Sec-WebSocket-Protocol: noteapp.v1, bearer.<jwt>`
- * (keeps the token out of URLs and proxy logs). `?token=` is still accepted
- * for simple clients and scripts.
+ * (keeps the token out of URLs and proxy logs). `?token=` is accepted in
+ * development only, for scripts.
  */
 export function tokenFromUpgrade(req: IncomingMessage): string | null {
   const protocols = String(req.headers['sec-websocket-protocol'] ?? '')
@@ -142,7 +201,7 @@ export function tokenFromUpgrade(req: IncomingMessage): string | null {
     .map((s) => s.trim());
   const p = protocols.find((s) => s.startsWith(WS_TOKEN_PREFIX));
   if (p) return p.slice(WS_TOKEN_PREFIX.length);
-  return new URL(req.url ?? '', 'http://x').searchParams.get('token');
+  return IS_PROD ? null : new URL(req.url ?? '', 'http://x').searchParams.get('token');
 }
 
 /** For `new WebSocketServer({ handleProtocols })`: never echo the token back. */

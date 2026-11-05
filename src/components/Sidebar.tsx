@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { del, patch, post } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, ui, useStore } from '../store.ts';
-import { Avatar, Dropdown, Kbd, MenuItem, MenuSeparator, MOD, useIsMobile } from './ui.tsx';
+import { Avatar, Dropdown, IconButton, Kbd, MenuItem, MenuSeparator, MOD, useIsMobile } from './ui.tsx';
 import { isMine } from '../lib/taskViews.ts';
 import { today } from '../../shared/dates.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
@@ -106,9 +106,9 @@ export function Sidebar() {
       <div className="sb-top">
         <WorkspaceSwitcher />
         {!isMobile && (
-          <button className="btn-ghost icon-btn" onClick={ui.toggleSidebar} title={`Hide sidebar (${MOD}\\)`}>
+          <IconButton label="Hide sidebar" shortcut={`${MOD}\\`} onClick={ui.toggleSidebar}>
             <PanelLeftClose size={17} />
-          </button>
+          </IconButton>
         )}
       </div>
 
@@ -137,9 +137,9 @@ export function Sidebar() {
         <div className="sb-heading">
           <span>Notebooks</span>
           {canEdit && (
-            <button className="btn-ghost icon-btn sm" onClick={createNotebook} title="New notebook">
+            <IconButton label="New notebook" size="sm" onClick={createNotebook}>
               <Plus size={15} />
-            </button>
+            </IconButton>
           )}
         </div>
 

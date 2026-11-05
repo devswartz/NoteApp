@@ -90,7 +90,7 @@ test('a private notebook is hidden from other members', async ({ browser, reques
   const nbRow = a.locator('.sb-row', { hasText: 'Alice Diary' });
   await nbRow.hover();
   await nbRow.getByTitle('Notebook options').click();
-  await a.getByRole('button', { name: 'Share with workspace' }).click();
+  await a.getByRole('menuitem', { name: 'Share with workspace' }).click();
   await expect(bSidebar.getByText('Alice Diary')).toBeVisible();
   await ac.close();
   await bc.close();
