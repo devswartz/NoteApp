@@ -19,6 +19,7 @@ import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
 import { platform } from '../platform/index.ts';
+import { ENTER, MOD, keyLabel } from '../components/ui.tsx';
 
 export function PageView() {
   const { wsId, pageId } = useParams() as { wsId: string; pageId: string };
@@ -499,7 +500,7 @@ function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: strin
         ))}
         {!tasks.length && (
           <p className="muted small panel-empty">
-            No tasks yet. Type <code>[]</code> in the note, or select text and press <code>⌘↵</code> to turn it into a task.
+            No tasks yet. Type <code>/task</code> in the note, or select text and press <code>{keyLabel(MOD, ENTER)}</code> to turn it into a task.
           </p>
         )}
         {done.length > 0 && (

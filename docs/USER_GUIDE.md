@@ -29,7 +29,7 @@ A short tour of NoteApp for the team. Shortcuts use ⌘ (Mac). On Windows and Li
 
 ## Tasks inside notes
 
-- Type **`[]` then space** at the start of a line to make a task, or put the cursor on any line and press **⌘↵** to turn it into one.
+- Type **`/task`** and press Enter to insert a task, or put the cursor on any line and press **⌘↵** to turn it into one.
 - A task in a note is **the real task**. Its due date, assignee, priority and done state are the same wherever it appears: in the note, on Today, on the calendar. Check it off anywhere and it's done everywhere.
 - Click a task's chips (date, flag, avatar) to change them, or open it for details: description, reminders and recurrence.
 - The **Tasks on this page** panel (the icon at the top right of a page) lists the page's tasks.
