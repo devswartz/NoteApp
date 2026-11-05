@@ -4,9 +4,10 @@
 //   import { sendMail } from './mail.ts';
 //   await sendMail({ to: 'sam@example.com', subject: 'Hi', text: 'Plain body', html: '<p>Optional HTML</p>' });
 //
-// If SMTP isn't configured the app still works: the message is logged (so
-// invite links can be copied from the server log) and sendMail resolves with
-// { sent: false }. sendMail never throws; delivery failures are logged and
+// If SMTP isn't configured the app still works: sendMail resolves with
+// { sent: false } and logs the recipient and subject. Outside production it
+// also logs the body, so invite links can be copied from the dev server log;
+// in production bodies are never logged, because invite links are credentials. sendMail never throws; delivery failures are logged and
 // reported as { sent: false, error }.
 // Owner: Collaboration & Access. Also used by Reminders.
 import nodemailer, { type Transporter } from 'nodemailer';
@@ -30,6 +31,10 @@ const OUTBOX_MAX = 50;
 
 let transport: Transporter | null | undefined; // undefined = not yet created
 let warned = false;
+
+// SES (and most providers) reject mail from an unverified sender, so a missing MAIL_FROM is a config error.
+if (process.env.SMTP_HOST && !process.env.MAIL_FROM)
+  console.warn('[mail] SMTP_HOST is set but MAIL_FROM is not: set MAIL_FROM to a verified sender (see docs/DEPLOY_CONTRACT.md)');
 
 function from(): string {
   return process.env.MAIL_FROM || `${APP_NAME} <no-reply@localhost>`;
@@ -71,7 +76,8 @@ export async function sendMail(msg: MailMessage): Promise<MailResult> {
     }
     outbox.push(msg);
     if (outbox.length > OUTBOX_MAX) outbox.shift();
-    if (!process.env.MAIL_QUIET) console.log(`[mail] (not sent) to=${msg.to} subject=${JSON.stringify(msg.subject)}\n${msg.text}`);
+    if (!process.env.MAIL_QUIET)
+      console.log(`[mail] (not sent) to=${msg.to} subject=${JSON.stringify(msg.subject)}${process.env.NODE_ENV === 'production' ? '' : `\n${msg.text}`}`);
     return { sent: false };
   }
   try {

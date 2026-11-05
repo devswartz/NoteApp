@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, Wifi, WifiOff, FolderInput, Plus, ListTodo } from 'lucide-react';
-import { get, patch, del } from '../api.ts';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus } from 'lucide-react';
+import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
-import { NoteEditor, type PresenceUser, type SyncStatus } from '../editor/NoteEditor.tsx';
+import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
+import { IconPicker } from '../editor/IconPicker.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
-import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator, useIsMobile } from '../components/ui.tsx';
+import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
@@ -22,6 +23,7 @@ export function PageView() {
   const updatedBy = useStore((s) => s.members.find((m) => m.id === meta?.updatedBy));
   const [canEdit, setCanEdit] = useState<boolean | null>(null);
   const [status, setStatus] = useState<SyncStatus>('connecting');
+  const [save, setSave] = useState<SaveState>('saved');
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
@@ -100,10 +102,7 @@ export function PageView() {
                 <Avatar key={p.id} user={p} size={24} title={`${p.name} is here`} />
               ))}
             </div>
-            <span className={`sync sync-${status}`} title={status === 'live' ? 'Connected — changes sync live' : status === 'offline' ? 'Offline — edits are saved on this device and will sync when you reconnect' : 'Connecting…'}>
-              {status === 'offline' ? <WifiOff size={14} /> : <Wifi size={14} />}
-              <span className="sync-label">{status === 'live' ? 'Live' : status === 'offline' ? 'Offline' : 'Syncing'}</span>
-            </span>
+            <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button
               className={`btn-ghost icon-btn ${panelOpen && !isMobile ? 'is-active' : ''}`}
@@ -122,6 +121,7 @@ export function PageView() {
         </header>
 
         <article className="page-article">
+          <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
             Edited {relativeTime(meta.updatedAt)}
@@ -130,9 +130,11 @@ export function PageView() {
           <NoteEditor
             key={`editor-${pageId}`}
             pageId={pageId}
+            workspaceId={wsId}
             user={user}
             canEdit={canEdit}
             onStatus={setStatus}
+            onSave={setSave}
             onPresence={setPresence}
             onReady={onReady}
           />
@@ -144,6 +146,65 @@ export function PageView() {
         </article>
       </div>
       {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
+    </div>
+  );
+}
+
+/** "Saved" / "Saving…" / "Offline": everything typed is in IndexedDB at once and on the server shortly after. */
+function SaveIndicator({ status, save }: { status: SyncStatus; save: SaveState }) {
+  const offline = status !== 'live' || save === 'offline';
+  const state = status === 'connecting' ? 'connecting' : offline ? 'offline' : save;
+  const label = { connecting: 'Connecting…', offline: 'Offline', saving: 'Saving…', saved: 'Saved' }[state];
+  const title = {
+    connecting: 'Connecting to the server…',
+    offline: 'Offline. Your edits are saved on this device and will sync when you reconnect.',
+    saving: 'Saving your latest changes…',
+    saved: 'All changes saved and syncing live.',
+  }[state];
+  const icon = state === 'offline' ? <CloudOff size={14} /> : state === 'saved' ? <Check size={14} /> : <Loader size={14} className="spin" />;
+  return (
+    <span className={`sync sync-${status} save-${state}`} title={title} role="status" aria-live="polite">
+      {icon}
+      <span className="sync-label">{label}</span>
+    </span>
+  );
+}
+
+function setPageIcon(pageId: string, icon: string | null) {
+  useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, icon } : p)) } }));
+  patch(`/pages/${pageId}`, { icon }).catch(errorToast);
+}
+
+function PageIcon({ pageId, icon, canEdit }: { pageId: string; icon: string | null; canEdit: boolean }) {
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  if (!icon && !canEdit) return null;
+  return (
+    <div className={`page-icon-row ${icon ? 'has-icon' : ''}`}>
+      <button
+        ref={anchor}
+        type="button"
+        className={icon ? 'page-icon' : 'btn-ghost btn-sm page-icon-add'}
+        disabled={!canEdit}
+        title={canEdit ? (icon ? 'Change icon' : 'Add icon') : undefined}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {icon ?? (
+          <>
+            <SmilePlus size={15} /> Add icon
+          </>
+        )}
+      </button>
+      <IconPicker
+        anchor={anchor}
+        open={open}
+        onClose={() => setOpen(false)}
+        hasIcon={!!icon}
+        onPick={(e) => {
+          setPageIcon(pageId, e);
+          setOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -199,51 +260,81 @@ function PageMenu({ pageId, wsId }: { pageId: string; wsId: string }) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
+  const [mode, setMode] = useState<'move' | 'copy'>('move');
+  const sectionsOf = (notebookId: string) => tree.sections.filter((s) => s.notebookId === notebookId);
+  const run = (sectionId: string, label: string) => {
+    if (mode === 'move') {
+      if (current?.sectionId === sectionId) return;
+      post(`/pages/${pageId}/move`, { sectionId })
+        .then(() => toast(`Moved to ${label}`))
+        .catch(errorToast);
+    } else {
+      post<{ id: string }>(`/pages/${pageId}/copy`, { sectionId })
+        .then((r) => {
+          toast(`Copied to ${label}`, { action: { label: 'Open', run: () => navigate(`/w/${wsId}/p/${r.id}`) } });
+        })
+        .catch(errorToast);
+    }
+  };
   return (
     <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
-      <div className="menu">
-        <MenuLabel>
-          <FolderInput size={13} /> Move to section
-        </MenuLabel>
-        {tree.notebooks.map((n) => (
-          <div key={n.id}>
-            <div className="menu-group-title">{n.name}</div>
-            {tree.sections
-              .filter((s) => s.notebookId === n.id)
-              .map((s) => (
+      {() => (
+        <div className="menu page-menu">
+          <MenuItem
+            icon={<Copy size={15} />}
+            onSelect={() => {
+              post<{ id: string }>(`/pages/${pageId}/copy`, {})
+                .then((r) => {
+                  toast('Page duplicated');
+                  navigate(`/w/${wsId}/p/${r.id}`);
+                })
+                .catch(errorToast);
+            }}
+          >
+            Duplicate
+          </MenuItem>
+          <MenuSeparator />
+          <div className="seg page-menu-seg" role="tablist">
+            <button type="button" role="tab" aria-selected={mode === 'move'} className={mode === 'move' ? 'is-active' : ''} onClick={() => setMode('move')}>
+              <FolderInput size={13} /> Move to
+            </button>
+            <button type="button" role="tab" aria-selected={mode === 'copy'} className={mode === 'copy' ? 'is-active' : ''} onClick={() => setMode('copy')}>
+              <Copy size={13} /> Copy to
+            </button>
+          </div>
+          {tree.notebooks.map((n) => (
+            <div key={n.id}>
+              <div className="menu-group-title">{n.name}</div>
+              {sectionsOf(n.id).map((s) => (
                 <MenuItem
                   key={s.id}
                   icon={<span className="dot" style={{ background: s.color }} />}
-                  checked={current?.sectionId === s.id}
-                  onSelect={() => {
-                    if (current?.sectionId === s.id) return;
-                    patch(`/pages/${pageId}`, { sectionId: s.id })
-                      .then(() => toast(`Moved to ${n.name} › ${s.name}`))
-                      .catch(errorToast);
-                  }}
+                  checked={mode === 'move' && current?.sectionId === s.id}
+                  onSelect={() => run(s.id, `${n.name} › ${s.name}`)}
                 >
                   {s.name}
                 </MenuItem>
               ))}
-          </div>
-        ))}
-        <MenuSeparator />
-        <MenuItem
-          icon={<Trash2 size={15} />}
-          danger
-          onSelect={() => {
-            if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
-            del(`/pages/${pageId}`)
-              .then(() => {
-                toast('Page deleted');
-                navigate(`/w/${wsId}/notes`);
-              })
-              .catch(errorToast);
-          }}
-        >
-          Delete page
-        </MenuItem>
-      </div>
+            </div>
+          ))}
+          <MenuSeparator />
+          <MenuItem
+            icon={<Trash2 size={15} />}
+            danger
+            onSelect={() => {
+              if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
+              del(`/pages/${pageId}`)
+                .then(() => {
+                  toast('Page deleted');
+                  navigate(`/w/${wsId}/notes`);
+                })
+                .catch(errorToast);
+            }}
+          >
+            Delete page
+          </MenuItem>
+        </div>
+      )}
     </Dropdown>
   );
 }
