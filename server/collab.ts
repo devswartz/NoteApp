@@ -258,6 +258,16 @@ export function closeRoom(pageId: string) {
   for (const c of [...room.conns.keys()]) c.close(4403, 'Access revoked');
 }
 
+/** Force-disconnect every collab socket of one user (their account was deleted). */
+export function closeUserCollab(userId: string) {
+  for (const room of rooms.values()) {
+    for (const conn of [...room.conns.keys()]) {
+      const a = connAuth.get(conn);
+      if (a?.userId === userId) revoke(conn, a, 4401, 'Account deleted');
+    }
+  }
+}
+
 /** Seed an empty page with initial content (used for onboarding pages). */
 export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void) {
   const doc = new Y.Doc();

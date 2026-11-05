@@ -102,6 +102,8 @@ export const LIMITS = {
   // Resending the confirmation email (signed in; see takeResend): no mail-bombing one inbox or the SMTP quota.
   resendUserMinute: { capacity: 1, perMinute: 1 }, // per user: one a minute …
   resendUserHour: { capacity: 5, perMinute: 5 / 60 }, // … and five an hour
+  // Re-entering the password to delete an account (signed in): per user, and server-wide with the other bcrypt checks.
+  accountDeleteUser: { capacity: 5, perMinute: 1 },
   resendIp: { capacity: 10, perMinute: 0.5 }, // per IP, across accounts: 10, then one every two minutes
 } satisfies Record<string, BucketSpec>;
 
@@ -227,6 +229,21 @@ export function takeResend(req: Request, userId: string): number {
   }
   if (wait) taken.forEach((c) => limiters[c.limiter].refund(c.key));
   return wait;
+}
+
+/**
+ * Rate limit for DELETE /auth/account (a password check). Returns 0 if allowed, else seconds to wait.
+ * The per-user bucket always applies; the server-wide password-check budget follows the loopback exemption.
+ */
+export function takeAccountDelete(req: Request, userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { loopback } = clientIp(req);
+  const wait = limiters.accountDeleteUser.take(userId);
+  if (wait) return wait;
+  if (loopback && process.env.RATE_LIMIT_LOOPBACK !== '1') return 0;
+  const g = passwordChecks >= MAX_PASSWORD_CHECKS ? 1 : limiters.passwordChecks.take('all');
+  if (g) limiters.accountDeleteUser.refund(userId);
+  return g;
 }
 
 export function refuse(res: Response, wait: number) {

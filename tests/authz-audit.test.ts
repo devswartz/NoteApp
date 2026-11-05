@@ -145,6 +145,9 @@ const ROWS: Row[] = [
   { method: 'GET', route: '/workspaces', path: () => '/workspaces', expect: { stranger: 200, ...READ } },
   // Changing your own password needs the current one (wrong here, so 400 for every signed-in user).
   { method: 'POST', route: '/me/password', path: () => '/me/password', body: () => ({ currentPassword: 'wrong-current', newPassword: 'another-password-1' }), expect: { stranger: 400, viewer: 400, member: 400 } },
+  // Account deletion: the wrong password is a 401 for everyone (and deletes nothing), so the table can reuse the same personas.
+  { method: 'GET', route: '/auth/account/deletion-preview', path: () => '/auth/account/deletion-preview', expect: { stranger: 200, ...READ } },
+  { method: 'DELETE', route: '/auth/account', path: () => '/auth/account', body: () => ({ password: 'wrong-password-123' }), expect: { stranger: 401, viewer: 401, member: 401 } },
   { method: 'POST', route: '/workspaces', path: () => '/workspaces', body: () => ({ name: 'Mine' }), expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'POST', route: '/uploads', path: () => '/uploads', raw: true, expect: { stranger: 200, viewer: 200, member: 200 } }, // personal, unscoped upload
   // Invite acceptance requires the invited email: nobody in this table has it.

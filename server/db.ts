@@ -12,6 +12,9 @@ export const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+/** Stand-in author for content that outlives its deleted creator (server/accounts.ts). Not a real account: nobody can sign in as it. */
+export const DELETED_USER_ID = 'deleted-user';
+
 export const newId = () => crypto.randomUUID();
 export const now = () => new Date().toISOString();
 

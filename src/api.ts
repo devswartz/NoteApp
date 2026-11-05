@@ -198,7 +198,9 @@ export function setEmailUnverifiedHandler(fn: () => void) {
 
 export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}, retry = true): Promise<T> {
   // /auth/* are the public sign-in endpoints (no token), except asking for a new confirmation email, which needs one.
-  const isAuth = path.startsWith('/auth/') && path !== '/auth/resend-verification';
+  // Account deletion (/auth/account…) is signed in too, and its 401 means "wrong password", not "session over".
+  const signedIn = path === '/auth/resend-verification' || path.startsWith('/auth/account');
+  const isAuth = path.startsWith('/auth/') && !signedIn;
   const headers = new Headers(init.headers);
   const token = isAuth ? null : await freshAccessToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -208,7 +210,7 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     body = JSON.stringify(init.json);
   }
   const res = await fetchWithRetry(apiUrl(path), { ...init, headers, body });
-  if (res.status === 401 && !isAuth) {
+  if (res.status === 401 && !isAuth && !path.startsWith('/auth/account')) {
     if (retry && (await refreshSession().catch(() => null))) return api<T>(path, init, false);
     onUnauthorized();
   }

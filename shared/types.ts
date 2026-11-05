@@ -37,6 +37,20 @@ export type Recurrence =
   | ({ freq: 'day' | 'week' | 'month' | 'year'; interval: number } & RecurrenceOptions)
   | ({ freq: 'weekday' } & RecurrenceOptions);
 
+/** GET /auth/account/deletion-preview: what deleting the signed-in account would do to workspaces. */
+export interface AccountDeletionPreview {
+  /** Owned, with no other owner or admin to hand over to: deleted for everyone. */
+  deletedWorkspaces: { id: string; name: string }[];
+  /** Owned, no other owner: the longest-standing admin becomes owner. */
+  transferredWorkspaces: { id: string; name: string; newOwnerName: string }[];
+  /** Owned together with another owner: that owner carries on. */
+  sharedOwnership: { id: string; name: string }[];
+  /** Workspaces owned by someone else (as admin, member or viewer): you are removed from them. */
+  leftWorkspaces: { id: string; name: string }[];
+  /** Private notebooks you created, deleted with everything in them. */
+  privateNotebooks: number;
+}
+
 export interface User {
   id: string;
   email: string;

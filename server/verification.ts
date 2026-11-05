@@ -47,7 +47,7 @@ export function verificationRequired(): boolean {
 /** Should a brand-new account start verified? Call inside the registration transaction, before inserting the user. */
 export function startsVerified(email: string): boolean {
   if (!verificationRequired()) return true;
-  if (!db.prepare('SELECT 1 FROM users LIMIT 1').get()) return true; // the very first account bootstraps the server
+  if (!db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get()) return true; // the very first account bootstraps the server
   return adminEmails().includes(email.toLowerCase());
 }
 

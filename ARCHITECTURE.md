@@ -173,6 +173,33 @@ templates (workspace_id, name, icon, visibility 'workspace' | 'private', content
 - **Secrets:** in production the server refuses to start unless `JWT_SECRET` is at least 32 bytes.
 - **API base URL:** `VITE_API_URL` at build time, else same origin. `apiUrl()`, `wsUrl()` and `fileUrl()` in `src/api.ts` build every URL; nothing else should hard-code `/api` or `location`.
 
+## Account deletion
+
+`deleteAccount(userId)` in `server/accounts.ts` is the one implementation; it checks no password and sends no email, so other jobs (such as auto-deleting accounts that never verified) can call it. The signed-in route is `DELETE /auth/account {password}` in `server/routes/auth.ts`: it sits behind `requireVerifiedEmail` like every other signed-in route (an unverified account can't reach it; it is meant to be removed by the automatic job instead), answers a wrong password with **401 "Incorrect password"** (the client's `api()` treats a 401 on `/auth/account…` as an error message, not as "session over") and is rate limited by `takeAccountDelete` (5 tries per user, then 1 a minute, plus the server-wide password-check budget; 429 + `Retry-After`). `GET /auth/account/deletion-preview` is the read-only list Settings shows first (workspaces that will be deleted, handed over, co-owned, or left; number of private notebooks).
+
+One transaction, in this order: private notebooks the user created and the tasks on their pages; the user's own tasks only they can see (`private_owner_only`, created by them, not assigned to someone else) with their subtasks; files (rows, then bytes after commit) on those pages, in workspaces that are deleted, copies owned by their private templates, and their detached files; `pages_fts` and `activity` entries for what goes; private templates, private notebooks (sections, pages, versions, comment threads and comments, shares cascade) and workspaces that go; ownership handover; invites; authorship re-pointing; the user row. After commit: file bytes unlinked, the user's `/api/events` and collab sockets closed (4401), `accessChanged()`, and events published: `task-deleted` for removed tasks, `task` for tasks that lost their assignee, `tree` where a private notebook disappeared, `members` for every workspace they were in that continues, `workspaces` for members of deleted workspaces and for a new owner.
+
+**Workspaces the user owns:** another owner exists, nothing changes; otherwise the longest-standing admin (`joined_at`) becomes owner; otherwise (only members and viewers) the whole workspace is deleted with its files. Everywhere else the user is simply removed (membership, `notebook_shares`, assignments, pending invites they sent, pending invites to their email).
+
+**The stand-in user.** Foreign keys to `users` that don't cascade can't be left dangling (`foreign_keys` stays ON), so content that stays is re-pointed at one fixed row, `users.id = 'deleted-user'` (name "Deleted user", created on first use, `created_at` 9999 so it sorts last, an unusable password hash, never verified, so nobody can sign in, reset or receive mail as it). It is not an account: the "first account", sign-up bootstrap and admin user-count queries exclude it, and password-reset requests for it are ignored. Clients find no member for it and show "a deleted user" (task details) or no avatar.
+
+| Table.column | Decision |
+|---|---|
+| `refresh_tokens.user_id`, `email_verifications`, `notification_settings`, `task_reminders.user_id`, `push_subscriptions`, `action_tokens`, `quiet_hours`, `calendar_feeds`, `device_tokens`, `notifications.user_id`, `workspace_members.user_id`, `notebook_shares.user_id` | ON DELETE CASCADE: deleted with the user |
+| `tasks.assignee_id` | ON DELETE SET NULL: the task stays, unassigned (clients get a `task` event) |
+| `notifications.actor_id`, `activity.actor_id`, `page_versions.author_id` | ON DELETE SET NULL: entries stay, author unknown. Private-notebook activity by the user is deleted instead |
+| `workspaces.created_by` | workspace continues: re-pointed to `deleted-user` |
+| `workspace_invites.invited_by` | their pending invites are deleted (invites to their email too) |
+| `notebooks.created_by` | private notebooks deleted; shared notebooks stay, re-pointed |
+| `pages.created_by`, `pages.updated_by` | pages in shared notebooks stay, re-pointed |
+| `tasks.created_by`, `tasks.completed_by` | tasks in shared places stay, re-pointed; their private ones are deleted |
+| `files.created_by` | files in shared places stay (bytes too), re-pointed; private-page, private-template and detached files are deleted with their bytes |
+| `notebook_shares.created_by` | shares on notebooks that stay, re-pointed |
+| `comment_threads.created_by`, `.resolved_by`, `comments.author_id` | comments in shared notebooks stay with their text, re-pointed; those in private notebooks go with the notebook |
+| `templates.created_by` | private templates deleted (with copied attachments); workspace-wide ones stay, re-pointed |
+
+`USER_FK_DECISIONS` in `server/accounts.ts` lists the re-pointed columns; `tests/account-deletion.test.ts` reads the schema (`PRAGMA foreign_key_list`) and fails if any table gains a foreign key to `users` that is neither cascading/nulling nor listed there, so a new migration must decide, and update this table. Not handled automatically: `@mentions` of the user inside page documents (the label stays as text) and rows in `notification_log` (no foreign key; plain delivery keys).
+
 ## Platform adapter (`src/platform/`)
 
 One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mobile). Everything that differs goes through `platform` (`src/platform/index.ts`, interface in `types.ts`). **App code must not call browser-only APIs directly:** no `localStorage`, `Notification`, `window.open`, `<input type="file">` or `navigator.locks` outside `src/platform/`. Layout APIs (`window.innerWidth`, `matchMedia`, key events) and IndexedDB (y-indexeddb) are fine; they work the same in every WebView.
@@ -243,6 +270,7 @@ Client-side task writes are optimistic with rollback (`createTask`, `updateTask`
 All under `/api`, JSON, bearer token except where noted:
 
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh` → `AuthSession`; `POST /auth/logout` (no access token needed); `POST /auth/verify-email {token}` (public) and `POST /auth/resend-verification` (signed in; the only routes besides `GET /me` open to an unverified user)
+- `GET /auth/account/deletion-preview` and `DELETE /auth/account {password}` (signed in and verified; see "Account deletion")
 - `GET /health` (no auth)
 - `GET/PATCH /me`; live events are the `/api/events` WebSocket, not REST
 - `GET/POST /workspaces`, `PATCH/DELETE /workspaces/:id`, members: `GET/POST /workspaces/:id/members`, `PATCH/DELETE /workspaces/:id/members/:userId`, `DELETE /workspaces/:id/invites/:email`
