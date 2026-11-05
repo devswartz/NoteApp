@@ -102,7 +102,7 @@ src/               React web app
   editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
-public/            sw.js (offline shell), icon.svg (the manifest is generated from shared/config.ts)
+public/            icon.svg (manifest and sw.js are generated at build time; see Offline)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
 docs/              Plan-adjacent docs: agent guide, deploy contract, homelab brief, status log
@@ -176,6 +176,14 @@ One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mob
 
 To add a shell: implement `Platform` in `src/platform/tauri.ts` or `capacitor.ts` and load it in `initPlatform()` when `detectPlatform()` matches (the stub is commented there). Shell builds also set `VITE_API_URL`.
 
+## Offline
+
+- **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view (names are immutable). `/api/*` and `/collab/*` are never cached.
+- **Updates:** a new service worker waits rather than taking over a running page. `platform.appUpdates` reports it, and `components/AppUpdates.tsx` shows a sticky "A new version is available — Reload" toast. Reload tells the worker to take over and reloads the page. Registrations check for a new deploy every 30 min and whenever the app becomes visible. The shells will plug their own updater into the same hook.
+- **Notes:** each page's Yjs doc is cached in IndexedDB (`y-indexeddb`, `noteapp-page-<id>`), so pages you've opened before load and stay editable offline. Edit rights are remembered per page (`noteapp.canEdit.<id>`). Changes merge when the collab socket reconnects.
+- **Everything else, read-only:** `src/store/cache.ts` → `cached(key, path)` caches workspaces, tree, tasks and members in IndexedDB (`src/lib/offlineCache.ts`), and falls back to that copy only when the server can't be reached. Task edits need a connection in v1.
+- **Cold start offline:** if the refresh call can't reach the server, `bootstrap()` opens with the cached user and data and shows the offline banner. The events socket keeps retrying with backoff; once it reconnects, the session refreshes and data reloads. Signing out clears the cache and the IndexedDB note copies.
+
 ## Real-time sync
 
 There are two channels:
@@ -213,7 +221,7 @@ All under `/api`, JSON, bearer token except where noted:
 | Dashboard | My Tasks, Today (incl. overdue), Upcoming, Team, All (filter/sort), Calendar, Completed | | |
 | Recurrence & reminders | Recurrence: daily / weekdays / weekly / monthly / yearly / every N | Reminders fire only in an open tab (`AppShell.tsx`, browser Notification or toast); "weekly on chosen days" not supported by the `Recurrence` type | Server reminder worker, web push, email |
 | Collaboration | Real-time co-editing with live cursors and presence; task changes pushed live; roles (owner/admin/member/viewer); private vs shared notebooks | Invites: pending invite applied when that email signs up, but no email is sent | Email invites |
-| Offline | Notes cached in IndexedDB (y-indexeddb), sync on reconnect; service worker caches the app shell; offline indicator | Tasks offline: whatever is in memory; nothing persisted | Persisted read-only task cache |
+| Offline | Notes cached in IndexedDB and editable offline (sync on reconnect); precached app shell with an update prompt; offline cold start; read-only cache of workspaces/tree/tasks/members; offline banner | | Offline task edits (deferred past v1) |
 | Platform (§2) | Bearer access + rotating refresh tokens, no cookies; token-authenticated WebSockets; configurable API base URL (`VITE_API_URL`); `src/platform/` adapter with the web implementation, existing browser-only calls routed through it | Deep links: parsing and routing done; only shells deliver them | Tauri/Capacitor implementations (Phases 2–3) |
 | Deploy (§4) | One-port production server (API, `/api/events` + `/collab/*` WebSockets, web app), `DATA_DIR`, `/api/health`, graceful SIGTERM, `SEED_DEMO` | | Docker/CI (Infra agent) |
 

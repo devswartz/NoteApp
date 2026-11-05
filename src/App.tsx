@@ -5,6 +5,7 @@ import { setUnauthorizedHandler } from './api.ts';
 import { AppShell } from './components/AppShell.tsx';
 import { Toasts } from './components/Overlays.tsx';
 import { DeepLinks } from './components/DeepLinks.tsx';
+import { AppUpdates } from './components/AppUpdates.tsx';
 import { Login } from './pages/Login.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { useIsMobile } from './components/ui.tsx';
@@ -43,6 +44,7 @@ export function App() {
       </Routes>
       <Toasts />
       {user && <DeepLinks />}
+      <AppUpdates />
     </BrowserRouter>
   );
 }

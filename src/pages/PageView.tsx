@@ -32,9 +32,14 @@ export function PageView() {
   useEffect(() => {
     let cancelled = false;
     setCanEdit(null);
+    // Remember edit rights so a page opened offline stays editable (changes sync on reconnect).
+    const key = `noteapp.canEdit.${pageId}`;
     get<{ canEdit: boolean }>(`/pages/${pageId}`)
-      .then((r) => !cancelled && setCanEdit(r.canEdit))
-      .catch(() => !cancelled && setCanEdit(false));
+      .then((r) => {
+        platform.kv.set(key, r.canEdit ? '1' : '0');
+        if (!cancelled) setCanEdit(r.canEdit);
+      })
+      .catch(() => !cancelled && setCanEdit(platform.kv.get(key) === '1'));
     platform.kv.set(`noteapp.lastPage.${wsId}`, pageId);
     return () => {
       cancelled = true;
