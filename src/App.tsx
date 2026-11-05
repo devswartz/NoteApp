@@ -5,10 +5,7 @@ import { setUnauthorizedHandler } from './api.ts';
 import { AppShell } from './components/AppShell.tsx';
 import { Toasts } from './components/Overlays.tsx';
 import { Login } from './pages/Login.tsx';
-import { PageView } from './pages/PageView.tsx';
-import { TasksView } from './pages/TasksView.tsx';
-import { Settings } from './pages/Settings.tsx';
-import { NotesHome } from './pages/NotesHome.tsx';
+import { workspaceRoutes } from './routes.tsx';
 import { useIsMobile } from './components/ui.tsx';
 
 export function App() {
@@ -31,10 +28,9 @@ export function App() {
             <Route path="/" element={<Home />} />
             <Route path="/w/:wsId" element={<AppShell />}>
               <Route index element={<WorkspaceIndex />} />
-              <Route path="p/:pageId" element={<PageView />} />
-              <Route path="tasks/:view" element={<TasksView />} />
-              <Route path="notes" element={<NotesHome />} />
-              <Route path="settings" element={<Settings />} />
+              {workspaceRoutes.map((r) => (
+                <Route key={r.path} path={r.path} element={r.element} />
+              ))}
               <Route path="*" element={<Navigate to="tasks/today" replace />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

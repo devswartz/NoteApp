@@ -2,7 +2,7 @@
 
 How NoteApp is built today. Read `PLAN.md` for what we're building and `docs/AGENT_GUIDE.md` for how we work. Keep this file accurate: if you change something described here, update it in the same PR.
 
-> **Moving parts.** Phase 0 is still restructuring the repo. PR 2 splits `server/routes.ts` and the DB migrations into per-area files, PR 3 adds the deploy contract (`DATA_DIR`, `/api/health`), PR 4 adds bearer access/refresh tokens and `src/platform/`. This file is updated with each of them.
+> **Moving parts.** Phase 0 is still in progress. PR 3 adds the deploy contract (`DATA_DIR`, `/api/health`), PR 4 adds bearer access/refresh tokens and `src/platform/`. This file is updated with each of them.
 
 ## Stack
 
@@ -34,33 +34,64 @@ Environment variables used today: `PORT` (3001), `DB_FILE` (default `data/noteap
 ## Folder layout
 
 ```
-server/          Node API + collaboration server
-  index.ts       HTTP server: mounts /api, /uploads, static dist/, routes WebSocket upgrades to collab
-  routes.ts      All REST routes (auth, workspaces, members, tree, pages, tasks, search, uploads) — split in PR 2
-  db.ts          SQLite connection + schema migrations (tracked in PRAGMA user_version)
-  auth.ts        JWT signing/verification, requireAuth middleware
-  access.ts      All permission checks (workspace roles, private notebooks, task visibility SQL)
-  tasks.ts       Task persistence and rules: create/update/complete/recur, syncPageTasks (note ↔ task reconcile)
-  collab.ts      Yjs WebSocket rooms per page, persistence, text + taskRef extraction
-  events.ts      Live event hub (server-sent events) for task/tree/member changes
-  seed.ts        Onboarding content for a new user's personal workspace
-shared/          Code used by both server and client
-  types.ts       API and event types (the contract between client and server)
-  dates.ts       Local-date helpers and recurrence (nextOccurrence)
-  quickadd.ts    Natural-language task parsing ("Pay rent tomorrow p1 @sam every month")
-src/             React web app
-  main.tsx       Entry; registers the service worker in production
-  App.tsx        Route table
-  api.ts         fetch wrapper (adds the bearer token, JSON, error handling), upload helper
-  store.ts       Zustand store: session, workspaces, tree, tasks, members, UI state, live-event client
-  components/    App shell, sidebar, command palette, quick add, task row/detail/controls, overlays, ui primitives
-  editor/        NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
-  pages/         Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
-  lib/           Formatting and task-view filtering/sorting
-public/          manifest.webmanifest, sw.js (offline shell), icon.svg
-tests/           node:test suites (shared logic, server routes)
-docs/            Plan-adjacent docs: agent guide, deploy contract, homelab brief, status log
+server/
+  index.ts         Entry: starts the server on PORT, flushes collab docs on SIGINT/SIGTERM
+  app.ts           createServer(): mounts /api, /uploads, static dist/, routes WebSocket upgrades to collab
+  routes/          REST API, one Router per area, registered in routes/index.ts
+    index.ts       Registration: public routes, then requireAuth, then each area (add one line per area)
+    auth.ts        /auth/register, /auth/login, /me
+    events.ts      /events (live event stream)
+    workspaces.ts  /workspaces, members, invites
+    tree.ts        /workspaces/:id/tree, notebooks, sections
+    pages.ts       /sections/:id/pages, /pages/:id
+    tasks.ts       /workspaces/:id/tasks, /tasks/:id
+    search.ts      /workspaces/:id/search
+    files.ts       /uploads (UPLOAD_DIR)
+  http.ts          Route helpers: h() handler wrapper, str() validation, param(), errorHandler
+  db.ts            SQLite connection + migration runner
+  migrations/      NNN-name.sql schema migrations, applied in order (see "Migrations" below)
+  auth.ts          JWT signing/verification, requireAuth middleware
+  access.ts        All permission checks (workspace roles, private notebooks, task visibility SQL)
+  tasks.ts         Task persistence and rules: create/update/complete/recur, syncPageTasks (note ↔ task reconcile)
+  tree.ts          Tree helpers shared by routes: nextPos, detachPagesTasks, refreshTasksForNotebook
+  workspaces.ts    createWorkspace, memberIds
+  collab.ts        Yjs WebSocket rooms per page, persistence, text + taskRef extraction
+  events.ts        Live event hub (server-sent events) for task/tree/member changes
+  seed.ts          Onboarding content for a new user's personal workspace
+shared/            Code used by both server and client
+  types.ts         API and event types (the contract between client and server)
+  dates.ts         Local-date helpers and recurrence (nextOccurrence)
+  quickadd.ts      Natural-language task parsing ("Pay rent tomorrow p1 @sam every month")
+src/               React web app
+  main.tsx         Entry; registers the service worker in production
+  App.tsx          Top-level routing (login, workspace shell); workspace screens come from routes.tsx
+  routes.tsx       Workspace screens (/w/:wsId/…), one line each
+  api.ts           fetch wrapper (adds the bearer token, JSON, error handling), upload helper
+  store.ts         Barrel re-exporting the store; import from here
+  store/           Zustand store split by area:
+    state.ts       the State shape and useStore
+    session.ts     bootstrap, signIn, signOut
+    workspace.ts   workspaces, tree, members
+    tasks.ts       task list + optimistic create/update/toggle/delete
+    events.ts      live event client
+    toasts.ts, ui.ts
+  components/      App shell, sidebar, command palette, quick add, task row/detail/controls, overlays, ui primitives
+  editor/          NoteEditor (TipTap + Yjs providers), TaskRef node, SlashMenu
+  pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
+  lib/             Formatting and task-view filtering/sorting
+public/            manifest.webmanifest, sw.js (offline shell), icon.svg
+tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
+scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
+docs/              Plan-adjacent docs: agent guide, deploy contract, homelab brief, status log
 ```
+
+### Adding things without conflicts
+
+- **A REST endpoint:** put it in your area's `server/routes/<area>.ts`. A new area gets a new file plus one `api.use(...)` line in `server/routes/index.ts` (a `[shared]` change).
+- **A screen:** one line in `src/routes.tsx`.
+- **Client state for a new area:** create your own small zustand store in your area's folder. Add to `src/store/state.ts` only for genuinely global state.
+- **A schema change:** a new file `server/migrations/NNN-name.sql`, using the next number. Never edit a merged migration. If two PRs pick the same number, the server refuses to start ("numbered … without gaps or duplicates"), and the second PR to merge renumbers its file.
+- **Route tests:** `import { startTestApp } from './helpers/app.ts'`. It starts the real server (API + WebSockets) on a random port with an in-memory DB and has `call(method, path, token, body)` and `signUp(name)`. See `tests/server.test.ts`.
 
 ## Data model
 
@@ -76,6 +107,7 @@ pages_fts (FTS5: page_id, title, text)
 ```
 
 - **Hierarchy:** workspace → notebook → section → page. Ordering uses a `position REAL` column per level (insert between two items by averaging).
+- **Migrations:** `server/migrations/NNN-name.sql`, applied in order at startup inside a transaction each. The last applied number is stored in `PRAGMA user_version`. `001-initial.sql` is the original schema.
 - **Permissions** live in `server/access.ts`. Workspace roles: viewers read, members and up edit, admins manage members, owners manage everything. A private notebook (and its pages and tasks) is visible only to its creator, except that a task's assignee and creator can always see it (`TASK_VISIBLE`).
 - **Tasks are the single source of truth.** A page never stores task fields. The page document contains `taskRef` nodes holding only a `taskId`; the editor renders each one from the client task store (`src/editor/TaskRef.tsx`). So a task edited on the dashboard updates every note it appears in, and the reverse.
   - Clients create a task with a client-chosen UUID first (`POST /workspaces/:id/tasks` with `id`), then insert the `taskRef` node, so the node never points at a missing row. Retrying with the same id is idempotent.
