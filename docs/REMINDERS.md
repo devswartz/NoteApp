@@ -27,7 +27,7 @@ A rule is a `Recurrence` (`shared/types.ts`). The original small rules still wor
 ### Completing a recurring task: the same task rolls forward
 Completing a recurring task keeps **one task** and moves its due date forward, so its id, note link (`taskRef`), assignee and reminders stay the same. For history, `server/tasks.ts` inserts a completed copy with `occurrence_of = <task id>`, and those copies show in Completed. When the series ends (`nextOccurrence` returns null), the task is completed normally.
 
-`server/reminders/recurring.ts → nextDueDate(rule, dueDate, taskId, userId)` wraps this with the completing user's time zone. It also counts the recorded occurrences, which `count` rules need. `server/tasks.ts` (owned by Tasks) should call it in place of `shared/dates.ts → nextOccurrence`.
+`server/reminders/recurring.ts → nextDueDate(rule, dueDate, taskId, userId)` wraps this with the completing user's time zone. It also counts the recorded occurrences, which `count` rules need. `server/tasks.ts` calls it when a recurring task is completed, and validates rules with `recurrenceError()`.
 
 ## Reminders (`server/reminders/`)
 

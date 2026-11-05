@@ -523,3 +523,34 @@ test('review fixes: due date moved earlier re-fires; endpoint moves between user
   const r = await new sched.ReminderScheduler({ now: () => Date.parse('2039-03-11T06:01:00Z'), channels: [ch] }).tick();
   assert.equal(r.digests, 0);
 });
+
+test('completing tasks with the new rule types rolls them forward and stops at the end (server/tasks.ts → nextDueDate)', async () => {
+  const u = await setup('RollForward', 'UTC');
+  const complete = async (id: string) => (await app.call<Task>('PATCH', `/tasks/${id}`, u.token, { status: 'done' })).data;
+  const due = async (id: string, n: number) => {
+    const out: (string | null)[] = [];
+    for (let i = 0; i < n; i++) {
+      const t = await complete(id);
+      out.push(t.status === 'done' ? 'done' : t.dueDate);
+    }
+    return out;
+  };
+  // Weekly on Mon + Thu (2030-01-07 is a Monday).
+  const weekly = await task(u, { title: 'Gym', dueDate: '2030-01-07', recurrence: { freq: 'week', interval: 1, byWeekday: [1, 4] } });
+  assert.deepEqual(await due(weekly.id, 3), ['2030-01-10', '2030-01-14', '2030-01-17']);
+  // Monthly on the 2nd Tuesday.
+  const nth = await task(u, { title: 'Review', dueDate: '2030-01-08', recurrence: { freq: 'month', interval: 1, byNthWeekday: { n: 2, weekday: 2 } } });
+  assert.deepEqual(await due(nth.id, 3), ['2030-02-12', '2030-03-12', '2030-04-09']);
+  // Every 3 days until 2030-01-07: 01-01 → 01-04 → 01-07, then the series ends.
+  const until = await task(u, { title: 'Pills', dueDate: '2030-01-01', recurrence: { freq: 'day', interval: 3, until: '2030-01-07' } });
+  assert.deepEqual(await due(until.id, 3), ['2030-01-04', '2030-01-07', 'done']);
+  // Every 2 weeks, 3 times in total.
+  const count = await task(u, { title: 'Sprint', dueDate: '2030-03-01', recurrence: { freq: 'week', interval: 2, count: 3 } });
+  assert.deepEqual(await due(count.id, 3), ['2030-03-15', '2030-03-29', 'done']);
+  // History: one completed copy per rolled occurrence, plus the final completion itself.
+  const completed = (await app.call<Task[]>('GET', `/workspaces/${u.wsId}/tasks/completed`, u.token)).data;
+  assert.equal(completed.filter((t) => t.title === 'Sprint').length, 3);
+  assert.equal(completed.filter((t) => t.title === 'Pills').length, 3);
+  // Invalid extended rules are rejected by the shared validator.
+  assert.equal((await app.call('POST', `/workspaces/${u.wsId}/tasks`, u.token, { title: 'x', recurrence: { freq: 'week', interval: 1, byWeekday: [9] } })).status, 400);
+});
