@@ -102,6 +102,7 @@ src/               React web app
   editor/          The note editor (see "Editor" below); styles in src/styles/editor.css
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting
+apps/mobile/       Capacitor shell for iPhone + Android (see docs/MOBILE.md)
 public/            sw.js (offline shell), icon.svg (the manifest is generated from shared/config.ts)
 tests/             node:test suites; tests/helpers/app.ts starts the server with an in-memory DB
 scripts/           smoke-e2e.cjs (manual Playwright walk-through of the core flow)
@@ -114,7 +115,7 @@ docs/              Plan-adjacent docs: agent guide, deploy contract, homelab bri
 - **A screen:** one line in `src/routes.tsx`.
 - **A command or keyboard shortcut:** `useCommands(() => [{ id, title, group, keys, icon, run, when }], deps)` from `src/hooks/useShortcuts.ts` inside your component. The ⌘K palette, the `?` overlay and the global key listener all read that one registry (`listCommands()` / `runCommand(id)` are there for the desktop menu). Don't add your own `window` keydown listeners for app-wide shortcuts.
 - **Client state for a new area:** create your own small zustand store in your area's folder. Add to `src/store/state.ts` only for genuinely global state.
-- **A schema change:** a new file `server/migrations/NNN-name.sql`, using the next number. Never edit a merged migration. If two PRs pick the same number, the server refuses to start ("numbered … without gaps or duplicates"), and the second PR to merge renumbers its file.
+- **A schema change:** a new file `server/migrations/NNN-name.sql`, with the number the manager reserves for your PR. Never edit a merged migration. If two PRs end up with the same number, the server refuses to start ("Two migrations share number …"), and the second PR to merge renumbers its file.
 - **Route tests:** `import { startTestApp } from './helpers/app.ts'`. It starts the real server (API + WebSockets) on a random port with an in-memory DB and has `call(method, path, token, body)` and `signUp(name)`. See `tests/server.test.ts`.
 
 ## Data model
@@ -133,7 +134,7 @@ files (uploads: workspace_id, page_id, name, mime, size)
 ```
 
 - **Hierarchy:** workspace → notebook → section → page. Ordering uses a `position REAL` column per level (insert between two items by averaging).
-- **Migrations:** `server/migrations/NNN-name.sql`, applied in order at startup inside a transaction each. The last applied number is stored in `PRAGMA user_version`. `001-initial.sql` is the original schema.
+- **Migrations:** `server/migrations/NNN-name.sql`, applied at startup in numeric order, one transaction each, and recorded in `schema_migrations`. Numbers are **reserved per PR by the manager** and may merge out of order, so gaps are allowed: a lower number that lands after a higher one still runs. Duplicate numbers stop the server. A migration must not depend on a higher-numbered one. Databases created before `schema_migrations` existed are backfilled from `PRAGMA user_version`.
 - **Permissions** live in `server/access.ts`. Workspace roles: viewers read, members and up edit, admins manage members, owners manage everything. A private notebook (and its pages and tasks) is visible only to its creator, except that a task's assignee and creator can always see it (`TASK_VISIBLE`).
 - **Tasks are the single source of truth.** A page never stores task fields. The page document contains `taskRef` nodes holding only a `taskId`; the editor renders each one from the client task store (`src/editor/TaskRef.tsx`). So a task edited on the dashboard updates every note it appears in, and the reverse.
   - Clients create a task with a client-chosen UUID first (`POST /workspaces/:id/tasks` with `id`), then insert the `taskRef` node, so the node never points at a missing row. Retrying with the same id is idempotent.
@@ -151,9 +152,11 @@ files (uploads: workspace_id, page_id, name, mime, size)
 
 - **Sign-in** (`POST /auth/register` | `/auth/login`) returns an `AuthSession` (`shared/types.ts`): `{ accessToken, expiresIn, refreshToken, user }`.
 - **Access token:** a JWT `{sub, typ:'access'}` valid for 15 minutes, sent as `Authorization: Bearer …`. The client keeps it in memory only.
-- **Refresh token:** 32 random bytes, valid for 30 days, stored server-side only as a SHA-256 hash (`refresh_tokens`, migration 002). `POST /auth/refresh {refreshToken}` returns a new session and retires the old token (**rotation**). If a retired token is presented again more than 60 s after it was rotated, the server treats that as theft and **revokes the whole sign-in** (every token in its `family_id`). The 60 s grace window covers two tabs or a retried request racing each other. `POST /auth/logout {refreshToken}` revokes the family.
+- **Refresh token:** 32 random bytes, valid for 30 days, stored server-side only as a SHA-256 hash (`refresh_tokens`, migrations 002–003). `POST /auth/refresh {refreshToken}` returns a new session and retires the old token (**rotation**). Presenting a retired token again within 60 s (a lost response, a retry, two windows racing) returns the **same** replacement token. The replacement is kept encrypted with a key derived from the retired token, so no second token chain is ever created. Any later reuse is treated as theft and **revokes the whole sign-in** (every token in its `family_id`). `POST /auth/logout {refreshToken}` revokes the family.
 - **Client:** the refresh token is persisted by `tokenStore` in `src/api.ts` through `platform.secureStorage` (localStorage on the web, the OS keychain in the shells). Startup calls `/auth/refresh` to restore the session. A timer refreshes a minute before expiry. Any 401 triggers one refresh-and-retry. Refreshes are single-flight per tab and serialized across tabs/windows with `platform.withLock` (Web Locks on the web), each reading the latest stored token, so tabs don't burn each other's tokens.
-- **WebSockets:** browsers can't set headers on a WebSocket, so the client offers subprotocols `noteapp.v1, bearer.<accessToken>`. The server reads the token from there (`tokenFromUpgrade`) and answers with `noteapp.v1` only, never echoing the token. `?token=` is still accepted for scripts. A socket is authenticated when it opens; on close code 4401 the client refreshes and reconnects. The collab provider gets the current token on every reconnect through a `WebSocket` subclass passed as y-websocket's `WebSocketPolyfill`.
+- **WebSockets:** browsers can't set headers on a WebSocket, so the client offers subprotocols `noteapp.v1, bearer.<accessToken>`. The server reads the token from there (`tokenFromUpgrade`) and answers with `noteapp.v1` only, never echoing the token. `?token=` is accepted in development only. A socket is closed with **4401 when its access token expires** (the client refreshes and reconnects). Collab sockets are also re-checked every 30 s and whenever access changes, and are closed with **4403** if the user lost access to the page. The collab provider gets the current token on every reconnect through a `WebSocket` subclass passed as y-websocket's `WebSocketPolyfill`.
+- **Access changes:** any route that can take access away (role or membership change, workspace deleted, notebook made private, page or section moved) calls `accessChanged()` from `server/access.ts`. Live connections subscribe with `onAccessChange()` and re-check themselves, so new routes only need that one call.
+- **Secrets:** in production the server refuses to start unless `JWT_SECRET` is at least 32 bytes.
 - **API base URL:** `VITE_API_URL` at build time, else same origin. `apiUrl()`, `wsUrl()` and `fileUrl()` in `src/api.ts` build every URL; nothing else should hard-code `/api` or `location`.
 
 ## Platform adapter (`src/platform/`)
@@ -173,6 +176,8 @@ One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mob
 | `isHidden()`, `focus()` | notification vs in-app toast | `document.hidden`, `window.focus()` |
 
 To add a shell: implement `Platform` in `src/platform/tauri.ts` or `capacitor.ts` and load it in `initPlatform()` when `detectPlatform()` matches (the stub is commented there). Shell builds also set `VITE_API_URL`.
+
+**Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
 ## Editor (`src/editor/`)
 
@@ -231,4 +236,6 @@ All under `/api`, JSON, bearer token except where noted:
 | Platform (§2) | Bearer access + rotating refresh tokens, no cookies; token-authenticated WebSockets; configurable API base URL (`VITE_API_URL`); `src/platform/` adapter with the web implementation, existing browser-only calls routed through it | Deep links: parsing and routing done; only shells deliver them | Tauri/Capacitor implementations (Phases 2–3) |
 | Deploy (§4) | One-port production server (API, `/api/events` + `/collab/*` WebSockets, web app), `DATA_DIR`, `/api/health`, graceful SIGTERM, `SEED_DEMO` | | Docker/CI (Infra agent) |
 
-Known rough edges: uploaded files are served without auth (unguessable names), and the main JS bundle is about 1 MB (no code splitting yet).
+Known rough edges and accepted v1 tradeoffs:
+- **`/uploads/*` is served without auth.** Files get unguessable 128-bit random names and are only linked from notes. Anyone holding a file's URL can fetch it, even after losing access to the note. This keeps images working in `<img>` tags, which can't send bearer tokens. Revisit with signed, expiring URLs if that matters.
+- The main JS bundle is about 1 MB (no code splitting yet).
