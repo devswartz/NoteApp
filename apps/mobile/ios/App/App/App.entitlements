@@ -5,10 +5,12 @@
 	<!-- Push notifications (APNs). Xcode switches this to "production" when exporting for TestFlight/App Store. -->
 	<key>aps-environment</key>
 	<string>development</string>
-	<!-- Universal links: https://notes.devswartz.com/w/… opens the app (needs /.well-known/apple-app-site-association on the server; see docs/MOBILE.md). -->
+	<!-- Universal links: https://notes(-staging).devswartz.com/w/… opens the app. The server serves
+	     /.well-known/apple-app-site-association once APNS_TEAM_ID (or APPLE_TEAM_ID) is set; see docs/MOBILE.md. -->
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:notes.devswartz.com</string>
+		<string>applinks:notes-staging.devswartz.com</string>
 	</array>
 	<!-- Shared container with the Share Extension and the Today widget (ios/App/Shared/SharedStore.swift). -->
 	<key>com.apple.security.application-groups</key>
