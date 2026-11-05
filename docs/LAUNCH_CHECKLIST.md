@@ -118,6 +118,8 @@ Production stays `SIGNUP_MODE=invite` (the default) until you decide otherwise. 
 - [ ] **Then set `SIGNUP_MODE=open`** and restart. Test in a private window: create an account with an address you own; you land on "Check your email"; the email arrives (check spam); the link opens the app; **Resend** works (one a minute); the app is unusable until the link is opened.
 - [ ] **Without SMTP, do not set `open` in production**: with no `SMTP_HOST` the server cannot send mail, so it treats every new account as confirmed. Anyone could then register any address, including one that has a pending workspace invite, and read what that invite grants. (`invite` mode is unaffected: it needs an invite either way.)
 
+- [ ] **Know the clean-up.** Accounts that are still unconfirmed after 7 days (`UNVERIFIED_ACCOUNT_DAYS`, optional) are deleted by the housekeeping job, which logs one `unverified account cleanup` line per run (counts only). A password reset also confirms the account. Admin addresses in `ADMIN_EMAILS` are never deleted. `legal/privacy.md` should say unconfirmed accounts are deleted after 7 days.
+
 Existing accounts are all treated as confirmed by the upgrade (migration 012), so nobody is locked out.
 
 ## 6. Known limitations and follow-ups

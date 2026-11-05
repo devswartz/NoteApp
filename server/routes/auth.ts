@@ -19,8 +19,9 @@ import { createWorkspace } from '../workspaces.ts';
 import { HttpError, h, str } from '../http.ts';
 import type { AuthSession } from '../../shared/types.ts';
 import { adminEmails } from '../admin.ts';
-import { refuse, takeResend } from '../ratelimit.ts';
-import { acceptPendingInvites, consumeVerificationToken, sendVerificationEmail, startsVerified } from '../verification.ts';
+import { refuse, takeAccountDelete, takeResend } from '../ratelimit.ts';
+import { deleteAccount, deletionPreview } from '../accounts.ts';
+import { acceptPendingInvites, consumeVerificationToken, markVerifiedByReset, sendVerificationEmail, startsVerified } from '../verification.ts';
 
 /** bcrypt only uses the first 72 bytes; anything longer would be silently truncated. */
 export const MAX_PASSWORD_BYTES = 72;
@@ -60,7 +61,7 @@ const SIGNUP_CLOSED = 'Sign-up is by invitation only. Ask a workspace admin to i
  */
 function maySignUp(email: string): boolean {
   if (signupMode() === 'open') return true;
-  if (!db.prepare('SELECT 1 FROM users LIMIT 1').get()) return true;
+  if (!db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get()) return true;
   if (adminEmails().includes(email)) return true;
   return !!db.prepare('SELECT 1 FROM workspace_invites WHERE email = ? AND (expires_at IS NULL OR expires_at > ?)').get(email, now());
 }
@@ -168,7 +169,7 @@ publicAuthRoutes.post(
       | { id: string; name: string; password_hash: string }
       | undefined;
     const last = lastResetMail.get(email) ?? 0;
-    if (row && Date.now() - last > 60_000) {
+    if (row && row.id !== 'deleted-user' && Date.now() - last > 60_000) {
       lastResetMail.set(email, Date.now());
       const link = `${PUBLIC_URL}/reset?token=${encodeURIComponent(signResetToken(row.id, row.password_hash))}`;
       // Not awaited: waiting for SMTP only when the account exists would reveal it by timing.
@@ -195,6 +196,7 @@ publicAuthRoutes.post(
       if (verifyResetToken(req.body.token) !== userId) throw invalid();
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
       revokeAllForUser(userId);
+      markVerifiedByReset(userId); // the link was emailed to the address, so using it proves the mailbox
     })();
     return { ok: true };
   }),
@@ -206,7 +208,7 @@ publicAuthRoutes.get(
   '/auth/config',
   h(() => ({
     signupMode: signupMode(),
-    signupOpen: signupMode() === 'open' || !db.prepare('SELECT 1 FROM users LIMIT 1').get(),
+    signupOpen: signupMode() === 'open' || !db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get(),
     // Optional overrides for the /privacy and /terms pages (defaults live in src/pages/Legal.tsx).
     ...(process.env.LEGAL_CONTACT_EMAIL ? { legalContactEmail: process.env.LEGAL_CONTACT_EMAIL } : {}),
     ...(process.env.LEGAL_OPERATOR_NAME ? { legalOperatorName: process.env.LEGAL_OPERATOR_NAME } : {}),
@@ -249,5 +251,25 @@ authRoutes.patch(
     const wss = db.prepare('SELECT workspace_id FROM workspace_members WHERE user_id = ?').all(req.user.id) as { workspace_id: string }[];
     for (const w of wss) publish({ type: 'members', workspaceId: w.workspace_id });
     return getUser(req.user.id);
+  }),
+);
+
+// ── Delete account ──
+// What would happen to the user's workspaces (read-only; shown in Settings before they confirm).
+authRoutes.get('/auth/account/deletion-preview', h((req) => deletionPreview(req.user.id)));
+
+// Delete the signed-in account after re-entering the password. Same 401 as login for a wrong password, and
+// rate limited like a password check. Behind the verified-email gate like every other signed-in route: an
+// unverified account can't reach it (and is removed automatically instead). Sends no email.
+authRoutes.delete(
+  '/auth/account',
+  h(async (req, res) => {
+    const wait = takeAccountDelete(req, req.user.id);
+    if (wait) return void refuse(res, wait);
+    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id) as { password_hash: string };
+    const password = String(req.body?.password ?? '').slice(0, 1024);
+    if (!(await bcrypt.compare(password, row.password_hash))) throw new HttpError(401, 'Incorrect password');
+    deleteAccount(req.user.id);
+    return { ok: true };
   }),
 );

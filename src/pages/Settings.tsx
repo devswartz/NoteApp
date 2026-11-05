@@ -19,6 +19,7 @@ import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx'
 import { platform, detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
 import { AvatarColorPicker, ChangePasswordForm } from '../components/AccountSettings.tsx';
+import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
 
 
 interface SectionDef {
@@ -208,6 +209,7 @@ function ProfileSection() {
           Sign out
         </Button>
       </Card>
+      <DeleteAccountCard />
     </>
   );
 }

@@ -18,6 +18,12 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Pending workspace invites for an address are applied when its email is confirmed, not at sign-up. Existing accounts (migration 012), bootstrap accounts (the first account and `ADMIN_EMAILS`) and every account on a server without SMTP are treated as confirmed.
 - Unverified users get `403 email_unverified` on every API route except `GET /me` and resend, and their WebSockets are refused (4403).
 
+- A successful password reset also confirms the email (the link proves the mailbox): pending invites are accepted and the old confirmation link stops working.
+- Accounts still unconfirmed after 7 days (`UNVERIFIED_ACCOUNT_DAYS`, default 7, minimum 1) are deleted by the 6-hourly housekeeping through the same code as Delete account, in batches of at most 100, never for `ADMIN_EMAILS` addresses, with no email sent.
+
+### Delete account
+- Settings → Profile → **Delete account**, with the password re-entered in a confirm dialog. It shows which workspaces will be handed over, deleted or left. The server (`DELETE /auth/account`, `deleteAccount()` in `server/accounts.ts`) deletes sessions, devices, notifications, reminders, private notebooks and private tasks with their files on disk, hands owned workspaces to another owner or the longest-standing admin (or deletes them when there is neither), and removes the user from the rest. Shared content stays, authored by "Deleted user". Live sockets are closed, other members' lists update live, and no email is sent. The per-table decisions are in `ARCHITECTURE.md` ("Account deletion").
+
 ### Send feedback
 - **Send feedback** in the command palette (⌘K) and in the `?` shortcuts overlay / Settings → Keyboard shortcuts: a small dialog (up to 4000 characters, draft kept if sending fails). `POST /api/feedback` (verified users, 5 per hour per user plus a server-wide cap) emails every `ADMIN_EMAILS` address with the message, the sender's name, email and id, app and server versions, the in-app path (no query or hash), platform and a timestamp; Reply-To is the sender. With no SMTP or no admins it still answers success (`delivered: false`) and logs one `"event":"feedback"` JSON line. No new table.
 

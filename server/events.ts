@@ -98,6 +98,14 @@ function catchUp(ws: WebSocket, userId: string, since: { boot: string; seq: numb
   }
 }
 
+/** Close every event socket of one user (their account was deleted). 4401 = unauthorized: the client can't get a session back. */
+export function closeUserEvents(userId: string) {
+  for (const ws of [...(clients.get(userId) ?? [])]) {
+    ws.close(4401, 'Account deleted');
+    setTimeout(() => ws.readyState !== WebSocket.CLOSED && ws.terminate(), 2000).unref();
+  }
+}
+
 /** Close every event socket (on shutdown). 1012 = service restart; clients reconnect. */
 export function closeAllEvents() {
   for (const set of clients.values()) for (const ws of set) ws.close(1012, 'Server restarting');
