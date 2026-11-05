@@ -135,6 +135,7 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/auth/forgot', path: () => '/auth/forgot', body: () => ({ email: 'nobody@example.com' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } }, // never reveals whether the email exists
   { method: 'POST', route: '/auth/reset', path: () => '/auth/reset', body: () => ({ token: 'not-a-token', password: 'password1234' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
   { method: 'GET', route: '/invites/:token', path: (f) => `/invites/${f.invite}`, expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'POST', route: '/client-errors', path: () => '/client-errors', body: () => ({ kind: 'error', message: 'audit probe' }), expect: { anon: 204, stranger: 204, viewer: 204, member: 204, private: 204 } }, // public by design: logs only, rate limited, 16 KB cap
   { method: 'POST', route: '/auth/verify-email', path: () => '/auth/verify-email', body: () => ({ token: 'not-a-token' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
 
   // ── The signed-in user ──
@@ -145,6 +146,9 @@ const ROWS: Row[] = [
   { method: 'GET', route: '/workspaces', path: () => '/workspaces', expect: { stranger: 200, ...READ } },
   // Changing your own password needs the current one (wrong here, so 400 for every signed-in user).
   { method: 'POST', route: '/me/password', path: () => '/me/password', body: () => ({ currentPassword: 'wrong-current', newPassword: 'another-password-1' }), expect: { stranger: 400, viewer: 400, member: 400 } },
+  // Account deletion: the wrong password is a 401 for everyone (and deletes nothing), so the table can reuse the same personas.
+  { method: 'GET', route: '/auth/account/deletion-preview', path: () => '/auth/account/deletion-preview', expect: { stranger: 200, ...READ } },
+  { method: 'DELETE', route: '/auth/account', path: () => '/auth/account', body: () => ({ password: 'wrong-password-123' }), expect: { stranger: 401, viewer: 401, member: 401 } },
   { method: 'POST', route: '/workspaces', path: () => '/workspaces', body: () => ({ name: 'Mine' }), expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'POST', route: '/uploads', path: () => '/uploads', raw: true, expect: { stranger: 200, viewer: 200, member: 200 } }, // personal, unscoped upload
   // Invite acceptance requires the invited email: nobody in this table has it.
@@ -238,6 +242,8 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/templates/:id', path: (f) => `/templates/${f.template}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'DELETE', route: '/templates/:id', path: (f) => `/templates/${f.template}`, expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'POST', route: '/templates/:id/use', path: (f) => `/templates/${f.template}/use`, body: (f) => ({ pageId: f.page }), expect: inPrivate(WRITE) },
+  // Feedback to the admins: any verified, signed-in user (not tied to a workspace).
+  { method: 'POST', route: '/feedback', path: () => '/feedback', body: () => ({ message: 'Audit feedback', page: '/w/x/tasks/today', client: { version: 'test', platform: 'web' } }), expect: { stranger: 200, viewer: 200, member: 200 } },
 ];
 
 const tokenOf = (who: Who) => (who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : member.token);

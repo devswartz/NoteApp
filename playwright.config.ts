@@ -104,7 +104,7 @@ export default defineConfig({
           reuseExistingServer: false,
           stdout: 'ignore',
           stderr: 'pipe',
-          env: { ...serverEnv, NODE_ENV: 'test', E2E_TEST_HOOKS: '1', MAIL_QUIET: '1', PORT: String(VERIFY_PORT), DATA_DIR: verifyDataDir, PUBLIC_URL: verifyURL },
+          env: { ...serverEnv, NODE_ENV: 'test', E2E_TEST_HOOKS: '1', MAIL_QUIET: '1', ADMIN_EMAILS: 'feedback-admin@e2e.test' /* feedback mail recipient, see 24-feedback.verify.spec.ts */, PORT: String(VERIFY_PORT), DATA_DIR: verifyDataDir, PUBLIC_URL: verifyURL },
         },
       ],
 });

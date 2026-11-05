@@ -35,6 +35,7 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 > 7c. **`MAIL_FROM` on prod (and staging) should say Notivelo**, e.g. `Notivelo <notes@devswartz.com>`. It is the sender name on invites and password resets and is set per environment in `.env`, so the rename alone doesn't change it. The address must stay one the SMTP provider has verified.
 > 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log. With #70, the *Demo Team* workspace shows off every feature (a notebook per area, every block type, subtasks, recurrence, links, comments, versions, a private notebook), which makes it a good tour for the team on staging.
 > 9. Unchanged from the brief: `NODE_ENV`, `PUBLIC_URL`, `JWT_SECRET` (per env), the SES SMTP settings (`SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`), VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `SEED_DEMO=1` on staging only, backups (`sqlite3 .backup` or Litestream, plus `/data/files/`, off the box), Cloudflare Access **off**.
+> 10. **Feedback goes to `ADMIN_EMAILS`.** The in-app **Send feedback** command emails every address in `ADMIN_EMAILS` (Reply-To is the sender), so it needs working SMTP (item 9) and a monitored admin inbox. Without SMTP or with `ADMIN_EMAILS` empty, nothing is lost: each submission is also written as one JSON log line (`"event":"feedback"`, with the text included when it wasn't mailed) and the user still sees success. Limits: 5 per user per hour, 60 per hour server-wide.
 >
 > `deploy/.env.example` lists all of these as commented lines.
 
@@ -116,6 +117,8 @@ Production stays `SIGNUP_MODE=invite` (the default) until you decide otherwise. 
 - [ ] **`PUBLIC_URL` is the real origin**, because the confirmation link is `$PUBLIC_URL/verify-email?token=…`.
 - [ ] **Then set `SIGNUP_MODE=open`** and restart. Test in a private window: create an account with an address you own; you land on "Check your email"; the email arrives (check spam); the link opens the app; **Resend** works (one a minute); the app is unusable until the link is opened.
 - [ ] **Without SMTP, do not set `open` in production**: with no `SMTP_HOST` the server cannot send mail, so it treats every new account as confirmed. Anyone could then register any address, including one that has a pending workspace invite, and read what that invite grants. (`invite` mode is unaffected: it needs an invite either way.)
+
+- [ ] **Know the clean-up.** Accounts that are still unconfirmed after 7 days (`UNVERIFIED_ACCOUNT_DAYS`, optional) are deleted by the housekeeping job, which logs one `unverified account cleanup` line per run (counts only). A password reset also confirms the account. Admin addresses in `ADMIN_EMAILS` are never deleted. `legal/privacy.md` should say unconfirmed accounts are deleted after 7 days.
 
 Existing accounts are all treated as confirmed by the upgrade (migration 012), so nobody is locked out.
 

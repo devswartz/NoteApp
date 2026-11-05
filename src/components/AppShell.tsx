@@ -6,6 +6,7 @@ import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
 import { DialogHost } from './shell/dialogs.tsx';
 import { NewNotebookHost } from './shell/NewNotebookDialog.tsx';
+import { FeedbackHost } from './shell/FeedbackDialog.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
@@ -71,6 +72,7 @@ export function AppShell() {
       <ShortcutsHelp />
       <DialogHost />
       <NewNotebookHost />
+      <FeedbackHost />
     </div>
   );
 }
