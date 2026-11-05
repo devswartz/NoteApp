@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { Check, Copy, Download, File, FileArchive, FileAudio, FileImage, FileSpreadsheet, FileText, FileVideo } from 'lucide-react';
 import { fileUrl } from '../api.ts';
 import { Dropdown } from '../components/ui.tsx';
+import { safeFileUrl } from './urls.ts';
 
 // ───────────── Callout ─────────────
 
@@ -148,7 +149,16 @@ export const FileAttachment = Node.create({
       },
       renderHTML: (a: Record<string, unknown>) => ({ [`data-${name}`]: a[name] }),
     });
-    return { url: attr('url', ''), name: attr('name', 'file'), size: attr('size', 0), mime: attr('mime', '') };
+    return {
+      url: {
+        default: '',
+        parseHTML: (el: HTMLElement) => safeFileUrl(el.getAttribute('data-url')),
+        renderHTML: (a: Record<string, unknown>) => ({ 'data-url': safeFileUrl(a.url) }),
+      },
+      name: attr('name', 'file'),
+      size: attr('size', 0),
+      mime: attr('mime', ''),
+    };
   },
   parseHTML() {
     return [{ tag: 'div[data-type="file"]' }];
@@ -157,7 +167,7 @@ export const FileAttachment = Node.create({
     return [
       'div',
       mergeAttributes(HTMLAttributes, { 'data-type': 'file', class: 'file-card' }),
-      ['a', { href: fileUrl(node.attrs.url as string), target: '_blank', rel: 'noopener noreferrer' }, node.attrs.name as string],
+      ['a', { href: fileUrl(safeFileUrl(node.attrs.url)) || '#', target: '_blank', rel: 'noopener noreferrer' }, node.attrs.name as string],
     ];
   },
   renderText({ node }) {
@@ -171,25 +181,37 @@ export const FileAttachment = Node.create({
       insertFileAttachment:
         (attrs, pos) =>
         ({ commands }) =>
-          pos === undefined ? commands.insertContent({ type: this.name, attrs }) : commands.insertContentAt(pos, { type: this.name, attrs }),
+          pos === undefined
+            ? commands.insertContent({ type: this.name, attrs: { ...attrs, url: safeFileUrl(attrs.url) } })
+            : commands.insertContentAt(pos, { type: this.name, attrs: { ...attrs, url: safeFileUrl(attrs.url) } }),
     };
   },
 });
 
 function FileCardView({ node, selected }: ReactNodeViewProps) {
   const a = node.attrs as FileAttrs;
-  const href = fileUrl(a.url);
+  // Validated again here: the attribute may have arrived from a collaborator's (or an older) document.
+  const safe = safeFileUrl(a.url);
+  const href = safe ? fileUrl(safe) : undefined;
   return (
     <NodeViewWrapper className={`file-card ${selected ? 'is-selected' : ''}`} data-type="file" data-drag-handle>
       <div className="file-card-inner" contentEditable={false}>
         <span className="file-card-icon">{fileIcon(a.mime, a.name)}</span>
-        <a className="file-card-name" href={href} target="_blank" rel="noopener noreferrer" title={`Open ${a.name}`}>
-          {a.name}
-        </a>
+        {href ? (
+          <a className="file-card-name" href={href} target="_blank" rel="noopener noreferrer" title={`Open ${a.name}`}>
+            {a.name}
+          </a>
+        ) : (
+          <span className="file-card-name" title="This file link is not valid">
+            {a.name}
+          </span>
+        )}
         <span className="file-card-size">{formatSize(a.size)}</span>
-        <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download">
-          <Download size={15} />
-        </a>
+        {href && (
+          <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download">
+            <Download size={15} />
+          </a>
+        )}
       </div>
     </NodeViewWrapper>
   );

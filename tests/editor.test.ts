@@ -45,6 +45,15 @@ test('[[ page suggestions: prefix first, current page excluded, "Create" when no
   assert.ok(!pageItems('roadmap', '4', tree).some((i) => i.kind === 'create'));
 });
 
+test('safeFileUrl allows upload paths and http(s) only', async () => {
+  const { safeFileUrl } = await import('../src/editor/urls.ts');
+  assert.equal(safeFileUrl('/uploads/0123456789abcdef0123456789abcdef.pdf'), '/uploads/0123456789abcdef0123456789abcdef.pdf');
+  assert.equal(safeFileUrl('https://example.com/a.pdf'), 'https://example.com/a.pdf');
+  for (const bad of ['javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,x', '//evil.com/x', '/uploads/../../x', '/api/me', 'https://a b', 42, null]) {
+    assert.equal(safeFileUrl(bad), '', String(bad));
+  }
+});
+
 test('templates: titles use the date, content uses only known node types', async () => {
   const { TEMPLATES, templateById } = await import('../src/editor/templates.ts');
   const known = new Set(['paragraph', 'text', 'heading', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'callout', 'table', 'tableRow', 'tableHeader', 'tableCell', 'details', 'detailsSummary', 'detailsContent']);

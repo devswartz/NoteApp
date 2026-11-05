@@ -1,9 +1,9 @@
 // Page metadata (content is edited over the collab WebSocket). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
-import { mustAccess, pageAccess, sectionAccess } from '../access.ts';
+import { accessChanged, mustAccess, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import { closeRoom, flushAll } from '../collab.ts';
+import { flushAll } from '../collab.ts';
 import { rowToTask } from '../tasks.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
 import type { Access } from '../access.ts';
@@ -118,7 +118,7 @@ function movePageTo(id: string, a: Access, sectionId: string, userId: string) {
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
   db.prepare('UPDATE pages SET section_id = ? WHERE id = ?').run(sectionId, id);
   if (t.notebookId !== a.notebookId) {
-    closeRoom(id); // collaborators may have lost access (e.g. moved into a private notebook)
+    accessChanged(); // collaborators may have lost access (e.g. moved into a private notebook)
     const tasks = db.prepare('SELECT * FROM tasks WHERE page_id = ?').all(id) as Parameters<typeof rowToTask>[0][];
     for (const r of tasks) publish({ type: 'task', task: rowToTask(r) });
   }
