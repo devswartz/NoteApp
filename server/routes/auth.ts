@@ -2,11 +2,11 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { db, newId, now, pickColor } from '../db.ts';
-import { signToken } from '../auth.ts';
+import { getUser, issueSession, revokeRefreshToken, rotateRefreshToken } from '../auth.ts';
 import { publish } from '../events.ts';
 import { createWorkspace } from '../workspaces.ts';
 import { HttpError, h, str } from '../http.ts';
-import type { Role } from '../../shared/types.ts';
+import type { AuthSession, Role } from '../../shared/types.ts';
 
 /** Routes that work without a token. */
 export const publicAuthRoutes = Router();
@@ -43,7 +43,7 @@ publicAuthRoutes.post(
       db.prepare('DELETE FROM workspace_invites WHERE email = ?').run(email);
       createWorkspace(id, `${name.split(' ')[0]}'s Space`, true);
     })();
-    return { token: signToken(id), user: { id, email, name, color } };
+    return { ...issueSession(id, req.get('user-agent') ?? null), user: { id, email, name, color } } satisfies AuthSession;
   }),
 );
 
@@ -56,7 +56,30 @@ publicAuthRoutes.post(
       | undefined;
     if (!row || !bcrypt.compareSync(String(req.body.password ?? ''), row.password_hash))
       throw new HttpError(401, 'Incorrect email or password');
-    return { token: signToken(row.id), user: { id: row.id, email: row.email, name: row.name, color: row.color } };
+    return {
+      ...issueSession(row.id, req.get('user-agent') ?? null),
+      user: { id: row.id, email: row.email, name: row.name, color: row.color },
+    } satisfies AuthSession;
+  }),
+);
+
+// Exchange a refresh token for a new access + refresh pair (the old refresh token is retired).
+publicAuthRoutes.post(
+  '/auth/refresh',
+  h((req) => {
+    const r = rotateRefreshToken(req.body.refreshToken, req.get('user-agent') ?? null);
+    if (!r) throw new HttpError(401, 'Session expired, please sign in again');
+    const { userId, ...tokens } = r;
+    return { ...tokens, user: getUser(userId)! } satisfies AuthSession;
+  }),
+);
+
+// Sign out: revokes this sign-in's refresh tokens. Works with an expired access token.
+publicAuthRoutes.post(
+  '/auth/logout',
+  h((req) => {
+    revokeRefreshToken(req.body.refreshToken);
+    return { ok: true };
   }),
 );
 

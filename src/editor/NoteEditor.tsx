@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
-import { getToken, upload } from '../api.ts';
+import { refreshSession, upload, wsProtocols, wsUrl } from '../api.ts';
 import { errorToast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 
@@ -45,8 +45,11 @@ const PlainTaskItem = TaskItem.extend({
   },
 }).configure({ nested: true });
 
-function collabUrl() {
-  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/collab`;
+/** y-websocket opens sockets itself; this subclass adds the current access token on every (re)connect. */
+class AuthedWebSocket extends WebSocket {
+  constructor(url: string | URL) {
+    super(url, wsProtocols());
+  }
 }
 
 interface Props {
@@ -62,10 +65,7 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
   // One Y.Doc + providers per page (component is keyed by page id).
   const { doc, provider } = useMemo(() => {
     const doc = new Y.Doc();
-    const provider = new WebsocketProvider(collabUrl(), pageId, doc, {
-      params: { token: getToken() ?? '' },
-      // Stop retrying on auth/permission failures.
-    });
+    const provider = new WebsocketProvider(wsUrl('/collab'), pageId, doc, { WebSocketPolyfill: AuthedWebSocket });
     return { doc, provider };
   }, [pageId]);
   const [synced, setSynced] = useState(false);
@@ -80,8 +80,14 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
     provider.on('status', onStatusEv);
     provider.on('sync', onSync);
     provider.on('connection-close', (ev: CloseEvent | null) => {
-      if (ev && (ev.code === 4401 || ev.code === 4403)) {
+      if (ev?.code === 4401) {
+        // Access token expired or rejected: refresh, then reconnect with the new one.
         provider.shouldConnect = false;
+        refreshSession()
+          .then((s) => s && provider.connect())
+          .catch(() => provider.connect());
+      } else if (ev?.code === 4403) {
+        provider.shouldConnect = false; // no access to this page
         onStatus('offline');
       }
     });

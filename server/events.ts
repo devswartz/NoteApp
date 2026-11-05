@@ -6,7 +6,7 @@ import type { IncomingMessage } from 'node:http';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
 import { taskVisible } from './access.ts';
-import { verifyToken } from './auth.ts';
+import { tokenFromUpgrade, verifyToken } from './auth.ts';
 import type { ServerEvent } from '../shared/types.ts';
 
 const clients = new Map<string, Set<WebSocket>>(); // userId -> open sockets
@@ -23,8 +23,7 @@ function addClient(userId: string, ws: WebSocket) {
 
 export function attachEvents(wss: WebSocketServer) {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    const url = new URL(req.url ?? '', 'http://x');
-    const user = verifyToken(url.searchParams.get('token'));
+    const user = verifyToken(tokenFromUpgrade(req));
     if (!user) {
       ws.close(4401, 'Unauthorized');
       return;

@@ -1,5 +1,5 @@
 // Live event client: applies server-pushed task/tree/member changes.
-import { getToken } from '../api.ts';
+import { freshAccessToken, notifyUnauthorized, refreshSession, wsProtocols, wsUrl } from '../api.ts';
 import { set, st } from './state.ts';
 import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
@@ -15,10 +15,6 @@ function debounce(key: string, fn: () => void, ms = 250) {
   debounced.set(key, setTimeout(fn, ms));
 }
 
-function eventsUrl(token: string) {
-  return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/events?token=${encodeURIComponent(token)}`;
-}
-
 export function disconnectEvents() {
   wanted = false;
   if (retryTimer) clearTimeout(retryTimer);
@@ -32,13 +28,14 @@ export function connectEvents() {
   disconnectEvents();
   wanted = true;
   attempts = 0;
-  open(true);
+  void open(true);
 }
 
-function open(first: boolean) {
-  const token = getToken();
-  if (!token || !wanted) return;
-  const ws = new WebSocket(eventsUrl(token));
+async function open(first: boolean) {
+  if (!wanted) return;
+  await freshAccessToken();
+  if (!wanted || socket) return;
+  const ws = new WebSocket(wsUrl('/api/events'), wsProtocols());
   socket = ws;
   ws.onopen = () => {
     attempts = 0;
@@ -53,11 +50,22 @@ function open(first: boolean) {
     if (socket !== ws) return; // replaced or disconnected deliberately
     socket = null;
     set({ online: false });
-    if (!wanted || e.code === 4401) return; // signed out / token rejected
-    const delay = Math.min(30_000, 1000 * 2 ** attempts++) * (0.75 + Math.random() / 2);
-    retryTimer = setTimeout(() => open(false), delay);
+    if (!wanted) return;
+    if (e.code === 4401) {
+      // Access token rejected: refresh and retry once; if that fails the session is gone.
+      refreshSession()
+        .then((ok) => (ok ? void open(false) : notifyUnauthorized()))
+        .catch(() => schedule());
+      return;
+    }
+    schedule();
   };
   ws.onmessage = (m) => handle(JSON.parse(String(m.data)) as ServerEvent);
+}
+
+function schedule() {
+  const delay = Math.min(30_000, 1000 * 2 ** attempts++) * (0.75 + Math.random() / 2);
+  retryTimer = setTimeout(() => void open(false), delay);
 }
 
 function handle(ev: ServerEvent) {
@@ -88,7 +96,7 @@ if (typeof window !== 'undefined') {
     if (wanted && !socket) {
       if (retryTimer) clearTimeout(retryTimer);
       attempts = 0;
-      open(false);
+      void open(false);
     }
   });
   window.addEventListener('offline', () => set({ online: false }));

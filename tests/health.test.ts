@@ -25,8 +25,9 @@ function nextMessage(ws: WebSocket): Promise<unknown> {
 
 test('/api/events WebSocket pushes task changes to workspace members', async () => {
   const alice = await app.signUp('Alice');
-  const ws = new WebSocket(`${app.wsOrigin}/api/events?token=${alice.token}`);
+  const ws = new WebSocket(`${app.wsOrigin}/api/events`, ['noteapp.v1', `bearer.${alice.token}`]);
   await new Promise((r) => ws.once('open', r));
+  assert.equal(ws.protocol, 'noteapp.v1', 'server never echoes the token protocol');
   const msg = nextMessage(ws);
   const created = await app.call('POST', `/workspaces/${alice.wsId}/tasks`, alice.token, { title: 'Live' });
   const ev = (await msg) as { type: string; task: { id: string } };
@@ -39,4 +40,15 @@ test('/api/events rejects a missing token', async () => {
   const ws = new WebSocket(`${app.wsOrigin}/api/events`);
   const code = await new Promise<number>((r) => ws.once('close', (c) => r(c)));
   assert.equal(code, 4401);
+});
+
+test('/collab/<pageId> authenticates with the bearer subprotocol', async () => {
+  const u = await app.signUp('Cleo');
+  const tree = await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token);
+  const pageId = tree.data.pages[0].id;
+  const ok = new WebSocket(`${app.wsOrigin}/collab/${pageId}`, ['noteapp.v1', `bearer.${u.token}`]);
+  await new Promise((r) => ok.once('message', r)); // server sends sync step 1
+  ok.close();
+  const bad = new WebSocket(`${app.wsOrigin}/collab/${pageId}`, ['noteapp.v1', 'bearer.not-a-token']);
+  assert.equal(await new Promise<number>((r) => bad.once('close', (c) => r(c))), 4401);
 });

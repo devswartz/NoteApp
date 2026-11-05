@@ -14,12 +14,23 @@ import { WebSocketServer } from 'ws';
 import { api, UPLOAD_DIR } from './routes/index.ts';
 import { attachCollab } from './collab.ts';
 import { attachEvents } from './events.ts';
+import { handleProtocols } from './auth.ts';
 
 export function createServer(opts: { serveWeb?: boolean } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 'loopback'); // behind the Cloudflare tunnel / reverse proxy
 
+  // The API uses bearer tokens, never cookies, so any origin may call it
+  // (native shells run on tauri:// and capacitor:// origins).
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.method !== 'OPTIONS') return next();
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Filename');
+    res.setHeader('Access-Control-Max-Age', '86400');
+    res.status(204).end();
+  });
   app.use('/api', api);
   app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true, fallthrough: false }));
 
@@ -33,8 +44,8 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   }
 
   const server = http.createServer(app);
-  const collab = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
-  const events = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+  const collab = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024, handleProtocols });
+  const events = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, handleProtocols });
   attachCollab(collab);
   attachEvents(events);
   server.on('upgrade', (req, socket, head) => {

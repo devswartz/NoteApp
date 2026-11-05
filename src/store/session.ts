@@ -1,37 +1,38 @@
 // Signing in and out.
-import { ApiError, get, getToken, post, setToken } from '../api.ts';
+import { endSession, get, post, refreshSession, startSession } from '../api.ts';
 import { emptyTree, set } from './state.ts';
 import { loadWorkspaces } from './workspace.ts';
 import { connectEvents, disconnectEvents } from './events.ts';
-import type { User, Workspace } from '../../shared/types.ts';
+import type { AuthSession, Workspace } from '../../shared/types.ts';
 
+/** Restore a session from the stored refresh token. */
 export async function bootstrap(): Promise<boolean> {
-  if (!getToken()) return false;
   try {
-    const user = await get<User>('/me');
-    set({ user });
+    const s = await refreshSession();
+    if (!s) return false;
+    set({ user: s.user });
     await loadWorkspaces();
     connectEvents();
     return true;
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 401) setToken(null);
+  } catch {
+    // Offline or server down: stay signed out for now (the refresh token is kept).
     return false;
   }
 }
 
 export async function signIn(mode: 'login' | 'register', body: Record<string, string>) {
-  const r = await post<{ token: string; user: User }>(`/auth/${mode}`, body);
-  setToken(r.token);
+  const s = await post<AuthSession>(`/auth/${mode}`, body);
+  await startSession(s);
   // Load workspaces before publishing the user, so the first signed-in render
   // already knows where to route (the /login route then redirects to /).
   const workspaces = await get<Workspace[]>('/workspaces');
-  set({ user: r.user, workspaces });
+  set({ user: s.user, workspaces });
   connectEvents();
 }
 
 export async function signOut() {
-  setToken(null);
   disconnectEvents();
+  await endSession();
   // Clear locally cached note content.
   try {
     const dbs = await indexedDB.databases?.();

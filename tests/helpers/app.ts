@@ -21,7 +21,9 @@ export interface TestResponse<T> {
 }
 
 export interface TestUser {
+  /** Access token. */
   token: string;
+  refreshToken: string;
   user: User;
   /** The user's personal workspace, created at sign-up. */
   wsId: string;
@@ -55,8 +57,8 @@ export async function startTestApp() {
   async function signUp(name: string, email = `${name.toLowerCase().replace(/\W+/g, '')}-${++seq}@example.com`): Promise<TestUser> {
     const r = await call('POST', '/auth/register', undefined, { name, email, password: 'password123' });
     if (r.status !== 200) throw new Error(`sign-up failed: ${r.status} ${JSON.stringify(r.data)}`);
-    const ws = await call('GET', '/workspaces', r.data.token);
-    return { token: r.data.token, user: r.data.user, wsId: ws.data[0].id };
+    const ws = await call('GET', '/workspaces', r.data.accessToken);
+    return { token: r.data.accessToken, refreshToken: r.data.refreshToken, user: r.data.user, wsId: ws.data[0].id };
   }
 
   async function close() {

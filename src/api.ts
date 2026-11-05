@@ -1,22 +1,133 @@
-const TOKEN_KEY = 'noteapp.token';
+// API client: base URL, bearer-token session (access + rotating refresh token),
+// JSON fetch wrapper with one transparent refresh-and-retry on 401.
+//
+// - The API base is VITE_API_URL (native shells, other origins) or the page's
+//   own origin. WebSocket URLs are derived from it.
+// - The access token lives only in memory. The refresh token is persisted
+//   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
+//   tab and serialized across tabs, each reading the latest stored token.
+import type { AuthSession } from '../shared/types.ts';
 
-export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
+const API_BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
+
+/** Absolute or same-origin URL for an API path ("/me" → ".../api/me"). */
+export const apiUrl = (path: string) => `${API_BASE}/api${path}`;
+
+/** URL for a file the API returned ("/uploads/…"), on the API's origin. */
+export const fileUrl = (url: string) => (url.startsWith('/uploads/') ? API_BASE + url : url);
+
+/** ws(s):// URL on the API's origin for a WebSocket path ("/api/events", "/collab"). */
+export function wsUrl(path: string): string {
+  const base = API_BASE || `${location.protocol}//${location.host}`;
+  return base.replace(/^http/, 'ws') + path;
+}
+
+/** WebSocket subprotocols carrying the access token (the server never echoes the token). */
+export function wsProtocols(): string[] {
+  return access ? ['noteapp.v1', `bearer.${access.token}`] : ['noteapp.v1'];
+}
+
+// ───────────── Token storage ─────────────
+// Async so native shells can back it with the keychain (src/platform, PR 4b).
+const REFRESH_KEY = 'noteapp.refreshToken';
+export const tokenStore = {
+  async get(): Promise<string | null> {
+    try {
+      return localStorage.getItem(REFRESH_KEY);
+    } catch {
+      return null;
+    }
+  },
+  async set(token: string | null): Promise<void> {
+    try {
+      if (token) localStorage.setItem(REFRESH_KEY, token);
+      else localStorage.removeItem(REFRESH_KEY);
+      localStorage.removeItem('noteapp.token'); // pre-refresh-token sessions
+    } catch {
+      /* storage unavailable */
+    }
+  },
+};
+
+// ───────────── Session ─────────────
+let access: { token: string; expiresAt: number } | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshing: Promise<AuthSession | null> | null = null;
+
+export function getAccessToken(): string | null {
+  return access?.token ?? null;
+}
+
+/** Adopt a session returned by /auth/login, /auth/register or /auth/refresh. */
+export async function startSession(s: AuthSession) {
+  await tokenStore.set(s.refreshToken);
+  access = { token: s.accessToken, expiresAt: Date.now() + s.expiresIn * 1000 };
+  if (refreshTimer) clearTimeout(refreshTimer);
+  // Refresh a minute before expiry so sockets and requests always have a valid token.
+  refreshTimer = setTimeout(() => void refreshSession(), Math.max(5_000, (s.expiresIn - 60) * 1000));
+}
+
+/** Forget the session locally and revoke it on the server (best effort). */
+export async function endSession() {
+  const refreshToken = await tokenStore.get();
+  access = null;
+  if (refreshTimer) clearTimeout(refreshTimer);
+  refreshTimer = null;
+  await tokenStore.set(null);
+  if (refreshToken) {
+    fetch(apiUrl('/auth/logout'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }) }).catch(
+      () => {},
+    );
   }
 }
 
-export function setToken(t: string | null) {
+/** Serialize across tabs when the browser supports it, so two tabs never spend the same refresh token. */
+function withLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  return locks ? (locks.request(name, fn) as Promise<T>) : fn();
+}
+
+/**
+ * Exchange the stored refresh token for a new session. Resolves to the session
+ * (including the user), or null if signed out / the refresh token is no longer
+ * valid. Network errors reject, so callers can tell "offline" from "signed out".
+ */
+export function refreshSession(): Promise<AuthSession | null> {
+  refreshing ??= withLock('noteapp-auth-refresh', async () => {
+    const refreshToken = await tokenStore.get();
+    if (!refreshToken) return null;
+    const res = await fetch(apiUrl('/auth/refresh'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (res.status === 401) {
+      // Another tab may have rotated it meanwhile; only clear if it's still ours.
+      if ((await tokenStore.get()) === refreshToken) await tokenStore.set(null);
+      access = null;
+      return null;
+    }
+    if (!res.ok) throw new ApiError(res.status, `Refresh failed (${res.status})`);
+    const s = (await res.json()) as AuthSession;
+    await startSession(s);
+    return s;
+  }).finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
+}
+
+/** A valid access token, refreshing first if it is about to expire. */
+export async function freshAccessToken(): Promise<string | null> {
+  if (access && access.expiresAt - Date.now() > 30_000) return access.token;
   try {
-    if (t) localStorage.setItem(TOKEN_KEY, t);
-    else localStorage.removeItem(TOKEN_KEY);
+    return (await refreshSession())?.accessToken ?? null;
   } catch {
-    /* storage unavailable */
+    return access?.token ?? null; // offline: try what we have
   }
 }
 
+// ───────────── Requests ─────────────
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -27,18 +138,24 @@ let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
+/** Called when the session is gone for good (refresh token rejected). */
+export const notifyUnauthorized = () => onUnauthorized();
 
-export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}, retry = true): Promise<T> {
+  const isAuth = path.startsWith('/auth/');
   const headers = new Headers(init.headers);
-  const token = getToken();
+  const token = isAuth ? null : await freshAccessToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   let body = init.body;
   if (init.json !== undefined) {
     headers.set('Content-Type', 'application/json');
     body = JSON.stringify(init.json);
   }
-  const res = await fetch(`/api${path}`, { ...init, headers, body });
-  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized();
+  const res = await fetch(apiUrl(path), { ...init, headers, body });
+  if (res.status === 401 && !isAuth) {
+    if (retry && (await refreshSession().catch(() => null))) return api<T>(path, init, false);
+    onUnauthorized();
+  }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
   if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`);
   return data as T;
