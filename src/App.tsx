@@ -6,6 +6,8 @@ import { AppShell } from './components/AppShell.tsx';
 import { Toasts } from './components/Overlays.tsx';
 import { DeepLinks } from './components/DeepLinks.tsx';
 import { Login } from './pages/Login.tsx';
+import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
+import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { useIsMobile } from './components/ui.tsx';
 import { platform } from './platform/index.ts';
@@ -25,6 +27,7 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/invite/:token" element={<InvitePage />} />
         {user ? (
           <>
             <Route path="/" element={<Home />} />
@@ -43,12 +46,15 @@ export function App() {
       </Routes>
       <Toasts />
       {user && <DeepLinks />}
+      {user && <ShareDialogHost />}
     </BrowserRouter>
   );
 }
 
 function Home() {
   const workspaces = useStore((s) => s.workspaces);
+  const [invite] = useState(takePendingInvite); // signed in from an invite link: finish joining
+  if (invite) return <Navigate to={invite} replace />;
   const last = platform.kv.get('noteapp.lastWs');
   const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];
   if (!ws) return <div className="empty-page">You don’t belong to any workspace yet.</div>;
