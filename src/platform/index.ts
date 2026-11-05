@@ -16,10 +16,23 @@ export function detectPlatform(): PlatformKind {
 /** Use `platform.*` everywhere; it is replaced by the shell implementation in initPlatform(). */
 export let platform: Platform = webPlatform;
 
+type ShellLoaders = Partial<Record<PlatformKind, () => Promise<Platform>>>;
+
+// Shell implementations are loaded lazily (dynamic import → separate chunk) so
+// the web app never downloads them.
+const shells: ShellLoaders = {
+  tauri: () => import('./tauri.ts').then((m) => m.tauriPlatform),
+  capacitor: () => import('./capacitor.ts').then((m) => m.loadCapacitorPlatform()),
+};
+
+/** The implementation for `kind`; the web one when there is no shell implementation. */
+export async function loadPlatform(kind: PlatformKind, loaders: ShellLoaders = shells): Promise<Platform> {
+  const load = kind === 'web' ? undefined : loaders[kind];
+  return load ? load() : webPlatform;
+}
+
 export async function initPlatform() {
-  // Shell implementations are loaded lazily so the web bundle doesn't carry them:
-  //   if (detectPlatform() === 'tauri') platform = (await import('./tauri.ts')).tauriPlatform;
-  if (detectPlatform() === 'capacitor') platform = await (await import('./capacitor.ts')).loadCapacitorPlatform();
+  platform = await loadPlatform(detectPlatform());
   await platform.init();
 }
 
