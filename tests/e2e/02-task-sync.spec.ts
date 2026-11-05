@@ -32,7 +32,8 @@ test.describe('inline tasks ↔ dashboard', () => {
 
     // The source chip goes back to the note.
     await taskRow(page, 'Email the venue').getByTitle('Open in note').click();
-    await expect(page).toHaveURL(new RegExp(`${pageUrl(user.wsId, pageId)}\\?task=`));
+    // The app opens /p/<id>?task=<id>, highlights the task, then drops the query, so accept either form.
+    await expect(page).toHaveURL(new RegExp(`${pageUrl(user.wsId, pageId)}(\\?task=[^&]+)?$`));
     await expect(taskRef(page, 'Email the venue')).toBeVisible();
   });
 
@@ -128,8 +129,9 @@ test.describe('inline tasks ↔ dashboard', () => {
     await addInlineTask(page, 'Keep me around');
     await eventually(() => listTasks(request, user), (ts) => ts.some((t) => t.title === 'Keep me around' && t.pageId === pageId), 'linked');
 
-    // Select the whole node and delete it from the document.
-    await taskRef(page, 'Keep me around').locator('.drag-handle').click();
+    // Remove everything from the document (select all in the editor, delete).
+    await page.locator('.ProseMirror').click();
+    await page.keyboard.press('ControlOrMeta+a');
     await page.keyboard.press('Delete');
     await expect(taskRef(page, 'Keep me around')).toHaveCount(0);
     await eventually(
