@@ -16,3 +16,4 @@ test-results
 **/.DS_Store
 Dockerfile
 .dockerignore
+apps/desktop/src-tauri/target
