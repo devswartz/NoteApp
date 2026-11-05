@@ -33,13 +33,18 @@ This is the fixed interface between the code in this repo and the homelab that r
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | yes for web push | generate once per environment: `npx web-push generate-vapid-keys` |
 | `VAPID_SUBJECT` | yes for web push | `mailto:<admin address>` |
 | `SEED_DEMO` | no | `1` on staging only: loads demo content on an empty DB |
+| `TRUST_PROXY_HEADER` | yes (staging + prod) | `cf`: read the client IP from `CF-Connecting-IP` for rate limiting. **Only set this when the app port is reachable solely through cloudflared**; otherwise clients could forge their IP. Default off. |
+| `ACCESS_TOKEN_TTL_S` | no | access-token lifetime; production clamps it to 60–3600 s (default 900). Leave unset. |
+| `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY` / `APNS_ENV` | for iOS push | APNs token auth (`.p8` key contents in `APNS_PRIVATE_KEY`; `APNS_ENV` = `production` or `sandbox`). Optional until the iOS app ships. |
+| `FCM_SERVICE_ACCOUNT_JSON` | for Android push | Firebase service-account JSON (one line). Optional until the Android app ships. |
 
 If email or push settings are missing, the app still starts and logs a warning; reminders through that channel are skipped.
 
 ## Hostnames
 - Production: `notes.devswartz.com`
 - Staging: `notes-staging.devswartz.com`
-- Both go through a Cloudflare Tunnel. **Cloudflare Access must be off**, because the desktop and mobile apps call the API directly; the app does its own auth.
+- Both go through a Cloudflare Tunnel. **The app's port must not be reachable any other way** (bind it to localhost or the Docker network only; no published host port on the LAN or internet), because rate limiting trusts `CF-Connecting-IP` when `TRUST_PROXY_HEADER=cf`.
+- **Cloudflare Access must be off**, because the desktop and mobile apps call the API directly; the app does its own auth.
 
 ## Backups
 - The SQLite DB is backed up with `sqlite3 .backup` or Litestream (never by copying the file while the app is running), together with `/data/files/`, to a destination off the box.
