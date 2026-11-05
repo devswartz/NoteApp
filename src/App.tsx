@@ -7,6 +7,7 @@ import { Toasts } from './components/Overlays.tsx';
 import { DeepLinks } from './components/DeepLinks.tsx';
 import { Login } from './pages/Login.tsx';
 import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
+import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { useIsMobile } from './components/ui.tsx';
 import { platform } from './platform/index.ts';
@@ -45,6 +46,7 @@ export function App() {
       </Routes>
       <Toasts />
       {user && <DeepLinks />}
+      {user && <ShareDialogHost />}
     </BrowserRouter>
   );
 }

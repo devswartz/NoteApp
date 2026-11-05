@@ -1,7 +1,9 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { requireRole, roleIn } from '../access.ts';
+import { mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
+import { recheckAccess } from '../collab.ts';
+import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import {
   createWorkspace,
@@ -193,6 +195,7 @@ workspaceRoutes.patch(
     if ((role === 'owner' || current === 'owner') && myRole !== 'owner') throw new HttpError(403, 'Only owners can change owners');
     if (current === 'owner' && role !== 'owner' && ownerCount(wsId) === 1) throw new HttpError(400, 'A workspace needs at least one owner');
     db.prepare('UPDATE workspace_members SET role = ? WHERE workspace_id = ? AND user_id = ?').run(role, wsId, target);
+    recheckAccess({ workspaceId: wsId, userId: target }); // e.g. demoted to viewer: open editors go read-only
     publish({ type: 'members', workspaceId: wsId });
     publish({ type: 'workspaces' }, { userIds: [target] });
     return { ok: true };
@@ -213,7 +216,9 @@ workspaceRoutes.delete(
     db.transaction(() => {
       db.prepare('DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?').run(wsId, target);
       db.prepare("UPDATE tasks SET assignee_id = NULL WHERE workspace_id = ? AND assignee_id = ? AND status = 'open'").run(wsId, target);
+      db.prepare('DELETE FROM notebook_shares WHERE user_id = ? AND notebook_id IN (SELECT id FROM notebooks WHERE workspace_id = ?)').run(target, wsId);
     })();
+    recheckAccess({ workspaceId: wsId, userId: target }); // drop them from pages they have open
     publish({ type: 'members', workspaceId: wsId });
     publish({ type: 'workspaces' }, { userIds: [target] });
     return { ok: true };
@@ -228,5 +233,54 @@ workspaceRoutes.delete(
     db.prepare('DELETE FROM workspace_invites WHERE workspace_id = ? AND email = ?').run(wsId, param(req, 'email').toLowerCase());
     publish({ type: 'members', workspaceId: wsId });
     return { ok: true };
+  }),
+);
+
+// ───────────── Sharing a private notebook with specific people ─────────────
+
+function notebookShares(notebookId: string): string[] {
+  return (db.prepare('SELECT user_id FROM notebook_shares WHERE notebook_id = ? ORDER BY created_at').all(notebookId) as { user_id: string }[]).map(
+    (r) => r.user_id,
+  );
+}
+
+workspaceRoutes.get(
+  '/notebooks/:id/shares',
+  h((req) => {
+    const id = param(req, 'id');
+    mustAccess(notebookAccess(id, req.user.id));
+    const nb = db.prepare('SELECT visibility, created_by AS createdBy FROM notebooks WHERE id = ?').get(id) as {
+      visibility: string;
+      createdBy: string;
+    };
+    return { ...nb, userIds: notebookShares(id) };
+  }),
+);
+
+// Replace the list of people a private notebook is shared with. Creator only.
+workspaceRoutes.put(
+  '/notebooks/:id/shares',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(notebookAccess(id, req.user.id));
+    if (!a.isNotebookOwner) throw new HttpError(403, 'Only the notebook’s creator can change who it’s shared with');
+    const raw: unknown = req.body.userIds;
+    if (!Array.isArray(raw) || raw.some((u) => typeof u !== 'string') || raw.length > 500) throw new HttpError(400, 'userIds must be a list of user ids');
+    const wanted = new Set((raw as string[]).filter((u) => u !== req.user.id));
+    for (const u of wanted) if (!roleIn(a.workspaceId, u)) throw new HttpError(400, 'You can only share with members of this workspace');
+    const before = new Set(notebookShares(id));
+    const removed = [...before].filter((u) => !wanted.has(u));
+    const added = [...wanted].filter((u) => !before.has(u));
+    db.transaction(() => {
+      for (const u of removed) db.prepare('DELETE FROM notebook_shares WHERE notebook_id = ? AND user_id = ?').run(id, u);
+      for (const u of added)
+        db.prepare('INSERT INTO notebook_shares (notebook_id, user_id, created_by, created_at) VALUES (?, ?, ?, ?)').run(id, u, req.user.id, now());
+    })();
+    if (removed.length || added.length) {
+      for (const u of removed) recheckAccess({ workspaceId: a.workspaceId, userId: u });
+      publish({ type: 'tree', workspaceId: a.workspaceId });
+      refreshTasksForNotebook(id);
+    }
+    return { userIds: notebookShares(id) };
   }),
 );

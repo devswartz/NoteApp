@@ -24,8 +24,14 @@ interface Room {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   conns: Map<WebSocket, Set<number>>; // socket -> awareness client ids it controls
+  peers: Map<WebSocket, Peer>; // socket -> who it is and what it may do
   saveTimer: NodeJS.Timeout | null;
   lastEditor: string | null;
+}
+
+interface Peer {
+  userId: string;
+  canEdit: boolean;
 }
 
 const rooms = new Map<string, Room>();
@@ -89,7 +95,7 @@ function getRoom(pageId: string, workspaceId: string): Room {
   if (row?.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
-  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), saveTimer: null, lastEditor: null };
+  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), peers: new Map(), saveTimer: null, lastEditor: null };
 
   doc.on('update', (update: Uint8Array, origin: unknown) => {
     const enc = encoding.createEncoder();
@@ -129,6 +135,7 @@ function closeConn(room: Room, conn: WebSocket) {
   const ids = room.conns.get(conn);
   if (!ids) return;
   room.conns.delete(conn);
+  room.peers.delete(conn);
   awarenessProtocol.removeAwarenessStates(room.awareness, [...ids], null);
   if (room.conns.size === 0) {
     if (room.saveTimer) {
@@ -141,11 +148,35 @@ function closeConn(room: Room, conn: WebSocket) {
   conn.close();
 }
 
-/** Force-disconnect everyone from a page (e.g. after it is deleted or access changes). */
-export function closeRoom(pageId: string) {
+/**
+ * Call after a page is deleted, moved or its access changes: disconnects (4403)
+ * every socket on it that no longer has access, and updates the edit flag of
+ * the rest. With `userId`, only that user's sockets are checked.
+ */
+export function closeRoom(pageId: string, userId?: string) {
   const room = rooms.get(pageId);
-  if (!room) return;
-  for (const c of [...room.conns.keys()]) c.close(4403, 'Access revoked');
+  if (room) recheckRoom(room, userId);
+}
+
+function recheckRoom(room: Room, userId?: string) {
+  for (const [c, peer] of [...room.peers]) {
+    if (userId && peer.userId !== userId) continue;
+    const a = pageAccess(room.pageId, peer.userId);
+    if (!a) c.close(4403, 'Access revoked');
+    else peer.canEdit = a.canEdit;
+  }
+}
+
+/**
+ * Re-check every open connection after permissions change (role change,
+ * notebook made private or unshared). Sockets that lost access are closed
+ * with 4403; others get their read-only/edit flag updated in place.
+ */
+export function recheckAccess(filter: { workspaceId?: string; userId?: string } = {}) {
+  for (const room of rooms.values()) {
+    if (filter.workspaceId && room.workspaceId !== filter.workspaceId) continue;
+    recheckRoom(room, filter.userId);
+  }
 }
 
 /** Seed an empty page with initial content (used for onboarding pages). */
@@ -173,6 +204,8 @@ export function attachCollab(wss: WebSocketServer) {
     conn.binaryType = 'arraybuffer';
     const room = getRoom(pageId, access.workspaceId);
     room.conns.set(conn, new Set());
+    const peer: Peer = { userId: user.id, canEdit: access.canEdit };
+    room.peers.set(conn, peer);
 
     let alive = true;
     conn.on('pong', () => (alive = true));
@@ -191,7 +224,7 @@ export function attachCollab(wss: WebSocketServer) {
           encoding.writeVarUint(enc, MSG_SYNC);
           // Peek at the sync sub-type so read-only users can't push updates.
           const sub = decoding.peekVarUint(dec);
-          if (sub !== syncProtocol.messageYjsSyncStep1 && !access.canEdit) return;
+          if (sub !== syncProtocol.messageYjsSyncStep1 && !peer.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
