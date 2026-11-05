@@ -5,6 +5,8 @@ import {
   type RefObject,
   forwardRef,
   useId,
+  isValidElement,
+  cloneElement,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -15,6 +17,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Check, Loader2, X } from 'lucide-react';
 import { initials } from '../lib/format.ts';
+import { menuTarget, trapTarget } from './focusNav.ts';
 
 // ───────────── Popover ─────────────
 
@@ -23,6 +26,8 @@ export const useClosePopover = () => useContext(PopoverCtx);
 
 interface PopoverProps {
   anchor: RefObject<HTMLElement | null>;
+  /** Position at a point instead of below the anchor (context menus). */
+  point?: { x: number; y: number } | null;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
@@ -31,13 +36,13 @@ interface PopoverProps {
 }
 
 /** Floating panel anchored to an element; closes on outside click and Escape. */
-export function Popover({ anchor, open, onClose, children, placement = 'bottom-start', className }: PopoverProps) {
+export function Popover({ anchor, point, open, onClose, children, placement = 'bottom-start', className }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!open || !anchor.current || !ref.current) return;
-    const a = anchor.current.getBoundingClientRect();
+    if (!open || !ref.current || (!point && !anchor.current)) return;
+    const a = point ? new DOMRect(point.x, point.y, 0, 0) : anchor.current!.getBoundingClientRect();
     const p = ref.current.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -46,13 +51,13 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
     if (top + p.height > vh - 8) top = Math.max(8, a.top - p.height - 6);
     left = Math.min(Math.max(8, left), vw - p.width - 8);
     setPos({ top, left });
-  }, [open, anchor, placement]);
+  }, [open, anchor, placement, point]);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (ref.current?.contains(t) || anchor.current?.contains(t)) return;
+      if (ref.current?.contains(t) || (!point && anchor.current?.contains(t))) return;
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -62,16 +67,15 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
         anchor.current?.focus({ preventScroll: true });
         return;
       }
-      // Arrow keys move between menu items (unless typing in a field inside the popover).
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && ref.current) {
+      // Arrow keys, Home and End move between menu items (unless typing in a field inside the popover).
+      if (ref.current && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
         const t = e.target as HTMLElement;
         if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
         const items = [...ref.current.querySelectorAll<HTMLElement>('.menu-item:not(:disabled)')];
-        if (!items.length) return;
+        const next = menuTarget(e.key, items.length, items.indexOf(document.activeElement as HTMLElement));
+        if (next === null) return;
         e.preventDefault();
-        const i = items.indexOf(document.activeElement as HTMLElement);
-        const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
-        items[i < 0 ? (e.key === 'ArrowDown' ? 0 : items.length - 1) : next].focus();
+        items[next].focus();
       }
     };
     document.addEventListener('pointerdown', onDown, true);
@@ -80,7 +84,7 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
     };
-  }, [open, onClose, anchor]);
+  }, [open, onClose, anchor, point]);
 
   if (!open) return null;
   return createPortal(
@@ -96,6 +100,57 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
     </PopoverCtx.Provider>,
     document.body,
   );
+}
+
+/**
+ * Right-click / long-press menu. Spread `bind` onto the target element and
+ * render `menu` anywhere. `open()` also works from a "⋯" button.
+ */
+export function useContextMenu(render: (close: () => void) => ReactNode) {
+  const anchor = useRef<HTMLElement | null>(null);
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
+  const close = () => setPoint(null);
+  const longPress = useRef<number | undefined>(undefined);
+  const pressed = useRef(false);
+  const bind = {
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPoint({ x: e.clientX, y: e.clientY });
+    },
+    // Touch: long-press opens the menu (iOS Safari doesn't fire contextmenu).
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      pressed.current = false;
+      window.clearTimeout(longPress.current);
+      longPress.current = window.setTimeout(() => {
+        pressed.current = true;
+        setPoint({ x: t.clientX, y: t.clientY });
+      }, 500);
+    },
+    // The finger lifting after a long-press must not also "tap" the row.
+    onClickCapture: (e: React.MouseEvent) => {
+      if (!pressed.current) return;
+      pressed.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      window.clearTimeout(longPress.current);
+      // After a long-press, cancel the click the browser would synthesize on release
+      // (it could land on an item of the menu that just opened under the finger).
+      if (pressed.current) e.preventDefault();
+    },
+    onTouchMove: () => window.clearTimeout(longPress.current),
+  };
+  // On phones the menu opens as a bottom sheet (bigger targets, thumb reach).
+  const sheet = typeof window !== 'undefined' && window.matchMedia('(max-width: 760px) and (pointer: coarse)').matches;
+  const menu = (
+    <Popover anchor={anchor} point={point} open={!!point} onClose={close} className={sheet ? 'as-sheet' : undefined}>
+      {point ? render(close) : null}
+    </Popover>
+  );
+  return { bind, menu, openAt: (x: number, y: number) => setPoint({ x, y }), close };
 }
 
 /** Button + popover pair. */
@@ -211,7 +266,14 @@ export function Avatar({
 
 // ───────────── Modal / Dialog ─────────────
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable]';
+
+/** Visible, focusable elements inside `root`, in tab order of the DOM. */
+function focusables(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+    (x) => x.offsetParent !== null && (!x.hasAttribute('contenteditable') || x.isContentEditable),
+  );
+}
 
 /** Keeps Tab inside `ref` and returns focus to the previously focused element on unmount. */
 export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean) {
@@ -222,17 +284,16 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active: boolean
     if (el && !el.contains(document.activeElement)) {
       // Respect autoFocus children; otherwise focus the first focusable element.
       requestAnimationFrame(() => {
-        if (!el.contains(document.activeElement)) (el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus();
+        if (!el.contains(document.activeElement)) (focusables(el)[0] ?? el).focus();
       });
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab' || !ref.current) return;
-      const items = [...ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((x) => x.offsetParent !== null);
-      if (!items.length) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());
-      else if (!e.shiftKey && document.activeElement === last) (e.preventDefault(), first.focus());
+      const items = focusables(ref.current);
+      const target = trapTarget(items.length, items.indexOf(document.activeElement as HTMLElement), e.shiftKey);
+      if (target === null) return;
+      e.preventDefault();
+      items[target].focus();
     };
     document.addEventListener('keydown', onKey);
     return () => {
@@ -248,12 +309,15 @@ export function Modal({
   children,
   className,
   label,
+  labelledBy,
 }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   className?: string;
   label: string;
+  /** id of a visible title; preferred over `label` for screen readers when present. */
+  labelledBy?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, open);
@@ -271,7 +335,7 @@ export function Modal({
   if (!open) return null;
   return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} tabIndex={-1} className={`modal ${className ?? ''}`} role="dialog" aria-modal="true" aria-label={label}>
+      <div ref={ref} tabIndex={-1} className={`modal ${className ?? ''}`} role="dialog" aria-modal="true" aria-labelledby={labelledBy} aria-label={labelledBy ? undefined : label}>
         {children}
       </div>
     </div>,
@@ -297,10 +361,13 @@ export function Dialog({
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
 }) {
+  const titleId = useId();
   return (
-    <Modal open={open} onClose={onClose} label={title} className={`dialog dialog-${size}`}>
+    <Modal open={open} onClose={onClose} label={title} labelledBy={titleId} className={`dialog dialog-${size}`}>
       <div className="dialog-head">
-        <h2 className="dialog-title">{title}</h2>
+        <h2 className="dialog-title" id={titleId}>
+          {title}
+        </h2>
         <IconButton label="Close" size="sm" onClick={onClose}>
           <X size={16} />
         </IconButton>
@@ -428,6 +495,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       ref={ref}
       type={type}
       aria-label={label}
+      title={tooltip ? undefined : label}
       aria-pressed={active}
       className={`btn-ghost icon-btn ${size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : ''} ${active ? 'is-active' : ''} ${className ?? ''}`}
       {...rest}
@@ -435,36 +503,47 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       {children}
     </button>
   );
-  return tooltip ? <Tooltip content={label} shortcut={shortcut}>{btn}</Tooltip> : btn;
+  return tooltip ? (
+    <Tooltip content={label} shortcut={shortcut} describe="shortcut">
+      {btn}
+    </Tooltip>
+  ) : (
+    btn
+  );
 });
 
 // ───────────── Tooltip ─────────────
 
 /**
- * Hover/focus tooltip. Wraps a single focusable child. Not shown on touch
- * devices (no hover), so never put essential information only in a tooltip.
+ * Tooltip on hover (pointer devices) and on keyboard focus; Escape dismisses it.
+ * Wraps a single element. The trigger gets `aria-describedby` pointing at an
+ * always-present, visually hidden description, so screen readers announce it
+ * (and the shortcut) without waiting for the visual tooltip. Touch devices
+ * never see it, so don't put essential information only in a tooltip.
  */
 export function Tooltip({
   content,
   shortcut,
   children,
   side = 'bottom',
+  describe = 'all',
 }: {
   content: ReactNode;
   shortcut?: string;
   children: ReactNode;
   side?: 'top' | 'bottom' | 'right';
+  /** What to expose as the trigger's description: 'shortcut' when `content` is already its accessible name. */
+  describe?: 'all' | 'shortcut' | 'none';
 }) {
   const wrap = useRef<HTMLSpanElement>(null);
   const [shown, setShown] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const timer = useRef<number | undefined>(undefined);
-  const id = useId();
+  const descId = useId();
 
-  const show = () => {
-    if (!window.matchMedia('(hover: hover)').matches) return;
+  const open = (delay: number) => {
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setShown(true), 450);
+    timer.current = window.setTimeout(() => setShown(true), delay);
   };
   const hide = () => {
     window.clearTimeout(timer.current);
@@ -472,6 +551,12 @@ export function Tooltip({
     setPos(null);
   };
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (!shown) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && hide();
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [shown]);
 
   const tip = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -486,12 +571,33 @@ export function Tooltip({
     setPos({ top: Math.max(6, top), left });
   }, [shown, side]);
 
+  const description = describe === 'none' ? null : describe === 'shortcut' ? shortcut : (
+    <>
+      {content}
+      {shortcut && ` (${shortcut})`}
+    </>
+  );
+  const trigger = description && isValidElement<{ 'aria-describedby'?: string }>(children) ? cloneElement(children, { 'aria-describedby': descId }) : children;
+
   return (
-    <span ref={wrap} className="tooltip-anchor" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide} onPointerDown={hide} aria-describedby={shown ? id : undefined}>
-      {children}
+    <span
+      ref={wrap}
+      className="tooltip-anchor"
+      onMouseEnter={() => window.matchMedia('(hover: hover)').matches && open(450)}
+      onMouseLeave={hide}
+      onFocus={(e) => (e.target as HTMLElement).matches(':focus-visible') && open(150)}
+      onBlur={hide}
+      onPointerDown={hide}
+    >
+      {trigger}
+      {description && (
+        <span id={descId} className="sr-only">
+          {description}
+        </span>
+      )}
       {shown &&
         createPortal(
-          <div ref={tip} id={id} role="tooltip" className="tooltip" style={pos ?? { top: -9999, left: -9999 }}>
+          <div ref={tip} role="tooltip" aria-hidden="true" className="tooltip" style={pos ?? { top: -9999, left: -9999 }}>
             {content}
             {shortcut && <span className="tooltip-kbd">{shortcut}</span>}
           </div>,

@@ -21,7 +21,7 @@ export function NotesHome() {
             <div className="recent-grid">
               {recent.map((p) => (
                 <Link key={p.id} to={`/w/${wsId}/p/${p.id}`} className="recent-card">
-                  <FileText size={18} className="muted" />
+                  {p.icon ? <span className="page-emoji">{p.icon}</span> : <FileText size={18} className="muted" />}
                   <strong className="truncate">{p.title || 'Untitled'}</strong>
                   <span className="muted small">{relativeTime(p.updatedAt)}</span>
                 </Link>
@@ -50,7 +50,7 @@ export function NotesHome() {
                     .filter((p) => p.sectionId === s.id)
                     .map((p) => (
                       <Link key={p.id} to={`/w/${wsId}/p/${p.id}`} className="notes-page-row">
-                        <FileText size={15} className="muted" />
+                        {p.icon ? <span className="page-emoji page-emoji-sm">{p.icon}</span> : <FileText size={15} className="muted" />}
                         <span className="truncate grow">{p.title || 'Untitled'}</span>
                         <span className="muted small">{relativeTime(p.updatedAt)}</span>
                       </Link>

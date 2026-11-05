@@ -1,11 +1,22 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileText, AlignLeft, Bell, Plus } from 'lucide-react';
+import { FileText, AlignLeft, CornerDownRight, ListChecks, Plus } from 'lucide-react';
+import { TaskIndicators } from './notifications/TaskIndicators.tsx';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
-import type { Task } from '../../shared/types.ts';
+import type { PageMeta, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
-import type { Group } from '../lib/taskViews.ts';
+import { subtaskIndex, type Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
+import { selection, useSelection } from '../pages/tasks/selection.ts';
+import { RENAME_EVENT } from '../pages/tasks/commands.tsx';
+
+/** id → page, cached per tree.pages array so each row's lookup is O(1). */
+const pageMaps = new WeakMap<PageMeta[], Map<string, PageMeta>>();
+function pageIndex(pages: PageMeta[]) {
+  let m = pageMaps.get(pages);
+  if (!m) pageMaps.set(pages, (m = new Map(pages.map((p) => [p.id, p]))));
+  return m;
+}
 
 export const TaskRow = memo(function TaskRow({
   task,
@@ -17,18 +28,48 @@ export const TaskRow = memo(function TaskRow({
   draggable?: boolean;
 }) {
   const { wsId } = useParams();
-  const page = useStore((s) => (task.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
+  const page = useStore((s) => (task.pageId ? pageIndex(s.tree.pages).get(task.pageId) : undefined));
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const lingering = useStore((s) => !!s.lingering[task.id]);
   const [editing, setEditing] = useState(false);
   // A click on the title waits briefly so a double-click can start renaming instead of opening the sheet.
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const selected = useSelection((s) => s.ids.has(task.id));
+  const subs = useStore((s) => subtaskIndex(s.tasks).get(task.id));
+  const subsDone = subs?.filter((x) => x.status === 'done').length ?? 0;
+  const parent = useStore((s) => (task.parentId ? s.tasks[task.parentId] : undefined));
   const done = task.status === 'done';
+  // The R shortcut (pages/tasks/commands.tsx) asks the focused row to rename itself.
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el || !canEdit) return;
+    const start = () => setEditing(true);
+    el.addEventListener(RENAME_EVENT, start);
+    return () => el.removeEventListener(RENAME_EVENT, start);
+  }, [canEdit]);
   return (
     <div
-      className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''}`}
+      ref={rowRef}
+      data-task-id={task.id}
+      aria-selected={selected || undefined}
+      className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''} ${selected ? 'is-selected' : ''}`}
+      onMouseDown={(e) => {
+        if (e.shiftKey && canEdit) e.preventDefault(); // no text selection on Shift-click
+      }}
       onClick={(e) => {
         if (editing) return;
+        // Ctrl/⌘-click toggles, Shift-click selects a range (bulk actions).
+        if (canEdit && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+          e.preventDefault();
+          if (e.shiftKey) selection.extendTo(task.id);
+          else selection.toggle(task.id);
+          return;
+        }
+        if (useSelection.getState().ids.size) {
+          selection.toggle(task.id);
+          return;
+        }
         clearTimeout(clickTimer.current);
         if (canEdit && (e.target as HTMLElement).closest('.task-title')) {
           if (e.detail < 2) clickTimer.current = setTimeout(() => ui.openTask(task.id), 250);
@@ -44,12 +85,9 @@ export const TaskRow = memo(function TaskRow({
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
+        // Other row keys (X, D, A, R, S, 1–4, J/K) are registered as shortcuts in pages/tasks/commands.tsx.
         if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter') ui.openTask(task.id);
-        if ((e.key === 'e' || e.key === 'F2') && canEdit) {
-          e.preventDefault();
-          setEditing(true);
-        }
         if (e.key === ' ' && canEdit) {
           e.preventDefault();
           toggleTask(task.id);
@@ -59,11 +97,17 @@ export const TaskRow = memo(function TaskRow({
       <TaskCheckbox task={task} onToggle={() => toggleTask(task.id)} disabled={!canEdit} />
       <div className="task-main">
         {editing ? (
-          <TitleEditor task={task} onDone={() => setEditing(false)} />
+          <TitleEditor
+            task={task}
+            onDone={(viaKey) => {
+              setEditing(false);
+              if (viaKey) rowRef.current?.focus();
+            }}
+          />
         ) : (
           <div
             className="task-title"
-            title={canEdit ? 'Double-click (or press E) to rename' : undefined}
+            title={canEdit ? 'Double-click (or press R) to rename' : undefined}
             onDoubleClick={(e) => {
               if (!canEdit) return;
               e.stopPropagation();
@@ -77,8 +121,25 @@ export const TaskRow = memo(function TaskRow({
         <div className="task-meta">
           <DueChip task={task} readOnly={!canEdit} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
           <PriorityChip task={task} readOnly={!canEdit} onChange={(priority) => void updateTask(task.id, { priority })} />
+          {subs && subs.length > 0 && (
+            <span className={`chip ${subsDone === subs.length ? 'chip-active' : ''}`} title={`${subsDone} of ${subs.length} subtasks done`}>
+              <ListChecks size={12} /> {subsDone}/{subs.length}
+            </span>
+          )}
+          {parent && (
+            <button
+              className="chip chip-btn chip-parent"
+              title={`Subtask of “${parent.title || 'Untitled'}”`}
+              onClick={(e) => {
+                e.stopPropagation();
+                ui.openTask(parent.id);
+              }}
+            >
+              <CornerDownRight size={12} /> <span className="truncate">{parent.title || 'Untitled'}</span>
+            </button>
+          )}
           {task.description && <AlignLeft size={13} className="muted" aria-label="Has description" />}
-          {task.reminderAt && task.status === 'open' && <Bell size={12} className="muted" aria-label="Has reminder" />}
+          <TaskIndicators task={task} />
           {showSource && page && (
             <Link
               to={`/w/${wsId}/p/${page.id}?task=${task.id}`}
@@ -100,12 +161,15 @@ export const TaskRow = memo(function TaskRow({
 });
 
 /** In-place title editor for a dashboard row: Enter or blur saves, Escape cancels. */
-function TitleEditor({ task, onDone }: { task: Task; onDone: () => void }) {
+function TitleEditor({ task, onDone }: { task: Task; onDone: (viaKey: boolean) => void }) {
   const [value, setValue] = useState(task.title);
-  const commit = () => {
+  const done = useRef(false);
+  const commit = (viaKey: boolean) => {
+    if (done.current) return;
+    done.current = true;
     const v = value.trim();
     if (v && v !== task.title) void updateTask(task.id, { title: v });
-    onDone();
+    onDone(viaKey);
   };
   return (
     <input
@@ -117,16 +181,17 @@ function TitleEditor({ task, onDone }: { task: Task; onDone: () => void }) {
       onFocus={(e) => e.target.select()}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
+      onBlur={() => commit(false)}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === 'Enter') {
           e.preventDefault();
-          commit();
+          commit(true);
         }
         if (e.key === 'Escape') {
           e.preventDefault();
-          onDone();
+          done.current = true;
+          onDone(true);
         }
       }}
     />
@@ -219,13 +284,34 @@ export function TaskGroups({
               <span className="group-count">{g.tasks.length || ''}</span>
             </h3>
           )}
-          {g.tasks.map((t) => (
-            <TaskRow key={t.id} task={t} showSource={showSource} />
-          ))}
+          <RowList tasks={g.tasks} showSource={showSource} />
           {addable && g.key !== 'overdue' && g.key !== '!overdue' && <InlineAdd group={g} />}
         </section>
       ))}
       {total === 0 && !addable && <div className="empty">{emptyText}</div>}
     </div>
+  );
+}
+
+const PAGE = 150;
+
+/**
+ * Renders task rows a page at a time, so views with thousands of tasks stay
+ * fast. The rest appear behind a "Show more" button (keyboard reachable).
+ */
+export function RowList({ tasks, showSource }: { tasks: Task[]; showSource?: boolean }) {
+  const [limit, setLimit] = useState(PAGE);
+  const shown = tasks.length > limit ? tasks.slice(0, limit) : tasks;
+  return (
+    <>
+      {shown.map((t) => (
+        <TaskRow key={t.id} task={t} showSource={showSource} />
+      ))}
+      {tasks.length > limit && (
+        <button className="inline-add show-more" onClick={() => setLimit((n) => n + PAGE * 2)}>
+          Show {Math.min(PAGE * 2, tasks.length - limit)} more of {tasks.length - limit}
+        </button>
+      )}
+    </>
   );
 }
