@@ -504,11 +504,13 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
         onKeyDown={(e) => e.key === 'Enter' && sidebar.toggleNode(nb.id)}
         {...menu.bind}
         {...dragProps('notebook', nb.id, p.canEdit)}
-        {...dropProps('notebook', nb.id, (where) => {
-          const drag = useDnd.getState().drag;
-          if (drag?.kind === 'notebook') void moveNotebook(drag.id, nb.id, where);
-          if (drag?.kind === 'section') void moveSection(drag.id, nb.id, null, 'inside');
-        })}
+        {...(p.canEdit
+          ? dropProps('notebook', nb.id, (where) => {
+              const drag = useDnd.getState().drag;
+              if (drag?.kind === 'notebook') void moveNotebook(drag.id, nb.id, where);
+              if (drag?.kind === 'section') void moveSection(drag.id, nb.id, null, 'inside');
+            })
+          : {})}
       >
         <span className="chev">{isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
         <span className="nb-icon" style={{ background: nb.color }}>
@@ -591,11 +593,13 @@ function SectionNode({ section, pages, ...p }: NodeProps & { section: Section; p
         onKeyDown={(e) => e.key === 'Enter' && sidebar.toggleNode(section.id)}
         {...(p.canEdit ? menu.bind : {})}
         {...dragProps('section', section.id, p.canEdit)}
-        {...dropProps('section', section.id, (where) => {
-          const drag = useDnd.getState().drag;
-          if (drag?.kind === 'section') void moveSection(drag.id, section.notebookId, section.id, where);
-          if (drag?.kind === 'page' || drag?.kind === 'favorite') void movePage(drag.id, section.id, null, 'inside');
-        })}
+        {...(p.canEdit
+          ? dropProps('section', section.id, (where) => {
+              const drag = useDnd.getState().drag;
+              if (drag?.kind === 'section') void moveSection(drag.id, section.notebookId, section.id, where);
+              if (drag?.kind === 'page' || drag?.kind === 'favorite') void movePage(drag.id, section.id, null, 'inside');
+            })
+          : {})}
       >
         <span className="chev">{isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}</span>
         <span className="sec-tab" style={{ background: section.color }} />
@@ -706,8 +710,10 @@ function PageRow({ page, favorite, flat, ...p }: NodeProps & { page: PageMeta; f
         className={({ isActive }) => `sb-row page-row ${isActive ? 'is-active' : ''} ${dropClass(rowId, drop)}`}
         role="treeitem"
         {...menu.bind}
+        // Viewers can still reorder their favourites (stored on this device only),
+        // but nothing that moves pages on the server is draggable or a drop target for them.
         {...dragProps(dragKind, page.id, p.canEdit || !!favorite)}
-        {...(flat
+        {...(flat || (!favorite && !p.canEdit)
           ? {}
           : dropProps(dragKind, rowId, (where) => {
               const drag = useDnd.getState().drag;
