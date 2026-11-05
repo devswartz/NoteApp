@@ -110,7 +110,7 @@ Until then, `noteapp://` links work and https links open in the browser.
 
 ## CI
 
-`.github/workflows/mobile.yml` runs on version tags, on manual dispatch (with a TestFlight checkbox and a server URL), and on PRs that touch `apps/mobile/**` or `src/platform/capacitor.ts`. It never runs for other PRs, so the main `CI` check isn't slowed.
+`.github/workflows/mobile.yml` runs on version tags, on manual dispatch (with a TestFlight checkbox and a server URL), and on PRs that touch `apps/mobile/**`, `src/platform/capacitor.ts` or `index.ts`, or the root `package.json`/lockfile (so Capacitor dependency bumps get a native build). It never runs for other PRs, so the main `CI` check isn't slowed.
 
 | Job | Runner | Does |
 |---|---|---|
