@@ -22,8 +22,8 @@ test.describe('bulk task actions', () => {
     await expect(taskRow(page, 'Bulk B')).toHaveAttribute('aria-selected', 'true');
     await expect(taskRow(page, 'Bulk D')).not.toHaveAttribute('aria-selected', 'true');
 
-    await bar.getByTitle('Set priority').click();
-    await page.getByRole('button', { name: 'Priority 1' }).click();
+    await bar.getByRole('button', { name: 'Set priority', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Priority 1' }).click();
     await eventually(
       () => listTasks(request, user),
       (ts) => ['Bulk A', 'Bulk B', 'Bulk C'].every((n) => (ts.find((t) => t.title === n) as { priority?: number } | undefined)?.priority === 1),
@@ -55,7 +55,7 @@ test.describe('bulk task actions', () => {
     await taskRow(page, 'Trash 1').locator('.task-title').click({ modifiers: ['ControlOrMeta'] });
     await taskRow(page, 'Trash 2').locator('.task-title').click({ modifiers: ['ControlOrMeta'] });
     page.once('dialog', (d) => void d.accept());
-    await bar.getByTitle('Delete').click();
+    await bar.getByRole('button', { name: 'Delete', exact: true }).click();
     await expect(taskRow(page, 'Trash 1')).toHaveCount(0);
     await expect(taskRow(page, 'Trash 2')).toHaveCount(0);
     await expect(taskRow(page, 'Keep 3')).toBeVisible();

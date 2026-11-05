@@ -28,10 +28,10 @@ test('move a page to another notebook: breadcrumb updates and its tasks stay lin
 
   await page.goto(`/w/${user.wsId}/p/${from.pageId}`);
   await expect(page.locator('.crumbs')).toContainText('Inbox Notebook');
-  await page.getByTitle('Page options').click();
+  await page.getByRole('button', { name: 'Page options', exact: true }).click();
   // The target notebook's "General" section.
   const archiveGroup = page.locator('.menu > div', { has: page.locator('.menu-group-title', { hasText: 'Archive Notebook' }) });
-  await archiveGroup.getByRole('button', { name: 'General' }).click();
+  await archiveGroup.getByRole('menuitem', { name: 'General' }).click();
   await expect(page.locator('.toast')).toContainText('Moved to Archive Notebook');
   await expect(page.locator('.crumbs')).toContainText('Archive Notebook');
 
@@ -50,15 +50,15 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   page.on('dialog', (d) => void d.accept());
 
   await page.goto(`/w/${user.wsId}/p/${p1.pageId}`);
-  await page.getByTitle('Page options').click();
-  await page.getByRole('button', { name: /Delete/ }).click();
+  await page.getByRole('button', { name: 'Page options', exact: true }).click();
+  await page.getByRole('menuitem', { name: /Delete/ }).click();
   await expect(page).toHaveURL(/\/notes$/);
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === null, 'task detached on page delete');
 
   const nbRow = page.locator('.sb-row', { hasText: 'Second Notebook' });
   await nbRow.hover();
-  await nbRow.getByTitle('Notebook options').click();
-  await page.getByRole('button', { name: 'Delete notebook' }).click();
+  await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Delete notebook' }).click();
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Second Notebook')).toHaveCount(0);
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor two')?.pageId === null, 'task detached on notebook delete');
 

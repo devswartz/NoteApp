@@ -31,7 +31,7 @@ test('invite by email → invitee signs up and lands in the team workspace', asy
   await b.getByLabel('Password').fill(PASSWORD);
   await b.getByRole('button', { name: 'Create account' }).click();
   await b.locator('.ws-switch').click();
-  await b.locator('.menu').getByRole('button', { name: /Invite Team/ }).click();
+  await b.locator('.menu').getByRole('menuitem', { name: /Invite Team/ }).click();
   await expect(b.locator('.ws-switch')).toContainText('Invite Team');
 
   // The owner's member list turns the invite into a member, live.
