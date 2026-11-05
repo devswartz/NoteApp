@@ -9,6 +9,7 @@ import {
   createCapacitorPlatform,
   inboxSection,
   shareContent,
+  widgetSnapshot,
   type SharedItem,
   dueTodayCount,
   notificationId,
@@ -101,7 +102,7 @@ function fakeBridge() {
   const posts: [string, unknown][] = [];
   const captured: SharedItem[] = [];
   let userCb: (u: string | null) => void = () => {};
-  let tasksCb: (t: Task[], u: string | null) => void = () => {};
+  let tasksCb: (t: Task[], u: string | null, ws: string | null) => void = () => {};
   const bridge: AppBridge = {
     onUser: (cb) => void (userCb = cb),
     onTasks: (cb) => void (tasksCb = cb),
@@ -113,7 +114,7 @@ function fakeBridge() {
       return item.kind === 'note' ? '/w/ws/p/new-page' : '/w/ws/tasks/today';
     },
   };
-  return { bridge, posts, captured, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null) => tasksCb(t, u) };
+  return { bridge, posts, captured, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null, ws: string | null = 'ws') => tasksCb(t, u, ws) };
 }
 
 test('mobile: notification payloads become safe in-app deep links', () => {
@@ -231,9 +232,16 @@ test('mobile: local notifications run their click handler; badge follows tasks',
   f.fire('Local.localNotificationActionPerformed', { actionId: 'tap', notification: { id, extra: {} } });
   assert.equal(clicked, 1);
 
-  b.setTasks([task({ dueDate: '2000-01-01' }), task({ dueDate: '2000-01-02' })], 'me');
+  const due = [task({ dueDate: '2000-01-01' }), task({ dueDate: '2000-01-02' })];
+  b.setTasks(due, 'me');
   await tick(600);
   assert.deepEqual(f.calls.filter(([c]) => c === 'Badge.set').at(-1), ['Badge.set', { count: 2 }]);
+  const widget = f.calls.filter(([c]) => c === 'Native.writeWidgetSnapshot').at(-1)![1] as { json: string };
+  assert.equal(JSON.parse(widget.json).total, 2, 'the widget snapshot is written with the badge');
+  const writes = f.calls.filter(([c]) => c === 'Native.writeWidgetSnapshot').length;
+  b.setTasks([...due], 'me');
+  await tick(600);
+  assert.equal(f.calls.filter(([c]) => c === 'Native.writeWidgetSnapshot').length, writes, 'unchanged snapshot is not rewritten');
 });
 
 function memoryKv() {
@@ -365,4 +373,25 @@ test('mobile: shares wait for sign-in, then open where they were saved', async (
   await tick();
   assert.equal(b.captured.length, 2);
   assert.equal(links.at(-1), 'noteapp://w/ws/tasks/today');
+});
+
+test('mobile: Today widget snapshot — my due tasks, overdue first, capped, with deep links', () => {
+  const today = '2026-11-05';
+  const tasks = [
+    task({ id: 'b', title: 'Later today', dueDate: today, dueTime: '15:00', priority: 2 }),
+    task({ id: 'a', title: 'Overdue', dueDate: '2026-11-03' }),
+    task({ id: 'c', title: 'Morning', dueDate: today, dueTime: '09:00', priority: 4 }),
+    task({ id: 'd', title: 'Not mine', dueDate: today, assigneeId: 'sam' }),
+    task({ id: 'e', title: 'Tomorrow', dueDate: '2026-11-06' }),
+  ];
+  const snap = widgetSnapshot(tasks, 'me', 'ws 1', today);
+  assert.equal(snap.total, 3);
+  assert.deepEqual(snap.items.map((i) => i.id), ['a', 'c', 'b']);
+  assert.equal(snap.items[0].overdue, true);
+  assert.equal(snap.items[1].time, '09:00');
+  assert.equal(snap.path, '/w/ws%201/tasks/today');
+  assert.equal(snap.items[0].path, '/w/ws%201/tasks/today?task=a');
+  assert.equal(widgetSnapshot(tasks, 'me', 'ws', today, 2).items.length, 2);
+  assert.equal(widgetSnapshot(tasks, 'me', 'ws', today, 2).total, 3, 'total counts everything');
+  assert.deepEqual(widgetSnapshot(tasks, null, null, today), { v: 1, date: today, signedIn: false, path: null, total: 0, items: [] });
 });

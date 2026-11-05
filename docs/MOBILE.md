@@ -13,6 +13,7 @@ apps/mobile/
     App/                app target: AppDelegate, MainViewController + NoteAppNativePlugin (the app's own plugin)
     Shared/             Swift shared by the app and its extensions (App Group store)
     ShareExtension/     "Share to NoteApp"
+    TodayWidget/        WidgetKit "Today" widget
   scripts/xcode-extensions.rb  re-adds the extension targets if the Xcode project is ever regenerated
   android/              Gradle project
 ```
@@ -53,6 +54,7 @@ npm run mobile:android   # …and open Android Studio
 | Keyboard | The web view resizes above the keyboard. iOS's prev/next/done accessory bar is hidden. While the keyboard is open `<html>` has class `keyboard-open` and `--keyboard-height` is set, so bottom bars can hide or move. |
 | Android back button | Goes back in history; at the root it backgrounds the app. |
 | Share to NoteApp | iOS: a Share Extension (`ios/App/ShareExtension`) with *Add as task* / *Save as note*. Android: two share targets, *Add task* and *Save as note* (activity-aliases of `MainActivity`). The item waits in the App Group (iOS) or in memory (Android) until the app is active and someone is signed in. Then a **task** opens quick add, prefilled with the text (and link), on Today; a **note** becomes a new page in the workspace's section named *Inbox* (or the first section), with the text and link as its body. The body is written to the page's local Yjs cache, and the editor syncs it like an offline edit. iOS extensions can't open their app, so the share appears the next time you switch to NoteApp. |
+| Today widget | iOS: a WidgetKit extension (`ios/App/TodayWidget`), small/medium/large. Android: a home-screen widget (`TodayWidgetProvider`). Both show my open tasks due today or overdue in the current workspace, with priority and time; tapping opens Today, and tapping a row (iOS medium/large, Android) opens that task. The app writes a JSON snapshot (`WidgetSnapshot` in `capacitor.ts`) to the App Group (iOS) or SharedPreferences (Android) whenever tasks change and when it comes to the foreground; the widget never calls the server. After midnight, tasks from an older snapshot show as overdue until the app is opened. |
 | App lock | Optional. Turn it on with the ⌘K command *Lock app with Face ID* (or Touch ID / fingerprint / passcode). It asks to unlock on launch and after more than a minute in the background, falling back to the device passcode. While the app is in the background a cover hides its content from the app switcher. A Settings toggle can use `platform.appLock` (`method()`, `enabled()`, `setEnabled()`, `subscribe()`). Stored per device. |
 | Splash screen | Native splash (light and dark) until React's first render. |
 | `<html>` classes | `native`, plus `native-ios` or `native-android`, for any shell-only CSS. |

@@ -61,6 +61,19 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Home-screen "Today" widget (TodayWidgetProvider). -->
+        <receiver
+            android:name=".TodayWidgetProvider"
+            android:label="@string/widget_title"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_widget_info" />
+        </receiver>
+
         <!-- Reminder pushes (FCM) use the same channel and icon as local notifications. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"

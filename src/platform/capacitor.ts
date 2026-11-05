@@ -8,6 +8,7 @@
 //                      the server after sign-in; tapping either deep-links to the task
 //   deep links         noteapp://… and https://notes.devswartz.com/w/… (universal/app links)
 //   app badge          number of my open tasks due today or overdue
+//   Today widget       a snapshot of those tasks for the iOS WidgetKit / Android home-screen widget
 //   haptics            light tap on checkbox toggles and [data-haptic] elements; platform.haptics
 //   share capture      "Share to NoteApp" (iOS Share Extension, Android share targets): a task opens
 //                      quick add prefilled, a note becomes a new page in the workspace's Inbox section
@@ -56,6 +57,8 @@ export interface NativePlugins {
   /** The app's own plugin (apps/mobile/ios/App/App/NoteAppNativePlugin.swift, android/…/NoteAppNativePlugin.java). */
   NoteAppNative: {
     getPendingShares(): Promise<{ items: SharedItem[] }>;
+    /** Stores the Today snapshot for the widget (App Group / SharedPreferences) and refreshes it. */
+    writeWidgetSnapshot(options: { json: string }): Promise<void>;
     addListener(event: 'shareReceived', fn: () => void): Promise<unknown>;
   };
   BiometricAuth: {
@@ -74,8 +77,8 @@ export interface NativePlugins {
 export interface AppBridge {
   /** Calls back with the signed-in user's id (null when signed out), now and on every change. */
   onUser(cb: (userId: string | null) => void): void;
-  /** Calls back with the loaded tasks whenever they change. */
-  onTasks(cb: (tasks: Task[], userId: string | null) => void): void;
+  /** Calls back with the loaded tasks (of the current workspace) whenever they change. */
+  onTasks(cb: (tasks: Task[], userId: string | null, workspaceId: string | null) => void): void;
   post(path: string, body: unknown): Promise<unknown>;
   del(path: string, body: unknown): Promise<unknown>;
   /** Handles a shared item once someone is signed in. Resolves to an in-app path to open, if any. */
@@ -175,6 +178,49 @@ export function inboxSection(tree: Tree): string | null {
     .filter((s) => nbPos.has(s.notebookId))
     .sort((a, b) => nbPos.get(a.notebookId)! - nbPos.get(b.notebookId)! || a.position - b.position);
   return (sections.find((s) => s.name.trim().toLowerCase() === 'inbox') ?? sections[0])?.id ?? null;
+}
+
+/** What the Today widget shows (read by TodayWidget.swift and TodayWidgetProvider.java). */
+export interface WidgetSnapshot {
+  v: 1;
+  /** Local date the snapshot was made; tasks "due today" then are overdue after it. */
+  date: string;
+  signedIn: boolean;
+  /** In-app path for the widget as a whole. */
+  path: string | null;
+  total: number;
+  items: { id: string; title: string; overdue: boolean; time: string | null; priority: number; path: string }[];
+}
+
+/** My open tasks due today or overdue, sorted like the Today view (overdue first, then time, priority). */
+export function widgetSnapshot(tasks: Iterable<Task>, me: string | null, wsId: string | null, today = localDate(), max = 8): WidgetSnapshot {
+  if (!me || !wsId) return { v: 1, date: today, signedIn: !!me, path: null, total: 0, items: [] };
+  const due = [...tasks].filter(
+    (t) => (t.assigneeId === me || (!t.assigneeId && t.createdBy === me)) && t.status === 'open' && !!t.dueDate && t.dueDate <= today,
+  );
+  due.sort(
+    (a, b) =>
+      a.dueDate!.localeCompare(b.dueDate!) ||
+      (a.dueTime ?? '99').localeCompare(b.dueTime ?? '99') ||
+      a.priority - b.priority ||
+      a.createdAt.localeCompare(b.createdAt),
+  );
+  const base = `/w/${encodeURIComponent(wsId)}/tasks/today`;
+  return {
+    v: 1,
+    date: today,
+    signedIn: true,
+    path: base,
+    total: due.length,
+    items: due.slice(0, max).map((t) => ({
+      id: t.id,
+      title: t.title.slice(0, 200),
+      overdue: t.dueDate! < today,
+      time: t.dueTime,
+      priority: t.priority,
+      path: `${base}?task=${encodeURIComponent(t.id)}`,
+    })),
+  };
 }
 
 /** Lock again after the app has been in the background this long. */
@@ -452,9 +498,17 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   // ── Badge ──
   let badgeTimer: ReturnType<typeof setTimeout> | null = null;
   let lastBadge = -1;
-  const scheduleBadge = (tasks: Task[], me: string | null) => {
+  let lastWidget = '';
+  let lastTasks: [Task[], string | null, string | null] | null = null;
+  const scheduleBadge = (tasks: Task[], me: string | null, wsId: string | null) => {
+    lastTasks = [tasks, me, wsId];
     if (badgeTimer) clearTimeout(badgeTimer);
     badgeTimer = setTimeout(() => {
+      const json = JSON.stringify(widgetSnapshot(tasks, me, wsId));
+      if (json !== lastWidget) {
+        lastWidget = json;
+        void native.NoteAppNative.writeWidgetSnapshot({ json }).catch(() => {});
+      }
       const n = dueTodayCount(tasks, me);
       if (n === lastBadge || notifPermission !== 'granted') return;
       lastBadge = n;
@@ -482,6 +536,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
           appLock.foreground();
           void refreshPermission();
           void drainShares();
+          if (lastTasks) scheduleBadge(...lastTasks); // the date may have changed overnight
         } else appLock.background();
       });
       void native.App.addListener('backButton', ({ canGoBack }) => {
@@ -659,11 +714,11 @@ async function loadAppBridge(): Promise<AppBridge> {
     onTasks(cb) {
       const emit = () => {
         const s = useStore.getState();
-        cb(Object.values(s.tasks), s.user?.id ?? null);
+        cb(Object.values(s.tasks), s.user?.id ?? null, s.wsId);
       };
       emit();
       useStore.subscribe((s, prev) => {
-        if (s.tasks !== prev.tasks || s.user !== prev.user) emit();
+        if (s.tasks !== prev.tasks || s.user !== prev.user || s.wsId !== prev.wsId) emit();
       });
     },
     post: (path, body) => api.post(path, body),

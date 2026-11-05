@@ -19,6 +19,8 @@ import java.util.regex.Pattern;
  * Share capture: other apps' share sheets show two targets, "Add task" and
  * "Save as note" (activity-aliases of MainActivity in AndroidManifest.xml).
  * Shared text/links are queued here until the web app asks for them.
+ *
+ * Today widget: writeWidgetSnapshot() stores the snapshot TodayWidgetProvider draws.
  */
 @CapacitorPlugin(name = "NoteAppNative")
 public class NoteAppNativePlugin extends Plugin {
@@ -60,6 +62,18 @@ public class NoteAppNativePlugin extends Plugin {
         intent.setAction(Intent.ACTION_MAIN);
         intent.removeExtra(Intent.EXTRA_TEXT);
         return true;
+    }
+
+    /** Stores the Today snapshot for the home-screen widget and redraws it. */
+    @PluginMethod
+    public void writeWidgetSnapshot(PluginCall call) {
+        String json = call.getString("json");
+        if (json == null) {
+            call.reject("json is required");
+            return;
+        }
+        TodayWidgetProvider.update(getContext(), json);
+        call.resolve();
     }
 
     /** Shared items received since the last call. */
