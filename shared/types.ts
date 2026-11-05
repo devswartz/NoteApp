@@ -21,6 +21,17 @@ export interface User {
   color: string;
 }
 
+/** Returned by /auth/register, /auth/login and /auth/refresh. */
+export interface AuthSession {
+  /** Short-lived JWT for `Authorization: Bearer …` and WebSocket auth. */
+  accessToken: string;
+  /** Lifetime of the access token in seconds. */
+  expiresIn: number;
+  /** Opaque, single-use token for POST /auth/refresh. Store it securely. */
+  refreshToken: string;
+  user: User;
+}
+
 export interface Workspace {
   id: string;
   name: string;
@@ -120,7 +131,7 @@ export interface SearchResult {
   tasks: Task[];
 }
 
-/** Messages pushed to clients over the server-sent event stream. */
+/** Messages pushed to clients over the /api/events WebSocket. */
 export type ServerEvent =
   | { type: 'task'; task: Task }
   | { type: 'task-deleted'; id: string; workspaceId: string }

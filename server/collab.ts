@@ -9,7 +9,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
-import { verifyToken } from './auth.ts';
+import { tokenFromUpgrade, verifyToken } from './auth.ts';
 import { pageAccess } from './access.ts';
 import { syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
@@ -164,7 +164,7 @@ export function attachCollab(wss: WebSocketServer) {
     const url = new URL(req.url ?? '', 'http://x');
     // y-websocket connects to `${serverUrl}/${roomName}`; room = page id.
     const pageId = decodeURIComponent(url.pathname.split('/').pop() ?? '');
-    const user = verifyToken(url.searchParams.get('token'));
+    const user = verifyToken(tokenFromUpgrade(req));
     const access = user ? pageAccess(pageId, user.id) : null;
     if (!user || !access) {
       conn.close(4401, 'Unauthorized');
@@ -228,4 +228,10 @@ export function flushAll() {
     clearTimeout(room.saveTimer);
     persist(room);
   }
+}
+
+/** Save every open document and disconnect its clients (on shutdown). 1012 = service restart; clients reconnect. */
+export function shutdownCollab() {
+  flushAll();
+  for (const room of rooms.values()) for (const c of room.conns.keys()) c.close(1012, 'Server restarting');
 }

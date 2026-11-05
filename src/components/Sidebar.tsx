@@ -30,11 +30,12 @@ import { Avatar, Dropdown, Kbd, MenuItem, MenuSeparator, MOD, useIsMobile } from
 import { isMine } from '../lib/taskViews.ts';
 import { today } from '../../shared/dates.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
+import { platform } from '../platform/index.ts';
 
 function useCollapsed() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try {
-      return JSON.parse(localStorage.getItem('noteapp.collapsed') ?? '{}');
+      return JSON.parse(platform.kv.get('noteapp.collapsed') ?? '{}');
     } catch {
       return {};
     }
@@ -42,11 +43,7 @@ function useCollapsed() {
   const toggle = (id: string, value?: boolean) =>
     setCollapsed((c) => {
       const next = { ...c, [id]: value ?? !c[id] };
-      try {
-        localStorage.setItem('noteapp.collapsed', JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
+      platform.kv.set('noteapp.collapsed', JSON.stringify(next));
       return next;
     });
   return [collapsed, toggle] as const;

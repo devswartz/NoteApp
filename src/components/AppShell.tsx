@@ -9,6 +9,7 @@ import { QuickAdd } from './QuickAdd.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { OfflineBanner, ShortcutsHelp } from './Overlays.tsx';
 import { MOD, useIsMobile } from './ui.tsx';
+import { platform } from '../platform/index.ts';
 
 /** Layout for everything inside a workspace. */
 export function AppShell() {
@@ -185,7 +186,7 @@ function useReminders() {
       if (!user) return;
       let fired: Record<string, string> = {};
       try {
-        fired = JSON.parse(localStorage.getItem(KEY) ?? '{}');
+        fired = JSON.parse(platform.kv.get(KEY) ?? '{}');
       } catch {
         /* ignore */
       }
@@ -197,21 +198,13 @@ function useReminders() {
         // Only fire reminders that came due in the last hour, once each.
         if (at > now || now - at > 3600_000 || fired[t.id] === t.reminderAt) continue;
         fired[t.id] = t.reminderAt;
-        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
-          const n = new Notification('Reminder', { body: t.title, tag: t.id });
-          n.onclick = () => {
-            window.focus();
-            ui.openTask(t.id);
-          };
+        if (platform.notifications.permission() === 'granted' && platform.isHidden()) {
+          platform.notifications.show('Reminder', { body: t.title, tag: t.id, onClick: () => ui.openTask(t.id) });
         } else {
           toast(`⏰ ${t.title}`, { action: { label: 'Open', run: () => ui.openTask(t.id) } });
         }
       }
-      try {
-        localStorage.setItem(KEY, JSON.stringify(fired));
-      } catch {
-        /* ignore */
-      }
+      platform.kv.set(KEY, JSON.stringify(fired));
     };
     const iv = setInterval(check, 30_000);
     check();

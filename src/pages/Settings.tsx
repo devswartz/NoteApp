@@ -5,6 +5,7 @@ import { del, patch, post } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
 import { Avatar } from '../components/ui.tsx';
 import type { Role } from '../../shared/types.ts';
+import { platform } from '../platform/index.ts';
 
 const ROLE_HELP: Record<Role, string> = {
   owner: 'Full control, including deleting the workspace',
@@ -23,7 +24,7 @@ export function Settings() {
   const [role, setRole] = useState<Role>('member');
   const [name, setName] = useState(user.name);
   const [wsName, setWsName] = useState(ws?.name ?? '');
-  const [notif, setNotif] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied');
+  const [notif, setNotif] = useState(platform.notifications.permission());
   if (!ws) return null;
   const isAdmin = ws.role === 'owner' || ws.role === 'admin';
 
@@ -57,10 +58,12 @@ export function Settings() {
           <span>Task reminders</span>
           {notif === 'granted' ? (
             <span className="chip">Enabled on this device</span>
-          ) : notif === 'denied' ? (
-            <span className="muted small">Blocked in browser settings — reminders show in-app only</span>
+          ) : notif === 'denied' || notif === 'unsupported' ? (
+            <span className="muted small">
+              {notif === 'denied' ? 'Blocked in browser settings' : 'Not supported here'} — reminders show in-app only
+            </span>
           ) : (
-            <button className="btn btn-secondary btn-sm" onClick={() => Notification.requestPermission().then(setNotif)}>
+            <button className="btn btn-secondary btn-sm" onClick={() => void platform.notifications.request().then(setNotif)}>
               Enable notifications
             </button>
           )}
