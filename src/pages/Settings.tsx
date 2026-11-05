@@ -16,7 +16,7 @@ import { NotificationSettingsPanel } from '../components/notifications/index.ts'
 import { AppLockSettings, hasAppLock } from '../components/shell/AppLockSettings.tsx';
 import { ShortcutList } from '../components/Overlays.tsx';
 import { MembersPanel, ROLE_HELP } from '../components/sharing/MembersPanel.tsx';
-import { detectPlatform } from '../platform/index.ts';
+import { platform, detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
 
 
@@ -34,7 +34,13 @@ const SECTIONS: SectionDef[] = [
   { id: 'profile', title: 'Profile', icon: <User size={16} />, group: 'Account', render: () => <ProfileSection /> },
   { id: 'appearance', title: 'Appearance', icon: <Palette size={16} />, group: 'Account', render: () => <AppearanceSettings /> },
   { id: 'security', title: 'Security', icon: <Lock size={16} />, group: 'Account', render: () => <AppLockSettings />, when: hasAppLock },
-  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => <NotificationSettingsPanel onError={errorToast} onMessage={toast} /> },
+  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => (
+      <>
+        <DeviceNotifications />
+        <NotificationSettingsPanel onError={errorToast} onMessage={toast} />
+      </>
+    ),
+  },
   { id: 'workspace', title: 'General', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
   { id: 'members', title: 'Members', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
   { id: 'shortcuts', title: 'Keyboard shortcuts', icon: <Keyboard size={16} />, group: 'App', render: () => <ShortcutList columns={false} /> },
@@ -196,6 +202,34 @@ function ProfileSection() {
         </Button>
       </Card>
     </>
+  );
+}
+
+/** Permission for system notifications on this device (the platform adapter); delivery settings are Reminders' panel below. */
+function DeviceNotifications() {
+  const [notif, setNotif] = useState(platform.notifications.permission());
+  return (
+    <Card title="This device" description="Reminders appear as system notifications when the app is in the background, and in-app otherwise.">
+      <div className="setting-row">
+        <div className="grow">
+          <div className="setting-title">Task reminders</div>
+          <div className="muted small">
+            {notif === 'granted'
+              ? 'Enabled on this device'
+              : notif === 'denied'
+                ? 'Blocked in your browser settings — reminders show in-app only'
+                : notif === 'unsupported'
+                  ? 'Not supported here — reminders show in-app only'
+                  : 'Allow notifications to get reminders when the app is in the background'}
+          </div>
+        </div>
+        {notif === 'default' && (
+          <Button size="sm" onClick={() => void platform.notifications.request().then(setNotif)}>
+            Enable notifications
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
 

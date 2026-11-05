@@ -460,6 +460,11 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
         </MenuItem>
       )}
       {isMine && (
+        <MenuItem icon={<UserPlus size={15} />} onSelect={() => openShareDialog(nb.id)}>
+          Share with people…
+        </MenuItem>
+      )}
+      {isMine && (
         <MenuItem
           icon={nb.visibility === 'private' ? <Globe size={15} /> : <Lock size={15} />}
           onSelect={() =>
@@ -469,11 +474,6 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
           }
         >
           {nb.visibility === 'private' ? 'Share with workspace' : 'Make private'}
-        </MenuItem>
-      )}
-      {isMine && (
-        <MenuItem icon={<UserPlus size={15} />} onSelect={() => openShareDialog(nb.id)}>
-          Share with people…
         </MenuItem>
       )}
       {p.canEdit && <ColorRow value={nb.color} onPick={(color) => patch(`/notebooks/${nb.id}`, { color }).catch(errorToast)} />}
