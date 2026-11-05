@@ -13,7 +13,7 @@ function task(p: Partial<Task> = {}): Task {
   return {
     id: `t${seq}`, workspaceId: 'w', title: `Task ${seq}`, description: '', status: 'open', priority: 4,
     dueDate: null, dueTime: null, recurrence: null, reminderAt: null, assigneeId: ME, createdBy: ME,
-    pageId: null, completedAt: null, completedBy: null, createdAt: ts, updatedAt: ts, ...p,
+    pageId: null, parentId: null, completedAt: null, completedBy: null, createdAt: ts, updatedAt: ts, ...p,
   };
 }
 const T = today();
@@ -110,3 +110,34 @@ test('quick add: connectors, noon, relative and absolute dates, recurrence', () 
 function pick(r: ReturnType<typeof parseQuickAdd>) {
   return [r.title, r.dueDate, r.dueTime];
 }
+
+test('productivity: done today, tasks left, streak and week', async () => {
+  const { productivity } = await import('../src/lib/taskViews.ts');
+  const now = new Date(2026, 10, 5, 15, 0);
+  const at = (daysAgo: number) => new Date(2026, 10, 5 - daysAgo, 10, 0).toISOString();
+  const done = (daysAgo: number, by = ME) => task({ status: 'done', completedBy: by, completedAt: at(daysAgo) });
+  const list = [done(0), done(0), done(1), done(2), done(4), done(0, 'sam'), task({ dueDate: '2026-11-04' }), task({ dueDate: '2026-11-05' }), task({ dueDate: '2026-11-06' })];
+  const p = productivity(list, ME, now);
+  assert.equal(p.doneToday, 2);
+  assert.equal(p.left, 2);
+  assert.equal(p.streak, 3, 'today, yesterday, the day before; the gap at 3 days ago ends it');
+  assert.deepEqual(p.week, [0, 0, 1, 0, 1, 1, 2]);
+  // Nothing yet today: the streak still counts up to yesterday.
+  assert.equal(productivity([done(1), done(2)], ME, now).streak, 2);
+});
+
+test('saved views: stored JSON is parsed defensively', async () => {
+  const { parseSavedViews, sameView } = await import('../src/pages/tasks/savedViews.ts');
+  assert.deepEqual(parseSavedViews(null), []);
+  assert.deepEqual(parseSavedViews('not json'), []);
+  assert.deepEqual(parseSavedViews('{"a":1}'), []);
+  const [v] = parseSavedViews(JSON.stringify([{ id: 'v1', name: 'Mine, urgent', filters: { assignee: 'me', priority: '1', bogus: 'x' }, sort: 'evil', group: 'priority' }, { name: 'no id' }]));
+  assert.equal(v.name, 'Mine, urgent');
+  assert.equal(v.sort, 'due', 'unknown sort falls back');
+  assert.equal(v.group, 'priority');
+  assert.equal(v.filters.assignee, 'me');
+  assert.equal(v.filters.status, 'open', 'missing filters get defaults');
+  assert.ok(!('bogus' in v.filters));
+  assert.ok(sameView(v, { ...DEFAULT_FILTERS, assignee: 'me', priority: '1' }, 'due', 'priority'));
+  assert.ok(!sameView(v, DEFAULT_FILTERS, 'due', 'priority'));
+});

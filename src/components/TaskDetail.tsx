@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, CalendarDays, Clock, FileText, Flag, Repeat, Trash2, UserRound, X } from 'lucide-react';
-import { deleteTask, errorToast, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { Bell, CalendarDays, Clock, CornerDownRight, FileText, Flag, ListChecks, Plus, Repeat, Trash2, UserRound, X } from 'lucide-react';
+import { createTask, deleteTask, errorToast, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { subtaskIndex } from '../lib/taskViews.ts';
+import { parseQuickAdd } from '../../shared/quickadd.ts';
+import { resolveMember } from './TaskRow.tsx';
+import type { Task } from '../../shared/types.ts';
 import { Avatar, Dropdown, Modal } from './ui.tsx';
 import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from './TaskControls.tsx';
 import { RecurrencePicker, ReminderPicker } from './notifications/index.ts';
@@ -45,7 +49,9 @@ export function TaskDetail() {
     <Modal open onClose={close} className="sheet" label="Task details">
       <div className="sheet-head">
         <div className="sheet-crumb">
-          {page ? (
+          {task.parentId ? (
+            <ParentCrumb parentId={task.parentId} />
+          ) : page ? (
             <Link to={`/w/${wsId}/p/${page.id}?task=${task.id}`} className="chip chip-link" onClick={close}>
               <FileText size={13} /> <span className="truncate">{page.title || 'Untitled'}</span>
             </Link>
@@ -58,7 +64,9 @@ export function TaskDetail() {
             className="btn-ghost icon-btn"
             title="Delete task"
             onClick={() => {
-              if (confirm(page ? 'Delete this task? It will also be removed from its note.' : 'Delete this task?')) {
+              const n = Object.values(useStore.getState().tasks).filter((t) => t.parentId === task.id).length;
+              const extra = n ? ` Its ${n} subtask${n === 1 ? '' : 's'} will be deleted too.` : '';
+              if (confirm((page && !task.parentId ? 'Delete this task? It will also be removed from its note.' : 'Delete this task?') + extra)) {
                 void deleteTask(task.id);
                 close();
               }
@@ -182,6 +190,8 @@ export function TaskDetail() {
           onBlur={commitDesc}
         />
 
+        {!task.parentId && <Subtasks task={task} canEdit={canEdit} />}
+
         <div className="detail-foot muted small">
           Created by {creator?.name ?? 'someone'} · {relativeTime(task.createdAt)}
           {task.status === 'done' && task.completedAt && (
@@ -205,5 +215,77 @@ function Prop({ icon, label, children }: { icon: React.ReactNode; label: string;
       </div>
       <div className="prop-value">{children}</div>
     </div>
+  );
+}
+
+function ParentCrumb({ parentId }: { parentId: string }) {
+  const parent = useStore((s) => s.tasks[parentId]);
+  return (
+    <button className="chip chip-link" onClick={() => ui.openTask(parentId)} title="Open the parent task">
+      <CornerDownRight size={13} /> <span className="truncate">Subtask of {parent?.title || 'a task'}</span>
+    </button>
+  );
+}
+
+/** One level of subtasks with progress; the input understands quick-add syntax. */
+function Subtasks({ task, canEdit }: { task: Task; canEdit: boolean }) {
+  const subs = useStore((s) => subtaskIndex(s.tasks).get(task.id)) ?? [];
+  const members = useStore((s) => s.members);
+  const me = useStore((s) => s.user!.id);
+  const [value, setValue] = useState('');
+  const done = subs.filter((x) => x.status === 'done').length;
+  const add = () => {
+    const raw = value.trim();
+    if (!raw) return;
+    const p = parseQuickAdd(raw);
+    const assignee = p.assignee ? resolveMember(p.assignee, members, me) : undefined;
+    void createTask({
+      title: p.title || raw,
+      parentId: task.id,
+      pageId: task.pageId,
+      dueDate: p.dueDate,
+      dueTime: p.dueTime,
+      priority: p.priority ?? 4,
+      assigneeId: assignee ?? task.assigneeId,
+    });
+    setValue('');
+  };
+  if (!subs.length && !canEdit) return null;
+  return (
+    <section className="subtasks" aria-label="Subtasks">
+      <div className="subtasks-head">
+        <ListChecks size={15} /> Subtasks
+        {subs.length > 0 && (
+          <span className="muted small">
+            {done}/{subs.length}
+          </span>
+        )}
+      </div>
+      {subs.length > 0 && (
+        <div className="progress subtasks-progress">
+          <div style={{ width: `${(done / subs.length) * 100}%` }} />
+        </div>
+      )}
+      {subs.map((x) => (
+        <div key={x.id} className={`subtask ${x.status === 'done' ? 'is-done' : ''}`}>
+          <TaskCheckbox task={x} onToggle={() => toggleTask(x.id)} disabled={!canEdit} />
+          <button className="subtask-title" onClick={() => ui.openTask(x.id)}>
+            {x.title || <span className="muted">Untitled</span>}
+          </button>
+        </div>
+      ))}
+      {canEdit && (
+        <form
+          className="subtask-add"
+          onSubmit={(e) => {
+            e.preventDefault();
+            add();
+          }}
+        >
+          <Plus size={15} className="muted" />
+          <input className="prop-input" placeholder="Add a subtask — “tomorrow @sam” works too" value={value} onChange={(e) => setValue(e.target.value)} />
+        </form>
+      )}
+    </section>
   );
 }

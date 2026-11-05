@@ -9,8 +9,10 @@ npm run test:e2e                         # builds, starts `npm start` on :4317 w
 E2E_NO_BUILD=1 npm run test:e2e          # reuse an existing dist/ (much faster when iterating)
 npx playwright test 03 --project=chromium   # one file
 E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you started yourself
+E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E2E_PORT+1) when several worktrees run at once
 ```
 
+- Ports: the main server listens on `E2E_PORT` (default 4317), the short-token server on `E2E_PORT+1`. Give each concurrent checkout its own `E2E_PORT`, or the second run fails to start its servers.
 - Each run uses a fresh, throwaway `DATA_DIR` (and a fixed test-only `JWT_SECRET`), so tests never touch `./data`.
 - Projects: `chromium` (desktop, every `*.spec.ts`), `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`) and `short-tokens` (only `*.tokens.spec.ts`, against a second server on port+1 started with `ACCESS_TOKEN_TTL_S=6`, so access tokens expire mid-test).
 - The browser runs in UTC (`timezoneId`), so "today" in tests matches `isoDay()` in `helpers.ts`.
@@ -40,9 +42,11 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 | 8 | Offline edit → reconnect → synced to server and another device; reload while offline | `08-offline.spec.ts` | ✅ / reload: fixme BUG-1 |
 | 9 | iPhone 13: tab bar, quick add, tap to complete, drawer sidebar → note, no horizontal scroll, editing, search | `09-mobile.mobile.spec.ts` | ✅ |
 | 10 | Notes edge cases: ⌘↵ convert line to task, move page (tasks stay linked), delete page/notebook keeps tasks, live rename for others, theme | `10-notes-edge.spec.ts` | ✅ |
-| 11 | Live access changes: notebook made private, member removed, member demoted (server rejects edits; UI read-only live) | `11-live-access.spec.ts` | ✅ / UI part: fixme BUG-2b |
+| 11 | Live access changes: notebook made private, member removed, member demoted (server rejects edits; UI read-only live) | `11-live-access.spec.ts` | ✅ |
 | 12 | Bulk task actions + row keys (#16) | `12-bulk-tasks.spec.ts` | fixme until #16 merges (verified on its branch) |
 | 13 | Token refresh mid-session: editing, REST and live events survive repeated 6 s access-token expiries (collab 4401 → refresh → reconnect); reload after expiry restores the session | `13-token-refresh.tokens.spec.ts` | ✅ |
+| 14 | Invite links (#11): invite → link → create account → joined, live in the owner's list; wrong signed-in account → Switch account; bad token. Private notebook shared with specific people (#14): live appear/disappear, others never see it, only the creator can change it | `14-invites-sharing.spec.ts` | ✅ / share dialog entry point: fixme (no UI calls `openShareDialog`) |
+| 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
 
 ## Open bugs
 
@@ -65,13 +69,7 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 - **Test:** `tests/e2e/<file>` › "<test name>" (`test.fixme`)
 -->
 
-### BUG-2: a member demoted to viewer can keep editing a page they already have open
-- **Area / owner:** Collaboration & Access (`server/collab.ts` checks the role only when the socket connects; the client doesn't react to its own role change).
-- **Found on:** main @ 1b38732, 2026-11-05
-- **Steps:** 1. A (owner) and B (member) are in a team workspace; B opens a page. 2. A changes B's role to Viewer. 3. Without reloading, B types in the page.
-- **BUG-2a (server):** fixed by #12, see "Fixed bugs".
-- **BUG-2b (UI):** B's page stays editable, with no "View only" chip, until B reloads, so B's typing is silently discarded (once 2a is fixed). Expected: the page switches to read-only live (a `members` event for yourself → refetch the role → `editor.setEditable(false)`). Still present on #12 and #14. → Test `11-live-access` › "BUG-2b…" (`fixme`).
-
 ## Fixed bugs
 
 - **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.
+- **BUG-2b** (Collaboration, client): after being demoted to viewer, an already-open page stayed editable (no "View only") until reload. Fixed by #41 (re-checks page edit rights when your role changes); its test is enabled.

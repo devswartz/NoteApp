@@ -177,7 +177,7 @@ export function DueChip({ task, onChange, readOnly }: { task: Task; onChange: (d
   return (
     <Dropdown
       trigger={label}
-      buttonClass={`chip chip-btn due-${tone} ${task.dueDate ? '' : 'chip-empty'}`}
+      buttonClass={`chip chip-btn chip-due due-${tone} ${task.dueDate ? '' : 'chip-empty'}`}
       title={task.dueDate ? `Due ${describeDue(task.dueDate)}` : 'Set due date'}
     >
       <DueMenu value={task.dueDate} onChange={onChange} />

@@ -58,7 +58,7 @@ export default defineConfig({
           reuseExistingServer: false,
           stdout: 'ignore',
           stderr: 'pipe',
-          env: { ...serverEnv, PORT: String(PORT), DATA_DIR: dataDir },
+          env: { ...serverEnv, PORT: String(PORT), DATA_DIR: dataDir, PUBLIC_URL: baseURL },
         },
         {
           command: 'npm start',
@@ -67,7 +67,7 @@ export default defineConfig({
           reuseExistingServer: false,
           stdout: 'ignore',
           stderr: 'pipe',
-          env: { ...serverEnv, PORT: String(SHORT_PORT), DATA_DIR: shortDataDir, ACCESS_TOKEN_TTL_S: String(SHORT_TOKEN_TTL_S) },
+          env: { ...serverEnv, PORT: String(SHORT_PORT), DATA_DIR: shortDataDir, PUBLIC_URL: shortURL, ACCESS_TOKEN_TTL_S: String(SHORT_TOKEN_TTL_S) },
         },
       ],
 });
