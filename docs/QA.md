@@ -53,10 +53,15 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages ; New notebook dialog with the "Team project" template (#71) | `18-sidebar.spec.ts` | ✅ |
 | 19 | Invite-only sign-up (#67, `SIGNUP_MODE=invite`): an `ADMIN_EMAILS` account can bootstrap; strangers see "Sign-up is by invitation" and get 403 from the API; an invited email signs up through the invite link and lands in the team | `19-signup.invite.spec.ts` | ✅ |
 | 21 | Comment threads (#28/#55/#62): select text → bubble menu Comment → highlight; another member sees it live and replies; resolve hides it under "Show 1 resolved" (live for others); reopen ; @mention in a comment notifies the person (#29, inbox API) | `21-comments.spec.ts` | ✅ / bell in header: fixme (`NotificationBell` not mounted yet) |
+| 22 | Editor extras (#21): page icon (page, sidebar, saved), ⌘K on a selection adds a link (kept after reload), ⌘K without a selection opens the palette; attachment renders as a file card with size and a working download | `22-editor-extras.spec.ts` | ✅ |
 
 ## Open bugs
 
 None open.
+
+## Observations (not filed as bugs)
+
+- **Keyboard selection reaches the editor asynchronously** (ProseMirror reads it on `selectionchange`). Keys pressed within a few ms of a selection change act on the old selection: ⌘K right after Shift+Home opens the palette instead of the link editor, and Enter right after End can replace still-selected text. Humans are too slow to notice; tests wait for the bubble menu to appear or disappear. If it ever shows up in real use, the ⌘K handler could read the DOM selection directly. (2026-11-05, Editor & Notes)
 
 <!-- Template:
 ### BUG-N: short title
