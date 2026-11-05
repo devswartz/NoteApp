@@ -11,6 +11,7 @@ before(async () => {
 after(() => app.close());
 beforeEach(() => {
   delete process.env.RATE_LIMIT_LOOPBACK;
+  process.env.TRUST_PROXY_HEADER = 'cf'; // tests use CF-Connecting-IP to simulate many clients
   resetRateLimits();
 });
 
@@ -32,22 +33,45 @@ test('Limiter: burst, refill and retry-after', () => {
   t += 60_000;
   l.prune();
   assert.equal(l.size, 0, 'full buckets are pruned');
+  // Memory is capped: least recently used keys are dropped.
+  const small = new Limiter({ capacity: 1, perMinute: 1 }, () => t, 3);
+  for (const k of ['k1', 'k2', 'k3', 'k4']) small.take(k);
+  assert.equal(small.size, 3);
+  assert.equal(small.take('k1'), 0, 'k1 was evicted, so it starts full again');
 });
 
-test('wrong passwords for one account are limited (per account, across IPs), with Retry-After', async () => {
+test('one IP guessing one account is limited (429 + Retry-After); the owner can still log in from elsewhere', async () => {
   const u = await app.signUp('Rita');
+  const attacker = '10.0.0.1';
   const statuses: number[] = [];
-  for (let i = 0; i < 8; i++) statuses.push((await post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `10.0.0.${i}`)).status);
+  for (let i = 0; i < 8; i++) statuses.push((await post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, attacker)).status);
   assert.deepEqual(statuses, Array(8).fill(401));
-  const r = await post('/auth/login', { email: u.user.email.toUpperCase(), password: 'wrong-pass' }, '10.0.1.1');
+  const r = await post('/auth/login', { email: u.user.email.toUpperCase(), password: 'wrong-pass' }, attacker);
   assert.equal(r.status, 429);
   assert.ok(Number(r.headers.get('retry-after')) >= 1);
   assert.match((await r.json()).error, /Too many attempts/);
-  // Even the right password waits now (otherwise the limit would be a password oracle).
-  assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, '10.0.1.2')).status, 429);
-  // Other accounts are unaffected.
-  const v = await app.signUp('Vera');
-  assert.equal((await post('/auth/login', { email: v.user.email, password: 'password123' }, '10.0.1.3')).status, 200);
+  // No lock-out: the real user, from their own IP, gets in.
+  assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, '10.9.9.9')).status, 200);
+});
+
+test('a distributed attack on one account only slows logins down; it never locks the owner out', async () => {
+  const u = await app.signUp('Dina');
+  for (let i = 0; i < 40; i++) assert.equal((await post('/auth/login', { email: u.user.email, password: 'nope-nope' }, `172.16.${i}.1`)).status, 401);
+  const t = Date.now();
+  const ok = await post('/auth/login', { email: u.user.email, password: 'password123' }, '172.31.0.1');
+  assert.equal(ok.status, 200);
+  assert.ok(Date.now() - t >= 1900, 'slowed down by the per-account delay');
+});
+
+test('CF-Connecting-IP is ignored unless TRUST_PROXY_HEADER=cf (it could be forged)', async () => {
+  delete process.env.TRUST_PROXY_HEADER;
+  // From loopback with a forged header: treated as loopback → exempt, and the header can't be used to dodge limits elsewhere.
+  for (let i = 0; i < 25; i++) assert.equal((await post('/auth/login', { email: 'f@example.com', password: 'x' }, `9.9.9.${i}`)).status, 401);
+  process.env.RATE_LIMIT_LOOPBACK = '1';
+  resetRateLimits();
+  let last = 0;
+  for (let i = 0; i < 21; i++) last = (await post('/auth/login', { email: `g${i}@example.com`, password: 'x' }, `9.9.8.${i}`)).status;
+  assert.equal(last, 429, 'rotating a forged header does not give fresh buckets');
 });
 
 test('successful logins do not use up the account allowance', async () => {

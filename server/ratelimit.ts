@@ -2,12 +2,21 @@
 // per client IP and per account, answering 429 with Retry-After.
 // Owner: Collaboration & Access (hardening).
 //
-// One server process (see PLAN.md), so in-memory state is enough; buckets
-// are pruned once full again. The client IP is Cloudflare's
-// `CF-Connecting-IP` (the app is only reachable through the tunnel, see
-// docs/DEPLOY_CONTRACT.md), else the socket address. Direct loopback
-// connections without that header (local dev, the e2e suite, health checks)
-// are exempt unless RATE_LIMIT_LOOPBACK=1. RATE_LIMIT=off disables limiting.
+// One server process (see PLAN.md), so in-memory state is enough. Each
+// limiter keeps at most MAX_KEYS buckets (least recently used are dropped) and
+// prunes full buckets every 10 minutes.
+//
+// Client IP: the socket address, or Cloudflare's `CF-Connecting-IP` header
+// only when TRUST_PROXY_HEADER=cf (staging/prod, where the app port is
+// reachable only through cloudflared; anyone else could forge the header).
+// Direct loopback connections with no trusted header (local dev, the e2e
+// suite, health checks) are exempt unless RATE_LIMIT_LOOPBACK=1.
+// RATE_LIMIT=off disables limiting.
+//
+// Login: limited per (account, IP) pair and per IP, so one source can't keep
+// guessing. The per-account bucket never refuses (that would let anyone lock
+// a user out from many IPs); once it runs dry it only slows failed-prone
+// logins down by ACCOUNT_DELAY_MS.
 import type { Request, RequestHandler } from 'express';
 
 export interface BucketSpec {
@@ -22,9 +31,18 @@ interface Bucket {
   at: number;
 }
 
+/** Most buckets one limiter keeps; beyond this the least recently used are dropped. */
+export const MAX_KEYS = 50_000;
+
 export class Limiter {
-  private buckets = new Map<string, Bucket>();
-  constructor(readonly spec: BucketSpec, private now: () => number = Date.now) {}
+  private buckets = new Map<string, Bucket>(); // insertion order = least recently used first
+  constructor(readonly spec: BucketSpec, private now: () => number = Date.now, private maxKeys = MAX_KEYS) {}
+
+  private put(key: string, b: Bucket) {
+    this.buckets.delete(key); // move to most recent
+    this.buckets.set(key, b);
+    while (this.buckets.size > this.maxKeys) this.buckets.delete(this.buckets.keys().next().value!);
+  }
 
   /** Take one token for `key`. Returns 0 if allowed, else seconds until one is available. */
   take(key: string): number {
@@ -35,10 +53,10 @@ export class Limiter {
     b.at = t;
     if (b.tokens >= 1) {
       b.tokens -= 1;
-      this.buckets.set(key, b);
+      this.put(key, b);
       return 0;
     }
-    this.buckets.set(key, b);
+    this.put(key, b);
     return Math.max(1, Math.ceil((1 - b.tokens) / refillPerMs / 1000));
   }
 
@@ -63,7 +81,8 @@ export class Limiter {
 /** Limits per endpoint group. Generous enough for real use (several tabs, typos), tight against guessing. */
 export const LIMITS = {
   loginIp: { capacity: 20, perMinute: 10 },
-  loginAccount: { capacity: 8, perMinute: 0.5 }, // ~8 wrong passwords, then one per 2 minutes
+  loginPair: { capacity: 8, perMinute: 0.5 }, // per (account, IP): ~8 wrong passwords, then one per 2 minutes
+  loginAccount: { capacity: 30, perMinute: 2 }, // per account, all IPs: never refuses, only slows down (ACCOUNT_DELAY_MS)
   registerIp: { capacity: 5, perMinute: 0.2 }, // 5 sign-ups, then one per 5 minutes
   refreshIp: { capacity: 60, perMinute: 60 }, // many tabs refreshing at once
   resetIp: { capacity: 5, perMinute: 0.2 },
@@ -79,11 +98,16 @@ export function resetRateLimits() {
   for (const k of Object.keys(limiters) as (keyof typeof LIMITS)[]) limiters[k] = new Limiter(LIMITS[k]);
 }
 
+/** Delay for logins to an account under a distributed guessing attack. */
+export const ACCOUNT_DELAY_MS = 2000;
+
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 export function clientIp(req: Request): { ip: string; loopback: boolean } {
-  const cf = req.get('cf-connecting-ip');
-  if (cf) return { ip: cf.trim(), loopback: false };
+  if (process.env.TRUST_PROXY_HEADER === 'cf') {
+    const cf = req.get('cf-connecting-ip');
+    if (cf && /^[0-9a-f.:]{2,45}$/i.test(cf.trim())) return { ip: cf.trim(), loopback: false };
+  }
   const ip = req.socket.remoteAddress ?? 'unknown';
   return { ip, loopback: LOOPBACK.has(ip) };
 }
@@ -103,7 +127,7 @@ function checksFor(req: Request, ip: string): Check[] {
   switch (p) {
     case '/auth/login': {
       const email = emailKey(body.email);
-      return [{ limiter: 'loginIp', key: ip }, ...(email ? [{ limiter: 'loginAccount' as const, key: email }] : [])];
+      return [{ limiter: 'loginIp', key: ip }, ...(email ? [{ limiter: 'loginPair' as const, key: `${email} ${ip}` }] : [])];
     }
     case '/auth/register':
       return [{ limiter: 'registerIp', key: ip }];
@@ -122,7 +146,7 @@ function checksFor(req: Request, ip: string): Check[] {
 
 /**
  * Mount on /api after the JSON body parser and before the auth routes.
- * A successful login refunds the per-account token, so only failures count against an account.
+ * Successful logins refund their (account, IP) and account tokens, so only failures count.
  */
 export const authRateLimit: RequestHandler = (req, res, next) => {
   if (process.env.RATE_LIMIT === 'off') return next();
@@ -143,7 +167,16 @@ export const authRateLimit: RequestHandler = (req, res, next) => {
     res.status(429).json({ error: `Too many attempts. Try again in ${wait < 60 ? `${wait} seconds` : `${Math.ceil(wait / 60)} minutes`}.` });
     return;
   }
-  const account = checks.find((c) => c.limiter === 'loginAccount');
-  if (account) res.on('finish', () => res.statusCode < 300 && limiters.loginAccount.refund(account.key));
-  next();
+  const pair = checks.find((c) => c.limiter === 'loginPair');
+  if (!pair) return next();
+  // Per-account: never refuse (no lock-out), just slow down once many failures arrive from anywhere.
+  const email = emailKey((req.body as Record<string, unknown>).email);
+  const slow = limiters.loginAccount.take(email) > 0;
+  res.on('finish', () => {
+    if (res.statusCode >= 300) return;
+    limiters.loginPair.refund(pair.key);
+    if (!slow) limiters.loginAccount.refund(email);
+  });
+  if (slow) setTimeout(next, ACCOUNT_DELAY_MS);
+  else next();
 };
