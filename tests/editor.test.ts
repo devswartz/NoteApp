@@ -43,6 +43,7 @@ test('[[ page suggestions: prefix first, current page excluded, "Create" when no
   assert.equal(items[0].kind === 'page' && items[0].crumb, 'Work › Notes');
   assert.ok(!pageItems('', '4', tree).some((i) => i.kind === 'page' && i.page.id === '4'));
   assert.ok(!pageItems('roadmap', '4', tree).some((i) => i.kind === 'create'));
+});
 
 test('safeFileUrl allows upload paths and http(s) only', async () => {
   const { safeFileUrl } = await import('../src/editor/urls.ts');
