@@ -11,7 +11,7 @@ import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import { refreshSession, wsProtocols, wsUrl } from '../api.ts';
+import { backoffMs, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import type { User } from '../../shared/types.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
@@ -105,13 +105,26 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     provider.on('status', onStatusEv);
     provider.on('sync', onSync);
     doc.on('update', onUpdate);
+    // 4401 (token expired/rejected): refresh, then reconnect with backoff. The
+    // counter resets only after the socket has stayed up for a while, because
+    // the server accepts the socket before rejecting it.
+    let authFailures = 0;
+    let healthy: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let destroyed = false;
+    provider.on('status', ({ status }: { status: string }) => {
+      clearTimeout(healthy);
+      if (status === 'connected') healthy = setTimeout(() => (authFailures = 0), 10_000);
+    });
     provider.on('connection-close', (ev: CloseEvent | null) => {
       if (ev?.code === 4401) {
-        // Access token expired or rejected: refresh, then reconnect with the new one.
         provider.shouldConnect = false;
-        refreshSession()
-          .then((s) => s && provider.connect())
-          .catch(() => provider.connect());
+        const delay = authFailures === 0 ? 0 : backoffMs(authFailures);
+        authFailures++;
+        retry = setTimeout(async () => {
+          const r = await reauthorize();
+          if (!destroyed && r !== 'signed-out') provider.connect();
+        }, delay);
       } else if (ev?.code === 4403) {
         provider.shouldConnect = false; // no access to this page
         cb.onStatus('offline');
@@ -127,6 +140,9 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     };
     provider.awareness.on('change', onAwareness);
     return () => {
+      destroyed = true;
+      clearTimeout(healthy);
+      clearTimeout(retry);
       if (timer) clearTimeout(timer);
       doc.off('update', onUpdate);
       provider.awareness.off('change', onAwareness);
