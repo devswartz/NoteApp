@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signIn } from '../store.ts';
+import { syncThemePref } from '../store/ui.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { Button } from '../components/ui.tsx';
 
@@ -8,6 +9,7 @@ export function Login() {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  useEffect(syncThemePref, []); // the shell's storage is ready now (see store/ui.ts)
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (

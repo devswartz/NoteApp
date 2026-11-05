@@ -5,6 +5,7 @@ import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
 import { DialogHost } from './shell/dialogs.tsx';
+import { syncThemePref } from '../store/ui.ts';
 import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
@@ -34,6 +35,7 @@ export function AppShell() {
   }, [wsId, valid]);
 
   useShellCommands(wsId);
+  useEffect(syncThemePref, []); // the shell's storage is ready now (see store/ui.ts)
   useShortcutListener(overlayOpen);
   useReminders();
   useDrawerSwipe(isMobile);
