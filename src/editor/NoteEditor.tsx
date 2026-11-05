@@ -37,6 +37,7 @@ import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
+import { MentionNode } from './collabMentions.ts';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { safeLinkUrl } from './urls.ts';
@@ -109,6 +110,7 @@ export function documentExtensions(pageId: string): Extensions {
     ToggleContent,
     TaskRef.configure({ pageId }),
     PageLink.configure({ pageId }),
+    MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
   ];
 }
