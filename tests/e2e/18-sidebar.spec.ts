@@ -70,3 +70,27 @@ test('recently opened pages are listed under Recent', async ({ page, context, re
   await expect(group.getByText('Visited first')).toBeVisible();
   await expect(group.getByText('Visited second')).toBeVisible();
 });
+
+test('New notebook dialog: "Team project" template creates its sections and pages', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Nell Notebook');
+  await signInContext(context, user);
+  await page.goto(tasksUrl(user.wsId, 'today'));
+  await page.getByRole('button', { name: 'New notebook', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'New notebook' });
+  await dialog.getByLabel('Name').fill('Apollo');
+  await dialog.getByRole('radio', { name: /Team project/ }).click();
+  await expect(dialog.getByRole('radio', { name: /Team project/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(dialog).toContainText('Creates Planning, Docs, Retros');
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(/\/p\/[^/]+$/);
+
+  const tree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Notebooks' });
+  await expect(tree.getByText('Apollo')).toBeVisible();
+  for (const name of ['Planning', 'Docs', 'Retros', 'Project brief', 'Meeting notes', 'Specs', 'Retro']) {
+    await expect(tree.getByText(name, { exact: true })).toBeVisible();
+  }
+  const t = await api<{ notebooks: { id: string; name: string }[]; sections: { notebookId: string; name: string }[] }>(request, 'GET', `/workspaces/${user.wsId}/tree`, user.token);
+  const nb = t.notebooks.find((n) => n.name === 'Apollo')!;
+  expect(t.sections.filter((s) => s.notebookId === nb.id).map((s) => s.name)).toEqual(['Planning', 'Docs', 'Retros']);
+});
