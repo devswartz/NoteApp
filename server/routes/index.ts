@@ -3,6 +3,7 @@
 import express, { Router } from 'express';
 import { requireAuth } from '../auth.ts';
 import { errorHandler } from '../http.ts';
+import { authRateLimit } from '../ratelimit.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
 import { healthRoutes } from './health.ts';
 import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
@@ -20,6 +21,7 @@ api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, n
 
 // No token needed.
 api.use(healthRoutes);
+api.use(authRateLimit); // 429 + Retry-After on login/sign-up/refresh/invite endpoints
 api.use(publicAuthRoutes);
 api.use(publicWorkspaceRoutes);
 
