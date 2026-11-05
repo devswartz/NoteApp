@@ -1,13 +1,33 @@
 // Live event hub: pushes task/tree/member changes over the /api/events
 // WebSocket to every connected client allowed to see them, so the dashboard
 // and open notes stay in sync. Server → client only; messages are JSON
-// ServerEvent objects (shared/types.ts).
+// EventMessage objects (shared/types.ts).
+//
+// Reliability: every published event gets a sequence number and is kept in a
+// bounded in-memory buffer. A client that reconnects with `?since=<boot>:<seq>`
+// first gets every event it missed replayed (filtered for it as of now), or a
+// single `resync` if the gap is no longer buffered or the server restarted
+// (new boot id), in which case it reloads everything. Then the server sends
+// `hello {boot, seq}`, which the client keeps as its cursor.
 import type { IncomingMessage } from 'node:http';
+import crypto from 'node:crypto';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
 import { taskVisible } from './access.ts';
 import { tokenFromUpgrade, verifyToken } from './auth.ts';
-import type { ServerEvent } from '../shared/types.ts';
+import type { EventMessage, ServerEvent } from '../shared/types.ts';
+
+/** Identifies this server process; sequence numbers are only comparable within one boot. */
+export const BOOT = crypto.randomBytes(6).toString('base64url');
+const BUFFER_MAX = 2000;
+
+interface Entry {
+  seq: number;
+  ev: ServerEvent;
+  userIds?: string[];
+}
+const buffer: Entry[] = [];
+let seq = 0;
 
 const clients = new Map<string, Set<WebSocket>>(); // userId -> open sockets
 
@@ -21,6 +41,13 @@ function addClient(userId: string, ws: WebSocket) {
   });
 }
 
+/** Parse `?since=<boot>:<seq>`. */
+function parseSince(req: IncomingMessage): { boot: string; seq: number } | null {
+  const raw = new URL(req.url ?? '', 'http://x').searchParams.get('since');
+  const m = raw?.match(/^([\w-]+):(\d+)$/);
+  return m ? { boot: m[1], seq: Number(m[2]) } : null;
+}
+
 export function attachEvents(wss: WebSocketServer) {
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const user = verifyToken(tokenFromUpgrade(req));
@@ -29,6 +56,11 @@ export function attachEvents(wss: WebSocketServer) {
       return;
     }
     addClient(user.id, ws);
+    const since = parseSince(req);
+    if (since) catchUp(ws, user.id, since);
+    // After any replay: the client adopts this as its cursor. If the socket drops before
+    // hello arrives, the client still has its old cursor and the replay simply repeats.
+    raw(ws, { type: 'hello', boot: BOOT, seq });
     // Detect dead connections (and keep proxies from closing idle ones).
     let alive = true;
     ws.on('pong', () => (alive = true));
@@ -42,14 +74,43 @@ export function attachEvents(wss: WebSocketServer) {
   });
 }
 
+function catchUp(ws: WebSocket, userId: string, since: { boot: string; seq: number }) {
+  if (since.boot !== BOOT || since.seq > seq) return raw(ws, { type: 'resync' });
+  if (since.seq === seq) return; // nothing missed
+  const oldest = buffer[0]?.seq ?? seq + 1;
+  if (since.seq + 1 < oldest) return raw(ws, { type: 'resync' });
+  for (const e of buffer) {
+    if (e.seq <= since.seq) continue;
+    const msg = messageFor(userId, e);
+    if (msg) raw(ws, msg);
+  }
+}
+
 /** Close every event socket (on shutdown). 1012 = service restart; clients reconnect. */
 export function closeAllEvents() {
   for (const set of clients.values()) for (const ws of set) ws.close(1012, 'Server restarting');
 }
 
-function send(userId: string, ev: ServerEvent) {
-  const data = JSON.stringify(ev);
-  for (const ws of clients.get(userId) ?? []) if (ws.readyState === WebSocket.OPEN) ws.send(data);
+function raw(ws: WebSocket, msg: EventMessage) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+}
+
+function isMember(workspaceId: string, userId: string): boolean {
+  return !!db.prepare('SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(workspaceId, userId);
+}
+
+/** What `userId` should receive for buffered entry `e`, judged by current permissions (null = nothing). */
+function messageFor(userId: string, e: Entry): EventMessage | null {
+  const { ev } = e;
+  if (e.userIds) return e.userIds.includes(userId) ? { ...ev, seq: e.seq } : null;
+  if (ev.type === 'workspaces' || ev.type === 'resync') return null;
+  const wsId = ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId;
+  if (!isMember(wsId, userId)) return null;
+  if (ev.type === 'task' && !taskVisible(ev.task.id, userId)) {
+    // Tell clients that may have previously seen it to drop it.
+    return { type: 'task-deleted', id: ev.task.id, workspaceId: wsId, seq: e.seq };
+  }
+  return { ...ev, seq: e.seq };
 }
 
 function membersOf(workspaceId: string): string[] {
@@ -58,20 +119,25 @@ function membersOf(workspaceId: string): string[] {
   ).map((r) => r.user_id);
 }
 
+/**
+ * Publish an event to everyone allowed to see it (workspace members, filtered
+ * per user for tasks), or only to `userIds`. Every publish is buffered with a
+ * sequence number for catch-up after a reconnect.
+ */
 export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
-  if (opts.userIds) {
-    for (const u of opts.userIds) send(u, ev);
-    return;
-  }
-  if (ev.type === 'workspaces' || ev.type === 'resync') return;
-  const ws = ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId;
-  for (const userId of membersOf(ws)) {
-    if (!clients.has(userId)) continue;
-    if (ev.type === 'task' && !taskVisible(ev.task.id, userId)) {
-      // Tell clients that may have previously seen it to drop it.
-      send(userId, { type: 'task-deleted', id: ev.task.id, workspaceId: ws });
-      continue;
-    }
-    send(userId, ev);
+  const entry: Entry = { seq: ++seq, ev, userIds: opts.userIds };
+  buffer.push(entry);
+  if (buffer.length > BUFFER_MAX) buffer.splice(0, buffer.length - BUFFER_MAX);
+  let recipients: string[];
+  if (opts.userIds) recipients = opts.userIds;
+  else if (ev.type === 'workspaces' || ev.type === 'resync') recipients = [];
+  else recipients = membersOf(ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId);
+  for (const userId of recipients) {
+    const sockets = clients.get(userId);
+    if (!sockets?.size) continue;
+    const msg = messageFor(userId, entry);
+    if (!msg) continue;
+    const data = JSON.stringify(msg);
+    for (const ws of sockets) if (ws.readyState === WebSocket.OPEN) ws.send(data);
   }
 }
