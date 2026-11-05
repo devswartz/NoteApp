@@ -65,7 +65,14 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     let connected = false;
     let dirty = false; // local edits the server may not have persisted yet
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const report = () => cb.onSave?.(!connected ? 'offline' : dirty ? 'saving' : 'saved');
+    let reported: SaveState | null = null;
+    // Only on change: this runs on every keystroke, and re-rendering the page header each time is costly.
+    const report = () => {
+      const next: SaveState = !connected ? 'offline' : dirty ? 'saving' : 'saved';
+      if (next === reported) return;
+      reported = next;
+      cb.onSave?.(next);
+    };
     const settle = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(function check() {
@@ -130,13 +137,19 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
         cb.onStatus('offline');
       }
     });
+    let lastPresence = '';
     const onAwareness = () => {
       const seen = new Map<string, PresenceUser>();
       provider.awareness.getStates().forEach((s, clientId) => {
         const u = s.user as PresenceUser | undefined;
         if (u && clientId !== doc.clientID && u.id !== user.id) seen.set(u.id, u);
       });
-      cb.onPresence([...seen.values()]);
+      // Awareness changes on every cursor move; only report when the set of people changes.
+      const list = [...seen.values()];
+      const key = list.map((u) => `${u.id}|${u.name}|${u.color}`).sort().join(',');
+      if (key === lastPresence) return;
+      lastPresence = key;
+      cb.onPresence(list);
     };
     provider.awareness.on('change', onAwareness);
     return () => {

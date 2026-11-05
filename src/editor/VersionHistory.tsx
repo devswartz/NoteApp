@@ -50,6 +50,7 @@ export function VersionHistory({ pageId, editor, open, onClose }: { pageId: stri
       });
   }, [open, pageId]);
 
+  if (!open) return null;
   return (
     <Modal open={open} onClose={onClose} className="history-modal" label="Version history">
       <div className="history">

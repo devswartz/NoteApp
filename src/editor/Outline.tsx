@@ -1,5 +1,5 @@
 // Table of contents for long pages, and the per-page "full width" setting.
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import type * as Y from 'yjs';
 
@@ -73,7 +73,7 @@ export function usePageSetting<T>(editor: Editor | null, key: string, fallback: 
 }
 
 /** Floating outline next to the page; highlights the section in view. */
-export function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLElement | null }) {
+export const Outline = memo(function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLElement | null }) {
   const items = useHeadings(editor);
   const [active, setActive] = useState(0);
 
@@ -119,4 +119,4 @@ export function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLEl
       </nav>
     </div>
   );
-}
+});
