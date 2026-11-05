@@ -11,6 +11,11 @@ Images live at `ghcr.io/devswartz/noteapp` and are built by
 
 `GET /api/health` reports the git SHA the running image was built from.
 
+Images are published by the `publish` job in the **CI** workflow, and only after
+`check`, `docker` (and `e2e`, once it exists) pass. To re-publish `:staging`
+by hand, run **Publish image** from the Actions tab on `main`. Note that this
+skips CI, and runs on any other branch do nothing.
+
 ## Staging
 Merge a PR into `main`. CI publishes `:staging`, and the homelab timer
 (`noteapp-update@staging.timer`) pulls it within about 5 minutes.
