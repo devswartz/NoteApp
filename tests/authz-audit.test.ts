@@ -238,6 +238,8 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/templates/:id', path: (f) => `/templates/${f.template}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'DELETE', route: '/templates/:id', path: (f) => `/templates/${f.template}`, expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'POST', route: '/templates/:id/use', path: (f) => `/templates/${f.template}/use`, body: (f) => ({ pageId: f.page }), expect: inPrivate(WRITE) },
+  // Feedback to the admins: any verified, signed-in user (not tied to a workspace).
+  { method: 'POST', route: '/feedback', path: () => '/feedback', body: () => ({ message: 'Audit feedback', page: '/w/x/tasks/today', client: { version: 'test', platform: 'web' } }), expect: { stranger: 200, viewer: 200, member: 200 } },
 ];
 
 const tokenOf = (who: Who) => (who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : member.token);

@@ -103,6 +103,9 @@ export const LIMITS = {
   resendUserMinute: { capacity: 1, perMinute: 1 }, // per user: one a minute …
   resendUserHour: { capacity: 5, perMinute: 5 / 60 }, // … and five an hour
   resendIp: { capacity: 10, perMinute: 0.5 }, // per IP, across accounts: 10, then one every two minutes
+  // Feedback emails to the admins (signed in; see takeFeedback): five an hour per user, plus a server-wide cap.
+  feedbackUser: { capacity: 5, perMinute: 5 / 60 },
+  feedbackGlobal: { capacity: 60, perMinute: 60 / 60 },
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -227,6 +230,16 @@ export function takeResend(req: Request, userId: string): number {
   }
   if (wait) taken.forEach((c) => limiters[c.limiter].refund(c.key));
   return wait;
+}
+
+/** Rate limit for POST /feedback, called by the handler: per user and server-wide. 0 if allowed, else seconds to wait. */
+export function takeFeedback(userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const w = limiters.feedbackUser.take(userId);
+  if (w) return w;
+  const g = limiters.feedbackGlobal.take('all');
+  if (g) limiters.feedbackUser.refund(userId);
+  return g;
 }
 
 export function refuse(res: Response, wait: number) {

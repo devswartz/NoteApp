@@ -421,6 +421,8 @@ mark {
 .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .input-sm { height: 28px; font-size: 13px; padding: 0 8px; }
 select.input { padding-right: 4px; }
+textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; resize: vertical; width: 100%; line-height: 1.45; }
+.feedback-count { text-align: right; }
 
 .kbd {
   display: inline-flex;

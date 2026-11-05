@@ -15,6 +15,9 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Pending workspace invites for an address are applied when its email is confirmed, not at sign-up. Existing accounts (migration 012), bootstrap accounts (the first account and `ADMIN_EMAILS`) and every account on a server without SMTP are treated as confirmed.
 - Unverified users get `403 email_unverified` on every API route except `GET /me` and resend, and their WebSockets are refused (4403).
 
+### Send feedback
+- **Send feedback** in the command palette (⌘K) and in the `?` shortcuts overlay / Settings → Keyboard shortcuts: a small dialog (up to 4000 characters, draft kept if sending fails). `POST /api/feedback` (verified users, 5 per hour per user plus a server-wide cap) emails every `ADMIN_EMAILS` address with the message, the sender's name, email and id, app and server versions, the in-app path (no query or hash), platform and a timestamp; Reply-To is the sender. With no SMTP or no admins it still answers success (`delivered: false`) and logs one `"event":"feedback"` JSON line. No new table.
+
 ### Foundation and security
 - Working core flow on a clean base: per-area layout, token auth (short-lived access JWT + rotating refresh token, no cookies), configurable API URL, the `src/platform/` adapter for native shells, and the deploy contract (#2).
 - Security follow-ups:
