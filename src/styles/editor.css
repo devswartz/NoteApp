@@ -368,3 +368,16 @@
 }
 @container (max-width: 700px) { .page-toc-rail { display: none; } }
 @media print { .page-toc-rail { display: none !important; } .page-article.is-full { padding: 0; } }
+
+/* ───────── Long pages ─────────
+   Let the browser skip layout and paint for blocks far off-screen. `auto` remembers each
+   block's real size once rendered, so scrolling and the scrollbar stay stable. */
+.ProseMirror > :is(p, h1, h2, h3, ul, ol, blockquote, pre, .code-block, .tableWrapper, .callout, .toggle, .file-card, .task-ref) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1.7em;
+}
+@media print {
+  .ProseMirror > * { content-visibility: visible; }
+}
+/* Headings land below the sticky page header when jumped to. */
+.ProseMirror :is(h1, h2, h3) { scroll-margin-top: 64px; }

@@ -96,9 +96,16 @@ export const Outline = memo(function Outline({ editor, scroller }: { editor: Edi
   if (items.length < 3) return null;
   const minLevel = Math.min(...items.map((h) => h.level));
   const go = (h: OutlineItem) => {
-    const el = editor.view.nodeDOM(h.pos) as HTMLElement | null;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    editor.chain().setTextSelection(h.pos + 1).run();
+    // Off-screen blocks use estimated sizes (content-visibility), so jump, then re-jump
+    // for a few frames while the real sizes settle, instead of one smooth scroll that misses.
+    const jump = () => (editor.view.nodeDOM(h.pos) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+    let frames = 0;
+    const settle = () => {
+      jump();
+      if (++frames < 4) requestAnimationFrame(settle);
+      else editor.chain().setTextSelection(h.pos + 1).focus(undefined, { scrollIntoView: false }).run();
+    };
+    settle();
   };
   return (
     <div className="page-toc-rail" aria-hidden={false}>
