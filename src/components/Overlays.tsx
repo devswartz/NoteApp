@@ -10,7 +10,7 @@ export function Toasts() {
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.tone === 'error' ? 'is-error' : ''}`}>
+        <div key={t.id} className={`toast ${t.tone === 'error' ? 'is-error' : ''}`} role={t.tone === 'error' ? 'alert' : 'status'}>
           <span>{t.message}</span>
           {t.action && (
             <button
@@ -42,11 +42,9 @@ function Keys({ keys }: { keys: string }) {
   );
 }
 
-/** The `?` overlay, generated from the command registry. */
-export function ShortcutsHelp() {
-  const open = useStore((s) => s.shortcutsOpen);
+/** Every registered shortcut, grouped by area (used by the `?` overlay and Settings). */
+export function ShortcutList({ filter = '', columns = true }: { filter?: string; columns?: boolean }) {
   const commands = useCommandList();
-  const [filter, setFilter] = useState('');
   const groups = new Map<string, Command[]>();
   const needle = filter.trim().toLowerCase();
   for (const c of commands) {
@@ -57,36 +55,45 @@ export function ShortcutsHelp() {
   }
   const ordered = [...groups.entries()].sort(([a], [b]) => rank(a) - rank(b));
   return (
+    <div className={columns ? 'shortcut-cols' : 'shortcut-stack'}>
+      {ordered.map(([group, cmds]) => (
+        <div key={group} className="shortcut-group">
+          <h4>{group}</h4>
+          {cmds.map((c) => (
+            <div className="shortcut" key={c.id}>
+              <span>{c.title}</span>
+              <Keys keys={Array.isArray(c.keys) ? c.keys[0] : c.keys!} />
+            </div>
+          ))}
+        </div>
+      ))}
+      <div className="shortcut-group">
+        <h4>Quick add language</h4>
+        <p className="muted small">
+          Dates: <code>today</code>, <code>tomorrow</code>, <code>fri</code>, <code>next week</code>, <code>in 3 days</code>, <code>jan 15</code>
+          <br />
+          Time: <code>3pm</code>, <code>at 14:30</code> · Priority: <code>p1</code>–<code>p4</code>
+          <br />
+          Repeat: <code>every day</code>, <code>every weekday</code>, <code>every 2 weeks</code>, <code>monthly</code>
+          <br />
+          Assign: <code>@name</code> or <code>@me</code>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** The `?` overlay, generated from the command registry. */
+export function ShortcutsHelp() {
+  const open = useStore((s) => s.shortcutsOpen);
+  const [filter, setFilter] = useState('');
+  return (
     <Modal open={open} onClose={() => ui.setShortcuts(false)} className="shortcuts" label="Keyboard shortcuts">
       <div className="shortcuts-head">
         <h2>Keyboard shortcuts</h2>
         <input className="input input-sm" placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} autoFocus aria-label="Filter shortcuts" />
       </div>
-      <div className="shortcut-cols">
-        {ordered.map(([group, cmds]) => (
-          <div key={group} className="shortcut-group">
-            <h4>{group}</h4>
-            {cmds.map((c) => (
-              <div className="shortcut" key={c.id}>
-                <span>{c.title}</span>
-                <Keys keys={Array.isArray(c.keys) ? c.keys[0] : c.keys!} />
-              </div>
-            ))}
-          </div>
-        ))}
-        <div className="shortcut-group">
-          <h4>Quick add language</h4>
-          <p className="muted small">
-            Dates: <code>today</code>, <code>tomorrow</code>, <code>fri</code>, <code>next week</code>, <code>in 3 days</code>, <code>jan 15</code>
-            <br />
-            Time: <code>3pm</code>, <code>at 14:30</code> · Priority: <code>p1</code>–<code>p4</code>
-            <br />
-            Repeat: <code>every day</code>, <code>every weekday</code>, <code>every 2 weeks</code>, <code>monthly</code>
-            <br />
-            Assign: <code>@name</code> or <code>@me</code>
-          </p>
-        </div>
-      </div>
+      <ShortcutList filter={filter} />
     </Modal>
   );
 }

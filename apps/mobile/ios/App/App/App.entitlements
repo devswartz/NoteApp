@@ -10,5 +10,10 @@
 	<array>
 		<string>applinks:notes.devswartz.com</string>
 	</array>
+	<!-- Shared container with the Share Extension and the Today widget (ios/App/Shared/SharedStore.swift). -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.devswartz.noteapp</string>
+	</array>
 </dict>
 </plist>

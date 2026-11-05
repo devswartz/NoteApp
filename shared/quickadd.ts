@@ -3,6 +3,7 @@
 // → { title: 'Send invoice', dueDate: <tomorrow>, priority: 1, assignee: 'sam', recurrence: monthly }
 import { addDays, addMonths, parseISODate, toISODate, today } from './dates.ts';
 import type { Priority, Recurrence } from './types.ts';
+import { firstOccurrence, parseRecurrence } from './recurrence.ts';
 
 export interface QuickAddResult {
   title: string;
@@ -52,53 +53,6 @@ const UNIT: Record<string, 'day' | 'week' | 'month' | 'year'> = {
 };
 
 const rules: Rule[] = [
-  // Recurrence first so "every monday" isn't eaten by the weekday rule.
-  {
-    re: /\b(?:every|each)\s+(weekday|workday)s?\b/i,
-    kind: 'recurrence',
-    apply: (_m, r, base) => {
-      r.recurrence = { freq: 'weekday' };
-      if (!r.dueDate) {
-        let d = base;
-        while ([0, 6].includes(parseISODate(d).getDay())) d = addDays(d, 1);
-        r.dueDate = d;
-      }
-      return true;
-    },
-  },
-  {
-    re: new RegExp(`\\b(?:every|each)\\s+${WEEKDAY_RE}\\b`, 'i'),
-    kind: 'recurrence',
-    apply: (m, r, base) => {
-      const idx = weekdayIndex(m[1]);
-      if (idx < 0) return false;
-      r.recurrence = { freq: 'week', interval: 1 };
-      r.dueDate = r.dueDate ?? nextWeekday(base, idx, false);
-      return true;
-    },
-  },
-  {
-    re: /\b(?:every|each)\s+(?:(\d+|other)\s+)?(day|days|week|weeks|month|months|year|years)\b/i,
-    kind: 'recurrence',
-    apply: (m, r, base) => {
-      const interval = m[1] ? (m[1].toLowerCase() === 'other' ? 2 : Number(m[1])) : 1;
-      if (!interval) return false;
-      r.recurrence = { freq: UNIT[m[2].toLowerCase()], interval };
-      r.dueDate = r.dueDate ?? base;
-      return true;
-    },
-  },
-  {
-    re: /\b(daily|weekly|monthly|yearly|annually)\b/i,
-    kind: 'recurrence',
-    apply: (m, r, base) => {
-      const f = m[1].toLowerCase();
-      const freq = f === 'daily' ? 'day' : f === 'weekly' ? 'week' : f === 'monthly' ? 'month' : 'year';
-      r.recurrence = { freq, interval: 1 };
-      r.dueDate = r.dueDate ?? base;
-      return true;
-    },
-  },
   {
     re: /(?:^|\s)!?p([1-4])\b/i,
     kind: 'priority',
@@ -233,6 +187,15 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
   // Track consumed character ranges so rules don't overlap.
   const consumed: boolean[] = new Array(input.length).fill(false);
   const seen = new Set<string>();
+  // Recurrence first (shared/recurrence.ts), so "every monday" or "every month
+  // on the 15th" isn't eaten by the date rules.
+  const rec = parseRecurrence(input);
+  if (rec) {
+    r.recurrence = rec.rule;
+    for (let i = rec.start; i < rec.end; i++) consumed[i] = true;
+    r.tokens.push({ start: rec.start, end: rec.end, kind: 'recurrence' });
+    seen.add('recurrence');
+  }
   for (const rule of rules) {
     // Only one match per token kind (first rule to match wins).
     if (seen.has(rule.kind)) continue;
@@ -259,6 +222,14 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
       }
       Object.assign(r, snapshot);
     }
+  }
+  if (r.recurrence) {
+    // No explicit date: start on the first day the rule matches ("every monday" → next Monday).
+    r.dueDate ??= firstOccurrence(r.recurrence, base);
+    // Pin monthly/yearly rules to the due date's day so month ends don't drift (Jan 31 → Feb 28 → Mar 31).
+    const rule = r.recurrence;
+    if ((rule.freq === 'month' || rule.freq === 'year') && rule.byMonthDay === undefined && !rule.byNthWeekday)
+      r.recurrence = { ...rule, byMonthDay: Number(r.dueDate.slice(8, 10)) };
   }
   r.title = input
     .split('')

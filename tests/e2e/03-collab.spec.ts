@@ -121,8 +121,13 @@ test('member removed from the workspace loses access', async ({ browser, request
   await api(request, 'DELETE', `/workspaces/${teamId}/members/${bob.id}`, alice.token);
 
   const b = await userPage(browser, bob);
+  await expect(api(request, 'GET', `/pages/${pageId}`, bob.token)).rejects.toThrow(/40[34]/);
   await b.page.goto(`/w/${teamId}/p/${pageId}`);
-  await expect(b.page.locator('.ProseMirror')).toHaveCount(0);
+  // The app either shows "not found" or moves Bob to a workspace he still belongs to; it never shows the page.
+  await expect
+    .poll(async () => (await b.page.locator('.empty-page').count()) > 0 || !b.page.url().includes(teamId), { timeout: 10_000 })
+    .toBe(true);
+  expect(await b.page.evaluate(() => [...document.querySelectorAll('textarea, input')].some((el) => (el as HTMLInputElement).value === 'Secret plans'))).toBe(false);
   await expect(b.page.getByText('Secret plans')).toHaveCount(0);
   await b.context.close();
 });

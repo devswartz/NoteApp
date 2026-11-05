@@ -1,5 +1,6 @@
 // Tree helpers (notebooks / sections / pages) used by more than one route module.
 import * as Y from 'yjs';
+import { HttpError } from './access.ts';
 import { db, newId, now } from './db.ts';
 import { publish } from './events.ts';
 import { rowToTask } from './tasks.ts';
@@ -19,13 +20,21 @@ export function refreshTasksForNotebook(notebookId: string) {
   for (const r of rows) publish({ type: 'task', task: rowToTask(r) });
 }
 
-/** Deleting notes never deletes their tasks: they become standalone tasks. `del` runs the actual DELETE. */
+/**
+ * Deleting notes never deletes their tasks: they become standalone tasks. Their files become
+ * private to the uploader. `del` runs the actual DELETE.
+ */
 export function detachPagesTasks(pageIds: string[], del: () => void) {
   const affected: string[] = [];
   db.transaction(() => {
     for (const id of pageIds) {
       affected.push(...(db.prepare('SELECT id FROM tasks WHERE page_id = ?').all(id) as { id: string }[]).map((r) => r.id));
       db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(id);
+      // Files attached to a deleted page must not become visible to the whole workspace
+      // (pages.id → files.page_id is ON DELETE SET NULL). Without a workspace, a file's
+      // metadata is visible only to its uploader (GET /files/:id). The bytes stay at their
+      // capability URL, so copies of the page that embed them keep working.
+      db.prepare('UPDATE files SET workspace_id = NULL WHERE page_id = ?').run(id);
     }
     del();
   })();
@@ -124,4 +133,14 @@ export function copyPage(pageId: string, sectionId: string, userId: string, opts
     publish({ type: 'task', task: rowToTask(r) });
   }
   return { id, taskIds: newTasks };
+}
+
+/**
+ * Notebook/section colours are rendered into styles, so only "#rrggbb" is accepted.
+ * A missing value takes `fallback()` (a random palette colour on create; updates pass one that throws).
+ */
+export function validColor(v: unknown, fallback: () => string): string {
+  if (v === undefined || v === null || v === '') return fallback();
+  if (typeof v !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(v.trim())) throw new HttpError(400, 'Colour must look like #4f46e5');
+  return v.trim().toLowerCase();
 }

@@ -59,6 +59,8 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   await nbRow.hover();
   await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete notebook' }).click();
+  // The sidebar confirms in the app's own dialog (not window.confirm).
+  await page.getByRole('dialog', { name: /Delete/ }).getByRole('button', { name: 'Delete notebook' }).click();
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Second Notebook')).toHaveCount(0);
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor two')?.pageId === null, 'task detached on notebook delete');
 
@@ -108,4 +110,21 @@ test('theme preference: dark mode applies and persists', async ({ page, context,
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+});
+
+test('a page title typed just before navigating away is still saved', async ({ page, context, request }) => {
+  test.fixme(true, 'BUG-3 (docs/QA.md): the debounced title save is cancelled on unmount, so the rename is lost');
+  const user = await createUser(request, 'Quick Renamer');
+  const { pageId } = await createPage(request, user, { page: 'Original title' });
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  await page.locator('.page-title').fill('Renamed right before leaving');
+  await page.getByRole('link', { name: 'Today' }).click();
+  await expect(page).toHaveURL(/\/tasks\/today$/);
+  await eventually(
+    () => api<{ page: { title: string } }>(request, 'GET', `/pages/${pageId}`, user.token),
+    (r) => r.page.title === 'Renamed right before leaving',
+    'rename saved despite navigating away',
+  );
+  await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Renamed right before leaving')).toBeVisible();
 });

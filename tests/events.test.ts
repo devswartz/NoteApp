@@ -2,6 +2,7 @@
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import WS from 'ws';
+import crypto from 'node:crypto';
 import { startTestApp, type TestApp, type TestUser } from './helpers/app.ts';
 import { waitFor } from './helpers/collab.ts';
 import type { EventMessage } from '../shared/types.ts';
@@ -170,4 +171,31 @@ test('team endpoint: members with open, overdue and due-today counts (visible ta
   assert.equal(row(asKai.data, owner.user.id).openTasks, baseline + 1, 'private task not counted for someone who cannot see it');
   const stranger = await app.signUp('Lee');
   assert.equal((await app.call('GET', `/workspaces/${owner.wsId}/team`, stranger.token)).status, 404);
+});
+
+test('replay withholds comment events on private pages and notifications meant for someone else', async () => {
+  const { owner, others } = await team(['Mia', 'Ned']);
+  const ned = others[0];
+  const nb = (await app.call('POST', `/workspaces/${owner.wsId}/notebooks`, owner.token, { name: 'Private', visibility: 'private' })).data.id;
+  const sec = (await app.call('POST', `/notebooks/${nb}/sections`, owner.token, { name: 's' })).data.id;
+  const pg = (await app.call('POST', `/sections/${sec}/pages`, owner.token, { title: 'p' })).data.id;
+  const n0 = await listen(ned);
+  const o0 = await listen(owner);
+  const nedSince = cursorOf(n0);
+  const ownerSince = cursorOf(o0);
+  n0.ws.terminate();
+  o0.ws.terminate();
+
+  await app.call('POST', `/pages/${pg}/comments`, owner.token, { threadId: crypto.randomUUID(), body: 'secret comment' });
+  const { publish } = await import('../server/events.ts');
+  const notification = { id: 'n1', kind: 'mention', workspaceId: owner.wsId, actorId: null, title: 'for the owner', body: '', link: null, data: null, createdAt: '', readAt: null } as const;
+  publish({ type: 'notification', notification }, { userIds: [owner.user.id] });
+  publish({ type: 'notification', notification }); // no recipients: delivered to nobody
+
+  const n1 = await listen(ned, nedSince);
+  assert.ok(!n1.msgs.some((m) => m.type === 'comments'), 'private comment event not replayed');
+  assert.ok(!n1.msgs.some((m) => m.type === 'notification'), 'someone else’s notification not replayed');
+  const o1 = await listen(owner, ownerSince);
+  assert.ok(o1.msgs.some((m) => m.type === 'comments'), 'the owner gets the comment event on replay');
+  assert.equal(o1.msgs.filter((m) => m.type === 'notification').length, 1, 'only the targeted notification');
 });

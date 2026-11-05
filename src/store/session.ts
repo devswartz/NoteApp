@@ -1,29 +1,59 @@
 // Signing in and out.
 import { endSession, get, post, refreshSession, startSession } from '../api.ts';
 import { emptyTree, set } from './state.ts';
+import { clearLocalUserData, isNetworkError, offlineCache } from '../lib/offlineCache.ts';
+import { LAST_USER_KEY } from './cache.ts';
+import { errorToast } from './toasts.ts';
 import { loadWorkspaces } from './workspace.ts';
 import { connectEvents, disconnectEvents } from './events.ts';
-import type { AuthSession, Workspace } from '../../shared/types.ts';
+import type { AuthSession, User, Workspace } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
 
-/** Restore a session from the stored refresh token. */
+/**
+ * Restore a session from the stored refresh token. If the server can't be
+ * reached, open in offline mode with the last cached user and data; the
+ * events socket keeps retrying and the session refreshes once back online.
+ */
 export async function bootstrap(): Promise<boolean> {
+  let user: User | null = null;
   try {
     const s = await refreshSession();
-    if (!s) return false;
-    set({ user: s.user });
-    await loadWorkspaces();
-    connectEvents();
-    return true;
-  } catch {
-    // Offline or server down: stay signed out for now (the refresh token is kept).
-    return false;
+    if (!s) {
+      // No session, or the server rejected the refresh token: forget this device's copy.
+      await clearLocalUserData();
+      return false;
+    }
+    user = s.user;
+    void offlineCache.set(LAST_USER_KEY, user);
+  } catch (e) {
+    if (!isNetworkError(e)) {
+      // The server answered with an error (e.g. 5xx): say so rather than pretending to be offline.
+      errorToast(e);
+      return false;
+    }
+    user = await offlineCache.get<User>(LAST_USER_KEY);
+    if (!user) return false;
+    set({ online: false });
   }
+  set({ user });
+  try {
+    await loadWorkspaces();
+  } catch {
+    /* no cached workspaces yet: the app shows its empty state until online */
+  }
+  connectEvents();
+  return true;
 }
 
 export async function signIn(mode: 'login' | 'register', body: Record<string, string>) {
   const s = await post<AuthSession>(`/auth/${mode}`, body);
+  // A different person signing in on this device must not inherit the previous
+  // user's cached notes and files (they survive if that session ended without a
+  // sign-out, e.g. the server was down at startup).
+  const last = await offlineCache.get<User>(LAST_USER_KEY);
+  if (last && last.id !== s.user.id) await clearLocalUserData();
   await startSession(s);
+  await offlineCache.set(LAST_USER_KEY, s.user);
   // Load workspaces before publishing the user, so the first signed-in render
   // already knows where to route (the /login route then redirects to /).
   const workspaces = await get<Workspace[]>('/workspaces');
@@ -32,15 +62,13 @@ export async function signIn(mode: 'login' | 'register', body: Record<string, st
 }
 
 export async function signOut() {
-  disconnectEvents();
-  await endSession();
-  // Clear locally cached note content.
   try {
-    const dbs = await indexedDB.databases?.();
-    for (const d of dbs ?? []) if (d.name?.startsWith('noteapp-page-')) indexedDB.deleteDatabase(d.name);
-  } catch {
-    /* ignore */
+    disconnectEvents();
+    await endSession();
+  } finally {
+    // Always wipe this device's copy of the user's data, even if a step above failed.
+    await clearLocalUserData();
+    platform.kv.remove('noteapp.lastWs');
+    set({ user: null, workspaces: [], wsId: null, tree: emptyTree, tasks: {}, members: [], treeLoaded: false, tasksLoaded: false });
   }
-  platform.kv.remove('noteapp.lastWs');
-  set({ user: null, workspaces: [], wsId: null, tree: emptyTree, tasks: {}, members: [], treeLoaded: false, tasksLoaded: false });
 }

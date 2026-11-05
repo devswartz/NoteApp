@@ -47,7 +47,8 @@ test('set "Repeat" from task details; weekly task moves a week ahead on completi
   await taskRow(page, 'Weekly review').click();
   const detail = page.getByRole('dialog', { name: 'Task details' });
   await detail.getByRole('button', { name: 'Does not repeat' }).click();
-  await page.getByRole('menuitem', { name: 'Every week', exact: true }).click();
+  // RecurrencePicker (Reminders agent, #4): presets are menu items such as "Every week on Thu".
+  await page.getByRole('menuitem', { name: /^Every week on / }).click();
   await expect(detail.getByRole('button', { name: /week/i }).first()).toBeVisible();
   await eventually(() => api<FullTask[]>(request, 'GET', `/workspaces/${user.wsId}/tasks`, user.token), (ts) => !!ts.find((x) => x.id === t.id)?.recurrence, 'recurrence saved');
 
@@ -60,18 +61,24 @@ test('set "Repeat" from task details; weekly task moves a week ahead on completi
 });
 
 test('reminder can be set in task details and shows the bell on the row', async ({ page, context, request }) => {
+  // Drives the Reminders agent's ReminderPicker (src/components/notifications/), which replaced the
+  // single datetime input in #4 (one-time edit by the Reminders agent, agreed with the manager).
   const user = await createUser(request, 'Remy Reminder');
-  await createTask(request, user, user.wsId, { title: 'Call the dentist', dueDate: isoDay(0) });
+  const t = await createTask(request, user, user.wsId, { title: 'Call the dentist', dueDate: isoDay(0) });
   await signInContext(context, user);
   await page.goto(tasksUrl(user.wsId, 'today'));
   await taskRow(page, 'Call the dentist').click();
   const detail = page.getByRole('dialog', { name: 'Task details' });
-  await detail.locator('input[type="datetime-local"]').fill(`${isoDay(1)}T09:30`);
+  await detail.getByRole('button', { name: 'Add reminder' }).click();
+  await detail.getByRole('button', { name: 'At a time' }).click();
+  await detail.getByLabel('Reminder time').fill(`${isoDay(1)}T09:30`);
+  await detail.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(detail.getByRole('button', { name: 'Remove reminder' })).toHaveCount(1);
   await detail.getByRole('button', { name: 'Close (Esc)', exact: true }).click();
   await expect(taskRow(page, 'Call the dentist').getByLabel('Has reminder')).toBeVisible();
   await eventually(
-    () => api<(FullTask & { reminderAt: string | null })[]>(request, 'GET', `/workspaces/${user.wsId}/tasks`, user.token),
-    (ts) => ts.find((x) => x.title === 'Call the dentist')?.reminderAt === `${isoDay(1)}T09:30:00.000Z`,
+    () => api<{ kind: string; at?: string; nextFireAt: string | null }[]>(request, 'GET', `/tasks/${t.id}/reminders`, user.token),
+    (rs) => rs.length === 1 && rs[0].kind === 'at' && rs[0].at === `${isoDay(1)}T09:30:00.000Z` && rs[0].nextFireAt === rs[0].at,
     'reminder saved',
   );
 });
@@ -111,6 +118,37 @@ test('a due reminder shows an in-app toast while the app is open', async ({ page
   await expect(page.locator('.toast', { hasText: 'Stretch break' })).toBeVisible();
 });
 
-test('reminder delivery settings (web push / email) in Settings', async () => {
-  test.fixme(true, 'waiting for feature: Reminders agent — server reminder worker, web push + email, notification settings');
+test('reminder delivery settings (email, digest, default time, quiet hours) save to the server', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Dee Digest');
+  await signInContext(context, user);
+  await page.goto(`/w/${user.wsId}/settings?s=notifications`);
+  await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
+
+  const email = page.getByRole('switch', { name: 'Email reminders' });
+  const digest = page.getByRole('switch', { name: 'Daily digest' });
+  if ((await email.getAttribute('aria-checked')) !== 'true') await email.click();
+  await expect(email).toHaveAttribute('aria-checked', 'true');
+  await expect(digest).toBeEnabled();
+  await digest.click();
+  await expect(digest).toHaveAttribute('aria-checked', 'true');
+  await page.getByLabel('Default reminder time').fill('08:15');
+  await page.getByRole('switch', { name: `Quiet hours for ${"Dee's Space"}` }).click();
+
+  await eventually(
+    () => api<{ emailEnabled: boolean; digestEnabled: boolean; defaultReminderTime: string }>(request, 'GET', '/notifications/settings', user.token),
+    (s) => s.emailEnabled && s.digestEnabled && s.defaultReminderTime === '08:15',
+    'notification settings saved',
+  );
+  await eventually(
+    () => api<{ workspaceId: string; start: string; end: string }[]>(request, 'GET', '/notifications/quiet-hours', user.token),
+    (q) => q.some((x) => x.workspaceId === user.wsId),
+    'quiet hours saved',
+  );
+
+  // Survives a reload; turning email off disables the digest switch.
+  await page.reload();
+  await expect(email).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByLabel('Default reminder time')).toHaveValue('08:15');
+  await email.click();
+  await expect(digest).toBeDisabled();
 });
