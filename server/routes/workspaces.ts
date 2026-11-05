@@ -1,7 +1,7 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { requireRole, roleIn } from '../access.ts';
+import { accessChanged, requireRole, roleIn } from '../access.ts';
 import { publish } from '../events.ts';
 import {
   createWorkspace,
@@ -62,6 +62,7 @@ workspaceRoutes.delete(
     requireRole(wsId, req.user.id, 'owner');
     const members = memberIds(wsId);
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(wsId);
+    accessChanged();
     publish({ type: 'workspaces' }, { userIds: members });
     return { ok: true };
   }),
@@ -196,6 +197,7 @@ workspaceRoutes.patch(
     if ((role === 'owner' || current === 'owner') && myRole !== 'owner') throw new HttpError(403, 'Only owners can change owners');
     if (current === 'owner' && role !== 'owner' && ownerCount(wsId) === 1) throw new HttpError(400, 'A workspace needs at least one owner');
     db.prepare('UPDATE workspace_members SET role = ? WHERE workspace_id = ? AND user_id = ?').run(role, wsId, target);
+    accessChanged();
     publish({ type: 'members', workspaceId: wsId });
     publish({ type: 'workspaces' }, { userIds: [target] });
     return { ok: true };
@@ -217,6 +219,7 @@ workspaceRoutes.delete(
       db.prepare('DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?').run(wsId, target);
       db.prepare("UPDATE tasks SET assignee_id = NULL WHERE workspace_id = ? AND assignee_id = ? AND status = 'open'").run(wsId, target);
     })();
+    accessChanged();
     publish({ type: 'members', workspaceId: wsId });
     publish({ type: 'workspaces' }, { userIds: [target] });
     return { ok: true };
