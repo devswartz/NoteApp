@@ -5,7 +5,8 @@ import { mustAccess, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { closeRoom } from '../collab.ts';
 import { rowToTask } from '../tasks.ts';
-import { detachPagesTasks, nextPos } from '../tree.ts';
+import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
+import type { Access } from '../access.ts';
 import { HttpError, h, param } from '../http.ts';
 
 export const pageRoutes = Router();
@@ -55,19 +56,69 @@ pageRoutes.patch(
       db.prepare('UPDATE pages_fts SET title = ? WHERE page_id = ?').run(title, id);
     }
     if (b.icon !== undefined) db.prepare('UPDATE pages SET icon = ? WHERE id = ?').run(b.icon ? String(b.icon).slice(0, 16) : null, id);
-    if (b.sectionId !== undefined) {
-      const t = mustAccess(sectionAccess(b.sectionId, req.user.id), true);
-      if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
-      db.prepare('UPDATE pages SET section_id = ? WHERE id = ?').run(b.sectionId, id);
-      if (t.notebookId !== a.notebookId) {
-        closeRoom(id); // collaborators may have lost access
-        const tasks = db.prepare('SELECT * FROM tasks WHERE page_id = ?').all(id) as Parameters<typeof rowToTask>[0][];
-        for (const r of tasks) publish({ type: 'task', task: rowToTask(r) });
-      }
-    }
+    if (b.sectionId !== undefined) movePageTo(id, a, String(b.sectionId), req.user.id);
     if (typeof b.position === 'number') db.prepare('UPDATE pages SET position = ? WHERE id = ?').run(b.position, id);
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };
+  }),
+);
+
+/** Move a page into a section (any notebook in the same workspace). Kicks collaborators if the notebook changed. */
+function movePageTo(id: string, a: Access, sectionId: string, userId: string) {
+  const t = mustAccess(sectionAccess(sectionId, userId), true);
+  if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
+  db.prepare('UPDATE pages SET section_id = ? WHERE id = ?').run(sectionId, id);
+  if (t.notebookId !== a.notebookId) {
+    closeRoom(id); // collaborators may have lost access (e.g. moved into a private notebook)
+    const tasks = db.prepare('SELECT * FROM tasks WHERE page_id = ?').all(id) as Parameters<typeof rowToTask>[0][];
+    for (const r of tasks) publish({ type: 'task', task: rowToTask(r) });
+  }
+}
+
+/**
+ * POST /pages/:id/move { sectionId?, index? }
+ * Move to another section (default: stay) at `index` among its pages (default: end).
+ * Used by sidebar drag-and-drop and the page menu.
+ */
+pageRoutes.post(
+  '/pages/:id/move',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(pageAccess(id, req.user.id), true);
+    const current = (db.prepare('SELECT section_id FROM pages WHERE id = ?').get(id) as { section_id: string }).section_id;
+    const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : current;
+    const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
+    if (sectionId !== current) movePageTo(id, a, sectionId, req.user.id);
+    const position = positionAt('pages', 'section_id', sectionId, index, id);
+    db.prepare('UPDATE pages SET position = ? WHERE id = ?').run(position, id);
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { ok: true, sectionId, position };
+  }),
+);
+
+/**
+ * POST /pages/:id/copy { sectionId?, title? } → { id }
+ * Duplicate a page (default: right after the original, titled "<title> (copy)").
+ * Embedded tasks are duplicated too, so the copy doesn't steal the original's tasks.
+ */
+pageRoutes.post(
+  '/pages/:id/copy',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(pageAccess(id, req.user.id));
+    const src = db.prepare('SELECT section_id, title, position FROM pages WHERE id = ?').get(id) as { section_id: string; title: string; position: number };
+    const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : src.section_id;
+    const t = mustAccess(sectionAccess(sectionId, req.user.id), true);
+    if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot copy between workspaces');
+    let position: number | undefined;
+    if (sectionId === src.section_id) {
+      const next = db.prepare('SELECT MIN(position) AS p FROM pages WHERE section_id = ? AND position > ?').get(sectionId, src.position) as { p: number | null };
+      position = next.p === null ? src.position + 1 : (src.position + next.p) / 2;
+    }
+    const title = typeof req.body.title === 'string' ? req.body.title.slice(0, 300) : sectionId === src.section_id ? `${src.title || 'Untitled'} (copy)` : src.title;
+    const r = copyPage(id, sectionId, req.user.id, { title, position });
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { id: r.id };
   }),
 );
 
