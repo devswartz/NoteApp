@@ -99,11 +99,12 @@ export const Outline = memo(function Outline({ editor, scroller }: { editor: Edi
     // Off-screen blocks use estimated sizes (content-visibility), so jump, then re-jump
     // for a few frames while the real sizes settle, instead of one smooth scroll that misses.
     const jump = () => (editor.view.nodeDOM(h.pos) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+    // Put the cursor in the heading right away (so typing works immediately), then settle the scroll.
+    editor.chain().setTextSelection(h.pos + 1).focus(undefined, { scrollIntoView: false }).run();
     let frames = 0;
     const settle = () => {
       jump();
       if (++frames < 4) requestAnimationFrame(settle);
-      else editor.chain().setTextSelection(h.pos + 1).focus(undefined, { scrollIntoView: false }).run();
     };
     settle();
   };

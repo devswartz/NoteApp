@@ -45,6 +45,7 @@ test.describe('outline and full width', () => {
     await expect.poll(async () => Math.round((await heading.boundingBox())!.y)).toBeLessThan(120);
     await expect(nav.locator('.is-active')).toHaveText('Section 3');
     // The cursor lands in the heading, so you can start typing there.
+    await expect(editor).toBeFocused();
     await page.keyboard.type('!');
     await expect(heading).toHaveText('!Section 3');
   });
