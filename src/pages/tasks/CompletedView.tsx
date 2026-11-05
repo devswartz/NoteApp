@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '../../store.ts';
 import { get } from '../../api.ts';
-import { TaskRow } from '../../components/TaskRow.tsx';
+import { RowList } from '../../components/TaskRow.tsx';
 import { addDays, toISODate, today } from '../../../shared/dates.ts';
 import type { Task } from '../../../shared/types.ts';
 import { longDate } from '../../lib/format.ts';
@@ -38,9 +38,7 @@ export function CompletedView() {
       {[...groups.entries()].map(([d, list]) => (
         <section key={d} className="task-group">
           <h3 className="group-title">{d === today() ? 'Today' : d === addDays(today(), -1) ? 'Yesterday' : longDate(d)}</h3>
-          {list.map((t) => (
-            <TaskRow key={t.id} task={t} />
-          ))}
+          <RowList tasks={list} />
         </section>
       ))}
       {!merged.length && <div className="empty">Nothing completed yet.</div>}

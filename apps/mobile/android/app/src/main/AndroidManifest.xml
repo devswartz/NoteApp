@@ -37,6 +37,43 @@
             </intent-filter>
         </activity>
 
+        <!-- "Share to NoteApp": two share targets, both handled by MainActivity (NoteAppNativePlugin). -->
+        <activity-alias
+            android:name=".ShareAsTask"
+            android:targetActivity=".MainActivity"
+            android:label="@string/share_as_task"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ShareAsNote"
+            android:targetActivity=".MainActivity"
+            android:label="@string/share_as_note"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Home-screen "Today" widget (TodayWidgetProvider). -->
+        <receiver
+            android:name=".TodayWidgetProvider"
+            android:label="@string/widget_title"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_widget_info" />
+        </receiver>
+
         <!-- Reminder pushes (FCM) use the same channel and icon as local notifications. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
