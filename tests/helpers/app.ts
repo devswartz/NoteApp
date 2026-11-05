@@ -34,6 +34,7 @@ export async function startTestApp() {
   // Must be set before the server modules are first imported.
   process.env.DB_FILE = ':memory:';
   process.env.JWT_SECRET ??= 'test-secret';
+  process.env.SIGNUP_MODE ??= 'open'; // most tests create users freely; tests/signup.test.ts covers invite mode
   process.env.DATA_DIR = tmp;
 
   const { createServer } = await import('../../server/app.ts');

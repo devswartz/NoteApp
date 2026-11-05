@@ -16,6 +16,11 @@ const PENDING_KEY = 'noteapp.pendingInvite';
  * straight into the workspace when sign-up already joined it (invites for your
  * email are applied at sign-up), else back to the invite page to accept it.
  */
+/** True when the user arrived from an invite link and hasn't used it yet (lets the login page offer sign-up). */
+export function hasPendingInvite(): boolean {
+  return !!platform.kv.get(PENDING_KEY);
+}
+
 export function takePendingInvite(): string | null {
   const raw = platform.kv.get(PENDING_KEY);
   if (!raw) return null;
