@@ -12,5 +12,7 @@ ext {
     junitVersion = '4.13.2'
     androidxJunitVersion = '1.3.0'
     androidxEspressoCoreVersion = '3.7.0'
+    // Same version @capacitor/push-notifications uses; the app's own messaging service needs it too.
+    firebaseMessagingVersion = '25.0.1'
     cordovaAndroidVersion = '14.0.1'
 }

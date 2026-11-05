@@ -39,6 +39,7 @@ This is the fixed interface between the code in this repo and the homelab that r
 | `ACCESS_TOKEN_TTL_S` | no | access-token lifetime; production clamps it to 60–3600 s (default 900). Leave unset. |
 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY` / `APNS_ENV` | for iOS push | APNs token auth (`.p8` key contents in `APNS_PRIVATE_KEY`; `APNS_ENV` = `production` or `sandbox`). Optional until the iOS app ships. |
 | `FCM_SERVICE_ACCOUNT_JSON` | for Android push | Firebase service-account JSON (one line). Optional until the Android app ships. |
+| `ANDROID_CERT_SHA256` | for Android app links | SHA-256 fingerprint(s) of the Android signing certificate(s), comma-separated. Served in `/.well-known/assetlinks.json` (404 until set). `APNS_TEAM_ID` likewise drives `/.well-known/apple-app-site-association`. See `docs/MOBILE.md`. |
 
 If email or push settings are missing, the app still starts and logs a warning; reminders through that channel are skipped.
 
