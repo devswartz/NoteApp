@@ -123,13 +123,14 @@ test('demoting a member to viewer makes their open socket read-only immediately'
   assert.equal(a.text(), 'allowed');
 });
 
-test('strangers and bad tokens are refused; making a notebook private kicks only those who lost access', async () => {
+test('strangers (4403) and bad tokens (4401) are refused; making a notebook private kicks only those who lost access', async () => {
   const { owner, others, pageId, notebookId } = await setup(['Kim', 'Lou']);
   const stranger = await app.signUp('Max');
   const s = client(pageId, stranger);
   const bad = collabClient(app, pageId, 'not-a-token');
   open.push(bad);
-  await waitFor(() => s.closes.includes(4401) && bad.closes.includes(4401), 3000, 'refusals');
+  // A valid user without access gets 4403; an invalid token gets 4401 (the client refreshes on 4401).
+  await waitFor(() => s.closes.includes(4403) && bad.closes.includes(4401), 3000, 'refusals');
 
   const a = client(pageId, owner);
   const m = client(pageId, others[0]);

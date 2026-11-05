@@ -1,8 +1,7 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { TASK_VISIBLE, mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
-import { recheckAccess } from '../collab.ts';
+import { TASK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import {
@@ -64,6 +63,7 @@ workspaceRoutes.delete(
     requireRole(wsId, req.user.id, 'owner');
     const members = memberIds(wsId);
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(wsId);
+    accessChanged();
     publish({ type: 'workspaces' }, { userIds: members });
     return { ok: true };
   }),
@@ -198,7 +198,7 @@ workspaceRoutes.patch(
     if ((role === 'owner' || current === 'owner') && myRole !== 'owner') throw new HttpError(403, 'Only owners can change owners');
     if (current === 'owner' && role !== 'owner' && ownerCount(wsId) === 1) throw new HttpError(400, 'A workspace needs at least one owner');
     db.prepare('UPDATE workspace_members SET role = ? WHERE workspace_id = ? AND user_id = ?').run(role, wsId, target);
-    recheckAccess({ workspaceId: wsId, userId: target }); // e.g. demoted to viewer: open editors go read-only
+    accessChanged(); // e.g. demoted to viewer: open editors go read-only
     publish({ type: 'members', workspaceId: wsId });
     publish({ type: 'workspaces' }, { userIds: [target] });
     return { ok: true };
@@ -221,7 +221,7 @@ workspaceRoutes.delete(
       db.prepare("UPDATE tasks SET assignee_id = NULL WHERE workspace_id = ? AND assignee_id = ? AND status = 'open'").run(wsId, target);
       db.prepare('DELETE FROM notebook_shares WHERE user_id = ? AND notebook_id IN (SELECT id FROM notebooks WHERE workspace_id = ?)').run(target, wsId);
     })();
-    recheckAccess({ workspaceId: wsId, userId: target }); // drop them from pages they have open
+    accessChanged(); // drop them from pages they have open
     publish({ type: 'members', workspaceId: wsId });
     publish({ type: 'workspaces' }, { userIds: [target] });
     return { ok: true };
@@ -280,7 +280,7 @@ workspaceRoutes.put(
         db.prepare('INSERT INTO notebook_shares (notebook_id, user_id, created_by, created_at) VALUES (?, ?, ?, ?)').run(id, u, req.user.id, now());
     })();
     if (removed.length || added.length) {
-      for (const u of removed) recheckAccess({ workspaceId: a.workspaceId, userId: u });
+      if (removed.length) accessChanged(); // unshared people are disconnected from its pages
       publish({ type: 'tree', workspaceId: a.workspaceId });
       refreshTasksForNotebook(id);
     }
