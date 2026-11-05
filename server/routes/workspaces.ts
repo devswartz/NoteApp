@@ -4,6 +4,7 @@ import { db, now } from '../db.ts';
 import { TASK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
+import { removeFiles, templateFilePaths } from '../templates.ts';
 import {
   createWorkspace,
   findInvite,
@@ -62,7 +63,9 @@ workspaceRoutes.delete(
     const wsId = param(req, 'id');
     requireRole(wsId, req.user.id, 'owner');
     const members = memberIds(wsId);
+    const templateFiles = templateFilePaths((db.prepare('SELECT id FROM templates WHERE workspace_id = ?').all(wsId) as { id: string }[]).map((t) => t.id));
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(wsId);
+    removeFiles(templateFiles); // template attachment copies don't outlive their workspace
     accessChanged();
     publish({ type: 'workspaces' }, { userIds: members });
     return { ok: true };

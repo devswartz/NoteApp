@@ -28,6 +28,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Page links and backlinks: `[[` links to a page or creates one, and each page has a "Linked from" panel (#25).
 - Page version history: automatic snapshots, preview and restore (#37).
 - Page templates: meeting notes, project, daily journal, and "Start with a template" on empty pages (#27).
+- User templates: **Save as template…** in the page menu; workspace templates are listed under the built-ins with rename and delete. Using one creates new tasks and copies attachments (migration 011). Templates saved from a private notebook are visible only to their creator.
 - `SEED_DEMO` showcase: a *Demo Team* workspace with a notebook per area, every block type, tasks with subtasks and recurrence, links, comments, versions and a private notebook (#70).
 
 ### Tasks and dashboard

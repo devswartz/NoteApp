@@ -16,6 +16,7 @@ import { publicReminderRoutes, reminderRoutes } from './reminders.ts';
 import { commentRoutes } from './comments.ts';
 import { notificationRoutes } from './notifications.ts';
 import { activityRecorder, activityRoutes } from './activity.ts';
+import { templateRoutes } from './templates.ts';
 
 import { adminRoutes } from './admin.ts';
 
@@ -49,6 +50,7 @@ api.use(reminderRoutes);
 api.use(commentRoutes);
 api.use(notificationRoutes);
 api.use(activityRoutes);
+api.use(templateRoutes);
 
 api.use(adminRoutes);
 

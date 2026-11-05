@@ -132,7 +132,8 @@ workspaces ──< workspace_members (role: owner | admin | member | viewer) >�
           ──< tasks (page_id → pages, nullable)
 pages_fts (FTS5: page_id, title, text)
 tasks_fts (FTS5: task_id, title, description; kept in sync by triggers)
-files (uploads: workspace_id, page_id, name, mime, size)
+files (uploads: workspace_id, page_id, template_id, name, mime, size)
+templates (workspace_id, name, icon, visibility 'workspace' | 'private', content = TipTap JSON, tasks = task snapshots, created_by)
 ```
 
 - **Hierarchy:** workspace → notebook → section → page. Ordering uses a `position REAL` column per level (insert between two items by averaging).
@@ -210,6 +211,7 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 | `LinkEditor.tsx` | Inline link editor (⌘K with a selection; ⌘K without one goes to the command palette) |
 | `PageLink.tsx`, `pageItems.ts` | `[[` page links: inline `pageLink[pageId]` node showing the page's live title and icon; the `[[` picker (search pages, or create one). Backlinks: `GET /pages/:id/backlinks` (`server/links.ts`, a lazily rebuilt in-memory index keyed by `pages.updated_at`) |
 | `templates.ts`, `TemplatePicker.tsx` | Built-in page templates (ProseMirror JSON) and the "Start with a template" row on empty pages (shown only after the server copy has synced). `applyTemplate(editor, pageId, template)` sets content, title and icon |
+| `userTemplates.ts` (+ `server/templates.ts`, `server/routes/templates.ts`) | **User templates.** "Save as template…" (page menu) POSTs `editor.getJSON()` to `/pages/:id/templates`. The server stores a self-contained snapshot: every `taskRef.taskId` is replaced by a template-local key with the task's title/description/priority/subtasks kept in `templates.tasks` (done state, dates, recurrence, reminders, assignee dropped; unreadable or foreign tasks dropped), and every `/uploads/…` URL is copied to a template-owned file row (`files.template_id`; caps: 100 templates per workspace, 300 KB content, 20 files / 50 MB, 100 tasks). Templates saved from a private notebook are `visibility = 'private'` (creator only, files included). `POST /templates/:id/use {pageId}` creates NEW open tasks (assigned to the user) and new file copies on that page and returns the rewritten JSON, which the picker inserts through the editor like a built-in. Rename/delete: creator, or an owner/admin for workspace-visible ones; delete removes the template's file copies from disk. A `templates` live event refreshes other clients (private ones go to the creator only) |
 | `VersionHistory.tsx` | Version history modal: snapshot list, read-only preview (`documentExtensions()` + a scratch Y.Doc), Restore (snapshots the current state first, then replaces the content as one collaborative edit). Server: `server/versions.ts` (`page_versions`): a 5-minute sweep snapshots pages edited since their last version (at most one per 10 min), opening the history also snapshots if due; kept: all < 24 h, hourly < 7 days, daily after, max 200 per page |
 | `exportPage.ts`, `markdownUtils.ts` | Export as Markdown (`@tiptap/markdown`; custom nodes have `renderMarkdown`: callout → quote, toggle → `<details>`, file card → link, task → `- [ ]` with due/priority, page link → `[[Title]]`), print / save as PDF (print stylesheet in `editor.css`), import Markdown (appends; a leading `# Title` names an untitled page) |
 | `IconPicker.tsx` | Emoji picker for page icons |
