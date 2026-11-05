@@ -10,6 +10,7 @@ import { Login } from './pages/Login.tsx';
 import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
 import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { workspaceRoutes } from './routes.tsx';
+import { ResetPassword } from './pages/ResetPassword.tsx';
 import { useIsMobile } from './components/ui.tsx';
 import { platform } from './platform/index.ts';
 
@@ -29,6 +30,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/invite/:token" element={<InvitePage />} />
+        <Route path="/reset" element={<ResetPassword />} />
         {user ? (
           <>
             <Route path="/" element={<Home />} />
