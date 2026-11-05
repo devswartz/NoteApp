@@ -77,6 +77,18 @@ export const webPlatform: Platform = {
     subscribe: () => () => {},
   },
 
+  async saveFile(name, data) {
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.style.display = 'none';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  },
+
   pickFiles({ accept, multiple } = {}) {
     return new Promise((resolve) => {
       const input = document.createElement('input');

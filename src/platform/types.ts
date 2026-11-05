@@ -53,6 +53,12 @@ export interface Platform {
   /** Let the user pick files. Resolves to [] if they cancel. */
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
 
+  /**
+   * Save a file to the user's device (a download on the web). Optional: shells
+   * without it get a clipboard fallback from the caller.
+   */
+  saveFile?(name: string, data: Blob): Promise<void>;
+
   /** Run fn while holding a named lock shared by every window/tab of the app. */
   withLock<T>(name: string, fn: () => Promise<T>): Promise<T>;
 

@@ -16,6 +16,8 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import { backoffMs, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import type { User } from '../../shared/types.ts';
 import { toast } from '../store/toasts.ts';
+import { platform } from '../platform/index.ts';
+import { docToMarkdown } from './collabExport.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 /** What the page header shows: is everything I typed safely on the server? */
@@ -94,26 +96,10 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
       if (dirty) settle();
       else report();
     };
-    // Set when the server refused a change as too large: nothing syncs until the page is reloaded.
-    let tooLarge = false;
-    let lastWarn = 0;
-    const warnTooLarge = () => {
-      if (Date.now() - lastWarn < 5000) return;
-      lastWarn = Date.now();
-      toast('A change on this page is too large to sync, so this page isn’t saving. Reload to continue from the saved version.', {
-        tone: 'error',
-        action: {
-          label: 'Reload page',
-          run: () => {
-            // Drop the local cache too, or the oversized change would be sent again.
-            void idb.clearData().finally(() => location.reload());
-          },
-        },
-      });
-    };
+    // Set when the server refused a change as too large: editing pauses, nothing syncs.
+    const warnTooLarge = () => warnBlocked(doc, idb);
     const onUpdate = (_u: Uint8Array, origin: unknown) => {
       if (origin === provider || origin === idb) return; // remote or cached, not a local edit
-      if (tooLarge) warnTooLarge(); // keep telling them while their edits can't be saved
       dirty = true;
       report();
       if (connected) settle();
@@ -138,7 +124,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
         // The server refused a change as too large (server/collab.ts MAX_SYNC_MESSAGE_BYTES).
         // Reconnecting would resend it forever, so stop, and offer to continue from the saved version.
         provider.shouldConnect = false;
-        tooLarge = true;
+        blockedDocs.add(doc); // SyncSizeGuard now refuses local edits, so nothing more is lost
         cb.onStatus('offline');
         warnTooLarge();
         return;
@@ -188,14 +174,71 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
  */
 export const MAX_PASTE_SIZE = 1_000_000;
 
-/** Refuses pastes and drops too large to sync, with an explanation, before they reach the shared doc. */
-export const SyncSizeGuard = Extension.create({
+// ───────────── Changes too large to sync ─────────────
+
+/** Docs whose sync was refused (1009): local editing is paused until reload. */
+const blockedDocs = new WeakSet<Y.Doc>();
+const idbFor = new WeakMap<Y.Doc, IndexeddbPersistence>();
+let lastWarn = 0;
+
+async function downloadUnsynced(doc: Y.Doc) {
+  const md = docToMarkdown(doc.getXmlFragment('default'));
+  const name = `unsynced-copy-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.md`;
+  try {
+    if (platform.saveFile) await platform.saveFile(name, new Blob([md], { type: 'text/markdown' }));
+    else await navigator.clipboard.writeText(md);
+    toast(platform.saveFile ? `Saved ${name}` : 'Unsynced copy copied to the clipboard');
+  } catch {
+    toast('Could not save the copy. Select the page text and copy it manually.', { tone: 'error' });
+  }
+}
+
+/** Explain the blocked state and offer, in order: a copy of the unsynced content, then discard + reload. */
+function warnBlocked(doc: Y.Doc, idb?: IndexeddbPersistence) {
+  if (idb) idbFor.set(doc, idb);
+  if (Date.now() - lastWarn < 4000) return;
+  lastWarn = Date.now();
+  toast('This page can’t sync: a change is too large. Editing is paused so nothing else is lost. Download a copy of your unsynced changes first.', {
+    tone: 'error',
+    action: {
+      label: 'Download unsynced copy',
+      run: () => {
+        void downloadUnsynced(doc).then(() =>
+          toast('Then discard this device’s unsynced changes to continue from the last saved version.', {
+            tone: 'error',
+            action: { label: 'Discard and reload', run: () => discardAndReload(doc) },
+          }),
+        );
+      },
+    },
+  });
+}
+
+function discardAndReload(doc: Y.Doc) {
+  const ok = confirm(
+    'Discard every change on this device that hasn’t synced to the server (including earlier offline edits), and reload the last saved version of this page?\n\nDownload a copy first if you still need them.',
+  );
+  if (!ok) return;
+  const idb = idbFor.get(doc);
+  void (idb ? idb.clearData() : Promise.resolve()).finally(() => location.reload());
+}
+
+/** Refuses pastes and drops too large to sync, and all local edits while the page is blocked, with an explanation. */
+export const SyncSizeGuard = Extension.create<{ doc: Y.Doc | null }>({
   name: 'syncSizeGuard',
+  addOptions() {
+    return { doc: null };
+  },
   addProseMirrorPlugins() {
+    const doc = this.options.doc;
     return [
       new Plugin({
         key: new PluginKey('syncSizeGuard'),
         filterTransaction: (tr) => {
+          if (doc && blockedDocs.has(doc) && tr.docChanged && !tr.getMeta('y-sync$')) {
+            warnBlocked(doc);
+            return false;
+          }
           const ui = tr.getMeta('uiEvent');
           if (ui !== 'paste' && ui !== 'drop') return true;
           let size = 0;
@@ -214,7 +257,7 @@ export const SyncSizeGuard = Extension.create({
 /** TipTap extensions that bind the editor to the shared doc and show other people's carets. */
 export function collabExtensions(session: CollabSession, user: User): Extensions {
   return [
-    SyncSizeGuard,
+    SyncSizeGuard.configure({ doc: session.doc }),
     Collaboration.configure({ document: session.doc, field: 'default' }),
     CollaborationCaret.configure({
       provider: session.provider,
