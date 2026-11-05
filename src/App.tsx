@@ -11,6 +11,7 @@ import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.t
 import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { ResetPassword } from './pages/ResetPassword.tsx';
+import { RouteBoundary } from './components/ErrorBoundary.tsx';
 import { useIsMobile } from './components/ui.tsx';
 import { platform } from './platform/index.ts';
 
@@ -37,7 +38,7 @@ export function App() {
             <Route path="/w/:wsId" element={<AppShell />}>
               <Route index element={<WorkspaceIndex />} />
               {workspaceRoutes.map((r) => (
-                <Route key={r.path} path={r.path} element={r.element} />
+                <Route key={r.path} path={r.path} element={<RouteBoundary>{r.element}</RouteBoundary>} />
               ))}
               <Route path="*" element={<Navigate to="tasks/today" replace />} />
             </Route>

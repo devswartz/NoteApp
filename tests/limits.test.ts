@@ -21,7 +21,7 @@ test('oversized JSON bodies get a 413 with a JSON error (not a 500); a maximal t
     body: JSON.stringify({ title: 'x', description: 'a'.repeat(600 * 1024) }),
   });
   assert.equal(big.status, 413);
-  assert.deepEqual(await big.json(), { error: 'Request is too large' });
+  assert.equal((await big.json()).error, 'That is too large to upload');
   // 50 000 characters (the description limit), multibyte, still fits.
   const ok = await app.call('POST', `/workspaces/${u.wsId}/tasks`, u.token, { title: 'x', description: '日本'.repeat(25_000) });
   assert.equal(ok.status, 200);

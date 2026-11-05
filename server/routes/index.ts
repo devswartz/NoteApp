@@ -3,6 +3,7 @@
 import express, { Router } from 'express';
 import { requireAuth } from '../auth.ts';
 import { errorHandler } from '../http.ts';
+import { authRateLimit } from '../ratelimit.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
 import { healthRoutes } from './health.ts';
 import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
@@ -16,6 +17,8 @@ import { commentRoutes } from './comments.ts';
 import { notificationRoutes } from './notifications.ts';
 import { activityRecorder, activityRoutes } from './activity.ts';
 
+import { adminRoutes } from './admin.ts';
+
 export { UPLOAD_DIR } from './files.ts';
 
 export const api = Router();
@@ -25,6 +28,7 @@ api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, n
 
 // No token needed.
 api.use(healthRoutes);
+api.use(authRateLimit); // 429 + Retry-After on login/sign-up/refresh/invite endpoints
 api.use(publicAuthRoutes);
 api.use(publicReminderRoutes);
 api.use(publicWorkspaceRoutes);
@@ -45,5 +49,7 @@ api.use(reminderRoutes);
 api.use(commentRoutes);
 api.use(notificationRoutes);
 api.use(activityRoutes);
+
+api.use(adminRoutes);
 
 api.use(errorHandler);

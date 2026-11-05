@@ -112,8 +112,8 @@ test('theme preference: dark mode applies and persists', async ({ page, context,
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 });
 
+// BUG-3 (docs/QA.md), fixed: the debounced title save is flushed when leaving the page.
 test('a page title typed just before navigating away is still saved', async ({ page, context, request }) => {
-  test.fixme(true, 'BUG-3 (docs/QA.md): the debounced title save is cancelled on unmount, so the rename is lost');
   const user = await createUser(request, 'Quick Renamer');
   const { pageId } = await createPage(request, user, { page: 'Original title' });
   await signInContext(context, user);
