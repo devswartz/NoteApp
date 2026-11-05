@@ -9,8 +9,10 @@ npm run test:e2e                         # builds, starts `npm start` on :4317 w
 E2E_NO_BUILD=1 npm run test:e2e          # reuse an existing dist/ (much faster when iterating)
 npx playwright test 03 --project=chromium   # one file
 E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you started yourself
+E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E2E_PORT+1) when several worktrees run at once
 ```
 
+- Ports: the main server listens on `E2E_PORT` (default 4317), the short-token server on `E2E_PORT+1`. Give each concurrent checkout its own `E2E_PORT`, or the second run fails to start its servers.
 - Each run uses a fresh, throwaway `DATA_DIR` (and a fixed test-only `JWT_SECRET`), so tests never touch `./data`.
 - Projects: `chromium` (desktop, every `*.spec.ts`), `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`) and `short-tokens` (only `*.tokens.spec.ts`, against a second server on port+1 started with `ACCESS_TOKEN_TTL_S=6`, so access tokens expire mid-test).
 - The browser runs in UTC (`timezoneId`), so "today" in tests matches `isoDay()` in `helpers.ts`.
