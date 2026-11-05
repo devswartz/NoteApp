@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { db, newId, now, pickColor } from '../db.ts';
 import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import { copyPage, detachPagesTasks, nextPos, positionAt, refreshTasksForNotebook } from '../tree.ts';
+import { copyPage, detachPagesTasks, nextPos, positionAt, refreshTasksForNotebook, validColor } from '../tree.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
 
@@ -48,7 +48,7 @@ treeRoutes.post(
     const visibility = req.body.visibility === 'private' ? 'private' : 'shared';
     db.prepare(
       `INSERT INTO notebooks (id, workspace_id, name, color, visibility, created_by, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, wsId, str(req.body.name, 'Name', 100), req.body.color ?? pickColor(), visibility, req.user.id, nextPos('notebooks', 'workspace_id', wsId), now());
+    ).run(id, wsId, str(req.body.name, 'Name', 100), validColor(req.body.color, pickColor), visibility, req.user.id, nextPos('notebooks', 'workspace_id', wsId), now());
     // Every notebook starts with one section so there is somewhere to write.
     const sectionId = newId();
     db.prepare('INSERT INTO sections (id, notebook_id, name, color, position, created_at) VALUES (?, ?, ?, ?, 1, ?)').run(
@@ -66,7 +66,7 @@ treeRoutes.patch(
     const a = mustAccess(notebookAccess(id, req.user.id), true);
     const b = req.body;
     if (b.name !== undefined) db.prepare('UPDATE notebooks SET name = ? WHERE id = ?').run(str(b.name, 'Name', 100), id);
-    if (b.color !== undefined) db.prepare('UPDATE notebooks SET color = ? WHERE id = ?').run(String(b.color), id);
+    if (b.color !== undefined) db.prepare('UPDATE notebooks SET color = ? WHERE id = ?').run(validColor(b.color, () => { throw new HttpError(400, 'Colour must look like #4f46e5'); }), id);
     if (typeof b.position === 'number') db.prepare('UPDATE notebooks SET position = ? WHERE id = ?').run(b.position, id);
     if (b.visibility !== undefined) {
       if (!a.isNotebookOwner) throw new HttpError(403, 'Only the notebook creator can change its visibility');
@@ -101,7 +101,7 @@ treeRoutes.post(
     const a = mustAccess(notebookAccess(notebookId, req.user.id), true);
     const id = newId();
     db.prepare('INSERT INTO sections (id, notebook_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id, notebookId, str(req.body.name, 'Name', 100), req.body.color ?? pickColor(), nextPos('sections', 'notebook_id', notebookId), now(),
+      id, notebookId, str(req.body.name, 'Name', 100), validColor(req.body.color, pickColor), nextPos('sections', 'notebook_id', notebookId), now(),
     );
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { id };
@@ -115,7 +115,7 @@ treeRoutes.patch(
     const a = mustAccess(sectionAccess(id, req.user.id), true);
     const b = req.body;
     if (b.name !== undefined) db.prepare('UPDATE sections SET name = ? WHERE id = ?').run(str(b.name, 'Name', 100), id);
-    if (b.color !== undefined) db.prepare('UPDATE sections SET color = ? WHERE id = ?').run(String(b.color), id);
+    if (b.color !== undefined) db.prepare('UPDATE sections SET color = ? WHERE id = ?').run(validColor(b.color, () => { throw new HttpError(400, 'Colour must look like #4f46e5'); }), id);
     if (b.notebookId !== undefined && b.notebookId !== a.notebookId) moveSectionTo(id, a, String(b.notebookId), req.user.id);
     if (typeof b.position === 'number') db.prepare('UPDATE sections SET position = ? WHERE id = ?').run(b.position, id);
     publish({ type: 'tree', workspaceId: a.workspaceId });
