@@ -6,7 +6,7 @@ import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
-import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
+import { Markdown } from '@tiptap/markdown';
 import { Placeholder } from '@tiptap/extensions';
 import { TextSelection } from '@tiptap/pm/state';
 import {
@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
-import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
+import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
@@ -98,11 +98,12 @@ export function documentExtensions(pageId: string): Extensions {
     CodeBlock,
     Callout,
     FileAttachment,
-    Details.configure({ persist: false, HTMLAttributes: { class: 'toggle' } }),
-    DetailsSummary,
-    DetailsContent,
+    Toggle,
+    ToggleSummary,
+    ToggleContent,
     TaskRef.configure({ pageId }),
     PageLink.configure({ pageId }),
+    Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
   ];
 }
 

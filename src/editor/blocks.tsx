@@ -2,6 +2,7 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import ImageExt from '@tiptap/extension-image';
 import { createLowlight, common } from 'lowlight';
 import { useState } from 'react';
@@ -9,6 +10,23 @@ import { Check, Copy, Download, File, FileArchive, FileAudio, FileImage, FileSpr
 import { fileUrl } from '../api.ts';
 import { Dropdown } from '../components/ui.tsx';
 import { safeFileUrl } from './urls.ts';
+
+/** Absolute URL for exports (uploads are stored API-relative). */
+export const absoluteUrl = (u: string) => {
+  try {
+    return new URL(fileUrl(u), location.href).href;
+  } catch {
+    return u;
+  }
+};
+
+/** Markdown for block children, prefixed as a quote ("> "). */
+function quoteMarkdown(text: string) {
+  return text
+    .split('\n')
+    .map((l) => (l.trim() ? `> ${l}` : '>'))
+    .join('\n');
+}
 
 // ───────────── Callout ─────────────
 
@@ -47,6 +65,11 @@ export const Callout = Node.create({
   },
   renderHTML({ HTMLAttributes }) {
     return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'callout', class: 'callout' }), 0];
+  },
+  // Exported as a quote that starts with the emoji: "> 💡 Remember…"
+  renderMarkdown(node, h) {
+    const body = (node.content ?? []).map((c) => h.renderChildren([c])).join('\n\n');
+    return quoteMarkdown(`${node.attrs?.emoji ?? '💡'} ${body}`);
   },
   addNodeView() {
     return ReactNodeViewRenderer(CalloutView);
@@ -173,6 +196,11 @@ export const FileAttachment = Node.create({
   renderText({ node }) {
     return `📎 ${node.attrs.name}`;
   },
+  renderMarkdown(node) {
+    const url = safeFileUrl(node.attrs?.url);
+    const name = String(node.attrs?.name ?? 'file').replace(/[[\]]/g, '');
+    return url ? `[📎 ${name}](${absoluteUrl(url)})` : `📎 ${name}`;
+  },
   addNodeView() {
     return ReactNodeViewRenderer(FileCardView);
   },
@@ -228,10 +256,29 @@ export const Image = ImageExt.extend({
       src: { default: null, renderHTML: (a: Record<string, unknown>) => ({ src: a.src ? fileUrl(String(a.src)) : null }) },
     };
   },
+  renderMarkdown(node) {
+    const src = node.attrs?.src ? absoluteUrl(String(node.attrs.src)) : '';
+    const alt = String(node.attrs?.alt ?? '').replace(/[[\]]/g, '');
+    return `![${alt}](${src})`;
+  },
 }).configure({
   allowBase64: false,
   resize: { enabled: true, directions: ['left', 'right', 'bottom-left', 'bottom-right'], minWidth: 80, alwaysPreserveAspectRatio: true },
 });
+
+// ───────────── Toggle (details) ─────────────
+
+/** Toggles export as HTML <details>, which GitHub, Obsidian and most Markdown renderers show as collapsible. */
+export const Toggle = Details.extend({
+  renderMarkdown(node, h) {
+    const [summary, content] = node.content ?? [];
+    const title = summary ? h.renderChildren(summary.content ?? []) : '';
+    const body = content ? (content.content ?? []).map((c) => h.renderChildren([c])).join('\n\n') : '';
+    return `<details>\n<summary>${title}</summary>\n\n${body}\n\n</details>`;
+  },
+}).configure({ persist: false, HTMLAttributes: { class: 'toggle' } });
+export const ToggleSummary = DetailsSummary;
+export const ToggleContent = DetailsContent;
 
 // ───────────── Code block ─────────────
 

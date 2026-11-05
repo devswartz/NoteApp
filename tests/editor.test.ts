@@ -65,3 +65,15 @@ test('templates: titles use the date, content uses only known node types', async
   const walk = (n: J): string[] => [n.type ?? '', ...(n.content ?? []).flatMap(walk)];
   for (const t of TEMPLATES) for (const type of t.content(d).flatMap(walk)) assert.ok(known.has(type), `${t.id}: ${type}`);
 });
+
+test('markdown import/export helpers: title split and safe file names', async () => {
+  const { splitTitle, fileName } = await import('../src/editor/markdownUtils.ts');
+  assert.deepEqual(splitTitle('# Trip plan\n\nPack bags'), { title: 'Trip plan', body: 'Pack bags' });
+  assert.deepEqual(splitTitle('﻿# Notes ##\r\n- a\r\n'), { title: 'Notes', body: '- a\n' });
+  assert.deepEqual(splitTitle('Just text\n# Later heading'), { title: null, body: 'Just text\n# Later heading' });
+  assert.equal(splitTitle('## Sub only\nx').title, null);
+  assert.equal(fileName('Q3: plan / budget?', 'md'), 'Q3 plan budget.md');
+  assert.equal(fileName('   ', 'md'), 'Untitled.md');
+  assert.equal(fileName('Welcome 👋', 'md'), 'Welcome.md');
+  assert.equal(fileName('🎯', 'md'), 'Untitled.md');
+});

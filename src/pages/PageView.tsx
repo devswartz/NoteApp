@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer } from 'lucide-react';
 import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
+import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -121,7 +122,7 @@ export function PageView() {
             >
               {isMobile ? <ListTodo size={18} /> : <PanelRight size={18} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} onHistory={() => setHistoryOpen(true)} />}
+            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} />}
           </div>
         </header>
 
@@ -265,7 +266,7 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({ pageId, wsId, onHistory }: { pageId: string; wsId: string; onHistory: () => void }) {
+function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: string; editor: Editor | null; onHistory: () => void }) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -304,6 +305,16 @@ function PageMenu({ pageId, wsId, onHistory }: { pageId: string; wsId: string; o
           </MenuItem>
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
+            Export as Markdown
+          </MenuItem>
+          <MenuItem icon={<Printer size={15} />} onSelect={() => printPage(current?.title ?? '')}>
+            Print / save as PDF
+          </MenuItem>
+          <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
+            Import Markdown…
           </MenuItem>
           <MenuSeparator />
           <div className="seg page-menu-seg" role="tablist">
