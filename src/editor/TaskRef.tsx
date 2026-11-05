@@ -6,12 +6,13 @@ import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from 
 import { Selection, TextSelection } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useRef, useState } from 'react';
-import { GripVertical, Maximize2, FileX2 } from 'lucide-react';
+import { GripVertical, Maximize2, FileX2, Flag } from 'lucide-react';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
-import { AssigneeChip, DueChip, TaskCheckbox } from '../components/TaskControls.tsx';
+import { AssigneeChip, DueChip, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from '../components/TaskControls.tsx';
+import { Dropdown } from '../components/ui.tsx';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from '../components/TaskRow.tsx';
-import type { TaskPatch } from '../../shared/types.ts';
+import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
 
 export interface TaskRefOptions {
   pageId: string;
@@ -264,6 +265,14 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
       e.preventDefault();
       commit();
       focusEditorAt(-1);
+    } else if (e.key === 'ArrowLeft' && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+      e.preventDefault();
+      commit();
+      focusEditorAt(-1);
+    } else if (e.key === 'ArrowRight' && e.currentTarget.selectionStart === title.length) {
+      e.preventDefault();
+      commit();
+      focusEditorAt(1);
     }
   };
 
@@ -293,8 +302,24 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
             commit();
           }}
           onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            // Pasting several lines: the first goes here, each other line becomes a task below.
+            const lines = e.clipboardData.getData('text/plain').split(/\r?\n/).map((l) => l.replace(/^\s*([-*•]|\[[ x]?\]|\d+[.)])\s+/i, '').trim()).filter(Boolean);
+            const p = pos();
+            if (lines.length < 2 || p === undefined) return;
+            e.preventDefault();
+            const input = e.currentTarget;
+            const next = title.slice(0, input.selectionStart ?? title.length) + lines[0] + title.slice(input.selectionEnd ?? title.length);
+            setTitle(next);
+            void updateTask(id, { title: next.trim() }, { silent: true });
+            freshTasks.delete(id);
+            const pageId = editor.extensionManager.extensions.find((x) => x.name === 'taskRef')!.options.pageId as string;
+            const nodes = lines.slice(1).map((l) => ({ type: 'taskRef', attrs: { taskId: newTask(pageId, l) } }));
+            editor.chain().insertContentAt(p + node.nodeSize, nodes).run();
+          }}
         />
         <div className="task-ref-meta">
+          <PriorityChip task={task} readOnly={!editable} onChange={(priority) => void updateTask(id, { priority })} />
           <DueChip task={task} readOnly={!editable} onChange={(dueDate) => void updateTask(id, { dueDate })} />
           <AssigneeChip task={task} readOnly={!editable} onChange={(assigneeId) => void updateTask(id, { assigneeId })} />
           <button className="icon-btn btn-ghost task-ref-open" title="Open task details" onClick={() => ui.openTask(id)}>
@@ -396,4 +421,24 @@ export function convertToTasks(editor: Editor): string[] {
   if (!ids.length) return [];
   editor.view.dispatch(state.tr.replaceWith(from, to, out).scrollIntoView());
   return ids;
+}
+
+/** Priority flag: shown when set (p1–p3), and on hover to set one. */
+function PriorityChip({ task, onChange, readOnly }: { task: Task; onChange: (p: Priority) => void; readOnly?: boolean }) {
+  const set = task.priority < 4;
+  const flag = <Flag size={13} color={PRIORITY_COLORS[task.priority]} fill={set ? PRIORITY_COLORS[task.priority] : 'none'} />;
+  if (readOnly) return set ? <span className="chip" title={`Priority ${task.priority}`}>{flag}</span> : null;
+  return (
+    <Dropdown trigger={flag} buttonClass={`chip chip-btn ${set ? '' : 'chip-empty'}`} title={set ? `Priority ${task.priority}` : 'Set priority'} placement="bottom-end">
+      {(close) => (
+        <PriorityMenu
+          value={task.priority}
+          onChange={(p) => {
+            onChange(p);
+            close();
+          }}
+        />
+      )}
+    </Dropdown>
+  );
 }
