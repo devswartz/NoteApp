@@ -94,8 +94,9 @@ export const LIMITS = {
   passwordChecks: { capacity: 30, perMinute: 300 }, // 5/s sustained: under half of what bcrypt can do, so other requests stay responsive
   registerIp: { capacity: 5, perMinute: 0.2 }, // 5 sign-ups, then one per 5 minutes
   refreshIp: { capacity: 60, perMinute: 60 }, // many tabs refreshing at once
-  resetIp: { capacity: 5, perMinute: 0.2 },
-  resetAccount: { capacity: 3, perMinute: 0.1 },
+  resetIp: { capacity: 5, perMinute: 0.2 }, // /auth/forgot per IP
+  resetAccount: { capacity: 3, perMinute: 0.1 }, // /auth/forgot per address (no mail-bombing one inbox)
+  resetConfirmIp: { capacity: 10, perMinute: 1 }, // /auth/reset per IP (tokens are unguessable; this caps scanning)
   inviteIp: { capacity: 20, perMinute: 2 }, // invite lookups + accepts (tokens are unguessable; this caps scanning)
 } satisfies Record<string, BucketSpec>;
 
@@ -185,12 +186,13 @@ function checksFor(req: Request, ip: string): Check[] {
       return [{ limiter: 'registerIp', key: ip }];
     case '/auth/refresh':
       return [{ limiter: 'refreshIp', key: ip }];
-    case '/auth/password-reset':
-    case '/auth/password-reset/request':
-    case '/auth/password-reset/confirm': {
+    // Password reset (server/routes/auth.ts): request a link by email, then set a new password with its token.
+    case '/auth/forgot': {
       const email = emailKey(body.email);
       return [{ limiter: 'resetIp', key: ip }, ...(email ? [{ limiter: 'resetAccount' as const, key: email }] : [])];
     }
+    case '/auth/reset':
+      return [{ limiter: 'resetConfirmIp', key: ip }];
   }
   if (/^\/invites\/[^/]+(\/accept)?$/.test(p)) return [{ limiter: 'inviteIp', key: ip }];
   return [];

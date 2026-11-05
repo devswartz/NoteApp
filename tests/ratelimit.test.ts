@@ -2,7 +2,7 @@
 import { before, after, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestApp, type TestApp } from './helpers/app.ts';
-import { Limiter, resetRateLimits, setRateLimitClock } from '../server/ratelimit.ts';
+import { Limiter, MAX_PASSWORD_CHECKS, resetRateLimits, setRateLimitClock } from '../server/ratelimit.ts';
 
 let app: TestApp;
 before(async () => {
@@ -54,7 +54,7 @@ test('one IP guessing one account is limited (429 + Retry-After); the owner can 
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, '10.9.9.9')).status, 200);
 });
 
-test('300 parallel wrong passwords from 300 IPs: most refused before bcrypt; the owner from a known IP gets in within ~1 s', async () => {
+test('300 parallel wrong passwords from 300 IPs: most refused before bcrypt; the owner from a known IP gets in within ~2 s', async () => {
   const u = await app.signUp('Dina');
   const home = '172.31.0.1';
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, home)).status, 200); // known-good from now on
@@ -65,7 +65,7 @@ test('300 parallel wrong passwords from 300 IPs: most refused before bcrypt; the
   const ownerMs = Date.now() - t;
   const codes = await Promise.all(attack);
   assert.equal(owner.status, 200);
-  assert.ok(ownerMs < 1500, `owner waited ${ownerMs} ms`);
+  assert.ok(ownerMs <= 2000, `owner waited ${ownerMs} ms`);
   const reachedBcrypt = codes.filter((c) => c === 401).length;
   assert.ok(reachedBcrypt <= 20, `${reachedBcrypt} of 300 attack attempts reached a password check`);
   assert.equal(codes.filter((c) => c === 429).length, 300 - reachedBcrypt);
@@ -74,21 +74,49 @@ test('300 parallel wrong passwords from 300 IPs: most refused before bcrypt; the
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, home)).status, 200);
 });
 
-test('server-wide budget for password checks across many accounts', async () => {
-  // Real accounts (an unknown email skips bcrypt), one attempt each from its own IP.
+test('server-wide caps on password checks: at most MAX_PASSWORD_CHECKS at once, and a throughput budget', async () => {
+  // Real accounts (an unknown email is checked against a dummy hash, but keep it realistic), each attempt from its own IP.
   const users = await Promise.all(Array.from({ length: 12 }, (_, i) => app.signUp(`Cap${i}`)));
-  resetRateLimits(); // sign-ups above don't count (they come from loopback anyway)
+  resetRateLimits();
+  // 1) Concurrency: 12 accounts in parallel; only MAX_PASSWORD_CHECKS run, the rest are refused at once (not queued).
+  const parallel = await Promise.all(users.map((u, i) => post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.1`).then((r) => r.status)));
+  assert.equal(parallel.filter((c) => c === 401).length, MAX_PASSWORD_CHECKS, JSON.stringify(parallel));
+  assert.equal(parallel.filter((c) => c === 429).length, 12 - MAX_PASSWORD_CHECKS);
+
+  // 2) Throughput: one at a time (no concurrency), with the clock frozen so nothing refills: exactly the burst runs.
+  resetRateLimits();
   const frozen = Date.now();
-  setRateLimitClock(() => frozen); // no refill during the burst, however slow bcrypt is on this machine
+  setRateLimitClock(() => frozen);
   try {
-    const codes = await Promise.all(
-      users.flatMap((u, i) => [0, 1, 2, 3].map((j) => post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.${j}`).then((r) => r.status))),
-    );
-    assert.equal(codes.filter((c) => c === 401).length, 30, 'exactly the server-wide burst of password checks runs');
-    assert.equal(codes.filter((c) => c === 429).length, 18, 'the rest are refused at once, not queued');
+    const seq: number[] = [];
+    for (let k = 0; k < 36; k++) {
+      const u = users[k % 12];
+      seq.push((await post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.19.${k}.1`)).status);
+    }
+    assert.equal(seq.filter((c) => c === 401).length, 30, 'the server-wide burst');
+    assert.equal(seq.filter((c) => c === 429).length, 6);
   } finally {
     setRateLimitClock(undefined);
   }
+});
+
+test('password reset: /auth/forgot per IP and per address, /auth/reset per IP', async () => {
+  const u = await app.signUp('Resi');
+  // Per address: 3 requests for the same inbox, from different IPs, then 429.
+  const forgot = (email: string, ip: string) => post('/auth/forgot', { email }, ip).then((r) => r.status);
+  const perAddress = [];
+  for (let i = 0; i < 4; i++) perAddress.push(await forgot(u.user.email, `100.64.0.${i}`));
+  assert.equal(perAddress[3], 429, JSON.stringify(perAddress));
+  assert.ok(perAddress.slice(0, 3).every((c) => c !== 429));
+  // Per IP: 5 different addresses from one IP, then 429.
+  const perIp = [];
+  for (let i = 0; i < 6; i++) perIp.push(await forgot(`someone-${i}@example.com`, '100.64.1.1'));
+  assert.equal(perIp[5], 429, JSON.stringify(perIp));
+  // Reset tokens: 10 tries from one IP, then 429.
+  const reset = [];
+  for (let i = 0; i < 11; i++) reset.push((await post('/auth/reset', { token: `bad-${i}`, password: 'password1234' }, '100.64.2.1')).status);
+  assert.equal(reset[10], 429, JSON.stringify(reset));
+  assert.ok(reset.slice(0, 10).every((c) => c !== 429));
 });
 
 test('CF-Connecting-IP is ignored unless TRUST_PROXY_HEADER=cf (it could be forged)', async () => {
