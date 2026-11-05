@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { APP_DESCRIPTION, APP_NAME } from './shared/config.ts';
 
+const pkgVersion = (JSON.parse(readFileSync('./package.json', 'utf8')) as { version: string }).version;
 const api = process.env.API_URL ?? 'http://localhost:3001';
 const wsApi = api.replace(/^http/, 'ws');
 
@@ -68,6 +69,8 @@ function serviceWorker(): Plugin {
 }
 
 export default defineConfig({
+  // The client's own version, sent with error reports (src/lib/errorReporting.ts); the server reports its GIT_SHA.
+  define: { __APP_VERSION__: JSON.stringify(process.env.GIT_SHA || pkgVersion) },
   plugins: [react(), appIdentity(), serviceWorker()],
   server: {
     port: 5173,

@@ -135,6 +135,7 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/auth/forgot', path: () => '/auth/forgot', body: () => ({ email: 'nobody@example.com' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } }, // never reveals whether the email exists
   { method: 'POST', route: '/auth/reset', path: () => '/auth/reset', body: () => ({ token: 'not-a-token', password: 'password1234' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
   { method: 'GET', route: '/invites/:token', path: (f) => `/invites/${f.invite}`, expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'POST', route: '/client-errors', path: () => '/client-errors', body: () => ({ kind: 'error', message: 'audit probe' }), expect: { anon: 204, stranger: 204, viewer: 204, member: 204, private: 204 } }, // public by design: logs only, rate limited, 16 KB cap
   { method: 'POST', route: '/auth/verify-email', path: () => '/auth/verify-email', body: () => ({ token: 'not-a-token' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
 
   // ── The signed-in user ──

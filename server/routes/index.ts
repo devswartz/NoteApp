@@ -6,6 +6,7 @@ import { errorHandler } from '../http.ts';
 import { authRateLimit } from '../ratelimit.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
 import { healthRoutes } from './health.ts';
+import { clientErrorRoutes } from './clientErrors.ts';
 import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
@@ -25,10 +26,11 @@ export { UPLOAD_DIR } from './files.ts';
 export const api = Router();
 // JSON bodies are small: the largest field is a task description (50 000 chars, up to ~200 KB of UTF-8). Uploads are raw, not JSON.
 const json = express.json({ limit: '512kb' });
-api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, next)));
+api.use((req, res, next) => (req.path === '/uploads' || req.path === '/client-errors' ? next() : json(req, res, next))); // /client-errors parses its own, much smaller, body
 
 // No token needed.
 api.use(healthRoutes);
+api.use(clientErrorRoutes); // POST /client-errors: browser error reports, logged only
 api.use(authRateLimit); // 429 + Retry-After on login/sign-up/refresh/invite endpoints
 api.use(publicAuthRoutes);
 api.use(publicReminderRoutes);
