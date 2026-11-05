@@ -11,6 +11,7 @@ mod secure;
 mod tray;
 
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_window_state::StateFlags;
 
 const MAIN: &str = "main";
 
@@ -93,6 +94,12 @@ fn hide_quick_capture(app: AppHandle) {
     }
 }
 
+/// Brings the main window forward (used by the quick-capture window, e.g. to sign in).
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    show_main(&app);
+}
+
 #[tauri::command]
 fn updater_enabled(app: AppHandle) -> bool {
     updater_configured(&app)
@@ -113,6 +120,9 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_denylist(&[quick::LABEL])
+                // Not VISIBLE: on macOS closing the main window only hides it, so a
+                // saved "hidden" would relaunch the app with no visible window.
+                .with_state_flags(StateFlags::all() - StateFlags::VISIBLE)
                 .build(),
         )
         .plugin(tauri_plugin_notification::init())
@@ -126,6 +136,7 @@ pub fn run() {
             secure_remove,
             set_today_count,
             hide_quick_capture,
+            show_main_window,
             updater_enabled,
         ])
         .on_window_event(|window, event| {
