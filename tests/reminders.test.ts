@@ -288,3 +288,14 @@ test('default channels skip gracefully when nothing is configured', async () => 
   assert.deepEqual(r.data, { sent: 0, failed: 0, skipped: 2 });
   void store;
 });
+
+test('nextDueDate (for server/tasks.ts): user time zone and count from recorded occurrences', async () => {
+  const { nextDueDate } = await import('../server/reminders/recurring.ts');
+  const u = await setup('NextDue', 'America/Los_Angeles');
+  const t = await task(u, { dueDate: '2026-11-05' });
+  // 06:30 UTC on 6 Nov is still 5 Nov in Los Angeles.
+  const at = Date.parse('2026-11-06T06:30:00Z');
+  assert.equal(nextDueDate({ freq: 'day', interval: 1 }, '2026-11-05', t.id, u.user.id, at), '2026-11-06');
+  assert.equal(nextDueDate({ freq: 'day', interval: 1, count: 1 }, '2026-11-05', t.id, u.user.id, at), null);
+  assert.equal(nextDueDate({ freq: 'day', interval: 1, count: 2 }, '2026-11-05', t.id, u.user.id, at), '2026-11-06');
+});
