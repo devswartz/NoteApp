@@ -37,3 +37,4 @@ button.cal-more:hover { color: var(--accent); }
 
 /* Dashboard rows */
 .task-title-input { width: 100%; font: inherit; }
+.task-row:focus-visible { outline: none; background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }

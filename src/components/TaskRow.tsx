@@ -2,7 +2,7 @@ import { memo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { FileText, AlignLeft, Bell, Plus } from 'lucide-react';
 import { createTask, toggleTask, ui, updateTask, useStore } from '../store.ts';
-import type { Task } from '../../shared/types.ts';
+import type { Priority, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
 import type { Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
@@ -23,9 +23,11 @@ export const TaskRow = memo(function TaskRow({
   const [editing, setEditing] = useState(false);
   // A click on the title waits briefly so a double-click can start renaming instead of opening the sheet.
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const rowRef = useRef<HTMLDivElement>(null);
   const done = task.status === 'done';
   return (
     <div
+      ref={rowRef}
       className={`task-row ${done ? 'is-done' : ''} ${lingering ? 'is-lingering' : ''}`}
       onClick={(e) => {
         if (editing) return;
@@ -46,9 +48,13 @@ export const TaskRow = memo(function TaskRow({
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === 'Enter') ui.openTask(task.id);
-        if ((e.key === 'e' || e.key === 'F2') && canEdit) {
+        if ((e.key === 'r' || e.key === 'F2') && canEdit) {
           e.preventDefault();
           setEditing(true);
+        }
+        if (['1', '2', '3', '4'].includes(e.key) && canEdit) {
+          e.preventDefault();
+          void updateTask(task.id, { priority: Number(e.key) as Priority });
         }
         if (e.key === ' ' && canEdit) {
           e.preventDefault();
@@ -59,11 +65,17 @@ export const TaskRow = memo(function TaskRow({
       <TaskCheckbox task={task} onToggle={() => toggleTask(task.id)} disabled={!canEdit} />
       <div className="task-main">
         {editing ? (
-          <TitleEditor task={task} onDone={() => setEditing(false)} />
+          <TitleEditor
+            task={task}
+            onDone={(viaKey) => {
+              setEditing(false);
+              if (viaKey) rowRef.current?.focus();
+            }}
+          />
         ) : (
           <div
             className="task-title"
-            title={canEdit ? 'Double-click (or press E) to rename' : undefined}
+            title={canEdit ? 'Double-click (or press R) to rename' : undefined}
             onDoubleClick={(e) => {
               if (!canEdit) return;
               e.stopPropagation();
@@ -100,12 +112,15 @@ export const TaskRow = memo(function TaskRow({
 });
 
 /** In-place title editor for a dashboard row: Enter or blur saves, Escape cancels. */
-function TitleEditor({ task, onDone }: { task: Task; onDone: () => void }) {
+function TitleEditor({ task, onDone }: { task: Task; onDone: (viaKey: boolean) => void }) {
   const [value, setValue] = useState(task.title);
-  const commit = () => {
+  const done = useRef(false);
+  const commit = (viaKey: boolean) => {
+    if (done.current) return;
+    done.current = true;
     const v = value.trim();
     if (v && v !== task.title) void updateTask(task.id, { title: v });
-    onDone();
+    onDone(viaKey);
   };
   return (
     <input
@@ -117,16 +132,17 @@ function TitleEditor({ task, onDone }: { task: Task; onDone: () => void }) {
       onFocus={(e) => e.target.select()}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
+      onBlur={() => commit(false)}
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === 'Enter') {
           e.preventDefault();
-          commit();
+          commit(true);
         }
         if (e.key === 'Escape') {
           e.preventDefault();
-          onDone();
+          done.current = true;
+          onDone(true);
         }
       }}
     />
