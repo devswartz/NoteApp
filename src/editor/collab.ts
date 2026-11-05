@@ -40,6 +40,8 @@ export interface CollabSession {
   provider: WebsocketProvider;
   /** True once the doc has content from IndexedDB or the server. */
   synced: boolean;
+  /** True once the server's copy has been merged (so "empty" really means empty). */
+  serverSynced: boolean;
 }
 
 interface Callbacks {
@@ -56,6 +58,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     return { doc, provider };
   }, [pageId]);
   const [synced, setSynced] = useState(false);
+  const [serverSynced, setServerSynced] = useState(false);
 
   useEffect(() => {
     // Local cache for offline reading/editing; merges when the socket reconnects.
@@ -88,6 +91,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     const onSync = (s: boolean) => {
       if (!s) return;
       setSynced(true);
+      setServerSynced(true);
       // Offline edits were just pushed by the sync handshake.
       if (dirty) settle();
       else report();
@@ -149,7 +153,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
     };
   }, [doc, provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { doc, provider, synced };
+  return { doc, provider, synced, serverSynced };
 }
 
 /** TipTap extensions that bind the editor to the shared doc and show other people's carets. */

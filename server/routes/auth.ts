@@ -2,11 +2,51 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { db, newId, now, pickColor } from '../db.ts';
-import { getUser, issueSession, revokeRefreshToken, rotateRefreshToken } from '../auth.ts';
+import {
+  getUser,
+  issueSession,
+  revokeAllForUser,
+  revokeRefreshToken,
+  rotateRefreshToken,
+  signResetToken,
+  verifyResetToken,
+} from '../auth.ts';
+import { escapeHtml, sendMail } from '../mail.ts';
+import { PUBLIC_URL } from '../config.ts';
+import { APP_NAME } from '../../shared/config.ts';
 import { publish } from '../events.ts';
 import { createWorkspace } from '../workspaces.ts';
 import { HttpError, h, str } from '../http.ts';
 import type { AuthSession, Role } from '../../shared/types.ts';
+
+/** bcrypt only uses the first 72 bytes; anything longer would be silently truncated. */
+export const MAX_PASSWORD_BYTES = 72;
+
+function validPassword(password: unknown): string {
+  if (typeof password !== 'string' || password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters');
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES)
+    throw new HttpError(400, `Password is too long (at most ${MAX_PASSWORD_BYTES} characters, fewer with accents or emoji)`);
+  return password;
+}
+
+// bcrypt runs asynchronously (off the event loop) everywhere.
+const BCRYPT_ROUNDS = 10;
+const hashPassword = (password: string) => bcrypt.hash(password, BCRYPT_ROUNDS);
+
+/**
+ * Login compares against this when the email is unknown, so the response takes
+ * as long as for a real account and timing doesn't reveal who has one.
+ */
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password-just-for-timing', BCRYPT_ROUNDS);
+
+/** Set a new password and end every existing sign-in. */
+async function setPassword(userId: string, password: string) {
+  const hash = await hashPassword(password);
+  db.transaction(() => {
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+    revokeAllForUser(userId);
+  })();
+}
 
 /** Routes that work without a token. */
 export const publicAuthRoutes = Router();
@@ -15,19 +55,22 @@ export const authRoutes = Router();
 
 publicAuthRoutes.post(
   '/auth/register',
-  h((req) => {
+  h(async (req) => {
     const email = str(req.body.email, 'Email', 200).toLowerCase();
     const name = str(req.body.name, 'Name', 100);
     const password = req.body.password;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address');
-    if (typeof password !== 'string' || password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters');
+    validPassword(password);
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
     const id = newId();
     const ts = now();
     const color = pickColor();
+    const hash = await hashPassword(password);
     db.transaction(() => {
+      // Re-check: another sign-up with this email may have landed while hashing.
+      if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
       db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-        id, email, name, bcrypt.hashSync(password, 10), color, ts,
+        id, email, name, hash, color, ts,
       );
       // Accept any pending, unexpired invitations for this email (expired ones stay listed for admins to resend).
       const live = '(expires_at IS NULL OR expires_at > ?)';
@@ -50,13 +93,15 @@ publicAuthRoutes.post(
 
 publicAuthRoutes.post(
   '/auth/login',
-  h((req) => {
+  h(async (req) => {
     const email = String(req.body.email ?? '').trim();
     const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as
       | { id: string; email: string; name: string; color: string; password_hash: string }
       | undefined;
-    if (!row || !bcrypt.compareSync(String(req.body.password ?? ''), row.password_hash))
-      throw new HttpError(401, 'Incorrect email or password');
+    const password = String(req.body.password ?? '').slice(0, 1024);
+    // Always run exactly one bcrypt comparison, real or dummy, so timing is the same either way.
+    const ok = await bcrypt.compare(password, row?.password_hash ?? DUMMY_HASH);
+    if (!row || !ok) throw new HttpError(401, 'Incorrect email or password');
     return {
       ...issueSession(row.id, req.get('user-agent') ?? null),
       user: { id: row.id, email: row.email, name: row.name, color: row.color },
@@ -84,7 +129,63 @@ publicAuthRoutes.post(
   }),
 );
 
+// ── Password reset ──
+// Always answers the same way, so it can't be used to find out who has an account.
+const lastResetMail = new Map<string, number>(); // email -> time, simple flood guard
+publicAuthRoutes.post(
+  '/auth/forgot',
+  h((req) => {
+    const email = String(req.body.email ?? '').trim().toLowerCase();
+    const row = db.prepare('SELECT id, name, password_hash FROM users WHERE email = ?').get(email) as
+      | { id: string; name: string; password_hash: string }
+      | undefined;
+    const last = lastResetMail.get(email) ?? 0;
+    if (row && Date.now() - last > 60_000) {
+      lastResetMail.set(email, Date.now());
+      const link = `${PUBLIC_URL}/reset?token=${encodeURIComponent(signResetToken(row.id, row.password_hash))}`;
+      // Not awaited: waiting for SMTP only when the account exists would reveal it by timing.
+      void sendMail({
+        to: email,
+        subject: `Reset your ${APP_NAME} password`,
+        text: `Hi ${row.name},\n\nUse this link within an hour to choose a new password:\n${link}\n\nIf you didn't ask for this, you can ignore this email.`,
+        html: `<p>Hi ${escapeHtml(row.name)},</p><p><a href="${escapeHtml(link)}">Choose a new password</a> (the link works for an hour).</p><p>If you didn't ask for this, you can ignore this email.</p>`,
+      });
+    }
+    return { ok: true };
+  }),
+);
+
+publicAuthRoutes.post(
+  '/auth/reset',
+  h(async (req) => {
+    const invalid = () => new HttpError(400, 'This reset link is invalid or has expired. Ask for a new one.');
+    const userId = verifyResetToken(req.body.token);
+    if (!userId) throw invalid();
+    const hash = await hashPassword(validPassword(req.body.password));
+    db.transaction(() => {
+      // Check again after the (async) hash, so two submissions of one link can't both succeed.
+      if (verifyResetToken(req.body.token) !== userId) throw invalid();
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
+      revokeAllForUser(userId);
+    })();
+    return { ok: true };
+  }),
+);
+
 authRoutes.get('/me', h((req) => req.user));
+
+// Change password: signs out every other device and returns a fresh session for this one.
+authRoutes.post(
+  '/me/password',
+  h(async (req) => {
+    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id) as { password_hash: string };
+    const newPassword = validPassword(req.body.newPassword);
+    if (!(await bcrypt.compare(String(req.body.currentPassword ?? '').slice(0, 1024), row.password_hash)))
+      throw new HttpError(400, 'Your current password is incorrect');
+    await setPassword(req.user.id, newPassword);
+    return { ...issueSession(req.user.id, req.get('user-agent') ?? null), user: req.user } satisfies AuthSession;
+  }),
+);
 
 authRoutes.patch(
   '/me',
