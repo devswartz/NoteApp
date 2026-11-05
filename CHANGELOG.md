@@ -10,6 +10,9 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - The product is now **Notivelo** everywhere users see it (`APP_NAME` in `shared/config.ts`). Desktop: product name, identifier `com.devswartz.notivelo` and `notivelo://` links. Mobile: app id and bundle IDs `com.devswartz.notivelo` (plus `.ShareExtension` and `.TodayWidget`), app group and URL scheme. The AASA and `assetlinks.json` defaults follow.
 - Deliberately not renamed: the repo, the Docker image, `/data/noteapp.db`, the systemd units, and the `noteapp.*` browser storage keys (so nobody loses local data).
 
+### Privacy Policy and Terms
+- Public `/privacy` and `/terms` pages, linked from the sign-in screen, the sign-up form and Settings → About. The text is plain Markdown in `legal/privacy.md` and `legal/terms.md` (bundled at build time; edit the files, no code change). Contact email and operator default to support@devswartz.com and devswartz.com; `LEGAL_CONTACT_EMAIL` and `LEGAL_OPERATOR_NAME` override them on the server.
+
 ### Email verification (for open sign-up)
 - New accounts must confirm their email before using the app when the server can send mail: a single-use, 24-hour link ("Confirm your email for Notivelo"), resend limited to one a minute and five an hour, and a **Check your email** screen until confirmed. This is what makes `SIGNUP_MODE=open` safe to switch on; production still defaults to `invite`. See `docs/LAUNCH_CHECKLIST.md` section 5b.
 - Pending workspace invites for an address are applied when its email is confirmed, not at sign-up. Existing accounts (migration 012), bootstrap accounts (the first account and `ADMIN_EMAILS`) and every account on a server without SMTP are treated as confirmed.

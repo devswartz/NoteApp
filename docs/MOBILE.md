@@ -97,6 +97,10 @@ Set these on the server (`docs/DEPLOY_CONTRACT.md` lists the server env). Each c
 
 Firebase setup: create a Firebase project, add an Android app with package `com.devswartz.notivelo`, and download `google-services.json` (that's the GitHub secret above). iOS doesn't use Firebase; it talks to APNs directly.
 
+### Store listings
+
+App Store and Play listings need public policy URLs. Use exactly `https://notes.devswartz.com/privacy` (Privacy Policy URL) and `https://notes.devswartz.com/terms` (Terms of Use). Both must open without logging in, because App Store and Play reviewers check them signed out. The text is in `legal/*.md`; have a lawyer review it before submitting.
+
 ### Universal links / app links (what you fill in)
 
 `https://notes.devswartz.com/w/…` and `https://notes-staging.devswartz.com/w/…` links open the app instead of the browser. The app side is already set up: Associated Domains in `App.entitlements`, and an `autoVerify` intent filter in `AndroidManifest.xml`. The server (`server/wellKnown.ts`) serves the two verification files. They are public JSON with no redirect, and return 404 until you set these variables on **both** prod and staging:

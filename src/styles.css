@@ -1589,3 +1589,12 @@ body.is-resizing .sidebar { transition: none; }
   h1, h2, h3 { break-after: avoid; }
   * { animation: none !important; transition: none !important; box-shadow: none !important; }
 }
+
+/* Legal pages (/privacy, /terms): rendered from legal/*.md */
+.legal-page { min-height: 100%; overflow-y: auto; padding: 24px 16px; background: var(--bg-subtle); }
+.legal-card { max-width: 720px; margin: 0 auto; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 16px; padding: 32px; line-height: 1.6; }
+.legal-card h1 { margin: 16px 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+.legal-card h2 { margin: 28px 0 6px; font-size: 18px; }
+.legal-card p, .legal-card li { font-size: 14.5px; }
+.legal-card ul, .legal-card ol { padding-left: 22px; }
+.legal-card a { color: var(--accent); }
