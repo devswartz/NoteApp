@@ -58,16 +58,29 @@ test('uploads keep their own sandbox CSP', async () => {
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
 });
 
-test('production: HSTS, and the CSP allows the PUBLIC_URL socket origin', () => {
+test('production: HSTS is sent, and the CSP allows the PUBLIC_URL socket origin', async () => {
   const env = { NODE_ENV: process.env.NODE_ENV, PUBLIC_URL: process.env.PUBLIC_URL };
+  const web = express();
+  web.use(securityHeaders);
+  web.get(/.*/, (_req, res) => res.type('html').send('<!doctype html>'));
+  const srv = web.listen(0, '127.0.0.1');
+  await new Promise((r) => srv.once('listening', r));
+  const origin = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
   try {
+    process.env.NODE_ENV = 'production';
     process.env.PUBLIC_URL = 'https://notes.example.com';
+    for (const path of ['/', '/api/health']) {
+      const r = await fetch(origin + path);
+      assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000; includeSubDomains', path);
+    }
     const csp = appCsp('evil"; script-src *');
     assert.ok(csp.includes('wss://notes.example.com'));
     assert.ok(!csp.includes('evil'), 'a malformed Host header is ignored');
   } finally {
-    process.env.NODE_ENV = env.NODE_ENV;
-    if (env.PUBLIC_URL === undefined) delete process.env.PUBLIC_URL;
-    else process.env.PUBLIC_URL = env.PUBLIC_URL;
+    srv.close();
+    for (const [k, v] of Object.entries(env)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 });
