@@ -124,9 +124,9 @@ test("search never returns another member's private notebook pages", async () =>
 // ───────── files ─────────
 
 async function uploadTo(u: TestUser, body: Uint8Array | string, name: string, type = '', path = `/workspaces/${u.wsId}/files`) {
-  const res = await fetch(`${app.origin}/api${path}`, {
+  const res = await fetch(`${app.origin}/api${path}${type ? `?type=${encodeURIComponent(type)}` : ''}`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${u.token}`, 'content-type': 'application/octet-stream', 'x-filename': encodeURIComponent(name), ...(type ? { 'x-file-type': type } : {}) },
+    headers: { authorization: `Bearer ${u.token}`, 'content-type': 'application/octet-stream', 'x-filename': encodeURIComponent(name) },
     body: Buffer.from(body),
   });
   return { status: res.status, data: await res.json() };
