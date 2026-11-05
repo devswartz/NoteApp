@@ -1,51 +1,169 @@
-// Collaboration helpers for the editor (no DOM): who is on a page, from Yjs
-// awareness. Owner: Collaboration & Access.
-import type { Awareness } from 'y-protocols/awareness';
+// Collaboration wiring for the note editor: the page's Y.Doc, the WebSocket
+// provider (/collab/<pageId>), the IndexedDB offline cache, presence and the
+// TipTap collaboration extensions.
+//
+// Owner: Collaboration (agent 4) may take this file over for cursors/presence;
+// NoteEditor only uses the exports below.
+import { useEffect, useMemo, useState } from 'react';
+import type { Extensions } from '@tiptap/core';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import { IndexeddbPersistence } from 'y-indexeddb';
+import { backoffMs, reauthorize, wsProtocols, wsUrl } from '../api.ts';
+import type { User } from '../../shared/types.ts';
+import { CommentMark } from './collabComments.ts';
 
-export interface PagePresence {
+export type SyncStatus = 'connecting' | 'live' | 'offline';
+/** What the page header shows: is everything I typed safely on the server? */
+export type SaveState = 'saved' | 'saving' | 'offline';
+
+export interface PresenceUser {
   id: string;
   name: string;
   color: string;
-  /** False when everyone with this user id is read-only here (viewers). */
-  canEdit: boolean;
-  /** Number of tabs/devices this person has the page open in. */
-  sessions: number;
 }
 
-interface AwarenessUser {
-  id?: string;
-  name?: string;
-  color?: string;
-  canEdit?: boolean;
+/** y-websocket opens sockets itself; this subclass adds the current access token on every (re)connect. */
+class AuthedWebSocket extends WebSocket {
+  constructor(url: string | URL) {
+    super(url, wsProtocols());
+  }
 }
 
-/**
- * Everyone else on the page, one entry per person (several tabs collapse into
- * one), sorted by name. `selfUserId` is excluded entirely, so your own other
- * tabs don't show up as a collaborator.
- */
-export function presenceFrom(awareness: Pick<Awareness, 'getStates' | 'clientID'>, selfUserId: string): PagePresence[] {
-  const byUser = new Map<string, PagePresence>();
-  awareness.getStates().forEach((state, clientId) => {
-    if (clientId === awareness.clientID) return;
-    const u = (state as { user?: AwarenessUser }).user;
-    if (!u?.id || u.id === selfUserId) return;
-    const prev = byUser.get(u.id);
-    const canEdit = u.canEdit !== false;
-    if (prev) {
-      prev.sessions++;
-      prev.canEdit ||= canEdit;
-    } else {
-      byUser.set(u.id, { id: u.id, name: u.name || 'Someone', color: u.color || '#888888', canEdit, sessions: 1 });
-    }
-  });
-  return [...byUser.values()].sort((a, b) => a.name.localeCompare(b.name));
+/** The server persists a room 1 s after the last update (server/collab.ts SAVE_DEBOUNCE_MS). */
+const SERVER_SAVE_DELAY_MS = 1100;
+
+export interface CollabSession {
+  doc: Y.Doc;
+  provider: WebsocketProvider;
+  /** True once the doc has content from IndexedDB or the server. */
+  synced: boolean;
+  /** True once the server's copy has been merged (so "empty" really means empty). */
+  serverSynced: boolean;
 }
 
-/** Shallow equality for presence lists, to skip re-renders on cursor-only awareness changes. */
-export function samePresence(a: PagePresence[], b: PagePresence[]): boolean {
-  return (
-    a.length === b.length &&
-    a.every((x, i) => x.id === b[i].id && x.name === b[i].name && x.color === b[i].color && x.canEdit === b[i].canEdit && x.sessions === b[i].sessions)
-  );
+interface Callbacks {
+  onStatus: (s: SyncStatus) => void;
+  onPresence: (users: PresenceUser[]) => void;
+  onSave?: (s: SaveState) => void;
+}
+
+/** One Y.Doc + providers per page. The calling component must be keyed by page id. */
+export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSession {
+  const { doc, provider } = useMemo(() => {
+    const doc = new Y.Doc();
+    const provider = new WebsocketProvider(wsUrl('/collab'), pageId, doc, { WebSocketPolyfill: AuthedWebSocket });
+    return { doc, provider };
+  }, [pageId]);
+  const [synced, setSynced] = useState(false);
+  const [serverSynced, setServerSynced] = useState(false);
+
+  useEffect(() => {
+    // Local cache for offline reading/editing; merges when the socket reconnects.
+    const idb = new IndexeddbPersistence(`noteapp-page-${pageId}`, doc);
+    let connected = false;
+    let dirty = false; // local edits the server may not have persisted yet
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const report = () => cb.onSave?.(!connected ? 'offline' : dirty ? 'saving' : 'saved');
+    const settle = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function check() {
+        const ws = provider.ws;
+        // Wait until the socket has flushed what we sent, then for the server's save debounce.
+        if (ws && ws.bufferedAmount > 0) {
+          timer = setTimeout(check, 200);
+          return;
+        }
+        if (connected && provider.synced) {
+          dirty = false;
+          report();
+        }
+      }, SERVER_SAVE_DELAY_MS);
+    };
+
+    const onStatusEv = ({ status }: { status: string }) => {
+      connected = status === 'connected';
+      cb.onStatus(connected ? 'live' : status === 'connecting' ? 'connecting' : 'offline');
+      report();
+    };
+    const onSync = (s: boolean) => {
+      if (!s) return;
+      setSynced(true);
+      setServerSynced(true);
+      // Offline edits were just pushed by the sync handshake.
+      if (dirty) settle();
+      else report();
+    };
+    const onUpdate = (_u: Uint8Array, origin: unknown) => {
+      if (origin === provider || origin === idb) return; // remote or cached, not a local edit
+      dirty = true;
+      report();
+      if (connected) settle();
+    };
+    idb.once('synced', () => setSynced(true));
+    provider.on('status', onStatusEv);
+    provider.on('sync', onSync);
+    doc.on('update', onUpdate);
+    // 4401 (token expired/rejected): refresh, then reconnect with backoff. The
+    // counter resets only after the socket has stayed up for a while, because
+    // the server accepts the socket before rejecting it.
+    let authFailures = 0;
+    let healthy: ReturnType<typeof setTimeout> | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let destroyed = false;
+    provider.on('status', ({ status }: { status: string }) => {
+      clearTimeout(healthy);
+      if (status === 'connected') healthy = setTimeout(() => (authFailures = 0), 10_000);
+    });
+    provider.on('connection-close', (ev: CloseEvent | null) => {
+      if (ev?.code === 4401) {
+        provider.shouldConnect = false;
+        const delay = authFailures === 0 ? 0 : backoffMs(authFailures);
+        authFailures++;
+        retry = setTimeout(async () => {
+          const r = await reauthorize();
+          if (!destroyed && r !== 'signed-out') provider.connect();
+        }, delay);
+      } else if (ev?.code === 4403) {
+        provider.shouldConnect = false; // no access to this page
+        cb.onStatus('offline');
+      }
+    });
+    const onAwareness = () => {
+      const seen = new Map<string, PresenceUser>();
+      provider.awareness.getStates().forEach((s, clientId) => {
+        const u = s.user as PresenceUser | undefined;
+        if (u && clientId !== doc.clientID && u.id !== user.id) seen.set(u.id, u);
+      });
+      cb.onPresence([...seen.values()]);
+    };
+    provider.awareness.on('change', onAwareness);
+    return () => {
+      destroyed = true;
+      clearTimeout(healthy);
+      clearTimeout(retry);
+      if (timer) clearTimeout(timer);
+      doc.off('update', onUpdate);
+      provider.awareness.off('change', onAwareness);
+      provider.destroy();
+      void idb.destroy();
+      doc.destroy();
+    };
+  }, [doc, provider]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return { doc, provider, synced, serverSynced };
+}
+
+/** TipTap extensions that bind the editor to the shared doc and show other people's carets. */
+export function collabExtensions(session: CollabSession, user: User): Extensions {
+  return [
+    CommentMark, // anchors of comment threads (./collabComments.ts)
+    Collaboration.configure({ document: session.doc, field: 'default' }),
+    CollaborationCaret.configure({
+      provider: session.provider,
+      user: { id: user.id, name: user.name, color: user.color },
+    }),
+  ];
 }

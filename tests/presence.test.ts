@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness';
-import { presenceFrom, samePresence } from '../src/editor/collab.ts';
+import { presenceFrom, samePresence } from '../src/editor/collabPresenceModel.ts';
 
 function peer(user: object) {
   const a = new Awareness(new Y.Doc());

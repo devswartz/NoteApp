@@ -17,6 +17,8 @@ import { publish } from './events.ts';
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 const SAVE_DEBOUNCE_MS = 1000;
+/** Save at least this often while people keep typing (the debounce alone would wait for a pause). */
+const SAVE_MAX_WAIT_MS = 5000;
 
 interface Room {
   pageId: string;
@@ -25,6 +27,8 @@ interface Room {
   awareness: awarenessProtocol.Awareness;
   conns: Map<WebSocket, Set<number>>; // socket -> awareness client ids it controls
   saveTimer: NodeJS.Timeout | null;
+  /** When the oldest unsaved change arrived (0 = nothing pending). */
+  dirtySince: number;
   lastEditor: string | null;
 }
 
@@ -97,6 +101,7 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
 
 function persist(room: Room) {
   room.saveTimer = null;
+  room.dirtySince = 0;
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);
   if (!exists) return; // page deleted while open
   const state = Buffer.from(Y.encodeStateAsUpdate(room.doc));
@@ -119,7 +124,10 @@ function persist(room: Room) {
 
 function scheduleSave(room: Room) {
   if (room.saveTimer) clearTimeout(room.saveTimer);
-  room.saveTimer = setTimeout(() => persist(room), SAVE_DEBOUNCE_MS);
+  const t = Date.now();
+  if (!room.dirtySince) room.dirtySince = t;
+  const wait = Math.max(0, Math.min(SAVE_DEBOUNCE_MS, room.dirtySince + SAVE_MAX_WAIT_MS - t));
+  room.saveTimer = setTimeout(() => persist(room), wait);
 }
 
 function getRoom(pageId: string, workspaceId: string): Room {
@@ -130,7 +138,7 @@ function getRoom(pageId: string, workspaceId: string): Room {
   if (row?.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
-  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), saveTimer: null, lastEditor: null };
+  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), saveTimer: null, dirtySince: 0, lastEditor: null };
 
   doc.on('update', (update: Uint8Array, origin: unknown) => {
     const enc = encoding.createEncoder();

@@ -13,7 +13,7 @@ import type { IncomingMessage } from 'node:http';
 import crypto from 'node:crypto';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
-import { taskVisible } from './access.ts';
+import { pageAccess, taskVisible } from './access.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import type { EventMessage, ServerEvent } from '../shared/types.ts';
 
@@ -111,9 +111,12 @@ function isMember(workspaceId: string, userId: string): boolean {
 function messageFor(userId: string, e: Entry): EventMessage | null {
   const { ev } = e;
   if (e.userIds) return e.userIds.includes(userId) ? { ...ev, seq: e.seq } : null;
-  if (ev.type === 'workspaces' || ev.type === 'resync') return null;
+  // User-targeted only: never broadcast (a notification without explicit recipients goes nowhere).
+  if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification') return null;
   const wsId = ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId;
   if (!isMember(wsId, userId)) return null;
+  // Comments on a page the user can't see (private notebook): withheld, live and on replay.
+  if (ev.type === 'comments' && !pageAccess(ev.pageId, userId)) return null;
   if (ev.type === 'task' && !taskVisible(ev.task.id, userId)) {
     // Tell clients that may have previously seen it to drop it.
     return { type: 'task-deleted', id: ev.task.id, workspaceId: wsId, seq: e.seq };
@@ -138,7 +141,7 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
   if (buffer.length > BUFFER_MAX) buffer.splice(0, buffer.length - BUFFER_MAX);
   let recipients: string[];
   if (opts.userIds) recipients = opts.userIds;
-  else if (ev.type === 'workspaces' || ev.type === 'resync') recipients = [];
+  else if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification') recipients = [];
   else recipients = membersOf(ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId);
   for (const userId of recipients) {
     const sockets = clients.get(userId);

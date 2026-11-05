@@ -6,6 +6,7 @@ import { set, st } from './state.ts';
 import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
 import type { EventMessage, ServerEvent } from '../../shared/types.ts';
+import { commentsChanged } from '../editor/collabComments.ts';
 
 let socket: WebSocket | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -115,6 +116,9 @@ function handle(ev: ServerEvent) {
       break;
     case 'members':
       if (ev.workspaceId === wsId) debounce('members', () => void loadMembers());
+      break;
+    case 'comments':
+      if (ev.workspaceId === wsId) commentsChanged(ev.pageId);
       break;
     case 'workspaces':
       debounce('ws', () => void loadWorkspaces());

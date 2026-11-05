@@ -12,8 +12,9 @@
 .visibility-choice { display: grid; gap: 8px; margin-top: 8px; }
 .visibility-choice label { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .visibility-choice label.is-active { border-color: var(--accent); }
-.share-dialog { width: min(480px, calc(100vw - 32px)); padding: 20px 22px; }
+.share-dialog { width: min(480px, calc(100vw - 32px)); }
 .share-dialog h2 { margin: 0 0 4px; font-size: 17px; }
+
 /* Presence stack (src/editor/collabPresence.tsx) */
 .presence-btn { display: flex; align-items: center; padding: 2px 4px; border-radius: 999px; }
 .presence-btn button.presence-avatar, .presence-btn button.presence-more { border: 0; padding: 0; cursor: pointer; font: inherit; }

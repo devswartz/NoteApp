@@ -12,6 +12,15 @@
 // within a step ("mod+k", "mod+shift+p", "alt+1"). `mod` is ⌘ on Apple
 // platforms and Ctrl elsewhere. Single characters match `event.key`
 // case-insensitively ("?" matches shift+/ on any layout).
+//
+// Precedence: a handler closer to the focused element wins. The global listener
+// is on `window` and ignores any event that was already `preventDefault()`ed,
+// so a component that handles a key itself just calls `e.preventDefault()`.
+// Example: the editor claims Mod-K for "insert link" while focus is in it.
+// ProseMirror's keymap runs on the editor element first and returns true
+// (which preventDefaults), so the ⌘K palette steps aside; outside the editor
+// ⌘K opens the palette as usual. Editable elements are detected with
+// `el.isContentEditable`, not a [contenteditable="true"] selector.
 import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { create } from 'zustand';

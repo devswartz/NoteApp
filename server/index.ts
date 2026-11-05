@@ -2,16 +2,19 @@ import { createServer } from './app.ts';
 import { shutdownCollab } from './collab.ts';
 import { closeAllEvents } from './events.ts';
 import { db } from './db.ts';
-import { PORT, VERSION, DATA_DIR, SEED_DEMO } from './config.ts';
+import { PORT, VERSION, DATA_DIR, SEED_DEMO, IS_PROD, PUBLIC_URL } from './config.ts';
 import { seedDemoIfEmpty } from './demo.ts';
 import { pruneRefreshTokens } from './auth.ts';
+import { startReminderScheduler } from './reminders/scheduler.ts';
 import { APP_NAME } from '../shared/config.ts';
 
+if (IS_PROD && !PUBLIC_URL) console.warn('PUBLIC_URL is not set: links in emails (password reset, invites) will be broken');
 if (SEED_DEMO) seedDemoIfEmpty();
 pruneRefreshTokens();
 setInterval(pruneRefreshTokens, 6 * 3600_000).unref();
 
 const { server } = createServer();
+const stopReminders = startReminderScheduler();
 server.listen(PORT, () => console.log(`${APP_NAME} ${VERSION} listening on http://localhost:${PORT} (data: ${DATA_DIR})`));
 
 // Graceful shutdown (contract: exit within 10 s of SIGTERM): stop accepting
@@ -27,6 +30,7 @@ function shutdown(signal: string) {
   }, 8000).unref();
   server.close();
   try {
+    stopReminders();
     shutdownCollab();
     closeAllEvents();
     server.closeAllConnections();

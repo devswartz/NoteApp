@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Awareness } from 'y-protocols/awareness';
 import { Avatar, Popover } from '../components/ui.tsx';
-import { presenceFrom, samePresence, type PagePresence } from './collab.ts';
+import { presenceFrom, samePresence, type PagePresence } from './collabPresenceModel.ts';
 import '../components/sharing/sharing.css';
 
 /** Live list of other people on the page, re-rendering only when it actually changes. */

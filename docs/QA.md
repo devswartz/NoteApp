@@ -9,10 +9,12 @@ npm run test:e2e                         # builds, starts `npm start` on :4317 w
 E2E_NO_BUILD=1 npm run test:e2e          # reuse an existing dist/ (much faster when iterating)
 npx playwright test 03 --project=chromium   # one file
 E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you started yourself
+E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E2E_PORT+1) when several worktrees run at once
 ```
 
+- Ports: the main server listens on `E2E_PORT` (default 4317), the short-token server on `E2E_PORT+1`. Give each concurrent checkout its own `E2E_PORT`, or the second run fails to start its servers.
 - Each run uses a fresh, throwaway `DATA_DIR` (and a fixed test-only `JWT_SECRET`), so tests never touch `./data`.
-- Projects: `chromium` (desktop, every `*.spec.ts`) and `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`).
+- Projects: `chromium` (desktop, every `*.spec.ts`), `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`) and `short-tokens` (only `*.tokens.spec.ts`, against a second server on port+1 started with `ACCESS_TOKEN_TTL_S=6`, so access tokens expire mid-test).
 - The browser runs in UTC (`timezoneId`), so "today" in tests matches `isoDay()` in `helpers.ts`.
 - On failure, a trace and a screenshot land in `test-results/`; in CI the HTML report is uploaded as the `playwright-report` artifact.
 - CI: the `e2e` job in `.github/workflows/ci.yml` runs `npx playwright test` after `check`; `publish` waits for it.
@@ -36,20 +38,27 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 | 4 | Viewer can't edit (UI + API + collab); private notebook hidden, then shared live | `04-permissions.spec.ts` | ✅ |
 | 5 | Today/Upcoming/Calendar/Completed/All, filters, quick add parsing | `05-dashboard.spec.ts` | ✅ |
 | 6 | Markdown shortcuts, slash menu (filter, table, divider, task, Escape), image upload, attachment, bubble menu; ⌘K search over page text, titles and tasks; no private results | `06-editor-search.spec.ts` | ✅ |
-| 7 | Daily and weekly recurrence roll forward with a completed copy; Repeat from task details; reminder time + bell; Settings "Enable notifications"; in-app reminder toast | `07-recurrence-reminders.spec.ts` | ✅ (push/email settings: fixme, waiting for feature) |
-| 8 | Offline edit → reconnect → synced to server and another device; reload while offline | `08-offline.spec.ts` | ✅ / reload: fixme BUG-1 |
+| 7 | Daily and weekly recurrence roll forward with a completed copy; Repeat from task details; reminder time + bell; Settings "Enable notifications"; in-app reminder toast | `07-recurrence-reminders.spec.ts` | ✅ incl. Settings → Notifications (email, digest, default time, quiet hours) |
+| 8 | Offline edit → reconnect → synced to server and another device; reload while offline | `08-offline.spec.ts` | ✅ |
 | 9 | iPhone 13: tab bar, quick add, tap to complete, drawer sidebar → note, no horizontal scroll, editing, search | `09-mobile.mobile.spec.ts` | ✅ |
+| 10 | Notes edge cases: ⌘↵ convert line to task, move page (tasks stay linked), delete page/notebook keeps tasks, live rename for others, theme | `10-notes-edge.spec.ts` | ✅ |
+| 11 | Live access changes: notebook made private, member removed, member demoted (server rejects edits; UI read-only live) | `11-live-access.spec.ts` | ✅ |
+| 12 | Bulk task actions + row keys (#16) | `12-bulk-tasks.spec.ts` | ✅ |
+| 13 | Token refresh mid-session: editing, REST and live events survive repeated 6 s access-token expiries (collab 4401 → refresh → reconnect); reload after expiry restores the session | `13-token-refresh.tokens.spec.ts` | ✅ |
+| 14 | Invite links (#11): invite → link → create account → joined, live in the owner's list; wrong signed-in account → Switch account; bad token. Private notebook shared with specific people (#14): live appear/disappear, others never see it, only the creator can change it | `14-invites-sharing.spec.ts` | ✅ incl. Notebook options → Share with people… |
+| 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
+| 16 | Page links (#25): `[[` to an existing page, open it, "Linked from" backlink, rename shows through, create from `[[`. Callout + toggle blocks persist (#21) | `16-links-blocks.spec.ts` | ✅ |
 
 ## Open bugs
 
-### BUG-1: reloading the app while offline shows the login screen, so cached notes can't be opened
-- **Area / owner:** Foundation (offline/PWA, `src/store/session.ts` `bootstrap()`, `public/sw.js`)
-- **Found on:** main @ 5814595, 2026-11-05
-- **Steps:** 1. Sign in and open a page; type something (it's cached in IndexedDB and the service worker is active). 2. Go offline (DevTools → Network → Offline). 3. Reload.
-- **Expected:** the app shell loads from the service worker and the note opens from the local cache, with the offline banner (PLAN §1: "Notes cached locally … so they open offline").
-- **Actual:** the login screen. `bootstrap()` needs `POST /auth/refresh` to succeed, and on a network error it stays signed out. There is no cached user, workspace list or tree to fall back on, so the editor never mounts. (The refresh token is kept, so it recovers once you're online again.)
-- **Suggested direction:** cache the last user, workspaces and tree (`platform.kv`) and boot from them in an "offline session" when the refresh fails with a network error (not a 401).
-- **Test:** `tests/e2e/08-offline.spec.ts` › "a page opened before going offline still opens after a reload while offline" (`test.fixme`)
+### BUG-3: renaming a page and navigating away within ~0.4 s loses the new title
+- **Area / owner:** Editor & Notes (`src/pages/PageView.tsx`, page title effect: `setTimeout(patch, 400)` with `clearTimeout` on cleanup and no flush)
+- **Found on:** main @ 29daf5c, 2026-11-05 (3 out of 3 runs)
+- **Steps:** 1. Open a page. 2. Change its title. 3. Within ~0.4 s, click elsewhere (a sidebar link, a backlink, Today).
+- **Expected:** the new title is saved (and shown in the sidebar and in `[[links]]`).
+- **Actual:** the pending save is cancelled when the title component unmounts; the server keeps the old title, and the edit is silently lost.
+- **Suggested direction:** flush the pending patch in the effect cleanup (or on blur/unmount) instead of only clearing the timer.
+- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a page title typed just before navigating away is still saved" (`test.fixme`)
 
 <!-- Template:
 ### BUG-N: short title
@@ -61,13 +70,8 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 - **Test:** `tests/e2e/<file>` › "<test name>" (`test.fixme`)
 -->
 
-### BUG-2: a member demoted to viewer can keep editing a page they already have open
-- **Area / owner:** Collaboration & Access (`server/collab.ts` checks the role only when the socket connects; the client doesn't react to its own role change).
-- **Found on:** main @ 1b38732, 2026-11-05
-- **Steps:** 1. A (owner) and B (member) are in a team workspace; B opens a page. 2. A changes B's role to Viewer. 3. Without reloading, B types in the page.
-- **BUG-2a (server):** fixed by #12, see "Fixed bugs".
-- **BUG-2b (UI):** B's page stays editable, with no "View only" chip, until B reloads, so B's typing is silently discarded (once 2a is fixed). Expected: the page switches to read-only live (a `members` event for yourself → refetch the role → `editor.setEditable(false)`). Still present on #12 and #14. → Test `11-live-access` › "BUG-2b…" (`fixme`).
-
 ## Fixed bugs
 
+- **BUG-1** (Foundation, offline/PWA): reloading while offline showed the login screen, so cached notes couldn't open. Fixed by #35 (precached shell, offline cold start, read-only data cache); test `08-offline` › "…still opens after a reload while offline" enabled.
 - **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.
+- **BUG-2b** (Collaboration, client): after being demoted to viewer, an already-open page stayed editable (no "View only") until reload. Fixed by #41 (re-checks page edit rights when your role changes); its test is enabled.

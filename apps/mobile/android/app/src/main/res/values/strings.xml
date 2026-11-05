@@ -4,4 +4,12 @@
     <string name="title_activity_main">NoteApp</string>
     <string name="package_name">com.devswartz.noteapp</string>
     <string name="custom_url_scheme">com.devswartz.noteapp</string>
+    <string name="share_as_task">Add task</string>
+    <string name="share_as_note">Save as note</string>
+    <string name="widget_title">Today</string>
+    <string name="widget_description">Your tasks due today and overdue</string>
+    <string name="widget_all_clear">All clear</string>
+    <string name="widget_locked">🔒 Locked</string>
+    <string name="widget_overdue">Overdue</string>
+    <string name="widget_signed_out">Open the app to sign in</string>
 </resources>
