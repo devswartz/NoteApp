@@ -110,7 +110,9 @@ workspaceRoutes.post(
     if (role === 'owner' && myRole !== 'owner') throw new HttpError(403, 'Only owners can add owners');
     const base = publicUrl(req.get('origin'));
     const mail = { to: email, workspaceName: workspaceName(wsId), inviterName: userName(req.user.id), role };
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
+    // An account that hasn't confirmed its email can't be added directly (its owner may not own the address):
+    // it gets a pending invite, which is applied when the email is confirmed.
+    const user = db.prepare('SELECT id FROM users WHERE email = ? AND email_verified_at IS NOT NULL').get(email) as { id: string } | undefined;
     if (user) {
       if (roleIn(wsId, user.id)) throw new HttpError(409, 'That person is already a member');
       db.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)').run(wsId, user.id, role, now());

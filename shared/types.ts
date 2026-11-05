@@ -42,6 +42,8 @@ export interface User {
   email: string;
   name: string;
   color: string;
+  /** False until the address is confirmed by email; unverified users only get the "check your email" screen. */
+  emailVerified: boolean;
 }
 
 /** Returned by /auth/register, /auth/login and /auth/refresh. */
@@ -62,7 +64,8 @@ export interface Workspace {
   createdAt: string;
 }
 
-export interface Member extends User {
+/** A workspace member as other members see them (verification status is private to the account). */
+export interface Member extends Omit<User, 'emailVerified'> {
   role: Role;
 }
 

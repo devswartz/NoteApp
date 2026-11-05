@@ -88,6 +88,7 @@ The sidebar counts show how many tasks are in Today, My Tasks and Upcoming.
 
 - **Settings → Profile:** your name, avatar colour and password (*Change password*).
 - **Forgot your password?** Use the link on the sign-in screen. You'll get an email with a reset link.
+- **Confirm your email:** when you create an account on a server with open sign-up, we email you a link ("Confirm your email for Notivelo"). Until you open it you only see a **Check your email** screen: tap **Resend email** if it hasn't arrived (you can ask once a minute; the newest link is the only one that works), **I've verified, continue** after opening the link (on any device), or **Sign out** if you typed the wrong address. The link works once, for 24 hours. If you were invited to a workspace, you join it as soon as your email is confirmed. Accounts made by invitation-only sign-up, and accounts that existed before this feature, don't need this step.
 
 ## Sharing and roles
 
