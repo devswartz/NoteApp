@@ -8,6 +8,7 @@ import type { Platform } from '../src/platform/types.ts';
 import { fallbackPath } from '../src/platform/tauri/paths.ts';
 import { todayCount } from '../src/platform/tauri/badge.ts';
 import { probeServer } from '../src/platform/tauri/serverSetup.ts';
+import { createClickTracker } from '../src/platform/tauri/notificationClicks.ts';
 import type { Task } from '../shared/types.ts';
 // @ts-expect-error plain .mjs build scripts, no type declarations
 import { manifest } from '../apps/desktop/scripts/latest-json.mjs';
@@ -113,4 +114,21 @@ test('latest-json.mjs: lists signed bundles only', async () => {
   assert.equal(m.platforms['darwin-x86_64'].url, m.platforms['darwin-aarch64'].url);
   assert.deepEqual(m.platforms['windows-x86_64'], { signature: 'SIGWIN', url: 'https://github.com/o/r/releases/download/v1.2.3/NoteApp_1.2.3_x64-setup.exe' });
   assert.deepEqual(manifest([mac, exe], 'o/r', 'v1.2.3').platforms, {}, 'unsigned bundles are not offered as updates');
+});
+
+test('notification clicks: coming to the front soon after a background notification runs its onClick', () => {
+  const clicks: string[] = [];
+  const t = createClickTracker(60_000);
+  t.shown(() => clicks.push('a'), true, 1000);
+  t.shown(() => clicks.push('b'), true, 2000); // the latest one wins
+  assert.equal(t.focused(30_000), true);
+  assert.deepEqual(clicks, ['b']);
+  assert.equal(t.focused(31_000), false, 'only once');
+
+  t.shown(() => clicks.push('c'), false, 40_000); // app was in front: the user saw it in-app
+  assert.equal(t.focused(41_000), false);
+
+  t.shown(() => clicks.push('d'), true, 50_000);
+  assert.equal(t.focused(200_000), false, 'too late: an unrelated return to the app');
+  assert.deepEqual(clicks, ['b']);
 });
