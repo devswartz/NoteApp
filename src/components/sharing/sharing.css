@@ -12,5 +12,13 @@
 .visibility-choice { display: grid; gap: 8px; margin-top: 8px; }
 .visibility-choice label { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .visibility-choice label.is-active { border-color: var(--accent); }
-.share-dialog { width: min(480px, calc(100vw - 32px)); }
+.share-dialog { width: min(480px, calc(100vw - 32px)); padding: 20px 22px; }
 .share-dialog h2 { margin: 0 0 4px; font-size: 17px; }
+/* Presence stack (src/editor/collabPresence.tsx) */
+.presence-btn { display: flex; align-items: center; background: none; border: 0; padding: 2px 4px; cursor: pointer; border-radius: 999px; }
+.presence-btn:hover { background: var(--hover, rgba(127, 127, 127, 0.1)); }
+.presence-avatar { display: inline-flex; margin-left: -6px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--ring); }
+.presence-avatar:first-child, .presence-btn > .presence-more:first-child { margin-left: 0; }
+.presence-more { margin-left: -6px; background: var(--border, #ddd); color: inherit; box-shadow: 0 0 0 2px var(--bg); }
+.presence-pop { min-width: 220px; padding: 6px; }
+.presence-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
