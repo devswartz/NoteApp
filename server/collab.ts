@@ -358,3 +358,10 @@ export function shutdownCollab() {
   flushAll();
   for (const room of rooms.values()) for (const c of room.conns.keys()) c.close(1012, 'Server restarting');
 }
+
+/** For /api/admin/stats. */
+export function collabStats() {
+  let connections = 0;
+  for (const r of rooms.values()) connections += r.conns.size;
+  return { openPages: rooms.size, connections };
+}
