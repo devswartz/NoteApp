@@ -81,6 +81,14 @@ export const TaskRef = Node.create<TaskRefOptions>({
     return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'task-ref' })];
   },
 
+  // Markdown export: a checklist line with the live task's state, due date and priority.
+  renderMarkdown(node) {
+    const t = useStore.getState().tasks[node.attrs?.taskId as string];
+    if (!t) return '';
+    const extras = [t.dueDate ? `📅 ${t.dueDate}${t.dueTime ? ` ${t.dueTime}` : ''}` : '', t.priority < 4 ? `p${t.priority}` : ''].filter(Boolean).join(' ');
+    return `- [${t.status === 'done' ? 'x' : ' '}] ${t.title}${extras ? ` ${extras}` : ''}`;
+  },
+
   // Plain-text clipboard / export representation.
   renderText({ node }) {
     const t = useStore.getState().tasks[node.attrs.taskId as string];

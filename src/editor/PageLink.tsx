@@ -58,6 +58,10 @@ export const PageLink = Node.create<PageLinkOptions>({
     const page = useStore.getState().tree.pages.find((p) => p.id === node.attrs.pageId);
     return ['a', mergeAttributes(HTMLAttributes, { 'data-type': 'page-link', class: 'page-link' }), page?.title || 'Untitled'];
   },
+  renderMarkdown(node) {
+    const page = useStore.getState().tree.pages.find((p) => p.id === node.attrs?.pageId);
+    return `[[${page?.title || 'Untitled'}]]`;
+  },
   renderText({ node }) {
     const page = useStore.getState().tree.pages.find((p) => p.id === node.attrs.pageId);
     return `[[${page?.title || 'Untitled'}]]`;
