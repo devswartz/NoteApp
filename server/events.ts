@@ -71,7 +71,7 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
     for (const u of opts.userIds) send(u, ev);
     return;
   }
-  if (ev.type === 'workspaces' || ev.type === 'resync') return;
+  if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification') return; // user-targeted only
   const ws = ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId;
   for (const userId of membersOf(ws)) {
     if (!clients.has(userId)) continue;
