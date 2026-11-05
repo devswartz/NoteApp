@@ -5,6 +5,9 @@
 //   GET    /notifications/push                    → { publicKey: string | null, emailAvailable, devices }
 //   POST   /notifications/push-subscriptions      PushSubscriptionInput → { ok }
 //   DELETE /notifications/push-subscriptions      { endpoint } → { ok }
+//   GET    /notifications/quiet-hours             → QuietHours[] (yours, per workspace)
+//   PUT    /workspaces/:id/quiet-hours            { start, end } (HH:mm) → QuietHours
+//   DELETE /workspaces/:id/quiet-hours
 //   POST   /notifications/devices                 { platform: 'ios'|'android', token } (mobile app)
 //   DELETE /notifications/devices                 { token }
 //   POST   /notifications/test                    → sends a test notice to yourself
@@ -24,6 +27,7 @@ import { deliver } from '../reminders/deliver.ts';
 import { mailConfigured } from '../mail.ts';
 import { snooze } from '../reminders/snooze.ts';
 import { deleteDeviceToken, saveDeviceToken } from '../reminders/devices.ts';
+import { clearQuietHours, listQuietHours, setQuietHours } from '../reminders/quiet.ts';
 
 export const reminderRoutes = Router();
 
@@ -64,6 +68,19 @@ reminderRoutes.delete(
 );
 
 const lastTest = new Map<string, number>();
+
+reminderRoutes.get('/notifications/quiet-hours', h((req) => listQuietHours(req.user.id)));
+reminderRoutes.put(
+  '/workspaces/:id/quiet-hours',
+  h((req) => setQuietHours(req.user.id, param(req, 'id'), req.body?.start, req.body?.end)),
+);
+reminderRoutes.delete(
+  '/workspaces/:id/quiet-hours',
+  h((req) => {
+    clearQuietHours(req.user.id, param(req, 'id'));
+    return { ok: true };
+  }),
+);
 
 // Native app push tokens (Phase 3): { platform: 'ios' | 'android', token }.
 reminderRoutes.post(

@@ -6,12 +6,13 @@
 // useAutoTimeZone() stores the browser's time zone the first time a user
 // still has the default (UTC), so due times are interpreted locally.
 import { useEffect, useState } from 'react';
-import { Bell, Mail, Clock, Globe, Send } from 'lucide-react';
+import { Bell, Mail, Clock, Globe, Send, Moon } from 'lucide-react';
 import { notificationsApi, type PushInfo } from './api.ts';
 import { currentPush, pushSupported, subscribePush, unsubscribePush } from './push.ts';
 import { allTimeZones, browserTimeZone } from './timezones.ts';
 import { platform } from '../../platform/index.ts';
-import type { NotificationSettings } from '../../../shared/types.ts';
+import { useStore } from '../../store.ts';
+import type { NotificationSettings, QuietHours } from '../../../shared/types.ts';
 import './notifications.css';
 
 const AUTO_TZ_KEY = 'noteapp.tzAutoSet';
@@ -174,10 +175,67 @@ export function NotificationSettingsPanel({ onError, onMessage }: { onError?: (e
         <Toggle label="Daily digest" checked={s.digestEnabled} disabled={!s.emailEnabled} onChange={(v) => void save({ digestEnabled: v })} />
       </div>
 
+      <QuietHoursRows onError={fail} />
+
       <button type="button" className="btn btn-secondary btn-sm ns-test" onClick={() => void sendTest()}>
         <Send size={14} /> Send a test notification
       </button>
     </section>
+  );
+}
+
+/** Quiet hours per workspace: reminders inside the window wait until it ends. */
+function QuietHoursRows({ onError }: { onError: (e: unknown) => void }) {
+  const workspaces = useStore((s) => s.workspaces);
+  const [list, setList] = useState<QuietHours[] | null>(null);
+  useEffect(() => {
+    notificationsApi.quietHours().then(setList).catch(onError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!list) return null;
+  const set = async (workspaceId: string, start: string, end: string) => {
+    const prev = list;
+    setList([...list.filter((q) => q.workspaceId !== workspaceId), { workspaceId, start, end }]);
+    try {
+      await notificationsApi.setQuietHours(workspaceId, start, end);
+    } catch (e) {
+      setList(prev);
+      onError(e);
+    }
+  };
+  const clear = async (workspaceId: string) => {
+    const prev = list;
+    setList(list.filter((q) => q.workspaceId !== workspaceId));
+    try {
+      await notificationsApi.clearQuietHours(workspaceId);
+    } catch (e) {
+      setList(prev);
+      onError(e);
+    }
+  };
+  return (
+    <>
+      {workspaces.map((w) => {
+        const q = list.find((x) => x.workspaceId === w.id);
+        return (
+          <div className="ns-row" key={w.id}>
+            <Moon size={16} />
+            <div className="ns-text">
+              <div>Quiet hours{workspaces.length > 1 ? ` · ${w.name}` : ''}</div>
+              <div className="muted small">Reminders for this workspace wait until quiet hours end</div>
+            </div>
+            {q && (
+              <span className="ns-range">
+                <input type="time" className="input input-sm" aria-label={`Quiet hours start for ${w.name}`} value={q.start} onChange={(e) => e.target.value && void set(w.id, e.target.value, q.end)} />
+                <span className="muted">–</span>
+                <input type="time" className="input input-sm" aria-label={`Quiet hours end for ${w.name}`} value={q.end} onChange={(e) => e.target.value && void set(w.id, q.start, e.target.value)} />
+              </span>
+            )}
+            <Toggle label={`Quiet hours for ${w.name}`} checked={!!q} onChange={(v) => void (v ? set(w.id, '22:00', '07:00') : clear(w.id))} />
+          </div>
+        );
+      })}
+    </>
   );
 }
 

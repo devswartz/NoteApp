@@ -405,3 +405,42 @@ test('APNs and FCM channels (fakes): auth, payloads, dead tokens removed', async
   assert.equal(rg.failed, 1);
   assert.deepEqual(gone.targets(u.user.id), []);
 });
+
+test('quiet hours: window math (wraps midnight, DST) and reminders held until the window ends', async () => {
+  const { quietUntil } = await import('../server/reminders/quiet.ts');
+  const at = (iso: string) => Date.parse(iso);
+  const iso = (n: number | null) => (n === null ? null : new Date(n).toISOString());
+  assert.equal(iso(quietUntil(at('2038-01-10T23:30:00Z'), 'UTC', '22:00', '07:00')), '2038-01-11T07:00:00.000Z');
+  assert.equal(iso(quietUntil(at('2038-01-10T03:00:00Z'), 'UTC', '22:00', '07:00')), '2038-01-10T07:00:00.000Z');
+  assert.equal(quietUntil(at('2038-01-10T12:00:00Z'), 'UTC', '22:00', '07:00'), null);
+  assert.equal(iso(quietUntil(at('2038-01-10T12:30:00Z'), 'UTC', '12:00', '13:00')), '2038-01-10T13:00:00.000Z');
+  assert.equal(quietUntil(at('2038-01-10T13:00:00Z'), 'UTC', '12:00', '13:00'), null);
+  assert.equal(quietUntil(at('2038-01-10T13:00:00Z'), 'UTC', '09:00', '09:00'), null);
+  // London, night of the spring-forward change (28→29 Mar 2038): ends 07:00 BST = 06:00Z.
+  assert.equal(iso(quietUntil(at('2038-03-28T23:00:00Z'), 'Europe/London', '22:00', '07:00')), '2038-03-29T06:00:00.000Z');
+
+  const u = await setup('Quiet', 'UTC');
+  const other = await app.signUp('QuietOther');
+  assert.equal((await app.call('PUT', `/workspaces/${u.wsId}/quiet-hours`, u.token, { start: '22:00', end: '07:00' })).status, 200);
+  assert.equal((await app.call('PUT', `/workspaces/${u.wsId}/quiet-hours`, u.token, { start: '25:00', end: '07:00' })).status, 400);
+  assert.equal((await app.call('PUT', `/workspaces/${u.wsId}/quiet-hours`, other.token, { start: '22:00', end: '07:00' })).status, 404); // not a member
+  assert.deepEqual((await app.call('GET', '/notifications/quiet-hours', u.token)).data, [{ workspaceId: u.wsId, start: '22:00', end: '07:00' }]);
+
+  const t = await task(u, { dueDate: '2038-02-01', dueTime: '23:00' });
+  await remind(u, t.id, { kind: 'before', minutes: 0 });
+  const { ch, sent } = fakeChannel();
+  const clock = new Clock(at('2038-02-01T23:00:10Z'));
+  const s = new sched.ReminderScheduler({ now: clock.now, channels: [ch] });
+  const r1 = await s.tick();
+  assert.equal(r1.deferred, 1);
+  assert.equal(sent.filter((x) => x.notice.taskId === t.id).length, 0);
+  clock.set('2038-02-02T06:59:00Z');
+  await s.tick();
+  assert.equal(sent.filter((x) => x.notice.taskId === t.id).length, 0);
+  clock.set('2038-02-02T07:00:05Z');
+  await s.tick();
+  await s.tick();
+  assert.equal(sent.filter((x) => x.notice.taskId === t.id).length, 1);
+  assert.equal((await app.call('DELETE', `/workspaces/${u.wsId}/quiet-hours`, u.token)).status, 200);
+  assert.deepEqual((await app.call('GET', '/notifications/quiet-hours', u.token)).data, []);
+});

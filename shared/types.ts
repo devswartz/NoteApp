@@ -217,6 +217,13 @@ export interface NotificationSettings {
   digestTime: string;
 }
 
+/** Quiet hours for one workspace: reminders inside the window wait until it ends. HH:mm local; start > end wraps midnight. */
+export interface QuietHours {
+  workspaceId: string;
+  start: string;
+  end: string;
+}
+
 /** Body of POST /notifications/push-subscriptions: a browser PushSubscription.toJSON(). */
 export interface PushSubscriptionInput {
   endpoint: string;

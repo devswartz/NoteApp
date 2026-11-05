@@ -14,6 +14,8 @@ import { syncReminders } from './store.ts';
 import { deliver, pruneNotificationLog } from './deliver.ts';
 import { dueDigests } from './digest.ts';
 import { createSnoozeToken, pruneActionTokens } from './snooze.ts';
+import { getQuietHours, quietUntil } from './quiet.ts';
+import { getSettings } from './settings.ts';
 import { emailChannel } from './email.ts';
 import { apnsChannel } from './apns.ts';
 import { fcmChannel } from './fcm.ts';
@@ -38,6 +40,8 @@ export interface SchedulerOptions {
 export interface TickReport {
   fired: number;
   missed: number;
+  /** Held back by quiet hours. */
+  deferred: number;
   digests: number;
   sent: number;
   failed: number;
@@ -80,7 +84,7 @@ export class ReminderScheduler {
   private async run(): Promise<TickReport> {
     const nowMs = this.now();
     const nowIso = new Date(nowMs).toISOString();
-    const report: TickReport = { fired: 0, missed: 0, digests: 0, sent: 0, failed: 0 };
+    const report: TickReport = { fired: 0, missed: 0, deferred: 0, digests: 0, sent: 0, failed: 0 };
     syncReminders(nowIso);
 
     const due = db
@@ -93,7 +97,16 @@ export class ReminderScheduler {
     const claim = db.prepare('UPDATE task_reminders SET last_fired_at = next_fire_at, next_fire_at = NULL WHERE id = ? AND next_fire_at = ?');
     const visible = db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @taskId AND ${TASK_VISIBLE}`);
     const notices: Notice[] = [];
+    const defer = db.prepare('UPDATE task_reminders SET next_fire_at = ? WHERE id = ? AND next_fire_at = ?');
     for (const r of due) {
+      const quiet = getQuietHours(r.user_id, r.workspace_id);
+      const until = quiet && quietUntil(nowMs, getSettings(r.user_id).timeZone, quiet.start, quiet.end);
+      if (until && nowMs - Date.parse(r.next_fire_at) <= this.catchUpMs) {
+        // Hold it until quiet hours end (not marked fired, so a task edit meanwhile recomputes it).
+        defer.run(new Date(until).toISOString(), r.id, r.next_fire_at);
+        report.deferred++;
+        continue;
+      }
       if (!claim.run(r.id, r.next_fire_at).changes) continue; // taken by another pass
       if (nowMs - Date.parse(r.next_fire_at) > this.catchUpMs) {
         report.missed++;

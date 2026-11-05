@@ -81,6 +81,9 @@ A reminder's push payload includes a `snoozeToken`. The token is random, stored 
 
 Push payload, read by `public/sw-push.js`: `{ title, body, url, tag, taskId }`. The service worker shows the notification with an "Open task" action. A click focuses an open window and navigates it (it also posts `{type:'notification-click', url, taskId}` to the window), or opens a new window.
 
+### Quiet hours
+Each user can set quiet hours per workspace (`quiet_hours`, HH:mm in their time zone; a window like 22:00–07:00 wraps past midnight). A reminder for a task in that workspace that comes due inside the window is **held until the window ends**, not dropped. The scheduler moves its `next_fire_at` to the end of the window without marking it fired, so editing the task in the meantime still recomputes it. The daily digest ignores quiet hours, since its time is chosen explicitly.
+
 ## Settings and digest
 `notification_settings` holds, per user: the time zone (default UTC), email on/off, the default reminder time (09:00), and the daily digest on/off with its time (08:00). The digest is an email listing open tasks assigned to you, or unassigned tasks you created, that are due today or overdue. It is sent once per local day at the chosen time. Empty digests aren't sent.
 
@@ -92,6 +95,8 @@ Push payload, read by `public/sw-push.js`: `{ title, body, url, tag, taskId }`. 
 | `POST /notifications/push-subscriptions` | `PushSubscription.toJSON()` |
 | `DELETE /notifications/push-subscriptions` | `{endpoint}` |
 | `POST /notifications/test` | sends a test notification to yourself (at most once per 10 s) |
+| `GET /notifications/quiet-hours` | your quiet hours, per workspace |
+| `PUT/DELETE /workspaces/:id/quiet-hours` | `{start, end}` (HH:mm) / remove |
 | `POST/DELETE /notifications/devices` | native push token `{platform, token}` / `{token}` |
 | `POST /reminders/snooze` | `{token, option}`; no auth, the token comes from the push notification |
 | `GET/POST /tasks/:id/reminders` | your reminders on a task / add one (`{kind:'before', minutes}` or `{kind:'at', at}`) |
