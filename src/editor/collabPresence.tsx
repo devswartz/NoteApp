@@ -61,11 +61,11 @@ export function PresenceStack({
               aria-pressed={following === u.id}
               onClick={() => onFollow(u)}
             >
-              <Avatar user={u} size={size} title={u.name} />
+              <Avatar user={u} size={size} title={`${u.name} is here`} />
             </button>
           ) : (
             <span key={u.id} className="presence-avatar" style={{ ['--ring' as string]: u.color }}>
-              <Avatar user={u} size={size} title={u.name} />
+              <Avatar user={u} size={size} title={`${u.name} is here`} />
             </span>
           ),
         )}
