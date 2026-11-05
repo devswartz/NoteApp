@@ -48,6 +48,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 | 14 | Invite links (#11): invite → link → create account → joined, live in the owner's list; wrong signed-in account → Switch account; bad token. Private notebook shared with specific people (#14): live appear/disappear, others never see it, only the creator can change it | `14-invites-sharing.spec.ts` | ✅ incl. Notebook options → Share with people… |
 | 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
 | 16 | Page links (#25): `[[` to an existing page, open it, "Linked from" backlink, rename shows through, create from `[[`. Callout + toggle blocks persist (#21) | `16-links-blocks.spec.ts` | ✅ |
+| 17 | Live-event catch-up after a dropped socket (#18): tasks created, edited or completed while away appear on reconnect without a reload. Version history restore (#37). "Meeting notes" template on an empty page (#27). Change password (#61) | `17-sync-history-account.spec.ts` | ✅ |
 
 ## Open bugs
 
@@ -59,6 +60,15 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 - **Actual:** the pending save is cancelled when the title component unmounts; the server keeps the old title, and the edit is silently lost.
 - **Suggested direction:** flush the pending patch in the effect cleanup (or on blur/unmount) instead of only clearing the timer.
 - **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a page title typed just before navigating away is still saved" (`test.fixme`)
+
+### BUG-4: a change made while the app is still connecting live events is never shown (until reload)
+- **Area / owner:** Collaboration (`src/store/events.ts`: on the *first* connect there is no `?since=` and no `resync()`. Catch-up only happens on reconnects.)
+- **Found on:** main @ 890bb6d, 2026-11-05 (3 out of 3 runs with the socket held for a moment; occasionally at random, it was the cause of a flake in a new test)
+- **Steps:** 1. B opens the dashboard; tasks load over REST. 2. Before B's `/api/events` socket is open (slow network, or a token refresh first), A assigns B a task. 3. The socket opens and later changes arrive live.
+- **Expected:** B sees A's task: changes between the initial load and the first `hello` are caught up.
+- **Actual:** that task never appears for B until a reload, though everything after it does.
+- **Suggested direction:** include the event cursor (`boot:seq`) in the initial REST loads and connect with `?since=`, or simply `resync()` once after the first `hello`.
+- **Test:** `tests/e2e/17-sync-history-account.spec.ts` › "a change made while the app is still connecting its live events is not lost" (`test.fixme`; deterministic: it holds the socket until the dashboard has loaded)
 
 <!-- Template:
 ### BUG-N: short title
