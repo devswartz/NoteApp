@@ -81,6 +81,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
   - deep links, app badge and haptics;
   - mobile CI.
 - Share to NoteApp (task or note), optional Face ID app lock, and a Today home-screen widget on iOS and Android (#36).
+- APNs to both sandbox and production builds, `/.well-known` app-link files, Android snooze actions, and a server picker on first launch (runtime server URL) (#57).
 
 ### Infrastructure and deploy
 - CI, the Docker image, GHCR publishing and homelab deploy templates (#1). Publishing only after CI passes, with `JWT_SECRET` required (#8). Publishing from `main` by manual dispatch (#13).
