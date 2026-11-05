@@ -283,3 +283,24 @@
 /* The page header's save status is small text: keep it at 4.5:1 or better. */
 .page-topbar .sync.save-saved, .page-topbar .sync.save-saving, .page-topbar .sync.save-connecting { color: var(--text-2); }
 .page-topbar .sync.save-offline { color: color-mix(in srgb, var(--warn) 65%, var(--text)); }
+
+/* ───────── Templates ───────── */
+.template-picker { margin: 18px 0 8px; }
+/* While the picker is offered the page is empty: don't reserve the editor's usual blank area. */
+.page-article:has(.template-picker) .ProseMirror { min-height: 2em; }
+.template-picker-label { display: block; font-size: 13px; color: var(--text-muted); margin: 0 0 8px; }
+.template-picker-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.template-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 14px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.template-card:hover { background: var(--bg-subtle); border-color: var(--border-strong); color: var(--text); }
+.template-icon { font-size: 18px; line-height: 1; }

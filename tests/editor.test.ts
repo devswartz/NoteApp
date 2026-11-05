@@ -53,3 +53,15 @@ test('safeFileUrl allows upload paths and http(s) only', async () => {
     assert.equal(safeFileUrl(bad), '', String(bad));
   }
 });
+
+test('templates: titles use the date, content uses only known node types', async () => {
+  const { TEMPLATES, templateById } = await import('../src/editor/templates.ts');
+  const known = new Set(['paragraph', 'text', 'heading', 'bulletList', 'orderedList', 'listItem', 'taskList', 'taskItem', 'callout', 'table', 'tableRow', 'tableHeader', 'tableCell', 'details', 'detailsSummary', 'detailsContent']);
+  const d = new Date(2026, 10, 5);
+  assert.deepEqual(TEMPLATES.map((t) => t.id), ['meeting', 'project', 'journal']);
+  assert.match(templateById('journal')!.title(d), /2026/);
+  assert.match(templateById('meeting')!.title(d), /^Meeting · /);
+  type J = { type?: string; content?: J[] };
+  const walk = (n: J): string[] => [n.type ?? '', ...(n.content ?? []).flatMap(walk)];
+  for (const t of TEMPLATES) for (const type of t.content(d).flatMap(walk)) assert.ok(known.has(type), `${t.id}: ${type}`);
+});

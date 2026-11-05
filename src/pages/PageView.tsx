@@ -6,6 +6,7 @@ import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
+import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -24,6 +25,8 @@ export function PageView() {
   const [canEdit, setCanEdit] = useState<boolean | null>(null);
   const [status, setStatus] = useState<SyncStatus>('connecting');
   const [save, setSave] = useState<SaveState>('saved');
+  const [synced, setSynced] = useState(false);
+  useEffect(() => setSynced(false), [pageId]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
@@ -140,9 +143,11 @@ export function PageView() {
             canEdit={canEdit}
             onStatus={setStatus}
             onSave={setSave}
+            onServerSynced={() => setSynced(true)}
             onPresence={setPresence}
             onReady={onReady}
           />
+          {canEdit && editor && synced && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
           {canEdit && editor && (
             <button className="add-task-end" onClick={() => insertTaskAtEnd(editor, pageId)}>
               <Plus size={15} /> Add a task to this page
