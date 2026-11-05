@@ -59,6 +59,8 @@ export interface NativePlugins {
     getPendingShares(): Promise<{ items: SharedItem[] }>;
     /** Stores the Today snapshot for the widget (App Group / SharedPreferences) and refreshes it. */
     writeWidgetSnapshot(options: { json: string }): Promise<void>;
+    /** Values the native side needs on its own (Android snooze actions call the API directly). */
+    setConfig(options: { apiBase: string | null }): Promise<void>;
     addListener(event: 'shareReceived', fn: () => void): Promise<unknown>;
   };
   BiometricAuth: {
@@ -84,6 +86,8 @@ export interface AppBridge {
   /** Handles a shared item once someone is signed in. Resolves to an in-app path to open, if any. */
   capture(item: SharedItem): Promise<string | null>;
   signOut(): Promise<void>;
+  /** The server origin the API client uses ("https://notes.example.com"), or null if same-origin. */
+  apiBase(): string | null;
   /** Adds commands to the ⌘K palette (src/hooks/useShortcuts.ts). */
   registerCommands(cmds: { id: string; title: string; group?: string; keywords?: string; run: () => void; when?: () => boolean }[]): void;
 }
@@ -666,6 +670,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       // Session-dependent work (push registration, badge) starts once the app's store is up.
       void appBridge().then((b) => {
         app = b;
+        void native.NoteAppNative.setConfig({ apiBase: b.apiBase() }).catch(() => {});
         b.onUser((u) => void onUser(u));
         b.onTasks(scheduleBadge);
         void appLock.api.method().then((label) => {
@@ -814,6 +819,10 @@ async function loadAppBridge(): Promise<AppBridge> {
     del: (path, body) => api.api(path, { method: 'DELETE', json: body }),
     registerCommands: (cmds) => void shortcuts.registerCommands(cmds),
     signOut: async () => (await import('../store/session.ts')).signOut(),
+    apiBase: () => {
+      const url = api.apiUrl('');
+      return /^https?:\/\//.test(url) ? url.replace(/\/api$/, '') : null;
+    },
     async capture(item) {
       const ws = await workspaceReady(useStore);
       if (!ws) return null;

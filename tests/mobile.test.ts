@@ -116,6 +116,7 @@ function fakeBridge() {
     del: async (path, body) => void posts.push([`DELETE ${path}`, body]),
     registerCommands: () => {},
     signOut: async () => {},
+    apiBase: () => 'https://notes.example.com',
     capture: async (item) => {
       captured.push(item);
       return item.kind === 'note' ? '/w/ws/p/new-page' : '/w/ws/tasks/today';
@@ -193,6 +194,7 @@ test('mobile: push token registered with the server after sign-in, once; unregis
   b.setUser('u1');
   await tick();
   assert.ok(f.calls.some(([c]) => c === 'Push.requestPermissions'), 'asks for permission after sign-in');
+  assert.deepEqual(f.calls.find(([c]) => c === 'Native.setConfig'), ['Native.setConfig', { apiBase: 'https://notes.example.com' }], 'Android snooze actions know the server');
   assert.ok(f.calls.some(([c]) => c === 'Push.register'));
   f.fire('Push.registration', { value: 'apns-token-1' });
   await tick();
