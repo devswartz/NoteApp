@@ -13,6 +13,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { backoffMs, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import type { User } from '../../shared/types.ts';
+import { CommentMark } from './collabComments.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 /** What the page header shows: is everything I typed safely on the server? */
@@ -154,6 +155,7 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
 /** TipTap extensions that bind the editor to the shared doc and show other people's carets. */
 export function collabExtensions(session: CollabSession, user: User): Extensions {
   return [
+    CommentMark, // anchors of comment threads (./collabComments.ts)
     Collaboration.configure({ document: session.doc, field: 'default' }),
     CollaborationCaret.configure({
       provider: session.provider,
