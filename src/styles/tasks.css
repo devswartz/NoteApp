@@ -19,7 +19,7 @@ button.cal-more:hover { color: var(--accent); }
 .cal-week .cal-date > span:first-child { display: none; }
 .cal-week .cal-date { justify-content: flex-end; }
 .cal-wdate { margin-left: 6px; color: var(--text); }
-.cal-wdate.is-today { background: var(--accent); color: #fff; border-radius: 10px; padding: 0 7px; }
+.cal-wdate.is-today { background: var(--accent-solid); color: var(--text-on-accent); border-radius: 10px; padding: 0 7px; }
 .cal-mobile-label { display: none; }
 
 @media (max-width: 760px) {

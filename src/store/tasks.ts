@@ -1,5 +1,6 @@
 // Task state and optimistic task actions.
-import { del, get, patch, post } from '../api.ts';
+import { del, patch, post } from '../api.ts';
+import { cached } from './cache.ts';
 import { describeDue } from '../lib/format.ts';
 import { set, st } from './state.ts';
 import { errorToast, toast } from './toasts.ts';
@@ -8,7 +9,7 @@ import type { Task, TaskPatch } from '../../shared/types.ts';
 export async function loadTasks() {
   const wsId = st().wsId;
   if (!wsId) return;
-  const list = await get<Task[]>(`/workspaces/${wsId}/tasks`);
+  const list = await cached<Task[]>(`tasks:${wsId}`, `/workspaces/${wsId}/tasks`);
   if (st().wsId !== wsId) return;
   const tasks: Record<string, Task> = {};
   for (const t of list) tasks[t.id] = t;
