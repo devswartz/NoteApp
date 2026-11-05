@@ -323,3 +323,41 @@ test('positionAt averages neighbours and handles empty lists', async () => {
   assert.equal(positionAt('pages', 'section_id', empty, 0), 0);
   assert.equal(positionAt('pages', 'section_id', empty, 99), 3);
 });
+
+// ───────── authorization follow-ups (AUTHZ-1, input limits) ─────────
+
+test("files on a private-notebook page are hidden from other workspace members (AUTHZ-1)", async () => {
+  const owner = await app.signUp('PrivOwner');
+  const member = await app.signUp('PrivMember');
+  await app.call('POST', `/workspaces/${owner.wsId}/members`, owner.token, { email: member.user.email, role: 'member' });
+  const priv = (await app.call('POST', `/workspaces/${owner.wsId}/notebooks`, owner.token, { name: 'Diary', visibility: 'private' })).data;
+  const secretPage = await newPage(owner, priv.sectionId, 'Secret');
+  const attached = await uploadTo(owner, 'secret', 'scan.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${secretPage}`);
+  assert.equal(attached.status, 200);
+  const loose = await uploadTo(owner, 'shared', 'team.pdf');
+
+  assert.equal((await app.call('GET', `/files/${attached.data.id}`, owner.token)).status, 200);
+  assert.equal((await app.call('GET', `/files/${attached.data.id}`, member.token)).status, 404, 'member cannot see a private page’s file');
+  assert.equal((await app.call('GET', `/files/${loose.data.id}`, member.token)).status, 200, 'workspace-level files stay visible to members');
+
+  // Once the notebook is shared, the file is visible too.
+  await app.call('PATCH', `/notebooks/${priv.id}`, owner.token, { visibility: 'shared' });
+  assert.equal((await app.call('GET', `/files/${attached.data.id}`, member.token)).status, 200);
+});
+
+test('notebook and section colours must be #rrggbb', async () => {
+  const u = await setup('Colours');
+  const bad = ['red', 'url(javascript:alert(1))', '#fff', '#12345g', '#123456;background:red', 42];
+  for (const color of bad) {
+    assert.equal((await app.call('POST', `/workspaces/${u.wsId}/notebooks`, u.token, { name: 'X', color })).status, 400, String(color));
+    assert.equal((await app.call('PATCH', `/sections/${u.s1}`, u.token, { color })).status, 400, String(color));
+    assert.equal((await app.call('PATCH', `/notebooks/${u.notebookId}`, u.token, { color })).status, 400, String(color));
+    assert.equal((await app.call('POST', `/notebooks/${u.notebookId}/sections`, u.token, { name: 'Y', color })).status, 400, String(color));
+  }
+  const ok = await app.call('POST', `/workspaces/${u.wsId}/notebooks`, u.token, { name: 'Ok', color: '#ABCDEF' });
+  assert.equal(ok.status, 200);
+  const tree = (await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token)).data;
+  assert.equal(tree.notebooks.find((n: { id: string }) => n.id === ok.data.id).color, '#abcdef');
+  assert.match(tree.notebooks.find((n: { name: string }) => n.name === 'Work').color, /^#[0-9a-f]{6}$/i, 'no colour → palette colour');
+  assert.equal((await app.call('PATCH', `/sections/${u.s1}`, u.token, { color: '#10b981' })).status, 200);
+});
