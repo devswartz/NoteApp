@@ -106,8 +106,10 @@ export async function bootstrap(): Promise<boolean> {
 export async function signIn(mode: 'login' | 'register', body: Record<string, string>) {
   const r = await post<{ token: string; user: User }>(`/auth/${mode}`, body);
   setToken(r.token);
-  set({ user: r.user });
-  await loadWorkspaces();
+  // Load workspaces before publishing the user, so the first signed-in render
+  // already knows where to route (the /login route then redirects to /).
+  const workspaces = await get<Workspace[]>('/workspaces');
+  set({ user: r.user, workspaces });
   connectEvents();
 }
 

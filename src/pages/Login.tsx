@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { signIn } from '../store.ts';
 
 export function Login() {
@@ -7,7 +6,6 @@ export function Login() {
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (
@@ -26,7 +24,7 @@ export function Login() {
             setError('');
             try {
               await signIn(mode, mode === 'login' ? { email: form.email, password: form.password } : form);
-              navigate('/', { replace: true });
+              // The /login route redirects to / once the user is set.
             } catch (err) {
               setError(err instanceof Error ? err.message : 'Something went wrong');
             } finally {

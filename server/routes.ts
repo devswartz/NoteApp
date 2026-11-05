@@ -536,7 +536,12 @@ api.get('/workspaces/:id/tasks/completed', h((req) => {
   return listCompleted(req.params.id as string, req.user.id, (req.query.before as string) || null);
 }));
 
-api.post('/workspaces/:id/tasks', h((req) => createTask(req.user.id, req.params.id as string, { ...req.body, title: str(req.body.title ?? 'Untitled', 'Title', 1000) })));
+// Empty titles are allowed: typing "[] " in a note creates the task before its title is typed.
+api.post('/workspaces/:id/tasks', h((req) => {
+  const title = req.body.title ?? '';
+  if (typeof title !== 'string' || title.length > 1000) throw new HttpError(400, 'Invalid title');
+  return createTask(req.user.id, req.params.id as string, { ...req.body, title });
+}));
 api.patch('/tasks/:id', h((req) => updateTask(req.user.id, req.params.id as string, req.body)));
 api.delete('/tasks/:id', h((req) => {
   deleteTask(req.user.id, req.params.id as string);

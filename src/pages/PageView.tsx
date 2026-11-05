@@ -132,13 +132,13 @@ export function PageView() {
         </header>
 
         <article className="page-article">
-          <TitleInput key={pageId} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
+          <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
             Edited {relativeTime(meta.updatedAt)}
             {updatedBy ? ` by ${updatedBy.id === user.id ? 'you' : updatedBy.name}` : ''}
           </div>
           <NoteEditor
-            key={pageId}
+            key={`editor-${pageId}`}
             pageId={pageId}
             user={user}
             canEdit={canEdit}

@@ -7,7 +7,7 @@ import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import ImageExt from '@tiptap/extension-image';
-import { Placeholder, TrailingNode } from '@tiptap/extensions';
+import { Placeholder } from '@tiptap/extensions';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
@@ -116,7 +116,6 @@ export function NoteEditor({ pageId, user, canEdit, onStatus, onPresence, onRead
           placeholder: ({ node }) =>
             node.type.name === 'heading' ? 'Heading' : "Type '/' for commands, '[]' for a task…",
         }),
-        TrailingNode,
         TaskList,
         PlainTaskItem,
         TableKit.configure({ table: { resizable: true } }),
