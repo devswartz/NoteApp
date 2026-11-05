@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, MoveHorizontal } from 'lucide-react';
 import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
@@ -9,6 +9,7 @@ import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
+import { Outline, usePageSetting } from '../editor/Outline.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -29,14 +30,22 @@ export function PageView() {
   const [save, setSave] = useState<SaveState>('saved');
   const [synced, setSynced] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     setSynced(false);
     setHistoryOpen(false);
   }, [pageId]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [fullWidth, setFullWidth] = usePageSetting(editor, 'fullWidth', false);
   const isMobile = useIsMobile();
-  const [panelOpen, setPanelOpen] = useState(() => platform.kv.get('noteapp.taskPanel') !== '0');
+  // The tasks panel remembers the user's choice; with none saved it starts open on
+  // desktop and closed on phones (where it's a bottom sheet that would cover the note).
+  const [panelOpen, setPanelOpen] = useState(() => {
+    const saved = platform.kv.get('noteapp.taskPanel');
+    if (saved === '1' || saved === '0') return saved === '1';
+    return !window.matchMedia('(max-width: 760px)').matches;
+  });
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -90,7 +99,8 @@ export function PageView() {
 
   return (
     <div className={`page-layout ${panelOpen && !isMobile ? 'with-panel' : ''}`}>
-      <div className="page-scroll">
+      <div className="page-scroll" ref={setScroller}>
+        {editor && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook && (
@@ -122,11 +132,11 @@ export function PageView() {
             >
               {isMobile ? <ListTodo size={18} /> : <PanelRight size={18} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} />}
+            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} fullWidth={fullWidth} onFullWidth={setFullWidth} />}
           </div>
         </header>
 
-        <article className="page-article">
+        <article className={`page-article ${fullWidth ? 'is-full' : ''}`}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
@@ -266,7 +276,21 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: string; editor: Editor | null; onHistory: () => void }) {
+function PageMenu({
+  pageId,
+  wsId,
+  editor,
+  onHistory,
+  fullWidth,
+  onFullWidth,
+}: {
+  pageId: string;
+  wsId: string;
+  editor: Editor | null;
+  onHistory: () => void;
+  fullWidth: boolean;
+  onFullWidth: (v: boolean) => void;
+}) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -305,6 +329,9 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
           </MenuItem>
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
+          </MenuItem>
+          <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
+            Full width
           </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
