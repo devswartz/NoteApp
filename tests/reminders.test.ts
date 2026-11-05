@@ -288,10 +288,10 @@ test('email channel and daily digest', async () => {
 
 test('default channels skip gracefully when nothing is configured', async () => {
   const chans = sched.defaultChannels();
-  assert.deepEqual(chans.map((c) => [c.name, c.available()]), [['push', false], ['email', false]]);
+  assert.deepEqual(chans.map((c) => [c.name, c.available()]), [['push', false], ['email', false], ['apns', false], ['fcm', false]]);
   const u = await setup('NoConfig', 'UTC');
   const r = await app.call('POST', '/notifications/test', u.token);
-  assert.deepEqual(r.data, { sent: 0, failed: 0, skipped: 2 });
+  assert.deepEqual(r.data, { sent: 0, failed: 0, skipped: 4 });
   void store;
 });
 
@@ -339,4 +339,69 @@ test('snooze from a push notification: token in the payload, +1 h / tomorrow, ex
   assert.equal(snoozeMod.snoozeUntil('tomorrow', u.user.id, Date.parse('2037-07-05T22:30:00Z')).toISOString(), '2037-07-06T08:00:00.000Z');
   // Expired after 7 days.
   assert.throws(() => snoozeMod.snooze(n.snoozeToken, '10m', clock.t + 8 * 864e5), /expired/);
+});
+
+test('APNs and FCM channels (fakes): auth, payloads, dead tokens removed', async () => {
+  const crypto = await import('node:crypto');
+  const jwt = (await import('jsonwebtoken')).default;
+  const { apnsChannel } = await import('../server/reminders/apns.ts');
+  const { fcmChannel } = await import('../server/reminders/fcm.ts');
+  const u = await setup('Native', 'UTC');
+  const ios1 = 'a'.repeat(64), ios2 = 'b'.repeat(64), android = 'fcm-token:' + 'c'.repeat(40);
+  for (const [platform, token] of [['ios', ios1], ['ios', ios2], ['android', android]])
+    assert.equal((await app.call('POST', '/notifications/devices', u.token, { platform, token })).status, 200);
+  assert.equal((await app.call('POST', '/notifications/devices', u.token, { platform: 'web', token: ios1 })).status, 400);
+  const notice: Notice = { key: `native:${u.user.id}`, userId: u.user.id, title: 'Pay rent', body: 'Due today', path: '/w/1/tasks/today?task=t1', taskId: 't1', tag: 'task-t1', snoozeToken: 'snz' };
+
+  // APNs
+  const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const apnsCfg = { keyId: 'KEY1234567', teamId: 'TEAM123456', bundleId: 'com.example.noteapp', privateKey: ec.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), host: 'api.sandbox.push.apple.com' };
+  const reqs: { host: string; path: string; headers: Record<string, string>; body: string }[] = [];
+  const apns = apnsChannel(async (req) => {
+    reqs.push(req);
+    return req.path.endsWith(ios2) ? { status: 410, body: JSON.stringify({ reason: 'Unregistered' }) } : { status: 200, body: '' };
+  }, () => apnsCfg);
+  assert.equal(apnsChannel(undefined, () => null).available(), false);
+  const ra = await deliverMod.deliver(notice, [apns]);
+  assert.deepEqual([ra.sent, ra.failed], [1, 1]);
+  const ok = reqs.find((r) => r.path === `/3/device/${ios1}`)!;
+  assert.equal(ok.host, 'api.sandbox.push.apple.com');
+  assert.equal(ok.headers['apns-topic'], 'com.example.noteapp');
+  assert.equal(ok.headers['apns-push-type'], 'alert');
+  const claims = jwt.verify(ok.headers.authorization.replace('bearer ', ''), ec.publicKey.export({ type: 'spki', format: 'pem' }).toString(), { algorithms: ['ES256'], complete: true }) as { header: { kid: string }; payload: { iss: string } };
+  assert.equal(claims.header.kid, 'KEY1234567');
+  assert.equal(claims.payload.iss, 'TEAM123456');
+  const body = JSON.parse(ok.body);
+  assert.deepEqual(body.aps.alert, { title: 'Pay rent', body: 'Due today' });
+  assert.equal(body.aps.category, 'REMINDER');
+  assert.equal(body.snoozeToken, 'snz');
+  assert.equal(body.url, '/w/1/tasks/today?task=t1');
+  assert.deepEqual(apns.targets(u.user.id), [ios1], 'unregistered token removed');
+
+  // FCM
+  const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const fcmCfg = { projectId: 'noteapp-test', clientEmail: 'push@noteapp-test.iam.gserviceaccount.com', privateKey: rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(), tokenUri: 'https://oauth2.example/token' };
+  const calls: { url: string; headers: Record<string, string>; body: string }[] = [];
+  const fakeFetch = async (url: string, init: { method: string; headers: Record<string, string>; body: string }) => {
+    calls.push({ url, headers: init.headers, body: init.body });
+    if (url === fcmCfg.tokenUri) return { status: 200, text: async () => JSON.stringify({ access_token: 'ya29.fake', expires_in: 3600 }) };
+    return { status: 200, text: async () => '{}' };
+  };
+  const fcm = fcmChannel(fakeFetch, () => fcmCfg);
+  const rf = await deliverMod.deliver(notice, [fcm]);
+  assert.equal(rf.sent, 1);
+  const assertion = new URLSearchParams(calls[0].body).get('assertion')!;
+  const a = jwt.verify(assertion, rsa.publicKey.export({ type: 'spki', format: 'pem' }).toString(), { algorithms: ['RS256'] }) as { iss: string; scope: string };
+  assert.equal(a.iss, fcmCfg.clientEmail);
+  assert.equal(a.scope, 'https://www.googleapis.com/auth/firebase.messaging');
+  assert.equal(calls[1].url, 'https://fcm.googleapis.com/v1/projects/noteapp-test/messages:send');
+  assert.equal(calls[1].headers.authorization, 'Bearer ya29.fake');
+  const msg = JSON.parse(calls[1].body).message;
+  assert.equal(msg.token, android);
+  assert.deepEqual(msg.data, { url: '/w/1/tasks/today?task=t1', taskId: 't1', snoozeToken: 'snz' });
+  // Unregistered token → removed.
+  const gone = fcmChannel(async (url, init) => (url === fcmCfg.tokenUri ? fakeFetch(url, init) : { status: 404, text: async () => '{"error":{"status":"NOT_FOUND","details":[{"errorCode":"UNREGISTERED"}]}}' }), () => fcmCfg);
+  const rg = await deliverMod.deliver({ ...notice, key: `native2:${u.user.id}` }, [gone]);
+  assert.equal(rg.failed, 1);
+  assert.deepEqual(gone.targets(u.user.id), []);
 });

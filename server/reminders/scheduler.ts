@@ -15,14 +15,17 @@ import { deliver, pruneNotificationLog } from './deliver.ts';
 import { dueDigests } from './digest.ts';
 import { createSnoozeToken, pruneActionTokens } from './snooze.ts';
 import { emailChannel } from './email.ts';
+import { apnsChannel } from './apns.ts';
+import { fcmChannel } from './fcm.ts';
 import { mailConfigured } from '../mail.ts';
 import { vapidPublicKey, webPushChannel } from './push.ts';
 import type { DeliveryChannel, Notice } from './channels.ts';
 
 export const CATCH_UP_MS = 12 * 3600_000;
 
+/** Every channel; each skips itself when its env vars aren't set. */
 export function defaultChannels(): DeliveryChannel[] {
-  return [webPushChannel(), emailChannel()];
+  return [webPushChannel(), emailChannel(), apnsChannel(), fcmChannel()];
 }
 
 export interface SchedulerOptions {

@@ -88,3 +88,14 @@ CREATE TABLE calendar_feeds (
   token_hash TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL
 );
+
+-- Native push tokens (Phase 3 mobile app): APNs device tokens (ios) and FCM registration tokens (android).
+CREATE TABLE device_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  platform TEXT NOT NULL CHECK (platform IN ('ios','android')),
+  token TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  last_success_at TEXT
+);
+CREATE INDEX device_tokens_user ON device_tokens(user_id, platform);

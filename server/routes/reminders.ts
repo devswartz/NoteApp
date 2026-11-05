@@ -5,6 +5,8 @@
 //   GET    /notifications/push                    → { publicKey: string | null, emailAvailable, devices }
 //   POST   /notifications/push-subscriptions      PushSubscriptionInput → { ok }
 //   DELETE /notifications/push-subscriptions      { endpoint } → { ok }
+//   POST   /notifications/devices                 { platform: 'ios'|'android', token } (mobile app)
+//   DELETE /notifications/devices                 { token }
 //   POST   /notifications/test                    → sends a test notice to yourself
 //   POST   /reminders/snooze                      { token, option: '10m'|'1h'|'tomorrow' } (no auth; token from the push)
 //   GET    /tasks/:id/reminders                   → Reminder[] (yours)
@@ -21,6 +23,7 @@ import { defaultChannels, pokeScheduler } from '../reminders/scheduler.ts';
 import { deliver } from '../reminders/deliver.ts';
 import { mailConfigured } from '../mail.ts';
 import { snooze } from '../reminders/snooze.ts';
+import { deleteDeviceToken, saveDeviceToken } from '../reminders/devices.ts';
 
 export const reminderRoutes = Router();
 
@@ -61,6 +64,23 @@ reminderRoutes.delete(
 );
 
 const lastTest = new Map<string, number>();
+
+// Native app push tokens (Phase 3): { platform: 'ios' | 'android', token }.
+reminderRoutes.post(
+  '/notifications/devices',
+  h((req) => {
+    saveDeviceToken(req.user.id, req.body?.platform, req.body?.token);
+    return { ok: true };
+  }),
+);
+reminderRoutes.delete(
+  '/notifications/devices',
+  h((req) => {
+    if (typeof req.body?.token !== 'string') throw new HttpError(400, 'token is required');
+    deleteDeviceToken(req.user.id, req.body.token);
+    return { ok: true };
+  }),
+);
 
 reminderRoutes.post(
   '/notifications/test',

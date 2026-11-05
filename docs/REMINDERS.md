@@ -62,7 +62,22 @@ interface DeliveryChannel {
 ```
 - **push** (`push.ts`): web push with VAPID through the `web-push` library, one subscription per browser or device (`push_subscriptions`). It is skipped unless `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` are set. Endpoints that return 404 or 410 are deleted.
 - **email** (`email.ts`): sent through `server/mail.ts`. It is skipped unless `SMTP_HOST` is set, and for users who turned email off.
-- **Phase 3 (APNs/FCM):** implement `DeliveryChannel` (for example `apns.ts`, with targets from a device-token table) and add it to `defaultChannels()` in `scheduler.ts`.
+- **apns** (`apns.ts`) and **fcm** (`fcm.ts`): native push for the Phase 3 mobile app. The app registers its token with `POST /notifications/devices {platform:'ios'|'android', token}` (stored in `device_tokens`). APNs uses token auth (an ES256 JWT over HTTP/2). FCM uses the HTTP v1 API with a service-account OAuth token. Dead tokens are removed. Each channel is off unless its env vars are set:
+
+  | Variable | Channel | Value |
+  |---|---|---|
+  | `APNS_KEY_ID` | apns | Key ID of the APNs auth key (.p8) |
+  | `APNS_TEAM_ID` | apns | Apple Developer team ID |
+  | `APNS_BUNDLE_ID` | apns | The iOS app's bundle ID (sent as `apns-topic`) |
+  | `APNS_PRIVATE_KEY` | apns | Contents of the .p8 file (newlines may be written as `\n`) |
+  | `APNS_ENV` | apns | `production` (default) or `sandbox` for development builds |
+  | `FCM_SERVICE_ACCOUNT_JSON` | fcm | Firebase service-account key JSON (raw or base64) |
+
+  The payloads carry `url`, `taskId` and `snoozeToken`, the same as web push. On iOS the notification category is `REMINDER`; on Android `click_action` is `REMINDER`. The app should register snooze actions under that name.
+- Another channel: implement `DeliveryChannel` and add it to `defaultChannels()` in `scheduler.ts`.
+
+### Snooze
+A reminder's push payload includes a `snoozeToken`. The token is random, stored only as a hash in `action_tokens`, limited to one user and task, and valid for 7 days. The service worker shows Snooze 10 min / Snooze 1 hour / Tomorrow actions; browsers show as many as `Notification.maxActions` allows. Each action calls `POST /api/reminders/snooze {token, option:'10m'|'1h'|'tomorrow'}`, which needs no access token. The call sets (or moves) a single snooze reminder for that user and task. "Tomorrow" means tomorrow at the user's default reminder time.
 
 Push payload, read by `public/sw-push.js`: `{ title, body, url, tag, taskId }`. The service worker shows the notification with an "Open task" action. A click focuses an open window and navigates it (it also posts `{type:'notification-click', url, taskId}` to the window), or opens a new window.
 
@@ -76,7 +91,9 @@ Push payload, read by `public/sw-push.js`: `{ title, body, url, tag, taskId }`. 
 | `GET /notifications/push` | `{publicKey, emailAvailable, devices}` |
 | `POST /notifications/push-subscriptions` | `PushSubscription.toJSON()` |
 | `DELETE /notifications/push-subscriptions` | `{endpoint}` |
-| `POST /notifications/test` | sends a test notification to yourself |
+| `POST /notifications/test` | sends a test notification to yourself (at most once per 10 s) |
+| `POST/DELETE /notifications/devices` | native push token `{platform, token}` / `{token}` |
+| `POST /reminders/snooze` | `{token, option}`; no auth, the token comes from the push notification |
 | `GET/POST /tasks/:id/reminders` | your reminders on a task / add one (`{kind:'before', minutes}` or `{kind:'at', at}`) |
 | `PATCH/DELETE /reminders/:id` | change or remove one |
 
