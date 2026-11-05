@@ -337,7 +337,7 @@ test('reconcile through the collab socket: removing a taskRef detaches it, addin
   }
 });
 
-test('tasks expose parentId (migration 005); top-level tasks have none', async () => {
+test('tasks expose parentId (migration 007); top-level tasks have none', async () => {
   const u = await app.signUp('Parent');
   const t = (await create(u, u.wsId, { title: 'Top' })).data;
   assert.equal(t.parentId, null);
