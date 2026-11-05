@@ -13,14 +13,19 @@
 //   address proves nothing about who owns the mailbox).
 // - Workspace invite links do NOT verify an email: the link's token is also
 //   returned to the inviting admin (inviteUrl), so it doesn't prove the mailbox.
+// - A successful password reset also verifies the account (markVerifiedByReset): the reset link was
+//   emailed to the address, so using it proves the mailbox.
+// - Accounts that stay unverified for UNVERIFIED_ACCOUNT_DAYS (default 7) are deleted by
+//   pruneUnverifiedAccounts, called from the housekeeping in server/index.ts.
 import crypto from 'node:crypto';
-import { db, now } from './db.ts';
+import { db, now, DELETED_USER_ID } from './db.ts';
 import { escapeHtml, mailConfigured, sendMail } from './mail.ts';
 import { APP_NAME } from '../shared/config.ts';
 import { publish } from './events.ts';
 import { publicUrl } from './workspaces.ts';
 import { adminEmails } from './admin.ts';
 import { log } from './log.ts';
+import { deleteAccount } from './accounts.ts';
 import type { Role } from '../shared/types.ts';
 
 export const VERIFY_TTL_S = 24 * 60 * 60;
@@ -117,4 +122,65 @@ export function consumeVerificationToken(token: unknown): string | null {
 /** Housekeeping: drop expired tokens (called with the refresh-token cleanup in server/index.ts). */
 export function pruneEmailVerifications() {
   db.prepare('DELETE FROM email_verifications WHERE expires_at < ?').run(now());
+}
+
+/**
+ * A valid password-reset link proves mailbox ownership: mark the account verified (if it isn't),
+ * accept its pending invites exactly as verification does, and drop any outstanding verification token.
+ * Call inside the transaction that changes the password, only after the reset token was accepted.
+ * Does nothing for an already verified account. Returns true when the account became verified.
+ */
+export function markVerifiedByReset(userId: string, ts = now()): boolean {
+  const u = db.prepare('SELECT email, email_verified_at FROM users WHERE id = ?').get(userId) as
+    | { email: string; email_verified_at: string | null }
+    | undefined;
+  if (!u || u.email_verified_at) return false;
+  db.prepare('UPDATE users SET email_verified_at = ? WHERE id = ? AND email_verified_at IS NULL').run(ts, userId);
+  db.prepare('DELETE FROM email_verifications WHERE user_id = ?').run(userId);
+  acceptPendingInvites(userId, u.email.toLowerCase(), ts);
+  return true;
+}
+
+const DAY_MS = 24 * 3600_000;
+/** Most accounts removed per run; the rest wait for the next pass. */
+export const UNVERIFIED_BATCH_CAP = 100;
+
+/** How long an account may stay unconfirmed, in days: UNVERIFIED_ACCOUNT_DAYS, default 7, at least 1. Read on each call. */
+export function unverifiedAccountDays(): number {
+  const n = Number(process.env.UNVERIFIED_ACCOUNT_DAYS);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 7;
+}
+
+/**
+ * Housekeeping: delete accounts that never confirmed their email within unverifiedAccountDays() of sign-up,
+ * through deleteAccount() (so workspaces, files, sockets etc. follow its rules). Never touches verified accounts
+ * (this covers bootstrap, ADMIN_EMAILS and no-SMTP accounts, which start verified), the stand-in user, or an
+ * address in ADMIN_EMAILS. Sends no mail. At most `cap` per run, oldest first; one failure is logged (ids only) and
+ * doesn't stop the rest. Idempotent, so it runs on every housekeeping pass (no persisted "last run" marker needed).
+ * `nowMs` and `remove` are injectable for tests.
+ */
+export function pruneUnverifiedAccounts(opts: { nowMs?: number; cap?: number; remove?: (userId: string) => boolean } = {}) {
+  const { nowMs = Date.now(), cap = UNVERIFIED_BATCH_CAP, remove = deleteAccount } = opts;
+  const days = unverifiedAccountDays();
+  const cutoff = new Date(nowMs - days * DAY_MS).toISOString();
+  const admins = adminEmails();
+  const rows = db
+    .prepare(
+      `SELECT id FROM users WHERE email_verified_at IS NULL AND id <> ? AND created_at < ?
+         AND LOWER(email) NOT IN (${admins.map(() => '?').join(',') || 'NULL'})
+       ORDER BY created_at, rowid LIMIT ?`,
+    )
+    .all(DELETED_USER_ID, cutoff, ...admins, cap) as { id: string }[];
+  let deleted = 0;
+  let failed = 0;
+  for (const { id } of rows) {
+    try {
+      if (remove(id)) deleted++;
+    } catch (e) {
+      failed++;
+      log.error('unverified account cleanup failed', { userId: id, err: e });
+    }
+  }
+  log.info('unverified account cleanup', { deleted, failed, days, cap });
+  return { deleted, failed };
 }
