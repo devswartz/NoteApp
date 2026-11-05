@@ -25,6 +25,8 @@ before(async () => {
 after(() => app.close());
 
 interface Fx {
+  /** The owner's own reminder on `task` (reminders are personal). */
+  reminder: string;
   /** Comment thread + its first comment on `page` (when the comments routes exist). */
   thread: string;
   comment: string;
@@ -73,7 +75,8 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
       thread = t.data.id;
       comment = t.data.comments[0].id;
     }
-    return { ws, nb, sec, page, task, file, thread, comment, target: target.user.id, email, invite };
+    const reminder = (await app.call('POST', `/tasks/${task}/reminders`, o, { kind: 'before', minutes: 10 })).data?.id ?? 'no-reminders-route';
+    return { ws, nb, sec, page, task, file, thread, comment, reminder, target: target.user.id, email, invite };
   };
   return { shared: await make('shared'), priv: await make('private') };
 }
@@ -89,6 +92,8 @@ interface Row {
   path: (f: Fx) => string;
   body?: (f: Fx) => unknown;
   raw?: boolean;
+  /** Response isn't JSON: only the status is checked. */
+  plain?: boolean;
   expect: Expect;
 }
 
@@ -152,6 +157,30 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
   { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: inPrivate(WRITE) },
   { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: inPrivate(WRITE) },
+  // ── Reminders & notification settings (#4). Reminders and settings are personal. ──
+  { method: 'POST', route: '/reminders/snooze', path: () => '/reminders/snooze', body: () => ({ token: 'not-a-token', option: '1h' }), expect: { anon: 404, stranger: 404, viewer: 404, member: 404, private: 404 } }, // public: the token is the credential
+  { method: 'GET', route: '/calendar/:file', plain: true, path: () => '/calendar/not-a-feed.ics', expect: { anon: 404, stranger: 404, viewer: 404, member: 404, private: 404 } }, // public: the token is the credential
+  { method: 'GET', route: '/notifications/settings', path: () => '/notifications/settings', expect: { stranger: 200, ...READ } },
+  { method: 'PATCH', route: '/notifications/settings', path: () => '/notifications/settings', body: () => ({}), expect: { stranger: 200, ...READ } },
+  { method: 'GET', route: '/notifications/push', path: () => '/notifications/push', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/notifications/push-subscriptions', path: () => '/notifications/push-subscriptions', body: () => ({ endpoint: 'https://push.example.com/x' }), expect: { stranger: 400, viewer: 400, member: 400 } }, // auth first, then validation
+  { method: 'DELETE', route: '/notifications/push-subscriptions', path: () => '/notifications/push-subscriptions', body: () => ({ endpoint: 'https://push.example.com/x' }), expect: { stranger: 200, ...READ } },
+  { method: 'GET', route: '/calendar-feed', path: () => '/calendar-feed', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/calendar-feed', path: () => '/calendar-feed', expect: { stranger: 200, ...READ } },
+  { method: 'DELETE', route: '/calendar-feed', path: () => '/calendar-feed', expect: { stranger: 200, ...READ } },
+  { method: 'GET', route: '/notifications/quiet-hours', path: () => '/notifications/quiet-hours', expect: { stranger: 200, ...READ } },
+  { method: 'PUT', route: '/workspaces/:id/quiet-hours', path: (f) => `/workspaces/${f.ws}/quiet-hours`, body: () => ({ start: '22:00', end: '07:00' }), expect: READ },
+  { method: 'DELETE', route: '/workspaces/:id/quiet-hours', path: (f) => `/workspaces/${f.ws}/quiet-hours`, expect: READ },
+  { method: 'POST', route: '/notifications/devices', path: () => '/notifications/devices', body: () => ({ platform: 'ios', token: 'x' }), expect: { stranger: 400, viewer: 400, member: 400 } }, // auth first, then validation
+  { method: 'DELETE', route: '/notifications/devices', path: () => '/notifications/devices', body: () => ({ token: 'x' }), expect: { stranger: 200, ...READ } },
+  // Its own per-user 10 s limit: `private` is the member again, so it gets 429.
+  { method: 'POST', route: '/notifications/test', path: () => '/notifications/test', expect: { stranger: 200, ...READ, private: 429 } },
+  { method: 'GET', route: '/workspaces/:id/reminders', path: (f) => `/workspaces/${f.ws}/reminders`, expect: READ },
+  { method: 'GET', route: '/tasks/:id/reminders', path: (f) => `/tasks/${f.task}/reminders`, expect: inPrivate(READ) },
+  { method: 'POST', route: '/tasks/:id/reminders', path: (f) => `/tasks/${f.task}/reminders`, body: () => ({ kind: 'before', minutes: 5 }), expect: inPrivate(READ) }, // personal: viewers may set their own
+  // Someone else's reminder (the owner's): nobody else can touch it.
+  { method: 'PATCH', route: '/reminders/:id', path: (f) => `/reminders/${f.reminder}`, body: () => ({ kind: 'before', minutes: 5 }), expect: { viewer: 404, member: 404 } },
+  { method: 'DELETE', route: '/reminders/:id', path: (f) => `/reminders/${f.reminder}`, expect: { viewer: 404, member: 404 } },
   // Team view (#18), comments (#28), notifications (#29), activity (#33): audited as soon as they're registered.
   { method: 'GET', route: '/workspaces/:id/team', path: (f) => `/workspaces/${f.ws}/team`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/activity', path: (f) => `/workspaces/${f.ws}/activity`, expect: READ },
@@ -165,13 +194,7 @@ const ROWS: Row[] = [
   { method: 'DELETE', route: '/comment-threads/:id', path: (f) => `/comment-threads/${f.thread}`, expect: inPrivate(ADMIN) }, // creator or admin
   { method: 'PATCH', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, body: () => ({ body: 'Edit' }), expect: inPrivate(ADMIN) }, // author only
   { method: 'DELETE', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, expect: inPrivate(ADMIN) }, // author or admin
-  {
-    method: 'GET',
-    route: '/files/:id',
-    path: (f) => `/files/${f.file}`,
-    expect: inPrivate(READ),
-    known: 'AUTHZ-1: /files/:id checks workspace membership but not the file’s page access (private notebooks) — routed to Editor & Notes',
-  },
+  { method: 'GET', route: '/files/:id', path: (f) => `/files/${f.file}`, expect: inPrivate(READ) }, // AUTHZ-1, fixed in #52
 ];
 
 const tokenOf = (who: Who) => (who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : member.token);
@@ -187,6 +210,7 @@ async function run(r: Row, f: Fx, who: Who): Promise<number> {
     });
     return res.status;
   }
+  if (r.plain) return (await fetch(`${app.origin}/api${r.path(f)}`, { method: r.method, headers: token ? { authorization: `Bearer ${token}` } : {} })).status;
   return (await app.call(r.method, r.path(f), token, r.body?.(f))).status;
 }
 
