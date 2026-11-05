@@ -17,6 +17,7 @@ import { attachCollab } from './collab.ts';
 import { attachEvents } from './events.ts';
 import { handleProtocols } from './auth.ts';
 import { securityHeaders } from './security.ts';
+import { requestLog } from './requests.ts';
 
 export function createServer(opts: { serveWeb?: boolean } = {}) {
   const app = express();
@@ -26,11 +27,13 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
 
   // The API uses bearer tokens, never cookies, so any origin may call it
   // (native shells run on tauri:// and capacitor:// origins).
+  app.use('/api', requestLog);
   app.use('/api', (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id');
     if (req.method !== 'OPTIONS') return next();
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Filename');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Filename, X-Request-Id');
     res.setHeader('Access-Control-Max-Age', '86400');
     res.status(204).end();
   });

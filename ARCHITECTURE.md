@@ -182,6 +182,13 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 **Capacitor (iPhone/Android):** `src/platform/capacitor.ts`, loaded when `window.Capacitor.isNativePlatform()`; the native projects are in `apps/mobile/`. Keychain/Keystore secure storage, local + APNs/FCM push (device token → `POST /notifications/devices` after sign-in), deep/universal links, app badge, haptics, status bar, keyboard and splash handling. It reaches the store and API client through a small bridge loaded after them (no import cycle). Details, build commands and secrets: `docs/MOBILE.md`.
 
+## Errors, logging and admin
+
+- **Server logs** (`server/log.ts`): `log.info/warn/error(msg, fields)`. In production each line is one JSON object on stdout/stderr; in dev the lines are readable. `LOG_LEVEL` (default `info` in production, `debug` in dev) sets the threshold. Use it instead of `console.*` in new server code.
+- **Request ids** (`server/requests.ts`): every `/api` request gets an id (a sane incoming `X-Request-Id` is kept), echoed in the `X-Request-Id` response header and logged with method, path (never the query string), status, time and user. 5xx responses are logged at `error` and return `{error, requestId}`, with no internals. The client shows `(ref xxxxxxxx)` in the error toast so a report can be matched to the log.
+- **Client:** `ErrorBoundary` wraps the app (full-page fallback), and `RouteBoundary` wraps each workspace screen, resetting on navigation, so one broken view doesn't take down the shell. GET/HEAD requests retry network errors and 502/503/504 twice with backoff (not when the browser is known to be offline). Writes are never retried. Unhandled API rejections become toasts. `errorMessage(e)` in the store gives user-facing text.
+- **Admin:** instance admins are the emails in `ADMIN_EMAILS` (comma-separated), or the first account ever created if that's unset. `GET /api/admin/stats` returns version, uptime, memory, DB size and row counts, live sessions, open sockets (collab pages/connections, event sockets) and request counts with p50/p95/p99 latency. Everyone else gets 403.
+
 ## Offline
 
 - **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view (names are immutable). `/api/*` and `/collab/*` are never cached.

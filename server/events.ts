@@ -84,3 +84,10 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
     send(userId, ev);
   }
 }
+
+/** For /api/admin/stats. */
+export function eventStats() {
+  let sockets = 0;
+  for (const set of clients.values()) sockets += set.size;
+  return { users: clients.size, sockets };
+}
