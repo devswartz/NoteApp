@@ -77,3 +77,32 @@ test('markdown import/export helpers: title split and safe file names', async ()
   assert.equal(fileName('Welcome 👋', 'md'), 'Welcome.md');
   assert.equal(fileName('🎯', 'md'), 'Untitled.md');
 });
+
+test('link and image URL checks, and sanitizeContent for imported/exported documents', async () => {
+  const { safeLinkUrl, safeImageUrl, sanitizeContent } = await import('../src/editor/urls.ts');
+  for (const ok of ['https://a.b/c', 'http://x', 'mailto:a@b.c', 'tel:+1', 'noteapp://page/1', '/w/1/p/2', '#top']) assert.equal(safeLinkUrl(ok), ok, ok);
+  for (const bad of ['javascript:alert(1)', ' JaVaScRiPt:alert(1)', 'java\tscript:alert(1)', 'java\nscript:x', 'data:text/html,x', 'vbscript:x', 'file:///etc/passwd', '//evil.com', 42]) {
+    assert.equal(safeLinkUrl(bad), '', String(bad));
+  }
+  assert.equal(safeImageUrl('/uploads/abc.png'), '/uploads/abc.png');
+  assert.equal(safeImageUrl('https://x.y/a.png'), 'https://x.y/a.png');
+  for (const bad of ['data:image/svg+xml,<svg onload=alert(1)>', 'javascript:x', '/api/me', '//x.y/a.png']) assert.equal(safeImageUrl(bad), '', bad);
+
+  const doc = {
+    type: 'doc',
+    content: [
+      { type: 'paragraph', content: [
+        { type: 'text', text: 'bad', marks: [{ type: 'bold' }, { type: 'link', attrs: { href: 'javascript:alert(1)' } }] },
+        { type: 'text', text: 'good', marks: [{ type: 'link', attrs: { href: 'https://ok.example' } }] },
+      ] },
+      { type: 'image', attrs: { src: 'data:image/png;base64,AAA' } },
+      { type: 'image', attrs: { src: '/uploads/abc.png' } },
+      { type: 'fileAttachment', attrs: { url: 'javascript:x', name: 'x' } },
+    ],
+  };
+  const out = sanitizeContent(doc);
+  const para = out.content![0].content!;
+  assert.deepEqual(para[0].marks, [{ type: 'bold' }], 'unsafe link mark dropped, text and other marks kept');
+  assert.equal(para[1].marks![0].attrs!.href, 'https://ok.example');
+  assert.deepEqual(out.content!.slice(1).map((n) => n.attrs!.src ?? n.type), ['/uploads/abc.png']);
+});
