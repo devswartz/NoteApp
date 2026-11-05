@@ -49,6 +49,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 | 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
 | 16 | Page links (#25): `[[` to an existing page, open it, "Linked from" backlink, rename shows through, create from `[[`. Callout + toggle blocks persist (#21) | `16-links-blocks.spec.ts` | ✅ |
 | 17 | Live-event catch-up after a dropped socket (#18): tasks created, edited or completed while away appear on reconnect without a reload. Version history restore (#37). "Meeting notes" template on an empty page (#27). Change password (#61) | `17-sync-history-account.spec.ts` | ✅ |
+| 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages | `18-sidebar.spec.ts` | ✅ |
 
 ## Open bugs
 
