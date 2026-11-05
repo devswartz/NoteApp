@@ -154,7 +154,7 @@ export function PageView() {
           <Backlinks pageId={pageId} wsId={wsId} />
         </article>
       </div>
-      <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
     </div>
   );
