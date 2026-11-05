@@ -11,6 +11,9 @@ import { TEMPLATES, type PageTemplate } from './templates.ts';
 import { deleteTemplate, loadUserTemplates, renameTemplate, useUserTemplates } from './userTemplates.ts';
 import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
 
+/** A stable empty list: a selector returning a fresh [] each time makes the store re-render forever. */
+const NONE: TemplateMeta[] = [];
+
 /** Sets the page's title and icon from a template if the page doesn't have them yet. */
 function fillMeta(pageId: string, title: string, icon: string | null) {
   const meta = useStore.getState().tree.pages.find((p) => p.id === pageId);
@@ -62,7 +65,7 @@ function useIsEmpty(editor: Editor) {
 export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: string }) {
   const empty = useIsEmpty(editor);
   const wsId = useStore((s) => s.wsId);
-  const mine = useUserTemplates((s) => (s.wsId === wsId ? s.items : []));
+  const mine = useUserTemplates((s) => (s.wsId === wsId ? s.items : NONE));
   const [busy, setBusy] = useState<string | null>(null);
   const show = empty && editor.isEditable;
   useEffect(() => {
