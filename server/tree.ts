@@ -1,8 +1,9 @@
 // Tree helpers (notebooks / sections / pages) used by more than one route module.
-import { db } from './db.ts';
+import * as Y from 'yjs';
+import { db, newId, now } from './db.ts';
 import { publish } from './events.ts';
 import { rowToTask } from './tasks.ts';
-import { closeRoom } from './collab.ts';
+import { closeRoom, flushAll } from './collab.ts';
 
 type TaskRow = Parameters<typeof rowToTask>[0];
 
@@ -33,4 +34,81 @@ export function detachPagesTasks(pageIds: string[], del: () => void) {
     const r = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined;
     if (r) publish({ type: 'task', task: rowToTask(r) });
   }
+}
+
+type Table = 'notebooks' | 'sections' | 'pages';
+
+/**
+ * Position that puts an item at `index` among its siblings (0 = first), ignoring
+ * the item itself. Positions are REAL, so inserting between two items averages them.
+ */
+export function positionAt(table: Table, col: string, parentId: string, index: number, selfId?: string): number {
+  const sibs = (db.prepare(`SELECT id, position FROM ${table} WHERE ${col} = ? ORDER BY position`).all(parentId) as {
+    id: string;
+    position: number;
+  }[]).filter((s) => s.id !== selfId);
+  if (!sibs.length) return 1;
+  if (!Number.isFinite(index) || index >= sibs.length) return sibs[sibs.length - 1].position + 1;
+  if (index <= 0) return sibs[0].position - 1;
+  return (sibs[index - 1].position + sibs[index].position) / 2;
+}
+
+/** Collect the taskRef ids in a page's Yjs document (in document order). */
+export function taskRefsInDoc(doc: Y.Doc): Y.XmlElement[] {
+  const out: Y.XmlElement[] = [];
+  const walk = (node: Y.XmlFragment | Y.XmlElement) => {
+    for (const child of node.toArray()) {
+      if (child instanceof Y.XmlElement) {
+        if (child.nodeName === 'taskRef') out.push(child);
+        walk(child);
+      }
+    }
+  };
+  walk(doc.getXmlFragment('default'));
+  return out;
+}
+
+/**
+ * Duplicate a page into `sectionId`. The copy gets its own copies of the tasks it
+ * embeds (new ids, rewritten in the document): two pages must never claim one task.
+ * Returns the new page id and the ids of the new tasks.
+ */
+export function copyPage(pageId: string, sectionId: string, userId: string, opts: { title?: string; position?: number } = {}) {
+  flushAll(); // save edits still pending in open collab rooms, so the copy is current
+  const src = db.prepare('SELECT * FROM pages WHERE id = ?').get(pageId) as
+    | { title: string; icon: string | null; kind: string; ydoc: Buffer | null; text: string }
+    | undefined;
+  if (!src) throw new Error('page not found');
+  const doc = new Y.Doc();
+  if (src.ydoc) Y.applyUpdate(doc, new Uint8Array(src.ydoc));
+
+  const id = newId();
+  const ts = now();
+  const newTasks: string[] = [];
+  db.transaction(() => {
+    const position = opts.position ?? nextPos('pages', 'section_id', sectionId);
+    const title = opts.title ?? src.title;
+    db.prepare(
+      `INSERT INTO pages (id, section_id, title, icon, kind, text, position, created_by, created_at, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, sectionId, title, src.icon, src.kind, src.text, position, userId, ts, ts, userId);
+    for (const el of taskRefsInDoc(doc)) {
+      const oldId = el.getAttribute('taskId');
+      const row = typeof oldId === 'string' ? (db.prepare('SELECT * FROM tasks WHERE id = ?').get(oldId) as Record<string, unknown> | undefined) : undefined;
+      if (!row) continue;
+      const copy: Record<string, unknown> = { ...row, id: newId(), page_id: id, occurrence_of: null, created_by: userId, created_at: ts, updated_at: ts };
+      const cols = Object.keys(copy);
+      db.prepare(`INSERT INTO tasks (${cols.join(', ')}) VALUES (${cols.map((c) => '@' + c).join(', ')})`).run(copy);
+      el.setAttribute('taskId', copy.id as string);
+      newTasks.push(copy.id as string);
+    }
+    db.prepare('UPDATE pages SET ydoc = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(doc)), id);
+    db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(id, title, src.text);
+  })();
+  doc.destroy();
+  for (const tid of newTasks) {
+    const r = db.prepare('SELECT * FROM tasks WHERE id = ?').get(tid) as TaskRow;
+    publish({ type: 'task', task: rowToTask(r) });
+  }
+  return { id, taskIds: newTasks };
 }
