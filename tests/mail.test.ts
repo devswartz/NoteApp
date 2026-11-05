@@ -53,3 +53,25 @@ test('delivery failures resolve with an error instead of throwing', async () => 
 test('escapeHtml', () => {
   assert.equal(escapeHtml(`<a href="x">'&'</a>`), '&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;');
 });
+
+test('in production, unsent mail logs recipient and subject but never the body (links are credentials)', async () => {
+  const logs: string[] = [];
+  const orig = console.log;
+  const env = { NODE_ENV: process.env.NODE_ENV, MAIL_QUIET: process.env.MAIL_QUIET };
+  console.log = (...a: unknown[]) => logs.push(a.join(' '));
+  delete process.env.MAIL_QUIET;
+  try {
+    process.env.NODE_ENV = 'production';
+    await sendMail({ to: 'p@example.com', subject: 'Invite', text: 'https://x/invite/SECRET' });
+    process.env.NODE_ENV = 'development';
+    await sendMail({ to: 'd@example.com', subject: 'Invite', text: 'https://x/invite/DEVLINK' });
+  } finally {
+    console.log = orig;
+    process.env.NODE_ENV = env.NODE_ENV;
+    process.env.MAIL_QUIET = env.MAIL_QUIET;
+  }
+  const all = logs.join('\n');
+  assert.match(all, /to=p@example\.com subject="Invite"/);
+  assert.ok(!all.includes('SECRET'));
+  assert.ok(all.includes('DEVLINK'), 'dev still prints the link');
+});
