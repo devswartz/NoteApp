@@ -53,6 +53,12 @@ export function onPageMentions(fn: typeof pageMentionHook) {
   pageMentionHook = fn;
 }
 
+/** Set by the activity feed: called after a page's content is saved, with who edited it last. */
+let pageSavedHook: ((pageId: string, actorId: string | null) => void) | null = null;
+export function onPageSaved(fn: typeof pageSavedHook) {
+  pageSavedHook = fn;
+}
+
 /** Who is on each socket, until when their token is valid, and whether they may edit. */
 interface ConnAuth {
   userId: string;
@@ -153,6 +159,11 @@ function persist(room: Room) {
   }
   room.mentionAuthors.clear();
   for (const [actor, ids] of byActor) pageMentionHook?.(room.pageId, room.workspaceId, ids, actor);
+  try {
+    pageSavedHook?.(room.pageId, room.lastEditor);
+  } catch (e) {
+    console.error('page saved hook', e);
+  }
   publish({ type: 'tree', workspaceId: room.workspaceId });
 }
 

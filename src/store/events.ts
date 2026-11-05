@@ -9,6 +9,7 @@ import type { EventMessage, ServerEvent } from '../../shared/types.ts';
 import { commentsChanged } from '../editor/collabComments.ts';
 import { loadUserTemplates } from '../editor/userTemplates.ts';
 import { receiveNotification } from '../components/sharing/inbox.ts';
+import { activityChanged } from '../components/sharing/ActivityFeed.tsx';
 import { toast } from './toasts.ts';
 
 let socket: WebSocket | null = null;
@@ -127,6 +128,9 @@ function handle(ev: ServerEvent) {
       break;
     case 'comments':
       if (ev.workspaceId === wsId) commentsChanged(ev.pageId);
+      break;
+    case 'activity':
+      if (ev.workspaceId === wsId) debounce('activity', activityChanged, 500);
       break;
     case 'notification':
       receiveNotification(ev.notification);
