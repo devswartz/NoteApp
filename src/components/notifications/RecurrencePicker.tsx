@@ -66,7 +66,7 @@ export function RecurrencePicker({
   return (
     <div className="menu rp" role="menu">
       {presets(anchor).map((p) => (
-        <button key={p.label} type="button" role="menuitemradio" aria-checked={same(value, p.value)} className="menu-item" onClick={() => pick(p.value)}>
+        <button key={p.label} type="button" role="menuitem" aria-current={same(value, p.value) || undefined} className="menu-item" onClick={() => pick(p.value)}>
           <span className="menu-icon">
             <Repeat size={15} />
           </span>
@@ -75,13 +75,13 @@ export function RecurrencePicker({
         </button>
       ))}
       <div className="menu-sep" />
-      <button type="button" className="menu-item" onClick={() => setCustom(true)}>
+      <button type="button" role="menuitem" className="menu-item" onClick={() => setCustom(true)}>
         <span className="menu-icon" />
         <span className="menu-label">Custom…</span>
         {value && !presets(anchor).some((p) => same(p.value, value)) && <span className="menu-hint">{describeRecurrence(value, dueDate)}</span>}
       </button>
       {value && (
-        <button type="button" className="menu-item" onClick={() => pick(null)}>
+        <button type="button" role="menuitem" className="menu-item" onClick={() => pick(null)}>
           <span className="menu-icon">
             <X size={15} />
           </span>

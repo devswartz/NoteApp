@@ -48,7 +48,7 @@ test('set "Repeat" from task details; weekly task moves a week ahead on completi
   const detail = page.getByRole('dialog', { name: 'Task details' });
   await detail.getByRole('button', { name: 'Does not repeat' }).click();
   // RecurrencePicker (Reminders agent, #4): presets are menu items such as "Every week on Thu".
-  await page.getByRole('menuitemradio', { name: /^Every week on / }).click();
+  await page.getByRole('menuitem', { name: /^Every week on / }).click();
   await expect(detail.getByRole('button', { name: /week/i }).first()).toBeVisible();
   await eventually(() => api<FullTask[]>(request, 'GET', `/workspaces/${user.wsId}/tasks`, user.token), (ts) => !!ts.find((x) => x.id === t.id)?.recurrence, 'recurrence saved');
 
