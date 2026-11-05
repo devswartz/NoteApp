@@ -9,6 +9,7 @@
     <string name="widget_title">Today</string>
     <string name="widget_description">Your tasks due today and overdue</string>
     <string name="widget_all_clear">All clear</string>
+    <string name="widget_locked">🔒 Locked</string>
     <string name="widget_overdue">Overdue</string>
     <string name="widget_signed_out">Open the app to sign in</string>
 </resources>

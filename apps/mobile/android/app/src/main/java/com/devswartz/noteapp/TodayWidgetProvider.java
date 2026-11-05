@@ -66,7 +66,9 @@ public class TodayWidgetProvider extends AppWidgetProvider {
                 JSONArray items = snap.optJSONArray("items");
                 int n = items == null ? 0 : Math.min(items.length(), ROWS.length);
                 views.setTextViewText(R.id.count, String.valueOf(snap.optInt("total")));
-                views.setTextViewText(R.id.empty, context.getString(R.string.widget_all_clear));
+                views.setTextViewText(R.id.empty, snap.optBoolean("locked")
+                    ? context.getString(R.string.widget_locked)
+                    : context.getString(R.string.widget_all_clear));
                 if (n > 0) views.setViewVisibility(R.id.empty, View.GONE);
                 for (int i = 0; i < n; i++) {
                     JSONObject item = items.getJSONObject(i);

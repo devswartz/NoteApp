@@ -52,6 +52,8 @@ struct TodaySnapshot: Codable {
     let v: Int
     let date: String
     let signedIn: Bool
+    /// App lock is on: show the count only.
+    let locked: Bool?
     let path: String?
     let total: Int
     let items: [Item]

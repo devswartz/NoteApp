@@ -405,7 +405,10 @@ test('mobile: Today widget snapshot — my due tasks, overdue first, capped, wit
   assert.equal(snap.items[0].path, '/w/ws%201/tasks/today?task=a');
   assert.equal(widgetSnapshot(tasks, 'me', 'ws', today, 2).items.length, 2);
   assert.equal(widgetSnapshot(tasks, 'me', 'ws', today, 2).total, 3, 'total counts everything');
-  assert.deepEqual(widgetSnapshot(tasks, null, null, today), { v: 1, date: today, signedIn: false, path: null, total: 0, items: [] });
+  assert.deepEqual(widgetSnapshot(tasks, null, null, today), { v: 1, date: today, signedIn: false, locked: false, path: null, total: 0, items: [] });
+  const locked = widgetSnapshot(tasks, 'me', 'ws', today, 8, true);
+  assert.equal(locked.total, 3);
+  assert.deepEqual(locked.items, [], 'app lock on: no task titles on the home screen');
 });
 
 /** Just enough DOM for the lock cover: elements with style, children and click listeners. */
@@ -465,7 +468,7 @@ test('mobile: lock cover is really removed after unlocking; password fallback wh
     kv.set('noteapp.appLock', '1');
     let clock = 0;
     let signedOut = 0;
-    const lock = createAppLock(native, kv, () => clock, () => signedOut++);
+    const lock = createAppLock(native, kv, () => clock, async () => void signedOut++);
 
     lock.start();
     assert.equal(dom.visible(), true, 'covered on launch');
@@ -545,5 +548,78 @@ test('mobile: shares wait while locked and never go to a different account', asy
   } finally {
     dom.remove();
     ls.clear();
+  }
+});
+
+test('mobile: cold start with biometrics unavailable — stays covered until sign-out finishes, then lock off', async () => {
+  const dom = installFakeDom();
+  try {
+    ls.set('noteapp.appLock', '1');
+    const f = fakes();
+    (f.native as unknown as Record<string, unknown>).BiometricAuth = {
+      checkBiometry: async () => ({ isAvailable: false, biometryType: 0, deviceIsSecure: false }),
+      authenticate: async () => {
+        throw Object.assign(new Error('no passcode'), { code: 'passcodeNotSet' });
+      },
+    };
+    // The app bridge (store) is slow to load: the fallback must wait for it, not skip the sign-out.
+    let releaseBridge: () => void = () => {};
+    const b = fakeBridge();
+    let signedOut = false;
+    let signOutDone: () => void = () => {};
+    b.bridge.signOut = () =>
+      new Promise<void>((r) => {
+        signedOut = true;
+        signOutDone = r;
+      });
+    const p = createCapacitorPlatform(f.native, () => new Promise<AppBridge>((r) => (releaseBridge = () => r(b.bridge))));
+    await p.init();
+    await tick();
+    assert.equal(dom.visible(), true, 'covered while the bridge is still loading');
+    assert.equal(signedOut, false);
+    assert.equal(ls.get('noteapp.appLock'), '1', 'lock not turned off before signing out');
+
+    releaseBridge();
+    await tick();
+    assert.equal(signedOut, true, 'signs out once the bridge is ready');
+    assert.equal(dom.visible(), true, 'still covered while signing out');
+    assert.equal(ls.get('noteapp.appLock'), '1');
+
+    signOutDone();
+    await tick();
+    await tick();
+    assert.equal(dom.visible(), false, 'cover removed only after the sign-out finished');
+    assert.equal(ls.get('noteapp.appLock'), undefined, 'then the lock is off');
+  } finally {
+    dom.remove();
+    ls.clear();
+  }
+});
+
+test('mobile: a failed fallback sign-out keeps the app covered', async () => {
+  const dom = installFakeDom();
+  try {
+    const kv = memoryKv();
+    kv.set('noteapp.appLock', '1');
+    const native = {
+      os: 'ios',
+      BiometricAuth: {
+        checkBiometry: async () => ({ isAvailable: false, biometryType: 0, deviceIsSecure: false }),
+        authenticate: async () => {
+          throw Object.assign(new Error('x'), { code: 'biometryNotAvailable' });
+        },
+      },
+    } as unknown as NativePlugins;
+    const lock = createAppLock(native, kv, () => 0, async () => {
+      throw new Error('offline');
+    });
+    lock.start();
+    await tick();
+    await lock.settled();
+    assert.equal(dom.visible(), true);
+    assert.equal(lock.locked(), true);
+    assert.equal(kv.get('noteapp.appLock'), '1');
+  } finally {
+    dom.remove();
   }
 });

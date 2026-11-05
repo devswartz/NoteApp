@@ -11,7 +11,7 @@ struct TodayEntry: TimelineEntry {
 
 struct TodayProvider: TimelineProvider {
     func placeholder(in context: Context) -> TodayEntry {
-        TodayEntry(date: Date(), snapshot: TodaySnapshot(v: 1, date: "", signedIn: true, path: nil, total: 2, items: [
+        TodayEntry(date: Date(), snapshot: TodaySnapshot(v: 1, date: "", signedIn: true, locked: false, path: nil, total: 2, items: [
             .init(id: "1", title: "Review the plan", overdue: false, time: "09:00", priority: 2, path: "/"),
             .init(id: "2", title: "Pay rent", overdue: true, time: nil, priority: 1, path: "/"),
         ]))
@@ -65,7 +65,12 @@ struct TodayWidgetView: View {
                     Spacer()
                     Text("\(snap.total)").font(.headline).foregroundColor(.accentColor)
                 }
-                if snap.items.isEmpty {
+                if snap.locked == true {
+                    Spacer()
+                    Label(snap.total == 1 ? "1 task · Locked" : "\(snap.total) tasks · Locked", systemImage: "lock.fill")
+                        .font(.subheadline).foregroundColor(.secondary)
+                    Spacer()
+                } else if snap.items.isEmpty {
                     Spacer()
                     Text("All clear").font(.subheadline).foregroundColor(.secondary)
                     Spacer()

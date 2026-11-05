@@ -187,6 +187,8 @@ export interface WidgetSnapshot {
   /** Local date the snapshot was made; tasks "due today" then are overdue after it. */
   date: string;
   signedIn: boolean;
+  /** App lock is on: the widget shows the count only (items is empty). */
+  locked: boolean;
   /** In-app path for the widget as a whole. */
   path: string | null;
   total: number;
@@ -194,8 +196,15 @@ export interface WidgetSnapshot {
 }
 
 /** My open tasks due today or overdue, sorted like the Today view (overdue first, then time, priority). */
-export function widgetSnapshot(tasks: Iterable<Task>, me: string | null, wsId: string | null, today = localDate(), max = 8): WidgetSnapshot {
-  if (!me || !wsId) return { v: 1, date: today, signedIn: !!me, path: null, total: 0, items: [] };
+export function widgetSnapshot(
+  tasks: Iterable<Task>,
+  me: string | null,
+  wsId: string | null,
+  today = localDate(),
+  max = 8,
+  locked = false,
+): WidgetSnapshot {
+  if (!me || !wsId) return { v: 1, date: today, signedIn: !!me, locked, path: null, total: 0, items: [] };
   const due = [...tasks].filter(
     (t) => (t.assigneeId === me || (!t.assigneeId && t.createdBy === me)) && t.status === 'open' && !!t.dueDate && t.dueDate <= today,
   );
@@ -211,9 +220,10 @@ export function widgetSnapshot(tasks: Iterable<Task>, me: string | null, wsId: s
     v: 1,
     date: today,
     signedIn: true,
+    locked,
     path: base,
     total: due.length,
-    items: due.slice(0, max).map((t) => ({
+    items: (locked ? [] : due.slice(0, max)).map((t) => ({
       id: t.id,
       title: t.title.slice(0, 200),
       overdue: t.dueDate! < today,
@@ -276,11 +286,12 @@ export function dueTodayCount(tasks: Iterable<Task>, me: string | null, today = 
 const UNAVAILABLE = new Set(['biometryNotAvailable', 'biometryNotEnrolled', 'biometryLockout', 'passcodeNotSet', 'noDeviceCredential', 'notInteractive']);
 
 /**
- * @param fallback  Called when the user chooses (or is forced) to unlock with
- *                  their account password instead: the adapter turns the lock
- *                  off and signs out, so the next step is the normal sign-in.
+ * @param signOut  Used when the user chooses (or is forced) to unlock with
+ *                 their account password instead. The cover stays up until it
+ *                 has finished; only then is the lock turned off, so the next
+ *                 step is the normal sign-in and nobody gets in signed in.
  */
-export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = () => Date.now(), fallback: () => void = () => {}) {
+export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = () => Date.now(), signOut: () => Promise<void> = async () => {}) {
   const listeners = new Set<(on: boolean) => void>();
   const unlockListeners = new Set<() => void>();
   let cover: HTMLElement | null = null;
@@ -315,7 +326,7 @@ export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = (
       password.type = 'button';
       password.className = 'btn btn-ghost btn-sm';
       password.textContent = 'Sign in with password instead';
-      password.addEventListener('click', usePassword);
+      password.addEventListener('click', () => void usePassword());
       actions.append(button, password);
       cover.append(icon, actions);
       document.body.appendChild(cover);
@@ -329,13 +340,29 @@ export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = (
   };
   const coverVisible = () => !!cover && cover.style.display !== 'none';
 
-  /** Way out when biometrics/passcode can't be used: lock off, sign out, sign in with the password. */
-  function usePassword() {
-    kv.remove(APP_LOCK_KEY);
-    listeners.forEach((l) => l(false));
-    locked = false;
-    hideCover();
-    fallback();
+  /**
+   * Way out when biometrics/passcode can't be used: sign out (the account
+   * password gets you back in), then turn the lock off and remove the cover.
+   * The cover is never removed unless the sign-out finished.
+   */
+  let signingOut: Promise<void> | null = null;
+  function usePassword(): Promise<void> {
+    return (signingOut ??= (async () => {
+      showCover(false);
+      try {
+        await signOut();
+      } catch (e) {
+        console.warn('Sign-out failed; staying locked', e);
+        showCover(true);
+        return;
+      } finally {
+        signingOut = null;
+      }
+      kv.remove(APP_LOCK_KEY);
+      listeners.forEach((l) => l(false));
+      locked = false;
+      hideCover();
+    })());
   }
 
   async function authenticate(reason: string): Promise<'ok' | 'cancelled' | 'unavailable'> {
@@ -364,13 +391,15 @@ export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = (
       unlockListeners.forEach((l) => l());
     } else if (result === 'unavailable') {
       // Face ID / passcode removed or locked out: never a dead end.
-      usePassword();
+      await usePassword();
     } else showCover(true); // cancelled: offer Unlock again, or the password
   }
 
   const lock = {
     locked: () => locked,
     coverVisible,
+    /** Resolves when a password fallback in progress has finished (tests). */
+    settled: () => signingOut ?? Promise.resolve(),
     /** Runs after every successful unlock. */
     onUnlock(cb: () => void) {
       unlockListeners.add(cb);
@@ -444,7 +473,10 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   };
 
   const localClicks = new Map<number, () => void>();
-  const appLock = createAppLock(native, kv, undefined, () => void app?.signOut());
+  // The bridge (store + API) loads after init; the lock may need it earlier (cold-start fallback).
+  let bridgePromise: Promise<AppBridge> | null = null;
+  const appBridge = () => (bridgePromise ??= bridge());
+  const appLock = createAppLock(native, kv, undefined, async () => (await appBridge()).signOut());
 
   const haptics: MobileExtras['haptics'] = {
     tap: () => void native.Haptics.selectionChanged().catch(() => {}),
@@ -556,7 +588,8 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     lastTasks = [tasks, me, wsId];
     if (badgeTimer) clearTimeout(badgeTimer);
     badgeTimer = setTimeout(() => {
-      const json = JSON.stringify(widgetSnapshot(tasks, me, wsId));
+      // With the app lock on, the home screen shows a count only, never task titles.
+      const json = JSON.stringify(widgetSnapshot(tasks, me, wsId, undefined, undefined, appLock.api.enabled()));
       if (json !== lastWidget) {
         lastWidget = json;
         void native.NoteAppNative.writeWidgetSnapshot({ json }).catch(() => {});
@@ -580,6 +613,9 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       await refreshPermission();
       appLock.start(); // before the first render, so nothing shows through
       appLock.onUnlock(() => void drainShares());
+      appLock.api.subscribe(() => {
+        if (lastTasks) scheduleBadge(...lastTasks); // widget: titles hidden / shown again
+      });
 
       // Deep links: custom scheme + universal/app links.
       void native.App.addListener('appUrlOpen', ({ url }) => emitLink(url));
@@ -628,7 +664,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       installSystemUi(native, haptics);
 
       // Session-dependent work (push registration, badge) starts once the app's store is up.
-      void bridge().then((b) => {
+      void appBridge().then((b) => {
         app = b;
         b.onUser((u) => void onUser(u));
         b.onTasks(scheduleBadge);
