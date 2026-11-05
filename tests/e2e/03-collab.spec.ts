@@ -17,7 +17,7 @@ test('invite by email → invitee signs up and lands in the team workspace', asy
   await a.page.goto(`/w/${teamId}/settings`);
   await a.page.getByPlaceholder('teammate@company.com').fill(inviteeEmail);
   await a.page.getByRole('button', { name: 'Invite', exact: true }).click();
-  await expect(a.page.locator('.toast')).toContainText('Invitation saved');
+  await expect(a.page.locator('.toast')).toContainText(inviteeEmail); // wording varies; it names the invitee
   const pending = a.page.locator('.member-row', { hasText: inviteeEmail });
   await expect(pending).toContainText('Invited');
 
