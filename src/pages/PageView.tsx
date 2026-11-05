@@ -4,12 +4,13 @@ import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History } from 'lucide-react';
 import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { PresenceStack } from '../editor/collabPresence.tsx';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
-import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
+import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
@@ -110,11 +111,7 @@ export function PageView() {
             {section && <span className="crumb">{section.name}</span>}
           </div>
           <div className="topbar-right">
-            <div className="presence">
-              {presence.slice(0, 5).map((p) => (
-                <Avatar key={p.id} user={p} size={24} title={`${p.name} is here`} />
-              ))}
-            </div>
+            <PresenceStack users={presence} />
             <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button

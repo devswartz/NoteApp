@@ -35,7 +35,7 @@ import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image } from './blocks.tsx';
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
-import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
+import { collabExtensions, useCollab, usePresenceRole, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
@@ -108,6 +108,7 @@ export function documentExtensions(pageId: string): Extensions {
 
 export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
+  usePresenceRole(session, user, canEdit); // others see 'editing' or 'viewing'
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
 

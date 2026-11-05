@@ -38,7 +38,7 @@ export function PresenceStack({ users, max = 4, size = 24 }: { users: PagePresen
       <button ref={anchor} type="button" className="presence presence-btn" aria-label={label} title={label} onClick={() => setOpen((o) => !o)}>
         {shown.map((u) => (
           <span key={u.id} className="presence-avatar" style={{ ['--ring' as string]: u.color }}>
-            <Avatar user={u} size={size} title={u.name} />
+            <Avatar user={u} size={size} title={`${u.name} is here`} />
           </span>
         ))}
         {extra > 0 && (

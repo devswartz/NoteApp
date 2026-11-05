@@ -13,17 +13,15 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { backoffMs, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import type { User } from '../../shared/types.ts';
+import { presenceFrom, samePresence, type PagePresence } from './collabPresenceModel.ts';
 import { CommentMark } from './collabComments.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 /** What the page header shows: is everything I typed safely on the server? */
 export type SaveState = 'saved' | 'saving' | 'offline';
 
-export interface PresenceUser {
-  id: string;
-  name: string;
-  color: string;
-}
+/** Someone else on the page: one entry per person, with whether they can edit and how many tabs. */
+export type PresenceUser = PagePresence;
 
 /** y-websocket opens sockets itself; this subclass adds the current access token on every (re)connect. */
 class AuthedWebSocket extends WebSocket {
@@ -131,13 +129,12 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
         cb.onStatus('offline');
       }
     });
+    let last: PresenceUser[] = [];
     const onAwareness = () => {
-      const seen = new Map<string, PresenceUser>();
-      provider.awareness.getStates().forEach((s, clientId) => {
-        const u = s.user as PresenceUser | undefined;
-        if (u && clientId !== doc.clientID && u.id !== user.id) seen.set(u.id, u);
-      });
-      cb.onPresence([...seen.values()]);
+      const next = presenceFrom(provider.awareness, user.id);
+      if (samePresence(last, next)) return; // cursor moves don't change who's here
+      last = next;
+      cb.onPresence(next);
     };
     provider.awareness.on('change', onAwareness);
     return () => {
@@ -154,6 +151,18 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
   }, [doc, provider]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { doc, provider, synced, serverSynced };
+}
+
+/**
+ * Publish whether this user can edit, so others' presence lists say "editing" or "viewing".
+ * Call from the editor component; it follows live role changes.
+ */
+export function usePresenceRole(session: CollabSession, user: User, canEdit: boolean) {
+  useEffect(() => {
+    const aw = session.provider.awareness;
+    const current = (aw.getLocalState()?.user ?? {}) as Record<string, unknown>;
+    aw.setLocalStateField('user', { ...current, id: user.id, name: user.name, color: user.color, canEdit });
+  }, [session, user.id, user.name, user.color, canEdit]);
 }
 
 /** TipTap extensions that bind the editor to the shared doc and show other people's carets. */
