@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
+import type { Extensions } from '@tiptap/core';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
-import { Placeholder, TrailingNode } from '@tiptap/extensions';
+import { Placeholder } from '@tiptap/extensions';
 import { TextSelection } from '@tiptap/pm/state';
 import {
   Bold,
@@ -63,6 +64,48 @@ interface Props {
   onReady: (editor: Editor) => void;
 }
 
+/**
+ * The document schema and node views shared by the live editor and read-only views
+ * (version history preview): everything except collaboration and the slash menu.
+ */
+export function documentExtensions(pageId: string): Extensions {
+  return [
+    StarterKit.configure({
+      undoRedo: false, // Collaboration provides collaborative undo
+      codeBlock: false, // replaced by CodeBlock (syntax highlighting + language picker)
+      link: {
+        openOnClick: false,
+        autolink: true,
+        linkOnPaste: true,
+        defaultProtocol: 'https',
+        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+      },
+      heading: { levels: [1, 2, 3] },
+    }),
+    Placeholder.configure({
+      includeChildren: true,
+      placeholder: ({ node, editor: e }) => {
+        if (node.type.name === 'heading') return `Heading ${node.attrs.level}`;
+        if (node.type.name === 'detailsSummary') return 'Toggle';
+        if (e.isActive('callout') || e.isActive('details')) return 'Type something…';
+        return "Type '/' for commands, '[]' for a task…";
+      },
+    }),
+    TaskList,
+    PlainTaskItem,
+    TableKit.configure({ table: { resizable: true } }),
+    Image,
+    CodeBlock,
+    Callout,
+    FileAttachment,
+    Details.configure({ persist: false, HTMLAttributes: { class: 'toggle' } }),
+    DetailsSummary,
+    DetailsContent,
+    TaskRef.configure({ pageId }),
+    PageLink.configure({ pageId }),
+  ];
+}
+
 export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const target = useRef({ pageId, workspaceId });
@@ -72,40 +115,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
     {
       editable: canEdit,
       extensions: [
-        StarterKit.configure({
-          undoRedo: false, // Collaboration provides collaborative undo
-          codeBlock: false, // replaced by CodeBlock (syntax highlighting + language picker)
-          link: {
-            openOnClick: false,
-            autolink: true,
-            linkOnPaste: true,
-            defaultProtocol: 'https',
-            HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
-          },
-          heading: { levels: [1, 2, 3] },
-        }),
-        Placeholder.configure({
-          includeChildren: true,
-          placeholder: ({ node, editor: e }) => {
-            if (node.type.name === 'heading') return `Heading ${node.attrs.level}`;
-            if (node.type.name === 'detailsSummary') return 'Toggle';
-            if (e.isActive('callout') || e.isActive('details')) return 'Type something…';
-            return "Type '/' for commands, '[]' for a task…";
-          },
-        }),
-        TrailingNode, // always an empty line at the end, so you can type after a callout, code block or table
-        TaskList,
-        PlainTaskItem,
-        TableKit.configure({ table: { resizable: true } }),
-        Image,
-        CodeBlock,
-        Callout,
-        FileAttachment,
-        Details.configure({ persist: false, HTMLAttributes: { class: 'toggle' } }),
-        DetailsSummary,
-        DetailsContent,
-        TaskRef.configure({ pageId }),
-        PageLink.configure({ pageId }),
+        ...documentExtensions(pageId),
         SlashCommand,
         ...collabExtensions(session, user),
       ],
