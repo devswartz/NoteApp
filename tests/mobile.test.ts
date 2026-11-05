@@ -625,3 +625,52 @@ test('mobile: a failed fallback sign-out keeps the app covered', async () => {
     dom.remove();
   }
 });
+
+test('mobile: server URL rules match the desktop app (https only, http just for this device)', async () => {
+  const { normalizeServerUrl, storedServerUrl } = await import('../src/platform/serverUrl.ts');
+  const ok = (s: string) => {
+    const r = normalizeServerUrl(s);
+    return r.ok ? r.url : `ERR ${r.error}`;
+  };
+  assert.equal(ok('notes.example.com'), 'https://notes.example.com');
+  assert.equal(ok('  https://notes.example.com/  '), 'https://notes.example.com');
+  assert.equal(ok('https://example.com/noteapp/'), 'https://example.com/noteapp', 'path prefix kept');
+  assert.equal(ok('http://localhost:3001'), 'http://localhost:3001');
+  assert.equal(ok('http://127.0.0.1:3001'), 'http://127.0.0.1:3001');
+  assert.match(ok('http://notes.example.com'), /^ERR .*https/);
+  assert.match(ok('ftp://notes.example.com'), /^ERR/);
+  assert.match(ok('javascript:alert(1)'), /^ERR/);
+  assert.match(ok('https://notes.example.com/?x=1'), /^ERR/);
+  assert.match(ok('https://user:pw@notes.example.com'), /^ERR/);
+  assert.match(ok(''), /^ERR/);
+  // Stored values are re-validated, so tampered storage can't point the app at plain http.
+  assert.equal(storedServerUrl({ getItem: () => 'http://evil.example' }), null);
+  assert.equal(storedServerUrl({ getItem: () => 'https://notes.example.com/' }), 'https://notes.example.com');
+  assert.equal(storedServerUrl({ getItem: () => null }), null);
+});
+
+test('mobile: choosing a server probes /api/health before saving it', async () => {
+  const { chooseServer, probeServer } = await import('../src/platform/capacitor.ts');
+  const seen: string[] = [];
+  const fakeFetch = (async (url: string) => {
+    seen.push(url);
+    if (url.startsWith('https://good.example')) return new Response(JSON.stringify({ ok: true, version: 'x' }), { status: 200 });
+    if (url.startsWith('https://html.example')) return new Response('<html>', { status: 200 });
+    throw new Error('offline');
+  }) as unknown as typeof fetch;
+  assert.equal(await probeServer('https://good.example', fakeFetch), true);
+  assert.equal(await probeServer('https://html.example', fakeFetch), false);
+  assert.equal(await probeServer('https://down.example', fakeFetch), false);
+
+  const kv = memoryKv();
+  const bad = await chooseServer('down.example', kv, fakeFetch);
+  assert.equal(bad.ok, false);
+  assert.equal(kv.get('noteapp.serverUrl'), null, 'nothing saved when unreachable');
+  assert.equal((await chooseServer('http://good.example', kv, fakeFetch)).ok, false, 'plain http refused before any request');
+  assert.ok(!seen.includes('http://good.example/api/health'));
+  const good = await chooseServer('good.example/', kv, fakeFetch);
+  assert.deepEqual(good, { ok: true, url: 'https://good.example' });
+  assert.equal(kv.get('noteapp.serverUrl'), 'https://good.example');
+  assert.equal(kv.get('noteapp.serverConfirmed'), '1');
+  assert.ok(seen.includes('https://good.example/api/health'));
+});
