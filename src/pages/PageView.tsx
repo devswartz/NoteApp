@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText } from 'lucide-react';
 import { get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
@@ -148,6 +148,7 @@ export function PageView() {
               <Plus size={15} /> Add a task to this page
             </button>
           )}
+          <Backlinks pageId={pageId} wsId={wsId} />
         </article>
       </div>
       {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
@@ -341,6 +342,49 @@ function PageMenu({ pageId, wsId }: { pageId: string; wsId: string }) {
         </div>
       )}
     </Dropdown>
+  );
+}
+
+interface Backlink {
+  id: string;
+  title: string;
+  icon: string | null;
+  sectionName: string;
+  notebookName: string;
+}
+
+/** "Linked from": pages that link here with [[…]]. Refreshes when the tree changes (any page saved). */
+function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
+  const [links, setLinks] = useState<Backlink[] | null>(null);
+  const version = useStore((s) => s.tree.pages.reduce((m, p) => (p.updatedAt > m ? p.updatedAt : m), ''));
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(() => {
+      get<Backlink[]>(`/pages/${pageId}/backlinks`)
+        .then((r) => !cancelled && setLinks(r))
+        .catch(() => {});
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [pageId, version]);
+  if (!links?.length) return null;
+  return (
+    <section className="backlinks" aria-label="Linked from">
+      <h4 className="backlinks-title">
+        Linked from {links.length} {links.length === 1 ? 'page' : 'pages'}
+      </h4>
+      {links.map((l) => (
+        <Link key={l.id} to={`/w/${wsId}/p/${l.id}`} className="backlink">
+          <span className="backlink-icon">{l.icon || <FileText size={15} />}</span>
+          <span className="truncate">{l.title || 'Untitled'}</span>
+          <span className="muted small truncate">
+            {l.notebookName} › {l.sectionName}
+          </span>
+        </Link>
+      ))}
+    </section>
   );
 }
 
