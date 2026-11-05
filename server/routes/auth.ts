@@ -207,6 +207,9 @@ publicAuthRoutes.get(
   h(() => ({
     signupMode: signupMode(),
     signupOpen: signupMode() === 'open' || !db.prepare('SELECT 1 FROM users LIMIT 1').get(),
+    // Optional overrides for the /privacy and /terms pages (defaults live in src/pages/Legal.tsx).
+    ...(process.env.LEGAL_CONTACT_EMAIL ? { legalContactEmail: process.env.LEGAL_CONTACT_EMAIL } : {}),
+    ...(process.env.LEGAL_OPERATOR_NAME ? { legalOperatorName: process.env.LEGAL_OPERATOR_NAME } : {}),
   })),
 );
 

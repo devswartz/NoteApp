@@ -9,6 +9,7 @@ import { Toasts } from './components/Overlays.tsx';
 import { DeepLinks } from './components/DeepLinks.tsx';
 import { AppUpdates } from './components/AppUpdates.tsx';
 import { Login } from './pages/Login.tsx';
+import { LegalPage } from './pages/Legal.tsx';
 import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
 import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { workspaceRoutes } from './routes.tsx';
@@ -36,6 +37,8 @@ export function App() {
         <Routes>
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/reset" element={<ResetPassword />} />
+          <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+          <Route path="/terms" element={<LegalPage doc="terms" />} />
           <Route path="*" element={<CheckEmail />} />
         </Routes>
         <Toasts />
@@ -48,6 +51,8 @@ export function App() {
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/invite/:token" element={<InvitePage />} />
+        <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+        <Route path="/terms" element={<LegalPage doc="terms" />} />
         <Route path="/reset" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         {user ? (

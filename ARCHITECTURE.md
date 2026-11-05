@@ -112,6 +112,10 @@ apps/desktop/      Tauri 2 desktop app (Rust in src-tauri/, build scripts, icon 
 docs/              Plan-adjacent docs: agent guide, deploy contract, homelab brief, status log
 ```
 
+### Legal pages (`/privacy`, `/terms`)
+
+The text is Markdown in `legal/privacy.md` and `legal/terms.md`, imported with Vite `?raw` (bundled into `dist/`, so the Dockerfile needs no change). `src/lib/markdown.tsx` is a tiny safe renderer: headings, paragraphs, lists, links, bold/italic/code; raw HTML shows as text; only http(s), mailto and in-app links; `<!-- -->` comments are dropped (that is where the owner-only TODO and lawyer-review notes live). `src/pages/Legal.tsx` renders them at public routes in `src/App.tsx` (also reachable while an email is unverified). `{{APP_NAME}}`, `{{CONTACT_EMAIL}}` and `{{OPERATOR_NAME}}` are filled from `shared/config.ts`, built-in defaults, and the optional `LEGAL_CONTACT_EMAIL` / `LEGAL_OPERATOR_NAME` server env vars (returned by `GET /api/auth/config`). To change the text, edit the file and rebuild. Tests: `tests/legal.test.ts`, `tests/e2e/24-legal-pages.spec.ts`.
+
 ### Adding things without conflicts
 
 - **A REST endpoint:** put it in your area's `server/routes/<area>.ts`. A new area gets a new file plus one `api.use(...)` line in `server/routes/index.ts` (a `[shared]` change).
