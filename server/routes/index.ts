@@ -5,7 +5,7 @@ import { requireAuth } from '../auth.ts';
 import { errorHandler } from '../http.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
 import { healthRoutes } from './health.ts';
-import { workspaceRoutes } from './workspaces.ts';
+import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
 import { taskRoutes } from './tasks.ts';
@@ -24,6 +24,7 @@ api.use((req, res, next) => (req.path === '/uploads' ? next() : json(req, res, n
 // No token needed.
 api.use(healthRoutes);
 api.use(publicAuthRoutes);
+api.use(publicWorkspaceRoutes);
 
 // The live event stream (/api/events) is a WebSocket: see server/events.ts and server/app.ts.
 
