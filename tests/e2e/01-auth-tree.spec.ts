@@ -74,8 +74,10 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
   const secRow = page.locator('.sec-row', { hasText: 'Q4' });
   await expect(secRow).toBeVisible();
 
+  const firstPageUrl = page.url();
   await secRow.hover();
   await secRow.getByTitle('New page').click();
+  await expect(page).not.toHaveURL(firstPageUrl);
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const pageId = page.url().split('/p/')[1];
 

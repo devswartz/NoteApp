@@ -34,14 +34,21 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 | 3 | Invite → sign up → join; two-user co-editing with cursors + presence; task assigned by A appears live for B; removed member loses access | `03-collab.spec.ts` | ✅ |
 | 4 | Viewer can't edit (UI + API + collab); private notebook hidden, then shared live | `04-permissions.spec.ts` | ✅ |
 | 5 | Today/Upcoming/Calendar/Completed/All, filters, quick add parsing | `05-dashboard.spec.ts` | ✅ |
-| 6 | Editor blocks, slash menu, uploads, search | — | next |
-| 7 | Recurring completion, reminder settings UI | — | next |
-| 8 | Offline edit → reconnect → synced | — | next |
-| 9 | Mobile (iPhone) smoke | — | next |
+| 6 | Markdown shortcuts, slash menu (filter, table, divider, task, Escape), image upload, attachment, bubble menu; ⌘K search over page text, titles and tasks; no private results | `06-editor-search.spec.ts` | ✅ |
+| 7 | Daily and weekly recurrence roll forward with a completed copy; Repeat from task details; reminder time + bell; Settings "Enable notifications"; in-app reminder toast | `07-recurrence-reminders.spec.ts` | ✅ (push/email settings: fixme, waiting for feature) |
+| 8 | Offline edit → reconnect → synced to server and another device; reload while offline | `08-offline.spec.ts` | ✅ / reload: fixme BUG-1 |
+| 9 | iPhone 13: tab bar, quick add, tap to complete, drawer sidebar → note, no horizontal scroll, editing, search | `09-mobile.mobile.spec.ts` | ✅ |
 
 ## Open bugs
 
-None found yet on `main`.
+### BUG-1: reloading the app while offline shows the login screen, so cached notes can't be opened
+- **Area / owner:** Foundation (offline/PWA, `src/store/session.ts` `bootstrap()`, `public/sw.js`)
+- **Found on:** main @ 5814595, 2026-11-05
+- **Steps:** 1. Sign in and open a page; type something (it's cached in IndexedDB and the service worker is active). 2. Go offline (DevTools → Network → Offline). 3. Reload.
+- **Expected:** the app shell loads from the service worker and the note opens from the local cache, with the offline banner (PLAN §1: "Notes cached locally … so they open offline").
+- **Actual:** the login screen. `bootstrap()` needs `POST /auth/refresh` to succeed, and on a network error it stays signed out. There is no cached user, workspace list or tree to fall back on, so the editor never mounts. (The refresh token is kept, so it recovers once you're online again.)
+- **Suggested direction:** cache the last user, workspaces and tree (`platform.kv`) and boot from them in an "offline session" when the refresh fails with a network error (not a 401).
+- **Test:** `tests/e2e/08-offline.spec.ts` › "a page opened before going offline still opens after a reload while offline" (`test.fixme`)
 
 <!-- Template:
 ### BUG-N: short title
