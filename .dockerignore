@@ -1,0 +1,18 @@
+# Keep the build context small and free of secrets/local state.
+.git
+.github
+node_modules
+dist
+data
+deploy
+docs
+tests
+playwright-report
+test-results
+*.tsbuildinfo
+*.md
+.env
+.env.*
+**/.DS_Store
+Dockerfile
+.dockerignore

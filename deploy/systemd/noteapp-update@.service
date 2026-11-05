@@ -1,0 +1,17 @@
+# Pull the latest image for one NoteApp environment and restart it if changed.
+# Instance name = environment directory under /opt/noteapp, e.g.
+#   noteapp-update@staging.service  ->  /opt/noteapp/staging
+[Unit]
+Description=Update NoteApp (%i) from GHCR
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/noteapp/%i
+# `up -d` only recreates the container when the pulled image changed.
+ExecStart=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+# Drop dangling (superseded) images older than a week.
+ExecStartPost=/usr/bin/docker image prune -f --filter until=168h
