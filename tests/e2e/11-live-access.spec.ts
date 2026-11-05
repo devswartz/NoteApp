@@ -17,8 +17,7 @@ async function demoteWhileOpen(browser: import('@playwright/test').Browser, requ
   return { alice, teamId, pageId, bc, b, editor };
 }
 
-test('BUG-2a: edits from a member demoted while the page is open are not saved', async ({ browser, request }) => {
-  test.fixme(true, 'BUG-2a (docs/QA.md): fixed by open PR #12 and by #14 (verified on both branches); enable when either merges');
+test('edits from a member demoted while the page is open are not saved (BUG-2a, fixed in #12)', async ({ browser, request }) => {
   const { alice, teamId, pageId, bc, b, editor } = await demoteWhileOpen(browser, request);
   await focusEnd(b);
   await b.keyboard.type('edit after demotion');

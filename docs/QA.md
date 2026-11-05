@@ -65,9 +65,9 @@ E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you 
 - **Area / owner:** Collaboration & Access (`server/collab.ts` checks the role only when the socket connects; the client doesn't react to its own role change).
 - **Found on:** main @ 1b38732, 2026-11-05
 - **Steps:** 1. A (owner) and B (member) are in a team workspace; B opens a page. 2. A changes B's role to Viewer. 3. Without reloading, B types in the page.
-- **BUG-2a (server, the serious part):** B's text reaches A live and is **persisted** (it's still there after A reloads). Expected: the server drops B's updates once B is a viewer. *Verified fixed on the open PR branches #12 (feat/foundation) and #14 (feat/collab-sharing), each merged with main locally.* → Test `11-live-access` › "BUG-2a…" (`fixme` until one merges).
+- **BUG-2a (server):** fixed by #12, see "Fixed bugs".
 - **BUG-2b (UI):** B's page stays editable, with no "View only" chip, until B reloads, so B's typing is silently discarded (once 2a is fixed). Expected: the page switches to read-only live (a `members` event for yourself → refetch the role → `editor.setEditable(false)`). Still present on #12 and #14. → Test `11-live-access` › "BUG-2b…" (`fixme`).
 
 ## Fixed bugs
 
-None yet.
+- **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.
