@@ -99,6 +99,23 @@ function validate(p: TaskPatch, workspaceId: string) {
   if (p.assigneeId && !roleIn(workspaceId, p.assigneeId)) throw new HttpError(400, 'Assignee is not a workspace member');
 }
 
+const IN_PRIVATE_NOTEBOOK = `SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id
+  JOIN notebooks n ON n.id = s.notebook_id WHERE n.visibility = 'private'`;
+
+/**
+ * Before tasks lose their page: those leaving a page in a private notebook stay
+ * private (creator and assignee only, see TASK_VISIBLE) instead of becoming
+ * workspace-visible standalone tasks. Covers subtasks and completion history,
+ * which share the page. `where` selects the tasks, e.g. 'page_id = ?'.
+ */
+export function keepPrivateWhenDetaching(where: string, ...args: unknown[]) {
+  db.prepare(`UPDATE tasks SET private_owner_only = 1 WHERE (${where}) AND page_id IN (${IN_PRIVATE_NOTEBOOK})`).run(...args);
+}
+
+function privateOwnerOnly(id: string): number {
+  return (db.prepare('SELECT private_owner_only AS v FROM tasks WHERE id = ?').get(id) as { v: number } | undefined)?.v ?? 0;
+}
+
 /** A valid parent for a subtask: same workspace, visible, and itself top-level (one level only). */
 function resolveParent(userId: string, workspaceId: string, parentId: string, selfId?: string): Task {
   const parent = getTask(parentId);
@@ -127,7 +144,12 @@ function cascadePage(parentId: string, pageId: string | null): string[] {
   const ids = (
     db.prepare('SELECT id FROM tasks WHERE parent_id = ? AND page_id IS NOT ?').all(parentId, pageId) as { id: string }[]
   ).map((r) => r.id);
-  if (ids.length) db.prepare('UPDATE tasks SET page_id = ?, updated_at = ? WHERE parent_id = ?').run(pageId, now(), parentId);
+  if (!ids.length) return ids;
+  if (pageId === null) keepPrivateWhenDetaching('parent_id = ?', parentId);
+  db.prepare(
+    `UPDATE tasks SET page_id = @pageId, updated_at = @ts,
+       private_owner_only = CASE WHEN @pageId IS NULL THEN private_owner_only ELSE 0 END WHERE parent_id = @parentId`,
+  ).run({ pageId, ts: now(), parentId });
   return ids;
 }
 
@@ -158,9 +180,9 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
   const ts = now();
   db.prepare(
     `INSERT INTO tasks (id, workspace_id, title, description, priority, due_date, due_time, recurrence, reminder_at,
-       assignee_id, created_by, page_id, parent_id, created_at, updated_at)
+       assignee_id, created_by, page_id, parent_id, private_owner_only, created_at, updated_at)
      VALUES (@id, @workspaceId, @title, @description, @priority, @dueDate, @dueTime, @recurrence, @reminderAt,
-       @assigneeId, @userId, @pageId, @parentId, @ts, @ts)`,
+       @assigneeId, @userId, @pageId, @parentId, @privateOnly, @ts, @ts)`,
   ).run({
     id,
     workspaceId,
@@ -176,6 +198,8 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
     assigneeId: input.assigneeId === undefined ? null : input.assigneeId,
     pageId,
     parentId,
+    // A subtask of a private standalone task is just as private.
+    privateOnly: parentId && !pageId ? privateOwnerOnly(parentId) : 0,
   });
   const task = getTask(id)!;
   publish({ type: 'task', task });
@@ -219,6 +243,8 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
 
   const ts = now();
   const sets: string[] = [];
+  if (patch.pageId) sets.push('private_owner_only = 0');
+  else if (patch.parentId && privateOwnerOnly(patch.parentId)) sets.push('private_owner_only = 1');
   const params: Record<string, unknown> = { id, ts };
   for (const [key, col] of Object.entries(COLUMNS) as [keyof TaskPatch, string][]) {
     if (patch[key] === undefined) continue;
@@ -235,6 +261,8 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
 
   let reopenedChildren: string[] = [];
   db.transaction(() => {
+    // Leaving a private note keeps the task private (entering a note clears it, above).
+    if (patch.pageId === null && task.pageId) keepPrivateWhenDetaching('id = ?', id);
     // Recurring: the next due date in the completing user's time zone, or null
     // when the series has ended (until / count) and the task completes for good.
     const dueDate = completing && recurrence ? nextDueDate(recurrence, patch.dueDate ?? task.dueDate, id, userId) : null;
@@ -310,12 +338,13 @@ export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<
       .all(pageId) as { id: string }[];
     for (const { id } of current) {
       if (!taskIds.has(id)) {
+        keepPrivateWhenDetaching('id = ?', id);
         db.prepare('UPDATE tasks SET page_id = NULL, updated_at = ? WHERE id = ?').run(now(), id);
         changed.push(id);
       }
     }
     for (const id of taskIds) {
-      const r = db.prepare('UPDATE tasks SET page_id = ?, updated_at = ? WHERE id = ? AND workspace_id = ? AND parent_id IS NULL AND (page_id IS NOT ? OR page_id IS NULL)')
+      const r = db.prepare('UPDATE tasks SET page_id = ?, private_owner_only = 0, updated_at = ? WHERE id = ? AND workspace_id = ? AND parent_id IS NULL AND (page_id IS NOT ? OR page_id IS NULL)')
         .run(pageId, now(), id, workspaceId, pageId);
       if (r.changes) changed.push(id);
     }

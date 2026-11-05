@@ -429,3 +429,63 @@ test('subtasks need edit access to the parent’s note; recurring parents reopen
   assert.equal(getTask(sub.id)!.status, 'open', 'subtask reopened for the next occurrence');
   assert.equal(getTask(sub.id)!.completedAt, null);
 });
+
+// ───────────── Private tasks that leave their note (migration 010) ─────────────
+
+test('deleting a private page keeps its tasks, subtasks and history private', async () => {
+  const { owner, other, wsId } = await team('member');
+  const third = await app.signUp('Third');
+  await app.call('POST', `/workspaces/${wsId}/members`, owner.token, { email: third.user.email, role: 'member' });
+  const { pageId } = await makePage(owner, wsId, 'private');
+  const plain = (await create(owner, wsId, { title: 'Private plain', pageId })).data;
+  const forOther = (await create(owner, wsId, { title: 'Private for other', pageId, assigneeId: other.user.id })).data;
+  const sub = (await create(owner, wsId, { title: 'Private sub', parentId: plain.id })).data;
+  const rec = (await create(owner, wsId, { title: 'Private weekly', pageId, dueDate: '2026-11-05', recurrence: { freq: 'week', interval: 1 } })).data;
+  await app.call('PATCH', `/tasks/${rec.id}`, owner.token, { status: 'done' }); // creates a history row
+
+  assert.equal((await app.call('DELETE', `/pages/${pageId}`, owner.token)).status, 200);
+
+  const titles = async (u: TestUser) => {
+    const open = (await list(u, wsId)).data;
+    const done = (await app.call<Task[]>('GET', `/workspaces/${wsId}/tasks/completed`, u.token)).data;
+    return new Set([...open, ...done].map((t) => t.title));
+  };
+  const mine = await titles(owner);
+  for (const t of ['Private plain', 'Private for other', 'Private sub', 'Private weekly']) assert.ok(mine.has(t), `creator still sees ${t}`);
+  const theirs = await titles(other);
+  assert.ok(theirs.has('Private for other'), 'the assignee still sees their task');
+  for (const t of ['Private plain', 'Private sub', 'Private weekly']) assert.ok(!theirs.has(t), `${t} stays hidden from other members`);
+  const third_ = await titles(third);
+  assert.equal([...third_].filter((t) => t.startsWith('Private')).length, 0);
+
+  // Still standalone (not deleted), and still editable by the creator.
+  const after = (await list(owner, wsId)).data.find((t) => t.id === plain.id)!;
+  assert.equal(after.pageId, null);
+  assert.equal((await app.call('PATCH', `/tasks/${sub.id}`, other.token, { title: 'x' })).status, 404);
+  assert.equal((await app.call('PATCH', `/tasks/${forOther.id}`, other.token, { status: 'done' })).status, 200);
+});
+
+test('removing a task from a private note keeps it private; putting it in a shared note makes it visible', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { syncPageTasks } = await import('../server/tasks.ts');
+  const priv = (await makePage(owner, wsId, 'private')).pageId;
+  const shared = (await makePage(owner, wsId, 'shared')).pageId;
+  const t = (await create(owner, wsId, { title: 'Was private', pageId: priv })).data;
+  syncPageTasks(priv, wsId, new Set()); // the taskRef was deleted from the note
+  assert.ok(!(await list(other, wsId)).data.some((x) => x.id === t.id), 'stays hidden after leaving the private note');
+  // A new subtask of a private standalone task is private too.
+  const sub = (await create(owner, wsId, { title: 'Sub of private', parentId: t.id })).data;
+  assert.ok(!(await list(other, wsId)).data.some((x) => x.id === sub.id));
+  // Pasting it into a shared note is a deliberate share: visible again, subtasks included.
+  syncPageTasks(shared, wsId, new Set([t.id]));
+  const seen = (await list(other, wsId)).data.map((x) => x.id);
+  assert.ok(seen.includes(t.id) && seen.includes(sub.id));
+});
+
+test('tasks from a deleted shared page are still visible to everyone', async () => {
+  const { owner, other, wsId } = await team('member');
+  const { pageId } = await makePage(owner, wsId, 'shared');
+  const t = (await create(owner, wsId, { title: 'Was shared', pageId })).data;
+  await app.call('DELETE', `/pages/${pageId}`, owner.token);
+  assert.ok((await list(other, wsId)).data.some((x) => x.id === t.id));
+});
