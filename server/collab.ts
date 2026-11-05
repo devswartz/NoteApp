@@ -291,6 +291,10 @@ export function attachCollab(wss: WebSocketServer) {
       return;
     }
     const user = auth.user;
+    if (!user.emailVerified) {
+      conn.close(4403, 'Email not verified');
+      return;
+    }
     const access = pageAccess(pageId, user.id);
     if (!access) {
       conn.close(4403, 'No access to this page');

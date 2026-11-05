@@ -34,6 +34,8 @@ interface Fx {
   /** Comment thread + its first comment on `page` (when the comments routes exist). */
   thread: string;
   comment: string;
+  /** The owner's template saved from `page` (visible to everyone for the shared notebook, owner-only for the private one). */
+  template: string;
   ws: string;
   nb: string;
   sec: string;
@@ -91,7 +93,11 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
       });
       version = (await app.call('POST', `/pages/${page}/versions`, o, {})).data?.id ?? 'no-version';
     }
-    return { ws, nb, sec, page, task, file, thread, comment, reminder, version, target: target.user.id, email, invite };
+    let template = 'no-templates-route';
+    if ((await registeredRoutes()).has('POST /pages/:id/templates')) {
+      template = (await app.call('POST', `/pages/${page}/templates`, o, { name: 'Tpl', content: { type: 'doc', content: [{ type: 'paragraph' }] } })).data?.id ?? 'no-template';
+    }
+    return { ws, nb, sec, page, task, file, thread, comment, template, reminder, version, target: target.user.id, email, invite };
   };
   return { shared: await make('shared'), priv: await make('private') };
 }
@@ -129,10 +135,13 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/auth/forgot', path: () => '/auth/forgot', body: () => ({ email: 'nobody@example.com' }), expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } }, // never reveals whether the email exists
   { method: 'POST', route: '/auth/reset', path: () => '/auth/reset', body: () => ({ token: 'not-a-token', password: 'password1234' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
   { method: 'GET', route: '/invites/:token', path: (f) => `/invites/${f.invite}`, expect: { anon: 200, stranger: 200, viewer: 200, member: 200, private: 200 } },
+  { method: 'POST', route: '/auth/verify-email', path: () => '/auth/verify-email', body: () => ({ token: 'not-a-token' }), expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
 
   // ── The signed-in user ──
   { method: 'GET', route: '/me', path: () => '/me', expect: { stranger: 200, ...READ } },
   { method: 'PATCH', route: '/me', path: () => '/me', body: () => ({ name: 'Same Name' }), expect: { stranger: 200, viewer: 200, member: 200 } },
+  // Everyone in this table is verified (no SMTP), so resend is a no-op 200 for them; an unverified user is covered below.
+  { method: 'POST', route: '/auth/resend-verification', path: () => '/auth/resend-verification', expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'GET', route: '/workspaces', path: () => '/workspaces', expect: { stranger: 200, ...READ } },
   // Changing your own password needs the current one (wrong here, so 400 for every signed-in user).
   { method: 'POST', route: '/me/password', path: () => '/me/password', body: () => ({ currentPassword: 'wrong-current', newPassword: 'another-password-1' }), expect: { stranger: 400, viewer: 400, member: 400 } },
@@ -223,24 +232,31 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, body: () => ({ body: 'Edit' }), expect: inPrivate(ADMIN) }, // author only
   { method: 'DELETE', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, expect: inPrivate(ADMIN) }, // author or admin
   { method: 'GET', route: '/files/:id', path: (f) => `/files/${f.file}`, expect: inPrivate(READ) }, // AUTHZ-1, fixed in #52
+  // User templates: workspace members list them; a template saved from a private page is visible to its creator (the owner) only.
+  { method: 'GET', route: '/workspaces/:id/templates', path: (f) => `/workspaces/${f.ws}/templates`, expect: READ },
+  { method: 'POST', route: '/pages/:id/templates', path: (f) => `/pages/${f.page}/templates`, body: () => ({ name: 'T', content: { type: 'doc', content: [] } }), expect: inPrivate(WRITE) },
+  { method: 'PATCH', route: '/templates/:id', path: (f) => `/templates/${f.template}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(ADMIN) }, // creator or admin only
+  { method: 'DELETE', route: '/templates/:id', path: (f) => `/templates/${f.template}`, expect: inPrivate(ADMIN) }, // creator or admin only
+  { method: 'POST', route: '/templates/:id/use', path: (f) => `/templates/${f.template}/use`, body: (f) => ({ pageId: f.page }), expect: inPrivate(WRITE) },
 ];
 
 const tokenOf = (who: Who) => (who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : member.token);
 const expected = (r: Row, who: Who) => r.expect[who] ?? (who === 'anon' ? 401 : who === 'stranger' ? 404 : who === 'private' ? (r.expect.member ?? 404) : 404);
 
-async function run(r: Row, f: Fx, who: Who): Promise<number> {
-  const token = tokenOf(who);
+async function runWith(r: Row, f: Fx, token: string | undefined): Promise<{ status: number; code?: string }> {
   if (r.raw) {
     const res = await fetch(`${app.origin}/api${r.path(f)}`, {
       method: r.method,
       headers: { 'content-type': 'text/plain', 'x-filename': 'a.txt', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: 'data',
     });
-    return res.status;
+    return { status: res.status, code: (await res.json().catch(() => null))?.code };
   }
-  if (r.plain) return (await fetch(`${app.origin}/api${r.path(f)}`, { method: r.method, headers: token ? { authorization: `Bearer ${token}` } : {} })).status;
-  return (await app.call(r.method, r.path(f), token, r.body?.(f))).status;
+  if (r.plain) return { status: (await fetch(`${app.origin}/api${r.path(f)}`, { method: r.method, headers: token ? { authorization: `Bearer ${token}` } : {} })).status };
+  const res = await app.call(r.method, r.path(f), token, r.body?.(f));
+  return { status: res.status, code: res.data?.code };
 }
+const run = async (r: Row, f: Fx, who: Who) => (await runWith(r, f, tokenOf(who))).status;
 
 /** Every (METHOD path) registered on the real /api router, walking mounted routers recursively. */
 async function registeredRoutes(): Promise<Set<string>> {
@@ -277,6 +293,90 @@ test('authz: every route registered on the /api router is in the audit table', a
   const missing = [...registered].filter((r) => !audited.has(r));
   assert.deepEqual(missing, [], `routes missing from the authorization audit: ${missing.join(', ')}`);
   assert.ok(registered.size >= 45, `found ${registered.size} routes`);
+});
+
+// ── Unverified email ──
+// A signed-in user whose email isn't confirmed gets 403 `email_unverified` on every authenticated route, even
+// as a member of the workspace (worst case: a membership that predates the check), except the allowlist below.
+// Public rows behave as for everyone (anon expectation).
+
+/** Registers a user while mail is "configured", so the account starts unverified. */
+async function signUpUnverified(): Promise<TestUser> {
+  const { setMailTransport } = await import('../server/mail.ts');
+  const nodemailer = (await import('nodemailer')).default;
+  process.env.SMTP_HOST = 'smtp.example.test';
+  const t = nodemailer.createTransport({ jsonTransport: true });
+  setMailTransport(t);
+  try {
+    // (app.signUp would fail: it lists workspaces, which an unverified user may not.)
+    const r = await app.call('POST', '/auth/register', undefined, { name: 'AzUnverified', email: `az-unverified-${++seq}@example.com`, password: 'password123' });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.user.emailVerified, false, 'the persona must be unverified');
+    return { token: r.data.accessToken, refreshToken: r.data.refreshToken, user: r.data.user, wsId: '' };
+  } finally {
+    delete process.env.SMTP_HOST;
+    setMailTransport(undefined);
+  }
+}
+const UNVERIFIED_OK = new Set(['GET /me', 'POST /auth/resend-verification']);
+
+test('authz: an unverified user is denied on every authenticated route, and only the allowlist works', async (t) => {
+  const unv = await signUpUnverified();
+  const { db } = await import('../server/db.ts');
+  const { shared } = await fixture();
+  db.prepare("INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)").run(shared.ws, unv.user.id, new Date().toISOString());
+  const registered = await registeredRoutes();
+  const got: string[] = [];
+  let denied = 0;
+  for (const r of ROWS) {
+    const key = `${r.method} ${r.route}`;
+    if (!registered.has(key)) continue;
+    const isPublic = r.expect.anon !== undefined; // only public rows spell out the anonymous result
+    const { status, code } = await runWith(r, shared, unv.token);
+    if (isPublic) {
+      assert.equal(status, r.expect.anon, `${key} (public) as unverified`);
+    } else if (UNVERIFIED_OK.has(key)) {
+      assert.equal(status, 200, `${key} (allowlisted) as unverified`);
+    } else {
+      assert.equal(status, 403, `${key} as unverified: expected 403 email_unverified, got ${status}  [${got.join(' ')}]`);
+      assert.equal(code, 'email_unverified', `${key} as unverified: error code`);
+      denied++;
+    }
+    got.push(`${key}=${status}`);
+  }
+  assert.ok(denied >= 60, `denied ${denied} routes`);
+  t.diagnostic(`${denied} authenticated routes denied to an unverified user`);
+
+  // The sign-in routes are public, so an unverified user can always get a session and end it.
+  const login = await app.call('POST', '/auth/login', undefined, { email: unv.user.email, password: 'password123' });
+  assert.equal(login.status, 200);
+  assert.equal(login.data.user.emailVerified, false);
+});
+
+test('authz: sockets refuse an unverified user (4403), including for a page they are a member of', async () => {
+  const unv = await signUpUnverified();
+  const { db } = await import('../server/db.ts');
+  const { shared } = await fixture();
+  db.prepare("INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)").run(shared.ws, unv.user.id, new Date().toISOString());
+  for (const path of ['/api/events', `/collab/${shared.page}`]) {
+    const r = await connect(path, unv.token);
+    assert.equal(r.code, 4403, path);
+    r.ws.terminate();
+  }
+});
+
+test('authz: nothing is mounted outside the audited /api router except uploads and /.well-known', async () => {
+  // Express layers on the app itself. A new top-level mount fails here, so it has to be looked at: unverified
+  // users must not reach it. /uploads/* is a capability URL (unguessable id, no token, served sandboxed) and
+  // /.well-known/* is public app-link metadata with no user data.
+  const { createServer } = await import('../server/app.ts');
+  const { app: express, server } = createServer({ serveWeb: false });
+  try {
+    const names = (express as unknown as { router: { stack: { name: string }[] } }).router.stack.map((l) => l.name);
+    assert.deepEqual(names, ['securityHeaders', 'requestLog', '<anonymous>', 'router', 'router', 'serveUploads']);
+  } finally {
+    server.close();
+  }
 });
 
 // ── WebSockets ──

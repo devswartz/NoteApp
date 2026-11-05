@@ -24,6 +24,13 @@ const tmp = () => (process.env.TEST_WORKER_INDEX ? '' : mkdtempSync(join(tmpdir(
 const dataDir = process.env.E2E_DATA_DIR ?? tmp();
 const shortDataDir = tmp();
 const inviteDataDir = tmp();
+// A fourth server (PORT+3) for the `verify-email` project (*.verify.spec.ts): email verification is only required
+// when mail can be sent, so it runs with the test-only hooks (E2E_TEST_HOOKS=1, which the server ignores in
+// production): verification required without SMTP, and the mail outbox readable over HTTP. It must not run with
+// NODE_ENV=production, so it doesn't use `npm start`. E2E_VERIFY_URL points the project at a server you started yourself.
+const VERIFY_PORT = PORT + 3;
+const verifyURL = process.env.E2E_VERIFY_URL ?? `http://127.0.0.1:${VERIFY_PORT}`;
+const verifyDataDir = tmp();
 const ci = !!process.env.CI;
 // SIGNUP_MODE=open: tests create many users directly (production defaults to invite-only).
 const serverEnv = { JWT_SECRET: 'e2e-only-secret-not-used-anywhere-else-0123456789', GIT_SHA: 'e2e', SIGNUP_MODE: 'open' };
@@ -47,8 +54,11 @@ export default defineConfig({
     locale: 'en-US',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: ['**/*.mobile.spec.ts', '**/*.tokens.spec.ts', '**/*.invite.spec.ts'] },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: ['**/*.mobile.spec.ts', '**/*.tokens.spec.ts', '**/*.invite.spec.ts', '**/*.verify.spec.ts'] },
     { name: 'mobile', use: { ...devices['iPhone 13'], browserName: 'chromium' }, testMatch: '**/*.mobile.spec.ts' },
+    ...(external && !process.env.E2E_VERIFY_URL
+      ? []
+      : [{ name: 'verify-email', use: { ...devices['Desktop Chrome'], baseURL: verifyURL }, testMatch: '**/*.verify.spec.ts' }]),
     ...(external
       ? []
       : [
@@ -86,6 +96,15 @@ export default defineConfig({
           stdout: 'ignore',
           stderr: 'pipe',
           env: { ...serverEnv, SIGNUP_MODE: 'invite', ADMIN_EMAILS: 'gate-owner@e2e.test', PORT: String(INVITE_PORT), DATA_DIR: inviteDataDir, PUBLIC_URL: inviteURL },
+        },
+        {
+          command: 'npx tsx server/index.ts',
+          url: `${verifyURL}/api/health`,
+          timeout: 60_000,
+          reuseExistingServer: false,
+          stdout: 'ignore',
+          stderr: 'pipe',
+          env: { ...serverEnv, NODE_ENV: 'test', E2E_TEST_HOOKS: '1', MAIL_QUIET: '1', PORT: String(VERIFY_PORT), DATA_DIR: verifyDataDir, PUBLIC_URL: verifyURL },
         },
       ],
 });

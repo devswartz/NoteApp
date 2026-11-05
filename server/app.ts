@@ -19,6 +19,8 @@ import { attachEvents } from './events.ts';
 import { handleProtocols } from './auth.ts';
 import { securityHeaders } from './security.ts';
 import { requestLog } from './requests.ts';
+import { testHookRoutes } from './testHooks.ts';
+import { testHooksEnabled } from './verification.ts';
 
 export function createServer(opts: { serveWeb?: boolean } = {}) {
   const app = express();
@@ -38,6 +40,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
     res.setHeader('Access-Control-Max-Age', '86400');
     res.status(204).end();
   });
+  if (testHooksEnabled()) app.use('/api/__test', testHookRoutes); // e2e only; never in production (server/verification.ts)
   app.use('/api', api);
   app.use('/.well-known', wellKnownRoutes()); // universal / app links for the mobile apps (docs/MOBILE.md)
   app.use('/uploads', serveUploads); // nosniff + sandbox CSP + attachment disposition (routes/files.ts)

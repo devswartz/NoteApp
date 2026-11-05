@@ -43,11 +43,12 @@ import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
+import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
 import '../styles/editor.css';
 
 export type { PresenceUser, SaveState, SyncStatus };
 
-/** Plain checklist items; the "[] " input rule is reserved for real tasks. */
+/** Plain checklist items. Typing "[ ] " does nothing special: real tasks are inserted with /task. */
 const PlainTaskItem = TaskItem.extend({
   addInputRules() {
     return [];
@@ -93,7 +94,7 @@ export function documentExtensions(pageId: string): Extensions {
         if (node.type.name === 'heading') return `Heading ${node.attrs.level}`;
         if (node.type.name === 'detailsSummary') return 'Toggle';
         if (e.isActive('callout') || e.isActive('details')) return 'Type something…';
-        return "Type '/' for commands, '[]' for a task…";
+        return "Type '/' for commands…";
       },
     }),
     TaskList,
@@ -293,17 +294,17 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       {btn(s.h3, 'Heading 3', () => editor.chain().focus().toggleHeading({ level: 3 }).run(), <Heading3 size={16} />)}
       {btn(s.quote, 'Quote', () => editor.chain().focus().toggleBlockquote().run(), <Quote size={16} />)}
       <span className="bm-sep" />
-      {btn(s.bold, 'Bold (⌘B)', () => editor.chain().focus().toggleBold().run(), <Bold size={16} />)}
-      {btn(s.italic, 'Italic (⌘I)', () => editor.chain().focus().toggleItalic().run(), <Italic size={16} />)}
-      {btn(s.underline, 'Underline (⌘U)', () => editor.chain().focus().toggleUnderline().run(), <Underline size={16} />)}
-      {btn(s.strike, 'Strikethrough (⌘⇧S)', () => editor.chain().focus().toggleStrike().run(), <Strikethrough size={16} />)}
-      {btn(s.code, 'Inline code (⌘E)', () => editor.chain().focus().toggleCode().run(), <Code size={16} />)}
-      {btn(s.link, 'Link (⌘K)', () => openLinkEditor(editor), <Link2 size={16} />)}
+      {btn(s.bold, `Bold (${keyLabel(MOD, 'B')})`, () => editor.chain().focus().toggleBold().run(), <Bold size={16} />)}
+      {btn(s.italic, `Italic (${keyLabel(MOD, 'I')})`, () => editor.chain().focus().toggleItalic().run(), <Italic size={16} />)}
+      {btn(s.underline, `Underline (${keyLabel(MOD, 'U')})`, () => editor.chain().focus().toggleUnderline().run(), <Underline size={16} />)}
+      {btn(s.strike, `Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, () => editor.chain().focus().toggleStrike().run(), <Strikethrough size={16} />)}
+      {btn(s.code, `Inline code (${keyLabel(MOD, 'E')})`, () => editor.chain().focus().toggleCode().run(), <Code size={16} />)}
+      {btn(s.link, `Link (${keyLabel(MOD, 'K')})`, () => openLinkEditor(editor), <Link2 size={16} />)}
       <span className="bm-sep" />
       <button
         type="button"
         className="bm-btn bm-text"
-        title="Turn into task (⌘↵)"
+        title={`Turn into task (${keyLabel(MOD, ENTER)})`}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => editor.chain().focus().convertToTask().run()}
       >

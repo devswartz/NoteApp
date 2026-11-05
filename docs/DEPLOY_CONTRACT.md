@@ -33,7 +33,7 @@ This is the fixed interface between the code in this repo and the homelab that r
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | yes for web push | generate once per environment: `npx web-push generate-vapid-keys` |
 | `VAPID_SUBJECT` | yes for web push | `mailto:<admin address>` |
 | `SEED_DEMO` | no | `1` on staging only: loads demo content on an empty DB |
-| `SIGNUP_MODE` | no | `invite` (default in production): only people with a pending invite can create an account, plus bootstrap (the first account, or an email in `ADMIN_EMAILS`). `open`: anyone can sign up |
+| `SIGNUP_MODE` | no | `invite` (default in production): only people with a pending invite can create an account, plus bootstrap (the first account, or an email in `ADMIN_EMAILS`). `open`: anyone can sign up, and **needs working SMTP**: a new account must confirm its email (a link sent to `PUBLIC_URL/verify-email`) before it can use the app, and pending workspace invites for that address are applied only at confirmation. Bootstrap accounts are confirmed automatically. **Without `SMTP_HOST` nothing can be sent, so every new account is treated as confirmed**; don't run `open` in production without SMTP. Accounts that existed before email verification (migration 012) count as confirmed |
 | `ADMIN_EMAILS` | yes (staging + prod) | comma-separated instance admins (`/api/admin/stats`); they can always sign up, even in `invite` mode. **Set it before the first sign-up**: if it's unset, the first account ever created becomes the admin. |
 | `LOG_LEVEL` | no | `debug` / `info` / `warn` / `error`; default `info` in production. Logs are one JSON object per line on stdout/stderr. |
 | `TRUST_PROXY_HEADER` | yes (staging + prod) | `cf`: read the client IP from `CF-Connecting-IP` for rate limiting. **Only set this when the app port is reachable solely through cloudflared**; otherwise clients could forge their IP. Default off. |
@@ -42,7 +42,9 @@ This is the fixed interface between the code in this repo and the homelab that r
 | `FCM_SERVICE_ACCOUNT_JSON` | for Android push | Firebase service-account JSON (one line). Optional until the Android app ships. |
 | `ANDROID_CERT_SHA256` | for Android app links | SHA-256 fingerprint(s) of the Android signing certificate(s), comma-separated. Served in `/.well-known/assetlinks.json` (404 until set). `APNS_TEAM_ID` likewise drives `/.well-known/apple-app-site-association`. See `docs/MOBILE.md`. |
 
-If email or push settings are missing, the app still starts and logs a warning; reminders through that channel are skipped.
+If email or push settings are missing, the app still starts and logs a warning; reminders through that channel are skipped. `MAIL_FROM` must be a sender the SMTP provider has verified: confirmation emails, invites and password resets all use it.
+
+`E2E_TEST_HOOKS` is a test-only variable used by the e2e suite and is **ignored when `NODE_ENV=production`**. Never set it on a real environment.
 
 ## Hostnames
 - Production: `notes.devswartz.com`

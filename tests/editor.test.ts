@@ -12,7 +12,7 @@ test('normaliseUrl adds https, recognises email, refuses script URLs', () => {
   assert.equal(normaliseUrl('sam@example.com'), 'mailto:sam@example.com');
   assert.equal(normaliseUrl('mailto:a@b.c'), 'mailto:a@b.c');
   assert.equal(normaliseUrl('/w/1/p/2'), '/w/1/p/2');
-  assert.equal(normaliseUrl('noteapp://page/abc'), 'noteapp://page/abc');
+  assert.equal(normaliseUrl('notivelo://page/abc'), 'notivelo://page/abc');
   assert.equal(normaliseUrl('javascript:alert(1)'), null);
   assert.equal(normaliseUrl('JavaScript:alert(1)'), null);
   assert.equal(normaliseUrl('data:text/html,x'), null);
@@ -80,7 +80,7 @@ test('markdown import/export helpers: title split and safe file names', async ()
 
 test('link and image URL checks, and sanitizeContent for imported/exported documents', async () => {
   const { safeLinkUrl, safeImageUrl, sanitizeContent } = await import('../src/editor/urls.ts');
-  for (const ok of ['https://a.b/c', 'http://x', 'mailto:a@b.c', 'tel:+1', 'noteapp://page/1', '/w/1/p/2', '#top']) assert.equal(safeLinkUrl(ok), ok, ok);
+  for (const ok of ['https://a.b/c', 'http://x', 'mailto:a@b.c', 'tel:+1', 'notivelo://page/1', '/w/1/p/2', '#top']) assert.equal(safeLinkUrl(ok), ok, ok);
   for (const bad of ['javascript:alert(1)', ' JaVaScRiPt:alert(1)', 'java\tscript:alert(1)', 'java\nscript:x', 'data:text/html,x', 'vbscript:x', 'file:///etc/passwd', '//evil.com', 42]) {
     assert.equal(safeLinkUrl(bad), '', String(bad));
   }
