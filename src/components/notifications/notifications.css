@@ -1,0 +1,52 @@
+/* Recurrence picker, reminder picker and notification settings (owner: Reminders). */
+.rp { min-width: 240px; }
+.rp-custom { display: flex; flex-direction: column; gap: 10px; padding: 10px; min-width: 280px; max-width: 340px; }
+.rp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rp-col { display: flex; flex-direction: column; gap: 6px; }
+.rp-n { width: 60px; }
+.rp-radio { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.rp-days { display: flex; gap: 4px; }
+.rp-day {
+  width: 32px; height: 32px; border-radius: 50%; font-size: 12px; font-weight: 600;
+  background: var(--bg-hover); color: var(--text-2);
+}
+.rp-day.on { background: var(--accent); color: #fff; }
+.rp-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rp-summary { padding: 8px; border-radius: 8px; background: var(--bg-subtle); font-size: 13px; }
+.rp-actions { justify-content: flex-end; }
+
+.rm { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.rm-item { display: flex; align-items: center; gap: 6px; font-size: 13px; min-height: 26px; }
+.rm-item .icon-btn { opacity: 0.6; }
+.rm-item:hover .icon-btn, .rm-item .icon-btn:focus-visible { opacity: 1; }
+.rm-idle .rm-label { color: var(--text-muted); }
+.rm-form { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.rm-add { padding-left: 4px; }
+
+.ns-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.ns-row:first-of-type { border-top: none; }
+.ns-text { flex: 1; min-width: 0; }
+.ns-tz { max-width: 220px; }
+.ns-test { margin-top: 12px; }
+.ns-feed { display: flex; gap: 6px; margin-top: 6px; }
+.ns-feed .input { flex: 1; min-width: 0; font-family: var(--font-mono, monospace); font-size: 12px; }
+.ns-range { display: inline-flex; align-items: center; gap: 4px; }
+.link-btn { color: var(--accent); font-size: inherit; padding: 0; background: none; }
+.ns-switch {
+  position: relative; flex: none; width: 36px; height: 20px; border-radius: 10px;
+  background: var(--border); transition: background 0.15s;
+}
+.ns-switch span {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: var(--shadow-sm); transition: transform 0.15s;
+}
+.ns-switch.on { background: var(--accent); }
+.ns-switch.on span { transform: translateX(16px); }
+.ns-switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.ns-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 760px) {
+  .ns-row { flex-wrap: wrap; }
+  .ns-tz { max-width: 100%; flex: 1 1 100%; }
+  .rp-custom { max-width: none; }
+}
+.task-ind { display: inline-flex; align-items: center; }

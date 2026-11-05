@@ -47,7 +47,8 @@ test('set "Repeat" from task details; weekly task moves a week ahead on completi
   await taskRow(page, 'Weekly review').click();
   const detail = page.getByRole('dialog', { name: 'Task details' });
   await detail.getByRole('button', { name: 'Does not repeat' }).click();
-  await page.getByRole('menuitem', { name: 'Every week', exact: true }).click();
+  // RecurrencePicker (Reminders agent, #4): presets are menu items such as "Every week on Thu".
+  await page.getByRole('menuitem', { name: /^Every week on / }).click();
   await expect(detail.getByRole('button', { name: /week/i }).first()).toBeVisible();
   await eventually(() => api<FullTask[]>(request, 'GET', `/workspaces/${user.wsId}/tasks`, user.token), (ts) => !!ts.find((x) => x.id === t.id)?.recurrence, 'recurrence saved');
 
@@ -60,18 +61,24 @@ test('set "Repeat" from task details; weekly task moves a week ahead on completi
 });
 
 test('reminder can be set in task details and shows the bell on the row', async ({ page, context, request }) => {
+  // Drives the Reminders agent's ReminderPicker (src/components/notifications/), which replaced the
+  // single datetime input in #4 (one-time edit by the Reminders agent, agreed with the manager).
   const user = await createUser(request, 'Remy Reminder');
-  await createTask(request, user, user.wsId, { title: 'Call the dentist', dueDate: isoDay(0) });
+  const t = await createTask(request, user, user.wsId, { title: 'Call the dentist', dueDate: isoDay(0) });
   await signInContext(context, user);
   await page.goto(tasksUrl(user.wsId, 'today'));
   await taskRow(page, 'Call the dentist').click();
   const detail = page.getByRole('dialog', { name: 'Task details' });
-  await detail.locator('input[type="datetime-local"]').fill(`${isoDay(1)}T09:30`);
+  await detail.getByRole('button', { name: 'Add reminder' }).click();
+  await detail.getByRole('button', { name: 'At a time' }).click();
+  await detail.getByLabel('Reminder time').fill(`${isoDay(1)}T09:30`);
+  await detail.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(detail.getByRole('button', { name: 'Remove reminder' })).toHaveCount(1);
   await detail.getByRole('button', { name: 'Close (Esc)', exact: true }).click();
   await expect(taskRow(page, 'Call the dentist').getByLabel('Has reminder')).toBeVisible();
   await eventually(
-    () => api<(FullTask & { reminderAt: string | null })[]>(request, 'GET', `/workspaces/${user.wsId}/tasks`, user.token),
-    (ts) => ts.find((x) => x.title === 'Call the dentist')?.reminderAt === `${isoDay(1)}T09:30:00.000Z`,
+    () => api<{ kind: string; at?: string; nextFireAt: string | null }[]>(request, 'GET', `/tasks/${t.id}/reminders`, user.token),
+    (rs) => rs.length === 1 && rs[0].kind === 'at' && rs[0].at === `${isoDay(1)}T09:30:00.000Z` && rs[0].nextFireAt === rs[0].at,
     'reminder saved',
   );
 });
@@ -112,5 +119,5 @@ test('a due reminder shows an in-app toast while the app is open', async ({ page
 });
 
 test('reminder delivery settings (web push / email) in Settings', async () => {
-  test.fixme(true, 'waiting for feature: Reminders agent — server reminder worker, web push + email, notification settings');
+  test.fixme(true, 'server side and <NotificationSettingsPanel> are in #4; waiting for UI shell to render the panel on the Settings page');
 });
