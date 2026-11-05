@@ -86,7 +86,7 @@ export function seedWorkspace(workspaceId: string, userId: string, personal: boo
       h(2, 'Handy shortcuts'),
       ul(
         [code('/'), ' — insert anything: headings, tasks, tables, images, files'],
-        [code('[]'), ' + space — new task  ·  ', code('⌘ Enter'), ' — turn the current line into a task'],
+        [code('/task'), ' — new task  ·  ', code('Ctrl+Enter'), ' (', code('⌘ Enter'), ' on a Mac) — turn the current line into a task'],
         [code('⌘K'), ' — search notes and tasks  ·  ', code('Q'), ' — quick-add a task from anywhere'],
         [code('?'), ' — see every keyboard shortcut'],
       ),

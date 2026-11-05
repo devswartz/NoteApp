@@ -63,7 +63,7 @@ export const TEMPLATES: PageTemplate[] = [
       h(2, 'Decisions'),
       bullets(''),
       h(2, 'Action items'),
-      callout('✅', p(text('Type '), text('[]', [{ type: 'code' }]), text(' for a task, or select lines and press ⌘↵. Action items land on everyone’s dashboard.'))),
+      callout('✅', p(text('Type '), text('/task', [{ type: 'code' }]), text(' for a task, or select lines and press Ctrl+Enter (⌘↵ on a Mac). Action items land on everyone’s dashboard.'))),
       p(),
     ],
   },
