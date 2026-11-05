@@ -47,10 +47,18 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 | 13 | Token refresh mid-session: editing, REST and live events survive repeated 6 s access-token expiries (collab 4401 → refresh → reconnect); reload after expiry restores the session | `13-token-refresh.tokens.spec.ts` | ✅ |
 | 14 | Invite links (#11): invite → link → create account → joined, live in the owner's list; wrong signed-in account → Switch account; bad token. Private notebook shared with specific people (#14): live appear/disappear, others never see it, only the creator can change it | `14-invites-sharing.spec.ts` | ✅ incl. Notebook options → Share with people… |
 | 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
+| 16 | Page links (#25): `[[` to an existing page, open it, "Linked from" backlink, rename shows through, create from `[[`. Callout + toggle blocks persist (#21) | `16-links-blocks.spec.ts` | ✅ |
 
 ## Open bugs
 
-None open.
+### BUG-3: renaming a page and navigating away within ~0.4 s loses the new title
+- **Area / owner:** Editor & Notes (`src/pages/PageView.tsx`, page title effect: `setTimeout(patch, 400)` with `clearTimeout` on cleanup and no flush)
+- **Found on:** main @ 29daf5c, 2026-11-05 (3 out of 3 runs)
+- **Steps:** 1. Open a page. 2. Change its title. 3. Within ~0.4 s, click elsewhere (a sidebar link, a backlink, Today).
+- **Expected:** the new title is saved (and shown in the sidebar and in `[[links]]`).
+- **Actual:** the pending save is cancelled when the title component unmounts; the server keeps the old title, and the edit is silently lost.
+- **Suggested direction:** flush the pending patch in the effect cleanup (or on blur/unmount) instead of only clearing the timer.
+- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a page title typed just before navigating away is still saved" (`test.fixme`)
 
 <!-- Template:
 ### BUG-N: short title
