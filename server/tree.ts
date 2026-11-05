@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { HttpError } from './access.ts';
 import { db, newId, now } from './db.ts';
 import { publish } from './events.ts';
-import { rowToTask } from './tasks.ts';
+import { keepPrivateWhenDetaching, rowToTask } from './tasks.ts';
 import { closeRoom, flushAll } from './collab.ts';
 
 type TaskRow = Parameters<typeof rowToTask>[0];
@@ -30,6 +30,7 @@ export function detachPagesTasks(pageIds: string[], del: () => void) {
     for (const id of pageIds) {
       affected.push(...(db.prepare('SELECT id FROM tasks WHERE page_id = ?').all(id) as { id: string }[]).map((r) => r.id));
       db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(id);
+      keepPrivateWhenDetaching('page_id = ?', id); // tasks from a private notebook stay private
       // Files attached to a deleted page must not become visible to the whole workspace
       // (pages.id → files.page_id is ON DELETE SET NULL). Without a workspace, a file's
       // metadata is visible only to its uploader (GET /files/:id). The bytes stay at their

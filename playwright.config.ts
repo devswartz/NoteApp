@@ -4,6 +4,8 @@
 //
 // A second server (PORT+1) runs with very short access tokens (ACCESS_TOKEN_TTL_S) for the
 // `short-tokens` project (*.tokens.spec.ts), which checks that refresh works mid-session.
+// A third server (PORT+2) runs the production default SIGNUP_MODE=invite for the `invite-only`
+// project (*.invite.spec.ts). The main and short-token servers use SIGNUP_MODE=open so tests can create users freely.
 import { defineConfig, devices } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,12 +17,16 @@ const SHORT_TOKEN_TTL_S = 6;
 const external = process.env.E2E_BASE_URL;
 const baseURL = external ?? `http://127.0.0.1:${PORT}`;
 const shortURL = `http://127.0.0.1:${SHORT_PORT}`;
+const INVITE_PORT = PORT + 2;
+const inviteURL = `http://127.0.0.1:${INVITE_PORT}`;
 // Only the main process starts the servers; workers just need the URLs.
 const tmp = () => (process.env.TEST_WORKER_INDEX ? '' : mkdtempSync(join(tmpdir(), 'noteapp-e2e-')));
 const dataDir = process.env.E2E_DATA_DIR ?? tmp();
 const shortDataDir = tmp();
+const inviteDataDir = tmp();
 const ci = !!process.env.CI;
-const serverEnv = { JWT_SECRET: 'e2e-only-secret-not-used-anywhere-else-0123456789', GIT_SHA: 'e2e' };
+// SIGNUP_MODE=open: tests create many users directly (production defaults to invite-only).
+const serverEnv = { JWT_SECRET: 'e2e-only-secret-not-used-anywhere-else-0123456789', GIT_SHA: 'e2e', SIGNUP_MODE: 'open' };
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -41,11 +47,14 @@ export default defineConfig({
     locale: 'en-US',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: ['**/*.mobile.spec.ts', '**/*.tokens.spec.ts'] },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: ['**/*.mobile.spec.ts', '**/*.tokens.spec.ts', '**/*.invite.spec.ts'] },
     { name: 'mobile', use: { ...devices['iPhone 13'], browserName: 'chromium' }, testMatch: '**/*.mobile.spec.ts' },
     ...(external
       ? []
-      : [{ name: 'short-tokens', use: { ...devices['Desktop Chrome'], baseURL: shortURL }, testMatch: '**/*.tokens.spec.ts' }]),
+      : [
+          { name: 'short-tokens', use: { ...devices['Desktop Chrome'], baseURL: shortURL }, testMatch: '**/*.tokens.spec.ts' },
+          { name: 'invite-only', use: { ...devices['Desktop Chrome'], baseURL: inviteURL }, testMatch: '**/*.invite.spec.ts' },
+        ]),
   ],
   // Servers start one after the other, so only the first one builds.
   webServer: external
@@ -68,6 +77,15 @@ export default defineConfig({
           stdout: 'ignore',
           stderr: 'pipe',
           env: { ...serverEnv, PORT: String(SHORT_PORT), DATA_DIR: shortDataDir, PUBLIC_URL: shortURL, ACCESS_TOKEN_TTL_S: String(SHORT_TOKEN_TTL_S) },
+        },
+        {
+          command: 'npm start',
+          url: `${inviteURL}/api/health`,
+          timeout: 60_000,
+          reuseExistingServer: false,
+          stdout: 'ignore',
+          stderr: 'pipe',
+          env: { ...serverEnv, SIGNUP_MODE: 'invite', ADMIN_EMAILS: 'gate-owner@e2e.test', PORT: String(INVITE_PORT), DATA_DIR: inviteDataDir, PUBLIC_URL: inviteURL },
         },
       ],
 });
