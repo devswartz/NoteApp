@@ -175,6 +175,57 @@ export interface UploadedFile {
   size: number;
 }
 
+export interface Comment {
+  id: string;
+  threadId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/** A comment thread on a text selection in a page (anchored by a `comment` mark with this id). */
+export interface CommentThread {
+  id: string;
+  pageId: string;
+  workspaceId: string;
+  quote: string;
+  createdBy: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  comments: Comment[];
+}
+
+export type NotificationKind = 'mention' | 'assigned' | 'shared' | 'comment' | 'reminder' | 'invite' | 'other';
+
+/** An in-app notification (the bell inbox). */
+export interface AppNotification {
+  id: string;
+  kind: NotificationKind;
+  workspaceId: string | null;
+  actorId: string | null;
+  title: string;
+  body: string;
+  /** In-app path to open, e.g. /w/<ws>/p/<page>. */
+  link: string | null;
+  data: Record<string, unknown> | null;
+  createdAt: string;
+  readAt: string | null;
+}
+
+/** One entry in a workspace's activity feed. */
+export interface ActivityItem {
+  id: number;
+  workspaceId: string;
+  actorId: string | null;
+  verb: string;
+  targetType: 'page' | 'notebook' | 'section' | 'task' | 'member' | 'comment' | 'workspace';
+  targetId: string;
+  summary: string;
+  createdAt: string;
+}
+
 /** Messages pushed to clients over the /api/events WebSocket. */
 export type ServerEvent =
   | { type: 'task'; task: Task }
@@ -182,6 +233,12 @@ export type ServerEvent =
   | { type: 'tree'; workspaceId: string }
   | { type: 'members'; workspaceId: string }
   | { type: 'workspaces' }
+  /** Comment threads on a page changed: refetch them if the page is open. */
+  | { type: 'comments'; workspaceId: string; pageId: string }
+  /** A new in-app notification for the recipient (always sent to specific users). */
+  | { type: 'notification'; notification: AppNotification }
+  /** New entries in the workspace activity feed. */
+  | { type: 'activity'; workspaceId: string }
   /** The server can't replay what was missed: reload tree, tasks and members. */
   | { type: 'resync' };
 
