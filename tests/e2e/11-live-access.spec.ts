@@ -2,22 +2,24 @@
 import { expect, test } from '@playwright/test';
 import { api, createPage, createTeam, createUser, focusEnd, openPage, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
-test('member demoted to viewer while the page is open can no longer edit (server + UI)', async ({ browser, request }) => {
-  test.fixme(true, 'BUG-2 (docs/QA.md): a demoted member keeps editing through the already-open collab socket, and the edits persist');
+async function demoteWhileOpen(browser: import('@playwright/test').Browser, request: import('@playwright/test').APIRequestContext) {
   const alice = await createUser(request, 'Alice Demoter');
   const bob = await createUser(request, 'Bob Demoted');
   const teamId = await createTeam(request, alice, [{ user: bob, role: 'member' }]);
   const { pageId } = await createPage(request, alice, { wsId: teamId });
-
   const bc = await browser.newContext();
   await signInContext(bc, bob);
   const b = await bc.newPage();
   const editor = await openPage(b, teamId, pageId);
   await expect(editor).toHaveAttribute('contenteditable', 'true');
-
   await api(request, 'PATCH', `/workspaces/${teamId}/members/${bob.id}`, alice.token, { role: 'viewer' });
-  // Server side: edits typed on the old socket after the demotion must not be saved.
   await expect.poll(async () => (await api<{ id: string; role: string }[]>(request, 'GET', '/workspaces', bob.token)).find((w) => w.id === teamId)?.role).toBe('viewer');
+  return { alice, teamId, pageId, bc, b, editor };
+}
+
+test('BUG-2a: edits from a member demoted while the page is open are not saved', async ({ browser, request }) => {
+  test.fixme(true, 'BUG-2a (docs/QA.md): fixed by open PR #12 and by #14 (verified on both branches); enable when either merges');
+  const { alice, teamId, pageId, bc, b, editor } = await demoteWhileOpen(browser, request);
   await focusEnd(b);
   await b.keyboard.type('edit after demotion');
   const ac = await browser.newContext();
@@ -31,11 +33,16 @@ test('member demoted to viewer while the page is open can no longer edit (server
   await a.reload();
   await expect(a.locator('.ProseMirror')).toContainText('alice still edits');
   await expect(a.locator('.ProseMirror')).not.toContainText('edit after demotion');
+  await ac.close();
+  await bc.close();
+});
 
-  // UI side: becomes read-only without a reload.
+test('BUG-2b: a member demoted while the page is open sees it become read-only without a reload', async ({ browser, request }) => {
+  test.fixme(true, 'BUG-2b (docs/QA.md): the open page stays editable after demotion until reload (also on #12 and #14)');
+  const { bc, b, editor } = await demoteWhileOpen(browser, request);
   await expect(b.locator('.page-topbar')).toContainText('View only', { timeout: 10_000 });
   await expect(editor).toHaveAttribute('contenteditable', 'false');
-  await ac.close();
+  await expect(b.getByRole('button', { name: 'Add task' })).toHaveCount(0);
   await bc.close();
 });
 
@@ -75,7 +82,12 @@ test('member removed while the app is open loses the workspace live', async ({ b
   await openPage(b, teamId, pageId);
   await api(request, 'DELETE', `/workspaces/${teamId}/members/${bob.id}`, alice.token);
   await expect(b.locator('.sync-live')).toHaveCount(0, { timeout: 10_000 });
-  await b.locator('.ws-switch').click();
-  await expect(b.locator('.menu')).not.toContainText('Leaving Team', { timeout: 10_000 });
+  // The workspace disappears from the switcher (re-open it until the list has refreshed; the app may also navigate away).
+  await expect(async () => {
+    await b.keyboard.press('Escape');
+    await b.locator('.ws-switch').click();
+    await expect(b.locator('.menu').first()).toBeVisible({ timeout: 1_000 });
+    await expect(b.locator('.menu').first()).not.toContainText('Leaving Team', { timeout: 1_000 });
+  }).toPass({ timeout: 10_000 });
   await bc.close();
 });
