@@ -22,6 +22,12 @@ import type { Task } from '../shared/types.ts';
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
+// The adapter keeps small preferences in the web view's localStorage (platform.kv).
+const ls = new Map<string, string>();
+(globalThis as Record<string, unknown>).window = {
+  localStorage: { getItem: (k: string) => ls.get(k) ?? null, setItem: (k: string, v: string) => void ls.set(k, v), removeItem: (k: string) => void ls.delete(k) },
+};
+
 function task(over: Partial<Task>): Task {
   return {
     id: 't' + Math.random(),
@@ -109,6 +115,7 @@ function fakeBridge() {
     post: async (path, body) => void posts.push([path, body]),
     del: async (path, body) => void posts.push([`DELETE ${path}`, body]),
     registerCommands: () => {},
+    signOut: async () => {},
     capture: async (item) => {
       captured.push(item);
       return item.kind === 'note' ? '/w/ws/p/new-page' : '/w/ws/tasks/today';
@@ -353,7 +360,7 @@ test('mobile: shared notes go to the Inbox section, else the first section', () 
 });
 
 test('mobile: shares wait for sign-in, then open where they were saved', async () => {
-  const shares: SharedItem[] = [{ kind: 'note', text: 'From Safari' }];
+  const shares: SharedItem[] = [];
   const f = fakes({ shares });
   const b = fakeBridge();
   const p = createCapacitorPlatform(f.native, async () => b.bridge);
@@ -361,6 +368,11 @@ test('mobile: shares wait for sign-in, then open where they were saved', async (
   await tick();
   const links: string[] = [];
   p.deepLinks.subscribe((u) => links.push(u));
+  b.setUser('u1'); // u1 has used this device before…
+  await tick();
+  b.setUser(null); // …is signed out when the share arrives
+  await tick();
+  shares.push({ kind: 'note', text: 'From Safari' });
   f.fire('App.appStateChange', { isActive: true });
   await tick();
   assert.equal(b.captured.length, 0, 'signed out: kept for later');
@@ -394,4 +406,144 @@ test('mobile: Today widget snapshot — my due tasks, overdue first, capped, wit
   assert.equal(widgetSnapshot(tasks, 'me', 'ws', today, 2).items.length, 2);
   assert.equal(widgetSnapshot(tasks, 'me', 'ws', today, 2).total, 3, 'total counts everything');
   assert.deepEqual(widgetSnapshot(tasks, null, null, today), { v: 1, date: today, signedIn: false, path: null, total: 0, items: [] });
+});
+
+/** Just enough DOM for the lock cover: elements with style, children and click listeners. */
+function installFakeDom() {
+  class El {
+    style: Record<string, string> & { cssText?: string } = {};
+    children: El[] = [];
+    listeners: Record<string, (() => void)[]> = {};
+    className = '';
+    textContent = '';
+    constructor(public tag: string) {}
+    setAttribute() {}
+    append(...els: El[]) {
+      this.children.push(...els);
+    }
+    appendChild(el: El) {
+      this.children.push(el);
+    }
+    get lastElementChild(): El | null {
+      return this.children.at(-1) ?? null;
+    }
+    addEventListener(type: string, fn: () => void) {
+      (this.listeners[type] ??= []).push(fn);
+    }
+    click() {
+      this.listeners.click?.forEach((f) => f());
+    }
+  }
+  const body = new El('body');
+  (globalThis as Record<string, unknown>).document = { body, createElement: (t: string) => new El(t) };
+  return {
+    body,
+    cover: () => body.children[0] as El | undefined,
+    visible: () => {
+      const c = body.children[0];
+      return !!c && c.style.display !== 'none';
+    },
+    remove: () => delete (globalThis as Record<string, unknown>).document,
+  };
+}
+
+test('mobile: lock cover is really removed after unlocking; password fallback when biometrics are gone', async () => {
+  const dom = installFakeDom();
+  try {
+    let auth: 'ok' | 'cancel' | 'gone' = 'ok';
+    const native = {
+      os: 'ios',
+      BiometricAuth: {
+        checkBiometry: async () => ({ isAvailable: true, biometryType: 2, deviceIsSecure: true }),
+        authenticate: async () => {
+          if (auth === 'cancel') throw Object.assign(new Error('cancel'), { code: 'userCancel' });
+          if (auth === 'gone') throw Object.assign(new Error('gone'), { code: 'passcodeNotSet' });
+        },
+      },
+    } as unknown as NativePlugins;
+    const kv = memoryKv();
+    kv.set('noteapp.appLock', '1');
+    let clock = 0;
+    let signedOut = 0;
+    const lock = createAppLock(native, kv, () => clock, () => signedOut++);
+
+    lock.start();
+    assert.equal(dom.visible(), true, 'covered on launch');
+    await tick();
+    assert.equal(lock.locked(), false);
+    assert.equal(dom.visible(), false, 'cover gone after Face ID');
+
+    lock.background();
+    assert.equal(dom.visible(), true, 'privacy cover in the app switcher');
+    clock += 1000;
+    lock.foreground();
+    assert.equal(dom.visible(), false, 'quick switch: cover removed without a prompt');
+
+    lock.background();
+    clock += 120_000;
+    auth = 'cancel';
+    lock.foreground();
+    await tick();
+    assert.equal(dom.visible(), true);
+    const actions = dom.cover()!.lastElementChild!;
+    assert.equal(actions.style.visibility, 'visible', 'Unlock and password buttons offered after cancelling');
+    auth = 'ok';
+    (actions as unknown as { children: { click(): void }[] }).children[0].click(); // Unlock
+    await tick();
+    assert.equal(dom.visible(), false);
+
+    // Face ID and passcode removed: falls back to signing in with the password.
+    lock.background();
+    clock += 120_000;
+    auth = 'gone';
+    lock.foreground();
+    await tick();
+    assert.equal(signedOut, 1);
+    assert.equal(dom.visible(), false);
+    assert.equal(lock.api.enabled(), false, 'lock turned off so the password sign-in works');
+  } finally {
+    dom.remove();
+  }
+});
+
+test('mobile: shares wait while locked and never go to a different account', async () => {
+  const dom = installFakeDom();
+  try {
+    ls.set('noteapp.appLock', '1');
+    const shares: SharedItem[] = [];
+    const f = fakes({ shares });
+    let finishFaceId: () => void = () => {};
+    (f.native as unknown as Record<string, unknown>).BiometricAuth = {
+      checkBiometry: async () => ({ isAvailable: true, biometryType: 2, deviceIsSecure: true }),
+      authenticate: () => new Promise<void>((r) => (finishFaceId = r)), // prompt stays open until we finish it
+    };
+    const b = fakeBridge();
+    const p = createCapacitorPlatform(f.native, async () => b.bridge);
+    await p.init();
+    await tick();
+    b.setUser('alice');
+    await tick();
+    shares.push({ kind: 'note', text: 'for alice' });
+    f.fire('Native.shareReceived', {});
+    await tick();
+    assert.equal(b.captured.length, 0, 'nothing is saved behind the lock screen');
+    finishFaceId();
+    await tick();
+    await tick();
+    assert.deepEqual(b.captured.map((i) => i.text), ['for alice'], 'saved once unlocked');
+
+    // A share arrives for alice, but she signs out and mallory signs in before it's saved.
+    ls.delete('noteapp.appLock');
+    shares.push({ kind: 'task', text: 'alice private' });
+    b.setUser(null);
+    await tick();
+    f.fire('App.appStateChange', { isActive: true });
+    await tick();
+    b.setUser('mallory');
+    await tick();
+    assert.deepEqual(b.captured.map((i) => i.text), ['for alice'], 'not handed to another account');
+  } finally {
+    dom.remove();
+    ls.clear();
+  }
 });

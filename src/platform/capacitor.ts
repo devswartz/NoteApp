@@ -83,6 +83,7 @@ export interface AppBridge {
   del(path: string, body: unknown): Promise<unknown>;
   /** Handles a shared item once someone is signed in. Resolves to an in-app path to open, if any. */
   capture(item: SharedItem): Promise<string | null>;
+  signOut(): Promise<void>;
   /** Adds commands to the ⌘K palette (src/hooks/useShortcuts.ts). */
   registerCommands(cmds: { id: string; title: string; group?: string; keywords?: string; run: () => void; when?: () => boolean }[]): void;
 }
@@ -223,6 +224,8 @@ export function widgetSnapshot(tasks: Iterable<Task>, me: string | null, wsId: s
   };
 }
 
+const LAST_USER_KEY = 'noteapp.lastUserId';
+
 /** Lock again after the app has been in the background this long. */
 export const RELOCK_AFTER_MS = 60_000;
 export const APP_LOCK_KEY = 'noteapp.appLock';
@@ -269,8 +272,17 @@ export function dueTodayCount(tasks: Iterable<Task>, me: string | null, today = 
  * hides the app; it is also shown as soon as the app goes to the background,
  * so the app switcher never shows note contents.
  */
-export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = () => Date.now()) {
+/** BiometricAuth error codes that mean "this device can't unlock right now", not "the user cancelled". */
+const UNAVAILABLE = new Set(['biometryNotAvailable', 'biometryNotEnrolled', 'biometryLockout', 'passcodeNotSet', 'noDeviceCredential', 'notInteractive']);
+
+/**
+ * @param fallback  Called when the user chooses (or is forced) to unlock with
+ *                  their account password instead: the adapter turns the lock
+ *                  off and signs out, so the next step is the normal sign-in.
+ */
+export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = () => Date.now(), fallback: () => void = () => {}) {
   const listeners = new Set<(on: boolean) => void>();
+  const unlockListeners = new Set<() => void>();
   let cover: HTMLElement | null = null;
   let locked = false;
   let prompting = false;
@@ -291,49 +303,78 @@ export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = (
       icon.src = '/icon.svg';
       icon.alt = '';
       icon.width = icon.height = 72;
+      const actions = document.createElement('div');
+      actions.className = 'app-lock-actions';
+      actions.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px';
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'btn btn-primary';
       button.textContent = 'Unlock';
       button.addEventListener('click', () => void unlock());
-      cover.append(icon, button);
+      const password = document.createElement('button');
+      password.type = 'button';
+      password.className = 'btn btn-ghost btn-sm';
+      password.textContent = 'Sign in with password instead';
+      password.addEventListener('click', usePassword);
+      actions.append(button, password);
+      cover.append(icon, actions);
       document.body.appendChild(cover);
     }
+    // The cover's own `display:flex` would override the `hidden` attribute, so toggle display.
     (cover.lastElementChild as HTMLElement).style.visibility = withButton ? 'visible' : 'hidden';
-    cover.hidden = false;
+    cover.style.display = 'flex';
   };
   const hideCover = () => {
-    if (cover) cover.hidden = true;
+    if (cover) cover.style.display = 'none';
   };
+  const coverVisible = () => !!cover && cover.style.display !== 'none';
 
-  async function authenticate(reason: string): Promise<boolean> {
+  /** Way out when biometrics/passcode can't be used: lock off, sign out, sign in with the password. */
+  function usePassword() {
+    kv.remove(APP_LOCK_KEY);
+    listeners.forEach((l) => l(false));
+    locked = false;
+    hideCover();
+    fallback();
+  }
+
+  async function authenticate(reason: string): Promise<'ok' | 'cancelled' | 'unavailable'> {
     try {
       await native.BiometricAuth.authenticate({
         reason,
         cancelTitle: 'Cancel',
-        allowDeviceCredential: true, // fall back to the passcode, never lock the user out
+        allowDeviceCredential: true, // fall back to the passcode
         androidTitle: 'Unlock',
         androidSubtitle: reason,
       });
-      return true;
-    } catch {
-      return false;
+      return 'ok';
+    } catch (e) {
+      return UNAVAILABLE.has((e as { code?: string } | null)?.code ?? '') ? 'unavailable' : 'cancelled';
     }
   }
 
   async function unlock() {
     if (prompting) return;
     prompting = true;
-    const ok = await authenticate('Unlock your notes');
+    const result = await authenticate('Unlock your notes');
     prompting = false;
-    if (ok) {
+    if (result === 'ok') {
       locked = false;
       hideCover();
-    } else showCover(true); // cancelled: offer a button to try again
+      unlockListeners.forEach((l) => l());
+    } else if (result === 'unavailable') {
+      // Face ID / passcode removed or locked out: never a dead end.
+      usePassword();
+    } else showCover(true); // cancelled: offer Unlock again, or the password
   }
 
   const lock = {
     locked: () => locked,
+    coverVisible,
+    /** Runs after every successful unlock. */
+    onUnlock(cb: () => void) {
+      unlockListeners.add(cb);
+    },
     /** Cold start. */
     start() {
       if (!enabled()) return;
@@ -369,7 +410,7 @@ export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = (
       async setEnabled(on: boolean) {
         if (on === enabled()) return on;
         // Prove it works before relying on it (and when turning it off, that it's really you).
-        if (!(await authenticate(on ? 'Turn on app lock' : 'Turn off app lock'))) return enabled();
+        if ((await authenticate(on ? 'Turn on app lock' : 'Turn off app lock')) !== 'ok') return enabled();
         if (on) kv.set(APP_LOCK_KEY, '1');
         else kv.remove(APP_LOCK_KEY);
         listeners.forEach((l) => l(on));
@@ -403,7 +444,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   };
 
   const localClicks = new Map<number, () => void>();
-  const appLock = createAppLock(native, kv);
+  const appLock = createAppLock(native, kv, undefined, () => void app?.signOut());
 
   const haptics: MobileExtras['haptics'] = {
     tap: () => void native.Haptics.selectionChanged().catch(() => {}),
@@ -448,7 +489,14 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     if (userId === currentUser) return;
     const previous = currentUser;
     currentUser = userId;
+    // Shares belong to whoever was signed in when they arrived; never hand them to another account.
+    for (let i = shareQueue.length - 1; i >= 0; i--) {
+      const owner = shareQueue[i].owner;
+      const keep = userId && (owner === userId || (owner === null && kv.get(LAST_USER_KEY) === userId));
+      if (!keep) shareQueue.splice(i, 1);
+    }
     if (userId) {
+      kv.set(LAST_USER_KEY, userId);
       void drainShares();
       await registerPush().catch((e) => console.warn('Push registration failed', e));
       await sendToken();
@@ -471,20 +519,24 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
   }
 
   // ── Share capture ──
-  const shareQueue: SharedItem[] = [];
+  // Each item is tagged with the user signed in when it arrived (null: nobody;
+  // then only the device's last user may take it). Nothing is saved while the app is locked.
+  const shareQueue: { item: SharedItem; owner: string | null }[] = [];
   let draining = false;
   async function drainShares() {
     try {
       const { items } = await native.NoteAppNative.getPendingShares();
-      shareQueue.push(...items);
+      shareQueue.push(...items.map((item) => ({ item, owner: currentUser })));
     } catch {
       /* plugin missing (e.g. live-reload dev build) */
     }
-    if (draining || !app || !currentUser) return;
+    if (draining || !app || !currentUser || appLock.locked() || appLock.coverVisible()) return;
     draining = true;
     try {
-      while (shareQueue.length && currentUser) {
-        const path = await app.capture(shareQueue.shift()!).catch((e) => {
+      while (shareQueue.length && currentUser && !appLock.locked()) {
+        const { item, owner } = shareQueue.shift()!;
+        if (owner !== null && owner !== currentUser) continue;
+        const path = await app.capture(item).catch((e) => {
           console.warn('Could not save the shared item', e);
           return null;
         });
@@ -527,6 +579,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       await native.SecureStorage.setDefaultKeychainAccess(3 /* afterFirstUnlockThisDeviceOnly */).catch(() => {});
       await refreshPermission();
       appLock.start(); // before the first render, so nothing shows through
+      appLock.onUnlock(() => void drainShares());
 
       // Deep links: custom scheme + universal/app links.
       void native.App.addListener('appUrlOpen', ({ url }) => emitLink(url));
@@ -653,7 +706,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
 
 /** Status bar, keyboard, splash screen and haptic taps: DOM wiring, no app state. */
 function installSystemUi(native: NativePlugins, haptics: MobileExtras['haptics']) {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return; // not a browser (tests)
   const root = document.documentElement;
   root.classList.add('native', `native-${native.os}`);
 
@@ -724,6 +777,7 @@ async function loadAppBridge(): Promise<AppBridge> {
     post: (path, body) => api.post(path, body),
     del: (path, body) => api.api(path, { method: 'DELETE', json: body }),
     registerCommands: (cmds) => void shortcuts.registerCommands(cmds),
+    signOut: async () => (await import('../store/session.ts')).signOut(),
     async capture(item) {
       const ws = await workspaceReady(useStore);
       if (!ws) return null;
