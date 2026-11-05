@@ -11,9 +11,18 @@
     "start": "NODE_ENV=production tsx server/index.ts",
     "typecheck": "tsc -b",
     "test": "node --import tsx --test tests/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "desktop:dev": "node apps/desktop/scripts/tauri.mjs dev",
+    "desktop:build": "node apps/desktop/scripts/tauri.mjs build",
+    "desktop:icons": "tauri icon apps/desktop/icon-source.svg -o apps/desktop/src-tauri/icons"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-deep-link": "^2.6.3",
+    "@tauri-apps/plugin-notification": "^2.8.0",
+    "@tauri-apps/plugin-opener": "^2.7.2",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "@tiptap/core": "^3.32.2",
     "@tiptap/extension-collaboration": "^3.32.2",
     "@tiptap/extension-collaboration-caret": "^3.32.2",
@@ -46,6 +55,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@tauri-apps/cli": "^2.12.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
