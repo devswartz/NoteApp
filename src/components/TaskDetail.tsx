@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, CalendarDays, Clock, FileText, Flag, Repeat, Trash2, UserRound, X } from 'lucide-react';
-import { deleteTask, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { deleteTask, errorToast, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
 import { Avatar, Dropdown, Modal } from './ui.tsx';
-import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu, RecurrenceMenu, TaskCheckbox } from './TaskControls.tsx';
+import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from './TaskControls.tsx';
+import { RecurrencePicker, ReminderPicker } from './notifications/index.ts';
 import { describeDue, dueTone, PRIORITY_LABEL, relativeTime } from '../lib/format.ts';
-import { describeRecurrence, today } from '../../shared/dates.ts';
+import { today } from '../../shared/dates.ts';
+import { describeRecurrence, firstOccurrence } from '../../shared/recurrence.ts';
 
 /** Side sheet (desktop) / bottom sheet (mobile) for viewing and editing one task. */
 export function TaskDetail() {
@@ -134,24 +136,39 @@ export function TaskDetail() {
             <Dropdown
               disabled={!canEdit}
               buttonClass="prop-btn"
-              trigger={task.recurrence ? describeRecurrence(task.recurrence) : <span className="muted">Does not repeat</span>}
+              trigger={task.recurrence ? describeRecurrence(task.recurrence, task.dueDate) : <span className="muted">Does not repeat</span>}
             >
-              <RecurrenceMenu
-                value={task.recurrence}
-                onChange={(recurrence) =>
-                  void updateTask(task.id, { recurrence, ...(recurrence && !task.dueDate ? { dueDate: today() } : {}) })
-                }
-              />
+              {(closeMenu) => (
+                <RecurrencePicker
+                  value={task.recurrence}
+                  dueDate={task.dueDate}
+                  onDone={closeMenu}
+                  onChange={(recurrence) =>
+                    void updateTask(task.id, {
+                      recurrence,
+                      ...(recurrence && !task.dueDate ? { dueDate: firstOccurrence(recurrence, today()) } : {}),
+                    })
+                  }
+                />
+              )}
             </Dropdown>
           </Prop>
-          <Prop icon={<Bell size={15} />} label="Reminder">
-            <input
-              type="datetime-local"
-              className="prop-input"
-              disabled={!canEdit}
-              value={task.reminderAt ? toLocalInput(task.reminderAt) : ''}
-              onChange={(e) => void updateTask(task.id, { reminderAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
-            />
+          <Prop icon={<Bell size={15} />} label="Reminders">
+            <div>
+              {task.reminderAt && (
+                // The original single reminder field: still shown and clearable; new ones go through ReminderPicker.
+                <div className="rm-item">
+                  <Bell size={13} />
+                  <span className="rm-label">{new Date(task.reminderAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                  {canEdit && (
+                    <button type="button" className="icon-btn btn-ghost" aria-label="Remove reminder" title="Remove reminder" onClick={() => void updateTask(task.id, { reminderAt: null })}>
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              )}
+              <ReminderPicker task={task} onError={errorToast} />
+            </div>
           </Prop>
         </div>
 
@@ -189,10 +206,4 @@ function Prop({ icon, label, children }: { icon: React.ReactNode; label: string;
       <div className="prop-value">{children}</div>
     </div>
   );
-}
-
-function toLocalInput(iso: string) {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
