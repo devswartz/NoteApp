@@ -10,6 +10,7 @@ public class NoteAppNativePlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "getPendingShares", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "writeWidgetSnapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setConfig", returnType: CAPPluginReturnPromise),
     ]
 
     /// Items saved by the Share Extension since the last call.
@@ -22,6 +23,11 @@ public class NoteAppNativePlugin: CAPPlugin, CAPBridgedPlugin {
         guard let json = call.getString("json") else { return call.reject("json is required") }
         SharedStore.saveSnapshot(json)
         WidgetCenter.shared.reloadAllTimelines()
+        call.resolve()
+    }
+
+    /// Settings the native side may need without the web view. iOS snooze actions open the app, so nothing is stored yet.
+    @objc func setConfig(_ call: CAPPluginCall) {
         call.resolve()
     }
 }
