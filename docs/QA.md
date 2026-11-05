@@ -51,6 +51,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 17 | Live-event catch-up after a dropped socket (#18): tasks created, edited or completed while away appear on reconnect without a reload. Version history restore (#37). "Meeting notes" template on an empty page (#27). Change password (#61) | `17-sync-history-account.spec.ts` | ✅ |
 | 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages | `18-sidebar.spec.ts` | ✅ |
 | 19 | Invite-only sign-up (#67, `SIGNUP_MODE=invite`): an `ADMIN_EMAILS` account can bootstrap; strangers see "Sign-up is by invitation" and get 403 from the API; an invited email signs up through the invite link and lands in the team | `19-signup.invite.spec.ts` | ✅ |
+| 21 | Comment threads (#28/#55/#62): select text → bubble menu Comment → highlight; another member sees it live and replies; resolve hides it under "Show 1 resolved" (live for others); reopen | `21-comments.spec.ts` | ✅ |
 
 ## Open bugs
 
