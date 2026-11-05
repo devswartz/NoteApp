@@ -59,6 +59,8 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   await nbRow.hover();
   await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete notebook' }).click();
+  // The sidebar confirms in the app's own dialog (not window.confirm).
+  await page.getByRole('dialog', { name: /Delete/ }).getByRole('button', { name: 'Delete notebook' }).click();
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Second Notebook')).toHaveCount(0);
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor two')?.pageId === null, 'task detached on notebook delete');
 

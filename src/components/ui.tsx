@@ -23,6 +23,8 @@ export const useClosePopover = () => useContext(PopoverCtx);
 
 interface PopoverProps {
   anchor: RefObject<HTMLElement | null>;
+  /** Position at a point instead of below the anchor (context menus). */
+  point?: { x: number; y: number } | null;
   open: boolean;
   onClose: () => void;
   children: ReactNode;
@@ -31,13 +33,13 @@ interface PopoverProps {
 }
 
 /** Floating panel anchored to an element; closes on outside click and Escape. */
-export function Popover({ anchor, open, onClose, children, placement = 'bottom-start', className }: PopoverProps) {
+export function Popover({ anchor, point, open, onClose, children, placement = 'bottom-start', className }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (!open || !anchor.current || !ref.current) return;
-    const a = anchor.current.getBoundingClientRect();
+    if (!open || !ref.current || (!point && !anchor.current)) return;
+    const a = point ? new DOMRect(point.x, point.y, 0, 0) : anchor.current!.getBoundingClientRect();
     const p = ref.current.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -46,13 +48,13 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
     if (top + p.height > vh - 8) top = Math.max(8, a.top - p.height - 6);
     left = Math.min(Math.max(8, left), vw - p.width - 8);
     setPos({ top, left });
-  }, [open, anchor, placement]);
+  }, [open, anchor, placement, point]);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (ref.current?.contains(t) || anchor.current?.contains(t)) return;
+      if (ref.current?.contains(t) || (!point && anchor.current?.contains(t))) return;
       onClose();
     };
     const onKey = (e: KeyboardEvent) => {
@@ -80,7 +82,7 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
     };
-  }, [open, onClose, anchor]);
+  }, [open, onClose, anchor, point]);
 
   if (!open) return null;
   return createPortal(
@@ -96,6 +98,38 @@ export function Popover({ anchor, open, onClose, children, placement = 'bottom-s
     </PopoverCtx.Provider>,
     document.body,
   );
+}
+
+/**
+ * Right-click / long-press menu. Spread `bind` onto the target element and
+ * render `menu` anywhere. `open()` also works from a "⋯" button.
+ */
+export function useContextMenu(render: (close: () => void) => ReactNode) {
+  const anchor = useRef<HTMLElement | null>(null);
+  const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
+  const close = () => setPoint(null);
+  const longPress = useRef<number | undefined>(undefined);
+  const bind = {
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setPoint({ x: e.clientX, y: e.clientY });
+    },
+    // Touch: long-press opens the menu (iOS Safari doesn't fire contextmenu).
+    onTouchStart: (e: React.TouchEvent) => {
+      const t = e.touches[0];
+      window.clearTimeout(longPress.current);
+      longPress.current = window.setTimeout(() => setPoint({ x: t.clientX, y: t.clientY }), 500);
+    },
+    onTouchEnd: () => window.clearTimeout(longPress.current),
+    onTouchMove: () => window.clearTimeout(longPress.current),
+  };
+  const menu = (
+    <Popover anchor={anchor} point={point} open={!!point} onClose={close}>
+      {point ? render(close) : null}
+    </Popover>
+  );
+  return { bind, menu, openAt: (x: number, y: number) => setPoint({ x, y }), close };
 }
 
 /** Button + popover pair. */
@@ -428,6 +462,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       ref={ref}
       type={type}
       aria-label={label}
+      title={tooltip ? undefined : label}
       aria-pressed={active}
       className={`btn-ghost icon-btn ${size === 'sm' ? 'sm' : size === 'lg' ? 'lg' : ''} ${active ? 'is-active' : ''} ${className ?? ''}`}
       {...rest}
