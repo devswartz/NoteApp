@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to the same PR/branch cancels the run already in progress.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Require this job ("check") in branch protection for `main`.
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      has_e2e: ${{ steps.e2e.outputs.present }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Detect E2E suite
+        id: e2e
+        run: |
+          if [ -d tests/e2e ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+
+  # ---------------------------------------------------------------------------
+  # E2E SLOT — Playwright suite owned by the QA agent (tests/e2e/).
+  # Skipped automatically until tests/e2e/ exists. Expects @playwright/test in
+  # devDependencies and a playwright.config.ts (its `webServer` should start
+  # the app, e.g. `npm run build && npm start`).
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: e2e
+    needs: check
+    if: needs.check.outputs.has_e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npx playwright install --with-deps chromium
+
+      - run: npx playwright test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
