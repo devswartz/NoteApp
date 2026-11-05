@@ -3,11 +3,25 @@ import { Router } from 'express';
 import { db, now } from '../db.ts';
 import { accessChanged, requireRole, roleIn } from '../access.ts';
 import { publish } from '../events.ts';
-import { createWorkspace, memberIds } from '../workspaces.ts';
+import {
+  createWorkspace,
+  findInvite,
+  memberIds,
+  publicUrl,
+  sendAddedEmail,
+  sendInviteEmail,
+  upsertInvite,
+} from '../workspaces.ts';
 import { HttpError, ROLES, h, param, str } from '../http.ts';
-import type { Member, Role, Workspace } from '../../shared/types.ts';
+import type { Member, PendingInvite, Role, Workspace } from '../../shared/types.ts';
 
 export const workspaceRoutes = Router();
+/** Routes that work without a token (the invite landing page). */
+export const publicWorkspaceRoutes = Router();
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const userName = (id: string) => (db.prepare('SELECT name FROM users WHERE id = ?').get(id) as { name: string } | undefined)?.name ?? 'Someone';
+const workspaceName = (id: string) => (db.prepare('SELECT name FROM workspaces WHERE id = ?').get(id) as { name: string }).name;
 
 workspaceRoutes.get(
   '/workspaces',
@@ -67,34 +81,102 @@ workspaceRoutes.get(
       .all(wsId) as Member[];
     const invites =
       role === 'owner' || role === 'admin'
-        ? db.prepare('SELECT email, role FROM workspace_invites WHERE workspace_id = ? ORDER BY created_at').all(wsId)
+        ? (db
+            .prepare(
+              `SELECT email, role, invited_by AS invitedBy, created_at AS createdAt, expires_at AS expiresAt
+               FROM workspace_invites WHERE workspace_id = ? ORDER BY created_at`,
+            )
+            .all(wsId) as PendingInvite[])
         : [];
     return { members, invites };
   }),
 );
 
+// Invite by email. An existing user is added straight away (and told by email);
+// anyone else gets an invite link by email. Returns the link so an admin can
+// copy it when SMTP isn't configured.
 workspaceRoutes.post(
   '/workspaces/:id/members',
-  h((req) => {
+  h(async (req) => {
     const wsId = param(req, 'id');
     const myRole = requireRole(wsId, req.user.id, 'admin');
     const email = str(req.body.email, 'Email', 200).toLowerCase();
+    if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Enter a valid email address');
     const role: Role = ROLES.includes(req.body.role) ? req.body.role : 'member';
     if (role === 'owner' && myRole !== 'owner') throw new HttpError(403, 'Only owners can add owners');
+    const base = publicUrl(req.get('origin'));
+    const mail = { to: email, workspaceName: workspaceName(wsId), inviterName: userName(req.user.id), role };
     const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
     if (user) {
       if (roleIn(wsId, user.id)) throw new HttpError(409, 'That person is already a member');
       db.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)').run(wsId, user.id, role, now());
+      db.prepare('DELETE FROM workspace_invites WHERE workspace_id = ? AND email = ?').run(wsId, email);
       publish({ type: 'workspaces' }, { userIds: [user.id] });
       publish({ type: 'members', workspaceId: wsId });
-      return { status: 'added' };
+      const r = await sendAddedEmail({ ...mail, link: `${base}/w/${wsId}` });
+      return { status: 'added', emailed: r.sent };
     }
-    db.prepare(
-      `INSERT INTO workspace_invites (workspace_id, email, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT (workspace_id, email) DO UPDATE SET role = excluded.role`,
-    ).run(wsId, email, role, req.user.id, now());
+    const token = upsertInvite(wsId, email, role, req.user.id);
     publish({ type: 'members', workspaceId: wsId });
-    return { status: 'invited' };
+    const inviteUrl = `${base}/invite/${token}`;
+    const r = await sendInviteEmail({ ...mail, link: inviteUrl });
+    return { status: 'invited', emailed: r.sent, inviteUrl };
+  }),
+);
+
+// Re-send a pending invite with a fresh link (the old link stops working).
+workspaceRoutes.post(
+  '/workspaces/:id/invites/:email/resend',
+  h(async (req) => {
+    const wsId = param(req, 'id');
+    requireRole(wsId, req.user.id, 'admin');
+    const email = param(req, 'email').toLowerCase();
+    const inv = db.prepare('SELECT role FROM workspace_invites WHERE workspace_id = ? AND email = ?').get(wsId, email) as
+      | { role: Role }
+      | undefined;
+    if (!inv) throw new HttpError(404, 'Invite not found');
+    const token = upsertInvite(wsId, email, inv.role, req.user.id);
+    publish({ type: 'members', workspaceId: wsId });
+    const inviteUrl = `${publicUrl(req.get('origin'))}/invite/${token}`;
+    const r = await sendInviteEmail({ to: email, link: inviteUrl, workspaceName: workspaceName(wsId), inviterName: userName(req.user.id), role: inv.role });
+    return { status: 'invited', emailed: r.sent, inviteUrl };
+  }),
+);
+
+// What an invite link is for (shown on the landing page before signing in).
+publicWorkspaceRoutes.get(
+  '/invites/:token',
+  h((req) => {
+    const inv = findInvite(param(req, 'token'));
+    if (!inv) throw new HttpError(404, 'This invite link is no longer valid');
+    const { expiresAt: _e, ...info } = inv;
+    return info;
+  }),
+);
+
+// Accept an invite link as the signed-in user. The link alone isn't enough:
+// the account's email must be the one that was invited.
+workspaceRoutes.post(
+  '/invites/:token/accept',
+  h((req) => {
+    const inv = findInvite(param(req, 'token'));
+    if (!inv) throw new HttpError(404, 'This invite link is no longer valid');
+    if (inv.expired) throw new HttpError(410, 'This invite has expired. Ask for a new one.');
+    if (req.user.email.toLowerCase() !== inv.email.toLowerCase())
+      throw new HttpError(403, `This invite was sent to ${inv.email}. Sign in with that email address to accept it.`);
+    db.transaction(() => {
+      if (!roleIn(inv.workspaceId, req.user.id))
+        db.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)').run(
+          inv.workspaceId,
+          req.user.id,
+          inv.role,
+          now(),
+        );
+      db.prepare('DELETE FROM workspace_invites WHERE workspace_id = ? AND email = ?').run(inv.workspaceId, inv.email);
+    })();
+    publish({ type: 'workspaces' }, { userIds: [req.user.id] });
+    publish({ type: 'members', workspaceId: inv.workspaceId });
+    return { workspaceId: inv.workspaceId };
   }),
 );
 
@@ -149,7 +231,7 @@ workspaceRoutes.delete(
   h((req) => {
     const wsId = param(req, 'id');
     requireRole(wsId, req.user.id, 'admin');
-    db.prepare('DELETE FROM workspace_invites WHERE workspace_id = ? AND email = ?').run(wsId, param(req, 'email'));
+    db.prepare('DELETE FROM workspace_invites WHERE workspace_id = ? AND email = ?').run(wsId, param(req, 'email').toLowerCase());
     publish({ type: 'members', workspaceId: wsId });
     return { ok: true };
   }),

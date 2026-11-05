@@ -19,7 +19,7 @@ export let platform: Platform = webPlatform;
 export async function initPlatform() {
   // Shell implementations are loaded lazily so the web bundle doesn't carry them:
   //   if (detectPlatform() === 'tauri') platform = (await import('./tauri.ts')).tauriPlatform;
-  //   if (detectPlatform() === 'capacitor') platform = (await import('./capacitor.ts')).capacitorPlatform;
+  if (detectPlatform() === 'capacitor') platform = await (await import('./capacitor.ts')).loadCapacitorPlatform();
   await platform.init();
 }
 

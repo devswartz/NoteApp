@@ -1,0 +1,14 @@
+/* Sharing, members and invites UI. Owner: Collaboration & Access. */
+.invite-cta { width: 100%; margin-top: 20px; }
+.invite-link { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 8px; }
+.invite-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.member-row .role-help { max-width: 260px; }
+.member-row.is-expired .grow > div:first-child { text-decoration: line-through; opacity: 0.7; }
+.share-list { display: grid; gap: 6px; margin-top: 12px; max-height: 320px; overflow: auto; }
+.share-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; }
+.share-row:hover { background: var(--hover, rgba(127, 127, 127, 0.08)); }
+.share-row .grow { min-width: 0; }
+.share-row input[type='checkbox'] { width: 16px; height: 16px; }
+.visibility-choice { display: grid; gap: 8px; margin-top: 8px; }
+.visibility-choice label { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.visibility-choice label.is-active { border-color: var(--accent); }

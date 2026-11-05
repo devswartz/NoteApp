@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Push notifications (APNs). Xcode switches this to "production" when exporting for TestFlight/App Store. -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<!-- Universal links: https://notes.devswartz.com/w/… opens the app (needs /.well-known/apple-app-site-association on the server; see docs/MOBILE.md). -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:notes.devswartz.com</string>
+	</array>
+</dict>
+</plist>
