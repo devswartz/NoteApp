@@ -126,9 +126,30 @@ export type TaskPatch = Partial<
   >
 >;
 
+/**
+ * GET /workspaces/:id/search?q=…&limit=… — best match first.
+ * Snippets mark matched terms with « and » (escape nothing else; render as text).
+ */
 export interface SearchResult {
-  pages: { id: string; title: string; snippet: string; notebookName: string; sectionName: string }[];
-  tasks: Task[];
+  pages: {
+    id: string;
+    title: string;
+    icon?: string | null;
+    snippet: string;
+    notebookName: string;
+    sectionName: string;
+  }[];
+  tasks: (Task & { snippet?: string })[];
+}
+
+/** An uploaded image or attachment (POST /workspaces/:id/files). */
+export interface UploadedFile {
+  id: string;
+  /** Path on the API origin ("/uploads/<id><ext>"); pass it through fileUrl() on the client. */
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
 }
 
 /** Messages pushed to clients over the /api/events WebSocket. */
