@@ -23,3 +23,20 @@
 .presence-more { margin-left: -6px; background: var(--border, #ddd); color: inherit; box-shadow: 0 0 0 2px var(--bg); }
 .presence-pop { min-width: 220px; padding: 6px; }
 .presence-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+
+/* Sharing one page (#98) */
+.page-share-add { margin-top: 12px; }
+.page-share-add .input { min-width: 0; }
+.page-share-level { width: auto; flex: none; }
+.page-share-suggestions { margin-top: 6px; }
+.page-share-suggestions .share-row { width: 100%; text-align: left; }
+.page-share-dialog .avatar-placeholder { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--bg-hover, rgba(127, 127, 127, 0.12)); color: var(--text-2, inherit); flex: none; }
+.page-share-btn { display: inline-flex; align-items: center; gap: 4px; }
+.sb-heading-static { cursor: default; }
+.sb-heading-static:hover { background: none; }
+.sb-shared-page { position: relative; }
+.sb-shared-ws { margin-left: auto; max-width: 40%; }
+.sb-shared-remove { opacity: 0; width: 22px; height: 22px; flex: none; }
+.sb-shared-page:hover .sb-shared-remove, .sb-shared-remove:focus-visible { opacity: 1; }
+.sb-shared-page .sb-shared-ws + .sb-shared-remove { margin-left: 4px; }
+.sb-shared-page > .truncate:nth-child(2) + .sb-shared-remove { margin-left: auto; }

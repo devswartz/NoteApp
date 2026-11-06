@@ -50,6 +50,7 @@ import { MoveDialog } from './shell/MoveDialog.tsx';
 import { NotificationBell } from './sharing/NotificationBell.tsx';
 import { openNewNotebook } from './shell/NewNotebookDialog.tsx';
 import { openShareDialog } from './sharing/ShareDialog.tsx';
+import { SharedWithMe } from './sharing/SharedWithMe.tsx';
 import { runCommand } from '../hooks/useShortcuts.ts';
 
 const NONE: string[] = [];
@@ -205,6 +206,8 @@ export function Sidebar() {
             </div>
           )}
         </Group>
+
+        <SharedWithMe wsId={wsId} />
       </div>
 
       <div className="sb-foot">
@@ -465,8 +468,11 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
         <MenuItem
           icon={nb.visibility === 'private' ? <Globe size={15} /> : <Lock size={15} />}
           onSelect={() =>
-            patch(`/notebooks/${nb.id}`, { visibility: nb.visibility === 'private' ? 'shared' : 'private' })
-              .then(() => toast(nb.visibility === 'private' ? 'Notebook shared with the workspace' : 'Notebook is now private to you'))
+            patch<{ removedPageShares?: number }>(`/notebooks/${nb.id}`, { visibility: nb.visibility === 'private' ? 'shared' : 'private' })
+              .then((r) => {
+                const n = r.removedPageShares ?? 0; // single-page shares others granted end (#98)
+                toast(nb.visibility === 'private' ? 'Notebook shared with the workspace' : `Notebook is now private to you${n ? `; ${n} page ${n === 1 ? 'share' : 'shares'} by others ended` : ''}`);
+              })
               .catch(errorToast)
           }
         >
