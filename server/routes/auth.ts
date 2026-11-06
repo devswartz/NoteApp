@@ -63,7 +63,8 @@ function maySignUp(email: string): boolean {
   if (signupMode() === 'open') return true;
   if (!db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get()) return true;
   if (adminEmails().includes(email)) return true;
-  return !!db.prepare('SELECT 1 FROM workspace_invites WHERE email = ? AND (expires_at IS NULL OR expires_at > ?)').get(email, now());
+  const live = '(expires_at IS NULL OR expires_at > ?)';
+  return !!db.prepare(`SELECT 1 FROM workspace_invites WHERE email = ? AND ${live} UNION ALL SELECT 1 FROM page_invites WHERE email = ? AND ${live}`).get(email, now(), email, now());
 }
 
 /** Routes that work without a token. */

@@ -96,6 +96,8 @@ templateRoutes.post(
   h((req) => {
     const pageId = param(req, 'id');
     const a = mustAccess(pageAccess(pageId, req.user.id), true);
+    // Templates belong to the workspace: page-share-only access (#98) can't add to its list.
+    if (!a.member || a.viaPageShare) throw new HttpError(403, 'Only people with access to its notebook can save this page as a template');
     const body = req.body ?? {};
     const name = str(body.name, 'name', MAX_TEMPLATE_NAME);
     const nb = db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(a.notebookId) as { visibility: string };

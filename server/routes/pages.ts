@@ -1,7 +1,7 @@
 // Page metadata (content is edited over the collab WebSocket). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
-import { accessChanged, mustAccess, pageAccess, sectionAccess } from '../access.ts';
+import { accessChanged, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { flushAll } from '../collab.ts';
 import { rowToTask } from '../tasks.ts';
@@ -43,7 +43,9 @@ pageRoutes.get(
          FROM pages p WHERE p.id = ?`,
       )
       .get(id);
-    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit };
+    // viaPageShare: opened through a page share (#98), so the client shows it under "Shared with me";
+    // canManage: may move, copy, delete or share it.
+    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit, canManage: a.canManage, viaPageShare: a.viaPageShare };
   }),
 );
 
@@ -99,6 +101,8 @@ pageRoutes.patch(
     const id = param(req, 'id');
     const a = mustAccess(pageAccess(id, req.user.id), true);
     const b = req.body;
+    // Moving and reordering change its notebook: not for page-share-only access (#98).
+    if (b.sectionId !== undefined || b.position !== undefined) mustManage(a);
     if (b.title !== undefined) {
       const title = String(b.title).slice(0, 300);
       db.prepare('UPDATE pages SET title = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(title, now(), req.user.id, id);
@@ -133,7 +137,7 @@ pageRoutes.post(
   '/pages/:id/move',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id), true);
+    const a = mustManage(pageAccess(id, req.user.id));
     const current = (db.prepare('SELECT section_id FROM pages WHERE id = ?').get(id) as { section_id: string }).section_id;
     const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : current;
     const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
@@ -154,7 +158,8 @@ pageRoutes.post(
   '/pages/:id/copy',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id));
+    // A page share reaches this page only; copying it elsewhere in the workspace is for notebook-level access.
+    const a = mustManage(pageAccess(id, req.user.id));
     const src = db.prepare('SELECT section_id, title, position FROM pages WHERE id = ?').get(id) as { section_id: string; title: string; position: number };
     const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : src.section_id;
     const t = mustAccess(sectionAccess(sectionId, req.user.id), true);
@@ -175,7 +180,7 @@ pageRoutes.delete(
   '/pages/:id',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id), true);
+    const a = mustManage(pageAccess(id, req.user.id));
     detachPagesTasks([id], () => db.prepare('DELETE FROM pages WHERE id = ?').run(id));
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };

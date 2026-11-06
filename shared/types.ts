@@ -100,6 +100,39 @@ export interface InviteInfo {
   email: string;
   role: Role;
   expired: boolean;
+  /** Set for an invite to a single page (#98): accepting shares that page, it doesn't add a membership. */
+  page?: { id: string; title: string; canEdit: boolean };
+}
+
+/** GET /shared-pages: a page someone shared with me (page_shares). */
+export interface SharedPage {
+  id: string;
+  title: string;
+  icon: string | null;
+  workspaceId: string;
+  workspaceName: string;
+  /** Am I a member of the page's workspace? (If not, the page is all I can see there.) */
+  member: boolean;
+  canEdit: boolean;
+  sharedByName: string | null;
+  sharedAt: string;
+}
+
+/** One person a page is shared with (GET /pages/:id/shares). */
+export interface PageShare {
+  userId: string;
+  name: string;
+  email: string;
+  color: string;
+  /** What the share grants. Someone outside the workspace can only view, whatever this says. */
+  canEdit: boolean;
+  member: boolean;
+}
+
+/** GET /pages/:id/shares */
+export interface PageShares {
+  shares: PageShare[];
+  invites: { email: string; canEdit: boolean; expiresAt: string | null; createdAt: string }[];
 }
 
 /** GET /workspaces/:id/team: members plus their task load (for the Team view). */
@@ -310,6 +343,8 @@ export type ServerEvent =
   | { type: 'activity'; workspaceId: string }
   /** A page template was created, renamed or deleted: refetch the list. Private templates only reach their creator. */
   | { type: 'templates'; workspaceId: string }
+  /** The pages shared with you (GET /shared-pages) changed: refetch. Sent only to the people affected. */
+  | { type: 'shared-pages' }
   /** The server can't replay what was missed: reload tree, tasks and members. */
   | { type: 'resync' };
 
