@@ -642,6 +642,9 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
 /* Stacked, equal-width actions in an auth card (e.g. Check your email). */
 .auth-actions { display: grid; gap: var(--space-2); margin: var(--space-5) 0 var(--space-4); }
 .auth-actions > .btn { width: 100%; }
+/* A lone primary action in an auth card (Verify email, Reset password, …) matches: full width, spaced. */
+.auth-card > .btn { width: 100%; margin-top: var(--space-4); }
+.auth-card > .form-error { margin-top: var(--space-3); }
 .auth-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
 .form-error { color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: var(--radius); font-size: 13px; }
 

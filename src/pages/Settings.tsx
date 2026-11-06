@@ -306,7 +306,7 @@ function AboutSection() {
   return (
     <Card>
       <div className="about-head">
-        <span className="ws-logo lg">{APP_NAME[0]}</span>
+        <img className="auth-icon" src="/icon.svg" alt="" width={34} height={34} />
         <div>
           <div className="setting-title">{APP_NAME}</div>
           <div className="muted small">{APP_DESCRIPTION}</div>
