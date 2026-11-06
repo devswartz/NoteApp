@@ -98,6 +98,23 @@ The sidebar counts show how many tasks are in Today, My Tasks and Upcoming.
 - **Import** (anyone): **Import from export…** picks such a `.zip` and creates a **new** workspace from it, owned by you; nothing existing is changed. Tasks assigned to you (same email) stay assigned to you; other people's assignments are dropped, and you invite people again from Settings → Members. Unsafe links and images in the file are removed.
 - **Limits:** a file can be up to **100 MB**. You can export 6 times an hour and import 3 times an hour, and the server runs one import at a time; if you hit a limit you'll see when to try again.
 
+### Import from OneNote
+
+If your server has it switched on, Settings → General shows **Import from OneNote** (members, admins and owners; not viewers).
+
+1. Click **Import from OneNote…**. A Microsoft sign-in opens in your browser; sign in with your personal or work/school account and allow Notivelo to **read your notebooks** (it can't change them).
+2. You come back to Settings with a list of your notebooks and the Microsoft account you signed in with. Check that it's **your** account (tick the box), tick the notebooks you want, and click **Import**.
+3. A progress line shows notebooks, pages, images, attachments and tasks as they're imported. You can keep working meanwhile, or **Cancel import**. When it's done you get links to your notes and tasks. An import stops after 30 minutes; whatever was imported stays, and a notebook that wasn't finished gets "(incomplete)" after its name.
+
+What you get: each OneNote notebook becomes a **private** notebook in the current workspace (share it afterwards if you like). Sections stay sections; sections inside a section group are named "Group / Section". Pages keep their titles and order (subpages become normal pages). Headings, bold/italic/underline/strikethrough, links, bulleted and numbered lists, tables, images and attached files come across. OneNote **to-dos become real tasks**, open or done, that show up on the Tasks dashboard and in the note. Unsafe content (scripts, unsafe links) is removed, and attachments follow the usual 25 MB limit and file-type rules.
+
+Limitations:
+- OneNote's free-form page layout becomes a normal top-to-bottom flow.
+- Ink and drawings come through as images when OneNote provides them, otherwise they're skipped.
+- Password-protected sections can't be read and are skipped (the import lists what was skipped).
+- Very large notebooks can take a while, because Microsoft limits how fast notebooks can be read.
+- Start it from the web app: the sign-in finishes in your browser. Notivelo only keeps the Microsoft sign-in in memory for up to an hour and for the import itself; nothing is stored, so sign in again for the next import. The server runs one OneNote import at a time, and they count toward the same hourly limit as workspace imports (3 an hour). An import brings in at most 300 MB of images and attachments, and you can import up to 1 GB of them a day; anything over that is skipped and listed.
+
 ## Sharing and roles
 
 - Invite people from **Settings → Members** by email. They get a link and join with that email address. Pending invites can be copied, resent or revoked there.

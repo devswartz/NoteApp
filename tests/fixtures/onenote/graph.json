@@ -1,0 +1,26 @@
+{
+  "_comment": "Recorded Microsoft Graph responses for tests/onenote.test.ts (ids shortened, account details removed). Keys are paths after https://graph.microsoft.com/v1.0.",
+  "/me?$select=displayName,mail,userPrincipalName": { "json": { "displayName": "Test Person", "mail": null, "userPrincipalName": "test.person@contoso.example" } },
+  "/me/onenote/resources/0-REDIR!1/$value": { "status": 302, "location": "https://evil.example/collect" },
+  "/me/onenote/notebooks?$select=id,displayName": { "json": { "value": [{ "id": "0-NB1!1", "displayName": "Work" }, { "id": "0-NB2!2", "displayName": "Recipes" }] } },
+  "/me/onenote/notebooks/0-NB1!1/sections?$select=id,displayName": {
+    "json": { "value": [{ "id": "0-SEC1!10", "displayName": "Meetings" }], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/onenote/notebooks/0-NB1!1/sections?$select=id,displayName&$skiptoken=2" }
+  },
+  "/me/onenote/notebooks/0-NB1!1/sections?$select=id,displayName&$skiptoken=2": { "json": { "value": [{ "id": "0-LOCKED!11", "displayName": "Secret" }] } },
+  "/me/onenote/notebooks/0-NB1!1/sectionGroups?$select=id,displayName": { "json": { "value": [{ "id": "0-GRP1!20", "displayName": "Projects" }] } },
+  "/me/onenote/sectionGroups/0-GRP1!20/sections?$select=id,displayName": { "json": { "value": [{ "id": "0-SEC2!21", "displayName": "Alpha" }] } },
+  "/me/onenote/sectionGroups/0-GRP1!20/sectionGroups?$select=id,displayName": { "json": { "value": [] } },
+  "/me/onenote/sections/0-SEC1!10/pages?$select=id,title,order&pagelevel=true&$top=100": {
+    "json": { "value": [{ "id": "0-PG2!101", "title": "Follow-ups", "order": 1, "level": 1 }, { "id": "0-PG1!100", "title": "Weekly sync", "order": 0, "level": 0 }] }
+  },
+  "/me/onenote/sections/0-LOCKED!11/pages?$select=id,title,order&pagelevel=true&$top=100": {
+    "status": 403,
+    "json": { "error": { "code": "10002", "message": "The section is password protected." } }
+  },
+  "/me/onenote/sections/0-SEC2!21/pages?$select=id,title,order&pagelevel=true&$top=100": { "json": { "value": [{ "id": "0-PG3!200", "title": "Pasted from the web", "order": 0 }] } },
+  "/me/onenote/pages/0-PG1!100/content": { "file": "page-weekly-sync.html", "type": "text/html" },
+  "/me/onenote/pages/0-PG2!101/content": { "file": "page-follow-ups.html", "type": "text/html" },
+  "/me/onenote/pages/0-PG3!200/content": { "file": "page-malicious.html", "type": "text/html" },
+  "/me/onenote/resources/0-IMG1!1/$value": { "base64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "type": "image/png" },
+  "/me/onenote/resources/0-ATT1!1/$value": { "base64": "JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDwvVHlwZS9DYXRhbG9nPj4KZW5kb2JqCnRyYWlsZXIKPDwvUm9vdCAxIDAgUj4+CiUlRU9GCg==", "type": "application/pdf" }
+}
