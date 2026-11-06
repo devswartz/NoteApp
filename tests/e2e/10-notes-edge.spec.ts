@@ -130,7 +130,6 @@ test('a page title typed just before navigating away is still saved', async ({ p
 });
 
 test('a new task left with Escape gets the same cleaned-up title as with Enter', async ({ page, context, request }) => {
-  test.fixme(true, 'BUG-5 (docs/QA.md): Escape keeps the quick-add words in the title ("Buy lemons tomorrow p1") while applying the date and priority');
   const user = await createUser(request, 'Esc Tasker');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);
@@ -146,6 +145,26 @@ test('a new task left with Escape gets the same cleaned-up title as with Enter',
   );
   // And it stays that way (no late overwrite with the raw text).
   await expect(page.locator('.task-ref-title')).toHaveValue('Buy lemons');
+  await page.waitForTimeout(500);
+  expect((await listTasks(request, user)).find((t) => t.pageId === pageId)?.title).toBe('Buy lemons');
+});
+
+test('leaving a new task with an arrow key also cleans up the title (BUG-5)', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Arrow Tasker');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  await page.getByRole('button', { name: 'Add a task to this page' }).click();
+  await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+  await page.keyboard.type('Call the plumber tomorrow');
+  await page.keyboard.press('ArrowUp');
+  await eventually(
+    () => listTasks(request, user),
+    (ts) => ts.some((t) => t.pageId === pageId && t.title === 'Call the plumber' && t.dueDate === isoDay(1)),
+    'title cleaned, date parsed',
+  );
+  await page.waitForTimeout(500);
+  expect((await listTasks(request, user)).find((t) => t.pageId === pageId)?.title).toBe('Call the plumber');
 });
 
 test('on a slow connection, a task typed and left quickly keeps its title and leaves no stray task', async ({ page, context, request }) => {
