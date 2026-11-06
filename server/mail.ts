@@ -18,6 +18,8 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  /** Where replies go (a single address; newlines are stripped). */
+  replyTo?: string;
 }
 
 export interface MailResult {
@@ -81,7 +83,7 @@ export async function sendMail(msg: MailMessage): Promise<MailResult> {
     return { sent: false };
   }
   try {
-    await t.sendMail({ from: from(), to: msg.to, subject: msg.subject, text: msg.text, html: msg.html });
+    await t.sendMail({ from: from(), to: msg.to, subject: msg.subject, text: msg.text, html: msg.html, ...(msg.replyTo ? { replyTo: msg.replyTo } : {}) });
     return { sent: true };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);

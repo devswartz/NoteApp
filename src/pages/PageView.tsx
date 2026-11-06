@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
 import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
@@ -9,6 +9,8 @@ import { useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
+import { saveAsTemplate } from '../editor/userTemplates.ts';
+import { promptDialog } from '../components/shell/dialogs.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
@@ -17,6 +19,7 @@ import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
 import { platform } from '../platform/index.ts';
+import { ENTER, MOD, keyLabel } from '../components/ui.tsx';
 
 export function PageView() {
   const { wsId, pageId } = useParams() as { wsId: string; pageId: string };
@@ -314,6 +317,32 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
   const current = tree.pages.find((p) => p.id === pageId);
   const [mode, setMode] = useState<'move' | 'copy'>('move');
   const sectionsOf = (notebookId: string) => tree.sections.filter((s) => s.notebookId === notebookId);
+  const inPrivate = tree.notebooks.find((n) => n.id === tree.sections.find((s) => s.id === current?.sectionId)?.notebookId)?.visibility === 'private';
+  /** "Save as template": a snapshot of the live editor content; the server copies the page's tasks (as new ones) and attachments. */
+  const saveTemplate = async () => {
+    if (!editor) return;
+    const name = await promptDialog({
+      title: 'Save page as template',
+      label: 'Template name',
+      initial: current?.title || 'Untitled',
+      confirmLabel: 'Save template',
+      message: inPrivate
+        ? 'This page is in a private notebook, so only you will see the template. Its tasks become new tasks each time it is used, and attachments are copied.'
+        : 'Everyone in this workspace will be able to see and use this template. Its tasks become new tasks each time it is used (title, priority and subtasks only), and attachments are copied.',
+    });
+    if (!name) return;
+    saveAsTemplate(editor, pageId, name, current?.icon)
+      .then((t) =>
+        toast(
+          t.visibility === 'private'
+            ? inPrivate
+              ? 'Template saved (only you can see it)'
+              : 'Template saved, but only you can see it: it includes private tasks or files'
+            : 'Template saved for the workspace',
+        ),
+      )
+      .catch(errorToast);
+  };
   const run = (sectionId: string, label: string) => {
     if (mode === 'move') {
       if (current?.sectionId === sectionId) return;
@@ -344,6 +373,9 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
             }}
           >
             Duplicate
+          </MenuItem>
+          <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
+            Save as template…
           </MenuItem>
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
@@ -476,7 +508,7 @@ function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: strin
         ))}
         {!tasks.length && (
           <p className="muted small panel-empty">
-            No tasks yet. Type <code>[]</code> in the note, or select text and press <code>⌘↵</code> to turn it into a task.
+            No tasks yet. Type <code>/task</code> in the note, or select text and press <code>{keyLabel(MOD, ENTER)}</code> to turn it into a task.
           </p>
         )}
         {done.length > 0 && (

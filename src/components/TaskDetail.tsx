@@ -193,11 +193,11 @@ export function TaskDetail() {
         {!task.parentId && <Subtasks task={task} canEdit={canEdit} />}
 
         <div className="detail-foot muted small">
-          Created by {creator?.name ?? 'someone'} · {relativeTime(task.createdAt)}
+          Created by {creator?.name ?? (task.createdBy === 'deleted-user' ? 'a deleted user' : 'someone')} · {relativeTime(task.createdAt)}
           {task.status === 'done' && task.completedAt && (
             <>
               <br />
-              Completed by {completer?.name ?? 'someone'} · {relativeTime(task.completedAt)}
+              Completed by {completer?.name ?? (task.completedBy === 'deleted-user' ? 'a deleted user' : 'someone')} · {relativeTime(task.completedAt)}
             </>
           )}
         </div>
