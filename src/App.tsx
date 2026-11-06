@@ -12,6 +12,7 @@ import { Login } from './pages/Login.tsx';
 import { LegalPage } from './pages/Legal.tsx';
 import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
 import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
+import { SharedPageRedirect } from './components/sharing/SharedWithMe.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { ResetPassword } from './pages/ResetPassword.tsx';
 import { RouteBoundary } from './components/ErrorBoundary.tsx';
@@ -58,6 +59,7 @@ export function App() {
         {user ? (
           <>
             <Route path="/" element={<Home />} />
+            <Route path="/shared/:pageId" element={<SharedPageRedirect />} />
             <Route path="/w/:wsId" element={<AppShell />}>
               <Route index element={<WorkspaceIndex />} />
               {workspaceRoutes.map((r) => (

@@ -49,6 +49,7 @@ import { MoveDialog } from './shell/MoveDialog.tsx';
 import { NotificationBell } from './sharing/NotificationBell.tsx';
 import { openNewNotebook } from './shell/NewNotebookDialog.tsx';
 import { openShareDialog } from './sharing/ShareDialog.tsx';
+import { SharedWithMe } from './sharing/SharedWithMe.tsx';
 import { runCommand } from '../hooks/useShortcuts.ts';
 
 const NONE: string[] = [];
@@ -203,6 +204,8 @@ export function Sidebar() {
             </div>
           )}
         </Group>
+
+        <SharedWithMe wsId={wsId} />
       </div>
 
       <div className="sb-foot">

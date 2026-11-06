@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
-import { api, get, patch, del, post } from '../api.ts';
+import { api, get, patch, del, post, ApiError } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
 import { useComments } from '../editor/collabComments.ts';
@@ -20,11 +20,34 @@ import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
 import { platform } from '../platform/index.ts';
 import { ENTER, MOD, keyLabel } from '../components/ui.tsx';
+import { PageShareDialogHost, openPageShareDialog } from '../components/sharing/PageShareDialog.tsx';
+import { loadSharedPageTasks, patchSharedPage, useShared } from '../components/sharing/sharedPages.ts';
+import type { PageMeta } from '../../shared/types.ts';
+import { UserPlus, Users } from 'lucide-react';
+
+/** GET /pages/:id. viaPageShare: opened through a page share (#98), so it isn't in the tree. */
+interface PageInfo {
+  page: PageMeta;
+  workspaceId: string;
+  canEdit: boolean;
+  canManage: boolean;
+  canShare: boolean;
+  viaPageShare: boolean;
+  member: boolean;
+}
 
 export function PageView() {
   const { wsId, pageId } = useParams() as { wsId: string; pageId: string };
   const user = useStore((s) => s.user!);
-  const meta = useStore((s) => s.tree.pages.find((p) => p.id === pageId));
+  const treeMeta = useStore((s) => s.tree.pages.find((p) => p.id === pageId));
+  // undefined while loading, null when it failed (offline, or no access).
+  const [info, setInfo] = useState<PageInfo | null | undefined>(undefined);
+  const [gone, setGone] = useState(false);
+  const shareKey = useShared((s) => {
+    const sp = s.pages.find((x) => x.id === pageId);
+    return sp ? `${sp.canEdit}` : '-';
+  });
+  const meta = treeMeta ?? (info?.viaPageShare ? info.page : undefined);
   const section = useStore((s) => s.tree.sections.find((x) => x.id === meta?.sectionId));
   const notebook = useStore((s) => s.tree.notebooks.find((x) => x.id === section?.notebookId));
   const treeLoaded = useStore((s) => s.treeLoaded);
@@ -53,22 +76,35 @@ export function PageView() {
   // Re-checked when your role changes (a live `workspaces` event reloads it), so a member
   // demoted to viewer goes read-only without a reload (BUG-2b).
   const role = useStore((s) => s.workspaces.find((w) => w.id === wsId)?.role);
-  useEffect(() => setCanEdit(null), [pageId]);
+  useEffect(() => {
+    setCanEdit(null);
+    setInfo(undefined);
+    setGone(false);
+  }, [pageId]);
   useEffect(() => {
     let cancelled = false;
     // Remember edit rights so a page opened offline stays editable (changes sync on reconnect).
     const key = `noteapp.canEdit.${user.id}.${pageId}`;
-    get<{ canEdit: boolean }>(`/pages/${pageId}`)
+    get<PageInfo>(`/pages/${pageId}`)
       .then((r) => {
         platform.kv.set(key, r.canEdit ? '1' : '0');
-        if (!cancelled) setCanEdit(r.canEdit);
+        if (cancelled) return;
+        setCanEdit(r.canEdit);
+        setInfo(r);
+        // A page shared from another workspace: its tasks aren't in this workspace's store (#98).
+        if (r.viaPageShare && r.workspaceId !== wsId) loadSharedPageTasks(pageId).catch(() => {});
       })
-      .catch(() => !cancelled && setCanEdit(platform.kv.get(key) === '1'));
+      .catch((e) => {
+        if (cancelled) return;
+        setInfo(null);
+        if (e instanceof ApiError && e.status === 404) setGone(true); // e.g. a page share was revoked
+        else setCanEdit(platform.kv.get(key) === '1');
+      });
     platform.kv.set(`noteapp.lastPage.${wsId}`, pageId);
     return () => {
       cancelled = true;
     };
-  }, [pageId, wsId, role]);
+  }, [pageId, wsId, role, shareKey]);
 
   // Deep link to a task inside the note (?task=id): scroll to it and flash.
   const focusTask = params.get('task');
@@ -93,7 +129,7 @@ export function PageView() {
 
   const onReady = useCallback((e: Editor) => setEditor(e), []);
 
-  if (treeLoaded && !meta) {
+  if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
     return (
       <div className="empty-page">
         <h2>Page not found</h2>
@@ -111,14 +147,22 @@ export function PageView() {
       <div className="page-scroll">
         <header className="page-topbar">
           <div className="crumbs">
-            {notebook && (
-              <span className="crumb">
-                <span className="dot" style={{ background: notebook.color }} />
-                {notebook.name}
-              </span>
+            {notebook ? (
+              <>
+                <span className="crumb">
+                  <span className="dot" style={{ background: notebook.color }} />
+                  {notebook.name}
+                </span>
+                <ChevronRight size={14} className="muted" />
+                {section && <span className="crumb">{section.name}</span>}
+              </>
+            ) : (
+              info?.viaPageShare && (
+                <span className="crumb">
+                  <Users size={13} /> Shared with me
+                </span>
+              )
             )}
-            <ChevronRight size={14} className="muted" />
-            {section && <span className="crumb">{section.name}</span>}
           </div>
           <div className="topbar-right">
             <div className="presence">
@@ -140,7 +184,23 @@ export function PageView() {
             >
               {isMobile ? <ListTodo size={18} /> : <PanelRight size={18} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} />}
+            {info?.canShare && (
+              <button className="btn btn-secondary btn-sm page-share-btn" onClick={() => openPageShareDialog(pageId, meta.title)}>
+                <UserPlus size={14} /> Share
+              </button>
+            )}
+            {(canEdit || info?.canShare) && (
+              <PageMenu
+                pageId={pageId}
+                wsId={wsId}
+                editor={editor}
+                onHistory={() => setHistoryOpen(true)}
+                canManage={info ? info.canManage : !!treeMeta}
+                canShare={!!info?.canShare}
+                canEdit={canEdit}
+                title={meta.title}
+              />
+            )}
           </div>
         </header>
 
@@ -174,6 +234,7 @@ export function PageView() {
       </div>
       <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       <CommentHighlights />
+      <PageShareDialogHost />
       {panelOpen && <PageTasksPanel pageId={pageId} canComment={!!canEdit} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
     </div>
   );
@@ -240,7 +301,9 @@ function PageIcon({ pageId, icon, canEdit }: { pageId: string; icon: string | nu
 
 function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; initial: string; canEdit: boolean; onEnter: () => void }) {
   const [title, setTitle] = useState(initial);
-  const remote = useStore((s) => s.tree.pages.find((p) => p.id === pageId)?.title ?? '');
+  const treeTitle = useStore((s) => s.tree.pages.find((p) => p.id === pageId)?.title);
+  const sharedTitle = useShared((s) => s.pages.find((p) => p.id === pageId)?.title);
+  const remote = treeTitle ?? sharedTitle ?? initial; // a shared page isn't in the tree (#98)
   const focused = useRef(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -256,6 +319,7 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
     if (next === null) return;
     pending.current = null;
     useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title: next } : p)) } }));
+    patchSharedPage(pageId, { title: next });
     api(`/pages/${pageId}`, { method: 'PATCH', json: { title: next }, keepalive: true }).catch(errorToast);
   };
   useEffect(() => {
@@ -311,7 +375,26 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: string; editor: Editor | null; onHistory: () => void }) {
+function PageMenu({
+  pageId,
+  wsId,
+  editor,
+  onHistory,
+  canManage,
+  canShare,
+  canEdit,
+  title,
+}: {
+  pageId: string;
+  wsId: string;
+  editor: Editor | null;
+  onHistory: () => void;
+  /** Notebook-level edit: duplicate, template, move, copy, delete. Not for page-share-only access (#98). */
+  canManage: boolean;
+  canShare: boolean;
+  canEdit: boolean;
+  title: string;
+}) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -361,22 +444,34 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
     <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
       {() => (
         <div className="menu page-menu">
-          <MenuItem
-            icon={<Copy size={15} />}
-            onSelect={() => {
-              post<{ id: string }>(`/pages/${pageId}/copy`, {})
-                .then((r) => {
-                  toast('Page duplicated');
-                  navigate(`/w/${wsId}/p/${r.id}`);
-                })
-                .catch(errorToast);
-            }}
-          >
-            Duplicate
-          </MenuItem>
-          <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
-            Save as template…
-          </MenuItem>
+          {canShare && (
+            <>
+              <MenuItem icon={<UserPlus size={15} />} onSelect={() => openPageShareDialog(pageId, current?.title ?? title)}>
+                Share…
+              </MenuItem>
+              <MenuSeparator />
+            </>
+          )}
+          {canManage && (
+            <MenuItem
+              icon={<Copy size={15} />}
+              onSelect={() => {
+                post<{ id: string }>(`/pages/${pageId}/copy`, {})
+                  .then((r) => {
+                    toast('Page duplicated');
+                    navigate(`/w/${wsId}/p/${r.id}`);
+                  })
+                  .catch(errorToast);
+              }}
+            >
+              Duplicate
+            </MenuItem>
+          )}
+          {canManage && (
+            <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
+              Save as template…
+            </MenuItem>
+          )}
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
           </MenuItem>
@@ -387,49 +482,55 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
           <MenuItem icon={<Printer size={15} />} onSelect={() => printPage(current?.title ?? '')}>
             Print / save as PDF
           </MenuItem>
-          <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
-            Import Markdown…
-          </MenuItem>
-          <MenuSeparator />
-          <div className="seg page-menu-seg" role="tablist">
-            <button type="button" role="tab" aria-selected={mode === 'move'} className={mode === 'move' ? 'is-active' : ''} onClick={() => setMode('move')}>
-              <FolderInput size={13} /> Move to
-            </button>
-            <button type="button" role="tab" aria-selected={mode === 'copy'} className={mode === 'copy' ? 'is-active' : ''} onClick={() => setMode('copy')}>
-              <Copy size={13} /> Copy to
-            </button>
-          </div>
-          {tree.notebooks.map((n) => (
-            <div key={n.id}>
-              <div className="menu-group-title">{n.name}</div>
-              {sectionsOf(n.id).map((s) => (
-                <MenuItem
-                  key={s.id}
-                  icon={<span className="dot" style={{ background: s.color }} />}
-                  checked={mode === 'move' && current?.sectionId === s.id}
-                  onSelect={() => run(s.id, `${n.name} › ${s.name}`)}
-                >
-                  {s.name}
-                </MenuItem>
-              ))}
+          {canEdit && (
+            <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
+              Import Markdown…
+            </MenuItem>
+          )}
+          {canManage && (
+          <>
+            <MenuSeparator />
+            <div className="seg page-menu-seg" role="tablist">
+              <button type="button" role="tab" aria-selected={mode === 'move'} className={mode === 'move' ? 'is-active' : ''} onClick={() => setMode('move')}>
+                <FolderInput size={13} /> Move to
+              </button>
+              <button type="button" role="tab" aria-selected={mode === 'copy'} className={mode === 'copy' ? 'is-active' : ''} onClick={() => setMode('copy')}>
+                <Copy size={13} /> Copy to
+              </button>
             </div>
-          ))}
-          <MenuSeparator />
-          <MenuItem
-            icon={<Trash2 size={15} />}
-            danger
-            onSelect={() => {
-              if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
-              del(`/pages/${pageId}`)
-                .then(() => {
-                  toast('Page deleted');
-                  navigate(`/w/${wsId}/notes`);
-                })
-                .catch(errorToast);
-            }}
-          >
-            Delete page
-          </MenuItem>
+            {tree.notebooks.map((n) => (
+              <div key={n.id}>
+                <div className="menu-group-title">{n.name}</div>
+                {sectionsOf(n.id).map((s) => (
+                  <MenuItem
+                    key={s.id}
+                    icon={<span className="dot" style={{ background: s.color }} />}
+                    checked={mode === 'move' && current?.sectionId === s.id}
+                    onSelect={() => run(s.id, `${n.name} › ${s.name}`)}
+                  >
+                    {s.name}
+                  </MenuItem>
+                ))}
+              </div>
+            ))}
+            <MenuSeparator />
+            <MenuItem
+              icon={<Trash2 size={15} />}
+              danger
+              onSelect={() => {
+                if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
+                del(`/pages/${pageId}`)
+                  .then(() => {
+                    toast('Page deleted');
+                    navigate(`/w/${wsId}/notes`);
+                  })
+                  .catch(errorToast);
+              }}
+            >
+              Delete page
+            </MenuItem>
+          </>
+          )}
         </div>
       )}
     </Dropdown>
@@ -481,7 +582,8 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
 
 function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: string; canComment: boolean; onClose: () => void; mobile: boolean }) {
   const all = useStore((s) => s.tasks);
-  const tasks = sortTasks(Object.values(all).filter((t) => t.pageId === pageId));
+  const shared = useShared((s) => s.tasks); // a page shared from another workspace (#98)
+  const tasks = sortTasks([...Object.values(all), ...Object.values(shared).filter((t) => !all[t.id])].filter((t) => t.pageId === pageId));
   const open = tasks.filter((t) => t.status === 'open');
   const done = tasks.filter((t) => t.status === 'done');
   const [showDone, setShowDone] = useState(false);
