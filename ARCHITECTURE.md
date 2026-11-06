@@ -223,7 +223,7 @@ One React codebase runs in the browser, in Tauri (desktop) and in Capacitor (mob
 | `secureStorage` (async) | the refresh token | localStorage (no keychain in browsers) |
 | `notifications.permission/request/show` | reminders | Web Notifications |
 | `openExternal(url)` | links leaving the app | `window.open(…, noopener)`; `installExternalLinkHandler()` routes clicks on external `<a>` here |
-| `deepLinks.initial/subscribe` | `noteapp://page/<id>`, `noteapp://w/…`, universal links | no-op (the URL is the link); `parseDeepLink()` + `components/DeepLinks.tsx` handle routing |
+| `deepLinks.initial/subscribe` | `notivelo://page/<id>`, `notivelo://w/…`, universal links | no-op (the URL is the link); `parseDeepLink()` + `components/DeepLinks.tsx` handle routing |
 | `pickFiles({accept, multiple})` | attachments and images | a temporary `<input type=file>` |
 | `withLock(name, fn)` | cross-tab/window mutual exclusion | Web Locks API, else just runs |
 | `isHidden()`, `focus()` | notification vs in-app toast | `document.hidden`, `window.focus()` |

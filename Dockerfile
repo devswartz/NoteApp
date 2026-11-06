@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# NoteApp: one image running the API, collab server, web app and reminder worker.
+# Notivelo: one image running the API, collab server, web app and reminder worker.
 # Contract: docs/DEPLOY_CONTRACT.md
 
 ARG NODE_VERSION=22

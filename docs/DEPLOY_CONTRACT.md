@@ -53,5 +53,10 @@ If email or push settings are missing, the app still starts and logs a warning; 
 - Both go through a Cloudflare Tunnel. **The app's port must not be reachable any other way** (bind it to localhost or the Docker network only; no published host port on the LAN or internet), because rate limiting trusts `CF-Connecting-IP` when `TRUST_PROXY_HEADER=cf`.
 - **Cloudflare Access must be off**, because the desktop and mobile apps call the API directly; the app does its own auth.
 
+## Request size and rate limits
+- **Uploads through the tunnel:** Cloudflare's free plan rejects request bodies over **100 MB**, so the app's own largest body (workspace import, `POST /api/workspaces/import`) is capped at exactly that; a larger `Content-Length` gets 413 before the body is read. Attachments are capped at 25 MB and JSON bodies at 512 KB.
+- **Workspace import/export** hold a whole archive in memory (import: the upload plus up to **300 MB** unpacked). To keep a small box safe with open sign-up: **one import at a time** server-wide, **3 imports an hour per user** and **10 an hour** server-wide, **6 exports an hour per user**. Refused requests get 429 with `Retry-After`. Plan for ~500 MB of headroom over normal use for a running import.
+- These and the auth rate limits (`server/ratelimit.ts`) are in-memory, per process, and reset on restart. `RATE_LIMIT=off` disables them all: **for local testing only, never on a real environment**.
+
 ## Backups
 - The SQLite DB is backed up with `sqlite3 .backup` or Litestream (never by copying the file while the app is running), together with `/data/files/`, to a destination off the box.
