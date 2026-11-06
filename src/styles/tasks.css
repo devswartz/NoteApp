@@ -97,3 +97,67 @@ button.cal-more:hover { color: var(--accent); }
   .cal-hint-pointer { display: none; }
   .cal-hint-touch { display: block; }
 }
+
+/* ───────────── Touch targets (phones and other coarse pointers) ─────────────
+   At least 44×44 px per tap target (Apple HIG; WCAG 2.5.5). Compact controls keep
+   their look and get an invisible hit area instead: an ::after centred on the
+   control, never smaller than the control itself. Controls with room to grow
+   just get a min-height. */
+@media (pointer: coarse), (max-width: 760px) {
+  .tasks-page :is(.task-check, .avatar-btn, .task-meta .chip-btn, .task-meta .chip-link, .segmented button,
+    .cal-head .btn, .cal-head .icon-btn, .cal-add, .show-more),
+  .sheet :is(.task-check, .sheet-head .icon-btn, .sheet-head .chip-link, .sheet-head .chip),
+  .bulk-bar :is(.btn-sm, .icon-btn) {
+    position: relative;
+  }
+  .tasks-page :is(.task-check, .avatar-btn, .task-meta .chip-btn, .task-meta .chip-link, .segmented button,
+    .cal-head .btn, .cal-head .icon-btn, .cal-add, .show-more)::after,
+  .sheet :is(.task-check, .sheet-head .icon-btn, .sheet-head .chip-link, .sheet-head .chip)::after,
+  .bulk-bar :is(.btn-sm, .icon-btn)::after {
+    content: '';
+    position: absolute;
+    top: min(0px, calc(50% - 22px));
+    bottom: min(0px, calc(50% - 22px));
+    left: min(0px, calc(50% - 22px));
+    right: min(0px, calc(50% - 22px));
+  }
+  /* Room between row chips so their hit areas don't swallow each other. */
+  .task-meta { gap: 6px 18px; }
+  .task-side { padding-left: 8px; }
+
+  .tasks-page .inline-add, .tasks-page .show-more { min-height: 44px; }
+  .tasks-page .toolbar :is(.input, .btn, select), .tasks-page .filters :is(.input, select) { min-height: 44px; }
+  .tasks-page .check-label { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; }
+  .tasks-page .check-label input { width: 20px; height: 20px; }
+  .saved-view { min-height: 36px; }
+  .saved-view button { min-width: 36px; }
+
+  /* Calendar: Month is an overview (a tap opens that week), so its chips aren't separate targets. */
+  .cal-month .cal-task { pointer-events: none; }
+  .cal-week .cal-task { min-height: 44px; display: flex; align-items: center; }
+  .cal-week .cal-date .cal-add { display: inline-flex; opacity: 1; }
+
+  /* Task sheet */
+  .sheet :is(.prop-btn, .prop-input) { min-height: 44px; }
+  .sheet .subtask, .sheet .subtask-add { min-height: 44px; }
+  .sheet .subtask-title { align-self: stretch; }
+  .sheet .btn { min-height: 44px; }
+}
+
+@media (pointer: coarse), (max-width: 760px) {
+  /* Keep the checkbox and avatar hit areas inside the (clipping) swipe row. */
+  .tasks-page .task-row { padding-left: 12px; padding-right: 12px; }
+  /* On phones a row has two targets: the checkbox, and the row itself (opens the task sheet,
+     where date, priority and assignee have full-size controls; swipes do complete/tomorrow).
+     The row's edit chips and avatar are display-only there: packed into one or two short lines
+     they can't each get 44px without stealing taps from one another. The note link stays a link. */
+  .tasks-page .task-meta .chip-btn, .tasks-page .task-side .avatar-btn { pointer-events: none; }
+  .tasks-page .task-meta .chip-link::after { left: -8px; right: -8px; }
+  .tasks-page .task-row { gap: 16px; }
+  /* Adjacent icon buttons: enough gap that their 44px areas don't overlap. */
+  .calendar .cal-head .row { gap: 12px; }
+  .sheet .sheet-head { gap: 16px; }
+  .cal-week .cal-date .cal-add { width: 44px; height: 44px; }
+  .sheet .detail-title { min-height: 44px; }
+  .sheet .subtask-title { min-height: 44px; }
+}

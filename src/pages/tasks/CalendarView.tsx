@@ -150,8 +150,15 @@ export function CalendarView() {
                   className={`cal-day ${out ? 'is-out' : ''} ${d === t ? 'is-today' : ''} ${d < t ? 'is-past' : ''} ${dropDay === d ? 'is-drop' : ''}`}
                   {...dropTarget(d)}
                   onDoubleClick={(e) => canEdit && e.target === e.currentTarget && ui.openQuickAdd({ dueDate: d })}
-                  // Touch screens have no double-click (and the + button is hidden there): a tap on a day adds.
-                  onClick={(e) => canEdit && isTouch() && e.target === e.currentTarget && ui.openQuickAdd({ dueDate: d })}
+                  // Touch screens have no double-click. In Month the chips are too small to tap, so a
+                  // tap anywhere on a day opens that week as an agenda; in Week a tap on a day adds.
+                  onClick={(e) => {
+                    if (!isTouch()) return;
+                    if (mode === 'month') {
+                      setCursor(d);
+                      setParams((p) => (p.set('mode', 'week'), p), { replace: true });
+                    } else if (canEdit && e.target === e.currentTarget) ui.openQuickAdd({ dueDate: d });
+                  }}
                   data-date={d}
                 >
                   <div className="cal-date">
@@ -192,7 +199,9 @@ export function CalendarView() {
         )}
       </div>
       <p className="muted small pad cal-hint-pointer">Drag tasks between days to reschedule. Double-click a day to add a task.</p>
-      <p className="muted small pad cal-hint-touch">Tap a day to add a task. Tap a task to change its date.</p>
+      <p className="muted small pad cal-hint-touch">
+        {mode === 'month' ? 'Tap a day to see its tasks.' : 'Tap a day to add a task. Tap a task to change its date.'}
+      </p>
     </div>
   );
 }
