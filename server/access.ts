@@ -164,6 +164,16 @@ export function mustManage(a: Access | null): Access {
   return ok;
 }
 
+/**
+ * May share the page with others: notebook-level edit access, and for a page in a private
+ * notebook only that notebook's creator (the rule for sharing the notebook itself).
+ */
+export function canSharePage(a: Access): boolean {
+  if (!a.canManage) return false;
+  const nb = db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(a.notebookId) as { visibility: string } | undefined;
+  return nb?.visibility !== 'private' || a.isNotebookOwner;
+}
+
 /** SQL predicate: @userId holds a page share on the page whose id is `pageIdExpr`. */
 export const pageSharedSql = (pageIdExpr: string) =>
   `EXISTS (SELECT 1 FROM page_shares psh WHERE psh.page_id = ${pageIdExpr} AND psh.user_id = @userId)`;

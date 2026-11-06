@@ -1,7 +1,7 @@
 // Page metadata (content is edited over the collab WebSocket). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
-import { accessChanged, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
+import { accessChanged, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { flushAll } from '../collab.ts';
 import { rowToTask } from '../tasks.ts';
@@ -44,8 +44,8 @@ pageRoutes.get(
       )
       .get(id);
     // viaPageShare: opened through a page share (#98), so the client shows it under "Shared with me";
-    // canManage: may move, copy, delete or share it.
-    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit, canManage: a.canManage, viaPageShare: a.viaPageShare };
+    // canManage: may move, copy or delete it; canShare: may share it (#98).
+    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit, canManage: a.canManage, canShare: canSharePage(a), viaPageShare: a.viaPageShare, member: a.member };
   }),
 );
 

@@ -1,7 +1,7 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { TASK_VISIBLE, accessChanged, mustAccess, mustManage, notebookAccess, pageAccess, requireRole, roleIn } from '../access.ts';
+import { TASK_VISIBLE, accessChanged, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import { rowToTask } from '../tasks.ts';
@@ -329,8 +329,7 @@ const MAX_PAGE_SHARES = 200;
 /** The page's access for a would-be sharer, or a 403/404. */
 function mustShare(pageId: string, userId: string) {
   const a = mustManage(pageAccess(pageId, userId));
-  const nb = db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(a.notebookId) as { visibility: string };
-  if (nb.visibility === 'private' && !a.isNotebookOwner) throw new HttpError(403, 'Only the notebook’s creator can share pages from a private notebook');
+  if (!canSharePage(a)) throw new HttpError(403, 'Only the notebook’s creator can share pages from a private notebook');
   return a;
 }
 

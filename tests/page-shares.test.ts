@@ -52,6 +52,8 @@ test('a teammate with an edit share opens and edits only that page', async () =>
   assert.equal(p.data.canEdit, true);
   assert.equal(p.data.canManage, false);
   assert.equal(p.data.viaPageShare, true);
+  assert.equal(p.data.canShare, false);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, owner.token)).data.canShare, true);
 
   // Nothing else from the private notebook: no sibling, no notebook or section in the tree.
   assert.equal((await app.call('GET', `/pages/${f.sibling}`, teammate.token)).status, 404);
