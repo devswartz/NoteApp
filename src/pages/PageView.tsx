@@ -86,7 +86,10 @@ export function PageView() {
     [],
   );
   const togglePanel = (p: Exclude<PagePanel, null>) => showPanel(panel === p ? null : p);
-  const openTasks = useStore((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open').length);
+  const ownOpen = useStore((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open').length);
+  // Plus tasks on a page shared from another workspace (#98), which live in their own store.
+  const sharedOpen = useShared((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open' && !useStore.getState().tasks[t.id]).length);
+  const openTasks = ownOpen + sharedOpen;
   const openThreads = useComments((s) => (s.pageId === pageId ? s.threads.filter((t) => !t.resolvedAt).length : 0));
   // Highlights need the threads even while the panel is closed.
   useEffect(() => {

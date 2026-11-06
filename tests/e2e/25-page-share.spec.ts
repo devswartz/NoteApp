@@ -83,7 +83,10 @@ test('someone outside the workspace opens the shared link: that page only, view-
   await expect(o.page.locator('.crumbs')).toContainText('Shared with me');
   await expect(o.page.getByTestId('shared-with-me').getByRole('link', { name: /Public-ish note/ })).toContainText('Closed Team');
   // The page's tasks render from the shared page, though Olga isn't in that workspace.
-  await expect(o.page.locator('.page-panel')).toContainText('Visible task on the page');
+  const tasksToggle = o.page.locator('button.panel-toggle[title="Tasks on this page"]');
+  await expect(tasksToggle).toContainText('1'); // the open-task badge counts it too
+  if ((await tasksToggle.getAttribute('aria-pressed')) !== 'true') await tasksToggle.click();
+  await expect(o.page.getByText('Visible task on the page')).toBeVisible();
   // Nothing else from that workspace: it isn't in her workspace list, and she can't share or manage the page.
   await expect(o.page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);
   await expect(o.page.locator('.page-topbar').getByTitle('Page options')).toHaveCount(0);
