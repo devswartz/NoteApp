@@ -283,7 +283,7 @@ function Subtasks({ task, canEdit }: { task: Task; canEdit: boolean }) {
           }}
         >
           <Plus size={15} className="muted" />
-          <input className="prop-input" placeholder="Add a subtask — “tomorrow @sam” works too" value={value} onChange={(e) => setValue(e.target.value)} />
+          <input className="prop-input" placeholder="Add a subtask…" title="Quick-add syntax works here too, e.g. “tomorrow p2 @sam”" value={value} onChange={(e) => setValue(e.target.value)} />
         </form>
       )}
     </section>
