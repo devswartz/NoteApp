@@ -9,6 +9,7 @@ import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
 import type { Access } from '../access.ts';
 import { HttpError, h, param } from '../http.ts';
 import { backlinks } from '../links.ts';
+import { dropForeignSharesOnPage } from '../workspaces.ts';
 import { getVersion, listVersions, snapshot, startVersionSweep } from '../versions.ts';
 
 export const pageRoutes = Router();
@@ -122,6 +123,9 @@ function movePageTo(id: string, a: Access, sectionId: string, userId: string) {
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
   db.prepare('UPDATE pages SET section_id = ? WHERE id = ?').run(sectionId, id);
   if (t.notebookId !== a.notebookId) {
+    // Into a private notebook: page shares its creator didn't grant end (#98).
+    const vis = (db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(t.notebookId) as { visibility: string }).visibility;
+    if (vis === 'private') dropForeignSharesOnPage(id, t.notebookId);
     accessChanged(); // collaborators may have lost access (e.g. moved into a private notebook)
     const tasks = db.prepare('SELECT * FROM tasks WHERE page_id = ?').all(id) as Parameters<typeof rowToTask>[0][];
     for (const r of tasks) publish({ type: 'task', task: rowToTask(r) });

@@ -144,19 +144,21 @@ export interface PageInvite {
   email: string;
   canEdit: boolean;
   expired: boolean;
+  /** Who sent it: recorded as the share's creator once accepted. */
+  invitedBy: string;
 }
 
 export function findPageInvite(token: string): PageInvite | null {
   if (typeof token !== 'string' || token.length < 16) return null;
   const r = db
     .prepare(
-      `SELECT i.page_id, i.email, i.can_edit, i.expires_at, p.title, n.workspace_id, w.name AS workspace_name, u.name AS inviter_name
+      `SELECT i.page_id, i.email, i.can_edit, i.expires_at, i.invited_by, p.title, n.workspace_id, w.name AS workspace_name, u.name AS inviter_name
        FROM page_invites i JOIN pages p ON p.id = i.page_id JOIN sections s ON s.id = p.section_id
        JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id JOIN users u ON u.id = i.invited_by
        WHERE i.token_hash = ?`,
     )
     .get(hashInviteToken(token)) as
-    | { page_id: string; email: string; can_edit: number; expires_at: string | null; title: string; workspace_id: string; workspace_name: string; inviter_name: string }
+    | { page_id: string; email: string; can_edit: number; expires_at: string | null; invited_by: string; title: string; workspace_id: string; workspace_name: string; inviter_name: string }
     | undefined;
   if (!r) return null;
   return {
@@ -168,6 +170,7 @@ export function findPageInvite(token: string): PageInvite | null {
     email: r.email,
     canEdit: !!r.can_edit,
     expired: !!r.expires_at && r.expires_at < now(),
+    invitedBy: r.invited_by,
   };
 }
 
@@ -224,6 +227,20 @@ export function dropForeignPageShares(notebookId: string): number {
   ).map((r) => r.user_id);
   const n = db.prepare(`DELETE FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).run({ nb: notebookId }).changes;
   db.prepare(`DELETE FROM page_invites WHERE page_id IN (${pagesOf}) AND invited_by IS NOT ${creator}`).run({ nb: notebookId });
+  if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
+  return n;
+}
+
+/**
+ * A page moved into a private notebook: its page shares (and pending invites) that the new
+ * notebook's creator didn't grant end, as if that notebook had just been made private. Returns
+ * how many shares were removed; the caller calls accessChanged().
+ */
+export function dropForeignSharesOnPage(pageId: string, notebookId: string): number {
+  const creator = (db.prepare('SELECT created_by FROM notebooks WHERE id = ?').get(notebookId) as { created_by: string }).created_by;
+  const users = (db.prepare('SELECT user_id FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').all(pageId, creator) as { user_id: string }[]).map((r) => r.user_id);
+  const n = db.prepare('DELETE FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').run(pageId, creator).changes;
+  db.prepare('DELETE FROM page_invites WHERE page_id = ? AND invited_by IS NOT ?').run(pageId, creator);
   if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
   return n;
 }

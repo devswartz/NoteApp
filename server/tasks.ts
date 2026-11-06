@@ -1,6 +1,6 @@
 // Task persistence and business rules (completion, recurrence, linking to notes).
 import { db, newId, now } from './db.ts';
-import { HttpError, TASK_VISIBLE, pageAccess, requireRole, roleIn } from './access.ts';
+import { HttpError, TASK_VISIBLE, atLeast, pageAccess, requireRole, roleIn } from './access.ts';
 import { publish } from './events.ts';
 import { recurrenceError } from '../shared/recurrence.ts';
 import { nextDueDate } from './reminders/recurring.ts';
@@ -225,6 +225,13 @@ const COLUMNS: Record<keyof TaskPatch, string> = {
  * (e.g. through a view-only page share) is not enough. The one exception: the person it's assigned
  * to may tick it off or reopen it, and nothing else, without edit access to its note.
  */
+/** May `userId` move this task off its current note? Needs edit access to that note (or it has none). No assignee exception. */
+export function canMoveTask(taskId: string, userId: string): boolean {
+  const task = getTask(taskId);
+  if (!task || !atLeast(roleIn(task.workspaceId, userId), 'member')) return false;
+  return !task.pageId || !!pageAccess(task.pageId, userId)?.canEdit;
+}
+
 function mustEditTask(task: Task, userId: string, patch?: TaskPatch) {
   requireRole(task.workspaceId, userId, 'member');
   if (!task.pageId) return;
