@@ -28,6 +28,8 @@ const sleeps: number[] = [];
 let hold: Promise<void> | null = null;
 /** Graph paths that answer 429 (Retry-After: 3) this many more times before the fixture. */
 const throttle = new Map<string, number>();
+/** Graph paths that answer with this status (and a Graph error body) instead of the fixture. */
+const fail = new Map<string, { status: number; code: string }>();
 
 before(async () => {
   app = await startTestApp();
@@ -53,6 +55,8 @@ before(async () => {
       throttle.set(key, left - 1);
       return new Response(JSON.stringify({ error: { code: '20166', message: 'Too many requests' } }), { status: 429, headers: { 'retry-after': '3' } });
     }
+    const f = fail.get(key);
+    if (f) return new Response(JSON.stringify({ error: { code: f.code, message: 'details that must not be logged' } }), { status: f.status });
     const fx = graph[key];
     assert.ok(fx, `no recorded Graph response for ${key}`);
     if (fx.location) return new Response(null, { status: fx.status ?? 302, headers: { location: fx.location } });
@@ -71,6 +75,7 @@ beforeEach(async () => {
   tokenRequests.length = 0;
   sleeps.length = 0;
   throttle.clear();
+  fail.clear();
 });
 
 /** Steps 1–2: start, follow the one-time link; returns Microsoft's URL, its state and the flow cookie. */
@@ -361,4 +366,20 @@ test('at most two Microsoft sign-ins are kept per user', async () => {
   const c = await connect();
   assert.equal((await app.call('GET', `/import/onenote/connections/${a}/notebooks`, me.token)).status, 404, 'the oldest is dropped');
   for (const id of [b, c]) assert.equal((await app.call('GET', `/import/onenote/connections/${id}/notebooks`, me.token)).status, 200);
+});
+
+test('an account where OneNote was never set up lists no notebooks; other Graph errors get a clear message, not a 500', async () => {
+  const key = '/me/onenote/notebooks?$select=id,displayName';
+  for (const status of [404, 403]) {
+    fail.set(key, { status, code: '30108' });
+    const id = await connect();
+    const r = await app.call('GET', `/import/onenote/connections/${id}/notebooks`, me.token);
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.deepEqual(r.data.notebooks, []);
+  }
+  fail.set(key, { status: 500, code: 'generalException' });
+  const id = await connect();
+  const r = await app.call('GET', `/import/onenote/connections/${id}/notebooks`, me.token);
+  assert.equal(r.status, 502);
+  assert.match(r.data.error, /couldn't list your OneNote notebooks \(500, generalException\)/);
 });

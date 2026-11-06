@@ -5,7 +5,7 @@ import { Router, type RequestHandler, type Response } from 'express';
 import { HttpError, h, param } from '../http.ts';
 import { takeImport } from '../ratelimit.ts';
 import { IS_PROD } from '../config.ts';
-import { authorizeFlow, BadState, cancelJob, completeFlow, connectionFor, COOKIE, FLOW_TTL_MS, jobFor, listNotebooks, oneNoteConfig, startFlow, startJob } from '../onenote.ts';
+import { authorizeFlow, BadState, cancelJob, GraphError, completeFlow, connectionFor, COOKIE, FLOW_TTL_MS, jobFor, listNotebooks, oneNoteConfig, startFlow, startJob } from '../onenote.ts';
 
 export const oneNoteGate: RequestHandler = (_req, res, next) => (oneNoteConfig() ? next() : void res.status(404).json({ error: 'Not found' }));
 
@@ -74,7 +74,13 @@ oneNoteRoutes.get(
   '/import/onenote/connections/:id/notebooks',
   h(async (req) => {
     const conn = connectionFor(param(req, 'id'), req.user.id);
-    return { workspaceId: conn.workspaceId, account: conn.account, notebooks: await listNotebooks(conn) };
+    try {
+      return { workspaceId: conn.workspaceId, account: conn.account, notebooks: await listNotebooks(conn) };
+    } catch (e) {
+      if (!(e instanceof GraphError)) throw e;
+      if (e.status === 401) throw new HttpError(409, 'The Microsoft sign-in has expired. Start the OneNote import again.');
+      throw new HttpError(502, `Microsoft couldn't list your OneNote notebooks (${e.status}${e.code ? `, ${e.code}` : ''}). Try again in a minute.`);
+    }
   }),
 );
 

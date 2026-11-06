@@ -243,8 +243,19 @@ async function refresh(conn: Connection): Promise<boolean> {
 }
 
 export class GraphError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
+  }
+}
+
+/** Graph's error code (e.g. "40004"), from at most 4 KB of an error body. Never the message: it can contain account details. */
+async function graphErrorCode(res: Response): Promise<string | undefined> {
+  try {
+    const text = (await res.text()).slice(0, 4096);
+    const code = (JSON.parse(text) as { error?: { code?: unknown } }).error?.code;
+    return typeof code === 'string' ? code.replace(/[^\w.-]/g, '').slice(0, 60) : undefined;
+  } catch {
+    return undefined;
   }
 }
 /** The job was cancelled or reached its deadline. */
@@ -318,8 +329,9 @@ export async function graphGet(conn: Connection, url: string, maxBytes = 10 * 10
       continue;
     }
     if (!res.ok) {
-      await res.body?.cancel().catch(() => {});
-      throw new GraphError(res.status, `Microsoft Graph answered ${res.status}`);
+      const code = await graphErrorCode(res);
+      log.warn('OneNote: Microsoft Graph error', { event: 'onenote_graph', status: res.status, code });
+      throw new GraphError(res.status, `Microsoft Graph answered ${res.status}`, code);
     }
     if (Number(res.headers.get('content-length')) > maxBytes) {
       await res.body?.cancel().catch(() => {});
@@ -373,7 +385,15 @@ interface GPage {
 const seg = (id: string) => encodeURIComponent(id);
 
 export async function listNotebooks(conn: Connection): Promise<{ id: string; name: string }[]> {
-  const nbs = await graphList<GNotebook>(conn, '/me/onenote/notebooks?$select=id,displayName');
+  let nbs: GNotebook[];
+  try {
+    nbs = await graphList<GNotebook>(conn, '/me/onenote/notebooks?$select=id,displayName');
+  } catch (e) {
+    // An account where OneNote was never set up has no notebook store yet: Graph answers 404, or 403
+    // (e.g. OneDrive not provisioned) instead of an empty list. Show it as "no notebooks".
+    if (e instanceof GraphError && (e.status === 404 || e.status === 403)) return [];
+    throw e;
+  }
   return nbs.filter((n) => typeof n.id === 'string').map((n) => ({ id: n.id, name: String(n.displayName ?? 'Notebook').slice(0, 100) }));
 }
 
