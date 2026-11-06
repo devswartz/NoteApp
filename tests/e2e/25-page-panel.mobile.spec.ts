@@ -34,6 +34,11 @@ test('mobile: a page with tasks opens as just the note; the badge opens the shee
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole('tab', { name: 'Tasks' })).toHaveAttribute('aria-selected', 'true');
   await expect(sheet.locator('.task-title', { hasText: 'Book the ferry' })).toBeVisible();
+  // Tabs and the close button are 44px tap targets.
+  for (const el of [sheet.getByRole('tab', { name: 'Tasks' }), sheet.getByRole('tab', { name: 'Comments' }), sheet.getByRole('button', { name: 'Close panel' })]) {
+    const box = (await el.boundingBox())!;
+    expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+  }
   await expect(sheet.locator('.comments-panel')).toHaveCount(0);
   await sheet.getByRole('tab', { name: 'Comments' }).tap();
   await expect(sheet.locator('.comments-panel')).toBeVisible();
