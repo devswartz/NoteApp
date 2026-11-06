@@ -5,7 +5,7 @@ import { useStore } from '../store.ts';
 import { addDays, parseISODate, today, toISODate, describeRecurrence } from '../../shared/dates.ts';
 import type { Priority, Recurrence, Task } from '../../shared/types.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator, useClosePopover } from './ui.tsx';
-import { describeDue, dueTone, formatTime } from '../lib/format.ts';
+import { describeDue, dueTone, formatTime, initials } from '../lib/format.ts';
 
 export const PRIORITY_COLORS: Record<number, string> = {
   1: 'var(--p1)',
@@ -187,10 +187,12 @@ export function DueChip({ task, onChange, readOnly }: { task: Task; onChange: (d
 
 export function AssigneeChip({ task, onChange, readOnly }: { task: Task; onChange: (id: string | null) => void; readOnly?: boolean }) {
   const member = useStore((s) => s.members.find((m) => m.id === task.assigneeId));
-  const avatar = <Avatar user={member} size={20} title={member ? `Assigned to ${member.name}` : 'Unassigned'} />;
+  // The accessible name starts with the visible initials ("label in name", WCAG 2.5.3).
+  const label = member ? `${initials(member.name)} – assigned to ${member.name}` : 'Unassigned';
+  const avatar = <Avatar user={member} size={20} title={label} />;
   if (readOnly) return member ? avatar : null;
   return (
-    <Dropdown trigger={avatar} buttonClass={`avatar-btn ${member ? '' : 'avatar-btn-empty'}`} title={member ? `Assigned to ${member.name}` : 'Assign'} placement="bottom-end">
+    <Dropdown trigger={avatar} buttonClass={`avatar-btn ${member ? '' : 'avatar-btn-empty'}`} title={member ? label : 'Assign'} placement="bottom-end">
       <AssigneeMenu value={task.assigneeId} onChange={onChange} />
     </Dropdown>
   );
