@@ -5,13 +5,25 @@ import { db } from './db.ts';
 import { PORT, VERSION, DATA_DIR, SEED_DEMO, IS_PROD, PUBLIC_URL } from './config.ts';
 import { seedDemoIfEmpty } from './demo.ts';
 import { pruneRefreshTokens } from './auth.ts';
+import { pruneEmailVerifications, pruneUnverifiedAccounts } from './verification.ts';
 import { startReminderScheduler } from './reminders/scheduler.ts';
 import { APP_NAME } from '../shared/config.ts';
 
 if (IS_PROD && !PUBLIC_URL) console.warn('PUBLIC_URL is not set: links in emails (password reset, invites) will be broken');
 if (SEED_DEMO) seedDemoIfEmpty();
-pruneRefreshTokens();
-setInterval(pruneRefreshTokens, 6 * 3600_000).unref();
+// Housekeeping: expired refresh tokens, expired email-confirmation tokens, and accounts never confirmed within
+// UNVERIFIED_ACCOUNT_DAYS (idempotent and capped, so it simply runs on every 6-hourly pass).
+const housekeeping = () => {
+  pruneRefreshTokens();
+  pruneEmailVerifications();
+  try {
+    pruneUnverifiedAccounts();
+  } catch (e) {
+    console.error('unverified account cleanup crashed', e);
+  }
+};
+housekeeping();
+setInterval(housekeeping, 6 * 3600_000).unref();
 
 const { server } = createServer();
 const stopReminders = startReminderScheduler();

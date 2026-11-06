@@ -27,7 +27,7 @@ export function openLinkEditor(editor: Editor): boolean {
 export function normaliseUrl(raw: string): string | null {
   const url = raw.trim();
   if (!url) return null;
-  if (/^(https?:|mailto:|tel:|noteapp:)/i.test(url)) return url;
+  if (/^(https?:|mailto:|tel:|notivelo:)/i.test(url)) return url;
   if (/^\/|^#/.test(url)) return url;
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(url)) return `mailto:${url}`;
   if (/^(javascript|data|vbscript):/i.test(url)) return null;

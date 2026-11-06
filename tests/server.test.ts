@@ -21,7 +21,7 @@ test('requests without a token are rejected', async () => {
   assert.equal((await app.call('GET', '/workspaces')).status, 401);
 });
 
-test('a task can be created with an empty title (inline "[] " tasks)', async () => {
+test('a task can be created with an empty title (inline /task tasks)', async () => {
   const { token, wsId } = await app.signUp('Bob');
   const r = await app.call('POST', `/workspaces/${wsId}/tasks`, token, { title: '' });
   assert.equal(r.status, 200);

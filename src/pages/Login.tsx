@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { signIn } from '../store.ts';
 import { get, post } from '../api.ts';
 import { hasPendingInvite } from '../components/sharing/InvitePage.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { Button } from '../components/ui.tsx';
+import { LegalLinks } from './Legal.tsx';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -96,6 +98,11 @@ export function Login() {
           <Button type="submit" variant="primary" size="lg" loading={busy} disabled={mode === 'forgot' && sent}>
             {mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : 'Send reset link'}
           </Button>
+          {mode === 'register' && (
+            <p className="muted small center" style={{ margin: 0 }}>
+              By creating an account you agree to the <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy Policy</Link>.
+            </p>
+          )}
         </form>
         {mode === 'login' && !signupOpen ? (
           <p className="muted small center">New here? Sign-up is by invitation: open the invite link from your email.</p>
@@ -107,6 +114,7 @@ export function Login() {
             </button>
           </p>
         )}
+        <LegalLinks />
       </div>
     </div>
   );

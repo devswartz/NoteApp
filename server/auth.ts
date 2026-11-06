@@ -19,9 +19,16 @@ import path from 'node:path';
 import { db, newId, now } from './db.ts';
 import { DATA_DIR, IS_PROD } from './config.ts';
 import type { AuthSession, User } from '../shared/types.ts';
+import { EMAIL_UNVERIFIED } from '../shared/config.ts';
 
 // ACCESS_TOKEN_TTL_S is a testing knob (e.g. short tokens to exercise refresh); not part of the deploy contract.
-export const ACCESS_TTL_S = Number(process.env.ACCESS_TOKEN_TTL_S) || 15 * 60;
+// Invalid, zero or negative values mean the default; production clamps it to 1–60 minutes.
+export function accessTtlFromEnv(raw = process.env.ACCESS_TOKEN_TTL_S, prod = process.env.NODE_ENV === 'production'): number {
+  const n = Number(raw);
+  if (!raw || !Number.isFinite(n) || n <= 0) return 15 * 60;
+  return prod ? Math.min(3600, Math.max(60, Math.floor(n))) : Math.floor(n) || 1;
+}
+export const ACCESS_TTL_S = accessTtlFromEnv();
 export const REFRESH_TTL_DAYS = 30;
 const REUSE_GRACE_S = 60;
 /** WebSocket subprotocol carrying the access token: `bearer.<jwt>`. */
@@ -215,7 +222,12 @@ export function verifyToken(token: string | undefined | null): User | null {
 }
 
 export function getUser(id: string): User | null {
-  return (db.prepare('SELECT id, email, name, color FROM users WHERE id = ?').get(id) as User) ?? null;
+  const r = db.prepare('SELECT id, email, name, color, email_verified_at IS NOT NULL AS verified FROM users WHERE id = ?').get(id) as
+    | (Omit<User, 'emailVerified'> & { verified: number })
+    | undefined;
+  if (!r) return null;
+  const { verified, ...user } = r;
+  return { ...user, emailVerified: !!verified };
 }
 
 /**
@@ -242,6 +254,22 @@ declare module 'express-serve-static-core' {
   interface Request {
     user: User;
   }
+}
+
+/**
+ * What an unverified user may call after signing in: their own profile, and asking for a new
+ * confirmation email. Anything else, including every route added in the future, is refused.
+ * Sign-in, refresh, sign-out and confirming a token are public routes and never reach this.
+ * Compared exactly (case-sensitive), so odd spellings fall through to the refusal.
+ */
+const UNVERIFIED_ALLOWED = new Set(['GET /me', 'POST /auth/resend-verification']);
+
+/** Mount right after requireAuth: users who haven't confirmed their email get 403 { code: 'email_unverified' } everywhere else. */
+export function requireVerifiedEmail(req: Request, res: Response, next: NextFunction) {
+  if (req.user.emailVerified) return next();
+  const path = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+  if (UNVERIFIED_ALLOWED.has(`${req.method} ${path}`)) return next();
+  res.status(403).json({ error: 'Confirm your email address to continue. Check your inbox for the link.', code: EMAIL_UNVERIFIED });
 }
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {

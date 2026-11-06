@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
-import { bootstrap, signOut, useStore } from './store.ts';
-import { setUnauthorizedHandler } from './api.ts';
+import { bootstrap, markEmailUnverified, signOut, useStore } from './store.ts';
+import { setEmailUnverifiedHandler, setUnauthorizedHandler } from './api.ts';
+import { CheckEmail } from './pages/CheckEmail.tsx';
+import { VerifyEmail } from './pages/VerifyEmail.tsx';
 import { AppShell } from './components/AppShell.tsx';
 import { Toasts } from './components/Overlays.tsx';
 import { DeepLinks } from './components/DeepLinks.tsx';
 import { AppUpdates } from './components/AppUpdates.tsx';
 import { Login } from './pages/Login.tsx';
+import { LegalPage } from './pages/Legal.tsx';
 import { InvitePage, takePendingInvite } from './components/sharing/InvitePage.tsx';
 import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { workspaceRoutes } from './routes.tsx';
@@ -21,17 +24,37 @@ export function App() {
 
   useEffect(() => {
     setUnauthorizedHandler(() => void signOut());
+    setEmailUnverifiedHandler(markEmailUnverified); // any API call answered 403 email_unverified
     bootstrap().finally(() => setReady(true));
   }, []);
 
   if (!ready) return <div className="splash" />;
+
+  // Signed in but the email isn't confirmed: one "check your email" screen, nothing else (the server refuses the rest).
+  if (user?.emailVerified === false)
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/reset" element={<ResetPassword />} />
+          <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+          <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="*" element={<CheckEmail />} />
+        </Routes>
+        <Toasts />
+        <AppUpdates />
+      </BrowserRouter>
+    );
 
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/invite/:token" element={<InvitePage />} />
+        <Route path="/privacy" element={<LegalPage doc="privacy" />} />
+        <Route path="/terms" element={<LegalPage doc="terms" />} />
         <Route path="/reset" element={<ResetPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         {user ? (
           <>
             <Route path="/" element={<Home />} />

@@ -304,6 +304,20 @@
 }
 .template-card:hover { background: var(--bg-subtle); border-color: var(--border-strong); color: var(--text); }
 .template-icon { font-size: 18px; line-height: 1; }
+.template-picker-label-2 { margin-top: 14px; }
+/* A user template: the card plus its rename / delete buttons, kept together. */
+.template-card-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.template-card-user[disabled] { opacity: 0.6; }
+.template-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.template-act:hover { background: var(--bg-subtle); color: var(--text); }
 
 /* ───────── Version history ───────── */
 .modal.history-modal { width: min(1040px, calc(100vw - 32px)); max-width: none; height: min(720px, 80vh); padding: 0; overflow: hidden; }
@@ -331,3 +345,19 @@
 .bubble-menu-bar { display: flex; align-items: center; gap: 1px; }
 /* Code language picker: small text needs 4.5:1. */
 .code-lang { color: var(--text-2); }
+/* ───────── Print / PDF ─────────
+   The app chrome, page margins, colours and typography are UI Shell's print stylesheet
+   (styles.css). This block only covers editor content and editor-only UI. */
+@media print {
+  .page-sub, .page-icon-add, .add-task-end, .template-picker, .block-handle, .table-bar, .bubble-menu,
+  .backlinks, .code-copy, .code-lang, .task-ref-open, .chip-empty, .avatar-btn-empty,
+  .collaboration-carets__caret, .collaboration-carets__label, .page-toc-rail {
+    display: none !important;
+  }
+  .ProseMirror { min-height: 0; }
+  .ProseMirror pre, .ProseMirror .callout, .file-card-inner, .ProseMirror img, .task-ref { break-inside: avoid; }
+  /* Collapsed toggles print open, so nothing is lost on paper. */
+  .ProseMirror .toggle:not(.is-open) [data-type='detailsContent'] { display: block !important; }
+  .task-ref-inner { margin-left: 0; padding-left: 0; }
+  .ProseMirror .code-block pre { padding-top: 12px; }
+}

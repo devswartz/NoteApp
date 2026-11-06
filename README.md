@@ -1,4 +1,4 @@
-# NoteApp
+# Notivelo
 
 Collaborative notes with built-in task management. Notebooks, sections and pages like OneNote, a block editor like Notion, and tasks like Todoist. **A task you write inside a note is a real task**: it shows up on your dashboard, stays linked to its note, and stays in sync everywhere it appears.
 
@@ -21,7 +21,7 @@ Built for a small team (about 2–10 people). Self-hosted, invite-only, and avai
 - Works offline: the app opens without a connection, notes stay editable and sync when you reconnect, and tasks are readable from a local cache.
 
 **Tasks**
-- Type `[] ` in a note, or press ⌘↵ on a line, to make it a task. You can also add standalone tasks from anywhere with **Q**.
+- Type `/task` in a note, or press ⌘↵ (Ctrl+Enter on Windows and Linux) on a line, to make it a task. You can also add standalone tasks from anywhere with **Q**.
 - Each task has an assignee, a due date and time, a priority (P1–P4) and recurrence. Edit it from the note or the dashboard; it is the same task in both places.
 - **Natural-language quick add:** `Send invoice tomorrow 3pm p1 @sam every month`.
 - **Dashboard:** Today (including overdue, with a progress strip), My Tasks, Upcoming, Team, All (filter, sort, group, saved views), Calendar (month and week, drag to reschedule) and Completed.

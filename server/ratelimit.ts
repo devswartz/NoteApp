@@ -98,6 +98,19 @@ export const LIMITS = {
   resetAccount: { capacity: 3, perMinute: 0.1 }, // /auth/forgot per address (no mail-bombing one inbox)
   resetConfirmIp: { capacity: 10, perMinute: 1 }, // /auth/reset per IP (tokens are unguessable; this caps scanning)
   inviteIp: { capacity: 20, perMinute: 2 }, // invite lookups + accepts (tokens are unguessable; this caps scanning)
+  verifyIp: { capacity: 20, perMinute: 2 }, // /auth/verify-email per IP (tokens are unguessable; this caps scanning)
+  // Resending the confirmation email (signed in; see takeResend): no mail-bombing one inbox or the SMTP quota.
+  resendUserMinute: { capacity: 1, perMinute: 1 }, // per user: one a minute …
+  resendUserHour: { capacity: 5, perMinute: 5 / 60 }, // … and five an hour
+  // Re-entering the password to delete an account (signed in): per user, and server-wide with the other bcrypt checks.
+  accountDeleteUser: { capacity: 5, perMinute: 1 },
+  resendIp: { capacity: 10, perMinute: 0.5 }, // per IP, across accounts: 10, then one every two minutes
+  // Client error reports (POST /client-errors, no auth): a crash loop on one device must not flood the log.
+  clientErrorIp: { capacity: 20, perMinute: 10 },
+  clientErrorGlobal: { capacity: 300, perMinute: 300 }, // whole server: 5/s sustained
+  // Feedback emails to the admins (signed in; see takeFeedback): five an hour per user, plus a server-wide cap.
+  feedbackUser: { capacity: 5, perMinute: 5 / 60 },
+  feedbackGlobal: { capacity: 60, perMinute: 60 / 60 },
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -193,12 +206,78 @@ function checksFor(req: Request, ip: string): Check[] {
     }
     case '/auth/reset':
       return [{ limiter: 'resetConfirmIp', key: ip }];
+    case '/auth/verify-email':
+      return [{ limiter: 'verifyIp', key: ip }];
   }
   if (/^\/invites\/[^/]+(\/accept)?$/.test(p)) return [{ limiter: 'inviteIp', key: ip }];
   return [];
 }
 
-function refuse(res: Response, wait: number) {
+/**
+ * Rate limit for POST /auth/resend-verification, called by the handler (the user is only known after sign-in).
+ * Returns 0 if allowed, else seconds to wait. The per-user caps always apply; the per-IP cap follows the
+ * usual loopback exemption. A refused request costs nothing.
+ */
+export function takeResend(req: Request, userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { ip, loopback } = clientIp(req);
+  const checks: Check[] = [
+    { limiter: 'resendUserMinute', key: userId },
+    { limiter: 'resendUserHour', key: userId },
+    ...(loopback && process.env.RATE_LIMIT_LOOPBACK !== '1' ? [] : [{ limiter: 'resendIp' as const, key: ip }]),
+  ];
+  let wait = 0;
+  const taken: Check[] = [];
+  for (const c of checks) {
+    const w = limiters[c.limiter].take(c.key);
+    if (w) wait = Math.max(wait, w);
+    else taken.push(c);
+  }
+  if (wait) taken.forEach((c) => limiters[c.limiter].refund(c.key));
+  return wait;
+}
+
+/**
+ * Rate limit for POST /client-errors (public): per IP and server-wide. Returns 0 if allowed, else seconds to wait.
+ * A refused request costs nothing. Follows the usual loopback exemption.
+ */
+export function takeClientError(req: Request): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { ip, loopback } = clientIp(req);
+  if (loopback && process.env.RATE_LIMIT_LOOPBACK !== '1') return 0;
+  const wait = limiters.clientErrorIp.take(ip);
+  if (wait) return wait;
+  const g = limiters.clientErrorGlobal.take('all');
+  if (g) limiters.clientErrorIp.refund(ip);
+  return g;
+}
+
+/** Rate limit for POST /feedback, called by the handler: per user and server-wide. 0 if allowed, else seconds to wait. */
+export function takeFeedback(userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const w = limiters.feedbackUser.take(userId);
+  if (w) return w;
+  const g = limiters.feedbackGlobal.take('all');
+  if (g) limiters.feedbackUser.refund(userId);
+  return g;
+}
+
+/**
+ * Rate limit for DELETE /auth/account (a password check). Returns 0 if allowed, else seconds to wait.
+ * The per-user bucket always applies; the server-wide password-check budget follows the loopback exemption.
+ */
+export function takeAccountDelete(req: Request, userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { loopback } = clientIp(req);
+  const wait = limiters.accountDeleteUser.take(userId);
+  if (wait) return wait;
+  if (loopback && process.env.RATE_LIMIT_LOOPBACK !== '1') return 0;
+  const g = passwordChecks >= MAX_PASSWORD_CHECKS ? 1 : limiters.passwordChecks.take('all');
+  if (g) limiters.accountDeleteUser.refund(userId);
+  return g;
+}
+
+export function refuse(res: Response, wait: number) {
   res.setHeader('Retry-After', String(wait));
   res.status(429).json({ error: `Too many attempts. Try again in ${wait < 60 ? `${wait} seconds` : `${Math.ceil(wait / 60)} minutes`}.` });
 }
