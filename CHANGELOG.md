@@ -2,6 +2,40 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.1.3
+
+What's new for testers since v0.1.2.
+
+### Share a single page
+- Share one page with chosen people from the page's **Share** button, **Can view** or **Can edit**, even when it lives in a private notebook. They see only that page, under **Shared with me** in the sidebar, and can edit it live with you.
+- Owners and admins can also share with someone outside the workspace by email. They always get view-only access.
+- Stopping a share takes effect immediately, even if the person has the page open. Making a notebook private ends page shares inside it that someone else created.
+
+### Import from OneNote
+- Settings → Import → **Import from OneNote**: sign in with Microsoft, pick notebooks, and they're imported with their sections, pages, images, attachments and to-dos (as real tasks). Freeform layout becomes a normal page, ink may be skipped, and password-protected sections can't be read. (#117)
+
+### Notes and editor
+- The **Tasks on this page** panel no longer opens by itself. The page toolbar shows counts for open tasks and comments, and Tasks and Comments are separate tabs. On phones the panel closes with a swipe down or a tap outside it.
+- **Table of contents** beside long pages, and a **Full width** option in the page menu.
+- Long pages load and type noticeably faster.
+- Blocks can be moved with the keyboard (Alt+Shift+↑/↓). Toggles and the formatting toolbar (Alt+F10) work without a mouse. The editor passes an automated accessibility check.
+- Avatars show who else is on a page, and whether they're editing or viewing.
+- Workspace **export and import** (Settings): one zip with your pages (JSON + Markdown), tasks, templates and attachments.
+
+### Tasks
+- On phones, swipe a task right to complete it, or left to move it to tomorrow (with Undo).
+- Larger tap targets throughout on phones; quick add fits small screens.
+
+### Fixes
+- Adding a task in a note on a slow connection could lose its title and leave an empty task behind (BUG-6).
+- Pressing Escape after typing "Buy lemons tomorrow p1" kept the whole text as the title (BUG-5).
+- The shortcuts list still showed the removed `[ ] Space` task shortcut; it now shows `/task`.
+- Demo accounts on staging were stuck on "Check your email".
+
+### For the server (homelab)
+- Database migrations 013 (page shares) and 014 (OneNote import, if needed) run automatically on start.
+- New optional settings: `MS_CLIENT_ID` and `MS_CLIENT_SECRET` (OneNote import). Import and export have size and rate limits; see `docs/DEPLOY_CONTRACT.md`.
+
 ## v0.1.0 (unreleased)
 
 The first version for day-to-day use by the team: web, desktop and mobile.
