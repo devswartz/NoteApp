@@ -5,6 +5,7 @@ import { PluginKey } from '@tiptap/pm/state';
 import { create } from 'zustand';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { MOD, keyLabel } from '../components/ui.tsx';
 import {
   ChevronRight,
   FileSymlink,
@@ -45,7 +46,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   {
     title: 'Task',
     description: 'A real task, synced to your dashboard',
-    keywords: 'todo task action checkbox [] assign',
+    keywords: 'todo task action checkbox assign',
     icon: <CircleCheck size={18} />,
     run: (e, r) => e.chain().focus().deleteRange(r).insertTask().run(),
   },
@@ -146,7 +147,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   {
     title: 'Link',
-    description: 'Link to a web page (or select text and press ⌘K)',
+    description: `Link to a web page (or select text and press ${keyLabel(MOD, 'K')})`,
     keywords: 'url href hyperlink web',
     icon: <Link2 size={18} />,
     run: (e, r) => {

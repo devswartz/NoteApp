@@ -53,6 +53,12 @@ export function onPageMentions(fn: typeof pageMentionHook) {
   pageMentionHook = fn;
 }
 
+/** Set by the activity feed: called after a page's content is saved, with who edited it last. */
+let pageSavedHook: ((pageId: string, actorId: string | null) => void) | null = null;
+export function onPageSaved(fn: typeof pageSavedHook) {
+  pageSavedHook = fn;
+}
+
 /** Who is on each socket, until when their token is valid, and whether they may edit. */
 interface ConnAuth {
   userId: string;
@@ -153,6 +159,11 @@ function persist(room: Room) {
   }
   room.mentionAuthors.clear();
   for (const [actor, ids] of byActor) pageMentionHook?.(room.pageId, room.workspaceId, ids, actor);
+  try {
+    pageSavedHook?.(room.pageId, room.lastEditor);
+  } catch (e) {
+    console.error('page saved hook', e);
+  }
   publish({ type: 'tree', workspaceId: room.workspaceId });
 }
 
@@ -258,6 +269,16 @@ export function closeRoom(pageId: string) {
   for (const c of [...room.conns.keys()]) c.close(4403, 'Access revoked');
 }
 
+/** Force-disconnect every collab socket of one user (their account was deleted). */
+export function closeUserCollab(userId: string) {
+  for (const room of rooms.values()) {
+    for (const conn of [...room.conns.keys()]) {
+      const a = connAuth.get(conn);
+      if (a?.userId === userId) revoke(conn, a, 4401, 'Account deleted');
+    }
+  }
+}
+
 /** Seed an empty page with initial content (used for onboarding pages). */
 export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void) {
   const doc = new Y.Doc();
@@ -280,6 +301,10 @@ export function attachCollab(wss: WebSocketServer) {
       return;
     }
     const user = auth.user;
+    if (!user.emailVerified) {
+      conn.close(4403, 'Email not verified');
+      return;
+    }
     const access = pageAccess(pageId, user.id);
     if (!access) {
       conn.close(4403, 'No access to this page');

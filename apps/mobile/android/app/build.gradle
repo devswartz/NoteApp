@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.devswartz.noteapp"
+    namespace = "com.devswartz.notivelo"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.devswartz.noteapp"
+        applicationId "com.devswartz.notivelo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI sets these (docs/MOBILE.md); local builds stay 1 / 0.1.0.

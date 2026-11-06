@@ -129,7 +129,7 @@ export function formatKeys(keys: string): string[] {
     if (i > 0) out.push('then');
     if (s.mod) out.push(isApple ? '⌘' : 'Ctrl');
     if (s.alt) out.push(isApple ? '⌥' : 'Alt');
-    if (s.shift) out.push('⇧');
+    if (s.shift) out.push(isApple ? '⇧' : 'Shift');
     const named: Record<string, string> = { escape: 'Esc', enter: '↵', ' ': 'Space', space: 'Space', arrowup: '↑', arrowdown: '↓', backspace: '⌫', '\\': '\\' };
     out.push(named[s.key] ?? (s.key.length === 1 ? s.key.toUpperCase() : s.key[0].toUpperCase() + s.key.slice(1)));
   });

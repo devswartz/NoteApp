@@ -4,7 +4,7 @@
 
 use keyring::Entry;
 
-const SERVICE: &str = "com.devswartz.noteapp";
+const SERVICE: &str = "com.devswartz.notivelo";
 
 fn entry(server: &str, key: &str) -> Result<Entry, String> {
     let account = if server.is_empty() { key.to_string() } else { format!("{key}@{server}") };

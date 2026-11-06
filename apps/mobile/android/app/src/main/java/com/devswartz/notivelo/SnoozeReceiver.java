@@ -1,4 +1,4 @@
-package com.devswartz.noteapp;
+package com.devswartz.notivelo;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

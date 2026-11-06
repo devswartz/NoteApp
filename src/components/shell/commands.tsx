@@ -10,6 +10,7 @@ import {
   Inbox,
   Keyboard,
   ListChecks,
+  MessageSquare,
   NotebookText,
   PanelLeft,
   Plus,
@@ -24,6 +25,7 @@ import { canEditWorkspace, errorToast, toast, ui, useStore } from '../../store.t
 import { cycleTheme } from '../../store/ui.ts';
 import { useCommands, type Command } from '../../hooks/useShortcuts.ts';
 import { openNewNotebook } from './NewNotebookDialog.tsx';
+import { openFeedback } from './FeedbackDialog.tsx';
 
 const currentPageId = () => location.pathname.match(/\/p\/([^/?#]+)/)?.[1];
 
@@ -67,6 +69,7 @@ export function useShellCommands(wsId: string) {
         run: () => (useStore.getState().paletteOpen ? ui.closePalette() : ui.openPalette()),
       },
       { id: 'app.shortcuts', title: 'Keyboard shortcuts', group: 'General', keys: '?', icon: <Keyboard size={16} />, run: () => ui.setShortcuts(true) },
+      { id: 'app.feedback', title: 'Send feedback', group: 'General', keywords: 'bug idea suggestion report problem help contact', icon: <MessageSquare size={16} />, run: openFeedback },
       { id: 'app.sidebar', title: 'Toggle sidebar', group: 'General', keys: 'mod+\\', icon: <PanelLeft size={16} />, run: ui.toggleSidebar },
       { id: 'app.theme', title: 'Switch theme (light / dark / system)', group: 'General', keywords: 'dark mode appearance', icon: <SunMoon size={16} />, run: cycleTheme },
       {

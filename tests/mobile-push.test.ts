@@ -15,7 +15,7 @@ const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
 const cfg = (host: string) => ({
   keyId: 'KEY1234567',
   teamId: 'TEAM123456',
-  bundleId: 'com.devswartz.noteapp',
+  bundleId: 'com.devswartz.notivelo',
   privateKey: ec.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
   host,
 });
@@ -81,9 +81,9 @@ test('/.well-known: universal-link and app-link files, public JSON, 404 until co
   assert.equal(normalizeFingerprint(fp), 'AB:'.repeat(31) + 'AB');
   assert.equal(normalizeFingerprint('AB:CD'), null);
   const c = wellKnownConfig({ APNS_TEAM_ID: 'ABCDE12345', ANDROID_CERT_SHA256: `${fp}, nonsense ,${'CD:'.repeat(31)}CD` });
-  assert.deepEqual(appleAppSiteAssociation(c)!.applinks.details[0].appIDs, ['ABCDE12345.com.devswartz.noteapp']);
+  assert.deepEqual(appleAppSiteAssociation(c)!.applinks.details[0].appIDs, ['ABCDE12345.com.devswartz.notivelo']);
   assert.deepEqual(appleAppSiteAssociation(c)!.applinks.details[0].components, [{ '/': '/w/*', comment: 'Workspace pages and tasks' }]);
-  assert.equal(assetLinks(c)![0].target.package_name, 'com.devswartz.noteapp');
+  assert.equal(assetLinks(c)![0].target.package_name, 'com.devswartz.notivelo');
   assert.equal(assetLinks(c)![0].target.sha256_cert_fingerprints.length, 2, 'invalid fingerprints dropped');
   assert.equal(appleAppSiteAssociation(wellKnownConfig({ APNS_TEAM_ID: 'bad id' })), null);
 
@@ -96,7 +96,7 @@ test('/.well-known: universal-link and app-link files, public JSON, 404 until co
     const aasa = await fetch(app.origin + '/.well-known/apple-app-site-association', { redirect: 'manual' });
     assert.equal(aasa.status, 200);
     assert.match(aasa.headers.get('content-type')!, /^application\/json/);
-    assert.equal((await aasa.json()).applinks.details[0].appIDs[0], 'ABCDE12345.com.devswartz.noteapp');
+    assert.equal((await aasa.json()).applinks.details[0].appIDs[0], 'ABCDE12345.com.devswartz.notivelo');
     const links = await fetch(app.origin + '/.well-known/assetlinks.json');
     assert.equal(links.status, 200);
     assert.match(links.headers.get('content-type')!, /^application\/json/);
