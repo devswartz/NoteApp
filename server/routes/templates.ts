@@ -148,8 +148,10 @@ templateRoutes.post(
     const t = visibleTemplate(param(req, 'id'), req.user.id);
     if (!t) throw new HttpError(404, 'Not found');
     const pageId = str(req.body?.pageId, 'pageId', 100);
+    // Into a page you can edit, as a member of the template's workspace (#98 review).
     const a = mustAccess(pageAccess(pageId, req.user.id), true);
     if (a.workspaceId !== t.workspace_id) throw new HttpError(400, 'That template belongs to a different workspace');
+    requireRole(t.workspace_id, req.user.id, 'member');
     const out = useTemplate(t, pageId, req.user.id);
     return { title: t.name, icon: t.icon, content: out.content, taskIds: out.taskIds };
   }),

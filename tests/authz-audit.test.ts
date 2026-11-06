@@ -254,7 +254,8 @@ const ROWS: Row[] = [
   // Sharing one page (#98). Managing shares needs edit access to the page's notebook (creator only for a private
   // one); `target` holds a share on both fixture pages. /shared-pages is the caller's own list.
   { method: 'GET', route: '/pages/:id/shares', path: (f) => `/pages/${f.page}/shares`, expect: shared(inPrivate(WRITE), 403) },
-  { method: 'POST', route: '/pages/:id/shares', path: (f) => `/pages/${f.page}/shares`, body: () => ({ email: `share-${++seq}@example.com` }), expect: shared(inPrivate(WRITE), 403) },
+  // Members share with members (sharing outside the workspace is for admins: tests/page-shares.test.ts).
+  { method: 'POST', route: '/pages/:id/shares', path: (f) => `/pages/${f.page}/shares`, body: (f) => ({ userId: f.target, canEdit: false }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'PATCH', route: '/pages/:id/shares/:userId', path: (f) => `/pages/${f.page}/shares/${f.target}`, body: () => ({ canEdit: false }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id/shares/:userId', path: (f) => `/pages/${f.page}/shares/${f.target}`, expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id/invites/:email', path: (f) => `/pages/${f.page}/invites/${encodeURIComponent(f.email)}`, expect: shared(inPrivate(WRITE), 403) },
@@ -466,6 +467,22 @@ test('authz: /api/events socket only delivers what each user may see', async () 
   assert.ok(sawTask('pageshare', priv.task), 'task on the shared page reaches its page share holder');
   assert.deepEqual(by.pageshare.filter((m) => m.type !== 'hello' && !(m.type === 'task' && m.task?.id === priv.task)), [], 'pageshare gets nothing else');
   for (const l of listeners) l.ws.terminate();
+});
+
+test('authz: a member with a view-only page share cannot change, delete or take over tasks on that page', async () => {
+  // #98 review: seeing a task through a view-only share isn't edit access to it.
+  const { priv } = await fixture();
+  await app.call('POST', `/pages/${priv.page}/shares`, owner.token, { userId: member.user.id, canEdit: false });
+  assert.equal((await app.call('GET', `/pages/${priv.page}`, member.token)).data.canEdit, false);
+  assert.ok(((await app.call('GET', `/workspaces/${priv.ws}/tasks`, member.token)).data as { id: string }[]).some((t) => t.id === priv.task), 'the task is visible');
+  for (const body of [{ title: 'Hijacked' }, { assigneeId: member.user.id }, { pageId: null }, { status: 'done' }, { dueDate: '2030-01-01' }])
+    assert.equal((await app.call('PATCH', `/tasks/${priv.task}`, member.token, body)).status, 403, JSON.stringify(body));
+  assert.equal((await app.call('DELETE', `/tasks/${priv.task}`, member.token)).status, 403);
+  assert.equal((await app.call('POST', `/workspaces/${priv.ws}/tasks`, member.token, { title: 'Sub', parentId: priv.task })).status, 400, 'no subtasks either');
+  // Unchanged after all that.
+  const { getTask } = await import('../server/tasks.ts');
+  const t = getTask(priv.task)!;
+  assert.deepEqual([t.title, t.assigneeId, t.pageId, t.status], ['Task', null, priv.page, 'open']);
 });
 
 test('authz: the configured site admin can use the admin routes', async () => {
