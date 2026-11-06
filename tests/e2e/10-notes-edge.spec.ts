@@ -1,7 +1,7 @@
 // Edge cases around notes: move/delete pages and notebooks (tasks survive), ⌘↵ convert to task,
 // live tree updates for another member, and the theme preference.
 import { expect, test } from '@playwright/test';
-import { api, createPage, createTeam, createUser, eventually, focusEnd, listTasks, openPage, signInContext, taskRow, tasksUrl } from './helpers.ts';
+import { api, createPage, createTeam, createUser, eventually, focusEnd, isoDay, listTasks, openPage, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
 test('⌘/Ctrl+Enter turns the current line into a task', async ({ page, context, request }) => {
   const user = await createUser(request, 'Cora Convert');
@@ -127,4 +127,42 @@ test('a page title typed just before navigating away is still saved', async ({ p
     'rename saved despite navigating away',
   );
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Renamed right before leaving')).toBeVisible();
+});
+
+test('a new task left with Escape gets the same cleaned-up title as with Enter', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Esc Tasker');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  await page.getByRole('button', { name: 'Add a task to this page' }).click();
+  await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+  await page.keyboard.type('Buy lemons tomorrow p1');
+  await page.keyboard.press('Escape');
+  await eventually(
+    () => listTasks(request, user),
+    (ts) => ts.some((t) => t.pageId === pageId && t.title === 'Buy lemons' && t.dueDate === isoDay(1)),
+    'title cleaned, date parsed',
+  );
+  // And it stays that way (no late overwrite with the raw text).
+  await expect(page.locator('.task-ref-title')).toHaveValue('Buy lemons');
+  await page.waitForTimeout(500);
+  expect((await listTasks(request, user)).find((t) => t.pageId === pageId)?.title).toBe('Buy lemons');
+});
+
+test('leaving a new task with an arrow key also cleans up the title (BUG-5)', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Arrow Tasker');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  await page.getByRole('button', { name: 'Add a task to this page' }).click();
+  await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+  await page.keyboard.type('Call the plumber tomorrow');
+  await page.keyboard.press('ArrowUp');
+  await eventually(
+    () => listTasks(request, user),
+    (ts) => ts.some((t) => t.pageId === pageId && t.title === 'Call the plumber' && t.dueDate === isoDay(1)),
+    'title cleaned, date parsed',
+  );
+  await page.waitForTimeout(500);
+  expect((await listTasks(request, user)).find((t) => t.pageId === pageId)?.title).toBe('Call the plumber');
 });
