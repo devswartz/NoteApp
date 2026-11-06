@@ -164,7 +164,7 @@ Generated from the app's command registry (the `?` overlay). ⌘ = Ctrl on Windo
 | In a note | |
 |---|---|
 | Insert block menu | / |
-| New task item | [ ] Space |
+| New task | /task |
 | Turn line into task | ⌘↵ |
 | Bold / italic / underline | ⌘B / ⌘I / ⌘U |
 | Heading 1–3 | #, ##, ### then Space |
