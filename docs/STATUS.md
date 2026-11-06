@@ -1,4 +1,34 @@
-# NoteApp — status
+# NoteApp (Notivelo) — status
+
+## ▶ CURRENT STATE (2026-11-06 13:25 UTC) — read this first
+- **Product name:** Notivelo (`APP_NAME`); internal ids (image, DB file, storage keys) stay `noteapp`.
+- **Prod:** notes.devswartz.com runs `v0.1.2` (tag at 3d44a4b) with `SIGNUP_MODE=open`. **Staging** follows `main`.
+- **Next release: `v0.1.3`.** Everything below is on `main`; waiting only on the OneNote importer (#117, in progress) and #39.
+  The owner/local agent pushes tags (manager sessions can't push tags).
+
+### Landed since v0.1.2 (2026-11-06)
+- Page panel no longer auto-opens; Tasks/Comments split with count badges (#101, #116; issue #99).
+- **Share a single page** with people, incl. from a private notebook (#107 server, #108 UI; issue #98 parts 1–2). Two independent security reviews.
+  Rules: only owners/admins share outside the workspace; rights = min(share, role); outsiders view-only; making a notebook private (or moving a page into one) drops other people's shares.
+- Workspace export/import zip with sanitising + import/export rate limits (#77). Migration 013 = page shares.
+- BUG-5 (Escape kept raw task title, #111) and **BUG-6** (task writes raced the create on slow links → lost titles, #115) fixed.
+- Editor: table of contents + full width (#53), long-page performance (#58), keyboard/screen-reader a11y + axe in CI (#68), block e2e (#72).
+- Collab: presence avatars (#23), @mentions in exports (#82). Tasks: swipe actions, a11y, 44px phone targets (#100, #106, #110).
+- UI: Activity nav + mobile audit (#102–#104, #113). Shortcuts list shows `/task` (#114). Demo seed accounts verified, Windows-safe rate-limit tests, limits documented (#109).
+- QA: e2e for verify×invites, template privacy, mobile flow, page panel (#81, #105, #112). Open bugs: none.
+
+### In flight
+- **#117 OneNote import** via Microsoft Graph — worker session "Notivelo: OneNote import (#117)". Owner has registered the Entra app; `MS_CLIENT_ID`/`MS_CLIENT_SECRET` are set on both stacks (redirect `${PUBLIC_URL}/api/import/onenote/callback`). Needs a careful security review (OAuth state, sanitising) before merge. Migration 014 reserved for it.
+- **#39** follow a collaborator — reviewed; Collab merging main in.
+
+### Open issues / later
+- #98 part 3: public read-only link. #117 if it slips from v0.1.3.
+- Signing secrets for desktop/mobile (docs/DESKTOP.md, docs/MOBILE.md); stale branch `feat/editor-mentions-wip` can be deleted.
+
+### Agents
+All original workers are archived except Collab (finishing #39). Keep new work to fresh, short-lived sessions — long-context agents are expensive.
+
+---
 
 ## ▶ FINAL SUMMARY (2026-11-05 12:15 UTC, end of the autonomous run)
 
