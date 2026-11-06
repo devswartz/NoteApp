@@ -3,12 +3,12 @@
 ## ▶ CURRENT STATE (2026-11-06 13:25 UTC) — read this first
 - **Product name:** Notivelo (`APP_NAME`); internal ids (image, DB file, storage keys) stay `noteapp`.
 - **Prod:** notes.devswartz.com runs `v0.1.2` (tag at 3d44a4b) with `SIGNUP_MODE=open`. **Staging** follows `main`.
-- **Next release: `v0.1.3`.** Everything below is on `main`; waiting only on the OneNote importer (#117, in progress) and #39.
+- **Next release: `v0.1.3`.** Everything below is on `main` and ready to tag.
   The owner/local agent pushes tags (manager sessions can't push tags).
 
 ### Landed since v0.1.2 (2026-11-06)
 - Page panel no longer auto-opens; Tasks/Comments split with count badges (#101, #116; issue #99).
-- **Share a single page** with people, incl. from a private notebook (#107 server on main; the UI from #108 was merged into the stacked branch by mistake and is being re-opened against main; issue #98 parts 1–2). Two independent security reviews.
+- **Share a single page** with people, incl. from a private notebook (#107 server, #119 UI; issue #98 parts 1–2). Two independent security reviews.
   Rules: only owners/admins share outside the workspace; rights = min(share, role); outsiders view-only; making a notebook private (or moving a page into one) drops other people's shares.
 - Workspace export/import zip with sanitising + import/export rate limits (#77). Migration 013 = page shares.
 - BUG-5 (Escape kept raw task title, #111) and **BUG-6** (task writes raced the create on slow links → lost titles, #115) fixed.
@@ -17,16 +17,16 @@
 - UI: Activity nav + mobile audit (#102–#104, #113). Shortcuts list shows `/task` (#114). Demo seed accounts verified, Windows-safe rate-limit tests, limits documented (#109).
 - QA: e2e for verify×invites, template privacy, mobile flow, page panel (#81, #105, #112). Open bugs: none.
 
-### In flight
-- **#117 OneNote import** via Microsoft Graph — worker session "Notivelo: OneNote import (#117)". Owner has registered the Entra app; `MS_CLIENT_ID`/`MS_CLIENT_SECRET` are set on both stacks (redirect `${PUBLIC_URL}/api/import/onenote/callback`). PR #120 (no migration; jobs/tokens in memory). Security review in progress. DEPLOY_CONTRACT change: `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, and outbound HTTPS to login.microsoftonline.com + graph.microsoft.com; both redirect URIs must be registered as **Web** redirects in Entra.
-- **#39** follow a collaborator — reviewed; Collab merging main in.
+### Also landed
+- **OneNote import** (#120, issue #117): Microsoft Graph, server-side OAuth+PKCE, Graph-only fetches, sanitised HTML, own import slot, 30 min / 300 MB per job, 1 GB/day per user. Needs `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and outbound HTTPS to login.microsoftonline.com + graph.microsoft.com. Not yet tested against a live Microsoft sign-in.
+- Follow a collaborator (#39).
 
 ### Open issues / later
 - #98 part 3: public read-only link. #117 if it slips from v0.1.3.
 - Signing secrets for desktop/mobile (docs/DESKTOP.md, docs/MOBILE.md); stale branch `feat/editor-mentions-wip` can be deleted.
 
 ### Agents
-All original workers are archived except Collab (finishing #39). Keep new work to fresh, short-lived sessions — long-context agents are expensive.
+All worker sessions are archived. Keep new work to fresh, short-lived sessions — long-context agents are expensive.
 
 ---
 
