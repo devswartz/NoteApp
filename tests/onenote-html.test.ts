@@ -64,26 +64,39 @@ test('the parser tolerates broken markup and decodes entities', () => {
   assert.ok(Date.now() - t0 < 2000, 'no catastrophic backtracking');
 });
 
-test('pathological 1 MB pages convert in well under a second (no quadratic parsing, nesting capped)', () => {
+test('pathological 1 MB pages convert in linear time (no quadratic parsing, nesting capped)', () => {
   const MB = 1024 * 1024;
-  const fill = (unit: string) => unit.repeat(Math.ceil(MB / unit.length)).slice(0, MB);
-  const cases: Record<string, string> = {
-    'unmatched close tags': fill('<b>').slice(0, MB / 2) + fill('</i>').slice(0, MB / 2),
-    'deep nesting': fill('<b><i>').slice(0, MB / 2) + fill('</b>').slice(0, MB / 2),
-    'implied ends': fill('<li><td><p>x'),
-    'unclosed tags': fill('<a '),
-    'long tag names': '<' + fill('a'),
-    'stray brackets': fill('< <! <? </ <a'),
-    'comments': fill('<!-- x --><!--'),
-    'many titles': fill('<title'),
-    'entities': fill('&aaaaaaaa'),
-    'tables': fill('<table><tr><td>'),
+  const fill = (unit: string, size: number) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
+  const cases: Record<string, (size: number) => string> = {
+    'unmatched close tags': (n) => fill('<b>', n / 2) + fill('</i>', n / 2),
+    'deep nesting': (n) => fill('<b><i>', n / 2) + fill('</b>', n / 2),
+    'implied ends': (n) => fill('<li><td><p>x', n),
+    'unclosed tags': (n) => fill('<a ', n),
+    'long tag names': (n) => '<' + fill('a', n),
+    'stray brackets': (n) => fill('< <! <? </ <a', n),
+    'comments': (n) => fill('<!-- x --><!--', n),
+    'many titles': (n) => fill('<title', n),
+    'entities': (n) => fill('&aaaaaaaa', n),
+    'tables': (n) => fill('<table><tr><td>', n),
   };
-  for (const [name, html] of Object.entries(cases)) {
-    const t0 = performance.now();
-    convertOneNotePage(html);
-    const ms = performance.now() - t0;
-    assert.ok(ms < 1000, `${name}: ${Math.round(ms)} ms`);
+  // Fastest of two runs, to skip one-off GC pauses and JIT warm-up.
+  const time = (html: string) =>
+    Math.min(
+      ...[0, 1].map(() => {
+        const t0 = performance.now();
+        convertOneNotePage(html);
+        return performance.now() - t0;
+      }),
+    );
+  for (const [name, make] of Object.entries(cases)) {
+    const half = time(make(MB / 2));
+    const full = time(make(MB));
+    // A fixed budget alone is flaky on slow or busy CI machines (one case takes
+    // ~0.3 s locally and ~1 s on a GitHub runner), so the main check is growth:
+    // doubling the input about doubles the time when parsing is linear and
+    // quadruples it when it is quadratic. Sub-20 ms timings are too noisy to compare.
+    if (full > 20) assert.ok(full < 3 * half, `${name}: ${Math.round(half)} ms at 512 KB → ${Math.round(full)} ms at 1 MB`);
+    assert.ok(full < 2000, `${name}: ${Math.round(full)} ms`);
   }
   // Deeper than MAX_DEPTH: flattened, the text survives.
   const deep = convertOneNotePage(`<body>${'<div>'.repeat(5000)}<p>bottom</p>${'</div>'.repeat(5000)}</body>`);
