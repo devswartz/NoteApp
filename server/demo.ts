@@ -23,8 +23,11 @@ export function seedDemoIfEmpty(): boolean {
   db.transaction(() => {
     const ids = DEMO_USERS.map((u) => {
       const id = newId();
-      db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-        id, u.email, u.name, hash, pickColor(), now(),
+      // Verified: nobody can open a demo inbox, and an unverified account would be stuck on "Check your email"
+      // (and later pruned) wherever verification is required, e.g. staging with SMTP.
+      const ts = now();
+      db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        id, u.email, u.name, hash, pickColor(), ts, ts,
       );
       createWorkspace(id, `${u.name.split(' ')[0]}'s Space`, true);
       return id;
