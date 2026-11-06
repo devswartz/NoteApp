@@ -26,6 +26,8 @@ test('mobile: a page with tasks opens as just the note; the badge opens the shee
   await expect(tasksBtn).toBeVisible();
   await expect(tasksBtn.locator('.panel-badge')).toHaveText('2');
   await expect(sheet).toHaveCount(0);
+  // "Add icon" is a comfortable tap target (390px audit).
+  expect((await page.getByRole('button', { name: /Add icon/ }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 
   // Tap the badge → the sheet with the page's tasks; Comments are a separate tab.
   await tasksBtn.tap();
