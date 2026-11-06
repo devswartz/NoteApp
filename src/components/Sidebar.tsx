@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
+  Activity,
   CalendarDays,
   CalendarRange,
   Check,
@@ -152,6 +153,7 @@ export function Sidebar() {
           <NavItem to={`/w/${wsId}/tasks/all`} icon={<ListChecks size={16} />} label="All Tasks" />
           <NavItem to={`/w/${wsId}/tasks/calendar`} icon={<CalendarDays size={16} />} label="Calendar" />
           <NavItem to={`/w/${wsId}/tasks/completed`} icon={<CheckCircle2 size={16} />} label="Completed" />
+          <NavItem to={`/w/${wsId}/activity`} icon={<Activity size={16} />} label="Activity" />
         </div>
 
         <Group id={`fav:${wsId}`} title="Favourites" dropTarget hidden={!favPages.length}>

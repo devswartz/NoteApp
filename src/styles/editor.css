@@ -361,3 +361,19 @@
   .task-ref-inner { margin-left: 0; padding-left: 0; }
   .ProseMirror .code-block pre { padding-top: 12px; }
 }
+
+/* ───────────── Page panel: toolbar badges, tabs, phone sheet (#99) ───────────── */
+.panel-toggle { position: relative; }
+.panel-badge {
+  position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; pointer-events: none;
+}
+.panel-tabs button { display: inline-flex; align-items: center; gap: 5px; }
+.panel-progress { display: grid; gap: 4px; padding: 0 16px 8px; }
+.page-panel .panel-progress .progress { margin: 0; }
+.sheet-handle { display: block; width: 36px; height: 4px; margin: 8px auto 0; border-radius: 2px; background: var(--border-strong, var(--border)); }
+.page-sheet-backdrop { position: fixed; inset: 0; z-index: 599; background: rgba(0, 0, 0, 0.25); }
+.page-panel.is-sheet { transition: transform 0.15s ease-out; }
+.page-panel.is-sheet .panel-grab { touch-action: none; }
+.page-panel.is-sheet .panel-body, .page-panel.is-sheet .comments-panel { overflow-y: auto; min-height: 0; }

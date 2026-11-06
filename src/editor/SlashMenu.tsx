@@ -104,7 +104,19 @@ export const SLASH_ITEMS: SlashItem[] = [
     description: 'Collapsible section with hidden content',
     keywords: 'toggle collapse collapsible details expand fold',
     icon: <ChevronRight size={18} />,
-    run: (e, r) => e.chain().focus().deleteRange(r).setDetails().run(),
+    run: (e, r) => {
+      e.chain().focus().deleteRange(r).setDetails().run();
+      // A new toggle opens, so Enter after its title goes into its content.
+      requestAnimationFrame(() => {
+        const at = e.view.domAtPos(e.state.selection.from).node;
+        const el = (at instanceof HTMLElement ? at : at.parentElement)?.closest('.toggle');
+        const button = el?.querySelector<HTMLButtonElement>(':scope > button');
+        if (el && button && !el.classList.contains('is-open')) {
+          button.click();
+          e.commands.focus();
+        }
+      });
+    },
   },
   {
     title: 'Table',

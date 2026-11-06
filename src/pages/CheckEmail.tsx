@@ -76,15 +76,17 @@ export function CheckEmail() {
             {error}
           </div>
         )}
-        <Button variant="primary" size="lg" loading={checking} onClick={() => void check()}>
-          I've verified, continue
-        </Button>
-        <Button size="lg" loading={sending} disabled={cooldown > 0} onClick={() => void resend()}>
-          {cooldown > 0 ? `Resend email (${cooldown}s)` : 'Resend email'}
-        </Button>
+        <div className="auth-actions">
+          <Button variant="primary" size="lg" loading={checking} onClick={() => void check()}>
+            I've verified, continue
+          </Button>
+          <Button size="lg" loading={sending} disabled={cooldown > 0} onClick={() => void resend()}>
+            {cooldown > 0 ? `Resend email (${cooldown}s)` : 'Resend email'}
+          </Button>
+        </div>
         <p className="muted small center">
           Wrong address?{' '}
-          <button className="link" onClick={() => void signOut()}>
+          <button className="link auth-inline-link" onClick={() => void signOut()}>
             Sign out
           </button>
         </p>

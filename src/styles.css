@@ -636,6 +636,12 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
 .auth-card label { display: grid; gap: 6px; font-weight: 500; font-size: 13px; }
 .auth-card .input { height: 40px; }
 .auth-icon { border-radius: 9px; box-shadow: var(--shadow-sm); }
+/* Text-style links in the auth card get a full-height touch area without looking bigger. */
+.auth-forgot { justify-self: start; padding: 10px 0; margin: -10px 0; }
+.auth-inline-link { padding: 12px 4px; margin: -12px -4px; }
+/* Stacked, equal-width actions in an auth card (e.g. Check your email). */
+.auth-actions { display: grid; gap: var(--space-2); margin: var(--space-5) 0 var(--space-4); }
+.auth-actions > .btn { width: 100%; }
 .auth-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
 .form-error { color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: var(--radius); font-size: 13px; }
 
@@ -1561,7 +1567,22 @@ body.is-resizing .sidebar { transition: none; }
   @keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } }
   .sheet-body { padding: 16px; }
   .prop { grid-template-columns: 110px 1fr; min-height: 44px; }
-  .palette-list { max-height: 60vh; }
+  /* Palette on phones: anchored to the top so the on-screen keyboard never covers results,
+     with roomier rows and no keyboard-only hints. */
+  .modal-backdrop:has(.palette) { align-items: flex-start; padding-top: var(--safe-top); }
+  .modal.palette { border-radius: 0 0 var(--radius-xl) var(--radius-xl); animation: palette-down var(--dur) var(--ease-out); }
+  @keyframes palette-down { from { transform: translateY(-24px); opacity: 0; } }
+  .palette-list { max-height: calc(100dvh - var(--safe-top) - 120px - var(--keyboard-height, 0px)); }
+  .palette-item { height: var(--touch); }
+  .btn-lg { height: var(--touch); }
+  .palette-foot, .palette .key-hint { display: none; }
+  .profile-row { flex-direction: column; align-items: stretch; }
+  .profile-fields { min-width: 0; }
+  .profile-row > .btn { align-self: flex-start; }
+  .swatch { width: 32px; height: 32px; }
+  .color-row, .row:has(> .swatch) { gap: var(--space-3); flex-wrap: wrap; }
+  .sb-row-actions .icon-btn.sm, .sb-heading .icon-btn.sm { width: 36px; height: 36px; }
+  .sb-heading-btn { height: 32px; }
   .shortcut-cols { columns: 1; }
   .toasts { bottom: calc(var(--tabbar-h) + 16px + var(--safe-bottom)); }
   .input { height: 40px; font-size: 16px; } /* 16px avoids iOS zoom on focus */
