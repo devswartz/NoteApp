@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import type { Extensions } from '@tiptap/core';
+import type { Awareness } from 'y-protocols/awareness';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { beginComment, useCommentBinding } from './collabComments.ts';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
@@ -70,6 +71,8 @@ interface Props {
   /** Called once the server's copy of the page has been loaded. */
   onServerSynced?: () => void;
   onReady: (editor: Editor) => void;
+  /** The page's awareness (cursors and presence), e.g. to follow a collaborator (./collabFollow.ts). */
+  onAwareness?: (awareness: Awareness | null) => void;
 }
 
 /**
@@ -118,8 +121,12 @@ export function documentExtensions(pageId: string): Extensions {
   ];
 }
 
-export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
+export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
+  useEffect(() => {
+    onAwareness?.(session.provider.awareness);
+    return () => onAwareness?.(null);
+  }, [session, onAwareness]);
   usePresenceRole(session, user, canEdit); // others see 'editing' or 'viewing'
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };

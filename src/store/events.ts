@@ -10,6 +10,7 @@ import { commentsChanged } from '../editor/collabComments.ts';
 import { loadUserTemplates } from '../editor/userTemplates.ts';
 import { receiveNotification } from '../components/sharing/inbox.ts';
 import { activityChanged } from '../components/sharing/ActivityFeed.tsx';
+import { isSharedPage, loadSharedPages, sharedTaskEvent } from '../components/sharing/sharedPages.ts';
 import { toast } from './toasts.ts';
 
 let socket: WebSocket | null = null;
@@ -101,6 +102,7 @@ function schedule() {
 /** Reload everything the event channel feeds (after a gap we can't replay). */
 function resync() {
   void loadWorkspaces();
+  void loadSharedPages();
   if (!st().wsId) return;
   void loadTree();
   void loadTasks();
@@ -116,6 +118,7 @@ function handle(ev: ServerEvent) {
       break;
     case 'task':
       if (ev.task.workspaceId === wsId) upsertTask(ev.task);
+      else sharedTaskEvent(ev.task); // on a page shared with me from another workspace (#98)
       break;
     case 'task-deleted':
       if (ev.workspaceId === wsId) removeTaskLocal(ev.id);
@@ -127,7 +130,10 @@ function handle(ev: ServerEvent) {
       if (ev.workspaceId === wsId) debounce('members', () => void loadMembers());
       break;
     case 'comments':
-      if (ev.workspaceId === wsId) commentsChanged(ev.pageId);
+      if (ev.workspaceId === wsId || isSharedPage(ev.pageId)) commentsChanged(ev.pageId);
+      break;
+    case 'shared-pages':
+      debounce('shared-pages', () => void loadSharedPages());
       break;
     case 'activity':
       if (ev.workspaceId === wsId) debounce('activity', activityChanged, 500);

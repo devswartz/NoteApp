@@ -23,6 +23,9 @@ let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser, tar
 before(async () => {
   // Admin routes: with ADMIN_EMAILS unset the first account would be admin, so name an address no persona uses.
   process.env.ADMIN_EMAILS = 'site-admin@example.com';
+  // OneNote import (#117) is hidden without these; turn it on so its routes are audited (no Graph call is made here).
+  process.env.MS_CLIENT_ID = 'audit-client-id';
+  process.env.MS_CLIENT_SECRET = 'audit-client-secret';
   app = await startTestApp();
   [owner, stranger, viewer, member, target, sharee] = await Promise.all(['Owner', 'Stranger', 'Viewer', 'Member', 'Target', 'Sharee'].map((n) => app.signUp(`Az${n}`)));
 });
@@ -264,6 +267,16 @@ const ROWS: Row[] = [
   { method: 'DELETE', route: '/pages/:id/invites/:email', path: (f) => `/pages/${f.page}/invites/${encodeURIComponent(f.email)}`, expect: shared(inPrivate(WRITE), 403) },
   { method: 'GET', route: '/pages/:id/tasks', path: (f) => `/pages/${f.page}/tasks`, expect: shared(inPrivate(READ), 200) },
   { method: 'GET', route: '/shared-pages', path: () => '/shared-pages', expect: { stranger: 200, ...READ, pageshare: 200 } },
+  // Import from OneNote (#117). The two browser redirects are public (no bearer token on a navigation): a bad ticket or state is a 400 for everyone.
+  { method: 'GET', route: '/import/onenote/authorize', plain: true, path: () => '/import/onenote/authorize?ticket=not-a-ticket', expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
+  { method: 'GET', route: '/import/onenote/callback', plain: true, path: () => '/import/onenote/callback?code=c&state=not-a-state', expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
+  { method: 'GET', route: '/import/onenote', path: () => '/import/onenote', expect: { stranger: 200, viewer: 200, member: 200 } },
+  { method: 'POST', route: '/import/onenote/start', path: () => '/import/onenote/start', body: (f) => ({ workspaceId: f.ws }), expect: WRITE }, // importing writes notebooks into the workspace
+  // Connections and jobs are personal (random ids, checked against the user): nobody else's is reachable.
+  { method: 'GET', route: '/import/onenote/connections/:id/notebooks', path: () => `/import/onenote/connections/${crypto.randomUUID()}/notebooks`, expect: { viewer: 404, member: 404 } },
+  { method: 'POST', route: '/import/onenote/connections/:id/import', path: () => `/import/onenote/connections/${crypto.randomUUID()}/import`, body: () => ({ notebookIds: ['x'] }), expect: { viewer: 404, member: 404 } },
+  { method: 'POST', route: '/import/onenote/jobs/:id/cancel', path: () => `/import/onenote/jobs/${crypto.randomUUID()}/cancel`, expect: { viewer: 404, member: 404 } },
+  { method: 'GET', route: '/import/onenote/jobs/:id', path: () => `/import/onenote/jobs/${crypto.randomUUID()}`, expect: { viewer: 404, member: 404 } },
   // Feedback to the admins: any verified, signed-in user (not tied to a workspace).
   { method: 'POST', route: '/feedback', path: () => '/feedback', body: () => ({ message: 'Audit feedback', page: '/w/x/tasks/today', client: { version: 'test', platform: 'web' } }), expect: { stranger: 200, viewer: 200, member: 200 } },
 ];

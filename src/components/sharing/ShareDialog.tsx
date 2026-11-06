@@ -57,7 +57,8 @@ function ShareDialog({ notebookId }: { notebookId: string }) {
     if (!picked || !initial) return;
     setBusy(true);
     try {
-      if (visibility !== initial.visibility) await patch(`/notebooks/${nb.id}`, { visibility });
+      let removed = 0;
+      if (visibility !== initial.visibility) removed = (await patch<{ removedPageShares?: number }>(`/notebooks/${nb.id}`, { visibility })).removedPageShares ?? 0;
       const ids = [...picked].sort();
       if (visibility === 'private' && ids.join() !== [...initial.userIds].sort().join())
         await api(`/notebooks/${nb.id}/shares`, { method: 'PUT', json: { userIds: ids } });
@@ -69,6 +70,8 @@ function ShareDialog({ notebookId }: { notebookId: string }) {
             ? `${nb.name} is shared with ${ids.length} ${ids.length === 1 ? 'person' : 'people'}`
             : `${nb.name} is private to you`,
       );
+      // Single pages others had shared from it stop being shared (#98).
+      if (removed) toast(`${removed} page ${removed === 1 ? 'share' : 'shares'} by other people ended, now that ${nb.name} is private`);
       close();
     } catch (e) {
       errorToast(e);

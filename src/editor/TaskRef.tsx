@@ -8,6 +8,7 @@ import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useRef, useState } from 'react';
 import { GripVertical, Maximize2, FileX2, Flag } from 'lucide-react';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
+import { useAnyTask } from '../components/sharing/sharedPages.ts';
 import { AssigneeChip, DueChip, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from '../components/TaskControls.tsx';
 import { Dropdown } from '../components/ui.tsx';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
@@ -146,7 +147,7 @@ export const TaskRef = Node.create<TaskRefOptions>({
 
 function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   const id = node.attrs.taskId as string;
-  const task = useStore((s) => s.tasks[id]);
+  const task = useAnyTask(id); // own workspace, or a page shared from another one (#98)
   const loaded = useStore((s) => s.tasksLoaded);
   const members = useStore((s) => s.members);
   const me = useStore((s) => s.user?.id ?? '');

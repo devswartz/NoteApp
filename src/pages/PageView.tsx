@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouch
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, MoveHorizontal } from 'lucide-react';
-import { api, get, patch, del, post } from '../api.ts';
+import { api, get, patch, del, post, ApiError } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
+import { useFollow } from '../editor/collabFollow.ts';
+import type { Awareness } from 'y-protocols/awareness';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
 import { loadComments, useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
@@ -23,11 +25,34 @@ import { sortTasks } from '../lib/taskViews.ts';
 import { platform } from '../platform/index.ts';
 import { ENTER, MOD, keyLabel } from '../components/ui.tsx';
 import { setPagePanel, syncPagePanel, usePagePanel, type PagePanel } from '../store/ui.ts';
+import { PageShareDialogHost, openPageShareDialog } from '../components/sharing/PageShareDialog.tsx';
+import { loadSharedPageTasks, patchSharedPage, useShared } from '../components/sharing/sharedPages.ts';
+import type { PageMeta } from '../../shared/types.ts';
+import { UserPlus, Users } from 'lucide-react';
+
+/** GET /pages/:id. viaPageShare: opened through a page share (#98), so it isn't in the tree. */
+interface PageInfo {
+  page: PageMeta;
+  workspaceId: string;
+  canEdit: boolean;
+  canManage: boolean;
+  canShare: boolean;
+  viaPageShare: boolean;
+  member: boolean;
+}
 
 export function PageView() {
   const { wsId, pageId } = useParams() as { wsId: string; pageId: string };
   const user = useStore((s) => s.user!);
-  const meta = useStore((s) => s.tree.pages.find((p) => p.id === pageId));
+  const treeMeta = useStore((s) => s.tree.pages.find((p) => p.id === pageId));
+  // undefined while loading, null when it failed (offline, or no access).
+  const [info, setInfo] = useState<PageInfo | null | undefined>(undefined);
+  const [gone, setGone] = useState(false);
+  const shareKey = useShared((s) => {
+    const sp = s.pages.find((x) => x.id === pageId);
+    return sp ? `${sp.canEdit}` : '-';
+  });
+  const meta = treeMeta ?? (info?.viaPageShare ? info.page : undefined);
   const section = useStore((s) => s.tree.sections.find((x) => x.id === meta?.sectionId));
   const notebook = useStore((s) => s.tree.notebooks.find((x) => x.id === section?.notebookId));
   const treeLoaded = useStore((s) => s.treeLoaded);
@@ -63,7 +88,10 @@ export function PageView() {
     [],
   );
   const togglePanel = (p: Exclude<PagePanel, null>) => showPanel(panel === p ? null : p);
-  const openTasks = useStore((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open').length);
+  const ownOpen = useStore((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open').length);
+  // Plus tasks on a page shared from another workspace (#98), which live in their own store.
+  const sharedOpen = useShared((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open' && !useStore.getState().tasks[t.id]).length);
+  const openTasks = ownOpen + sharedOpen;
   const openThreads = useComments((s) => (s.pageId === pageId ? s.threads.filter((t) => !t.resolvedAt).length : 0));
   // Highlights need the threads even while the panel is closed.
   useEffect(() => {
@@ -81,22 +109,35 @@ export function PageView() {
   // Re-checked when your role changes (a live `workspaces` event reloads it), so a member
   // demoted to viewer goes read-only without a reload (BUG-2b).
   const role = useStore((s) => s.workspaces.find((w) => w.id === wsId)?.role);
-  useEffect(() => setCanEdit(null), [pageId]);
+  useEffect(() => {
+    setCanEdit(null);
+    setInfo(undefined);
+    setGone(false);
+  }, [pageId]);
   useEffect(() => {
     let cancelled = false;
     // Remember edit rights so a page opened offline stays editable (changes sync on reconnect).
     const key = `noteapp.canEdit.${user.id}.${pageId}`;
-    get<{ canEdit: boolean }>(`/pages/${pageId}`)
+    get<PageInfo>(`/pages/${pageId}`)
       .then((r) => {
         platform.kv.set(key, r.canEdit ? '1' : '0');
-        if (!cancelled) setCanEdit(r.canEdit);
+        if (cancelled) return;
+        setCanEdit(r.canEdit);
+        setInfo(r);
+        // A page shared from another workspace: its tasks aren't in this workspace's store (#98).
+        if (r.viaPageShare && r.workspaceId !== wsId) loadSharedPageTasks(pageId).catch(() => {});
       })
-      .catch(() => !cancelled && setCanEdit(platform.kv.get(key) === '1'));
+      .catch((e) => {
+        if (cancelled) return;
+        setInfo(null);
+        if (e instanceof ApiError && e.status === 404) setGone(true); // e.g. a page share was revoked
+        else setCanEdit(platform.kv.get(key) === '1');
+      });
     platform.kv.set(`noteapp.lastPage.${wsId}`, pageId);
     return () => {
       cancelled = true;
     };
-  }, [pageId, wsId, role]);
+  }, [pageId, wsId, role, shareKey]);
 
   // Deep link to a task inside the note (?task=id): scroll to it and flash.
   const focusTask = params.get('task');
@@ -131,8 +172,13 @@ export function PageView() {
   }, [focusTask, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onReady = useCallback((e: Editor) => setEditor(e), []);
+  // Follow a collaborator: click their avatar and their cursor stays in view (./editor/collabFollow.ts).
+  const [awareness, setAwareness] = useState<Awareness | null>(null);
+  const [article, setArticle] = useState<HTMLElement | null>(null);
+  const follow = useFollow(awareness, article);
+  const followed = presence.find((p) => p.id === follow.id);
 
-  if (treeLoaded && !meta) {
+  if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
     return (
       <div className="empty-page">
         <h2>Page not found</h2>
@@ -151,17 +197,25 @@ export function PageView() {
         {editor && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
-            {notebook && (
-              <span className="crumb">
-                <span className="dot" style={{ background: notebook.color }} />
-                {notebook.name}
-              </span>
+            {notebook ? (
+              <>
+                <span className="crumb">
+                  <span className="dot" style={{ background: notebook.color }} />
+                  {notebook.name}
+                </span>
+                <ChevronRight size={14} className="muted" />
+                {section && <span className="crumb">{section.name}</span>}
+              </>
+            ) : (
+              info?.viaPageShare && (
+                <span className="crumb">
+                  <Users size={13} /> Shared with me
+                </span>
+              )
             )}
-            <ChevronRight size={14} className="muted" />
-            {section && <span className="crumb">{section.name}</span>}
           </div>
           <div className="topbar-right">
-            <PresenceStack users={presence} />
+            <PresenceStack users={presence} following={follow.id} onFollow={follow.start} />
             <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button
@@ -185,11 +239,34 @@ export function PageView() {
               <span className="sr-only">Comments</span>
               {openThreads > 0 && <PanelBadge n={openThreads} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} fullWidth={fullWidth} onFullWidth={setFullWidth} />}
+            {info?.canShare && (
+              <button className="btn btn-secondary btn-sm page-share-btn" onClick={() => openPageShareDialog(pageId, meta.title)}>
+                <UserPlus size={14} /> Share
+              </button>
+            )}
+            {(canEdit || info?.canShare) && (
+              <PageMenu
+                pageId={pageId}
+                wsId={wsId}
+                editor={editor}
+                onHistory={() => setHistoryOpen(true)}
+                fullWidth={fullWidth}
+                onFullWidth={setFullWidth}
+                canManage={info ? info.canManage : !!treeMeta}
+                canShare={!!info?.canShare}
+                canEdit={canEdit}
+                title={meta.title}
+              />
+            )}
           </div>
         </header>
 
-        <article className={`page-article ${fullWidth ? 'is-full' : ''}`}>
+        {followed && (
+          <div className="follow-banner" role="status" style={{ ['--ring' as string]: followed.color }}>
+            Following {followed.name} · scroll, click or Esc to stop
+          </div>
+        )}
+        <article className={`page-article ${fullWidth ? 'is-full' : ''}`} ref={setArticle}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
@@ -207,6 +284,7 @@ export function PageView() {
             onServerSynced={() => setSynced(true)}
             onPresence={setPresence}
             onReady={onReady}
+            onAwareness={setAwareness}
           />
           {canEdit && editor && synced && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
           {canEdit && editor && (
@@ -219,6 +297,7 @@ export function PageView() {
       </div>
       <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       <CommentHighlights />
+      <PageShareDialogHost />
       {panel && <PageSidePanel pageId={pageId} tab={panel} onTab={showPanel} canComment={!!canEdit} onClose={() => showPanel(null)} mobile={isMobile} />}
     </div>
   );
@@ -285,7 +364,9 @@ function PageIcon({ pageId, icon, canEdit }: { pageId: string; icon: string | nu
 
 function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; initial: string; canEdit: boolean; onEnter: () => void }) {
   const [title, setTitle] = useState(initial);
-  const remote = useStore((s) => s.tree.pages.find((p) => p.id === pageId)?.title ?? '');
+  const treeTitle = useStore((s) => s.tree.pages.find((p) => p.id === pageId)?.title);
+  const sharedTitle = useShared((s) => s.pages.find((p) => p.id === pageId)?.title);
+  const remote = treeTitle ?? sharedTitle ?? initial; // a shared page isn't in the tree (#98)
   const focused = useRef(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -301,6 +382,7 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
     if (next === null) return;
     pending.current = null;
     useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title: next } : p)) } }));
+    patchSharedPage(pageId, { title: next });
     api(`/pages/${pageId}`, { method: 'PATCH', json: { title: next }, keepalive: true }).catch(errorToast);
   };
   useEffect(() => {
@@ -372,9 +454,14 @@ type PageMenuProps = {
   onHistory: () => void;
   fullWidth: boolean;
   onFullWidth: (v: boolean) => void;
+  /** Notebook-level edit: duplicate, template, move, copy, delete. Not for page-share-only access (#98). */
+  canManage: boolean;
+  canShare: boolean;
+  canEdit: boolean;
+  title: string;
 };
 
-function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth }: PageMenuProps) {
+function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -422,8 +509,17 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
   };
   return (
         <div className="menu page-menu">
-          <MenuItem
-            icon={<Copy size={15} />}
+          {canShare && (
+            <>
+              <MenuItem icon={<UserPlus size={15} />} onSelect={() => openPageShareDialog(pageId, current?.title ?? title)}>
+                Share…
+              </MenuItem>
+              <MenuSeparator />
+            </>
+          )}
+          {canManage && (
+            <MenuItem
+              icon={<Copy size={15} />}
             onSelect={() => {
               post<{ id: string }>(`/pages/${pageId}/copy`, {})
                 .then((r) => {
@@ -433,11 +529,14 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
                 .catch(errorToast);
             }}
           >
-            Duplicate
-          </MenuItem>
-          <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
-            Save as template…
-          </MenuItem>
+              Duplicate
+            </MenuItem>
+          )}
+          {canManage && (
+            <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
+              Save as template…
+            </MenuItem>
+          )}
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
           </MenuItem>
@@ -451,49 +550,55 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
           <MenuItem icon={<Printer size={15} />} onSelect={() => printPage(current?.title ?? '')}>
             Print / save as PDF
           </MenuItem>
-          <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
-            Import Markdown…
-          </MenuItem>
-          <MenuSeparator />
-          <div className="seg page-menu-seg" role="tablist">
-            <button type="button" role="tab" aria-selected={mode === 'move'} className={mode === 'move' ? 'is-active' : ''} onClick={() => setMode('move')}>
-              <FolderInput size={13} /> Move to
-            </button>
-            <button type="button" role="tab" aria-selected={mode === 'copy'} className={mode === 'copy' ? 'is-active' : ''} onClick={() => setMode('copy')}>
-              <Copy size={13} /> Copy to
-            </button>
-          </div>
-          {tree.notebooks.map((n) => (
-            <div key={n.id}>
-              <div className="menu-group-title">{n.name}</div>
-              {sectionsOf(n.id).map((s) => (
-                <MenuItem
-                  key={s.id}
-                  icon={<span className="dot" style={{ background: s.color }} />}
-                  checked={mode === 'move' && current?.sectionId === s.id}
-                  onSelect={() => run(s.id, `${n.name} › ${s.name}`)}
-                >
-                  {s.name}
-                </MenuItem>
-              ))}
+          {canEdit && (
+            <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
+              Import Markdown…
+            </MenuItem>
+          )}
+          {canManage && (
+            <>
+            <MenuSeparator />
+            <div className="seg page-menu-seg" role="tablist">
+              <button type="button" role="tab" aria-selected={mode === 'move'} className={mode === 'move' ? 'is-active' : ''} onClick={() => setMode('move')}>
+                <FolderInput size={13} /> Move to
+              </button>
+              <button type="button" role="tab" aria-selected={mode === 'copy'} className={mode === 'copy' ? 'is-active' : ''} onClick={() => setMode('copy')}>
+                <Copy size={13} /> Copy to
+              </button>
             </div>
-          ))}
-          <MenuSeparator />
-          <MenuItem
-            icon={<Trash2 size={15} />}
-            danger
-            onSelect={() => {
-              if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
-              del(`/pages/${pageId}`)
-                .then(() => {
-                  toast('Page deleted');
-                  navigate(`/w/${wsId}/notes`);
-                })
-                .catch(errorToast);
-            }}
-          >
-            Delete page
-          </MenuItem>
+            {tree.notebooks.map((n) => (
+              <div key={n.id}>
+                <div className="menu-group-title">{n.name}</div>
+                {sectionsOf(n.id).map((s) => (
+                  <MenuItem
+                    key={s.id}
+                    icon={<span className="dot" style={{ background: s.color }} />}
+                    checked={mode === 'move' && current?.sectionId === s.id}
+                    onSelect={() => run(s.id, `${n.name} › ${s.name}`)}
+                  >
+                    {s.name}
+                  </MenuItem>
+                ))}
+              </div>
+            ))}
+            <MenuSeparator />
+            <MenuItem
+              icon={<Trash2 size={15} />}
+              danger
+              onSelect={() => {
+                if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
+                del(`/pages/${pageId}`)
+                  .then(() => {
+                    toast('Page deleted');
+                    navigate(`/w/${wsId}/notes`);
+                  })
+                  .catch(errorToast);
+              }}
+            >
+              Delete page
+            </MenuItem>
+            </>
+          )}
         </div>
   );
 }
@@ -620,7 +725,8 @@ function PageSidePanel({ pageId, tab, onTab, canComment, onClose, mobile }: Side
 
 function PageTasks({ pageId }: { pageId: string }) {
   const all = useStore((s) => s.tasks);
-  const tasks = sortTasks(Object.values(all).filter((t) => t.pageId === pageId));
+  const shared = useShared((s) => s.tasks); // a page shared from another workspace (#98)
+  const tasks = sortTasks([...Object.values(all), ...Object.values(shared).filter((t) => !all[t.id])].filter((t) => t.pageId === pageId));
   const open = tasks.filter((t) => t.status === 'open');
   const done = tasks.filter((t) => t.status === 'done');
   const [showDone, setShowDone] = useState(false);
