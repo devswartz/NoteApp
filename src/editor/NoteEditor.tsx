@@ -33,6 +33,7 @@ import {
   PanelTop,
 } from 'lucide-react';
 import { TaskRef } from './TaskRef.tsx';
+import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
 import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
@@ -131,6 +132,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         BlockMove, // Alt+Shift+↑/↓ moves blocks
         UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
+        LongPage, // long pages: render-skipping CSS away from the cursor
         ...collabExtensions(session, user),
       ],
       editorProps: {

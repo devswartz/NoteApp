@@ -147,7 +147,18 @@ export function PageView() {
       if (el || ++tries > 30) {
         clearInterval(iv);
         if (el) {
-          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (editor.view.dom.classList.contains('is-long')) {
+            // Long pages skip rendering off-screen blocks (estimated heights), so one smooth
+            // scroll can miss: jump, then re-settle for a few frames as real sizes come in.
+            let frames = 0;
+            const settle = () => {
+              el.scrollIntoView({ block: 'center' });
+              if (++frames < 4) requestAnimationFrame(settle);
+            };
+            settle();
+          } else {
+            el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
           el.classList.add('flash');
           setTimeout(() => el.classList.remove('flash'), 1800);
         }
@@ -414,18 +425,16 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({
-  pageId,
-  wsId,
-  editor,
-  onHistory,
-  fullWidth,
-  onFullWidth,
-  canManage,
-  canShare,
-  canEdit,
-  title,
-}: {
+/** The page "⋯" menu. Its items are a separate component so they're only built while the menu is open. */
+function PageMenu(props: PageMenuProps) {
+  return (
+    <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
+      {() => <PageMenuItems {...props} />}
+    </Dropdown>
+  );
+}
+
+type PageMenuProps = {
   pageId: string;
   wsId: string;
   editor: Editor | null;
@@ -437,7 +446,9 @@ function PageMenu({
   canShare: boolean;
   canEdit: boolean;
   title: string;
-}) {
+};
+
+function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -484,8 +495,6 @@ function PageMenu({
     }
   };
   return (
-    <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
-      {() => (
         <div className="menu page-menu">
           {canShare && (
             <>
@@ -578,8 +587,6 @@ function PageMenu({
             </>
           )}
         </div>
-      )}
-    </Dropdown>
   );
 }
 

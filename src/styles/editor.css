@@ -420,6 +420,21 @@
 @container (max-width: 700px) { .page-toc-rail { display: none; } }
 @media print { .page-toc-rail { display: none !important; } .page-article.is-full { padding: 0; } }
 
+/* ───────── Long pages ─────────
+   Let the browser skip layout and paint for blocks far off-screen. `auto` remembers each
+   block's real size once rendered, so scrolling and the scrollbar stay stable.
+   Only on long pages (.is-long), and never for the blocks around the cursor (.near-cursor):
+   applied to the block being edited, fast typing could land characters in the wrong place. */
+.ProseMirror.is-long > :is(p, h1, h2, h3, ul, ol, blockquote, pre, .code-block, .tableWrapper, .callout, .toggle, .file-card, .task-ref):not(.near-cursor) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 1.7em;
+}
+@media print {
+  .ProseMirror > * { content-visibility: visible !important; } /* beats the (0,4,0) long-page rule above */
+}
+/* Headings land below the sticky page header when jumped to. */
+.ProseMirror :is(h1, h2, h3) { scroll-margin-top: 64px; }
+
 /* ───────────── Page panel: toolbar badges, tabs, phone sheet (#99) ───────────── */
 .panel-toggle { position: relative; }
 .panel-badge {
@@ -435,3 +450,9 @@
 .page-panel.is-sheet { transition: transform 0.15s ease-out; }
 .page-panel.is-sheet .panel-grab { touch-action: none; }
 .page-panel.is-sheet .panel-body, .page-panel.is-sheet .comments-panel { overflow-y: auto; min-height: 0; }
+/* Phones: 44px tap targets in the sheet header (390px audit). */
+@media (max-width: 760px) {
+  .page-panel.is-sheet .panel-head { height: auto; min-height: 52px; padding-top: 4px; padding-bottom: 4px; }
+  .page-panel.is-sheet .panel-tabs button { min-height: 44px; padding: 0 14px; }
+  .page-panel.is-sheet .panel-head .icon-btn { min-width: 44px; min-height: 44px; }
+}
