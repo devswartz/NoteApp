@@ -96,3 +96,38 @@ darkQuery?.addEventListener('change', () => {
   useTheme.setState({ resolved });
   applyTheme(resolved, true);
 });
+
+// ───────────── Page side panel (tasks / comments) ─────────────
+
+export type PagePanel = 'tasks' | 'comments' | null;
+const PAGE_PANEL_KEY = 'noteapp.pagePanel';
+
+function readPagePanel(): PagePanel {
+  try {
+    const v = platform.kv.get(PAGE_PANEL_KEY);
+    return v === 'tasks' || v === 'comments' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which page panel is open on this device (#99). Closed unless the person opened
+ * it; closing it is remembered on every page. Phones never restore it on page
+ * open (PageView), so a note always opens as just the note.
+ */
+export const usePagePanel = create<{ panel: PagePanel }>(() => ({ panel: readPagePanel() }));
+
+export function setPagePanel(panel: PagePanel) {
+  try {
+    platform.kv.set(PAGE_PANEL_KEY, panel ?? '');
+  } catch {
+    // storage unavailable: the choice lasts for this visit only
+  }
+  usePagePanel.setState({ panel });
+}
+
+/** Re-read after initPlatform() swaps in a shell's storage (see syncThemePref). */
+export function syncPagePanel() {
+  usePagePanel.setState({ panel: readPagePanel() });
+}

@@ -15,6 +15,36 @@ beforeEach(() => {
   resetRateLimits();
 });
 
+/**
+ * Hold password checks (bcrypt.compare) open until `release()`, so tests about requests that overlap
+ * don't depend on how fast this machine opens connections or hashes (they failed on slower Windows hosts,
+ * where requests arrived one after another and never overlapped). `held` counts checks waiting.
+ */
+async function holdPasswordChecks(only: (password: string) => boolean = () => true) {
+  const bcrypt = (await import('bcryptjs')).default;
+  const real = bcrypt.compare;
+  let open!: () => void;
+  const gate = new Promise<void>((r) => (open = r));
+  const state = { held: 0 };
+  (bcrypt as { compare: unknown }).compare = async (pw: string, hash: string) => {
+    if (only(pw)) {
+      state.held++;
+      await gate;
+    }
+    return real(pw, hash);
+  };
+  return {
+    state,
+    release() {
+      open();
+      (bcrypt as { compare: unknown }).compare = real;
+    },
+  };
+}
+const until = async (cond: () => boolean, ms = 10_000) => {
+  for (const end = Date.now() + ms; !cond() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 5));
+};
+
 const post = (path: string, body: unknown, ip?: string) =>
   fetch(`${app.origin}/api${path}`, {
     method: 'POST',
@@ -58,18 +88,35 @@ test('300 parallel wrong passwords from 300 IPs: most refused before bcrypt; the
   const u = await app.signUp('Dina');
   const home = '172.31.0.1';
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, home)).status, 200); // known-good from now on
-  const attack = Array.from({ length: 300 }, (_, i) => post('/auth/login', { email: u.user.email, password: 'nope-nope' }, `172.16.${i >> 8}.${i & 255}`).then((r) => r.status));
-  await new Promise((r) => setTimeout(r, 20)); // the attack is already in progress
-  const t = Date.now();
-  const owner = await post('/auth/login', { email: u.user.email, password: 'password123' }, home);
-  const ownerMs = Date.now() - t;
-  const codes = await Promise.all(attack);
+  // The attackers' password checks are held open, so the attack is really in progress while the owner signs in.
+  const hold = await holdPasswordChecks((pw) => pw === 'nope-nope');
+  let codes: number[];
+  let owner: Response;
+  let ownerMs: number;
+  try {
+    let answered = 0;
+    const attack = Array.from({ length: 300 }, (_, i) =>
+      post('/auth/login', { email: u.user.email, password: 'nope-nope' }, `172.16.${i >> 8}.${i & 255}`).then((r) => (answered++, r.status)),
+    );
+    await until(() => hold.state.held > 0 && hold.state.held + answered >= 300); // every attempt has reached the server
+    const t = Date.now();
+    owner = await post('/auth/login', { email: u.user.email, password: 'password123' }, home);
+    ownerMs = Date.now() - t;
+    hold.release();
+    codes = await Promise.all(attack);
+  } finally {
+    hold.release();
+  }
   assert.equal(owner.status, 200);
   assert.ok(ownerMs <= 2000, `owner waited ${ownerMs} ms`);
   const reachedBcrypt = codes.filter((c) => c === 401).length;
   assert.ok(reachedBcrypt <= 20, `${reachedBcrypt} of 300 attack attempts reached a password check`);
   assert.equal(codes.filter((c) => c === 429).length, 300 - reachedBcrypt);
-  // The account budget is spent: a new, unknown IP is refused even with the right password; the known one still works.
+  // Wrong passwords one at a time from new IPs use up the account budget (10). Then a new, unknown IP is
+  // refused even with the right password, and the known one still works.
+  const spend: number[] = [];
+  for (let i = 0; i < 12; i++) spend.push((await post('/auth/login', { email: u.user.email, password: 'nope-nope' }, `172.17.0.${i}`)).status);
+  assert.ok(spend.includes(429), JSON.stringify(spend));
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, '172.30.0.9')).status, 429);
   assert.equal((await post('/auth/login', { email: u.user.email, password: 'password123' }, home)).status, 200);
 });
@@ -79,7 +126,20 @@ test('server-wide caps on password checks: at most MAX_PASSWORD_CHECKS at once, 
   const users = await Promise.all(Array.from({ length: 12 }, (_, i) => app.signUp(`Cap${i}`)));
   resetRateLimits();
   // 1) Concurrency: 12 accounts in parallel; only MAX_PASSWORD_CHECKS run, the rest are refused at once (not queued).
-  const parallel = await Promise.all(users.map((u, i) => post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.1`).then((r) => r.status)));
+  // Checks are held open until the others have been answered, so all 12 overlap however slow this machine is.
+  const hold = await holdPasswordChecks();
+  let parallel: number[];
+  try {
+    let refused = 0;
+    const pending = users.map((u, i) =>
+      post('/auth/login', { email: u.user.email, password: 'wrong-pass' }, `198.18.${i}.1`).then((r) => (r.status === 429 && refused++, r.status)),
+    );
+    await until(() => hold.state.held + refused >= 12);
+    hold.release();
+    parallel = await Promise.all(pending);
+  } finally {
+    hold.release();
+  }
   assert.equal(parallel.filter((c) => c === 401).length, MAX_PASSWORD_CHECKS, JSON.stringify(parallel));
   assert.equal(parallel.filter((c) => c === 429).length, 12 - MAX_PASSWORD_CHECKS);
 
