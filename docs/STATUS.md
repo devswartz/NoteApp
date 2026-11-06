@@ -1,10 +1,13 @@
 # NoteApp (Notivelo) — status
 
-## ▶ CURRENT STATE (2026-11-06 13:25 UTC) — read this first
+## ▶ CURRENT STATE (2026-11-06 16:10 UTC) — read this first
 - **Product name:** Notivelo (`APP_NAME`); internal ids (image, DB file, storage keys) stay `noteapp`.
-- **Prod:** notes.devswartz.com runs `v0.1.2` (tag at 3d44a4b) with `SIGNUP_MODE=open`. **Staging** follows `main`.
-- **Next release: `v0.1.3`.** Everything below is on `main` and ready to tag.
-  The owner/local agent pushes tags (manager sessions can't push tags).
+- **Prod:** notes.devswartz.com runs **v0.1.3** (tag at 677ae70; `/api/health` reports the sha `677ae70`), `SIGNUP_MODE=open`, migration 013 applied, backed up before the switch. **Staging** follows `main`.
+- **`main` is ahead of prod by:** #121 (CI: e2e installs only the Chromium browser, cached and time-limited, so the Ubuntu apt mirror can't stall it) and #122 (OneNote import: an account with no notebooks shows "no notebooks" instead of a 500). Tag **v0.1.4** on `main` whenever wanted; no migrations or new settings.
+- **Repo hygiene:** branch protection on `main` (check, docker, e2e required); "Automatically delete head branches" is on; all old branches deleted; no open PRs.
+- **Agents:** every worker session is archived. Keep new work to fresh, short-lived sessions; long-context agents are expensive.
+- Tags are pushed by the owner or the owner's local agent (manager sessions can't push tags).
+- Tester-facing capabilities page: https://claude.ai/artifact/KDzaNzDFrGMMQUWF6ft2jz (private until shared).
 
 ### Landed since v0.1.2 (2026-11-06)
 - Page panel no longer auto-opens; Tasks/Comments split with count badges (#101, #116; issue #99).
@@ -18,15 +21,13 @@
 - QA: e2e for verify×invites, template privacy, mobile flow, page panel (#81, #105, #112). Open bugs: none.
 
 ### Also landed
-- **OneNote import** (#120, issue #117): Microsoft Graph, server-side OAuth+PKCE, Graph-only fetches, sanitised HTML, own import slot, 30 min / 300 MB per job, 1 GB/day per user. Needs `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and outbound HTTPS to login.microsoftonline.com + graph.microsoft.com. Not yet tested against a live Microsoft sign-in.
+- **OneNote import** (#120, issue #117): Microsoft Graph, server-side OAuth+PKCE, Graph-only fetches, sanitised HTML, own import slot, 30 min / 300 MB per job, 1 GB/day per user. Needs `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and outbound HTTPS to login.microsoftonline.com + graph.microsoft.com. Tested live by the owner on prod.
 - Follow a collaborator (#39).
 
 ### Open issues / later
-- #98 part 3: public read-only link. #117 if it slips from v0.1.3.
-- Signing secrets for desktop/mobile (docs/DESKTOP.md, docs/MOBILE.md); stale branch `feat/editor-mentions-wip` can be deleted.
-
-### Agents
-All worker sessions are archived. Keep new work to fresh, short-lived sessions — long-context agents are expensive.
+- #98 part 3: public read-only link (its own release, needs a security review).
+- Signing secrets for desktop/mobile (docs/DESKTOP.md, docs/MOBILE.md); until then the tag builds are unsigned.
+- Optional: make tag builds report the tag name (e.g. `v0.1.3`) in `/api/health` instead of the commit sha.
 
 ---
 
