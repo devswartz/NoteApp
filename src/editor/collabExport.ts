@@ -4,7 +4,11 @@ import * as Y from 'yjs';
 /** Plain Markdown of a page doc (headings, lists, tasks, quotes, code), for the unsynced-copy download. */
 export function docToMarkdown(frag: Y.XmlFragment): string {
   const text = (n: Y.XmlElement | Y.XmlText | Y.XmlFragment): string =>
-    n instanceof Y.XmlText ? n.toString().replace(/<[^>]+>/g, '') : n.toArray().map((c) => text(c as Y.XmlElement)).join('');
+    n instanceof Y.XmlText
+      ? n.toString().replace(/<[^>]+>/g, '')
+      : n instanceof Y.XmlElement && n.nodeName === 'mention'
+        ? `@${n.getAttribute('label') ?? ''}` // inline @mention chip: no children, the name is an attribute
+        : n.toArray().map((c) => text(c as Y.XmlElement)).join('');
   const lines: string[] = [];
   const block = (n: Y.XmlElement, prefix = '') => {
     const name = n.nodeName;

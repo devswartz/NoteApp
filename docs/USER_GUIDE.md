@@ -92,6 +92,12 @@ The sidebar counts show how many tasks are in Today, My Tasks and Upcoming.
 - **Privacy and Terms:** the **Privacy** and **Terms** links on the sign-in screen and in Settings → About open the Privacy Policy and Terms of Service. They are public pages (`/privacy`, `/terms`) that anyone can read without an account. Creating an account means you agree to them.
 - **Confirm your email:** when you create an account on a server with open sign-up, we email you a link ("Confirm your email for Notivelo"). Until you open it you only see a **Check your email** screen: tap **Resend email** if it hasn't arrived (you can ask once a minute; the newest link is the only one that works), **I've verified, continue** after opening the link (on any device), or **Sign out** if you typed the wrong address. The link works once, for 24 hours. If you were invited to a workspace, you join it as soon as your email is confirmed. If you forget your password and use the reset link from your email, that also confirms your address. **Accounts that are still unconfirmed after 7 days are deleted automatically** (with anything in them), so sign up again if that happens. Accounts made by invitation-only sign-up, and accounts that existed before this feature, don't need this step.
 
+## Backup and import
+
+- **Export a workspace** (owners and admins): Settings → General → **Backup and import** → **Export workspace**. You get a `.zip` with every page as a Markdown file, all tasks, attachments, templates and a full backup of the pages. Only what you can see is included: private notebooks are in only if they are yours or shared with you.
+- **Import** (anyone): **Import from export…** picks such a `.zip` and creates a **new** workspace from it, owned by you; nothing existing is changed. Tasks assigned to you (same email) stay assigned to you; other people's assignments are dropped, and you invite people again from Settings → Members. Unsafe links and images in the file are removed.
+- **Limits:** a file can be up to **100 MB**. You can export 6 times an hour and import 3 times an hour, and the server runs one import at a time; if you hit a limit you'll see when to try again.
+
 ## Sharing and roles
 
 - Invite people from **Settings → Members** by email. They get a link and join with that email address. Pending invites can be copied, resent or revoked there.
@@ -158,7 +164,7 @@ Generated from the app's command registry (the `?` overlay). ⌘ = Ctrl on Windo
 | In a note | |
 |---|---|
 | Insert block menu | / |
-| New task item | [ ] Space |
+| New task | /task |
 | Turn line into task | ⌘↵ |
 | Bold / italic / underline | ⌘B / ⌘I / ⌘U |
 | Heading 1–3 | #, ##, ### then Space |

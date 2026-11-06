@@ -20,7 +20,7 @@ function move(dir: 1 | -1) {
   if (!list.length) return;
   const i = list.indexOf(focusedRow()!);
   const next = list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, i + dir))];
-  next.focus();
+  (next.querySelector<HTMLElement>('.task-title-btn') ?? next).focus();
   next.scrollIntoView({ block: 'nearest' });
 }
 

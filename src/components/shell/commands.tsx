@@ -2,6 +2,7 @@
 // Other areas register theirs with useCommands() from src/hooks/useShortcuts.ts.
 import { useNavigate } from 'react-router-dom';
 import {
+  Activity,
   CalendarDays,
   CalendarRange,
   CheckCircle2,
@@ -95,6 +96,7 @@ export function useShellCommands(wsId: string) {
       nav('calendar', 'Calendar', 'c', 'tasks/calendar', <CalendarDays size={16} />),
       nav('completed', 'Completed', 'd', 'tasks/completed', <CheckCircle2 size={16} />),
       nav('notes', 'Notes', 'n', 'notes', <NotebookText size={16} />),
+      nav('activity', 'Activity', 'v', 'activity', <Activity size={16} />),
       nav('settings', 'Settings', 's', 'settings', <Settings size={16} />),
     ];
   }, [wsId, navigate]);
@@ -106,7 +108,7 @@ export function useShellCommands(wsId: string) {
       (
         [
           ['editor.slash', 'Insert block menu', '/'],
-          ['editor.taskItem', 'New task item', '[ ] space'],
+          ['editor.taskItem', 'New task', '/ task'],
           ['editor.toTask', 'Turn line into task', 'mod+enter'],
           ['editor.bold', 'Bold', 'mod+b'],
           ['editor.italic', 'Italic', 'mod+i'],
