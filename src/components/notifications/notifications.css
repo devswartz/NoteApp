@@ -34,17 +34,24 @@
 .link-btn { color: var(--accent); font-size: inherit; padding: 0; background: none; }
 .ns-switch {
   position: relative; flex: none; width: 36px; height: 20px; border-radius: 10px;
-  background: var(--border); transition: background 0.15s;
+  background: var(--border-strong); transition: background var(--dur-fast);
 }
+/* Invisible hit area: at least 44px tall (and a little wider) without changing the look. */
+.ns-switch::before { content: ''; position: absolute; inset: -12px -6px; }
 .ns-switch span {
   position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
-  background: #fff; box-shadow: var(--shadow-sm); transition: transform 0.15s;
+  background: #fff; box-shadow: var(--shadow-sm); transition: transform var(--dur-fast) var(--ease-out);
 }
-.ns-switch.on { background: var(--accent); }
+.ns-switch.on { background: var(--accent-solid); }
 .ns-switch.on span { transform: translateX(16px); }
 .ns-switch:disabled { opacity: 0.5; cursor: not-allowed; }
 .ns-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 760px) {
+  /* Phone size switch (iOS proportions); the hit area grows with it. */
+  .ns-switch { width: 44px; height: 26px; border-radius: 13px; }
+  .ns-switch::before { inset: -9px -4px; }
+  .ns-switch span { width: 22px; height: 22px; }
+  .ns-switch.on span { transform: translateX(18px); }
   .ns-row { flex-wrap: wrap; }
   .ns-tz { max-width: 100%; flex: 1 1 100%; }
   .rp-custom { max-width: none; }
