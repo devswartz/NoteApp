@@ -20,12 +20,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- noteapp://page/<id>, noteapp://w/<ws>/… (src/platform/deepLinks.ts) -->
+            <!-- notivelo://page/<id>, notivelo://w/<ws>/… (src/platform/deepLinks.ts) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="noteapp" />
+                <data android:scheme="notivelo" />
             </intent-filter>
 
             <!-- App links: https://notes(-staging).devswartz.com/w/… opens the app. The server serves
@@ -39,7 +39,7 @@
             </intent-filter>
         </activity>
 
-        <!-- "Share to NoteApp": two share targets, both handled by MainActivity (NoteAppNativePlugin). -->
+        <!-- "Share to Notivelo": two share targets, both handled by MainActivity (NoteAppNativePlugin). -->
         <activity-alias
             android:name=".ShareAsTask"
             android:targetActivity=".MainActivity"

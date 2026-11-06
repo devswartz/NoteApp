@@ -1,13 +1,14 @@
-//! NoteApp desktop shell. The window loads the bundled web app (dist/), so it
+//! Notivelo desktop shell. The window loads the bundled web app (dist/), so it
 //! starts instantly and opens offline; only the API is remote (see config.rs).
 //! Everything app-specific happens in the web app; this side adds what a
-//! browser can't: keychain, app menu, tray, global hotkey, deep links,
+//! browser can't: keychain, app menu (macOS), tray, global hotkey, deep links,
 //! single instance, window state and auto-update.
 
 mod config;
 mod menu;
 mod quick;
 mod secure;
+mod theme;
 mod tray;
 
 use tauri::{AppHandle, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
@@ -32,12 +33,13 @@ pub(crate) fn show_main<R: Runtime>(app: &AppHandle<R>) {
 
 fn create_main<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let cfg = config::load(app);
-    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()));
-    // macOS has one app-wide menu bar (set in setup); elsewhere the menu belongs
-    // to the main window only, so the quick-capture window has none.
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.menu(menu::build(app, &app.package_info().name)?);
-    builder
+    // Only macOS has a menu (one app-wide menu bar, set in setup). Windows and
+    // Linux have none: the command palette and shortcuts cover every action.
+    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()));
+    if let Some(t) = theme::initial(app) {
+        builder = builder.theme(Some(t));
+    }
+    let window = builder
         .title(app.package_info().name.clone())
         .inner_size(1200.0, 800.0)
         .min_inner_size(420.0, 480.0)
@@ -45,6 +47,7 @@ fn create_main<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .disable_drag_drop_handler()
         .initialization_script(config::init_script(&cfg))
         .build()?;
+    theme::decorate(app, &window);
     Ok(())
 }
 
@@ -85,6 +88,13 @@ fn secure_remove(app: AppHandle, key: String) -> Result<(), String> {
 #[tauri::command]
 fn set_today_count(app: AppHandle, count: u32) {
     tray::set_today_count(&app, count);
+}
+
+/// The web app's theme preference ("light", "dark" or "system") and its resolved
+/// background colour → the native title bar.
+#[tauri::command]
+fn set_window_theme(app: AppHandle, theme: String, background: Option<[u8; 3]>) {
+    theme::set(&app, &theme, background);
 }
 
 #[tauri::command]
@@ -135,6 +145,7 @@ pub fn run() {
             secure_set,
             secure_remove,
             set_today_count,
+            set_window_theme,
             hide_quick_capture,
             show_main_window,
             updater_enabled,

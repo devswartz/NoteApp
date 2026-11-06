@@ -1,7 +1,7 @@
 // "taskRef" — a block node that embeds a live task inside a note.
 // The node stores only the task id; the task itself lives in the database and
 // the app store, so it stays in sync with the Tasks dashboard everywhere.
-import { InputRule, Node, mergeAttributes, type Editor } from '@tiptap/core';
+import { Node, mergeAttributes, type Editor } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { Selection, TextSelection } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
@@ -13,6 +13,7 @@ import { Dropdown } from '../components/ui.tsx';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from '../components/TaskRow.tsx';
 import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
+import { markCreatedHere } from './undoTasks.ts';
 
 export interface TaskRefOptions {
   pageId: string;
@@ -43,6 +44,7 @@ const freshTasks = new Set<string>();
 
 function newTask(pageId: string, title = '', patch: TaskPatch = {}): string {
   const id = newTaskId();
+  markCreatedHere(id);
   const me = useStore.getState().user?.id ?? null;
   if (!title) freshTasks.add(id);
   const { status, ...rest } = patch;
@@ -140,23 +142,6 @@ export const TaskRef = Node.create<TaskRefOptions>({
     };
   },
 
-  addInputRules() {
-    // "[] " or "[ ] " at the start of an empty paragraph creates a task.
-    return [
-      new InputRule({
-        find: /^\s*\[\s?\]\s$/,
-        handler: ({ state, range, chain }) => {
-          const $from = state.doc.resolve(range.from);
-          if ($from.parent.type.name !== 'paragraph') return null;
-          const id = newTask(this.options.pageId);
-          pendingFocus = id;
-          chain()
-            .insertContentAt({ from: $from.before(), to: $from.after() }, { type: this.name, attrs: { taskId: id } })
-            .run();
-        },
-      }),
-    ];
-  },
 });
 
 function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
