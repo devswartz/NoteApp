@@ -213,7 +213,7 @@
 /* ───────── Mobile ───────── */
 @media (max-width: 760px) {
   .page-icon { font-size: 44px; }
-  .page-icon-add { opacity: 1; }
+  .page-icon-add { opacity: 1; min-height: 44px; } /* a 44px tap target (390px audit) */
   .code-copy { opacity: 1; }
   .ProseMirror [data-resize-handle] { opacity: 1; }
 }

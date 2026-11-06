@@ -11,6 +11,7 @@ import { subtaskIndex, type Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { selection, useSelection } from '../pages/tasks/selection.ts';
 import { RENAME_EVENT } from '../pages/tasks/commands.tsx';
+import '../styles/tasks.css'; // row touch sizing applies wherever a TaskRow renders
 
 /** id → page, cached per tree.pages array so each row's lookup is O(1). */
 const pageMaps = new WeakMap<PageMeta[], Map<string, PageMeta>>();

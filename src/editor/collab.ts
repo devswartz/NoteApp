@@ -206,9 +206,8 @@ async function downloadUnsynced(doc: Y.Doc) {
   const md = docToMarkdown(doc.getXmlFragment('default'));
   const name = `unsynced-copy-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.md`;
   try {
-    if (platform.saveFile) await platform.saveFile(name, new Blob([md], { type: 'text/markdown' }));
-    else await navigator.clipboard.writeText(md);
-    toast(platform.saveFile ? `Saved ${name}` : 'Unsynced copy copied to the clipboard');
+    await platform.saveFile(name, new Blob([md], { type: 'text/markdown' }));
+    toast(`Saved ${name}`);
   } catch {
     toast('Could not save the copy. Select the page text and copy it manually.', { tone: 'error' });
   }
