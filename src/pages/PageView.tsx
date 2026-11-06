@@ -5,6 +5,8 @@ import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loa
 import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
+import { useFollow } from '../editor/collabFollow.ts';
+import type { Awareness } from 'y-protocols/awareness';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
 import { loadComments, useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
@@ -117,6 +119,11 @@ export function PageView() {
   }, [focusTask, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onReady = useCallback((e: Editor) => setEditor(e), []);
+  // Follow a collaborator: click their avatar and their cursor stays in view (./editor/collabFollow.ts).
+  const [awareness, setAwareness] = useState<Awareness | null>(null);
+  const [article, setArticle] = useState<HTMLElement | null>(null);
+  const follow = useFollow(awareness, article);
+  const followed = presence.find((p) => p.id === follow.id);
 
   if (treeLoaded && !meta) {
     return (
@@ -146,7 +153,7 @@ export function PageView() {
             {section && <span className="crumb">{section.name}</span>}
           </div>
           <div className="topbar-right">
-            <PresenceStack users={presence} />
+            <PresenceStack users={presence} following={follow.id} onFollow={follow.start} />
             <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button
@@ -173,7 +180,12 @@ export function PageView() {
           </div>
         </header>
 
-        <article className="page-article">
+        {followed && (
+          <div className="follow-banner" role="status" style={{ ['--ring' as string]: followed.color }}>
+            Following {followed.name} · scroll, click or Esc to stop
+          </div>
+        )}
+        <article className="page-article" ref={setArticle}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
@@ -191,6 +203,7 @@ export function PageView() {
             onServerSynced={() => setSynced(true)}
             onPresence={setPresence}
             onReady={onReady}
+            onAwareness={setAwareness}
           />
           {canEdit && editor && synced && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
           {canEdit && editor && (
