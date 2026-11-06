@@ -263,29 +263,107 @@ test('in invite-only mode, a page invite lets that address sign up', async () =>
   }
 });
 
-test('who may share: the private notebook’s creator; for a shared notebook, anyone who can edit it', async () => {
+test('who may share: the private notebook’s creator; for a shared notebook, its editors, with members only unless admin', async () => {
   const f = await fixture();
   // Teammate can't see the private notebook at all.
   assert.equal((await share(f.page, { userId: viewer.user.id }, teammate.token)).status, 404);
   // Even with the notebook shared with them, only its creator shares single pages from it.
   await app.call('PUT', `/notebooks/${f.nb}/shares`, owner.token, { userIds: [teammate.user.id] });
   assert.equal((await share(f.page, { userId: viewer.user.id }, teammate.token)).status, 403);
-  // In a shared notebook: members yes, viewers no.
-  assert.equal((await share(f.openPage, { email: outsider.user.email }, teammate.token)).status, 200);
-  assert.equal((await share(f.openPage, { email: outsider.user.email }, viewer.token)).status, 403);
+  // In a shared notebook: members may share with members, not outside the workspace; viewers not at all.
+  assert.equal((await share(f.openPage, { userId: viewer.user.id }, teammate.token)).status, 200);
+  assert.equal((await share(f.openPage, { email: viewer.user.email }, teammate.token)).status, 200, 'by email, but a member');
+  assert.equal((await share(f.openPage, { email: outsider.user.email }, teammate.token)).status, 403, 'an account outside the workspace');
+  assert.equal((await share(f.openPage, { email: `ps-nobody-${++seq}@example.com` }, teammate.token)).status, 403, 'an email invite');
+  assert.equal((await share(f.openPage, { userId: teammate.user.id }, viewer.token)).status, 403);
+  // Owners and admins may share outside the workspace.
+  assert.equal((await share(f.openPage, { email: outsider.user.email })).status, 200);
   // Not with yourself, and userId must be a member.
   assert.equal((await share(f.page, { userId: owner.user.id })).status, 400);
   assert.equal((await share(f.page, { userId: outsider.user.id })).status, 400);
 });
 
-test('a viewer can be given edit rights on one page', async () => {
+test('effective rights are min(share, role): a viewer stays view-only; outsider shares are stored view-only', async () => {
   const f = await fixture();
-  assert.equal((await app.call('GET', `/pages/${f.openPage}`, viewer.token)).data.canEdit, false);
   await share(f.openPage, { userId: viewer.user.id, canEdit: true });
   const p = (await app.call('GET', `/pages/${f.openPage}`, viewer.token)).data;
-  assert.equal(p.canEdit, true);
-  assert.equal(p.canManage, false, 'still no structural changes');
-  assert.equal((await app.call('DELETE', `/pages/${f.openPage}`, viewer.token)).status, 403);
+  assert.equal(p.canEdit, false, 'a viewer role caps the share');
+  assert.equal((await app.call('PATCH', `/pages/${f.openPage}`, viewer.token, { title: 'x' })).status, 403);
+  await share(f.page, { email: outsider.user.email, canEdit: true });
+  const { db } = await import('../server/db.ts');
+  assert.equal((db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit, 0);
+  assert.equal((await app.call('PATCH', `/pages/${f.page}/shares/${outsider.user.id}`, owner.token, { canEdit: true })).status, 200);
+  assert.equal((db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit, 0);
+  // A share never adds to notebook-level access: the viewer can't edit the open notebook's other pages.
+  await share(f.openPage, { userId: teammate.user.id, canEdit: false });
+  assert.equal((await app.call('GET', `/pages/${f.openPage}`, teammate.token)).data.canEdit, true, 'a view share doesn’t lower notebook access');
+});
+
+test('tasks on a page shared view-only: the assignee may only tick theirs off', async () => {
+  const f = await fixture();
+  await share(f.page, { userId: teammate.user.id, canEdit: false });
+  await app.call('PATCH', `/tasks/${f.task}`, owner.token, { assigneeId: teammate.user.id });
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, teammate.token, { status: 'done' })).status, 200);
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, teammate.token, { status: 'done', title: 'and rename' })).status, 403);
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, teammate.token, { pageId: null })).status, 403);
+  assert.equal((await app.call('DELETE', `/tasks/${f.task}`, teammate.token)).status, 403);
+});
+
+test('a task reference only moves a task onto the page if whoever inserted it can see that task', async () => {
+  const f = await fixture();
+  await share(f.page, { userId: teammate.user.id, canEdit: true });
+  const { db } = await import('../server/db.ts');
+  // The owner's private standalone task (left a private page): the teammate can't see it.
+  const secret = (await app.call('POST', `/workspaces/${f.ws}/tasks`, owner.token, { title: 'Owner secret' })).data.id as string;
+  db.prepare('UPDATE tasks SET private_owner_only = 1 WHERE id = ?').run(secret);
+  const mine = (await app.call('POST', `/workspaces/${f.ws}/tasks`, teammate.token, { title: 'Teammate standalone' })).data.id as string;
+  const b = collabClient(app, f.page, teammate.token);
+  try {
+    await synced(b);
+    const refs = [secret, f.siblingTask, mine].map((id) => {
+      const el = new Y.XmlElement('taskRef');
+      el.setAttribute('taskId', id);
+      return el;
+    });
+    b.doc.getXmlFragment('default').insert(0, refs);
+  } finally {
+    // Leaving the page saves it.
+    await new Promise((r) => setTimeout(r, 300));
+    b.destroy();
+  }
+  const { getTask } = await import('../server/tasks.ts');
+  await waitFor(() => getTask(mine)?.pageId === f.page, 3000, 'their own task attached');
+  assert.equal(getTask(secret)!.pageId, null, 'a task they can’t see is not pulled in');
+  assert.equal((db.prepare('SELECT private_owner_only AS v FROM tasks WHERE id = ?').get(secret) as { v: number }).v, 1, 'and stays private');
+  assert.equal(getTask(f.siblingTask)!.pageId, f.sibling, 'a task on a page they can’t see stays there');
+});
+
+test('making a notebook private ends page shares others granted on its pages', async () => {
+  const f = await fixture();
+  await share(f.openPage, { userId: viewer.user.id }, teammate.token); // granted by a member
+  await share(f.openPage, { userId: teammate.user.id }); // granted by the creator: stays
+  const r = await app.call('PATCH', `/notebooks/${f.openNb}`, owner.token, { visibility: 'private' });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.removedPageShares, 1);
+  assert.equal((await app.call('GET', `/pages/${f.openPage}`, viewer.token)).status, 404);
+  assert.equal((await app.call('GET', `/pages/${f.openPage}`, teammate.token)).status, 200);
+  // Making it private again (already private) removes nothing.
+  assert.equal((await app.call('PATCH', `/notebooks/${f.openNb}`, owner.token, { visibility: 'private' })).data.removedPageShares, 0);
+});
+
+test('invite-only sign-up counts a page invite only while its sender is an owner or admin', async () => {
+  const f = await fixture();
+  const admin = await app.signUp('PsAdmin');
+  await app.call('POST', `/workspaces/${f.ws}/members`, owner.token, { email: admin.user.email, role: 'admin' });
+  const email = `ps-demoted-${++seq}@example.com`;
+  assert.equal((await share(f.openPage, { email }, admin.token)).data.status, 'invited');
+  await app.call('PATCH', `/workspaces/${f.ws}/members/${admin.user.id}`, owner.token, { role: 'member' });
+  process.env.SIGNUP_MODE = 'invite';
+  try {
+    assert.equal((await app.call('POST', '/auth/register', undefined, { name: 'Late', email, password: 'password123' })).status, 403);
+  } finally {
+    process.env.SIGNUP_MODE = 'open';
+  }
 });
 
 test('moving the page keeps its shares; deleting it or removing the member drops them', async () => {

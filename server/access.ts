@@ -131,9 +131,10 @@ export function pageShare(pageId: string, userId: string): { canEdit: boolean } 
 /**
  * Access to one page: through its notebook (notebookAccess), or through a page share
  * (page_shares). A page share reaches that page only — never its notebook, siblings or
- * sub-pages. A share can grant edit to a workspace member (even a viewer); people outside
- * the workspace are always view-only. Every route and socket that serves page content
- * goes through here.
+ * sub-pages. Effective rights are the lesser of the share and the workspace role: an edit
+ * share lets a member (or above) edit, a viewer stays view-only, and people outside the
+ * workspace are always view-only. A share never adds to notebook-level access. Every route
+ * and socket that serves page content goes through here.
  */
 export function pageAccess(pageId: string, userId: string): Access | null {
   const row = db
@@ -142,14 +143,14 @@ export function pageAccess(pageId: string, userId: string): Access | null {
   if (!row) return null;
   const nb = notebookAccess(row.notebook_id, userId);
   const share = pageShare(pageId, userId);
-  if (nb) return share?.canEdit && !nb.canEdit ? { ...nb, canEdit: true } : nb;
+  if (nb) return nb;
   if (!share) return null;
   const role = roleIn(row.workspace_id, userId);
   return {
     workspaceId: row.workspace_id,
     notebookId: row.notebook_id,
     role: role ?? 'viewer',
-    canEdit: !!role && share.canEdit,
+    canEdit: atLeast(role, 'member') && share.canEdit, // min(share, role)
     isNotebookOwner: false,
     member: !!role,
     canManage: false,

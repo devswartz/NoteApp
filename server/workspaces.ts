@@ -4,6 +4,7 @@ import { seedWorkspace } from './seed.ts';
 import { IS_PROD } from './config.ts';
 import crypto from 'node:crypto';
 import { escapeHtml, sendMail } from './mail.ts';
+import { publish } from './events.ts';
 import { APP_NAME } from '../shared/config.ts';
 import type { InviteInfo, Role } from '../shared/types.ts';
 
@@ -187,8 +188,9 @@ export function acceptPendingPageInvites(userId: string, email: string, ts = now
     invited_by: string;
   }[];
   for (const r of rows)
-    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(
-      r.page_id, userId, r.can_edit, r.invited_by, ts,
+    // View-only: the invitee isn't a workspace member (#98 review: outsider shares are stored can_edit = 0).
+    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, 0, ?, ?)').run(
+      r.page_id, userId, r.invited_by, ts,
     );
   db.prepare(`DELETE FROM page_invites WHERE email = ? AND ${live}`).run(email, ts);
   return rows.length;
@@ -207,4 +209,21 @@ export async function sendPageSharedEmail(opts: { to: string; link: string; page
 <p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;background:#6366f1;color:#fff;border-radius:6px;text-decoration:none">${invite ? 'Accept and open' : 'Open page'}</a></p>
 <p style="color:#666;font-size:13px">Or open this link: ${escapeHtml(link)}${invite ? `<br>It works for ${INVITE_TTL_DAYS} days. If you weren't expecting this, you can ignore this email.` : ''}</p>`,
   });
+}
+
+/**
+ * A notebook was made private: page shares on its pages that someone other than its creator
+ * granted end (the creator's own stay). Also drops such pending page invites. Returns how many
+ * shares were removed; the caller calls accessChanged(). Holders are told to refresh.
+ */
+export function dropForeignPageShares(notebookId: string): number {
+  const pagesOf = `SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id WHERE s.notebook_id = @nb`;
+  const creator = `(SELECT created_by FROM notebooks WHERE id = @nb)`;
+  const users = (
+    db.prepare(`SELECT DISTINCT user_id FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).all({ nb: notebookId }) as { user_id: string }[]
+  ).map((r) => r.user_id);
+  const n = db.prepare(`DELETE FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).run({ nb: notebookId }).changes;
+  db.prepare(`DELETE FROM page_invites WHERE page_id IN (${pagesOf}) AND invited_by IS NOT ${creator}`).run({ nb: notebookId });
+  if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
+  return n;
 }

@@ -220,12 +220,26 @@ const COLUMNS: Record<keyof TaskPatch, string> = {
   parentId: 'parent_id',
 };
 
+/**
+ * Changing a task that lives on a note needs edit access to that note (#98 review): seeing it
+ * (e.g. through a view-only page share) is not enough. The one exception: the person it's assigned
+ * to may tick it off or reopen it, and nothing else, without edit access to its note.
+ */
+function mustEditTask(task: Task, userId: string, patch?: TaskPatch) {
+  requireRole(task.workspaceId, userId, 'member');
+  if (!task.pageId) return;
+  if (pageAccess(task.pageId, userId)?.canEdit) return;
+  const statusOnly = !!patch && Object.keys(patch).every((k) => k === 'status');
+  if (statusOnly && task.assigneeId === userId) return;
+  throw new HttpError(403, 'You have view-only access to the note this task is in');
+}
+
 export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   const patch: TaskPatch = { ...input };
   const task = getTask(id);
   if (!task || !db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId }))
     throw new HttpError(404, 'Task not found');
-  requireRole(task.workspaceId, userId, 'member');
+  mustEditTask(task, userId, patch);
   validate(patch, task.workspaceId);
   if (patch.pageId) {
     const a = pageAccess(patch.pageId, userId);
@@ -317,7 +331,7 @@ export function deleteTask(userId: string, id: string) {
   const task = getTask(id);
   if (!task || !db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId }))
     throw new HttpError(404, 'Task not found');
-  requireRole(task.workspaceId, userId, 'member');
+  mustEditTask(task, userId);
   const children = childIds(id);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id); // subtasks go with it (ON DELETE CASCADE)
   for (const c of [id, ...children]) publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId });
@@ -330,7 +344,7 @@ export function deleteTask(userId: string, id: string) {
  * - tasks that claim the page but are no longer in it become standalone tasks
  *   (they are never deleted silently).
  */
-export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<string>) {
+export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<string>, mayAttach: (taskId: string) => boolean = () => true) {
   const changed: string[] = [];
   db.transaction(() => {
     const current = db
@@ -344,6 +358,10 @@ export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<
       }
     }
     for (const id of taskIds) {
+      // A reference to a task on another page (or standalone) moves it here only if whoever put the
+      // reference in may see that task (#98 review): otherwise pasting an id would pull in, and
+      // un-privatise, a task the editor can't see. Tasks already on this page are untouched.
+      if (!mayAttach(id)) continue;
       const r = db.prepare('UPDATE tasks SET page_id = ?, private_owner_only = 0, updated_at = ? WHERE id = ? AND workspace_id = ? AND parent_id IS NULL AND (page_id IS NOT ? OR page_id IS NULL)')
         .run(pageId, now(), id, workspaceId, pageId);
       if (r.changes) changed.push(id);

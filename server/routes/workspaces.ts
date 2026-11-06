@@ -1,7 +1,7 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { TASK_VISIBLE, accessChanged, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, requireRole, roleIn } from '../access.ts';
+import { TASK_VISIBLE, accessChanged, atLeast, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import { rowToTask } from '../tasks.ts';
@@ -321,8 +321,11 @@ workspaceRoutes.put(
 // A page share reaches one page only (see pageAccess in server/access.ts).
 // Who may share: anyone who can manage the page (edit access to its notebook);
 // in a private notebook, only the notebook's creator — the same rule as
-// sharing the notebook itself. Someone outside the workspace gets view-only
-// access to that page, and nothing else in the workspace.
+// sharing the notebook itself. Members share with members only; sharing with
+// anyone outside the workspace (an account that isn't a member, or an email
+// invite) is for workspace owners and admins. Outside the workspace a share is
+// view-only and stored that way (can_edit = 0); effective rights are always
+// min(share, role), see pageAccess.
 
 const MAX_PAGE_SHARES = 200;
 
@@ -397,20 +400,23 @@ workspaceRoutes.post(
       target = db.prepare('SELECT id, email FROM users WHERE email = ? AND email_verified_at IS NOT NULL').get(email) as typeof target;
     }
     if (target?.id === req.user.id) throw new HttpError(400, 'You already have access to this page');
+    const targetIsMember = !!target && !!roleIn(a.workspaceId, target.id);
+    if (!targetIsMember && !atLeast(roleIn(a.workspaceId, req.user.id), 'admin'))
+      throw new HttpError(403, 'Only workspace owners and admins can share with people outside the workspace');
     const count = (db.prepare('SELECT (SELECT COUNT(*) FROM page_shares WHERE page_id = ?) + (SELECT COUNT(*) FROM page_invites WHERE page_id = ?) AS n').get(id, id) as { n: number }).n;
     if (count >= MAX_PAGE_SHARES) throw new HttpError(400, `A page can be shared with at most ${MAX_PAGE_SHARES} people`);
     const base = publicUrl(req.get('origin'));
     const mail = { pageTitle: pageTitle(id), inviterName: userName(req.user.id), canEdit };
     if (target) {
-      const member = !!roleIn(a.workspaceId, target.id);
+      const store = canEdit && targetIsMember; // outsiders: always view-only
       const before = db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(id, target.id) as { can_edit: number } | undefined;
-      grantPageShare(id, target.id, canEdit, req.user.id);
+      grantPageShare(id, target.id, store, req.user.id);
       if (email) db.prepare('DELETE FROM page_invites WHERE page_id = ? AND email = ?').run(id, email);
-      sharesChanged(id, [target.id], !!before?.can_edit && !canEdit);
-      const r = before ? { sent: false } : await sendPageSharedEmail({ ...mail, canEdit: canEdit && member, to: target.email, link: pageLink(base, id), invite: false });
+      sharesChanged(id, [target.id], !!before?.can_edit && !store);
+      const r = before ? { sent: false } : await sendPageSharedEmail({ ...mail, canEdit: !!pageAccess(id, target.id)?.canEdit, to: target.email, link: pageLink(base, id), invite: false });
       return { status: 'shared', emailed: r.sent, ...pageShares(id, a.workspaceId) };
     }
-    const token = upsertPageInvite(id, email!, canEdit, req.user.id);
+    const token = upsertPageInvite(id, email!, false, req.user.id); // they won't be a member: view-only
     const inviteUrl = `${base}/invite/${token}`;
     const r = await sendPageSharedEmail({ ...mail, canEdit: false, to: email!, link: inviteUrl, invite: true });
     return { status: 'invited', emailed: r.sent, inviteUrl, ...pageShares(id, a.workspaceId) };
@@ -424,9 +430,10 @@ workspaceRoutes.patch(
     const id = param(req, 'id');
     const target = param(req, 'userId');
     const a = mustShare(id, req.user.id);
-    const r = db.prepare('UPDATE page_shares SET can_edit = ? WHERE page_id = ? AND user_id = ?').run(req.body?.canEdit === true ? 1 : 0, id, target);
+    const want = req.body?.canEdit === true && !!roleIn(a.workspaceId, target); // outsiders stay view-only
+    const r = db.prepare('UPDATE page_shares SET can_edit = ? WHERE page_id = ? AND user_id = ?').run(want ? 1 : 0, id, target);
     if (!r.changes) throw new HttpError(404, 'Share not found');
-    sharesChanged(id, [target], req.body?.canEdit !== true);
+    sharesChanged(id, [target], !want);
     return pageShares(id, a.workspaceId);
   }),
 );
@@ -500,7 +507,7 @@ function acceptPageInvite(userId: string, email: string, token: string) {
     throw new HttpError(403, `This invite was sent to ${inv.email}. Sign in with that email address to accept it.`);
   db.transaction(() => {
     if (!db.prepare('SELECT 1 FROM page_shares WHERE page_id = ? AND user_id = ?').get(inv.pageId, userId))
-      grantPageShare(inv.pageId, userId, inv.canEdit, null);
+      grantPageShare(inv.pageId, userId, false, null); // invitees are outside the workspace: view-only
     db.prepare('DELETE FROM page_invites WHERE page_id = ? AND email = ?').run(inv.pageId, inv.email);
   })();
   publish({ type: 'shared-pages' }, { userIds: [userId] });
