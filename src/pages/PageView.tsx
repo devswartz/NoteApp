@@ -167,22 +167,23 @@ export function PageView() {
             <button
               className={`btn-ghost icon-btn panel-toggle ${panel === 'tasks' ? 'is-active' : ''}`}
               title="Tasks on this page"
-              aria-label={`Tasks on this page${openTasks ? ` (${openTasks} open)` : ''}`}
               aria-pressed={panel === 'tasks'}
               onClick={() => togglePanel('tasks')}
             >
-              <ListTodo size={18} />
-              {openTasks > 0 && <span className="panel-badge" aria-hidden>{openTasks > 99 ? '99+' : openTasks}</span>}
+              <ListTodo size={18} aria-hidden />
+              {/* The name comes from the content so it contains the visible count (axe: label-content-name-mismatch). */}
+              <span className="sr-only">Tasks on this page</span>
+              {openTasks > 0 && <PanelBadge n={openTasks} />}
             </button>
             <button
               className={`btn-ghost icon-btn panel-toggle ${panel === 'comments' ? 'is-active' : ''}`}
               title="Comments"
-              aria-label={`Comments${openThreads ? ` (${openThreads} open)` : ''}`}
               aria-pressed={panel === 'comments'}
               onClick={() => togglePanel('comments')}
             >
-              <MessageSquare size={18} />
-              {openThreads > 0 && <span className="panel-badge" aria-hidden>{openThreads > 99 ? '99+' : openThreads}</span>}
+              <MessageSquare size={18} aria-hidden />
+              <span className="sr-only">Comments</span>
+              {openThreads > 0 && <PanelBadge n={openThreads} />}
             </button>
             {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} fullWidth={fullWidth} onFullWidth={setFullWidth} />}
           </div>
@@ -537,6 +538,18 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
         </Link>
       ))}
     </section>
+  );
+}
+
+/** Open-item count on a toolbar button; reads as "(3 open)" to screen readers. */
+function PanelBadge({ n }: { n: number }) {
+  return (
+    <>
+      <span className="sr-only"> ({n} open)</span>
+      <span className="panel-badge" aria-hidden>
+        {n > 99 ? '99+' : n}
+      </span>
+    </>
   );
 }
 

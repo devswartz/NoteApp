@@ -281,16 +281,32 @@ export function SlashMenuView() {
   const top = rect.bottom + 6 + 320 > window.innerHeight ? Math.max(8, rect.top - 326) : rect.bottom + 6;
   const left = Math.min(rect.left, window.innerWidth - 300);
   return createPortal(
-    <div className="popover slash-menu" style={{ top, left }} ref={listRef} onMouseDown={(e) => e.preventDefault()}>
-      <div className="menu-label-row">Insert block</div>
+    <div
+      className="popover slash-menu"
+      style={{ top, left }}
+      ref={listRef}
+      onMouseDown={(e) => e.preventDefault()}
+      role="listbox"
+      aria-label="Insert block"
+      id="slash-menu"
+    >
+      <div className="menu-label-row" aria-hidden="true">
+        Insert block
+      </div>
       {items.map((item, i) => (
         <button
           key={item.title}
+          id={`slash-item-${i}`}
+          role="option"
+          aria-selected={i === index}
+          tabIndex={-1}
           className={`slash-item ${i === index ? 'is-active' : ''}`}
           onMouseEnter={() => useSlash.setState({ index: i })}
           onClick={() => pick?.(item)}
         >
-          <span className="slash-icon">{item.icon}</span>
+          <span className="slash-icon" aria-hidden="true">
+            {item.icon}
+          </span>
           <span>
             <span className="slash-title">{item.title}</span>
             <span className="slash-desc">{item.description}</span>
