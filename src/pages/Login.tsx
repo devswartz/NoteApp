@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { signIn } from '../store.ts';
-import { post } from '../api.ts';
+import { get, post } from '../api.ts';
+import { hasPendingInvite } from '../components/sharing/InvitePage.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { Button } from '../components/ui.tsx';
+import { LegalLinks } from './Legal.tsx';
 
 export function Login() {
   const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
@@ -12,6 +15,14 @@ export function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(syncThemePref, []); // the shell's storage is ready now (see store/ui.ts)
+  // Sign-up is invite-only unless the server says otherwise; arriving from an invite link always allows it.
+  const [signupOpen, setSignupOpen] = useState(() => hasPendingInvite());
+  useEffect(() => {
+    if (hasPendingInvite()) return;
+    get<{ signupOpen: boolean }>('/auth/config')
+      .then((c) => setSignupOpen(c.signupOpen))
+      .catch(() => {});
+  }, []);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (
@@ -87,13 +98,23 @@ export function Login() {
           <Button type="submit" variant="primary" size="lg" loading={busy} disabled={mode === 'forgot' && sent}>
             {mode === 'login' ? 'Sign in' : mode === 'register' ? 'Create account' : 'Send reset link'}
           </Button>
+          {mode === 'register' && (
+            <p className="muted small center" style={{ margin: 0 }}>
+              By creating an account you agree to the <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy Policy</Link>.
+            </p>
+          )}
         </form>
-        <p className="muted small center">
-          {mode === 'login' ? 'New here?' : mode === 'forgot' ? 'Remembered it?' : 'Already have an account?'}{' '}
-          <button className="link" onClick={() => (setMode(mode === 'login' ? 'register' : 'login'), setError(''))}>
-            {mode === 'login' ? 'Create an account' : 'Sign in'}
-          </button>
-        </p>
+        {mode === 'login' && !signupOpen ? (
+          <p className="muted small center">New here? Sign-up is by invitation: open the invite link from your email.</p>
+        ) : (
+          <p className="muted small center">
+            {mode === 'login' ? 'New here?' : mode === 'forgot' ? 'Remembered it?' : 'Already have an account?'}{' '}
+            <button className="link" onClick={() => (setMode(mode === 'login' ? 'register' : 'login'), setError(''))}>
+              {mode === 'login' ? 'Create an account' : 'Sign in'}
+            </button>
+          </p>
+        )}
+        <LegalLinks />
       </div>
     </div>
   );

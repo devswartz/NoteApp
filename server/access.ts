@@ -122,12 +122,13 @@ export function mustAccess<T extends Access | null>(a: T, edit = false): NonNull
 /**
  * SQL predicate for tasks visible to @userId, given alias `t`.
  * A task is visible to workspace members unless it lives in someone else's
- * private notebook — but the assignee and creator can always see it.
+ * private notebook, or left one (private_owner_only, migration 010) — but the
+ * assignee and creator can always see it.
  */
 export const TASK_VISIBLE = `
   EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = @userId)
   AND (
-    t.page_id IS NULL
+    (t.page_id IS NULL AND t.private_owner_only = 0)
     OR t.assignee_id = @userId
     OR t.created_by = @userId
     OR EXISTS (

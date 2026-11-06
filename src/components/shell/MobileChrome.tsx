@@ -1,10 +1,11 @@
 // Phone layout chrome: a contextual top bar, the bottom tab bar with a floating
 // quick-add button, and edge-swipe for the notes drawer (the sidebar).
 // Rendered by AppShell only at phone widths (useIsMobile).
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { BookOpen, Inbox, Menu, Plus, Search, Sun } from 'lucide-react';
 import { ui, useStore } from '../../store.ts';
+import { NotificationBell } from '../sharing/NotificationBell.tsx';
 
 const VIEW_TITLES: Record<string, string> = {
   today: 'Today',
@@ -30,21 +31,63 @@ function useScreenTitle(): string {
   return ws?.name ?? '';
 }
 
+/**
+ * True while the screen's own large heading (its first h1, or a page's title)
+ * is on screen. The top bar then shows just the workspace, and takes over the
+ * screen title once the heading scrolls away (iOS "large title" style).
+ */
+function useHeadingVisible(): boolean {
+  const { pathname } = useLocation();
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    let io: IntersectionObserver | undefined;
+    let tries = 0;
+    let timer: number | undefined;
+    const attach = () => {
+      const el = document.querySelector('.route h1, .route .page-title');
+      if (!el) {
+        setVisible(false);
+        if (tries++ < 20) timer = window.setTimeout(attach, 100); // the screen may still be loading
+        return;
+      }
+      io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { rootMargin: '-56px 0px 0px 0px' });
+      io.observe(el);
+    };
+    attach();
+    return () => {
+      window.clearTimeout(timer);
+      io?.disconnect();
+    };
+  }, [pathname]);
+  return visible;
+}
+
 export function MobileTopBar() {
   const title = useScreenTitle();
   const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
+  const headingVisible = useHeadingVisible();
+  const showTitle = !headingVisible && ws && title !== ws.name;
   return (
     <header className="mobile-top">
       <button className="btn-ghost icon-btn touch" onClick={() => ui.setSidebar(true)} aria-label="Open menu">
         <Menu size={21} />
       </button>
-      <div className="mobile-title">
-        <span className="truncate">{title}</span>
-        {ws && title !== ws.name && <span className="mobile-subtitle truncate">{ws.name}</span>}
+      <div className={`mobile-title ${showTitle ? 'has-title' : ''}`}>
+        {showTitle ? (
+          <>
+            <span className="truncate">{title}</span>
+            <span className="mobile-subtitle truncate">{ws!.name}</span>
+          </>
+        ) : (
+          <span className="truncate">{ws?.name}</span>
+        )}
       </div>
-      <button className="btn-ghost icon-btn touch" onClick={ui.openPalette} aria-label="Search">
-        <Search size={20} />
-      </button>
+      <div className="mobile-top-actions">
+        <NotificationBell size={20} />
+        <button className="btn-ghost icon-btn touch" onClick={ui.openPalette} aria-label="Search">
+          <Search size={20} />
+        </button>
+      </div>
     </header>
   );
 }
@@ -53,7 +96,8 @@ export function MobileTabBar({ wsId }: { wsId: string }) {
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const paletteOpen = useStore((s) => s.paletteOpen);
   const { pathname } = useLocation();
-  const showFab = canEdit && !pathname.endsWith('/settings');
+  // Not on Settings, and not on a page: there the task sheet and inline tasks sit where the button would.
+  const showFab = canEdit && !pathname.endsWith('/settings') && !/\/p\//.test(pathname);
   const tab = (to: string, icon: React.ReactNode, label: string) => (
     <NavLink to={to} className={({ isActive }) => `tab ${isActive ? 'is-active' : ''}`}>
       {icon}

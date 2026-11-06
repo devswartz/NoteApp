@@ -1,4 +1,4 @@
-package com.devswartz.noteapp;
+package com.devswartz.notivelo;
 
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -19,7 +19,7 @@ import java.util.Map;
  * Reminder pushes arrive as FCM data messages (server/reminders/fcm.ts), so the
  * app builds the notification itself and can add the same snooze actions as
  * iOS: "Snooze 10 minutes", "Snooze 1 hour", "Tomorrow morning". Tapping the
- * notification opens the task (noteapp:/<path>); a snooze action is handled by
+ * notification opens the task (notivelo:/<path>); a snooze action is handled by
  * SnoozeReceiver without opening the app.
  *
  * Extends the push plugin's service (AndroidManifest replaces it) so the web
@@ -55,7 +55,7 @@ public class NoteAppMessagingService extends MessagingService {
         String tag = data.get("tag");
         int id = idFor(tag);
         String path = data.get("url");
-        Uri uri = Uri.parse(path != null && path.startsWith("/") && !path.startsWith("//") ? "noteapp:/" + path : "noteapp://");
+        Uri uri = Uri.parse(path != null && path.startsWith("/") && !path.startsWith("//") ? "notivelo:/" + path : "notivelo://");
         Intent open = new Intent(Intent.ACTION_VIEW, uri, context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent tap = PendingIntent.getActivity(context, id, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

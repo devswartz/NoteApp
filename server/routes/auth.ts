@@ -12,12 +12,16 @@ import {
   verifyResetToken,
 } from '../auth.ts';
 import { escapeHtml, sendMail } from '../mail.ts';
-import { PUBLIC_URL } from '../config.ts';
+import { PUBLIC_URL, signupMode } from '../config.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { publish } from '../events.ts';
 import { createWorkspace } from '../workspaces.ts';
 import { HttpError, h, str } from '../http.ts';
-import type { AuthSession, Role } from '../../shared/types.ts';
+import type { AuthSession } from '../../shared/types.ts';
+import { adminEmails } from '../admin.ts';
+import { refuse, takeAccountDelete, takeResend } from '../ratelimit.ts';
+import { deleteAccount, deletionPreview } from '../accounts.ts';
+import { acceptPendingInvites, consumeVerificationToken, markVerifiedByReset, sendVerificationEmail, startsVerified } from '../verification.ts';
 
 /** bcrypt only uses the first 72 bytes; anything longer would be silently truncated. */
 export const MAX_PASSWORD_BYTES = 72;
@@ -48,6 +52,20 @@ async function setPassword(userId: string, password: string) {
   })();
 }
 
+const SIGNUP_CLOSED = 'Sign-up is by invitation only. Ask a workspace admin to invite you, then use the link in the email.';
+
+/**
+ * In invite mode an account can be created only with a pending, unexpired
+ * invite for that email, or to bootstrap the server: the very first account,
+ * or an email listed in ADMIN_EMAILS.
+ */
+function maySignUp(email: string): boolean {
+  if (signupMode() === 'open') return true;
+  if (!db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get()) return true;
+  if (adminEmails().includes(email)) return true;
+  return !!db.prepare('SELECT 1 FROM workspace_invites WHERE email = ? AND (expires_at IS NULL OR expires_at > ?)').get(email, now());
+}
+
 /** Routes that work without a token. */
 export const publicAuthRoutes = Router();
 /** Routes for the signed-in user. */
@@ -62,32 +80,43 @@ publicAuthRoutes.post(
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address');
     validPassword(password);
     if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
+    if (!maySignUp(email)) throw new HttpError(403, SIGNUP_CLOSED); // fail fast, before the slow hash
     const id = newId();
     const ts = now();
     const color = pickColor();
     const hash = await hashPassword(password);
+    let verified = false;
     db.transaction(() => {
       // Re-check: another sign-up with this email may have landed while hashing.
       if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) throw new HttpError(409, 'An account with that email already exists');
-      db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-        id, email, name, hash, color, ts,
+      // And re-check permission here, atomically with the insert: two concurrent sign-ups on an
+      // empty server must not both count as "the first account", and an invite revoked or
+      // expired while hashing must not still work. The invite is consumed below, in this transaction.
+      if (!maySignUp(email)) throw new HttpError(403, SIGNUP_CLOSED);
+      // Bootstrap accounts, and every account when no mail can be sent, start verified (server/verification.ts).
+      verified = startsVerified(email);
+      db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        id, email, name, hash, color, ts, verified ? ts : null,
       );
-      // Accept any pending, unexpired invitations for this email (expired ones stay listed for admins to resend).
-      const live = '(expires_at IS NULL OR expires_at > ?)';
-      const invites = db.prepare(`SELECT workspace_id, role FROM workspace_invites WHERE email = ? AND ${live}`).all(email, ts) as {
-        workspace_id: string;
-        role: Role;
-      }[];
-      for (const inv of invites) {
-        db.prepare('INSERT OR IGNORE INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)').run(
-          inv.workspace_id, id, inv.role, ts,
-        );
-        publish({ type: 'members', workspaceId: inv.workspace_id });
-      }
-      db.prepare(`DELETE FROM workspace_invites WHERE email = ? AND ${live}`).run(email, ts);
+      // Pending, unexpired invitations for this email are accepted only for a verified account (expired ones
+      // stay listed for admins to resend). An unverified account gets them when it confirms its email.
+      if (verified) acceptPendingInvites(id, email, ts);
       createWorkspace(id, `${name.split(' ')[0]}'s Space`, true);
     })();
-    return { ...issueSession(id, req.get('user-agent') ?? null), user: { id, email, name, color } } satisfies AuthSession;
+    // Not awaited: SMTP latency shouldn't slow sign-up, and a failure just means the user taps "Resend".
+    if (!verified) void sendVerificationEmail({ id, email, name });
+    return { ...issueSession(id, req.get('user-agent') ?? null), user: { id, email, name, color, emailVerified: verified } } satisfies AuthSession;
+  }),
+);
+
+// Confirm an email address with the token from the emailed link. Public: it works whether or not the user
+// is signed in (here or on another device). Every failure looks the same.
+publicAuthRoutes.post(
+  '/auth/verify-email',
+  h((req) => {
+    const userId = consumeVerificationToken(req.body?.token);
+    if (!userId) throw new HttpError(400, 'This confirmation link is invalid or has expired. Sign in to get a new one.');
+    return { ok: true, emailVerified: true };
   }),
 );
 
@@ -96,7 +125,7 @@ publicAuthRoutes.post(
   h(async (req) => {
     const email = String(req.body.email ?? '').trim();
     const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as
-      | { id: string; email: string; name: string; color: string; password_hash: string }
+      | { id: string; email: string; name: string; color: string; password_hash: string; email_verified_at: string | null }
       | undefined;
     const password = String(req.body.password ?? '').slice(0, 1024);
     // Always run exactly one bcrypt comparison, real or dummy, so timing is the same either way.
@@ -104,7 +133,7 @@ publicAuthRoutes.post(
     if (!row || !ok) throw new HttpError(401, 'Incorrect email or password');
     return {
       ...issueSession(row.id, req.get('user-agent') ?? null),
-      user: { id: row.id, email: row.email, name: row.name, color: row.color },
+      user: { id: row.id, email: row.email, name: row.name, color: row.color, emailVerified: !!row.email_verified_at },
     } satisfies AuthSession;
   }),
 );
@@ -140,7 +169,7 @@ publicAuthRoutes.post(
       | { id: string; name: string; password_hash: string }
       | undefined;
     const last = lastResetMail.get(email) ?? 0;
-    if (row && Date.now() - last > 60_000) {
+    if (row && row.id !== 'deleted-user' && Date.now() - last > 60_000) {
       lastResetMail.set(email, Date.now());
       const link = `${PUBLIC_URL}/reset?token=${encodeURIComponent(signResetToken(row.id, row.password_hash))}`;
       // Not awaited: waiting for SMTP only when the account exists would reveal it by timing.
@@ -167,12 +196,38 @@ publicAuthRoutes.post(
       if (verifyResetToken(req.body.token) !== userId) throw invalid();
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, userId);
       revokeAllForUser(userId);
+      markVerifiedByReset(userId); // the link was emailed to the address, so using it proves the mailbox
     })();
     return { ok: true };
   }),
 );
 
+// What the sign-in page should offer. `signupOpen` is true when anyone may
+// create an account (open mode, or nobody has signed up yet).
+publicAuthRoutes.get(
+  '/auth/config',
+  h(() => ({
+    signupMode: signupMode(),
+    signupOpen: signupMode() === 'open' || !db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get(),
+    // Optional overrides for the /privacy and /terms pages (defaults live in src/pages/Legal.tsx).
+    ...(process.env.LEGAL_CONTACT_EMAIL ? { legalContactEmail: process.env.LEGAL_CONTACT_EMAIL } : {}),
+    ...(process.env.LEGAL_OPERATOR_NAME ? { legalOperatorName: process.env.LEGAL_OPERATOR_NAME } : {}),
+  })),
+);
+
 authRoutes.get('/me', h((req) => req.user));
+
+// Send a new confirmation email (the older link stops working). One a minute and five an hour per user.
+authRoutes.post(
+  '/auth/resend-verification',
+  h((req, res) => {
+    if (req.user.emailVerified) return { ok: true, alreadyVerified: true };
+    const wait = takeResend(req, req.user.id);
+    if (wait) return void refuse(res, wait);
+    void sendVerificationEmail(req.user);
+    return { ok: true, alreadyVerified: false };
+  }),
+);
 
 // Change password: signs out every other device and returns a fresh session for this one.
 authRoutes.post(
@@ -195,6 +250,26 @@ authRoutes.patch(
       db.prepare('UPDATE users SET color = ? WHERE id = ?').run(req.body.color, req.user.id);
     const wss = db.prepare('SELECT workspace_id FROM workspace_members WHERE user_id = ?').all(req.user.id) as { workspace_id: string }[];
     for (const w of wss) publish({ type: 'members', workspaceId: w.workspace_id });
-    return db.prepare('SELECT id, email, name, color FROM users WHERE id = ?').get(req.user.id);
+    return getUser(req.user.id);
+  }),
+);
+
+// ── Delete account ──
+// What would happen to the user's workspaces (read-only; shown in Settings before they confirm).
+authRoutes.get('/auth/account/deletion-preview', h((req) => deletionPreview(req.user.id)));
+
+// Delete the signed-in account after re-entering the password. Same 401 as login for a wrong password, and
+// rate limited like a password check. Behind the verified-email gate like every other signed-in route: an
+// unverified account can't reach it (and is removed automatically instead). Sends no email.
+authRoutes.delete(
+  '/auth/account',
+  h(async (req, res) => {
+    const wait = takeAccountDelete(req, req.user.id);
+    if (wait) return void refuse(res, wait);
+    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id) as { password_hash: string };
+    const password = String(req.body?.password ?? '').slice(0, 1024);
+    if (!(await bcrypt.compare(password, row.password_hash))) throw new HttpError(401, 'Incorrect password');
+    deleteAccount(req.user.id);
+    return { ok: true };
   }),
 );

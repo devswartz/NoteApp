@@ -17,6 +17,15 @@ import { publish } from './events.ts';
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 const SAVE_DEBOUNCE_MS = 1000;
+/**
+ * Largest single message accepted on /collab. Normal typing sends bytes to a
+ * few KB; pasting a long document or syncing a page edited offline can reach
+ * hundreds of KB. Anything bigger is refused (close 1009) rather than applied,
+ * so one client can't bloat a page for everyone. Images are uploads, not inline.
+ */
+export const MAX_SYNC_MESSAGE_BYTES = 4 * 1024 * 1024;
+/** Presence (cursor, name, colour) is tiny; cap it hard. */
+export const MAX_AWARENESS_MESSAGE_BYTES = 64 * 1024;
 /** Save at least this often while people keep typing (the debounce alone would wait for a pause). */
 const SAVE_MAX_WAIT_MS = 5000;
 
@@ -30,9 +39,25 @@ interface Room {
   /** When the oldest unsaved change arrived (0 = nothing pending). */
   dirtySince: number;
   lastEditor: string | null;
+  /** People @mentioned in the doc as last saved; only new mentions notify. */
+  mentioned: Set<string>;
+  /** Who inserted each mention since the last save (mentioned user → the user whose socket sent it). */
+  mentionAuthors: Map<string, string>;
 }
 
 const rooms = new Map<string, Room>();
+
+/** Set by server/notifications.ts: called with people newly @mentioned when a page is saved, grouped by who added them (null = unknown). */
+let pageMentionHook: ((pageId: string, workspaceId: string, userIds: string[], actorId: string | null) => void) | null = null;
+export function onPageMentions(fn: typeof pageMentionHook) {
+  pageMentionHook = fn;
+}
+
+/** Set by the activity feed: called after a page's content is saved, with who edited it last. */
+let pageSavedHook: ((pageId: string, actorId: string | null) => void) | null = null;
+export function onPageSaved(fn: typeof pageSavedHook) {
+  pageSavedHook = fn;
+}
 
 /** Who is on each socket, until when their token is valid, and whether they may edit. */
 interface ConnAuth {
@@ -76,8 +101,9 @@ onAccessChange(revalidateCollab);
 setInterval(revalidateCollab, REVALIDATE_MS).unref();
 
 /** Walk a ProseMirror-shaped Y.XmlFragment and collect plain text and task references. */
-export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Set<string> } {
+export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Set<string>; mentionIds: Set<string> } {
   const taskIds = new Set<string>();
+  const mentionIds = new Set<string>();
   const parts: string[] = [];
   const walk = (node: Y.XmlElement | Y.XmlText | Y.XmlFragment) => {
     if (node instanceof Y.XmlText) {
@@ -90,13 +116,18 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
       if (node.nodeName === 'taskRef') {
         const id = node.getAttribute('taskId');
         if (typeof id === 'string' && id) taskIds.add(id);
+      } else if (node.nodeName === 'mention') {
+        const id = node.getAttribute('id');
+        if (typeof id === 'string' && id) mentionIds.add(id);
+        const label = node.getAttribute('label');
+        if (typeof label === 'string' && label) parts.push(`@${label}`);
       }
     }
     for (const child of node.toArray()) walk(child as Y.XmlElement | Y.XmlText);
     if (node instanceof Y.XmlElement) parts.push('\n');
   };
   walk(fragment);
-  return { text: parts.join('').replace(/\n{3,}/g, '\n\n').trim(), taskIds };
+  return { text: parts.join('').replace(/\n{3,}/g, '\n\n').trim(), taskIds, mentionIds };
 }
 
 function persist(room: Room) {
@@ -105,7 +136,7 @@ function persist(room: Room) {
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);
   if (!exists) return; // page deleted while open
   const state = Buffer.from(Y.encodeStateAsUpdate(room.doc));
-  const { text, taskIds } = extractDoc(room.doc.getXmlFragment('default'));
+  const { text, taskIds, mentionIds } = extractDoc(room.doc.getXmlFragment('default'));
   db.transaction(() => {
     db.prepare('UPDATE pages SET ydoc = ?, text = ?, updated_at = ?, updated_by = COALESCE(?, updated_by) WHERE id = ?').run(
       state,
@@ -119,6 +150,20 @@ function persist(room: Room) {
     db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(room.pageId, title, text);
   })();
   syncPageTasks(room.pageId, room.workspaceId, taskIds);
+  const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
+  room.mentioned = mentionIds;
+  const byActor = new Map<string | null, string[]>();
+  for (const id of added) {
+    const actor = room.mentionAuthors.get(id) ?? null;
+    byActor.set(actor, [...(byActor.get(actor) ?? []), id]);
+  }
+  room.mentionAuthors.clear();
+  for (const [actor, ids] of byActor) pageMentionHook?.(room.pageId, room.workspaceId, ids, actor);
+  try {
+    pageSavedHook?.(room.pageId, room.lastEditor);
+  } catch (e) {
+    console.error('page saved hook', e);
+  }
   publish({ type: 'tree', workspaceId: room.workspaceId });
 }
 
@@ -138,7 +183,34 @@ function getRoom(pageId: string, workspaceId: string): Room {
   if (row?.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
-  const r: Room = { pageId, workspaceId, doc, awareness, conns: new Map(), saveTimer: null, dirtySince: 0, lastEditor: null };
+  const r: Room = {
+    pageId,
+    workspaceId,
+    doc,
+    awareness,
+    conns: new Map(),
+    saveTimer: null,
+    dirtySince: 0,
+    lastEditor: null,
+    mentioned: extractDoc(doc.getXmlFragment('default')).mentionIds,
+    mentionAuthors: new Map(),
+  };
+
+  // Attribute new @mentions to whoever's update inserted them (not just the last editor).
+  doc.getXmlFragment('default').observeDeep((events, tr) => {
+    const actor = tr.origin instanceof WebSocket ? connAuth.get(tr.origin)?.userId : undefined;
+    if (!actor) return;
+    const collect = (n: unknown) => {
+      if (!(n instanceof Y.XmlElement)) return;
+      if (n.nodeName === 'mention') {
+        const id = n.getAttribute('id');
+        if (typeof id === 'string' && id && !r.mentionAuthors.has(id)) r.mentionAuthors.set(id, actor);
+      }
+      for (const c of n.toArray()) collect(c);
+    };
+    for (const ev of events)
+      for (const item of ev.changes.added) for (const c of (item.content as { getContent(): unknown[] }).getContent()) collect(c);
+  });
 
   doc.on('update', (update: Uint8Array, origin: unknown) => {
     const enc = encoding.createEncoder();
@@ -197,6 +269,16 @@ export function closeRoom(pageId: string) {
   for (const c of [...room.conns.keys()]) c.close(4403, 'Access revoked');
 }
 
+/** Force-disconnect every collab socket of one user (their account was deleted). */
+export function closeUserCollab(userId: string) {
+  for (const room of rooms.values()) {
+    for (const conn of [...room.conns.keys()]) {
+      const a = connAuth.get(conn);
+      if (a?.userId === userId) revoke(conn, a, 4401, 'Account deleted');
+    }
+  }
+}
+
 /** Seed an empty page with initial content (used for onboarding pages). */
 export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void) {
   const doc = new Y.Doc();
@@ -219,6 +301,10 @@ export function attachCollab(wss: WebSocketServer) {
       return;
     }
     const user = auth.user;
+    if (!user.emailVerified) {
+      conn.close(4403, 'Email not verified');
+      return;
+    }
     const access = pageAccess(pageId, user.id);
     if (!access) {
       conn.close(4403, 'No access to this page');
@@ -245,6 +331,12 @@ export function attachCollab(wss: WebSocketServer) {
         const dec = decoding.createDecoder(new Uint8Array(data));
         const enc = encoding.createEncoder();
         const type = decoding.readVarUint(dec);
+        const max = type === MSG_AWARENESS ? MAX_AWARENESS_MESSAGE_BYTES : MAX_SYNC_MESSAGE_BYTES;
+        if (data.byteLength > max) {
+          console.warn(`[collab] refused a ${data.byteLength}-byte message (type ${type}) on page ${pageId}`);
+          conn.close(1009, 'Message too big');
+          return;
+        }
         if (type === MSG_SYNC) {
           encoding.writeVarUint(enc, MSG_SYNC);
           // Peek at the sync sub-type so read-only users can't push updates.
@@ -294,4 +386,11 @@ export function flushAll() {
 export function shutdownCollab() {
   flushAll();
   for (const room of rooms.values()) for (const c of room.conns.keys()) c.close(1012, 'Server restarting');
+}
+
+/** For /api/admin/stats. */
+export function collabStats() {
+  let connections = 0;
+  for (const r of rooms.values()) connections += r.conns.size;
+  return { openPages: rooms.size, connections };
 }

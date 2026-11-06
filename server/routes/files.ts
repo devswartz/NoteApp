@@ -25,6 +25,7 @@ import { HttpError, h, param } from '../http.ts';
 import { DATA_DIR, FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
 import { pageAccess, requireRole, roleIn } from '../access.ts';
+import { visibleTemplate } from '../templates.ts';
 import type { UploadedFile } from '../../shared/types.ts';
 
 // Dev databases created before DATA_DIR kept files in data/uploads.
@@ -134,22 +135,36 @@ fileRoutes.post(
   }),
 );
 
+export interface FileMeta {
+  id: string;
+  workspace_id: string | null;
+  page_id: string | null;
+  template_id?: string | null;
+  name: string;
+  ext: string;
+  mime: string;
+  size: number;
+  created_by: string;
+}
+
+/**
+ * Who may see a file's metadata. A file attached to a page is visible exactly to the people who can
+ * view that page (private notebooks included); a template's copy to whoever can see that template;
+ * otherwise to workspace members, or for legacy workspace-less uploads only to the uploader.
+ */
+export function fileVisible(row: FileMeta, userId: string): boolean {
+  if (row.page_id) return !!pageAccess(row.page_id, userId);
+  if (row.template_id) return !!visibleTemplate(row.template_id, userId);
+  if (row.workspace_id) return roleIn(row.workspace_id, userId) !== null;
+  return row.created_by === userId;
+}
+
 fileRoutes.get(
   '/files/:id',
   h((req) => {
-    const row = db.prepare('SELECT * FROM files WHERE id = ?').get(param(req, 'id')) as
-      | { id: string; workspace_id: string | null; page_id: string | null; name: string; ext: string; mime: string; size: number; created_by: string }
-      | undefined;
-    if (!row) throw new HttpError(404, 'Not found');
-    // A file attached to a page is visible exactly to the people who can view that page
-    // (private notebooks included); otherwise to workspace members, or for legacy
-    // workspace-less uploads only to the uploader. Always 404, never 403, so ids can't be probed.
-    const visible = row.page_id
-      ? !!pageAccess(row.page_id, req.user.id)
-      : row.workspace_id
-        ? roleIn(row.workspace_id, req.user.id) !== null
-        : row.created_by === req.user.id;
-    if (!visible) throw new HttpError(404, 'Not found');
+    const row = db.prepare('SELECT * FROM files WHERE id = ?').get(param(req, 'id')) as FileMeta | undefined;
+    // Always 404, never 403, so ids can't be probed.
+    if (!row || !fileVisible(row, req.user.id)) throw new HttpError(404, 'Not found');
     return { id: row.id, url: `/uploads/${row.id}${row.ext}`, name: row.name, mime: row.mime, size: row.size } satisfies UploadedFile;
   }),
 );

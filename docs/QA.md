@@ -9,12 +9,12 @@ npm run test:e2e                         # builds, starts `npm start` on :4317 w
 E2E_NO_BUILD=1 npm run test:e2e          # reuse an existing dist/ (much faster when iterating)
 npx playwright test 03 --project=chromium   # one file
 E2E_BASE_URL=http://localhost:3001 npx playwright test   # against a server you started yourself
-E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E2E_PORT+1) when several worktrees run at once
+E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 and +2) when several worktrees run at once
 ```
 
-- Ports: the main server listens on `E2E_PORT` (default 4317), the short-token server on `E2E_PORT+1`. Give each concurrent checkout its own `E2E_PORT`, or the second run fails to start its servers.
+- Ports: the main server listens on `E2E_PORT` (default 4317), the short-token server on `E2E_PORT+1`, the invite-only server on `E2E_PORT+2`, the email-verification server on `E2E_PORT+3`. Give each concurrent checkout its own `E2E_PORT`, or the second run fails to start its servers.
 - Each run uses a fresh, throwaway `DATA_DIR` (and a fixed test-only `JWT_SECRET`), so tests never touch `./data`.
-- Projects: `chromium` (desktop, every `*.spec.ts`), `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`) and `short-tokens` (only `*.tokens.spec.ts`, against a second server on port+1 started with `ACCESS_TOKEN_TTL_S=6`, so access tokens expire mid-test).
+- Projects: `chromium` (desktop, every `*.spec.ts`), `mobile` (iPhone 13 viewport, only `*.mobile.spec.ts`) `short-tokens` (only `*.tokens.spec.ts`, against a second server on port+1 started with `ACCESS_TOKEN_TTL_S=6`, so access tokens expire mid-test) and `invite-only` (only `*.invite.spec.ts`, against a third server on port+2 with the production default `SIGNUP_MODE=invite` and `ADMIN_EMAILS=gate-owner@e2e.test`). The main and short-token servers use `SIGNUP_MODE=open` so tests can create users freely. `verify-email` (only `*.verify.spec.ts`) runs against a fourth server on port+3, open sign-up with **no SMTP** but started with `NODE_ENV=test` and `E2E_TEST_HOOKS=1` (not `npm start`): that makes email verification required and exposes the mail outbox at `GET /api/__test/outbox?to=<address>`. Both are ignored in production. Every other project has no SMTP, so accounts there are auto-verified and the other specs are unaffected. To run it by hand against your own server, start one that way and use `E2E_BASE_URL=… E2E_VERIFY_URL=http://localhost:<port> npx playwright test 23 --project=verify-email`.
 - The browser runs in UTC (`timezoneId`), so "today" in tests matches `isoDay()` in `helpers.ts`.
 - On failure, a trace and a screenshot land in `test-results/`; in CI the HTML report is uploaded as the `playwright-report` artifact.
 - CI: the `e2e` job in `.github/workflows/ci.yml` runs `npx playwright test` after `check`; `publish` waits for it.
@@ -25,6 +25,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 - **Every test makes its own users**, with unique emails, so tests can run in parallel against one server.
 - **No fixed sleeps.** Wait on UI state (`expect(...).toBeVisible()`), or on server state with `eventually(() => listTasks(...), check)`.
 - **Selectors follow the UI primitives (#20):** menu entries are `getByRole('menuitem', { name })`, and icon buttons are `getByRole('button', { name })` (their name comes from `aria-label`/`title`). Use dialog/toolbar/radiogroup roles with their labels. Don't assert on toast wording; assert on the outcome.
+- **Avoid hover-revealed buttons** when there's another way in: right-click the sidebar row (same menu as the ⋯ button) or use the command palette. Hover reveals can animate and never settle under load, so Playwright's stability check times out.
 - Two users = two `browser.newContext()`s (see `03-collab.spec.ts`).
 - A feature that isn't on `main` yet: `test.fixme(true, 'waiting for feature: …')`. A known bug: `test.fixme(true, 'BUG-N: …')` plus an entry below.
 
@@ -48,17 +49,20 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 | 14 | Invite links (#11): invite → link → create account → joined, live in the owner's list; wrong signed-in account → Switch account; bad token. Private notebook shared with specific people (#14): live appear/disappear, others never see it, only the creator can change it | `14-invites-sharing.spec.ts` | ✅ incl. Notebook options → Share with people… |
 | 15 | Command registry (#19): palette commands, `g` navigation, `?` overlay, `n` new page, theme command; shortcuts ignored while typing | `15-commands.spec.ts` | ✅ |
 | 16 | Page links (#25): `[[` to an existing page, open it, "Linked from" backlink, rename shows through, create from `[[`. Callout + toggle blocks persist (#21) | `16-links-blocks.spec.ts` | ✅ |
+| 17 | Live-event catch-up after a dropped socket (#18): tasks created, edited or completed while away appear on reconnect without a reload. Version history restore (#37). "Meeting notes" template on an empty page (#27). Change password (#61) | `17-sync-history-account.spec.ts` | ✅ |
+| 18 | Sidebar (#40): right-click menu → add/remove favourite (kept after reload), inline rename, duplicate; Recent lists visited pages ; New notebook dialog with the "Team project" template (#71) | `18-sidebar.spec.ts` | ✅ |
+| 19 | Invite-only sign-up (#67, `SIGNUP_MODE=invite`): an `ADMIN_EMAILS` account can bootstrap; strangers see "Sign-up is by invitation" and get 403 from the API; an invited email signs up through the invite link and lands in the team | `19-signup.invite.spec.ts` | ✅ |
+| 21 | Comment threads (#28/#55/#62): select text → bubble menu Comment → highlight; another member sees it live and replies; resolve hides it under "Show 1 resolved" (live for others); reopen ; @mention in a comment notifies the person (#29, inbox API) | `21-comments.spec.ts` | ✅ / bell in header: fixme (`NotificationBell` not mounted yet) |
+| 22 | User templates: page menu → Save as template… (workspace-visible, tasks and attachments captured); a new empty page lists it under the built-ins; inserting it creates a NEW task (different id, original untouched, completing the copy leaves the original open) and a copied attachment; rename and delete from the picker; pages made from it keep working after the template is deleted | `22-user-templates.spec.ts` | ✅ |
+| 24 | Delete account (Settings → Profile): the card lists workspaces handed over and deleted; Delete is disabled without a password; a wrong password shows "Incorrect password" and deletes nothing; the right one signs out to the login page, the account can't sign in, the admin became owner of the handed-over workspace and the plain-members workspace is gone. Server side in `tests/account-deletion.test.ts` | `24-delete-account.spec.ts` | ✅ |
+| 23 | Email verification (`verify-email` project, test-only mail outbox): sign up → "Check your email" (address shown, app unreachable) → Resend with cooldown, older link dead (Link not valid) → confirm link in the signed-in browser opens the app; the link is single use; "I've verified, continue" says "Not confirmed yet" until confirmed from another client; signed-out link → login; unverified sign-in shows the screen even on deep links; Sign out | `23-email-verification.verify.spec.ts` | ✅ |
+| 24 | Public `/privacy` and `/terms` (rendered from `legal/*.md`) open signed out with headings and the contact address; the login screen links to both; sign-up says "By creating an account you agree to the Terms and Privacy Policy" | `24-legal-pages.spec.ts` | ✅ |
+| 25 | Client error reporting: an uncaught error in the page makes exactly one `POST /api/client-errors` (204) with message, stack, version and the page URL without query/fragment; the same error again, ResizeObserver noise and aborts are not reported; signed in the request carries the bearer token; nothing is sent while offline | `24-client-errors.spec.ts` | ✅ |
+| 26 | Send feedback (`verify-email` project, which runs with `ADMIN_EMAILS=feedback-admin@e2e.test`): ⌘K → "Send feedback" → Send is disabled until there is text, counter, success toast, and the admin mail in the outbox (subject, Reply-To = the user, id, path with query/hash stripped, HTML escaped). A failed send (500 stubbed) keeps the draft; the `?` overlay also opens the dialog. Server side in `tests/feedback.test.ts` | `24-feedback.verify.spec.ts` | ✅ |
 
 ## Open bugs
 
-### BUG-3: renaming a page and navigating away within ~0.4 s loses the new title
-- **Area / owner:** Editor & Notes (`src/pages/PageView.tsx`, page title effect: `setTimeout(patch, 400)` with `clearTimeout` on cleanup and no flush)
-- **Found on:** main @ 29daf5c, 2026-11-05 (3 out of 3 runs)
-- **Steps:** 1. Open a page. 2. Change its title. 3. Within ~0.4 s, click elsewhere (a sidebar link, a backlink, Today).
-- **Expected:** the new title is saved (and shown in the sidebar and in `[[links]]`).
-- **Actual:** the pending save is cancelled when the title component unmounts; the server keeps the old title, and the edit is silently lost.
-- **Suggested direction:** flush the pending patch in the effect cleanup (or on blur/unmount) instead of only clearing the timer.
-- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a page title typed just before navigating away is still saved" (`test.fixme`)
+None open.
 
 <!-- Template:
 ### BUG-N: short title
@@ -72,6 +76,8 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT and E
 
 ## Fixed bugs
 
+- **BUG-4** (Collaboration): a change made while the app was still opening its first live-events connection was never shown until a reload. Fixed by #76 (reload once the first hello arrives); test `17-sync-history-account` › "a change made while the app is still connecting its live events is not lost" enabled.
+- **BUG-3** (Editor & Notes): a page title typed just before navigating away was lost (debounced save cancelled on unmount). Fixed by #66; test `10-notes-edge` › "a page title typed just before navigating away is still saved" enabled.
 - **BUG-1** (Foundation, offline/PWA): reloading while offline showed the login screen, so cached notes couldn't open. Fixed by #35 (precached shell, offline cold start, read-only data cache); test `08-offline` › "…still opens after a reload while offline" enabled.
 - **BUG-2a** (Collaboration, server): a member demoted to viewer could keep editing an already-open page, and the edits were persisted. Fixed by #12 (socket access revalidation). Test `11-live-access` › "edits from a member demoted … are not saved (BUG-2a, fixed in #12)" is enabled.
 - **BUG-2b** (Collaboration, client): after being demoted to viewer, an already-open page stayed editable (no "View only") until reload. Fixed by #41 (re-checks page edit rights when your role changes); its test is enabled.

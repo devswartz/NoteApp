@@ -83,8 +83,9 @@ export const Outline = memo(function Outline({ editor, scroller }: { editor: Edi
       const top = scroller.getBoundingClientRect().top + 96;
       let current = 0;
       items.forEach((h, i) => {
-        const el = editor.view.nodeDOM(h.pos) as HTMLElement | null;
-        if (el && el.getBoundingClientRect().top <= top) current = i;
+        const el = editor.view.nodeDOM(h.pos);
+        // nodeDOM can be a text node (or stale) while the doc changes under the scroll handler.
+        if (el instanceof HTMLElement && el.getBoundingClientRect().top <= top) current = i;
       });
       setActive(current);
     };
@@ -98,7 +99,10 @@ export const Outline = memo(function Outline({ editor, scroller }: { editor: Edi
   const go = (h: OutlineItem) => {
     // Off-screen blocks use estimated sizes (content-visibility), so jump, then re-jump
     // for a few frames while the real sizes settle, instead of one smooth scroll that misses.
-    const jump = () => (editor.view.nodeDOM(h.pos) as HTMLElement | null)?.scrollIntoView({ block: 'start' });
+    const jump = () => {
+      const el = editor.view.nodeDOM(h.pos);
+      if (el instanceof HTMLElement) el.scrollIntoView({ block: 'start' });
+    };
     // Put the cursor in the heading right away (so typing works immediately), then settle the scroll.
     editor.chain().setTextSelection(h.pos + 1).focus(undefined, { scrollIntoView: false }).run();
     let frames = 0;

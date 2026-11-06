@@ -46,6 +46,8 @@ import { sidebar, useSidebar, SIDEBAR_MAX, SIDEBAR_MIN } from './shell/sidebarSt
 import { byPos, dragProps, dropClass, dropProps, moveNotebook, movePage, moveSection, useDnd } from './shell/treeDnd.ts';
 import { confirmDialog, promptDialog } from './shell/dialogs.tsx';
 import { MoveDialog } from './shell/MoveDialog.tsx';
+import { NotificationBell } from './sharing/NotificationBell.tsx';
+import { openNewNotebook } from './shell/NewNotebookDialog.tsx';
 import { openShareDialog } from './sharing/ShareDialog.tsx';
 import { runCommand } from '../hooks/useShortcuts.ts';
 
@@ -69,6 +71,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
+  const sidebarOpen = useStore((s) => s.sidebarOpen);
 
   // Close the drawer after navigating on mobile; remember visited pages.
   useEffect(() => {
@@ -107,17 +110,7 @@ export function Sidebar() {
     }
   };
 
-  const createNotebook = async () => {
-    const name = await promptDialog({ title: 'New notebook', label: 'Name', placeholder: 'e.g. Projects', confirmLabel: 'Create' });
-    if (!name) return;
-    try {
-      const r = await post<{ id: string; sectionId: string }>(`/workspaces/${wsId}/notebooks`, { name, visibility: 'shared' });
-      sidebar.toggleNode(r.id, false);
-      await createPage(r.sectionId);
-    } catch (e) {
-      errorToast(e);
-    }
-  };
+  const createNotebook = openNewNotebook;
 
   const nodeProps: NodeProps = { wsId, collapsed, editing, setEditing, canEdit, createPage, setMoving };
 
@@ -125,6 +118,8 @@ export function Sidebar() {
     <nav className="sidebar" aria-label="Sidebar">
       <div className="sb-top">
         <WorkspaceSwitcher />
+        {/* The inbox lives here on desktop; the mobile top bar has its own, and AppShell shows one while the sidebar is hidden. */}
+        {!isMobile && sidebarOpen && <NotificationBell size={17} />}
         {!isMobile && (
           <IconButton label="Hide sidebar" shortcut={`${MOD}\\`} onClick={ui.toggleSidebar}>
             <PanelLeftClose size={17} />
