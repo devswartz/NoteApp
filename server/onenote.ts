@@ -39,8 +39,24 @@ export const TICKET_TTL_MS = 2 * 60_000;
 export const CONNECTION_TTL_MS = 60 * 60_000;
 const MAX_PENDING = 500;
 export const MAX_PAGES_PER_JOB = 5000;
-export const MAX_JOB_BYTES = 1024 * 1024 * 1024;
-export const MAX_PAGE_HTML_BYTES = 5 * 1024 * 1024;
+export const MAX_PAGE_HTML_BYTES = 1024 * 1024;
+/** Resource limits for jobs (one small server, open sign-up). Mutable only so tests can shrink them. */
+export const limits = {
+  /** Files downloaded by one job (the same as workspace import's unpacked cap). */
+  maxJobBytes: 300 * 1024 * 1024,
+  /** Files downloaded per user in a rolling 24 hours, across jobs. */
+  dailyUserBytes: 1024 * 1024 * 1024,
+  /** One Graph request, body included. */
+  requestTimeoutMs: 30_000,
+  /** A job ends as "partial" after this, keeping what it imported. */
+  jobDeadlineMs: 30 * 60_000,
+  /** Total Retry-After waiting per job; past it the request fails (the page becomes a warning). */
+  maxWaitTotalMs: 10 * 60_000,
+  /** Sections plus section groups read per job. */
+  maxSections: 500,
+  /** Microsoft sign-ins kept per user (the oldest idle one is dropped). */
+  maxConnectionsPerUser: 2,
+};
 const MAX_RESOURCES_PER_PAGE = 200;
 export const MAX_TRIES = 6;
 const MAX_WAIT_S = 120;
@@ -48,7 +64,12 @@ const MAX_WAIT_S = 120;
 /** Injected so tests replay recorded Graph responses and don't wait for real Retry-After delays. */
 export const deps = {
   fetch: (url: string, init?: RequestInit): Promise<Response> => fetch(url, init),
-  sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+  sleep: (ms: number, signal?: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal?.aborted) return reject(new Stopped());
+      const t = setTimeout(resolve, ms);
+      signal?.addEventListener('abort', () => (clearTimeout(t), reject(new Stopped())), { once: true });
+    }),
 };
 
 /** The feature is on only when both values are configured (read on each call, so tests can switch it). */
@@ -149,6 +170,7 @@ export async function completeFlow(q: { state?: unknown; code?: unknown; error?:
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: c.clientId, client_secret: c.clientSecret, grant_type: 'authorization_code', code: q.code, redirect_uri: c.redirectUri, code_verifier: f.verifier, scope: SCOPES }),
+    signal: AbortSignal.timeout(limits.requestTimeoutMs),
   });
   if (!res.ok) {
     log.warn('OneNote sign-in: token exchange failed', { event: 'onenote_token', status: res.status });
@@ -157,7 +179,18 @@ export async function completeFlow(q: { state?: unknown; code?: unknown; error?:
   const t = (await res.json()) as TokenResponse;
   if (typeof t.access_token !== 'string') return back('onenote=failed');
   const id = rand();
-  connections.set(id, { userId: f.userId, workspaceId: f.workspaceId, ...tokens(t), expires: Date.now() + CONNECTION_TTL_MS, busy: false });
+  const conn: Connection = { userId: f.userId, workspaceId: f.workspaceId, ...tokens(t), expires: Date.now() + CONNECTION_TTL_MS, busy: false, account: null, run: null };
+  // Which Microsoft account this is (User.Read), shown in the app so the user confirms it before importing.
+  try {
+    const me = JSON.parse((await graphGet(conn, '/me?$select=displayName,mail,userPrincipalName', 64 * 1024)).body.toString('utf8'));
+    conn.account = { name: String(me.displayName ?? '').slice(0, 200), email: String(me.mail || me.userPrincipalName || '').slice(0, 320) };
+  } catch {
+    conn.account = null;
+  }
+  // At most a couple of sign-ins per user: drop the oldest idle ones.
+  const mine = [...connections].filter(([, c]) => c.userId === f.userId && !c.busy).sort((a, b) => a[1].expires - b[1].expires);
+  while (mine.length >= limits.maxConnectionsPerUser) connections.delete(mine.shift()![0]);
+  connections.set(id, conn);
   return back(`onenote=${encodeURIComponent(id)}`);
 }
 
@@ -176,6 +209,10 @@ interface Connection {
   accessExpires: number;
   expires: number;
   busy: boolean;
+  /** The signed-in Microsoft account (GET /me), if Graph told us. */
+  account: { name: string; email: string } | null;
+  /** The job using this connection: its abort signal (cancel / deadline) and Retry-After budget. */
+  run: { abort: AbortController; waitedMs: number } | null;
 }
 const connections = new Map<string, Connection>();
 const tokens = (t: TokenResponse) => ({ access: t.access_token!, refresh: t.refresh_token ?? null, accessExpires: Date.now() + (Number(t.expires_in) || 3600) * 1000 });
@@ -196,6 +233,7 @@ async function refresh(conn: Connection): Promise<boolean> {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: c.clientId, client_secret: c.clientSecret, grant_type: 'refresh_token', refresh_token: conn.refresh, scope: SCOPES }),
+    signal: AbortSignal.timeout(limits.requestTimeoutMs),
   });
   if (!res.ok) return false;
   const t = (await res.json()) as TokenResponse;
@@ -209,6 +247,8 @@ export class GraphError extends Error {
     super(message);
   }
 }
+/** The job was cancelled or reached its deadline. */
+export class Stopped extends Error {}
 
 /** Seconds to wait before retry `attempt` (0-based): Retry-After (seconds or a date) if given, else 1, 2, 4… */
 export function retryDelay(header: string | null, attempt: number): number {
@@ -218,33 +258,63 @@ export function retryDelay(header: string | null, attempt: number): number {
   return Math.min(MAX_WAIT_S, Math.max(0, s));
 }
 
-/**
- * GET a Graph URL with the connection's token. Only https://graph.microsoft.com/v1.0/… is ever fetched (URLs
- * from page HTML and @odata.nextLink included), so the token can't be sent anywhere else. Retries 429/503/504
- * and network errors (Retry-After honoured), refreshes the token once on 401, caps the body size.
- */
-export async function graphGet(conn: Connection, url: string, maxBytes = 10 * 1024 * 1024): Promise<{ body: Buffer; type: string }> {
+/** An absolute https://graph.microsoft.com/v1.0/… URL, or a GraphError. The only place the token may go. */
+function graphUrl(url: string): string {
   const full = url.startsWith('/') ? `${GRAPH_BASE}${url}` : url;
   if (!full.startsWith(`${GRAPH_BASE}/`) || /[\s\\]/.test(full) || new URL(full).origin !== new URL(GRAPH_BASE).origin) throw new GraphError(400, 'Not a Microsoft Graph URL');
+  return full;
+}
+
+/**
+ * GET a Graph URL with the connection's token. Only https://graph.microsoft.com/v1.0/… is ever fetched (URLs
+ * from page HTML, @odata.nextLink and redirects included), so the token can't be sent anywhere else. Each
+ * request (body included) times out; 429/503/504 and network errors are retried (Retry-After honoured, within
+ * the job's total waiting budget); the token is refreshed once on 401; the body size is capped.
+ */
+export async function graphGet(conn: Connection, url: string, maxBytes = 10 * 1024 * 1024): Promise<{ body: Buffer; type: string }> {
+  let full = graphUrl(url);
+  const run = conn.run;
+  const stopped = () => run?.abort.signal.aborted;
   let refreshed = false;
+  let hops = 0;
   for (let attempt = 0; ; attempt++) {
+    if (stopped()) throw new Stopped();
     if (conn.accessExpires < Date.now() + 60_000 && conn.refresh && !refreshed) refreshed = await refresh(conn);
+    const signal = run ? AbortSignal.any([AbortSignal.timeout(limits.requestTimeoutMs), run.abort.signal]) : AbortSignal.timeout(limits.requestTimeoutMs);
+    const wait = async (ms: number) => {
+      if (run) {
+        if (run.waitedMs + ms > limits.maxWaitTotalMs) throw new GraphError(429, 'Microsoft Graph kept throttling the import');
+        run.waitedMs += ms;
+      }
+      await deps.sleep(ms, run?.abort.signal);
+    };
     let res: Response;
     try {
-      // fetch drops the Authorization header if Graph redirects to another origin.
-      res = await deps.fetch(full, { headers: { authorization: `Bearer ${conn.access}` } });
+      // Redirects are followed by hand, and only to Graph (see graphUrl).
+      res = await deps.fetch(full, { headers: { authorization: `Bearer ${conn.access}` }, redirect: 'manual', signal });
     } catch {
+      if (stopped()) throw new Stopped();
       if (attempt + 1 >= MAX_TRIES) throw new GraphError(502, 'Microsoft Graph could not be reached');
-      await deps.sleep(retryDelay(null, attempt) * 1000);
+      await wait(retryDelay(null, attempt) * 1000);
+      continue;
+    }
+    if (res.status >= 300 && res.status < 400) {
+      await res.body?.cancel().catch(() => {});
+      const loc = res.headers.get('location');
+      if (!loc || ++hops > 3) throw new GraphError(502, 'Unexpected redirect from Microsoft Graph');
+      full = graphUrl(new URL(loc, full).href);
+      attempt--;
       continue;
     }
     if (res.status === 401 && !refreshed) {
       refreshed = true;
+      await res.body?.cancel().catch(() => {});
       if (await refresh(conn)) continue;
+      throw new GraphError(401, 'The Microsoft sign-in has expired');
     }
     if ((res.status === 429 || res.status === 503 || res.status === 504) && attempt + 1 < MAX_TRIES) {
       await res.body?.cancel().catch(() => {});
-      await deps.sleep(retryDelay(res.headers.get('retry-after'), attempt) * 1000);
+      await wait(retryDelay(res.headers.get('retry-after'), attempt) * 1000);
       continue;
     }
     if (!res.ok) {
@@ -257,12 +327,18 @@ export async function graphGet(conn: Connection, url: string, maxBytes = 10 * 10
     }
     const chunks: Buffer[] = [];
     let size = 0;
-    if (res.body) {
-      for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-        size += chunk.length;
-        if (size > maxBytes) throw new GraphError(413, 'Too large');
-        chunks.push(Buffer.from(chunk));
+    try {
+      if (res.body) {
+        for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+          size += chunk.length;
+          if (size > maxBytes) throw new GraphError(413, 'Too large');
+          chunks.push(Buffer.from(chunk));
+        }
       }
+    } catch (e) {
+      if (e instanceof GraphError) throw e;
+      if (stopped()) throw new Stopped();
+      throw new GraphError(504, 'Microsoft Graph timed out');
     }
     return { body: Buffer.concat(chunks), type: res.headers.get('content-type') ?? '' };
   }
@@ -301,13 +377,19 @@ export async function listNotebooks(conn: Connection): Promise<{ id: string; nam
   return nbs.filter((n) => typeof n.id === 'string').map((n) => ({ id: n.id, name: String(n.displayName ?? 'Notebook').slice(0, 100) }));
 }
 
-/** Sections of a notebook, section groups flattened into a "Group / Section" name. */
-async function sectionsOf(conn: Connection, notebookId: string): Promise<{ id: string; name: string }[]> {
+/** Sections of a notebook, section groups flattened into a "Group / Section" name. `budget.left` counts sections + groups per job. */
+async function sectionsOf(conn: Connection, notebookId: string, budget: { left: number }): Promise<{ id: string; name: string }[]> {
   const out: { id: string; name: string }[] = [];
   const walk = async (base: string, prefix: string, depth: number) => {
-    for (const s of await graphList<GSection>(conn, `${base}/sections?$select=id,displayName`)) out.push({ id: s.id, name: `${prefix}${s.displayName ?? 'Section'}` });
+    for (const s of await graphList<GSection>(conn, `${base}/sections?$select=id,displayName`)) {
+      if (budget.left-- <= 0) return;
+      out.push({ id: s.id, name: `${prefix}${s.displayName ?? 'Section'}` });
+    }
     if (depth > 10) return;
-    for (const g of await graphList<GSection>(conn, `${base}/sectionGroups?$select=id,displayName`)) await walk(`/me/onenote/sectionGroups/${seg(g.id)}`, `${prefix}${g.displayName ?? 'Group'} / `, depth + 1);
+    for (const g of await graphList<GSection>(conn, `${base}/sectionGroups?$select=id,displayName`)) {
+      if (budget.left-- <= 0) return;
+      await walk(`/me/onenote/sectionGroups/${seg(g.id)}`, `${prefix}${g.displayName ?? 'Group'} / `, depth + 1);
+    }
   };
   await walk(`/me/onenote/notebooks/${seg(notebookId)}`, '', 0);
   return out;
@@ -317,7 +399,9 @@ async function sectionsOf(conn: Connection, notebookId: string): Promise<{ id: s
 
 export interface JobStatus {
   id: string;
-  status: 'running' | 'done' | 'failed';
+  /** partial: stopped at the deadline; cancelled: stopped by the user; failed: an error. Then `incomplete` is true. */
+  status: 'running' | 'done' | 'partial' | 'cancelled' | 'failed';
+  incomplete: boolean;
   workspaceId: string;
   notebooks: { total: number; done: number };
   pages: { total: number; done: number };
@@ -329,38 +413,79 @@ export interface JobStatus {
   error: string | null;
   finishedAt: string | null;
 }
-const jobs = new Map<string, JobStatus & { userId: string }>();
+type Job = JobStatus & { userId: string; abort: AbortController };
+const jobs = new Map<string, Job>();
 
-export function jobFor(id: string, userId: string): JobStatus {
+/** Bytes downloaded per user in the current 24-hour window. */
+const daily = new Map<string, { since: number; bytes: number }>();
+function dailyUsage(userId: string) {
+  const t = Date.now();
+  let d = daily.get(userId);
+  if (!d || d.since + 864e5 < t) daily.set(userId, (d = { since: t, bytes: 0 }));
+  return d;
+}
+
+function own(id: string, userId: string): Job {
   config();
   const j = jobs.get(id);
   if (!j || j.userId !== userId) throw new HttpError(404, 'Import not found');
-  const { userId: _u, ...status } = j;
-  return { ...status, warnings: status.warnings.slice(0, 50) };
+  return j;
+}
+export function jobFor(id: string, userId: string): JobStatus {
+  const { userId: _u, abort: _a, ...status } = own(id, userId);
+  return { ...status, imported: status.imported.map((n) => ({ ...n })), warnings: status.warnings.slice(0, 50) };
+}
+/** Stop a running import (owner only). What's imported so far stays, marked "(incomplete)". */
+export function cancelJob(id: string, userId: string): JobStatus {
+  const j = own(id, userId);
+  if (j.status === 'running') j.abort.abort('cancelled');
+  return jobFor(id, userId);
 }
 
 /** Start importing the chosen notebooks into the connection's workspace. `release` ends the import admission. */
 export function startJob(conn: Connection, connId: string, notebookIds: string[], release: () => void): JobStatus {
   requireRole(conn.workspaceId, conn.userId, 'member');
   if (conn.busy) throw new HttpError(409, 'An import is already running for this sign-in');
-  const job: JobStatus & { userId: string } = {
-    id: newId(), userId: conn.userId, status: 'running', workspaceId: conn.workspaceId,
+  const abort = new AbortController();
+  const job: Job = {
+    id: newId(), userId: conn.userId, abort, status: 'running', incomplete: false, workspaceId: conn.workspaceId,
     notebooks: { total: notebookIds.length, done: 0 }, pages: { total: 0, done: 0 }, images: 0, attachments: 0, tasks: 0,
     imported: [], warnings: [], error: null, finishedAt: null,
   };
   jobs.set(job.id, job);
   conn.busy = true;
-  void runJob(job, conn, notebookIds)
+  conn.run = { abort, waitedMs: 0 };
+  const deadline = setTimeout(() => abort.abort('deadline'), limits.jobDeadlineMs);
+  deadline.unref();
+  const unfinished = new Set<string>(); // notebooks created but not finished
+  void runJob(job, conn, notebookIds, unfinished)
     .catch((e) => {
+      if (e instanceof Stopped || abort.signal.aborted) {
+        job.status = abort.signal.reason === 'cancelled' ? 'cancelled' : 'partial';
+        job.error = job.status === 'cancelled' ? 'Cancelled' : `Stopped after ${Math.round(limits.jobDeadlineMs / 60_000)} minutes`;
+        return;
+      }
       job.status = 'failed';
       job.error = e instanceof GraphError || e instanceof HttpError ? e.message : 'The import stopped unexpectedly';
       log.warn('OneNote import failed', { event: 'onenote_import', jobId: job.id, error: (e as Error).message });
     })
     .finally(() => {
+      clearTimeout(deadline);
       if (job.status === 'running') job.status = 'done';
+      // A half-imported notebook says so in its name, rather than looking complete.
+      if (job.status !== 'done' && unfinished.size) {
+        job.incomplete = true;
+        for (const n of job.imported) {
+          if (!unfinished.has(n.id)) continue;
+          n.name = `${n.name} (incomplete)`.slice(0, 100);
+          db.prepare('UPDATE notebooks SET name = ? WHERE id = ?').run(n.name, n.id);
+        }
+      }
+      if (job.status !== 'done') job.incomplete = true;
       job.finishedAt = now();
       // The tokens are only for this import: forget them.
       conn.busy = false;
+      conn.run = null;
       connections.delete(connId);
       release();
       publish({ type: 'tree', workspaceId: job.workspaceId });
@@ -369,32 +494,37 @@ export function startJob(conn: Connection, connId: string, notebookIds: string[]
 }
 
 const warn = (job: JobStatus, msg: string) => {
-  if (job.warnings.length < 200) job.warnings.push(msg);
+  if (job.warnings.length < 200 && !job.warnings.includes(msg)) job.warnings.push(msg);
 };
 
-async function runJob(job: JobStatus & { userId: string }, conn: Connection, notebookIds: string[]) {
+async function runJob(job: Job, conn: Connection, notebookIds: string[], unfinished: Set<string>) {
   const { userId, workspaceId } = job;
   const all = await listNotebooks(conn);
   const ctx = { bytes: 0 };
+  const budget = { left: limits.maxSections };
   for (const nbId of notebookIds) {
+    if (job.abort.signal.aborted) throw new Stopped();
     const nb = all.find((n) => n.id === nbId);
     if (!nb) {
       warn(job, 'A notebook you picked is no longer available');
       job.notebooks.done++;
       continue;
     }
-    const sections = await sectionsOf(conn, nb.id);
+    const sections = await sectionsOf(conn, nb.id, budget);
+    if (budget.left < 0) warn(job, `Only the first ${limits.maxSections} sections and section groups were imported`);
     const notebookId = newId();
     // Imported notebooks are private to the importer (the issue: "private by default"); they can share them later.
     db.prepare('INSERT INTO notebooks (id, workspace_id, name, color, visibility, created_by, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
       notebookId, workspaceId, nb.name || 'Notebook', pickColor(), 'private', userId, nextPos('notebooks', 'workspace_id', workspaceId), now(),
     );
     job.imported.push({ id: notebookId, name: nb.name });
+    unfinished.add(notebookId);
     for (const s of sections) {
       let pages: GPage[];
       try {
         pages = await graphList<GPage>(conn, `/me/onenote/sections/${seg(s.id)}/pages?$select=id,title,order&pagelevel=true&$top=100`);
       } catch (e) {
+        if (e instanceof Stopped) throw e;
         warn(job, `Section “${s.name}” in “${nb.name}” couldn't be read${e instanceof GraphError && e.status === 403 ? ' (password-protected sections can’t be imported)' : ''}`);
         continue;
       }
@@ -412,11 +542,13 @@ async function runJob(job: JobStatus & { userId: string }, conn: Connection, not
         try {
           await importPage(job, conn, ctx, sectionId, p);
         } catch (e) {
+          if (e instanceof Stopped) throw e;
           warn(job, `Page “${String(p.title ?? '').slice(0, 80) || 'Untitled'}” couldn't be imported${e instanceof GraphError ? ` (${e.message})` : ''}`);
         }
         job.pages.done++;
       }
     }
+    unfinished.delete(notebookId);
     job.notebooks.done++;
     publish({ type: 'tree', workspaceId });
   }
@@ -480,19 +612,24 @@ async function storeResource(job: JobStatus, conn: Connection, ctx: { bytes: num
     // Not a OneNote resource: an external image stays a link to it if it's a plain http(s) image; anything else is dropped.
     return r.kind === 'image' && safeImageUrl(r.url) ? { src: r.url } : null;
   }
-  if (ctx.bytes >= MAX_JOB_BYTES) {
-    warn(job, 'Some images and attachments were skipped: the import reached its size limit');
-    return null;
-  }
+  const userId = (job as Job).userId;
+  const overBudget = (extra: number) => {
+    if (ctx.bytes + extra > limits.maxJobBytes) return warn(job, `Some images and attachments were skipped: an import can bring in at most ${Math.round(limits.maxJobBytes / 1024 / 1024)} MB of files`), true;
+    if (dailyUsage(userId).bytes + extra > limits.dailyUserBytes) return warn(job, `Some images and attachments were skipped: you can import at most ${Math.round(limits.dailyUserBytes / 1024 / 1024)} MB of files a day`), true;
+    return false;
+  };
+  if (overBudget(0)) return null;
   let data: Buffer;
   try {
     data = (await graphGet(conn, r.url, MAX_UPLOAD_BYTES)).body;
   } catch (e) {
+    if (e instanceof Stopped) throw e;
     warn(job, `An ${r.kind === 'image' ? 'image' : `attachment (${r.name})`} couldn't be downloaded${e instanceof GraphError && e.status === 413 ? ` (larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)` : ''}`);
     return null;
   }
-  if (!data.length) return null;
+  if (!data.length || overBudget(data.length)) return null;
   ctx.bytes += data.length;
+  dailyUsage(userId).bytes += data.length;
   const declared = r.type.toLowerCase().split(';')[0].trim();
   const imageExt = r.kind === 'image' ? IMAGE_EXT[declared] : undefined;
   const name = (r.kind === 'image' ? `image${imageExt ?? ''}` : path.basename(r.name.replace(/\\/g, '/')).replace(/[\u0000-\u001f]/g, '').trim()).slice(0, 200) || 'file';
@@ -519,4 +656,5 @@ export function resetOneNote() {
   tickets.clear();
   connections.clear();
   jobs.clear();
+  daily.clear();
 }

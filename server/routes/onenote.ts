@@ -5,7 +5,7 @@ import { Router, type RequestHandler, type Response } from 'express';
 import { HttpError, h, param } from '../http.ts';
 import { takeImport } from '../ratelimit.ts';
 import { IS_PROD } from '../config.ts';
-import { authorizeFlow, BadState, completeFlow, connectionFor, COOKIE, FLOW_TTL_MS, jobFor, listNotebooks, oneNoteConfig, startFlow, startJob } from '../onenote.ts';
+import { authorizeFlow, BadState, cancelJob, completeFlow, connectionFor, COOKIE, FLOW_TTL_MS, jobFor, listNotebooks, oneNoteConfig, startFlow, startJob } from '../onenote.ts';
 
 export const oneNoteGate: RequestHandler = (_req, res, next) => (oneNoteConfig() ? next() : void res.status(404).json({ error: 'Not found' }));
 
@@ -74,19 +74,20 @@ oneNoteRoutes.get(
   '/import/onenote/connections/:id/notebooks',
   h(async (req) => {
     const conn = connectionFor(param(req, 'id'), req.user.id);
-    return { workspaceId: conn.workspaceId, notebooks: await listNotebooks(conn) };
+    return { workspaceId: conn.workspaceId, account: conn.account, notebooks: await listNotebooks(conn) };
   }),
 );
 
-/** POST /import/onenote/connections/:id/import {notebookIds} → the job (202). One import at a time server-wide, rate limited per user. */
+/** POST /import/onenote/connections/:id/import {notebookIds, confirmedAccount: true} → the job (202). One OneNote import at a time server-wide (its own slot), rate limited per user. */
 oneNoteRoutes.post(
   '/import/onenote/connections/:id/import',
   h((req, res) => {
     const id = param(req, 'id');
     const conn = connectionFor(id, req.user.id);
+    if (req.body?.confirmedAccount !== true) throw new HttpError(400, 'Confirm the Microsoft account first');
     const ids = req.body?.notebookIds;
     if (!Array.isArray(ids) || !ids.length || ids.length > 50 || ids.some((x) => typeof x !== 'string' || x.length > 200)) throw new HttpError(400, 'Pick one or more notebooks');
-    const { wait, done } = takeImport(req.user.id);
+    const { wait, done } = takeImport(req.user.id, 'onenote');
     if (wait) {
       res.setHeader('Retry-After', String(wait));
       throw new HttpError(429, `Another import is running, or you have imported several times recently. Try again in ${wait < 60 ? `${wait} seconds` : `${Math.ceil(wait / 60)} minutes`}.`);
@@ -103,3 +104,6 @@ oneNoteRoutes.post(
 
 /** GET /import/onenote/jobs/:id → progress (only for the user who started it). */
 oneNoteRoutes.get('/import/onenote/jobs/:id', h((req) => jobFor(param(req, 'id'), req.user.id)));
+
+/** POST /import/onenote/jobs/:id/cancel → the job (owner only). What's imported so far stays, marked "(incomplete)". */
+oneNoteRoutes.post('/import/onenote/jobs/:id/cancel', h((req) => cancelJob(param(req, 'id'), req.user.id)));

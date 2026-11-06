@@ -1,5 +1,7 @@
 {
   "_comment": "Recorded Microsoft Graph responses for tests/onenote.test.ts (ids shortened, account details removed). Keys are paths after https://graph.microsoft.com/v1.0.",
+  "/me?$select=displayName,mail,userPrincipalName": { "json": { "displayName": "Test Person", "mail": null, "userPrincipalName": "test.person@contoso.example" } },
+  "/me/onenote/resources/0-REDIR!1/$value": { "status": 302, "location": "https://evil.example/collect" },
   "/me/onenote/notebooks?$select=id,displayName": { "json": { "value": [{ "id": "0-NB1!1", "displayName": "Work" }, { "id": "0-NB2!2", "displayName": "Recipes" }] } },
   "/me/onenote/notebooks/0-NB1!1/sections?$select=id,displayName": {
     "json": { "value": [{ "id": "0-SEC1!10", "displayName": "Meetings" }], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/onenote/notebooks/0-NB1!1/sections?$select=id,displayName&$skiptoken=2" }

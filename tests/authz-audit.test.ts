@@ -275,6 +275,7 @@ const ROWS: Row[] = [
   // Connections and jobs are personal (random ids, checked against the user): nobody else's is reachable.
   { method: 'GET', route: '/import/onenote/connections/:id/notebooks', path: () => `/import/onenote/connections/${crypto.randomUUID()}/notebooks`, expect: { viewer: 404, member: 404 } },
   { method: 'POST', route: '/import/onenote/connections/:id/import', path: () => `/import/onenote/connections/${crypto.randomUUID()}/import`, body: () => ({ notebookIds: ['x'] }), expect: { viewer: 404, member: 404 } },
+  { method: 'POST', route: '/import/onenote/jobs/:id/cancel', path: () => `/import/onenote/jobs/${crypto.randomUUID()}/cancel`, expect: { viewer: 404, member: 404 } },
   { method: 'GET', route: '/import/onenote/jobs/:id', path: () => `/import/onenote/jobs/${crypto.randomUUID()}`, expect: { viewer: 404, member: 404 } },
   // Feedback to the admins: any verified, signed-in user (not tied to a workspace).
   { method: 'POST', route: '/feedback', path: () => '/feedback', body: () => ({ message: 'Audit feedback', page: '/w/x/tasks/today', client: { version: 'test', platform: 'web' } }), expect: { stranger: 200, viewer: 200, member: 200 } },

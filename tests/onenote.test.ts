@@ -12,7 +12,7 @@ process.env.MS_CLIENT_ID = 'test-client-id';
 process.env.MS_CLIENT_SECRET = 'test-client-secret';
 
 const FIXTURES = path.join(import.meta.dirname, 'fixtures', 'onenote');
-type Fx = { status?: number; json?: unknown; file?: string; base64?: string; type?: string };
+type Fx = { status?: number; json?: unknown; file?: string; base64?: string; type?: string; location?: string };
 const graph = JSON.parse(fs.readFileSync(path.join(FIXTURES, 'graph.json'), 'utf8')) as Record<string, Fx>;
 
 let app: TestApp;
@@ -20,6 +20,7 @@ let me: TestUser;
 let other: TestUser;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let on: any;
+let defaults: Record<string, number>;
 const calls: { url: string; auth: string | null }[] = [];
 const tokenRequests: Record<string, string>[] = [];
 const sleeps: number[] = [];
@@ -31,6 +32,7 @@ const throttle = new Map<string, number>();
 before(async () => {
   app = await startTestApp();
   on = await import('../server/onenote.ts');
+  defaults = { ...on.limits };
   [me, other] = await Promise.all([app.signUp('OneNoteMe'), app.signUp('OneNoteOther')]);
   on.deps.sleep = async (ms: number) => {
     sleeps.push(ms);
@@ -53,6 +55,7 @@ before(async () => {
     }
     const fx = graph[key];
     assert.ok(fx, `no recorded Graph response for ${key}`);
+    if (fx.location) return new Response(null, { status: fx.status ?? 302, headers: { location: fx.location } });
     if (fx.json !== undefined) return Response.json(fx.json, { status: fx.status ?? 200 });
     const body = fx.file ? fs.readFileSync(path.join(FIXTURES, fx.file)) : Buffer.from(fx.base64!, 'base64');
     return new Response(body, { status: fx.status ?? 200, headers: { 'content-type': fx.type ?? 'application/octet-stream' } });
@@ -61,6 +64,8 @@ before(async () => {
 after(() => app.close());
 beforeEach(async () => {
   on.resetOneNote();
+  Object.assign(on.limits, defaults);
+  hold = null;
   (await import('../server/ratelimit.ts')).resetRateLimits();
   calls.length = 0;
   tokenRequests.length = 0;
@@ -163,8 +168,10 @@ test('connections and jobs belong to the user who signed in', async () => {
   assert.equal((await app.call('GET', `/import/onenote/connections/${conn}/notebooks`, other.token)).status, 404);
   const mine = await app.call('GET', `/import/onenote/connections/${conn}/notebooks`, me.token);
   assert.equal(mine.status, 200);
+  assert.deepEqual(mine.data.account, { name: 'Test Person', email: 'test.person@contoso.example' }, 'shown so the user can confirm it');
+  assert.equal((await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'] })).status, 400, 'the account must be confirmed');
   assert.deepEqual(mine.data.notebooks, [{ id: '0-NB1!1', name: 'Work' }, { id: '0-NB2!2', name: 'Recipes' }]);
-  assert.equal((await app.call('POST', `/import/onenote/connections/${conn}/import`, other.token, { notebookIds: ['0-NB1!1'] })).status, 404);
+  assert.equal((await app.call('POST', `/import/onenote/connections/${conn}/import`, other.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true })).status, 404);
   // A viewer can't import into the workspace.
   await app.call('POST', `/workspaces/${me.wsId}/members`, me.token, { email: other.user.email, role: 'viewer' });
   assert.equal((await app.call('POST', '/import/onenote/start', other.token, { workspaceId: me.wsId })).status, 403);
@@ -177,16 +184,20 @@ test('import: hierarchy, to-dos → tasks, image + attachment → files, malicio
   throttle.set('/me/onenote/pages/0-PG2!101/content', 2); // Graph throttles this page twice
   let release!: () => void;
   hold = new Promise((r) => (release = r));
-  const start = await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'] });
+  const start = await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true });
   assert.equal(start.status, 202, JSON.stringify(start.data));
   // One import at a time, server-wide.
-  const second = await app.call('POST', `/import/onenote/connections/${await connect(other)}/import`, other.token, { notebookIds: ['0-NB1!1'] });
+  const second = await app.call('POST', `/import/onenote/connections/${await connect(other)}/import`, other.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true });
   assert.equal(second.status, 429);
   assert.ok(second.data.error);
+  // ...but OneNote has its own slot: a workspace import isn't blocked by it (garbage body → 400, not 429).
+  const ws = await fetch(`${app.origin}/api/workspaces/import`, { method: 'POST', headers: { authorization: `Bearer ${other.token}`, 'content-type': 'application/zip' }, body: 'not a zip' });
+  assert.equal(ws.status, 400);
   hold = null;
   release();
   const job = await waitForJob(start.data.id);
   assert.equal(job.status, 'done', JSON.stringify(job));
+  assert.equal(job.incomplete, false);
   assert.deepEqual(job.notebooks, { total: 1, done: 1 });
   assert.deepEqual(job.pages, { total: 3, done: 3 });
   assert.equal(job.images, 1);
@@ -254,6 +265,7 @@ test('import: hierarchy, to-dos → tasks, image + attachment → files, malicio
   assert.match(evil, /Click here or there or this\./, 'unsafe links lose the link, the text stays');
   assert.match(evil, /<link [^>]*href="https:\/\/example.org\/ok"[^>]*>link<\/link>/i);
   assert.match(evil, /&lt;3 escaped text stays text|<3 escaped text stays text/);
+  assert.ok(job.warnings.some((w: string) => /couldn't be downloaded/.test(w)), 'a Graph redirect to another host is refused');
   assert.doesNotMatch(evil, /payload\.exe/, 'attachments that are not OneNote resources are dropped');
   assert.equal((db.prepare('SELECT COUNT(*) AS n FROM files WHERE page_id = ?').get(pages(sections[1].id)[0].id) as { n: number }).n, 0);
 });
@@ -270,9 +282,83 @@ test('retryDelay honours Retry-After (seconds or a date) and falls back to backo
 test('Graph throttling past the retry budget fails the page with a warning, not the import', async () => {
   const conn = await connect();
   throttle.set('/me/onenote/pages/0-PG3!200/content', 100);
-  const start = await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'] });
+  const start = await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true });
   const job = await waitForJob(start.data.id);
   assert.equal(job.status, 'done');
   assert.equal(sleeps.length, on.MAX_TRIES - 1);
   assert.ok(job.warnings.some((w: string) => /Pasted from the web.*429/.test(w)), JSON.stringify(job.warnings));
+});
+
+/** Start an import that stays running (Graph throttles a page and the wait blocks) until `release()`. */
+async function heldImport() {
+  let release!: () => void;
+  hold = new Promise((r) => (release = r));
+  throttle.set('/me/onenote/pages/0-PG2!101/content', 1);
+  const conn = await connect();
+  const start = await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true });
+  assert.equal(start.status, 202);
+  for (let i = 0; i < 200 && !sleeps.length; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(sleeps.length, 1, 'the job is waiting on Retry-After');
+  return { id: start.data.id as string, release };
+}
+const notebookNames = async () => {
+  const { db } = await import('../server/db.ts');
+  return (db.prepare('SELECT name FROM notebooks WHERE workspace_id = ? ORDER BY position').all(me.wsId) as { name: string }[]).map((n) => n.name);
+};
+
+test('cancel: owner only; the half-imported notebook is marked "(incomplete)"', async () => {
+  const { id, release } = await heldImport();
+  assert.equal((await app.call('POST', `/import/onenote/jobs/${id}/cancel`, other.token)).status, 404);
+  const c = await app.call('POST', `/import/onenote/jobs/${id}/cancel`, me.token);
+  assert.equal(c.status, 200);
+  release();
+  const job = await waitForJob(id);
+  assert.equal(job.status, 'cancelled');
+  assert.equal(job.incomplete, true);
+  assert.equal(job.imported[0].name, 'Work (incomplete)');
+  assert.ok((await notebookNames()).includes('Work (incomplete)'));
+  assert.ok(job.pages.done < 3, 'it stopped');
+});
+
+test('a job past its deadline ends as "partial", keeping what it imported', async () => {
+  on.limits.jobDeadlineMs = 30;
+  const { id, release } = await heldImport();
+  await new Promise((r) => setTimeout(r, 60));
+  release();
+  const job = await waitForJob(id);
+  assert.equal(job.status, 'partial');
+  assert.equal(job.incomplete, true);
+  assert.match(job.imported[0].name, /\(incomplete\)$/);
+  assert.ok(job.pages.done >= 1, 'pages imported before the deadline stay');
+});
+
+test('budgets: Retry-After waiting per job, files per user per day, sections per job', async () => {
+  on.limits.maxWaitTotalMs = 5000; // Retry-After is 3 s: the second wait would pass it
+  on.limits.dailyUserBytes = 10; // smaller than the image
+  on.limits.maxSections = 1;
+  throttle.set('/me/onenote/pages/0-PG1!100/content', 100);
+  const conn = await connect();
+  const start = await app.call('POST', `/import/onenote/connections/${conn}/import`, me.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true });
+  const job = await waitForJob(start.data.id);
+  assert.equal(job.status, 'done');
+  assert.deepEqual(sleeps, [3000]);
+  assert.ok(job.warnings.some((w: string) => /Weekly sync.*kept throttling/.test(w)), JSON.stringify(job.warnings));
+  assert.ok(job.warnings.some((w: string) => /first 1 sections/.test(w)), JSON.stringify(job.warnings));
+  assert.equal(job.pages.total, 2, 'only the first section');
+
+  // The daily file budget: a second import's image is skipped.
+  throttle.clear();
+  on.limits.maxSections = 500;
+  const again = await app.call('POST', `/import/onenote/connections/${await connect()}/import`, me.token, { notebookIds: ['0-NB1!1'], confirmedAccount: true });
+  const j2 = await waitForJob(again.data.id);
+  assert.equal(j2.images + j2.attachments, 0);
+  assert.ok(j2.warnings.some((w: string) => /at most 0 MB of files a day/.test(w)), JSON.stringify(j2.warnings));
+});
+
+test('at most two Microsoft sign-ins are kept per user', async () => {
+  const a = await connect();
+  const b = await connect();
+  const c = await connect();
+  assert.equal((await app.call('GET', `/import/onenote/connections/${a}/notebooks`, me.token)).status, 404, 'the oldest is dropped');
+  for (const id of [b, c]) assert.equal((await app.call('GET', `/import/onenote/connections/${id}/notebooks`, me.token)).status, 200);
 });

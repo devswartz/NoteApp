@@ -11,7 +11,8 @@ import { Button } from './ui.tsx';
 
 interface Job {
   id: string;
-  status: 'running' | 'done' | 'failed';
+  status: 'running' | 'done' | 'partial' | 'cancelled' | 'failed';
+  incomplete: boolean;
   notebooks: { total: number; done: number };
   pages: { total: number; done: number };
   images: number;
@@ -36,6 +37,8 @@ export function OneNoteImport({ wsId }: { wsId: string }) {
   const [conn, setConn] = useState<string | null>(null);
   const [notebooks, setNotebooks] = useState<{ id: string; name: string }[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [account, setAccount] = useState<{ name: string; email: string } | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -59,8 +62,12 @@ export function OneNoteImport({ wsId }: { wsId: string }) {
     if (v === 'failed') return setMessage('Microsoft sign-in failed. Try again.');
     setConn(v);
     setBusy(true);
-    get<{ notebooks: { id: string; name: string }[] }>(`/import/onenote/connections/${encodeURIComponent(v)}/notebooks`)
-      .then((r) => setNotebooks(r.notebooks))
+    setConfirmed(false);
+    get<{ account: { name: string; email: string } | null; notebooks: { id: string; name: string }[] }>(`/import/onenote/connections/${encodeURIComponent(v)}/notebooks`)
+      .then((r) => {
+        setAccount(r.account);
+        setNotebooks(r.notebooks);
+      })
       .catch(errorToast)
       .finally(() => setBusy(false));
   }, [params, setParams]);
@@ -92,7 +99,7 @@ export function OneNoteImport({ wsId }: { wsId: string }) {
     if (!conn) return;
     setBusy(true);
     try {
-      const j = await post<Job>(`/import/onenote/connections/${encodeURIComponent(conn)}/import`, { notebookIds: [...picked] });
+      const j = await post<Job>(`/import/onenote/connections/${encodeURIComponent(conn)}/import`, { notebookIds: [...picked], confirmedAccount: confirmed });
       setJob(j);
       setNotebooks(null);
       setConn(null);
@@ -124,9 +131,9 @@ export function OneNoteImport({ wsId }: { wsId: string }) {
             </p>
           </>
         )}
-        {job.status === 'done' && (
+        {job.status !== 'running' && (
           <p className="small">
-            Imported {job.pages.done} pages, {job.images} images, {job.attachments} attachments and {job.tasks} tasks into{' '}
+            {job.status === 'done' ? 'Imported' : 'So far:'} {job.pages.done} pages, {job.images} images, {job.attachments} attachments and {job.tasks} tasks into{' '}
             {job.imported.map((n, i) => (
               <span key={n.id}>
                 {i > 0 && ', '}
@@ -137,7 +144,16 @@ export function OneNoteImport({ wsId }: { wsId: string }) {
             <Link to={`/w/${wsId}/notes`}>Open notes</Link> · <Link to={`/w/${wsId}/tasks/today`}>Open tasks</Link>
           </p>
         )}
-        {job.status === 'failed' && <p className="small" role="alert">The import stopped: {job.error}</p>}
+        {job.status === 'running' && (
+          <div>
+            <Button onClick={() => post(`/import/onenote/jobs/${job.id}/cancel`).catch(errorToast)}>Cancel import</Button>
+          </div>
+        )}
+        {job.status !== 'running' && job.status !== 'done' && (
+          <p className="small" role="alert">
+            The import stopped ({job.error ?? job.status}). What was imported so far is kept; notebooks that weren’t finished are marked “(incomplete)”.
+          </p>
+        )}
         {job.warnings.length > 0 && (
           <details className="small">
             <summary>{job.warnings.length} item(s) skipped</summary>
@@ -179,9 +195,15 @@ export function OneNoteImport({ wsId }: { wsId: string }) {
             </label>
           ))}
         </fieldset>
+        <label className="row gap-6 small">
+          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+          <span>
+            This is my Microsoft account: <strong>{account ? `${account.name}${account.email ? ` (${account.email})` : ''}` : 'unknown account'}</strong>
+          </span>
+        </label>
         {limitations}
         <div className="row gap-10">
-          <Button variant="primary" loading={busy} disabled={!picked.size || busy} onClick={() => void start()}>
+          <Button variant="primary" loading={busy} disabled={!picked.size || !confirmed || busy} onClick={() => void start()}>
             Import {picked.size || ''} notebook{picked.size === 1 ? '' : 's'}
           </Button>
           <Button onClick={() => setNotebooks(null)}>Cancel</Button>

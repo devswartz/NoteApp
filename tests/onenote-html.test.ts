@@ -63,3 +63,29 @@ test('the parser tolerates broken markup and decodes entities', () => {
   convertOneNotePage('<a' + ' x'.repeat(200_000));
   assert.ok(Date.now() - t0 < 2000, 'no catastrophic backtracking');
 });
+
+test('pathological 1 MB pages convert in well under a second (no quadratic parsing, nesting capped)', () => {
+  const MB = 1024 * 1024;
+  const fill = (unit: string) => unit.repeat(Math.ceil(MB / unit.length)).slice(0, MB);
+  const cases: Record<string, string> = {
+    'unmatched close tags': fill('<b>').slice(0, MB / 2) + fill('</i>').slice(0, MB / 2),
+    'deep nesting': fill('<b><i>').slice(0, MB / 2) + fill('</b>').slice(0, MB / 2),
+    'implied ends': fill('<li><td><p>x'),
+    'unclosed tags': fill('<a '),
+    'long tag names': '<' + fill('a'),
+    'stray brackets': fill('< <! <? </ <a'),
+    'comments': fill('<!-- x --><!--'),
+    'many titles': fill('<title'),
+    'entities': fill('&aaaaaaaa'),
+    'tables': fill('<table><tr><td>'),
+  };
+  for (const [name, html] of Object.entries(cases)) {
+    const t0 = performance.now();
+    convertOneNotePage(html);
+    const ms = performance.now() - t0;
+    assert.ok(ms < 1000, `${name}: ${Math.round(ms)} ms`);
+  }
+  // Deeper than MAX_DEPTH: flattened, the text survives.
+  const deep = convertOneNotePage(`<body>${'<div>'.repeat(5000)}<p>bottom</p>${'</div>'.repeat(5000)}</body>`);
+  assert.match(JSON.stringify(deep.doc), /bottom/);
+});

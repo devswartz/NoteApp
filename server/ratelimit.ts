@@ -135,7 +135,8 @@ export function resetRateLimits() {
 
 /** Workspace imports running at once, server-wide (each holds up to the body cap plus the unpacked archive). */
 export const MAX_IMPORTS = 1;
-let importsRunning = 0;
+/** Imports running per kind. OneNote imports (#117) have their own slot, so a slow one never blocks a workspace import. */
+const importsRunning = { workspace: 0, onenote: 0 };
 
 /**
  * Admission for POST /workspaces/import, run BEFORE the body is read, so a refused request never buffers it.
@@ -143,10 +144,10 @@ let importsRunning = 0;
  * no loopback exemption (it caps memory, not guessing); RATE_LIMIT=off still turns it off. A refused request
  * costs nothing.
  */
-export function takeImport(userId: string): { wait: number; done: () => void } {
+export function takeImport(userId: string, kind: keyof typeof importsRunning = 'workspace'): { wait: number; done: () => void } {
   const noop = () => {};
   if (process.env.RATE_LIMIT === 'off') return { wait: 0, done: noop };
-  if (importsRunning >= MAX_IMPORTS) return { wait: 5, done: noop };
+  if (importsRunning[kind] >= MAX_IMPORTS) return { wait: 5, done: noop };
   const u = limiters.importUser.take(userId);
   if (u) return { wait: u, done: noop };
   const g = limiters.importGlobal.take('all');
@@ -154,14 +155,14 @@ export function takeImport(userId: string): { wait: number; done: () => void } {
     limiters.importUser.refund(userId);
     return { wait: g, done: noop };
   }
-  importsRunning++;
+  importsRunning[kind]++;
   let ended = false;
   return {
     wait: 0,
     done: () => {
       if (ended) return;
       ended = true;
-      importsRunning--;
+      importsRunning[kind]--;
     },
   };
 }

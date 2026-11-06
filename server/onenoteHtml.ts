@@ -26,7 +26,7 @@ const CLOSES_P = new Set(['p', 'div', 'ul', 'ol', 'table', 'h1', 'h2', 'h3', 'h4
 
 const NAMED: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', bull: '•', copy: '©', reg: '®', trade: '™', euro: '€' };
 export function decodeEntities(s: string): string {
-  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+  return s.replace(/&(#x[0-9a-f]{1,8}|#\d{1,8}|[a-z]{1,32});/gi, (m, e: string) => {
     if (e[0] === '#') {
       const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
       return n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : '';
@@ -46,47 +46,89 @@ function parseAttrs(src: string): Record<string, string> {
   return out;
 }
 
-/** Parse HTML into a tree. Never throws; malformed markup gives a best-effort tree. */
+/** Deepest element nesting kept; deeper elements are flattened into their ancestor (their text and images stay). */
+export const MAX_DEPTH = 256;
+/** Longest tag (from "<" to ">") read as markup; a longer one is treated as text. */
+const MAX_TAG = 8000;
+
+/**
+ * Parse HTML into a tree. Never throws; malformed markup gives a best-effort tree.
+ * Linear in the input: a single forward scan with indexOf (the next ">" is found once and reused), nesting
+ * capped at MAX_DEPTH, and a close tag with no open match is dropped in O(1) via per-tag open counts.
+ */
 export function parseHtml(html: string): HNode {
   const root: HNode = { tag: '#root', attrs: {}, children: [] };
   const stack: HNode[] = [root];
+  const open = new Map<string, number>(); // tag → how many are on the stack
   const top = () => stack[stack.length - 1];
+  const truncate = (i: number) => {
+    for (let k = stack.length - 1; k >= i; k--) open.set(stack[k].tag, open.get(stack[k].tag)! - 1);
+    stack.length = i;
+  };
+  /** Close the innermost open `tag` (not crossing `stopAt`). Bounded by MAX_DEPTH. */
   const popTo = (tag: string, stopAt: string[] = []) => {
+    if (!open.get(tag)) return false;
     for (let i = stack.length - 1; i > 0; i--) {
       if (stopAt.includes(stack[i].tag)) return false;
       if (stack[i].tag === tag) {
-        stack.length = i;
+        truncate(i);
         return true;
       }
     }
     return false;
   };
-  const re = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<![^>]*>|<\?[^>]*>|<\/\s*([a-zA-Z][\w:-]*)\s*>|<([a-zA-Z][\w:-]*)([^>]{0,8000})>/g; // bounded, so a stray "<" can't make this quadratic
-  let last = 0;
-  let m: RegExpExecArray | null;
   const text = (s: string) => {
     if (s) top().children.push({ tag: '#text', attrs: {}, children: [], text: decodeEntities(s) });
   };
-  while ((m = re.exec(html))) {
-    text(html.slice(last, m.index));
-    last = re.lastIndex;
-    if (m[1]) {
-      popTo(m[1].toLowerCase());
+  const n = html.length;
+  let i = 0;
+  let gt = -1; // the next ">" at or after the current "<" (cached: never searched twice)
+  while (i < n) {
+    const lt = html.indexOf('<', i);
+    if (lt < 0) break;
+    text(html.slice(i, lt));
+    if (html.startsWith('<!--', lt)) {
+      const e = html.indexOf('-->', lt + 4);
+      i = e < 0 ? n : e + 3;
       continue;
     }
-    if (!m[2]) continue; // comment, doctype, CDATA, processing instruction
-    const tag = m[2].toLowerCase();
-    let rawAttrs = m[3] ?? '';
+    if (gt < lt) gt = html.indexOf('>', lt);
+    if (gt < 0) {
+      i = lt;
+      break; // no ">" anywhere after this: the rest is text
+    }
+    const c = html.charCodeAt(lt + 1);
+    const isLetter = (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+    const isMarkup = isLetter || c === 47 /* / */ || c === 33 /* ! */ || c === 63; /* ? */
+    if (!isMarkup || gt - lt > MAX_TAG) {
+      text('<'); // "a < b", or an absurdly long "tag": plain text
+      i = lt + 1;
+      continue;
+    }
+    const inner = html.slice(lt + 1, gt);
+    i = gt + 1;
+    if (c === 33 || c === 63) continue; // doctype, CDATA, processing instruction
+    if (c === 47) {
+      const m = /^\/\s*([a-zA-Z][\w:-]{0,64})\s*$/.exec(inner);
+      if (m) popTo(m[1].toLowerCase());
+      continue;
+    }
+    const m = /^([a-zA-Z][\w:-]{0,64})(?=[\s/]|$)/.exec(inner);
+    if (!m) {
+      text(`<${inner}>`);
+      continue;
+    }
+    const tag = m[1].toLowerCase();
+    let rawAttrs = inner.slice(m[1].length);
     const selfClosing = /\/\s*$/.test(rawAttrs);
     if (selfClosing) rawAttrs = rawAttrs.replace(/\/\s*$/, '');
     if (SKIP.has(tag)) {
       // Skip everything up to the matching close tag (raw text: a "<" inside a script isn't markup).
       if (!selfClosing && !VOID.has(tag)) {
         const close = new RegExp(`</\\s*${tag}\\s*>`, 'ig');
-        close.lastIndex = last;
-        const c = close.exec(html);
-        last = c ? close.lastIndex : html.length;
-        re.lastIndex = last;
+        close.lastIndex = i;
+        const e = close.exec(html);
+        i = e ? close.lastIndex : n;
       }
       continue;
     }
@@ -95,11 +137,16 @@ export function parseHtml(html: string): HNode {
     if (tag === 'li') popTo('li', ['ul', 'ol', 'table']);
     if (tag === 'td' || tag === 'th') popTo('td', ['tr', 'table']) || popTo('th', ['tr', 'table']);
     if (tag === 'tr') popTo('tr', ['table']);
+    const leaf = selfClosing || VOID.has(tag);
+    if (!leaf && stack.length > MAX_DEPTH) continue; // too deep: flatten (its content goes to the current element)
     const node: HNode = { tag, attrs: parseAttrs(rawAttrs), children: [] };
     top().children.push(node);
-    if (!selfClosing && !VOID.has(tag)) stack.push(node);
+    if (!leaf) {
+      stack.push(node);
+      open.set(tag, (open.get(tag) ?? 0) + 1);
+    }
   }
-  text(html.slice(last));
+  text(html.slice(i));
   return root;
 }
 
@@ -425,12 +472,21 @@ function trimInline(nodes: PMNode[]): PMNode[] {
   return out.filter((n) => n.type !== 'text' || n.text);
 }
 
+/** The <title> text, found with indexOf (a regex here could be quadratic on many unclosed "<title"). */
+function titleOf(html: string): string {
+  const lower = html.slice(0, 64 * 1024).toLowerCase(); // <title> is in <head>, at the top
+  const a = lower.indexOf('<title');
+  const b = a < 0 ? -1 : lower.indexOf('>', a);
+  const c = b < 0 ? -1 : lower.indexOf('</title', b);
+  return c < 0 ? '' : html.slice(b + 1, c);
+}
+
 /** Convert one OneNote page. `fallbackTitle` is used when the HTML has no <title>. */
 export function convertOneNotePage(html: string, fallbackTitle = ''): Converted {
   const root = parseHtml(html);
   // <title> is inside <head>, which the parser skips, so read it directly.
-  const t = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-  const title = (fallbackTitle || (t ? decodeEntities(t[1]) : '')).replace(/\s+/g, ' ').trim().slice(0, 300) || 'Untitled';
+  const t = fallbackTitle ? '' : titleOf(html);
+  const title = (fallbackTitle || decodeEntities(t)).replace(/\s+/g, ' ').trim().slice(0, 300) || 'Untitled';
   const body = findAll(root, 'body')[0] ?? root;
   const c = new Converter();
   const content = c.blocks(body.children);
