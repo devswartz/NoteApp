@@ -66,14 +66,6 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Open bugs
 
-### BUG-5: a new task left with Escape keeps the quick-add words in its title
-- **Area / owner:** Editor & Notes (`src/editor/TaskRef.tsx`: Escape calls `commit()`, which saves the parsed title, then moves focus out, and the `onBlur` → `commit()` runs again with the stale raw `title` and overwrites it)
-- **Found on:** main @ 3d44a4b, 2026-11-06 (3/3; both "/task" and "Add a task to this page")
-- **Steps:** 1. In a page, start a task (`/task` or "Add a task to this page"). 2. Type `Buy lemons tomorrow p1`. 3. Press Escape.
-- **Expected:** like Enter, the title becomes "Buy lemons", due tomorrow, priority 1.
-- **Actual:** due date and priority are applied, but the title stays "Buy lemons tomorrow p1" (in the note, the dashboard and the server).
-- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a new task left with Escape gets the same cleaned-up title as with Enter" (`test.fixme`)
-
 ### BUG-6 (high): on a slow connection, a quickly entered task loses its title, and Enter-Enter leaves a stray task
 - **Area / owner:** Tasks + Editor (`src/store/tasks.ts` optimistic create/update/delete and `src/editor/TaskRef.tsx`). Title updates and the delete of the empty task are sent while the task's `POST /workspaces/:id/tasks` is still in flight; the server applies them before or without the create, so they're lost.
 - **Found on:** main @ 0c59452, 2026-11-06. Deterministic with 300 ms or more on the create request (phones on mobile data easily see 1–2 s). Also seen without any added latency in about 1 of 4 runs as a client-only phantom "Untitled task".
@@ -99,6 +91,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Fixed bugs
 
+- **BUG-5** (Editor & Notes): a new task left with Escape kept the quick-add words in its title. Fixed by #111; test `10-notes-edge` › "a new task left with Escape gets the same cleaned-up title as with Enter" enabled.
 - **BUG-4** (Collaboration): a change made while the app was still opening its first live-events connection was never shown until a reload. Fixed by #76 (reload once the first hello arrives); test `17-sync-history-account` › "a change made while the app is still connecting its live events is not lost" enabled.
 - **BUG-3** (Editor & Notes): a page title typed just before navigating away was lost (debounced save cancelled on unmount). Fixed by #66; test `10-notes-edge` › "a page title typed just before navigating away is still saved" enabled.
 - **BUG-1** (Foundation, offline/PWA): reloading while offline showed the login screen, so cached notes couldn't open. Fixed by #35 (precached shell, offline cold start, read-only data cache); test `08-offline` › "…still opens after a reload while offline" enabled.
