@@ -108,7 +108,7 @@ export function useShellCommands(wsId: string) {
       (
         [
           ['editor.slash', 'Insert block menu', '/'],
-          ['editor.taskItem', 'New task item', '[ ] space'],
+          ['editor.taskItem', 'New task', '/ task'],
           ['editor.toTask', 'Turn line into task', 'mod+enter'],
           ['editor.bold', 'Bold', 'mod+b'],
           ['editor.italic', 'Italic', 'mod+i'],
