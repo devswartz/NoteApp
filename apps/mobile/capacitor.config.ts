@@ -10,7 +10,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 import { APP_NAME } from '../../shared/config.ts';
 
 /** Bundle id / application id. Changing it makes a new app in the stores. */
-export const APP_ID = 'com.devswartz.noteapp';
+export const APP_ID = 'com.devswartz.notivelo';
 
 const devServer = process.env.CAP_SERVER_URL;
 

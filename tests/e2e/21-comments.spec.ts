@@ -88,6 +88,27 @@ test('@mentioning someone in a comment notifies them (inbox API)', async ({ brow
   await ac.close();
 });
 
-test('notification bell in the app header shows unread mentions', async () => {
-  test.fixme(true, 'waiting for feature: <NotificationBell/> is not mounted in the AppShell yet (UI Shell hook-up, docs/STATUS.md)');
+test('notification bell in the app header shows unread mentions', async ({ page, context, request }) => {
+  const alice = await createUser(request, 'Alice Mentioner');
+  const bob = await createUser(request, 'Bob Mentioned');
+  const teamId = await createTeam(request, alice, [{ user: bob, role: 'member' }]);
+  const { pageId } = await createPage(request, alice, { wsId: teamId, page: 'Launch plan' });
+  // Alice @mentions Bob in a comment on the page.
+  await api(request, 'POST', `/pages/${pageId}/comments`, alice.token, { body: `@[${bob.name}](${bob.id}) can you check the dates?`, quote: '' });
+
+  await signInContext(context, bob);
+  await page.goto(`/w/${teamId}/tasks/today`);
+  const bell = page.getByRole('button', { name: 'Notifications, 1 unread' });
+  await expect(bell).toBeVisible();
+  await bell.click();
+  const item = page.locator('.inbox-row', { hasText: 'mentioned you' });
+  await expect(item).toContainText('Launch plan');
+  await item.click();
+  await expect(page).toHaveURL(new RegExp(`/p/${pageId}`));
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
+
+  // Still reachable while the sidebar is hidden.
+  await page.keyboard.press('ControlOrMeta+Backslash');
+  await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
 });

@@ -1,4 +1,4 @@
-package com.devswartz.noteapp;
+package com.devswartz.notivelo;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
@@ -43,7 +43,7 @@ public class TodayWidgetProvider extends AppWidgetProvider {
     }
 
     private static PendingIntent open(Context context, String path, int requestCode) {
-        Uri uri = Uri.parse(path != null && path.startsWith("/") ? "noteapp:/" + path : "noteapp://");
+        Uri uri = Uri.parse(path != null && path.startsWith("/") ? "notivelo:/" + path : "notivelo://");
         Intent intent = new Intent(Intent.ACTION_VIEW, uri, context, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         return PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
