@@ -2,7 +2,7 @@
 // what the invite is for and sends you to sign in / sign up, remembering the
 // token. Signed in: one click to join. Owner: Collaboration & Access.
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, get, post } from '../../api.ts';
 import { loadWorkspaces, signOut, useStore } from '../../store.ts';
 import { platform } from '../../platform/index.ts';
@@ -25,7 +25,9 @@ export function takePendingInvite(): string | null {
   const raw = platform.kv.get(PENDING_KEY);
   if (!raw) return null;
   platform.kv.remove(PENDING_KEY);
-  const [token, workspaceId] = raw.split(' ');
+  const [token, workspaceId, pageId] = raw.split(' ');
+  // A page invite (#98): sign-up may already have turned it into a share, so the invite page falls back to the page.
+  if (pageId) return `/invite/${token}?page=${encodeURIComponent(pageId)}`;
   if (workspaceId && useStore.getState().workspaces.some((w) => w.id === workspaceId)) return `/w/${workspaceId}`;
   return `/invite/${token}`;
 }
@@ -34,6 +36,7 @@ export function InvitePage() {
   const { token = '' } = useParams();
   const user = useStore((s) => s.user);
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -41,12 +44,22 @@ export function InvitePage() {
   useEffect(() => {
     get<InviteInfo>(`/invites/${encodeURIComponent(token)}`)
       .then(setInfo)
-      .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load this invite'));
-  }, [token]);
+      .catch((e) => {
+        // Already used (sign-up applies page invites for that address): open the page instead.
+        const page = params.get('page');
+        if (user && page && e instanceof ApiError && e.status === 404) return navigate(`/shared/${encodeURIComponent(page)}`, { replace: true });
+        setError(e instanceof ApiError ? e.message : 'Could not load this invite');
+      });
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const accept = async () => {
     setBusy(true);
     try {
+      if (info?.page) {
+        await post(`/invites/${encodeURIComponent(token)}/accept`);
+        navigate(`/shared/${encodeURIComponent(info.page.id)}`, { replace: true });
+        return;
+      }
       if (info && useStore.getState().workspaces.some((w) => w.id === info.workspaceId)) {
         navigate(`/w/${info.workspaceId}`, { replace: true }); // already a member
         return;
@@ -61,7 +74,7 @@ export function InvitePage() {
   };
 
   const signInFirst = () => {
-    platform.kv.set(PENDING_KEY, `${token} ${info?.workspaceId ?? ''}`);
+    platform.kv.set(PENDING_KEY, `${token} ${info?.workspaceId ?? ''}${info?.page ? ` ${info.page.id}` : ''}`);
     navigate('/login', { replace: true });
   };
 
@@ -89,11 +102,23 @@ export function InvitePage() {
           </>
         ) : (
           <>
-            <h1>Join {info.workspaceName}</h1>
-            <p className="muted">
-              {info.invitedByName} invited <strong>{info.email}</strong> to join as {info.role === 'admin' ? 'an' : 'a'}{' '}
-              <strong>{info.role}</strong>.
-            </p>
+            {info.page ? (
+              <>
+                <h1>Open “{info.page.title}”</h1>
+                <p className="muted">
+                  {info.invitedByName} shared a page from {info.workspaceName} with <strong>{info.email}</strong>. You’ll be able to view this
+                  page only, not the rest of the workspace.
+                </p>
+              </>
+            ) : (
+              <>
+                <h1>Join {info.workspaceName}</h1>
+                <p className="muted">
+                  {info.invitedByName} invited <strong>{info.email}</strong> to join as {info.role === 'admin' ? 'an' : 'a'}{' '}
+                  <strong>{info.role}</strong>.
+                </p>
+              </>
+            )}
             {user && user.email.toLowerCase() !== info.email.toLowerCase() ? (
               <>
                 <p className="muted small">
@@ -111,7 +136,7 @@ export function InvitePage() {
               </>
             ) : user ? (
               <button className="btn btn-primary btn-lg invite-cta" disabled={busy} onClick={accept}>
-                {busy ? 'Joining…' : `Join ${info.workspaceName}`}
+                {busy ? (info.page ? 'Opening…' : 'Joining…') : info.page ? 'Open the page' : `Join ${info.workspaceName}`}
               </button>
             ) : (
               <button className="btn btn-primary btn-lg invite-cta" onClick={signInFirst}>
