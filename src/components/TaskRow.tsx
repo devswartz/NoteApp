@@ -124,6 +124,7 @@ export const TaskRow = memo(function TaskRow({
               }}
             >
               {task.title || <span className="muted">Untitled task</span>}
+              {selected && <span className="sr-only"> (selected)</span>}
             </button>
           )}
           <div className="task-meta">
