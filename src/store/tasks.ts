@@ -5,6 +5,16 @@ import { describeDue } from '../lib/format.ts';
 import { set, st } from './state.ts';
 import { errorToast, toast } from './toasts.ts';
 import type { Task, TaskPatch } from '../../shared/types.ts';
+import { TaskWrites } from './taskWrites.ts';
+
+/** Orders each task's create / update / delete requests (see taskWrites.ts, BUG-6). */
+const writes = new TaskWrites<Task, TaskPatch>();
+
+/** The local copy of a task from the server, with edits that are still on their way laid over it. */
+function withUnsaved(t: Task): Task {
+  const o = writes.overlay(t.id);
+  return o ? { ...t, ...o } : t;
+}
 
 export async function loadTasks() {
   const wsId = st().wsId;
@@ -17,10 +27,12 @@ export async function loadTasks() {
 }
 
 export function upsertTask(t: Task) {
+  // A task deleted here stays deleted, even if its create response or an echo arrives later.
+  if (writes.isDeleted(t.id)) return;
   const prev = st().tasks[t.id];
   // Ignore stale echoes older than what we already have.
   if (prev && prev.updatedAt > t.updatedAt) return;
-  set((s) => ({ tasks: { ...s.tasks, [t.id]: t } }));
+  set((s) => ({ tasks: { ...s.tasks, [t.id]: withUnsaved(t) } }));
 }
 
 export function removeTaskLocal(id: string) {
@@ -62,10 +74,12 @@ export async function createTask(input: TaskPatch & { title: string; id?: string
   };
   set((s) => ({ tasks: { ...s.tasks, [id]: optimistic } }));
   try {
-    const t = await post<Task>(`/workspaces/${wsId}/tasks`, { ...input, id });
+    const t = await writes.create(id, () => post<Task>(`/workspaces/${wsId}/tasks`, { ...input, id }));
+    if (writes.isDeleted(id)) return null; // deleted while the create was in flight; the DELETE follows
     upsertTask(t);
     return t;
   } catch (e) {
+    if (writes.isDeleted(id)) return null;
     removeTaskLocal(id);
     errorToast(e);
     return null;
@@ -83,13 +97,16 @@ export async function updateTask(id: string, p: TaskPatch, opts: { silent?: bool
   }
   set((s) => ({ tasks: { ...s.tasks, [id]: optimistic } }));
   try {
-    const t = await patch<Task>(`/tasks/${id}`, p);
-    set((s) => ({ tasks: { ...s.tasks, [id]: t } }));
+    // Waits behind the task's create (and earlier writes); patches queued meanwhile go as one PATCH.
+    const t = await writes.update(id, p, (merged) => patch<Task>(`/tasks/${id}`, merged));
+    if (!t || writes.isDeleted(id)) return; // dropped: the task was deleted or never created
+    set((s) => ({ tasks: { ...s.tasks, [id]: withUnsaved(t) } }));
     if (!opts.silent && p.status === 'done' && prev.recurrence && t.status === 'open') {
       toast(`Recurring task — next due ${describeDue(t.dueDate).toLowerCase()}`);
     }
     return t;
   } catch (e) {
+    if (writes.isDeleted(id) || !st().tasks[id]) return;
     set((s) => ({ tasks: { ...s.tasks, [id]: prev } }));
     errorToast(e);
   }
@@ -120,8 +137,10 @@ export async function deleteTask(id: string) {
   removeTaskLocal(id);
   for (const c of children) removeTaskLocal(c.id); // the server deletes subtasks with their parent
   try {
-    await del(`/tasks/${id}`);
+    // Waits for a create still in flight, so the server never sees DELETE before POST.
+    await writes.remove(id, () => del(`/tasks/${id}`));
   } catch (e) {
+    writes.undelete(id);
     if (prev) set((s) => ({ tasks: { ...s.tasks, [id]: prev, ...Object.fromEntries(children.map((c) => [c.id, c])) } }));
     errorToast(e);
   }

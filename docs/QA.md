@@ -66,18 +66,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Open bugs
 
-### BUG-6 (high): on a slow connection, a quickly entered task loses its title, and Enter-Enter leaves a stray task
-- **Area / owner:** Tasks + Editor (`src/store/tasks.ts` optimistic create/update/delete and `src/editor/TaskRef.tsx`). Title updates and the delete of the empty task are sent while the task's `POST /workspaces/:id/tasks` is still in flight; the server applies them before or without the create, so they're lost.
-- **Found on:** main @ 0c59452, 2026-11-06. Deterministic with 300 ms or more on the create request (phones on mobile data easily see 1–2 s). Also seen without any added latency in about 1 of 4 runs as a client-only phantom "Untitled task".
-- **Steps:** 1. Throttle the network (DevTools → Slow 3G). 2. In a page, "Add a task to this page" (or `/task`). 3. Type a title and press Enter, then Enter again on the new empty task to leave task mode.
-- **Expected:** one task with that title on the page.
-- **Actual:** the task on the page is **untitled** (the title is gone from the note, dashboard and server), and a second **untitled standalone task** remains (the "deleted" empty one). With Escape instead of Enter, the title is lost too. With no throttling, the client sometimes shows a phantom "Untitled task" in My Tasks and +1 on the page badge/sidebar count until a reload.
-- **Suggested direction:** queue a task's PATCH/DELETE behind its pending create (or send the final title in the create when it hasn't gone out yet), and don't re-insert a task the user already deleted when its create answers.
-- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "on a slow connection, a task typed and left quickly keeps its title and leaves no stray task" (`test.fixme`; deterministic: it delays the create by 1.5 s)
-
-## Observations (not filed as bugs)
-
-- **Keyboard selection reaches the editor asynchronously** (ProseMirror reads it on `selectionchange`). Keys pressed within a few ms of a selection change act on the old selection: ⌘K right after Shift+Home opens the palette instead of the link editor, and Enter right after End can replace still-selected text. Humans are too slow to notice; tests wait for the bubble menu to appear or disappear. If it ever shows up in real use, the ⌘K handler could read the DOM selection directly. (2026-11-05, Editor & Notes)
+None open.
 
 <!-- Template:
 ### BUG-N: short title
@@ -91,6 +80,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Fixed bugs
 
+- **BUG-6** (Tasks, high): on a slow connection a quickly entered task lost its title, and Enter-Enter left a stray untitled task (plus a client-only phantom at full speed). Fixed by #115 (each task's writes are ordered behind its create); covered by #115's slow-create tests in `10-notes-edge` (Enter and Escape variants, and the no-phantom test).
 - **BUG-5** (Editor & Notes): a new task left with Escape kept the quick-add words in its title. Fixed by #111; test `10-notes-edge` › "a new task left with Escape gets the same cleaned-up title as with Enter" enabled.
 - **BUG-4** (Collaboration): a change made while the app was still opening its first live-events connection was never shown until a reload. Fixed by #76 (reload once the first hello arrives); test `17-sync-history-account` › "a change made while the app is still connecting its live events is not lost" enabled.
 - **BUG-3** (Editor & Notes): a page title typed just before navigating away was lost (debounced save cancelled on unmount). Fixed by #66; test `10-notes-edge` › "a page title typed just before navigating away is still saved" enabled.
