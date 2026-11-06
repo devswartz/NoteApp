@@ -1,19 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History } from 'lucide-react';
-import { get, patch, del, post } from '../api.ts';
+import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
+import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
+import { useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
+import { saveAsTemplate } from '../editor/userTemplates.ts';
+import { promptDialog } from '../components/shell/dialogs.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
+import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
 import { platform } from '../platform/index.ts';
+import { ENTER, MOD, keyLabel } from '../components/ui.tsx';
 
 export function PageView() {
   const { wsId, pageId } = useParams() as { wsId: string; pageId: string };
@@ -36,6 +42,11 @@ export function PageView() {
   const [editor, setEditor] = useState<Editor | null>(null);
   const isMobile = useIsMobile();
   const [panelOpen, setPanelOpen] = useState(() => platform.kv.get('noteapp.taskPanel') !== '0');
+  // Starting a comment opens the side panel so the composer is visible.
+  const commentPending = useComments((s) => !!s.pending || !!s.activeId);
+  useEffect(() => {
+    if (commentPending) setPanelOpen(true);
+  }, [commentPending]);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
@@ -129,7 +140,7 @@ export function PageView() {
             >
               {isMobile ? <ListTodo size={18} /> : <PanelRight size={18} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} onHistory={() => setHistoryOpen(true)} />}
+            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} />}
           </div>
         </header>
 
@@ -162,7 +173,8 @@ export function PageView() {
         </article>
       </div>
       <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
-      {panelOpen && <PageTasksPanel pageId={pageId} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
+      <CommentHighlights />
+      {panelOpen && <PageTasksPanel pageId={pageId} canComment={!!canEdit} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
     </div>
   );
 }
@@ -234,14 +246,40 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   useEffect(() => {
     if (!focused.current) setTitle(remote);
   }, [remote]);
+  // Title saves are debounced while typing, but a pending save is never dropped: it's flushed
+  // when the page changes or unmounts (navigating away) and when the tab is hidden or closed
+  // (keepalive, so the request outlives the page). BUG-3.
+  const pending = useRef<string | null>(null);
+  const flush = useRef(() => {});
+  flush.current = () => {
+    const next = pending.current;
+    if (next === null) return;
+    pending.current = null;
+    useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title: next } : p)) } }));
+    api(`/pages/${pageId}`, { method: 'PATCH', json: { title: next }, keepalive: true }).catch(errorToast);
+  };
   useEffect(() => {
-    if (title === remote) return;
-    const t = setTimeout(() => {
-      patch(`/pages/${pageId}`, { title }).catch(errorToast);
-      useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title } : p)) } }));
-    }, 400);
+    if (title === remote) {
+      pending.current = null;
+      return;
+    }
+    pending.current = title;
+    const t = setTimeout(() => flush.current(), 400);
     return () => clearTimeout(t);
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const onHide = () => flush.current();
+    const onVisibility = () => document.visibilityState === 'hidden' && flush.current();
+    window.addEventListener('pagehide', onHide);
+    window.addEventListener('beforeunload', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('beforeunload', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush.current(); // unmount: the component is keyed by page id, so this also covers switching pages
+    };
+  }, []);
   useEffect(() => {
     // Auto-size and focus new, empty pages.
     if (ref.current) {
@@ -273,12 +311,38 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({ pageId, wsId, onHistory }: { pageId: string; wsId: string; onHistory: () => void }) {
+function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: string; editor: Editor | null; onHistory: () => void }) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
   const [mode, setMode] = useState<'move' | 'copy'>('move');
   const sectionsOf = (notebookId: string) => tree.sections.filter((s) => s.notebookId === notebookId);
+  const inPrivate = tree.notebooks.find((n) => n.id === tree.sections.find((s) => s.id === current?.sectionId)?.notebookId)?.visibility === 'private';
+  /** "Save as template": a snapshot of the live editor content; the server copies the page's tasks (as new ones) and attachments. */
+  const saveTemplate = async () => {
+    if (!editor) return;
+    const name = await promptDialog({
+      title: 'Save page as template',
+      label: 'Template name',
+      initial: current?.title || 'Untitled',
+      confirmLabel: 'Save template',
+      message: inPrivate
+        ? 'This page is in a private notebook, so only you will see the template. Its tasks become new tasks each time it is used, and attachments are copied.'
+        : 'Everyone in this workspace will be able to see and use this template. Its tasks become new tasks each time it is used (title, priority and subtasks only), and attachments are copied.',
+    });
+    if (!name) return;
+    saveAsTemplate(editor, pageId, name, current?.icon)
+      .then((t) =>
+        toast(
+          t.visibility === 'private'
+            ? inPrivate
+              ? 'Template saved (only you can see it)'
+              : 'Template saved, but only you can see it: it includes private tasks or files'
+            : 'Template saved for the workspace',
+        ),
+      )
+      .catch(errorToast);
+  };
   const run = (sectionId: string, label: string) => {
     if (mode === 'move') {
       if (current?.sectionId === sectionId) return;
@@ -310,8 +374,21 @@ function PageMenu({ pageId, wsId, onHistory }: { pageId: string; wsId: string; o
           >
             Duplicate
           </MenuItem>
+          <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
+            Save as template…
+          </MenuItem>
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
+            Export as Markdown
+          </MenuItem>
+          <MenuItem icon={<Printer size={15} />} onSelect={() => printPage(current?.title ?? '')}>
+            Print / save as PDF
+          </MenuItem>
+          <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
+            Import Markdown…
           </MenuItem>
           <MenuSeparator />
           <div className="seg page-menu-seg" role="tablist">
@@ -402,7 +479,7 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
   );
 }
 
-function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: () => void; mobile: boolean }) {
+function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: string; canComment: boolean; onClose: () => void; mobile: boolean }) {
   const all = useStore((s) => s.tasks);
   const tasks = sortTasks(Object.values(all).filter((t) => t.pageId === pageId));
   const open = tasks.filter((t) => t.status === 'open');
@@ -431,7 +508,7 @@ function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: 
         ))}
         {!tasks.length && (
           <p className="muted small panel-empty">
-            No tasks yet. Type <code>[]</code> in the note, or select text and press <code>⌘↵</code> to turn it into a task.
+            No tasks yet. Type <code>/task</code> in the note, or select text and press <code>{keyLabel(MOD, ENTER)}</code> to turn it into a task.
           </p>
         )}
         {done.length > 0 && (
@@ -441,6 +518,10 @@ function PageTasksPanel({ pageId, onClose, mobile }: { pageId: string; onClose: 
         )}
         {showDone && done.map((t) => <TaskRow key={t.id} task={t} showSource={false} />)}
       </div>
+      <div className="panel-head">
+        <strong>Comments</strong>
+      </div>
+      <CommentsPanel pageId={pageId} canComment={canComment} />
     </aside>
   );
 }

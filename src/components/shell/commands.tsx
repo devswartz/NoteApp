@@ -5,10 +5,12 @@ import {
   CalendarDays,
   CalendarRange,
   CheckCircle2,
+  BookPlus,
   FilePlus,
   Inbox,
   Keyboard,
   ListChecks,
+  MessageSquare,
   NotebookText,
   PanelLeft,
   Plus,
@@ -22,6 +24,8 @@ import { post } from '../../api.ts';
 import { canEditWorkspace, errorToast, toast, ui, useStore } from '../../store.ts';
 import { cycleTheme } from '../../store/ui.ts';
 import { useCommands, type Command } from '../../hooks/useShortcuts.ts';
+import { openNewNotebook } from './NewNotebookDialog.tsx';
+import { openFeedback } from './FeedbackDialog.tsx';
 
 const currentPageId = () => location.pathname.match(/\/p\/([^/?#]+)/)?.[1];
 
@@ -65,6 +69,7 @@ export function useShellCommands(wsId: string) {
         run: () => (useStore.getState().paletteOpen ? ui.closePalette() : ui.openPalette()),
       },
       { id: 'app.shortcuts', title: 'Keyboard shortcuts', group: 'General', keys: '?', icon: <Keyboard size={16} />, run: () => ui.setShortcuts(true) },
+      { id: 'app.feedback', title: 'Send feedback', group: 'General', keywords: 'bug idea suggestion report problem help contact', icon: <MessageSquare size={16} />, run: openFeedback },
       { id: 'app.sidebar', title: 'Toggle sidebar', group: 'General', keys: 'mod+\\', icon: <PanelLeft size={16} />, run: ui.toggleSidebar },
       { id: 'app.theme', title: 'Switch theme (light / dark / system)', group: 'General', keywords: 'dark mode appearance', icon: <SunMoon size={16} />, run: cycleTheme },
       {
@@ -80,6 +85,7 @@ export function useShellCommands(wsId: string) {
           ui.openQuickAdd(pageId ? { pageId } : {});
         },
       },
+      { id: 'notebooks.new', title: 'New notebook…', group: 'Create', keywords: 'template project personal meetings', icon: <BookPlus size={16} />, when: canEditWorkspace, run: openNewNotebook },
       { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note document', icon: <FilePlus size={16} />, when: canEditWorkspace, run: newPage },
       nav('today', 'Today', 't', 'tasks/today', <Sun size={16} />),
       nav('my', 'My Tasks', 'm', 'tasks/my', <Inbox size={16} />),

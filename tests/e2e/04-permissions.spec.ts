@@ -88,8 +88,8 @@ test('a private notebook is hidden from other members', async ({ browser, reques
   await b.goto(`/w/${teamId}/tasks/all`);
   await expect(bSidebar.getByText('Team Wiki')).toBeVisible();
   const nbRow = a.locator('.sb-row', { hasText: 'Alice Diary' });
-  await nbRow.hover();
-  await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
+  // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
+  await nbRow.locator('.sb-label').click({ button: 'right' });
   await a.getByRole('menuitem', { name: 'Share with workspace' }).click();
   await expect(bSidebar.getByText('Alice Diary')).toBeVisible();
   await ac.close();

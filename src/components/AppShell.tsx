@@ -5,9 +5,12 @@ import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
 import { DialogHost } from './shell/dialogs.tsx';
+import { NewNotebookHost } from './shell/NewNotebookDialog.tsx';
+import { FeedbackHost } from './shell/FeedbackDialog.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { NotificationBell } from './sharing/NotificationBell.tsx';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
@@ -51,9 +54,12 @@ export function AppShell() {
       <Sidebar />
       <main className="main">
         {isMobile ? <MobileTopBar /> : !sidebarOpen && (
-          <IconButton label="Show sidebar" shortcut={`${MOD}\\`} className="sidebar-reveal" onClick={ui.toggleSidebar}>
-            <PanelLeftOpen size={18} />
-          </IconButton>
+          <div className="sidebar-reveal">
+            <IconButton label="Show sidebar" shortcut={`${MOD}\\`} onClick={ui.toggleSidebar}>
+              <PanelLeftOpen size={18} />
+            </IconButton>
+            <NotificationBell />
+          </div>
         )}
         <div className="route" key={routeKey}>
           <Outlet />
@@ -65,6 +71,8 @@ export function AppShell() {
       <CommandPalette />
       <ShortcutsHelp />
       <DialogHost />
+      <NewNotebookHost />
+      <FeedbackHost />
     </div>
   );
 }

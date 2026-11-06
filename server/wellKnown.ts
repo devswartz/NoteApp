@@ -8,7 +8,7 @@
 // API URLs always stay in the browser. See docs/MOBILE.md.
 import { Router } from 'express';
 
-export const DEFAULT_APP_ID = 'com.devswartz.noteapp';
+export const DEFAULT_APP_ID = 'com.devswartz.notivelo';
 
 export interface WellKnownConfig {
   teamId: string | null;
