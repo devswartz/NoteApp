@@ -50,14 +50,11 @@ export interface Platform {
     subscribe(onLink: (url: string) => void): () => void;
   };
 
+  /** Hand the user a file to keep (download on the web, a save dialog in the shells). */
+  saveFile(name: string, data: Blob): Promise<void>;
+
   /** Let the user pick files. Resolves to [] if they cancel. */
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
-
-  /**
-   * Save a file to the user's device (a download on the web). Optional: shells
-   * without it get a clipboard fallback from the caller.
-   */
-  saveFile?(name: string, data: Blob): Promise<void>;
 
   /**
    * New app versions. Web: a new service worker is waiting; Tauri: the

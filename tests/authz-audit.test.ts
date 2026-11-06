@@ -167,6 +167,9 @@ const ROWS: Row[] = [
   { method: 'DELETE', route: '/workspaces/:id/members/:userId', path: (f) => `/workspaces/${f.ws}/members/${f.target}`, expect: ADMIN },
   { method: 'POST', route: '/workspaces/:id/invites/:email/resend', path: (f) => `/workspaces/${f.ws}/invites/${encodeURIComponent(f.email)}/resend`, expect: ADMIN },
   { method: 'DELETE', route: '/workspaces/:id/invites/:email', path: (f) => `/workspaces/${f.ws}/invites/${encodeURIComponent(f.email)}`, expect: ADMIN },
+  // Export is owner/admin only; import makes a new workspace for whoever uploads (garbage here, so 400 once signed in).
+  { method: 'GET', route: '/workspaces/:id/export', path: (f) => `/workspaces/${f.ws}/export`, expect: ADMIN },
+  { method: 'POST', route: '/workspaces/import', raw: true, path: () => '/workspaces/import', expect: { stranger: 400, viewer: 400, member: 400 } },
   { method: 'GET', route: '/workspaces/:id/tree', path: (f) => `/workspaces/${f.ws}/tree`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/search', path: (f) => `/workspaces/${f.ws}/search?q=page`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/tasks', path: (f) => `/workspaces/${f.ws}/tasks`, expect: READ },
