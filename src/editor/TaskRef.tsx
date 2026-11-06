@@ -151,7 +151,15 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   const members = useStore((s) => s.members);
   const me = useStore((s) => s.user?.id ?? '');
   const editable = editor.isEditable;
-  const [title, setTitle] = useState(task?.title ?? '');
+  const [title, setTitleState] = useState(task?.title ?? '');
+  // The latest title, readable synchronously: Escape/arrows commit and then blur the input
+  // in the same tick, and the blur's commit must see the cleaned-up title, not the raw text
+  // from this render's closure (BUG-5).
+  const titleRef = useRef(title);
+  const setTitle = (v: string) => {
+    titleRef.current = v;
+    setTitleState(v);
+  };
   const inputRef = useRef<HTMLInputElement>(null);
   const focused = useRef(false);
 
@@ -190,7 +198,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   const pos = () => (typeof getPos === 'function' ? getPos() : undefined);
 
   const commit = () => {
-    const trimmed = title.trim();
+    const trimmed = titleRef.current.trim();
     if (freshTasks.has(id) && trimmed) {
       freshTasks.delete(id);
       const p = parseQuickAdd(trimmed);
