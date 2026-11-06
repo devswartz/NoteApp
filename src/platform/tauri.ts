@@ -1,4 +1,4 @@
-// Tauri (desktop: macOS, Windows) implementation of the platform adapter.
+// Tauri (desktop: macOS, Windows, Linux) implementation of the platform adapter.
 // Loaded only inside the desktop app, by a dynamic import in index.ts, so the
 // web bundle never carries @tauri-apps/*. The Rust side is apps/desktop/src-tauri.
 //
@@ -13,7 +13,9 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { getCurrent as getCurrentDeepLinks, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import type { NotificationPermission, Platform } from './types.ts';
 import { webPlatform } from './web.ts';
+import { isApple } from '../hooks/useShortcuts.ts';
 import { navigateTo, runMenuCommand } from './tauri/commands.ts';
+import { registerMenulessCommands } from './tauri/menuless.ts';
 import { serverInfo, showServerSetup } from './tauri/serverSetup.ts';
 import { createClickTracker } from './tauri/notificationClicks.ts';
 
@@ -73,6 +75,9 @@ export const tauriPlatform: Platform = {
       deliverLinks(urls);
     });
 
+    // macOS has a native menu; elsewhere its shortcuts and menu-only actions are registered here.
+    if (!isApple) registerMenulessCommands();
+
     // App menu and tray items run commands from the web app's command registry.
     void listen<string>('menu-command', ({ payload }) => runMenuCommand(payload));
     void listen<string>('open-path', ({ payload }) => {
@@ -84,6 +89,7 @@ export const tauriPlatform: Platform = {
     // After the app has rendered: keep the dock badge / tray count in sync and check for updates.
     setTimeout(() => {
       void import('./tauri/badge.ts').then((m) => m.startBadgeSync());
+      if (!isApple) void import('./tauri/menuless.ts').then((m) => m.startWindowThemeSync());
       void import('./tauri/updates.ts').then((m) => m.checkForUpdates({ interactive: false }));
     }, 0);
   },

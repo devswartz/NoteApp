@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { dismissToast, ui, useStore } from '../store.ts';
 import { useState } from 'react';
 import { Kbd, Modal } from './ui.tsx';
+import { openFeedback } from './shell/FeedbackDialog.tsx';
 import { formatKeys, isEnabled, useCommandList, type Command } from '../hooks/useShortcuts.ts';
 
 export function Toasts() {
@@ -67,6 +68,21 @@ export function ShortcutList({ filter = '', columns = true }: { filter?: string;
           ))}
         </div>
       ))}
+      <div className="shortcut-group">
+        <h4>Help</h4>
+        <p className="small">
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              ui.setShortcuts(false);
+              openFeedback();
+            }}
+          >
+            Send feedback
+          </button>
+        </p>
+      </div>
       <div className="shortcut-group">
         <h4>Quick add language</h4>
         <p className="muted small">

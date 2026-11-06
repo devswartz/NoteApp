@@ -32,7 +32,7 @@ adminRoutes.get(
       memoryMb: { rss: Math.round(mem.rss / 1e6), heapUsed: Math.round(mem.heapUsed / 1e6) },
       db: {
         bytes: DB_FILE === ':memory:' ? 0 : fileSize(DB_FILE) + fileSize(`${DB_FILE}-wal`),
-        users: count('SELECT COUNT(*) AS n FROM users'),
+        users: count("SELECT COUNT(*) AS n FROM users WHERE id <> 'deleted-user'"),
         workspaces: count('SELECT COUNT(*) AS n FROM workspaces'),
         notebooks: count('SELECT COUNT(*) AS n FROM notebooks'),
         pages: count('SELECT COUNT(*) AS n FROM pages'),

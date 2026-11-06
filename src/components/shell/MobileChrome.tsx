@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { BookOpen, Inbox, Menu, Plus, Search, Sun } from 'lucide-react';
 import { ui, useStore } from '../../store.ts';
+import { NotificationBell } from '../sharing/NotificationBell.tsx';
 
 const VIEW_TITLES: Record<string, string> = {
   today: 'Today',
@@ -81,9 +82,12 @@ export function MobileTopBar() {
           <span className="truncate">{ws?.name}</span>
         )}
       </div>
-      <button className="btn-ghost icon-btn touch" onClick={ui.openPalette} aria-label="Search">
-        <Search size={20} />
-      </button>
+      <div className="mobile-top-actions">
+        <NotificationBell size={20} />
+        <button className="btn-ghost icon-btn touch" onClick={ui.openPalette} aria-label="Search">
+          <Search size={20} />
+        </button>
+      </div>
     </header>
   );
 }

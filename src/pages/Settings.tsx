@@ -6,7 +6,7 @@
 //   Notifications → Recurrence & Reminders (NotificationSettingsPanel)
 //   Members       → Collaboration & Access (MembersPanel)
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Trash2, User, Users, Building2 } from 'lucide-react';
 import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
@@ -20,6 +20,7 @@ import { platform, detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
 import { AvatarColorPicker, ChangePasswordForm } from '../components/AccountSettings.tsx';
 import { WorkspaceData } from '../components/WorkspaceData.tsx';
+import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
 
 
 interface SectionDef {
@@ -209,6 +210,7 @@ function ProfileSection() {
           Sign out
         </Button>
       </Card>
+      <DeleteAccountCard />
     </>
   );
 }
@@ -328,6 +330,10 @@ function AboutSection() {
         <dd>{server ?? '…'}</dd>
         <dt>Platform</dt>
         <dd>{detectPlatform()}</dd>
+        <dt>Legal</dt>
+        <dd>
+          <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link>
+        </dd>
       </dl>
     </Card>
   );

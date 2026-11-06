@@ -15,7 +15,7 @@ export const DEMO_USERS = [
 
 /** Returns true if it seeded. Does nothing unless the DB has no users. */
 export function seedDemoIfEmpty(): boolean {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number };
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM users WHERE id <> 'deleted-user'").get() as { n: number };
   if (n > 0) return false;
   const password = process.env.DEMO_PASSWORD || crypto.randomBytes(9).toString('base64url');
   const hash = bcrypt.hashSync(password, 10);

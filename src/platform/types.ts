@@ -44,7 +44,7 @@ export interface Platform {
   openExternal(url: string): void;
 
   deepLinks: {
-    /** The link the app was launched with, if any (e.g. noteapp://page/<id>). */
+    /** The link the app was launched with, if any (e.g. notivelo://page/<id>). */
     initial(): Promise<string | null>;
     /** Links received while running. Returns an unsubscribe function. */
     subscribe(onLink: (url: string) => void): () => void;

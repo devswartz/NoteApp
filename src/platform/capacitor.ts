@@ -6,11 +6,11 @@
 //   secure storage     Keychain (iOS) / Keystore-encrypted prefs (Android) for the refresh token
 //   notifications      local notifications for in-app reminders; APNs/FCM push registered with
 //                      the server after sign-in; tapping either deep-links to the task
-//   deep links         noteapp://… and https://notes.devswartz.com/w/… (universal/app links)
+//   deep links         notivelo://… and https://notes.devswartz.com/w/… (universal/app links)
 //   app badge          number of my open tasks due today or overdue
 //   Today widget       a snapshot of those tasks for the iOS WidgetKit / Android home-screen widget
 //   haptics            light tap on checkbox toggles and [data-haptic] elements; platform.haptics
-//   share capture      "Share to NoteApp" (iOS Share Extension, Android share targets): a task opens
+//   share capture      "Share to Notivelo" (iOS Share Extension, Android share targets): a task opens
 //                      quick add prefilled, a note becomes a new page in the workspace's Inbox section
 //   server             first-run "Connect to a server" screen and "Change server…" (platform.server),
 //                      same rules as the desktop app (src/platform/serverUrl.ts)
@@ -136,7 +136,7 @@ export function notificationLink(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
   const url = (data as { url?: unknown }).url;
   if (typeof url !== 'string' || !url.startsWith('/') || url.startsWith('//')) return null;
-  return `noteapp:/${url}`;
+  return `notivelo:/${url}`;
 }
 
 /** Notification ids must be positive 32-bit ints (Android); derive a stable one from a tag. */
@@ -296,7 +296,7 @@ const SERVER_CONFIRMED_KEY = 'noteapp.serverConfirmed';
 /** The server baked into this build (npm run mobile:sync → MOBILE_SERVER_URL). */
 const BUILD_SERVER = (import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '') || null;
 
-/** Is there a NoteApp server at this address? (GET /api/health → {ok:true}) */
+/** Is there a Notivelo server at this address? (GET /api/health → {ok:true}) */
 export async function probeServer(url: string, doFetch: typeof fetch = fetch, timeoutMs = 8000): Promise<boolean> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
@@ -685,7 +685,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
           console.warn('Could not save the shared item', e);
           return null;
         });
-        if (path) emitLink(`noteapp:/${path}`);
+        if (path) emitLink(`notivelo:/${path}`);
       }
     } finally {
       draining = false;

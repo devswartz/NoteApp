@@ -3,6 +3,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ApiError } from '../api.ts';
 import { errorToast } from '../store.ts';
+import { reportReactError } from '../lib/errorReporting.ts';
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,7 @@ export class ErrorBoundary extends Component<Props, { error: Error | null; key?:
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Render error', error, info.componentStack);
+    reportReactError(error, info.componentStack);
   }
 
   render() {

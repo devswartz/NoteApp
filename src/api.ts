@@ -8,6 +8,7 @@
 //   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
 //   tab and serialized across tabs, each reading the latest stored token.
 import type { AuthSession } from '../shared/types.ts';
+import { EMAIL_UNVERIFIED } from '../shared/config.ts';
 import { detectPlatform, platform } from './platform/index.ts';
 import { storedServerUrl } from './platform/serverUrl.ts';
 
@@ -146,9 +147,12 @@ export async function freshAccessToken(): Promise<string | null> {
 export class ApiError extends Error {
   /** Server request id (X-Request-Id), to match a report with the server log. */
   requestId?: string;
-  constructor(public status: number, message: string, requestId?: string | null) {
+  /** Stable machine-readable code from the server, e.g. 'email_unverified'. */
+  code?: string;
+  constructor(public status: number, message: string, requestId?: string | null, code?: string) {
     super(message);
     this.requestId = requestId ?? undefined;
+    this.code = code;
   }
 }
 
@@ -186,8 +190,17 @@ export function setUnauthorizedHandler(fn: () => void) {
 /** Called when the session is gone for good (refresh token rejected). */
 export const notifyUnauthorized = () => onUnauthorized();
 
+let onEmailUnverified: () => void = () => {};
+/** Called when the server answers 403 `email_unverified`: the app then shows its "check your email" screen. */
+export function setEmailUnverifiedHandler(fn: () => void) {
+  onEmailUnverified = fn;
+}
+
 export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}, retry = true): Promise<T> {
-  const isAuth = path.startsWith('/auth/');
+  // /auth/* are the public sign-in endpoints (no token), except asking for a new confirmation email, which needs one.
+  // Account deletion (/auth/account…) is signed in too, and its 401 means "wrong password", not "session over".
+  const signedIn = path === '/auth/resend-verification' || path.startsWith('/auth/account');
+  const isAuth = path.startsWith('/auth/') && !signedIn;
   const headers = new Headers(init.headers);
   const token = isAuth ? null : await freshAccessToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -197,12 +210,15 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     body = JSON.stringify(init.json);
   }
   const res = await fetchWithRetry(apiUrl(path), { ...init, headers, body });
-  if (res.status === 401 && !isAuth) {
+  if (res.status === 401 && !isAuth && !path.startsWith('/auth/account')) {
     if (retry && (await refreshSession().catch(() => null))) return api<T>(path, init, false);
     onUnauthorized();
   }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`, data?.requestId ?? res.headers.get('x-request-id'));
+  if (!res.ok) {
+    if (res.status === 403 && data?.code === EMAIL_UNVERIFIED) onEmailUnverified();
+    throw new ApiError(res.status, data?.error ?? `Request failed (${res.status})`, data?.requestId ?? res.headers.get('x-request-id'), data?.code);
+  }
   return data as T;
 }
 

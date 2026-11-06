@@ -55,6 +55,10 @@ export function attachEvents(wss: WebSocketServer) {
       ws.close(4401, 'Unauthorized');
       return;
     }
+    if (!auth.user.emailVerified) {
+      ws.close(4403, 'Email not verified');
+      return;
+    }
     addClient(auth.user.id, ws);
     // Close when the access token lapses; the client refreshes, reconnects and catches up.
     const expiry = setTimeout(() => {
@@ -91,6 +95,14 @@ function catchUp(ws: WebSocket, userId: string, since: { boot: string; seq: numb
     if (e.seq <= since.seq) continue;
     const msg = messageFor(userId, e);
     if (msg) raw(ws, msg);
+  }
+}
+
+/** Close every event socket of one user (their account was deleted). 4401 = unauthorized: the client can't get a session back. */
+export function closeUserEvents(userId: string) {
+  for (const ws of [...(clients.get(userId) ?? [])]) {
+    ws.close(4401, 'Account deleted');
+    setTimeout(() => ws.readyState !== WebSocket.CLOSED && ws.terminate(), 2000).unref();
   }
 }
 
