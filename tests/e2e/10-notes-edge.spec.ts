@@ -147,3 +147,28 @@ test('a new task left with Escape gets the same cleaned-up title as with Enter',
   // And it stays that way (no late overwrite with the raw text).
   await expect(page.locator('.task-ref-title')).toHaveValue('Buy lemons');
 });
+
+test('on a slow connection, a task typed and left quickly keeps its title and leaves no stray task', async ({ page, context, request }) => {
+  test.fixme(true, 'BUG-6 (docs/QA.md): if the title is committed before the task create has answered, the title is lost and Enter-Enter leaves a stray untitled task');
+  const user = await createUser(request, 'Slow Link');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  // A phone on a slow network: creating a task takes 1.5 s to answer.
+  await page.route(/\/api\/workspaces\/[^/]+\/tasks$/, async (route) => {
+    if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, 1_500));
+    await route.continue();
+  });
+  await page.getByRole('button', { name: 'Add a task to this page' }).click();
+  await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+  await page.keyboard.type('Call the plumber', { delay: 60 }); // human typing speed
+  await page.keyboard.press('Enter'); // commit + new empty task
+  await expect(page.locator('.task-ref-title:focus')).toHaveValue('');
+  await page.keyboard.press('Enter'); // empty task + Enter: leave task mode (deletes the empty one)
+  await eventually(
+    () => listTasks(request, user),
+    (ts) => ts.filter((t) => t.pageId === pageId).map((t) => t.title).join('|') === 'Call the plumber' && !ts.some((t) => t.title === ''),
+    'one titled task on the page and no stray untitled task',
+    15_000,
+  );
+});

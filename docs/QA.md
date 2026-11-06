@@ -62,6 +62,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 27 | Editor extras (#21): page icon (page, sidebar, saved), ⌘K on a selection adds a link (kept after reload), ⌘K without a selection opens the palette; attachment renders as a file card with size and a working download | `27-editor-extras.spec.ts` | ✅ |
 | 28 | Verification × invites (`verify-email`): an invited person who signs up unverified isn't a member yet (invite still pending, the team URL shows "Check your email"); confirming applies the invite and they land in the team | `28-verify-invites.verify.spec.ts` | ✅ |
 | 29 | Template privacy: a page in a private notebook (with a task) is saved as a private template (dialog says so, other members don't get it); a shared-notebook page is a workspace template other members see | `29-template-privacy.spec.ts` | ✅ |
+| 30 | Page panel (#99) live: adding a task bumps the toolbar count without opening the panel; another member completing it lowers the count live; a member's new comment shows "Comments (1 open)" live; starting a comment opens the Comments tab; the badge opens it | `30-page-panel-live.spec.ts` | ✅ |
 
 ## Open bugs
 
@@ -72,6 +73,15 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 - **Expected:** like Enter, the title becomes "Buy lemons", due tomorrow, priority 1.
 - **Actual:** due date and priority are applied, but the title stays "Buy lemons tomorrow p1" (in the note, the dashboard and the server).
 - **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a new task left with Escape gets the same cleaned-up title as with Enter" (`test.fixme`)
+
+### BUG-6 (high): on a slow connection, a quickly entered task loses its title, and Enter-Enter leaves a stray task
+- **Area / owner:** Tasks + Editor (`src/store/tasks.ts` optimistic create/update/delete and `src/editor/TaskRef.tsx`). Title updates and the delete of the empty task are sent while the task's `POST /workspaces/:id/tasks` is still in flight; the server applies them before or without the create, so they're lost.
+- **Found on:** main @ 0c59452, 2026-11-06. Deterministic with 300 ms or more on the create request (phones on mobile data easily see 1–2 s). Also seen without any added latency in about 1 of 4 runs as a client-only phantom "Untitled task".
+- **Steps:** 1. Throttle the network (DevTools → Slow 3G). 2. In a page, "Add a task to this page" (or `/task`). 3. Type a title and press Enter, then Enter again on the new empty task to leave task mode.
+- **Expected:** one task with that title on the page.
+- **Actual:** the task on the page is **untitled** (the title is gone from the note, dashboard and server), and a second **untitled standalone task** remains (the "deleted" empty one). With Escape instead of Enter, the title is lost too. With no throttling, the client sometimes shows a phantom "Untitled task" in My Tasks and +1 on the page badge/sidebar count until a reload.
+- **Suggested direction:** queue a task's PATCH/DELETE behind its pending create (or send the final title in the create when it hasn't gone out yet), and don't re-insert a task the user already deleted when its create answers.
+- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "on a slow connection, a task typed and left quickly keeps its title and leaves no stray task" (`test.fixme`; deterministic: it delays the create by 1.5 s)
 
 ## Observations (not filed as bugs)
 
