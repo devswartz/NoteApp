@@ -325,6 +325,64 @@
   .ProseMirror .code-block pre { padding-top: 12px; }
 }
 
+/* ───────── Full width & outline ───────── */
+.page-scroll { position: relative; container-type: inline-size; }
+.page-article.is-full { max-width: none; padding-left: clamp(48px, 7vw, 120px); padding-right: clamp(48px, 7vw, 120px); }
+.page-toc-rail { position: absolute; top: 0; bottom: 0; right: 0; width: 220px; pointer-events: none; }
+.page-toc {
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  margin-right: 16px;
+  padding: 4px 0;
+  pointer-events: auto;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.page-toc:hover, .page-toc:focus-within { opacity: 1; }
+.page-toc-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 0 8px 6px; }
+.page-toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.35;
+  padding: 4px 8px;
+  border-radius: 5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 2px solid transparent;
+}
+.page-toc-item:hover { background: var(--bg-hover); color: var(--text); }
+.page-toc-item.is-active { color: var(--accent); border-left-color: var(--accent); border-radius: 0 5px 5px 0; }
+/* Not enough room beside the 760px column: a strip of bars at the edge that expands on hover. */
+@container (max-width: 1220px) {
+  .page-toc-rail { width: 36px; }
+  .page-toc { margin-right: 8px; opacity: 1; width: 28px; }
+  .page-toc-title { display: none; }
+  .page-toc-item { font-size: 0; height: 12px; padding: 5px 4px !important; border-left: 0; background: none !important; }
+  .page-toc-item::before { content: ''; display: block; height: 2px; width: 16px; margin-left: auto; border-radius: 1px; background: var(--border-strong); }
+  .page-toc-item.is-active::before { background: var(--accent); }
+  .page-toc:hover, .page-toc:focus-within {
+    width: 240px;
+    margin-left: -204px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 6px;
+  }
+  .page-toc:hover .page-toc-title, .page-toc:focus-within .page-toc-title { display: block; }
+  .page-toc:hover .page-toc-item, .page-toc:focus-within .page-toc-item { font-size: 12.5px; height: auto; padding: 4px 8px !important; }
+  .page-toc:hover .page-toc-item:hover, .page-toc:focus-within .page-toc-item:hover { background: var(--bg-hover) !important; }
+  .page-toc:hover .page-toc-item::before, .page-toc:focus-within .page-toc-item::before { display: none; }
+}
+@container (max-width: 700px) { .page-toc-rail { display: none; } }
+@media print { .page-toc-rail { display: none !important; } .page-article.is-full { padding: 0; } }
+
 /* ───────────── Page panel: toolbar badges, tabs, phone sheet (#99) ───────────── */
 .panel-toggle { position: relative; }
 .panel-badge {
