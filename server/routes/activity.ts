@@ -12,7 +12,7 @@
 // tasks the reader can't see.
 import { Router, type Request, type RequestHandler } from 'express';
 import { db, now } from '../db.ts';
-import { NOTEBOOK_VISIBLE, TASK_VISIBLE, requireRole } from '../access.ts';
+import { NOTEBOOK_VISIBLE, TASK_VISIBLE, pageSharedSql, requireRole } from '../access.ts';
 import { publish } from '../events.ts';
 import { onPageSaved } from '../collab.ts';
 import { h, param } from '../http.ts';
@@ -460,6 +460,8 @@ activityRoutes.get(
            AND (a.actor_id = @userId OR (
              (a.notebook_id IS NULL
                OR EXISTS (SELECT 1 FROM notebooks n WHERE n.id = a.notebook_id AND ${NOTEBOOK_VISIBLE})
+               -- a page shared with them (#98): its edits and renames, not moves (those name its sections)
+               OR (a.target_type = 'page' AND a.verb IN ('edited', 'renamed') AND ${pageSharedSql('a.target_id')})
                OR (a.private = 0 AND NOT EXISTS (SELECT 1 FROM notebooks n2 WHERE n2.id = a.notebook_id)))
              AND (a.task_id IS NULL
                OR EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.task_id AND ${TASK_VISIBLE})

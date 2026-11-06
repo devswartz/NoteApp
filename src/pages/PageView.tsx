@@ -108,7 +108,18 @@ export function PageView() {
       if (el || ++tries > 30) {
         clearInterval(iv);
         if (el) {
-          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (editor.view.dom.classList.contains('is-long')) {
+            // Long pages skip rendering off-screen blocks (estimated heights), so one smooth
+            // scroll can miss: jump, then re-settle for a few frames as real sizes come in.
+            let frames = 0;
+            const settle = () => {
+              el.scrollIntoView({ block: 'center' });
+              if (++frames < 4) requestAnimationFrame(settle);
+            };
+            settle();
+          } else {
+            el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
           el.classList.add('flash');
           setTimeout(() => el.classList.remove('flash'), 1800);
         }
@@ -156,22 +167,23 @@ export function PageView() {
             <button
               className={`btn-ghost icon-btn panel-toggle ${panel === 'tasks' ? 'is-active' : ''}`}
               title="Tasks on this page"
-              aria-label={`Tasks on this page${openTasks ? ` (${openTasks} open)` : ''}`}
               aria-pressed={panel === 'tasks'}
               onClick={() => togglePanel('tasks')}
             >
-              <ListTodo size={18} />
-              {openTasks > 0 && <span className="panel-badge" aria-hidden>{openTasks > 99 ? '99+' : openTasks}</span>}
+              <ListTodo size={18} aria-hidden />
+              {/* The name comes from the content so it contains the visible count (axe: label-content-name-mismatch). */}
+              <span className="sr-only">Tasks on this page</span>
+              {openTasks > 0 && <PanelBadge n={openTasks} />}
             </button>
             <button
               className={`btn-ghost icon-btn panel-toggle ${panel === 'comments' ? 'is-active' : ''}`}
               title="Comments"
-              aria-label={`Comments${openThreads ? ` (${openThreads} open)` : ''}`}
               aria-pressed={panel === 'comments'}
               onClick={() => togglePanel('comments')}
             >
-              <MessageSquare size={18} />
-              {openThreads > 0 && <span className="panel-badge" aria-hidden>{openThreads > 99 ? '99+' : openThreads}</span>}
+              <MessageSquare size={18} aria-hidden />
+              <span className="sr-only">Comments</span>
+              {openThreads > 0 && <PanelBadge n={openThreads} />}
             </button>
             {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} fullWidth={fullWidth} onFullWidth={setFullWidth} />}
           </div>
@@ -344,21 +356,25 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({
-  pageId,
-  wsId,
-  editor,
-  onHistory,
-  fullWidth,
-  onFullWidth,
-}: {
+/** The page "⋯" menu. Its items are a separate component so they're only built while the menu is open. */
+function PageMenu(props: PageMenuProps) {
+  return (
+    <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
+      {() => <PageMenuItems {...props} />}
+    </Dropdown>
+  );
+}
+
+type PageMenuProps = {
   pageId: string;
   wsId: string;
   editor: Editor | null;
   onHistory: () => void;
   fullWidth: boolean;
   onFullWidth: (v: boolean) => void;
-}) {
+};
+
+function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -405,8 +421,6 @@ function PageMenu({
     }
   };
   return (
-    <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
-      {() => (
         <div className="menu page-menu">
           <MenuItem
             icon={<Copy size={15} />}
@@ -481,8 +495,6 @@ function PageMenu({
             Delete page
           </MenuItem>
         </div>
-      )}
-    </Dropdown>
   );
 }
 
@@ -526,6 +538,18 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
         </Link>
       ))}
     </section>
+  );
+}
+
+/** Open-item count on a toolbar button; reads as "(3 open)" to screen readers. */
+function PanelBadge({ n }: { n: number }) {
+  return (
+    <>
+      <span className="sr-only"> ({n} open)</span>
+      <span className="panel-badge" aria-hidden>
+        {n > 99 ? '99+' : n}
+      </span>
+    </>
   );
 }
 

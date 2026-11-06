@@ -166,3 +166,77 @@ test('leaving a new task with an arrow key also cleans up the title (BUG-5)', as
   await page.waitForTimeout(500);
   expect((await listTasks(request, user)).find((t) => t.pageId === pageId)?.title).toBe('Call the plumber');
 });
+
+// BUG-6: with a slow create, the title PATCH and the empty task's DELETE used to reach the
+// server before the POST (404), losing the title and leaving an untitled task behind.
+/** Delays every task-create request so it is still in flight while the user keeps typing. */
+async function slowCreates(page: import('@playwright/test').Page, ms = 1500) {
+  await page.route(/\/api\/workspaces\/[^/]+\/tasks$/, async (route) => {
+    if (route.request().method() === 'POST') await new Promise((r) => setTimeout(r, ms));
+    await route.continue();
+  });
+}
+
+for (const leave of ['Enter', 'Escape'] as const) {
+  test(`with a slow create, a typed task keeps its title (left with ${leave}) and no stray task survives (BUG-6)`, async ({ page, context, request }) => {
+    const user = await createUser(request, `Slow ${leave}`);
+    const { pageId } = await createPage(request, user);
+    const before = (await listTasks(request, user)).length;
+    await signInContext(context, user);
+    await slowCreates(page);
+    await openPage(page, user.wsId, pageId);
+    await page.getByRole('button', { name: 'Add a task to this page' }).click();
+    await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+    await page.keyboard.type('Call the plumber');
+    await page.keyboard.press('Enter'); // commits the title and opens a new empty task below
+    if (leave === 'Enter') {
+      await expect(page.locator('.task-ref-title')).toHaveCount(2);
+      await page.keyboard.press('Enter'); // Enter on the empty task leaves task mode and deletes it
+    } else {
+      await expect(page.locator('.task-ref-title')).toHaveCount(2);
+      await page.keyboard.press('Escape'); // leaves the empty task (kept, untitled, as before)
+    }
+
+    // The server ends up with the titled page task, and nothing untitled except an empty task
+    // left with Escape (which is kept on purpose) — never an untitled copy of the typed one.
+    await eventually(
+      () => listTasks(request, user),
+      (ts) => ts.some((t) => t.pageId === pageId && t.title === 'Call the plumber'),
+      'title saved on the server',
+    );
+    await page.waitForTimeout(2_000); // let every queued write land
+    const ts = await listTasks(request, user);
+    const fresh = ts.length - before;
+    expect(ts.filter((t) => t.title === 'Call the plumber')).toHaveLength(1);
+    expect(fresh).toBe(leave === 'Enter' ? 1 : 2);
+    expect(ts.filter((t) => t.title === '' && t.pageId === null)).toHaveLength(0);
+
+    // The note and the dashboard agree, with no client-only phantom.
+    await expect(page.locator('.task-ref-title').first()).toHaveValue('Call the plumber');
+    await page.goto(tasksUrl(user.wsId, 'all'));
+    await expect(taskRow(page, 'Call the plumber')).toHaveCount(1);
+    await expect(page.locator('.task-row')).toHaveCount(fresh + before);
+  });
+}
+
+test('at full speed, deleting a just-created empty task never leaves a phantom in the client (BUG-6)', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Fast Phantom');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  for (let i = 0; i < 4; i++) {
+    await page.getByRole('button', { name: 'Add a task to this page' }).click();
+    await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+    await page.keyboard.type(`Fast ${i}`);
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Enter'); // delete the new empty task straight away
+    await expect(page.locator('.task-ref-title')).toHaveCount(i + 1);
+  }
+  await page.waitForTimeout(1_000);
+  const server = await listTasks(request, user);
+  expect(server.filter((t) => t.pageId === pageId).map((t) => t.title).sort()).toEqual(['Fast 0', 'Fast 1', 'Fast 2', 'Fast 3']);
+  // Same session, no reload: the dashboard shows exactly the server's open tasks (no "Untitled" phantom).
+  await page.getByRole('link', { name: /All Tasks/ }).first().click().catch(() => page.goto(tasksUrl(user.wsId, 'all')));
+  await expect(page.locator('.task-row')).toHaveCount(server.filter((t) => t.status === 'open').length);
+  await expect(page.locator('.task-row', { hasText: 'Untitled task' })).toHaveCount(0);
+});

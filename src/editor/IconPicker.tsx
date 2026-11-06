@@ -36,6 +36,7 @@ export function IconPicker({
     const n = q.trim().toLowerCase();
     return n ? EMOJI.filter(([, k]) => k.includes(n)) : EMOJI;
   }, [q]);
+  if (!open) return null;
   return (
     <Popover anchor={anchor} open={open} onClose={onClose} className="icon-picker">
       <div className="icon-picker-head">

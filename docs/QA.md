@@ -62,20 +62,11 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 27 | Editor extras (#21): page icon (page, sidebar, saved), ⌘K on a selection adds a link (kept after reload), ⌘K without a selection opens the palette; attachment renders as a file card with size and a working download | `27-editor-extras.spec.ts` | ✅ |
 | 28 | Verification × invites (`verify-email`): an invited person who signs up unverified isn't a member yet (invite still pending, the team URL shows "Check your email"); confirming applies the invite and they land in the team | `28-verify-invites.verify.spec.ts` | ✅ |
 | 29 | Template privacy: a page in a private notebook (with a task) is saved as a private template (dialog says so, other members don't get it); a shared-notebook page is a workspace template other members see | `29-template-privacy.spec.ts` | ✅ |
+| 30 | Page panel (#99) live: adding a task bumps the toolbar count without opening the panel; another member completing it lowers the count live; a member's new comment shows "Comments (1 open)" live; starting a comment opens the Comments tab; the badge opens it | `30-page-panel-live.spec.ts` | ✅ |
 
 ## Open bugs
 
-### BUG-5: a new task left with Escape keeps the quick-add words in its title
-- **Area / owner:** Editor & Notes (`src/editor/TaskRef.tsx`: Escape calls `commit()`, which saves the parsed title, then moves focus out, and the `onBlur` → `commit()` runs again with the stale raw `title` and overwrites it)
-- **Found on:** main @ 3d44a4b, 2026-11-06 (3/3; both "/task" and "Add a task to this page")
-- **Steps:** 1. In a page, start a task (`/task` or "Add a task to this page"). 2. Type `Buy lemons tomorrow p1`. 3. Press Escape.
-- **Expected:** like Enter, the title becomes "Buy lemons", due tomorrow, priority 1.
-- **Actual:** due date and priority are applied, but the title stays "Buy lemons tomorrow p1" (in the note, the dashboard and the server).
-- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a new task left with Escape gets the same cleaned-up title as with Enter" (`test.fixme`)
-
-## Observations (not filed as bugs)
-
-- **Keyboard selection reaches the editor asynchronously** (ProseMirror reads it on `selectionchange`). Keys pressed within a few ms of a selection change act on the old selection: ⌘K right after Shift+Home opens the palette instead of the link editor, and Enter right after End can replace still-selected text. Humans are too slow to notice; tests wait for the bubble menu to appear or disappear. If it ever shows up in real use, the ⌘K handler could read the DOM selection directly. (2026-11-05, Editor & Notes)
+None open.
 
 <!-- Template:
 ### BUG-N: short title
@@ -89,6 +80,8 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 
 ## Fixed bugs
 
+- **BUG-6** (Tasks, high): on a slow connection a quickly entered task lost its title, and Enter-Enter left a stray untitled task (plus a client-only phantom at full speed). Fixed by #115 (each task's writes are ordered behind its create); covered by #115's slow-create tests in `10-notes-edge` (Enter and Escape variants, and the no-phantom test).
+- **BUG-5** (Editor & Notes): a new task left with Escape kept the quick-add words in its title. Fixed by #111; test `10-notes-edge` › "a new task left with Escape gets the same cleaned-up title as with Enter" enabled.
 - **BUG-4** (Collaboration): a change made while the app was still opening its first live-events connection was never shown until a reload. Fixed by #76 (reload once the first hello arrives); test `17-sync-history-account` › "a change made while the app is still connecting its live events is not lost" enabled.
 - **BUG-3** (Editor & Notes): a page title typed just before navigating away was lost (debounced save cancelled on unmount). Fixed by #66; test `10-notes-edge` › "a page title typed just before navigating away is still saved" enabled.
 - **BUG-1** (Foundation, offline/PWA): reloading while offline showed the login screen, so cached notes couldn't open. Fixed by #35 (precached shell, offline cold start, read-only data cache); test `08-offline` › "…still opens after a reload while offline" enabled.

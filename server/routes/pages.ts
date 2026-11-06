@@ -1,7 +1,7 @@
 // Page metadata (content is edited over the collab WebSocket). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
-import { accessChanged, mustAccess, pageAccess, sectionAccess } from '../access.ts';
+import { accessChanged, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { flushAll } from '../collab.ts';
 import { rowToTask } from '../tasks.ts';
@@ -9,6 +9,7 @@ import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
 import type { Access } from '../access.ts';
 import { HttpError, h, param } from '../http.ts';
 import { backlinks } from '../links.ts';
+import { dropForeignSharesOnPage } from '../workspaces.ts';
 import { getVersion, listVersions, snapshot, startVersionSweep } from '../versions.ts';
 
 export const pageRoutes = Router();
@@ -43,7 +44,9 @@ pageRoutes.get(
          FROM pages p WHERE p.id = ?`,
       )
       .get(id);
-    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit };
+    // viaPageShare: opened through a page share (#98), so the client shows it under "Shared with me";
+    // canManage: may move, copy or delete it; canShare: may share it (#98).
+    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit, canManage: a.canManage, canShare: canSharePage(a), viaPageShare: a.viaPageShare, member: a.member };
   }),
 );
 
@@ -99,6 +102,8 @@ pageRoutes.patch(
     const id = param(req, 'id');
     const a = mustAccess(pageAccess(id, req.user.id), true);
     const b = req.body;
+    // Moving and reordering change its notebook: not for page-share-only access (#98).
+    if (b.sectionId !== undefined || b.position !== undefined) mustManage(a);
     if (b.title !== undefined) {
       const title = String(b.title).slice(0, 300);
       db.prepare('UPDATE pages SET title = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(title, now(), req.user.id, id);
@@ -118,6 +123,9 @@ function movePageTo(id: string, a: Access, sectionId: string, userId: string) {
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
   db.prepare('UPDATE pages SET section_id = ? WHERE id = ?').run(sectionId, id);
   if (t.notebookId !== a.notebookId) {
+    // Into a private notebook: page shares its creator didn't grant end (#98).
+    const vis = (db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(t.notebookId) as { visibility: string }).visibility;
+    if (vis === 'private') dropForeignSharesOnPage(id, t.notebookId);
     accessChanged(); // collaborators may have lost access (e.g. moved into a private notebook)
     const tasks = db.prepare('SELECT * FROM tasks WHERE page_id = ?').all(id) as Parameters<typeof rowToTask>[0][];
     for (const r of tasks) publish({ type: 'task', task: rowToTask(r) });
@@ -133,7 +141,7 @@ pageRoutes.post(
   '/pages/:id/move',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id), true);
+    const a = mustManage(pageAccess(id, req.user.id));
     const current = (db.prepare('SELECT section_id FROM pages WHERE id = ?').get(id) as { section_id: string }).section_id;
     const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : current;
     const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
@@ -154,7 +162,8 @@ pageRoutes.post(
   '/pages/:id/copy',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id));
+    // A page share reaches this page only; copying it elsewhere in the workspace is for notebook-level access.
+    const a = mustManage(pageAccess(id, req.user.id));
     const src = db.prepare('SELECT section_id, title, position FROM pages WHERE id = ?').get(id) as { section_id: string; title: string; position: number };
     const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : src.section_id;
     const t = mustAccess(sectionAccess(sectionId, req.user.id), true);
@@ -175,7 +184,7 @@ pageRoutes.delete(
   '/pages/:id',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id), true);
+    const a = mustManage(pageAccess(id, req.user.id));
     detachPagesTasks([id], () => db.prepare('DELETE FROM pages WHERE id = ?').run(id));
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };

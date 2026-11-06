@@ -178,6 +178,7 @@ export function deleteAccount(userId: string): boolean {
 
     // 7. Invites they sent (all still pending: accepting deletes the row) and invites addressed to their email.
     db.prepare('DELETE FROM workspace_invites WHERE invited_by = ? OR email = ?').run(userId, user.email);
+    db.prepare('DELETE FROM page_invites WHERE email = ?').run(user.email); // those they sent cascade
 
     // 8. Re-point authorship in what stays, then delete the user. Memberships, notebook shares, sessions, push and device
     //    tokens, notifications, reminders and settings cascade; assignee, activity actor and version author become NULL.
