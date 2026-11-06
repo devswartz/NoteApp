@@ -40,7 +40,7 @@ import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, Toggl
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { MentionNode } from './collabMentions.ts';
-import { collabExtensions, useCollab, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
+import { collabExtensions, useCollab, usePresenceRole, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
@@ -119,6 +119,7 @@ export function documentExtensions(pageId: string): Extensions {
 
 export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
+  usePresenceRole(session, user, canEdit); // others see 'editing' or 'viewing'
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
 

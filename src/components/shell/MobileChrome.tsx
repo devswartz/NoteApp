@@ -28,6 +28,7 @@ function useScreenTitle(): string {
   if (pageId) return pageTitle || 'Untitled';
   if (pathname.endsWith('/notes')) return 'Notes';
   if (pathname.endsWith('/settings')) return 'Settings';
+  if (pathname.endsWith('/activity')) return 'Activity';
   return ws?.name ?? '';
 }
 
@@ -37,7 +38,8 @@ function useScreenTitle(): string {
  * screen title once the heading scrolls away (iOS "large title" style).
  */
 function useHeadingVisible(): boolean {
-  const { pathname } = useLocation();
+  // The query matters too: Settings sections are ?s=<id> on the same path.
+  const { pathname, search } = useLocation();
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     let io: IntersectionObserver | undefined;
@@ -58,7 +60,7 @@ function useHeadingVisible(): boolean {
       window.clearTimeout(timer);
       io?.disconnect();
     };
-  }, [pathname]);
+  }, [pathname, search]);
   return visible;
 }
 
