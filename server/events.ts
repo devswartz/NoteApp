@@ -124,16 +124,28 @@ function messageFor(userId: string, e: Entry): EventMessage | null {
   const { ev } = e;
   if (e.userIds) return e.userIds.includes(userId) ? { ...ev, seq: e.seq } : null;
   // User-targeted only: never broadcast (a notification without explicit recipients goes nowhere).
-  if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification') return null;
+  if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification' || ev.type === 'shared-pages') return null;
   const wsId = ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId;
-  if (!isMember(wsId, userId)) return null;
-  // Comments on a page the user can't see (private notebook): withheld, live and on replay.
-  if (ev.type === 'comments' && !pageAccess(ev.pageId, userId)) return null;
+  // Comments go to whoever can see the page (members of its notebook, and page shares, #98);
+  // withheld from anyone else, live and on replay.
+  if (ev.type === 'comments') return pageAccess(ev.pageId, userId) ? { ...ev, seq: e.seq } : null;
+  if (!isMember(wsId, userId)) {
+    // Outside the workspace, only tasks on a page shared with you (TASK_VISIBLE covers that).
+    if (ev.type !== 'task') return null;
+    // Never a task-deleted here: that would hand strangers task ids on replay.
+    return taskVisible(ev.task.id, userId) ? { ...ev, seq: e.seq } : null;
+  }
   if (ev.type === 'task' && !taskVisible(ev.task.id, userId)) {
     // Tell clients that may have previously seen it to drop it.
     return { type: 'task-deleted', id: ev.task.id, workspaceId: wsId, seq: e.seq };
   }
   return { ...ev, seq: e.seq };
+}
+
+/** People holding a page share on `pageId` (they may be outside the workspace). */
+function pageShareHolders(pageId: string | null | undefined): string[] {
+  if (!pageId) return [];
+  return (db.prepare('SELECT user_id FROM page_shares WHERE page_id = ?').all(pageId) as { user_id: string }[]).map((r) => r.user_id);
 }
 
 function membersOf(workspaceId: string): string[] {
@@ -153,8 +165,12 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
   if (buffer.length > BUFFER_MAX) buffer.splice(0, buffer.length - BUFFER_MAX);
   let recipients: string[];
   if (opts.userIds) recipients = opts.userIds;
-  else if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification') recipients = [];
-  else recipients = membersOf(ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId);
+  else if (ev.type === 'workspaces' || ev.type === 'resync' || ev.type === 'notification' || ev.type === 'shared-pages') recipients = [];
+  else {
+    recipients = membersOf(ev.type === 'task' ? ev.task.workspaceId : ev.workspaceId);
+    const page = ev.type === 'task' ? ev.task.pageId : ev.type === 'comments' ? ev.pageId : null;
+    if (page) recipients = [...new Set([...recipients, ...pageShareHolders(page)])];
+  }
   for (const userId of recipients) {
     const sockets = clients.get(userId);
     if (!sockets?.size) continue;

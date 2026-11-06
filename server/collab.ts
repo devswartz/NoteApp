@@ -10,8 +10,8 @@ import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
-import { onAccessChange, pageAccess } from './access.ts';
-import { syncPageTasks } from './tasks.ts';
+import { onAccessChange, pageAccess, taskVisible } from './access.ts';
+import { canMoveTask, syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
 
 const MSG_SYNC = 0;
@@ -43,6 +43,8 @@ interface Room {
   mentioned: Set<string>;
   /** Who inserted each mention since the last save (mentioned user → the user whose socket sent it). */
   mentionAuthors: Map<string, string>;
+  /** Who put each task reference into the doc since the last save (task id → user ids), see syncPageTasks. */
+  taskAuthors: Map<string, Set<string>>;
 }
 
 const rooms = new Map<string, Room>();
@@ -149,7 +151,12 @@ function persist(room: Room) {
     db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(room.pageId);
     db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(room.pageId, title, text);
   })();
-  syncPageTasks(room.pageId, room.workspaceId, taskIds);
+  // Only tasks that whoever inserted the reference may see and edit move onto this page (#98 review).
+  const authors = room.taskAuthors;
+  room.taskAuthors = new Map();
+  syncPageTasks(room.pageId, room.workspaceId, taskIds, (id) =>
+    [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
+  );
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;
   const byActor = new Map<string | null, string[]>();
@@ -194,22 +201,34 @@ function getRoom(pageId: string, workspaceId: string): Room {
     lastEditor: null,
     mentioned: extractDoc(doc.getXmlFragment('default')).mentionIds,
     mentionAuthors: new Map(),
+    taskAuthors: new Map(),
   };
 
   // Attribute new @mentions to whoever's update inserted them (not just the last editor).
   doc.getXmlFragment('default').observeDeep((events, tr) => {
     const actor = tr.origin instanceof WebSocket ? connAuth.get(tr.origin)?.userId : undefined;
     if (!actor) return;
+    const addTask = (n: Y.XmlElement) => {
+      const id = n.getAttribute('taskId');
+      if (typeof id !== 'string' || !id) return;
+      let set = r.taskAuthors.get(id);
+      if (!set) r.taskAuthors.set(id, (set = new Set()));
+      set.add(actor);
+    };
     const collect = (n: unknown) => {
       if (!(n instanceof Y.XmlElement)) return;
+      if (n.nodeName === 'taskRef') addTask(n);
       if (n.nodeName === 'mention') {
         const id = n.getAttribute('id');
         if (typeof id === 'string' && id && !r.mentionAuthors.has(id)) r.mentionAuthors.set(id, actor);
       }
       for (const c of n.toArray()) collect(c);
     };
-    for (const ev of events)
+    for (const ev of events) {
       for (const item of ev.changes.added) for (const c of (item.content as { getContent(): unknown[] }).getContent()) collect(c);
+      // A task reference re-pointed at another task in place.
+      if (ev instanceof Y.YXmlEvent && ev.target instanceof Y.XmlElement && ev.target.nodeName === 'taskRef' && ev.attributesChanged.has('taskId')) addTask(ev.target);
+    }
   });
 
   doc.on('update', (update: Uint8Array, origin: unknown) => {

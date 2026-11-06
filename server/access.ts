@@ -76,9 +76,21 @@ function notebookCtx(notebookId: string): NotebookCtx | null {
 export interface Access {
   workspaceId: string;
   notebookId: string;
+  /** Workspace role; 'viewer' for someone outside the workspace who has a page share. */
   role: Role;
+  /** May change the page's content (or, for notebook/section access, add and change its pages). */
   canEdit: boolean;
   isNotebookOwner: boolean;
+  /** Is a workspace member. False only for page-share-only access from outside the workspace. */
+  member: boolean;
+  /**
+   * Access to the whole notebook with edit rights: may move, copy, delete and share the page.
+   * False when the page is reachable only through a page share (page_shares, migration 013),
+   * which never reveals or changes anything outside the page itself.
+   */
+  canManage: boolean;
+  /** Access comes only from a page share, not from the page's notebook. */
+  viaPageShare: boolean;
 }
 
 function accessFor(ctx: NotebookCtx | null, userId: string): Access | null {
@@ -86,12 +98,16 @@ function accessFor(ctx: NotebookCtx | null, userId: string): Access | null {
   const role = roleIn(ctx.workspaceId, userId);
   if (!role) return null;
   if (ctx.visibility === 'private' && ctx.createdBy !== userId && !isSharedWith(ctx.notebookId, userId)) return null;
+  const canEdit = atLeast(role, 'member');
   return {
     workspaceId: ctx.workspaceId,
     notebookId: ctx.notebookId,
     role,
-    canEdit: atLeast(role, 'member'),
+    canEdit,
     isNotebookOwner: ctx.createdBy === userId,
+    member: true,
+    canManage: canEdit,
+    viaPageShare: false,
   };
 }
 
@@ -106,12 +122,70 @@ export function sectionAccess(sectionId: string, userId: string) {
   return row ? notebookAccess(row.notebook_id, userId) : null;
 }
 
-export function pageAccess(pageId: string, userId: string) {
-  const row = db
-    .prepare('SELECT s.notebook_id FROM pages p JOIN sections s ON s.id = p.section_id WHERE p.id = ?')
-    .get(pageId) as { notebook_id: string } | undefined;
-  return row ? notebookAccess(row.notebook_id, userId) : null;
+/** The page share `userId` holds on `pageId`, if any. */
+export function pageShare(pageId: string, userId: string): { canEdit: boolean } | null {
+  const r = db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(pageId, userId) as { can_edit: number } | undefined;
+  return r ? { canEdit: !!r.can_edit } : null;
 }
+
+/**
+ * Access to one page: through its notebook (notebookAccess), or through a page share
+ * (page_shares). A page share reaches that page only — never its notebook, siblings or
+ * sub-pages. Effective rights are the lesser of the share and the workspace role: an edit
+ * share lets a member (or above) edit, a viewer stays view-only, and people outside the
+ * workspace are always view-only. A share never adds to notebook-level access. Every route
+ * and socket that serves page content goes through here.
+ */
+export function pageAccess(pageId: string, userId: string): Access | null {
+  const row = db
+    .prepare('SELECT s.notebook_id, n.workspace_id FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ?')
+    .get(pageId) as { notebook_id: string; workspace_id: string } | undefined;
+  if (!row) return null;
+  const nb = notebookAccess(row.notebook_id, userId);
+  const share = pageShare(pageId, userId);
+  if (nb) return nb;
+  if (!share) return null;
+  const role = roleIn(row.workspace_id, userId);
+  return {
+    workspaceId: row.workspace_id,
+    notebookId: row.notebook_id,
+    role: role ?? 'viewer',
+    canEdit: atLeast(role, 'member') && share.canEdit, // min(share, role)
+    isNotebookOwner: false,
+    member: !!role,
+    canManage: false,
+    viaPageShare: true,
+  };
+}
+
+/** Throws unless the caller may move, copy, delete or share the page (notebook-level edit access). */
+export function mustManage(a: Access | null): Access {
+  const ok = mustAccess(a);
+  if (!ok.canManage) throw new HttpError(403, 'Only people with edit access to its notebook can do that');
+  return ok;
+}
+
+/**
+ * May share the page with others: notebook-level edit access, and for a page in a private
+ * notebook only that notebook's creator (the rule for sharing the notebook itself).
+ */
+export function canSharePage(a: Access): boolean {
+  if (!a.canManage) return false;
+  const nb = db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(a.notebookId) as { visibility: string } | undefined;
+  return nb?.visibility !== 'private' || a.isNotebookOwner;
+}
+
+/** SQL predicate: @userId holds a page share on the page whose id is `pageIdExpr`. */
+export const pageSharedSql = (pageIdExpr: string) =>
+  `EXISTS (SELECT 1 FROM page_shares psh WHERE psh.page_id = ${pageIdExpr} AND psh.user_id = @userId)`;
+
+/**
+ * SQL predicate: page `pg` (in notebook `n`) is visible to @userId — through its notebook
+ * (workspace membership included) or through a page share.
+ */
+export const PAGE_VISIBLE = `((${NOTEBOOK_VISIBLE}
+    AND EXISTS (SELECT 1 FROM workspace_members pvm WHERE pvm.workspace_id = n.workspace_id AND pvm.user_id = @userId))
+  OR ${pageSharedSql('pg.id')})`;
 
 export function mustAccess<T extends Access | null>(a: T, edit = false): NonNullable<T> {
   if (!a) throw new HttpError(404, 'Not found');
@@ -123,10 +197,12 @@ export function mustAccess<T extends Access | null>(a: T, edit = false): NonNull
  * SQL predicate for tasks visible to @userId, given alias `t`.
  * A task is visible to workspace members unless it lives in someone else's
  * private notebook, or left one (private_owner_only, migration 010) — but the
- * assignee and creator can always see it.
+ * assignee and creator can always see it. Someone with a page share (migration
+ * 013) also sees the tasks that live on that page, member or not, except
+ * private_owner_only ones.
  */
-export const TASK_VISIBLE = `
-  EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = @userId)
+export const TASK_VISIBLE = `(
+  (EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = @userId)
   AND (
     (t.page_id IS NULL AND t.private_owner_only = 0)
     OR t.assignee_id = @userId
@@ -135,7 +211,9 @@ export const TASK_VISIBLE = `
       SELECT 1 FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id
       WHERE p.id = t.page_id AND ${NOTEBOOK_VISIBLE}
     )
-  )`;
+  ))
+  OR (t.page_id IS NOT NULL AND t.private_owner_only = 0 AND ${pageSharedSql('t.page_id')})
+)`;
 
 export function taskVisible(taskId: string, userId: string): boolean {
   return !!db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @taskId AND ${TASK_VISIBLE}`).get({ taskId, userId });
