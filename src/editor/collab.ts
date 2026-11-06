@@ -20,6 +20,7 @@ import { toast } from '../store/toasts.ts';
 import { platform } from '../platform/index.ts';
 import { docToMarkdown } from './collabExport.ts';
 import { CommentMark } from './collabComments.ts';
+import { renderCaret } from './collabFollow.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 /** What the page header shows: is everything I typed safely on the server? */
@@ -283,6 +284,7 @@ export function collabExtensions(session: CollabSession, user: User): Extensions
     CollaborationCaret.configure({
       provider: session.provider,
       user: { id: user.id, name: user.name, color: user.color },
+      render: renderCaret, // tags carets with data-user-id so "follow" can find them (./collabFollow.ts)
     }),
   ];
 }

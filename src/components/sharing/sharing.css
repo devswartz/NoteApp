@@ -16,13 +16,18 @@
 .share-dialog h2 { margin: 0 0 4px; font-size: 17px; }
 
 /* Presence stack (src/editor/collabPresence.tsx) */
-.presence-btn { display: flex; align-items: center; background: none; border: 0; padding: 2px 4px; cursor: pointer; border-radius: 999px; }
+.presence-btn { display: flex; align-items: center; padding: 2px 4px; border-radius: 999px; }
+.presence-btn button.presence-avatar, .presence-btn button.presence-more { border: 0; padding: 0; cursor: pointer; font: inherit; }
+.presence-btn button.presence-avatar { background: none; }
 .presence-btn:hover { background: var(--hover, rgba(127, 127, 127, 0.1)); }
 .presence-avatar { display: inline-flex; margin-left: -6px; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--ring); }
 .presence-avatar:first-child, .presence-btn > .presence-more:first-child { margin-left: 0; }
 .presence-more { margin-left: -6px; background: var(--border, #ddd); color: inherit; box-shadow: 0 0 0 2px var(--bg); }
 .presence-pop { min-width: 220px; padding: 6px; }
 .presence-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+.presence-avatar.is-following { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring); transform: scale(1.08); }
+/* Following banner: <div className="follow-banner" style={{'--ring': color}}>Following Ann · Esc to stop</div> */
+.follow-banner { position: sticky; top: 0; z-index: 5; display: flex; justify-content: center; gap: 8px; padding: 4px 10px; font-size: 12px; color: #fff; background: var(--ring, var(--accent)); border-radius: 0 0 8px 8px; width: fit-content; margin: 0 auto; }
 
 /* Sharing one page (#98) */
 .page-share-add { margin-top: 12px; }
