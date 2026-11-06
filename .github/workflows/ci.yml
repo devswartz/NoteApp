@@ -88,7 +88,35 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      - run: npx playwright install --with-deps chromium
+      # The browser download (and its apt packages) has hung on GitHub runners more than once,
+      # stalling e2e until the 20-minute job limit. Cache the browser per Playwright version, and
+      # give the install a short timeout with retries so a stuck download fails fast.
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+
+      - name: Install Playwright browser and system deps
+        timeout-minutes: 12
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
+            cmd="npx playwright install-deps chromium"   # browser cached: only the OS packages
+          else
+            cmd="npx playwright install --with-deps chromium"
+          fi
+          for attempt in 1 2 3; do
+            if timeout 240 $cmd; then exit 0; fi
+            echo "::warning::Playwright install attempt $attempt failed or timed out; retrying"
+            sleep 5
+          done
+          echo "::error::Playwright install failed after 3 attempts"
+          exit 1
 
       - run: npx playwright test
 
