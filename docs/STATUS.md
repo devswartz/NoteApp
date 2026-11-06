@@ -1,4 +1,34 @@
-# NoteApp — status
+# NoteApp (Notivelo) — status
+
+## ▶ CURRENT STATE (2026-11-06 13:25 UTC) — read this first
+- **Product name:** Notivelo (`APP_NAME`); internal ids (image, DB file, storage keys) stay `noteapp`.
+- **Prod:** notes.devswartz.com runs `v0.1.2` (tag at 3d44a4b) with `SIGNUP_MODE=open`. **Staging** follows `main`.
+- **Next release: `v0.1.3`.** Everything below is on `main` and ready to tag.
+  The owner/local agent pushes tags (manager sessions can't push tags).
+
+### Landed since v0.1.2 (2026-11-06)
+- Page panel no longer auto-opens; Tasks/Comments split with count badges (#101, #116; issue #99).
+- **Share a single page** with people, incl. from a private notebook (#107 server, #119 UI; issue #98 parts 1–2). Two independent security reviews.
+  Rules: only owners/admins share outside the workspace; rights = min(share, role); outsiders view-only; making a notebook private (or moving a page into one) drops other people's shares.
+- Workspace export/import zip with sanitising + import/export rate limits (#77). Migration 013 = page shares.
+- BUG-5 (Escape kept raw task title, #111) and **BUG-6** (task writes raced the create on slow links → lost titles, #115) fixed.
+- Editor: table of contents + full width (#53), long-page performance (#58), keyboard/screen-reader a11y + axe in CI (#68), block e2e (#72).
+- Collab: presence avatars (#23), @mentions in exports (#82). Tasks: swipe actions, a11y, 44px phone targets (#100, #106, #110).
+- UI: Activity nav + mobile audit (#102–#104, #113). Shortcuts list shows `/task` (#114). Demo seed accounts verified, Windows-safe rate-limit tests, limits documented (#109).
+- QA: e2e for verify×invites, template privacy, mobile flow, page panel (#81, #105, #112). Open bugs: none.
+
+### Also landed
+- **OneNote import** (#120, issue #117): Microsoft Graph, server-side OAuth+PKCE, Graph-only fetches, sanitised HTML, own import slot, 30 min / 300 MB per job, 1 GB/day per user. Needs `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and outbound HTTPS to login.microsoftonline.com + graph.microsoft.com. Not yet tested against a live Microsoft sign-in.
+- Follow a collaborator (#39).
+
+### Open issues / later
+- #98 part 3: public read-only link. #117 if it slips from v0.1.3.
+- Signing secrets for desktop/mobile (docs/DESKTOP.md, docs/MOBILE.md); stale branch `feat/editor-mentions-wip` can be deleted.
+
+### Agents
+All worker sessions are archived. Keep new work to fresh, short-lived sessions — long-context agents are expensive.
+
+---
 
 ## ▶ FINAL SUMMARY (2026-11-05 12:15 UTC, end of the autonomous run)
 
