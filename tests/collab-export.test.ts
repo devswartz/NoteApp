@@ -28,3 +28,9 @@ test('docToMarkdown: headings, paragraphs, lists, task lists, quotes, code, task
     ['## Plan', '', 'Intro text', '', '- one', '- two', '', '1. first', '', '- [x] done thing', '', '> quoted', '', '```', 'let x = 1;', '```', '', '- [task] abc', ''].join('\n'),
   );
 });
+
+test('docToMarkdown: inline @mentions export as @Label', () => {
+  const doc = new Y.Doc();
+  doc.getXmlFragment('default').insert(0, [el('paragraph', {}, [t('Ask '), el('mention', { id: 'u1', label: 'Ana' }), t(' about it')])]);
+  assert.equal(docToMarkdown(doc.getXmlFragment('default')), 'Ask @Ana about it\n');
+});

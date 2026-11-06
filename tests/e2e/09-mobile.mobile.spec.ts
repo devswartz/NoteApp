@@ -1,6 +1,6 @@
 // Priority 9: phone-size smoke test (iPhone 13 viewport, touch) — navigation, tasks, quick add, opening a note.
 import { expect, test } from '@playwright/test';
-import { createPage, createTask, createUser, isoDay, openPage, signInContext, taskRow } from './helpers.ts';
+import { createPage, createTask, createUser, isoDay, listTasks, openPage, signInContext, taskRow } from './helpers.ts';
 
 test('mobile: tab bar navigation, quick add, complete a task, open a note from the menu', async ({ page, context, request }) => {
   const user = await createUser(request, 'Milo Mobile');
@@ -69,4 +69,46 @@ test('mobile: search from the tab bar', async ({ page, context, request }) => {
   const palette = page.getByRole('dialog', { name: 'Search' });
   await palette.getByPlaceholder(/Search pages and tasks/).fill('passport');
   await expect(palette.locator('.palette-label', { hasText: 'Renew passport' })).toBeVisible();
+});
+
+test('mobile: create a page from search, add a task with /task, see it on Today, complete it', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Nia Phone');
+  await createPage(request, user, { notebook: 'Phone notes', page: 'Existing' });
+  await signInContext(context, user);
+  await page.goto(`/w/${user.wsId}/tasks/today`);
+  const tabbar = page.getByRole('navigation', { name: 'Primary' });
+  await expect(tabbar).toBeVisible();
+
+  // "New page" from the palette (the phone has no hover-revealed sidebar buttons).
+  await page.getByRole('button', { name: 'Search' }).first().tap();
+  const palette = page.getByRole('dialog', { name: 'Search' });
+  await palette.getByPlaceholder(/Search pages and tasks/).fill('new page');
+  await expect(palette.locator('.palette-label', { hasText: 'New page' }).first()).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/p\/[^/]+$/);
+  const pageId = page.url().split('/p/')[1]!;
+
+  await page.locator('.page-title').fill('Groceries');
+  const editor = page.locator('.ProseMirror');
+  await editor.tap();
+  await page.keyboard.type('/task');
+  await expect(page.locator('.slash-menu .slash-title', { hasText: 'Task' }).first()).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.task-ref-title:focus')).toBeVisible();
+  await page.keyboard.type('Buy lemons today');
+  await page.keyboard.press('Enter'); // commit (+ a new empty task)
+  await page.keyboard.press('Enter'); // empty task + Enter leaves task mode
+  await expect.poll(async () => (await listTasks(request, user)).some((t) => t.title === 'Buy lemons' && t.pageId === pageId)).toBe(true);
+
+  await tabbar.getByRole('link', { name: 'Today' }).tap();
+  const row = taskRow(page, 'Buy lemons');
+  await expect(row).toBeVisible();
+  await expect(row.getByTitle('Open in note')).toContainText('Groceries');
+  await row.getByRole('checkbox', { name: 'Complete task' }).tap();
+  await expect.poll(async () => (await listTasks(request, user)).find((t) => t.title === 'Buy lemons')?.status).toBe('done');
+
+  // No horizontal scroll on the note either.
+  await page.goto(`/w/${user.wsId}/p/${pageId}`);
+  await expect(page.locator('.ProseMirror')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 });

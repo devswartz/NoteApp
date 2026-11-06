@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, PanelRight, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, MoveHorizontal } from 'lucide-react';
 import { api, get, patch, del, post, ApiError } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { PresenceStack } from '../editor/collabPresence.tsx';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
-import { useComments } from '../editor/collabComments.ts';
+import { loadComments, useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
@@ -13,13 +14,15 @@ import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { promptDialog } from '../components/shell/dialogs.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
+import { Outline, usePageSetting } from '../editor/Outline.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
-import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
+import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
 import { platform } from '../platform/index.ts';
 import { ENTER, MOD, keyLabel } from '../components/ui.tsx';
+import { setPagePanel, syncPagePanel, usePagePanel, type PagePanel } from '../store/ui.ts';
 import { PageShareDialogHost, openPageShareDialog } from '../components/sharing/PageShareDialog.tsx';
 import { loadSharedPageTasks, patchSharedPage, useShared } from '../components/sharing/sharedPages.ts';
 import type { PageMeta } from '../../shared/types.ts';
@@ -57,18 +60,43 @@ export function PageView() {
   const [save, setSave] = useState<SaveState>('saved');
   const [synced, setSynced] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     setSynced(false);
     setHistoryOpen(false);
   }, [pageId]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [fullWidth, setFullWidth] = usePageSetting(editor, 'fullWidth', false);
   const isMobile = useIsMobile();
-  const [panelOpen, setPanelOpen] = useState(() => platform.kv.get('noteapp.taskPanel') !== '0');
-  // Starting a comment opens the side panel so the composer is visible.
+  // Tasks / comments panel (#99): never opens by itself. Desktop restores the
+  // last choice on this device; phones always open a page as just the note.
+  const storedPanel = usePagePanel((s) => s.panel);
+  const [phonePanel, setPhonePanel] = useState<PagePanel>(null);
+  useEffect(() => {
+    syncPagePanel(); // the shell's storage may have been swapped in after the store loaded
+    setPhonePanel(null);
+  }, [pageId]);
+  const panel = isMobile ? phonePanel : storedPanel;
+  const showPanel = useCallback(
+    (p: PagePanel) => {
+      setPagePanel(p);
+      setPhonePanel(p);
+    },
+    [],
+  );
+  const togglePanel = (p: Exclude<PagePanel, null>) => showPanel(panel === p ? null : p);
+  const openTasks = useStore((s) => Object.values(s.tasks).filter((t) => t.pageId === pageId && t.status === 'open').length);
+  const openThreads = useComments((s) => (s.pageId === pageId ? s.threads.filter((t) => !t.resolvedAt).length : 0));
+  // Highlights need the threads even while the panel is closed.
+  useEffect(() => {
+    void loadComments(pageId);
+  }, [pageId]);
+  // Starting a comment (or clicking a highlighted one) opens Comments so the composer/thread is visible.
   const commentPending = useComments((s) => !!s.pending || !!s.activeId);
   useEffect(() => {
-    if (commentPending) setPanelOpen(true);
+    if (commentPending) setPhonePanel('comments');
+    if (commentPending && usePagePanel.getState().panel !== 'comments') setPagePanel('comments');
   }, [commentPending]);
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -143,8 +171,9 @@ export function PageView() {
   if (!meta || canEdit === null) return <div className="page-loading" />;
 
   return (
-    <div className={`page-layout ${panelOpen && !isMobile ? 'with-panel' : ''}`}>
-      <div className="page-scroll">
+    <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
+      <div className="page-scroll" ref={setScroller}>
+        {editor && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -165,24 +194,29 @@ export function PageView() {
             )}
           </div>
           <div className="topbar-right">
-            <div className="presence">
-              {presence.slice(0, 5).map((p) => (
-                <Avatar key={p.id} user={p} size={24} title={`${p.name} is here`} />
-              ))}
-            </div>
+            <PresenceStack users={presence} />
             <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button
-              className={`btn-ghost icon-btn ${panelOpen && !isMobile ? 'is-active' : ''}`}
+              className={`btn-ghost icon-btn panel-toggle ${panel === 'tasks' ? 'is-active' : ''}`}
               title="Tasks on this page"
-              onClick={() => {
-                setPanelOpen((o) => {
-                  platform.kv.set('noteapp.taskPanel', o ? '0' : '1');
-                  return !o;
-                });
-              }}
+              aria-pressed={panel === 'tasks'}
+              onClick={() => togglePanel('tasks')}
             >
-              {isMobile ? <ListTodo size={18} /> : <PanelRight size={18} />}
+              <ListTodo size={18} aria-hidden />
+              {/* The name comes from the content so it contains the visible count (axe: label-content-name-mismatch). */}
+              <span className="sr-only">Tasks on this page</span>
+              {openTasks > 0 && <PanelBadge n={openTasks} />}
+            </button>
+            <button
+              className={`btn-ghost icon-btn panel-toggle ${panel === 'comments' ? 'is-active' : ''}`}
+              title="Comments"
+              aria-pressed={panel === 'comments'}
+              onClick={() => togglePanel('comments')}
+            >
+              <MessageSquare size={18} aria-hidden />
+              <span className="sr-only">Comments</span>
+              {openThreads > 0 && <PanelBadge n={openThreads} />}
             </button>
             {info?.canShare && (
               <button className="btn btn-secondary btn-sm page-share-btn" onClick={() => openPageShareDialog(pageId, meta.title)}>
@@ -195,6 +229,8 @@ export function PageView() {
                 wsId={wsId}
                 editor={editor}
                 onHistory={() => setHistoryOpen(true)}
+                fullWidth={fullWidth}
+                onFullWidth={setFullWidth}
                 canManage={info ? info.canManage : !!treeMeta}
                 canShare={!!info?.canShare}
                 canEdit={canEdit}
@@ -204,7 +240,7 @@ export function PageView() {
           </div>
         </header>
 
-        <article className="page-article">
+        <article className={`page-article ${fullWidth ? 'is-full' : ''}`}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
@@ -235,7 +271,7 @@ export function PageView() {
       <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       <CommentHighlights />
       <PageShareDialogHost />
-      {panelOpen && <PageTasksPanel pageId={pageId} canComment={!!canEdit} onClose={() => setPanelOpen(false)} mobile={isMobile} />}
+      {panel && <PageSidePanel pageId={pageId} tab={panel} onTab={showPanel} canComment={!!canEdit} onClose={() => showPanel(null)} mobile={isMobile} />}
     </div>
   );
 }
@@ -380,6 +416,8 @@ function PageMenu({
   wsId,
   editor,
   onHistory,
+  fullWidth,
+  onFullWidth,
   canManage,
   canShare,
   canEdit,
@@ -389,6 +427,8 @@ function PageMenu({
   wsId: string;
   editor: Editor | null;
   onHistory: () => void;
+  fullWidth: boolean;
+  onFullWidth: (v: boolean) => void;
   /** Notebook-level edit: duplicate, template, move, copy, delete. Not for page-share-only access (#98). */
   canManage: boolean;
   canShare: boolean;
@@ -455,15 +495,15 @@ function PageMenu({
           {canManage && (
             <MenuItem
               icon={<Copy size={15} />}
-              onSelect={() => {
-                post<{ id: string }>(`/pages/${pageId}/copy`, {})
-                  .then((r) => {
-                    toast('Page duplicated');
-                    navigate(`/w/${wsId}/p/${r.id}`);
-                  })
-                  .catch(errorToast);
-              }}
-            >
+            onSelect={() => {
+              post<{ id: string }>(`/pages/${pageId}/copy`, {})
+                .then((r) => {
+                  toast('Page duplicated');
+                  navigate(`/w/${wsId}/p/${r.id}`);
+                })
+                .catch(errorToast);
+            }}
+          >
               Duplicate
             </MenuItem>
           )}
@@ -474,6 +514,9 @@ function PageMenu({
           )}
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
+          </MenuItem>
+          <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
+            Full width
           </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
@@ -488,7 +531,7 @@ function PageMenu({
             </MenuItem>
           )}
           {canManage && (
-          <>
+            <>
             <MenuSeparator />
             <div className="seg page-menu-seg" role="tablist">
               <button type="button" role="tab" aria-selected={mode === 'move'} className={mode === 'move' ? 'is-active' : ''} onClick={() => setMode('move')}>
@@ -529,7 +572,7 @@ function PageMenu({
             >
               Delete page
             </MenuItem>
-          </>
+            </>
           )}
         </div>
       )}
@@ -580,7 +623,84 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
   );
 }
 
-function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: string; canComment: boolean; onClose: () => void; mobile: boolean }) {
+/** Open-item count on a toolbar button; reads as "(3 open)" to screen readers. */
+function PanelBadge({ n }: { n: number }) {
+  return (
+    <>
+      <span className="sr-only"> ({n} open)</span>
+      <span className="panel-badge" aria-hidden>
+        {n > 99 ? '99+' : n}
+      </span>
+    </>
+  );
+}
+
+interface SidePanelProps {
+  pageId: string;
+  tab: 'tasks' | 'comments';
+  onTab: (t: 'tasks' | 'comments') => void;
+  canComment: boolean;
+  onClose: () => void;
+  mobile: boolean;
+}
+
+/** Tasks and Comments for the page: a side panel on desktop, a dismissible bottom sheet on phones (#99). */
+function PageSidePanel({ pageId, tab, onTab, canComment, onClose, mobile }: SidePanelProps) {
+  const sheet = useRef<HTMLElement>(null);
+  const drag = useRef<{ y: number; dy: number } | null>(null);
+  useEffect(() => {
+    if (!mobile) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobile, onClose]);
+
+  // Swipe down on the sheet's header to close it.
+  const onTouchStart = (e: ReactTouchEvent) => {
+    if (mobile) drag.current = { y: e.touches[0].clientY, dy: 0 };
+  };
+  const onTouchMove = (e: ReactTouchEvent) => {
+    if (!drag.current || !sheet.current) return;
+    drag.current.dy = Math.max(0, e.touches[0].clientY - drag.current.y);
+    sheet.current.style.transition = 'none';
+    sheet.current.style.transform = `translateY(${drag.current.dy}px)`;
+  };
+  const onTouchEnd = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || !sheet.current) return;
+    sheet.current.style.transition = '';
+    sheet.current.style.transform = '';
+    if (d.dy > 60) onClose();
+  };
+
+  return (
+    <>
+      {mobile && <div className="page-sheet-backdrop" onClick={onClose} aria-hidden />}
+      <aside ref={sheet} className={`page-panel ${mobile ? 'is-sheet' : ''}`} aria-label={tab === 'tasks' ? 'Tasks on this page' : 'Comments'}>
+        <div className="panel-grab" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
+          {mobile && <span className="sheet-handle" aria-hidden />}
+          <div className="panel-head">
+            <div className="segmented panel-tabs" role="tablist">
+              <button role="tab" aria-selected={tab === 'tasks'} className={tab === 'tasks' ? 'is-active' : ''} onClick={() => onTab('tasks')}>
+                <CircleCheck size={14} /> Tasks
+              </button>
+              <button role="tab" aria-selected={tab === 'comments'} className={tab === 'comments' ? 'is-active' : ''} onClick={() => onTab('comments')}>
+                <MessageSquare size={14} /> Comments
+              </button>
+            </div>
+            <button className="btn-ghost icon-btn" style={{ marginLeft: 'auto' }} onClick={onClose} title="Close panel" aria-label="Close panel">
+              ×
+            </button>
+          </div>
+        </div>
+        {tab === 'tasks' ? <PageTasks pageId={pageId} /> : <CommentsPanel pageId={pageId} canComment={canComment} />}
+      </aside>
+    </>
+  );
+}
+
+function PageTasks({ pageId }: { pageId: string }) {
   const all = useStore((s) => s.tasks);
   const shared = useShared((s) => s.tasks); // a page shared from another workspace (#98)
   const tasks = sortTasks([...Object.values(all), ...Object.values(shared).filter((t) => !all[t.id])].filter((t) => t.pageId === pageId));
@@ -588,20 +708,15 @@ function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: strin
   const done = tasks.filter((t) => t.status === 'done');
   const [showDone, setShowDone] = useState(false);
   return (
-    <aside className={`page-panel ${mobile ? 'is-sheet' : ''}`}>
-      <div className="panel-head">
-        <CircleCheck size={16} />
-        <strong>Tasks on this page</strong>
-        <span className="muted small">
-          {done.length}/{tasks.length}
-        </span>
-        <button className="btn-ghost icon-btn" style={{ marginLeft: 'auto' }} onClick={onClose} title="Close panel">
-          ×
-        </button>
-      </div>
+    <>
       {tasks.length > 0 && (
-        <div className="progress">
-          <div style={{ width: `${(done.length / tasks.length) * 100}%` }} />
+        <div className="panel-progress">
+          <span className="muted small">
+            {done.length}/{tasks.length} done
+          </span>
+          <div className="progress">
+            <div style={{ width: `${(done.length / tasks.length) * 100}%` }} />
+          </div>
         </div>
       )}
       <div className="panel-body">
@@ -620,10 +735,6 @@ function PageTasksPanel({ pageId, canComment, onClose, mobile }: { pageId: strin
         )}
         {showDone && done.map((t) => <TaskRow key={t.id} task={t} showSource={false} />)}
       </div>
-      <div className="panel-head">
-        <strong>Comments</strong>
-      </div>
-      <CommentsPanel pageId={pageId} canComment={canComment} />
-    </aside>
+    </>
   );
 }

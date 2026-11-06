@@ -32,7 +32,9 @@ test('comment on a selection; another member sees it live, replies; resolve', as
   await expect(a.locator('.comment-body', { hasText: 'Is this before or after tax?' })).toBeVisible();
   await expect(aEditor.locator('.comment-anchor[data-thread-id]', { hasText: 'fifty thousand' })).toBeVisible();
 
-  // Bob sees the thread live in the page panel, selects it and replies.
+  // Bob's Comments button counts the new thread live (the panel stays closed until he opens it, #99);
+  // he opens it, selects the thread and replies.
+  await b.getByRole('button', { name: 'Comments (1 open)' }).click({ timeout: 10_000 });
   const bThread = b.locator('.comment-thread', { has: b.locator('.comment-body', { hasText: 'Is this before or after tax?' }) });
   await expect(bThread).toBeVisible({ timeout: 10_000 });
   await bThread.locator('.comment-quote').click();

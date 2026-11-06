@@ -86,7 +86,7 @@ export function Login() {
           </label>
           )}
           {mode === 'login' && (
-            <button type="button" className="link small" style={{ justifySelf: 'start' }} onClick={() => (setMode('forgot'), setSent(false), setError(''))}>
+            <button type="button" className="link small auth-forgot" onClick={() => (setMode('forgot'), setSent(false), setError(''))}>
               Forgot password?
             </button>
           )}

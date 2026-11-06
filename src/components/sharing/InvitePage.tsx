@@ -82,7 +82,7 @@ export function InvitePage() {
     <div className="auth">
       <div className="auth-card">
         <div className="auth-logo">
-          <span className="ws-logo lg">{APP_NAME[0]}</span>
+          <img className="auth-icon" src="/icon.svg" alt="" width={34} height={34} />
           <span>{APP_NAME}</span>
         </div>
         {error ? (

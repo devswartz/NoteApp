@@ -15,8 +15,9 @@ test.describe('bulk task actions', () => {
     await taskRow(page, 'Bulk C').locator('.task-title').click({ modifiers: ['Shift'] });
     const bar = page.getByRole('toolbar', { name: 'Bulk actions' });
     await expect(bar).toContainText('3 selected');
-    await expect(taskRow(page, 'Bulk B')).toHaveAttribute('aria-selected', 'true');
-    await expect(taskRow(page, 'Bulk D')).not.toHaveAttribute('aria-selected', 'true');
+    // Rows are plain containers (no interactive role), so selection is a class, not aria-selected.
+    await expect(taskRow(page, 'Bulk B')).toHaveClass(/\bis-selected\b/);
+    await expect(taskRow(page, 'Bulk D')).not.toHaveClass(/\bis-selected\b/);
 
     await bar.getByRole('button', { name: 'Set priority', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Priority 1' }).click();
@@ -63,11 +64,12 @@ test.describe('bulk task actions', () => {
     await createTask(request, user, user.wsId, { title: 'Keyboard task', dueDate: isoDay(0) });
     await signInContext(context, user);
     await page.goto(tasksUrl(user.wsId, 'today'));
-    const row = taskRow(page, 'Keyboard task');
-    await row.focus();
+    // The row's focusable control is its title button (J/K move between them).
+    const title = taskRow(page, 'Keyboard task').locator('.task-title-btn');
+    await title.focus();
     await page.keyboard.press('2');
     await eventually(() => listTasks(request, user), (ts) => (ts.find((t) => t.title === 'Keyboard task') as { priority?: number } | undefined)?.priority === 2, 'priority 2');
-    await row.focus();
+    await title.focus();
     await page.keyboard.press('x');
     await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Keyboard task')?.status === 'done', 'completed with x');
   });

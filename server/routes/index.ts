@@ -21,13 +21,14 @@ import { templateRoutes } from './templates.ts';
 import { feedbackRoutes } from './feedback.ts';
 
 import { adminRoutes } from './admin.ts';
+import { exportRoutes } from './export.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
 export const api = Router();
-// JSON bodies are small: the largest field is a task description (50 000 chars, up to ~200 KB of UTF-8). Uploads are raw, not JSON.
+// JSON bodies are small: the largest field is a task description (50 000 chars, up to ~200 KB of UTF-8). Uploads and imports are raw, not JSON.
 const json = express.json({ limit: '512kb' });
-api.use((req, res, next) => (req.path === '/uploads' || req.path === '/client-errors' ? next() : json(req, res, next))); // /client-errors parses its own, much smaller, body
+api.use((req, res, next) => (req.path === '/uploads' || req.path === '/workspaces/import' || req.path === '/client-errors' ? next() : json(req, res, next))); // /client-errors parses its own, much smaller, body
 
 // No token needed.
 api.use(healthRoutes);
@@ -44,6 +45,7 @@ api.use(requireAuth);
 api.use(requireVerifiedEmail); // unverified users get 403 email_unverified on everything below except GET /me and POST /auth/resend-verification
 api.use(activityRecorder); // activity feed: observes mutating requests, never blocks them
 api.use(authRoutes);
+api.use(exportRoutes); // before workspaceRoutes: /workspaces/import must not hit /workspaces/:id
 api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);

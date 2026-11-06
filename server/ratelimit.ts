@@ -111,6 +111,10 @@ export const LIMITS = {
   // Feedback emails to the admins (signed in; see takeFeedback): five an hour per user, plus a server-wide cap.
   feedbackUser: { capacity: 5, perMinute: 5 / 60 },
   feedbackGlobal: { capacity: 60, perMinute: 60 / 60 },
+  // Workspace import/export (signed in; see takeImport/takeExport): both hold a whole archive in memory.
+  importUser: { capacity: 3, perMinute: 3 / 60 }, // three an hour per user
+  importGlobal: { capacity: 10, perMinute: 10 / 60 }, // ten an hour, whole server
+  exportUser: { capacity: 6, perMinute: 6 / 60 }, // six an hour per user
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -127,6 +131,45 @@ setInterval(() => Object.values(limiters).forEach((l) => l.prune()), 10 * 60_000
 export function resetRateLimits() {
   for (const k of Object.keys(limiters) as (keyof typeof LIMITS)[]) limiters[k] = new Limiter(LIMITS[k], now);
   knownGood.clear();
+}
+
+/** Workspace imports running at once, server-wide (each holds up to the body cap plus the unpacked archive). */
+export const MAX_IMPORTS = 1;
+let importsRunning = 0;
+
+/**
+ * Admission for POST /workspaces/import, run BEFORE the body is read, so a refused request never buffers it.
+ * Returns 0 and a `done` to call when the import ends, or the seconds to wait. Unlike the auth limits there is
+ * no loopback exemption (it caps memory, not guessing); RATE_LIMIT=off still turns it off. A refused request
+ * costs nothing.
+ */
+export function takeImport(userId: string): { wait: number; done: () => void } {
+  const noop = () => {};
+  if (process.env.RATE_LIMIT === 'off') return { wait: 0, done: noop };
+  if (importsRunning >= MAX_IMPORTS) return { wait: 5, done: noop };
+  const u = limiters.importUser.take(userId);
+  if (u) return { wait: u, done: noop };
+  const g = limiters.importGlobal.take('all');
+  if (g) {
+    limiters.importUser.refund(userId);
+    return { wait: g, done: noop };
+  }
+  importsRunning++;
+  let ended = false;
+  return {
+    wait: 0,
+    done: () => {
+      if (ended) return;
+      ended = true;
+      importsRunning--;
+    },
+  };
+}
+
+/** Rate limit for GET /workspaces/:id/export (builds the whole zip in memory). 0 if allowed, else seconds to wait. */
+export function takeExport(userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  return limiters.exportUser.take(userId);
 }
 
 /** Most password checks (bcrypt) running at once, server-wide; more are refused rather than queued. */
