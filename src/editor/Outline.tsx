@@ -1,5 +1,5 @@
 // Table of contents for long pages, and the per-page "full width" setting.
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import type * as Y from 'yjs';
 
@@ -73,7 +73,7 @@ export function usePageSetting<T>(editor: Editor | null, key: string, fallback: 
 }
 
 /** Floating outline next to the page; highlights the section in view. */
-export function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLElement | null }) {
+export const Outline = memo(function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLElement | null }) {
   const items = useHeadings(editor);
   const [active, setActive] = useState(0);
 
@@ -83,8 +83,9 @@ export function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLEl
       const top = scroller.getBoundingClientRect().top + 96;
       let current = 0;
       items.forEach((h, i) => {
-        const el = editor.view.nodeDOM(h.pos) as HTMLElement | null;
-        if (el && el.getBoundingClientRect().top <= top) current = i;
+        const el = editor.view.nodeDOM(h.pos);
+        // nodeDOM can be a text node (or stale) while the doc changes under the scroll handler.
+        if (el instanceof HTMLElement && el.getBoundingClientRect().top <= top) current = i;
       });
       setActive(current);
     };
@@ -96,9 +97,20 @@ export function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLEl
   if (items.length < 3) return null;
   const minLevel = Math.min(...items.map((h) => h.level));
   const go = (h: OutlineItem) => {
-    const el = editor.view.nodeDOM(h.pos) as HTMLElement | null;
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    editor.chain().setTextSelection(h.pos + 1).run();
+    // Off-screen blocks use estimated sizes (content-visibility), so jump, then re-jump
+    // for a few frames while the real sizes settle, instead of one smooth scroll that misses.
+    const jump = () => {
+      const el = editor.view.nodeDOM(h.pos);
+      if (el instanceof HTMLElement) el.scrollIntoView({ block: 'start' });
+    };
+    // Put the cursor in the heading right away (so typing works immediately), then settle the scroll.
+    editor.chain().setTextSelection(h.pos + 1).focus(undefined, { scrollIntoView: false }).run();
+    let frames = 0;
+    const settle = () => {
+      jump();
+      if (++frames < 4) requestAnimationFrame(settle);
+    };
+    settle();
   };
   return (
     <div className="page-toc-rail" aria-hidden={false}>
@@ -119,4 +131,4 @@ export function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLEl
       </nav>
     </div>
   );
-}
+});

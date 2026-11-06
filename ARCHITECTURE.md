@@ -290,6 +290,14 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 The document schema is ProseMirror's, stored in the Yjs `XmlFragment` named `default`. Node names that the server reads in `extractDoc` (`server/collab.ts`): every text node for search, and `taskRef[taskId]` for task reconcile. **Save state:** a local edit marks the page "Saving…"; it becomes "Saved" once the socket has flushed it and the server's 1 s save debounce has passed; with no connection it reads "Offline" (edits are already in IndexedDB).
 
+**Long pages** (measured on a 12k-word page, production build, keystroke → next frame): about one frame unthrottled, and about 43 ms median at 4× CPU throttling (a short page is about 27 ms). What keeps it there:
+- code highlighting is incremental (`codeHighlight.ts`: only code blocks a transaction touches are re-highlighted);
+- presence and save state reach React only when they change, so typing doesn't re-render the page;
+- closed menus, pickers and modals don't render their contents;
+- top-level blocks use `content-visibility: auto`. The outline re-jumps over a few frames because off-screen blocks use estimated heights.
+
+The remaining per-keystroke cost scales with document size inside y-prosemirror (Yjs sync and cursor mapping) and ProseMirror's view update.
+
 ## Real-time sync
 
 There are two channels:

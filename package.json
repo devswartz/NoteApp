@@ -41,7 +41,7 @@
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.1",
     "@tiptap/core": "^3.32.2",
-    "@tiptap/extension-code-block-lowlight": "^3.32.2",
+    "@tiptap/extension-code-block": "^3.32.2",
     "@tiptap/extension-collaboration": "^3.32.2",
     "@tiptap/extension-collaboration-caret": "^3.32.2",
     "@tiptap/extension-details": "^3.32.2",

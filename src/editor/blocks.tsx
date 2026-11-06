@@ -1,7 +1,8 @@
 // Custom block nodes: callout, file attachment card, code block with a language picker.
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { CodeBlock as CodeBlockBase } from '@tiptap/extension-code-block';
+import { codeHighlightPlugin } from './codeHighlight.ts';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import ImageExt from '@tiptap/extension-image';
 import { createLowlight, common } from 'lowlight';
@@ -343,11 +344,15 @@ export const CODE_LANGUAGES: { id: string; label: string }[] = [
   { id: 'yaml', label: 'YAML' },
 ];
 
-export const CodeBlock = CodeBlockLowlight.extend({
+export const CodeBlock = CodeBlockBase.extend({
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockView);
   },
-}).configure({ lowlight, defaultLanguage: null, enableTabIndentation: true });
+  addProseMirrorPlugins() {
+    // Incremental highlighting (see codeHighlight.ts) instead of code-block-lowlight's whole-doc rescans.
+    return [...(this.parent?.() ?? []), codeHighlightPlugin({ name: this.name, lowlight, defaultLanguage: null })];
+  },
+}).configure({ enableTabIndentation: true });
 
 function CodeBlockView({ node, updateAttributes, editor }: ReactNodeViewProps) {
   const [copied, setCopied] = useState(false);
