@@ -28,6 +28,7 @@ function useScreenTitle(): string {
   if (pageId) return pageTitle || 'Untitled';
   if (pathname.endsWith('/notes')) return 'Notes';
   if (pathname.endsWith('/settings')) return 'Settings';
+  if (pathname.endsWith('/activity')) return 'Activity';
   return ws?.name ?? '';
 }
 
