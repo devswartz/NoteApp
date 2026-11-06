@@ -398,3 +398,9 @@
 .page-panel.is-sheet { transition: transform 0.15s ease-out; }
 .page-panel.is-sheet .panel-grab { touch-action: none; }
 .page-panel.is-sheet .panel-body, .page-panel.is-sheet .comments-panel { overflow-y: auto; min-height: 0; }
+/* Phones: 44px tap targets in the sheet header (390px audit). */
+@media (max-width: 760px) {
+  .page-panel.is-sheet .panel-head { height: auto; min-height: 52px; padding-top: 4px; padding-bottom: 4px; }
+  .page-panel.is-sheet .panel-tabs button { min-height: 44px; padding: 0 14px; }
+  .page-panel.is-sheet .panel-head .icon-btn { min-width: 44px; min-height: 44px; }
+}
