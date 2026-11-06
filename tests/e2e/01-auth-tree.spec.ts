@@ -70,8 +70,8 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
   await expect(page.locator('.ProseMirror')).toBeVisible();
 
   const nbRow = page.locator('.sb-row', { hasText: 'Launch Plans' });
-  await nbRow.hover();
-  await nbRow.getByRole('button', { name: 'Notebook options', exact: true }).click();
+  // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
+  await nbRow.locator('.sb-label').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'New section' }).click();
   await answer(/New section/, 'Q4');
   const secRow = page.locator('.sec-row', { hasText: 'Q4' });
@@ -79,7 +79,7 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
 
   const firstPageUrl = page.url();
   await secRow.hover();
-  await secRow.getByRole('button', { name: 'New page', exact: true }).click();
+  await secRow.getByRole('button', { name: 'New page', exact: true }).click({ force: true }); // hover-revealed; may animate
   await expect(page).not.toHaveURL(firstPageUrl);
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const pageId = page.url().split('/p/')[1];

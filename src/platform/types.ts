@@ -44,7 +44,7 @@ export interface Platform {
   openExternal(url: string): void;
 
   deepLinks: {
-    /** The link the app was launched with, if any (e.g. noteapp://page/<id>). */
+    /** The link the app was launched with, if any (e.g. notivelo://page/<id>). */
     initial(): Promise<string | null>;
     /** Links received while running. Returns an unsubscribe function. */
     subscribe(onLink: (url: string) => void): () => void;
@@ -52,6 +52,12 @@ export interface Platform {
 
   /** Let the user pick files. Resolves to [] if they cancel. */
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
+
+  /**
+   * Save a file to the user's device (a download on the web). Optional: shells
+   * without it get a clipboard fallback from the caller.
+   */
+  saveFile?(name: string, data: Blob): Promise<void>;
 
   /**
    * New app versions. Web: a new service worker is waiting; Tauri: the

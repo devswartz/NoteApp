@@ -1,4 +1,4 @@
-# NoteApp
+# Notivelo
 
 Collaborative notes with built-in task management. Notebooks, sections and pages like OneNote, a block editor like Notion, and tasks like Todoist. **A task you write inside a note is a real task**: it shows up on your dashboard, stays linked to its note, and stays in sync everywhere it appears.
 
@@ -21,7 +21,7 @@ Built for a small team (about 2–10 people). Self-hosted, invite-only, and avai
 - Works offline: the app opens without a connection, notes stay editable and sync when you reconnect, and tasks are readable from a local cache.
 
 **Tasks**
-- Type `[] ` in a note, or press ⌘↵ on a line, to make it a task. You can also add standalone tasks from anywhere with **Q**.
+- Type `/task` in a note, or press ⌘↵ (Ctrl+Enter on Windows and Linux) on a line, to make it a task. You can also add standalone tasks from anywhere with **Q**.
 - Each task has an assignee, a due date and time, a priority (P1–P4) and recurrence. Edit it from the note or the dashboard; it is the same task in both places.
 - **Natural-language quick add:** `Send invoice tomorrow 3pm p1 @sam every month`.
 - **Dashboard:** Today (including overdue, with a progress strip), My Tasks, Upcoming, Team, All (filter, sort, group, saved views), Calendar (month and week, drag to reschedule) and Completed.
@@ -71,6 +71,7 @@ Desktop: `npm run desktop:dev` (needs Rust). Mobile: `npm run mobile:ios` / `npm
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | How to use the app: notes, tasks, views, quick add, reminders, sharing, shortcuts |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How it's built: stack, folder layout, data model, auth, sync, platform adapter, API |
 | [docs/DEPLOY_CONTRACT.md](docs/DEPLOY_CONTRACT.md) | The hosting interface: image, ports, environment, volumes, health check |
+| [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md) | Step by step from `main` to staging, prod v0.1.0, and the signed desktop and mobile apps |
 | [docs/RELEASING.md](docs/RELEASING.md) | Releasing the server image (CI, GHCR, staging and production) |
 | [docs/DESKTOP.md](docs/DESKTOP.md) | The macOS/Windows app: building, signing, notarisation, auto-update |
 | [docs/MOBILE.md](docs/MOBILE.md) | The iPhone/Android app: building, push, widgets, store secrets |
