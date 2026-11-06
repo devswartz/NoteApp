@@ -20,6 +20,7 @@ import { platform, detectPlatform } from '../platform/index.ts';
 import { APP_NAME, APP_DESCRIPTION } from '../../shared/config.ts';
 import { AvatarColorPicker, ChangePasswordForm } from '../components/AccountSettings.tsx';
 import { WorkspaceData } from '../components/WorkspaceData.tsx';
+import { OneNoteImport, useOneNoteEnabled } from '../components/OneNoteImport.tsx';
 import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
 
 
@@ -249,6 +250,7 @@ function WorkspaceSection() {
   const [wsName, setWsName] = useState(ws.name);
   useEffect(() => setWsName(ws.name), [ws.name]);
   const isAdmin = ws.role === 'owner' || ws.role === 'admin';
+  const oneNote = useOneNoteEnabled();
   return (
     <>
       <Card>
@@ -286,6 +288,11 @@ function WorkspaceSection() {
       >
         <WorkspaceData wsId={ws.id} canExport={isAdmin} />
       </Card>
+      {oneNote && ws.role !== 'viewer' && (
+        <Card title="Import from OneNote" description="Sign in with Microsoft, pick notebooks, and they are imported into this workspace as private notebooks with their sections, pages, images, attachments and to-dos (as tasks).">
+          <OneNoteImport wsId={ws.id} />
+        </Card>
+      )}
       {ws.role === 'owner' && (
         <Card title="Danger zone" tone="danger" description="Deleting a workspace removes every notebook, page and task in it for everyone. This can’t be undone.">
           <Button

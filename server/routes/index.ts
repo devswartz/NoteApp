@@ -22,6 +22,7 @@ import { feedbackRoutes } from './feedback.ts';
 
 import { adminRoutes } from './admin.ts';
 import { exportRoutes } from './export.ts';
+import { oneNoteGate, oneNoteRoutes, publicOneNoteRoutes } from './onenote.ts';
 
 export { UPLOAD_DIR } from './files.ts';
 
@@ -37,6 +38,8 @@ api.use(authRateLimit); // 429 + Retry-After on login/sign-up/refresh/invite end
 api.use(publicAuthRoutes);
 api.use(publicReminderRoutes);
 api.use(publicWorkspaceRoutes);
+api.use('/import/onenote', oneNoteGate); // OneNote import (#117): 404 for everyone unless MS_CLIENT_ID + MS_CLIENT_SECRET are set
+api.use(publicOneNoteRoutes); // the browser's OAuth redirects (one-time ticket, then state + flow cookie)
 
 // The live event stream (/api/events) is a WebSocket: see server/events.ts and server/app.ts.
 
@@ -45,6 +48,7 @@ api.use(requireAuth);
 api.use(requireVerifiedEmail); // unverified users get 403 email_unverified on everything below except GET /me and POST /auth/resend-verification
 api.use(activityRecorder); // activity feed: observes mutating requests, never blocks them
 api.use(authRoutes);
+api.use(oneNoteRoutes);
 api.use(exportRoutes); // before workspaceRoutes: /workspaces/import must not hit /workspaces/:id
 api.use(workspaceRoutes);
 api.use(treeRoutes);
