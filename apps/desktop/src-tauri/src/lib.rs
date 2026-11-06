@@ -23,12 +23,27 @@ pub(crate) fn show_main<R: Runtime>(app: &AppHandle<R>) {
             let _ = w.show();
             let _ = w.set_focus();
         }
-        None => {
-            if let Err(e) = create_main(app) {
-                eprintln!("main window: {e}");
-            }
-        }
+        // Gone (closed on Windows/Linux; the app lives on in the tray): build it again.
+        None => build_window(app, "main window", create_main),
     }
+}
+
+/// Builds a window on a separate thread. Callers run on the main thread (tray,
+/// menu, single-instance and global-shortcut handlers, sync commands), and on
+/// Windows `WebviewWindowBuilder::build` deadlocks there: it waits for WebView2,
+/// which needs the event loop the caller is blocking. From another thread the
+/// build is handed to the event loop and the caller returns at once.
+pub(crate) fn build_window<R: Runtime>(
+    app: &AppHandle<R>,
+    what: &'static str,
+    build: fn(&AppHandle<R>) -> tauri::Result<()>,
+) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = build(&app) {
+            eprintln!("{what}: {e}");
+        }
+    });
 }
 
 fn create_main<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
