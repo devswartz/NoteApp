@@ -114,6 +114,7 @@ async function buildEveryBlock(page: Page) {
 
 test.describe('editor accessibility', () => {
   test('a page with every block type has no serious or critical axe violations', async ({ page, context, request }) => {
+    test.slow(); // types out every block type: ~4 s normally, past 30 s on an overloaded runner
     const user = await createUser(request, 'Axe Tester');
     const { pageId } = await createPage(request, user, { page: 'Every block' });
     await signInContext(context, user);
@@ -165,9 +166,13 @@ test.describe('editor accessibility', () => {
     await editor.locator('p').first().click();
     await page.keyboard.press('Home');
     await page.keyboard.press('Shift+End');
-    await page.keyboard.press('Alt+F10');
+    // Wait for the selection's toolbar to be showing (and focusable) before asking for it.
     const toolbar = page.getByRole('toolbar', { name: 'Formatting' });
-    await expect(toolbar.locator(':focus')).toHaveCount(1);
+    await expect(toolbar.getByRole('button', { name: /^Bold/ })).toBeVisible();
+    await expect(async () => {
+      await page.keyboard.press('Alt+F10');
+      await expect(toolbar.locator(':focus')).toHaveCount(1, { timeout: 1000 });
+    }).toPass({ timeout: 10_000 });
     const bold = toolbar.getByRole('button', { name: /^Bold/ });
     for (let i = 0; i < 10 && !(await bold.evaluate((b) => b === document.activeElement)); i++) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');

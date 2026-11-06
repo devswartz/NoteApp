@@ -399,7 +399,7 @@ function focusToolbar(attempt = 0) {
   const first = bar?.querySelector<HTMLButtonElement>('button');
   const visible = !!bar && bar.getBoundingClientRect().width > 0 && getComputedStyle(bar).visibility !== 'hidden';
   if (first && visible) first.focus();
-  else if (attempt < 30) requestAnimationFrame(() => focusToolbar(attempt + 1));
+  else if (attempt < 90) requestAnimationFrame(() => focusToolbar(attempt + 1)); // ~1.5 s for the bubble menu to show on a slow machine
 }
 
 /** Toolbar keyboard pattern: ←/→ (and Home/End) move between buttons, Escape returns to the text. */
