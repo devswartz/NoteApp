@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
 import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { PresenceStack } from '../editor/collabPresence.tsx';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
 import { loadComments, useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
@@ -14,7 +15,7 @@ import { promptDialog } from '../components/shell/dialogs.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
-import { Avatar, Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
+import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { sortTasks } from '../lib/taskViews.ts';
@@ -145,11 +146,7 @@ export function PageView() {
             {section && <span className="crumb">{section.name}</span>}
           </div>
           <div className="topbar-right">
-            <div className="presence">
-              {presence.slice(0, 5).map((p) => (
-                <Avatar key={p.id} user={p} size={24} title={`${p.name} is here`} />
-              ))}
-            </div>
+            <PresenceStack users={presence} />
             <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button
