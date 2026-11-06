@@ -18,7 +18,12 @@ async function raw(method: string, url: string, token: string, body?: Buffer, he
   const res = await fetch(`${app.origin}/api${url}`, { method, headers: { authorization: `Bearer ${token}`, ...headers }, body: body ? new Uint8Array(body) : undefined });
   return { status: res.status, buf: Buffer.from(await res.arrayBuffer()) };
 }
-const importZip = (token: string, zip: Buffer) => raw('POST', '/workspaces/import', token, zip, { 'content-type': 'application/zip' });
+// Imports are rate limited (tests/export-limits.test.ts); these tests import many times, so start each from full buckets.
+const importZip = async (token: string, zip: Buffer) => {
+  const { resetRateLimits } = await import('../server/ratelimit.ts');
+  resetRateLimits();
+  return raw('POST', '/workspaces/import', token, zip, { 'content-type': 'application/zip' });
+};
 
 const FILE_ID = 'a'.repeat(32);
 
@@ -192,7 +197,7 @@ test('import refuses damaged, malformed and oversized archives', async () => {
   const big = writeZip([{ name: 'a.txt', data: Buffer.alloc(100_000) }]);
   const cd2 = big.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
   big.writeUInt32LE(10, cd2 + 24);
-  assert.throws(() => readZip(big));
+  await assert.rejects(readZip(big));
 
   assert.equal(workspaces(), start, 'nothing was created by a refused import');
 });
@@ -216,7 +221,7 @@ test('export: private notebooks shared with the exporter are included, others ar
   const exp = await raw('GET', `/workspaces/${owner.wsId}/export`, owner.token);
   assert.equal(exp.status, 200);
   const { readZip } = await import('../server/zip.ts');
-  const m = JSON.parse(readZip(exp.buf).find((e) => e.name === 'workspace.json')!.data.toString());
+  const m = JSON.parse((await readZip(exp.buf)).find((e) => e.name === 'workspace.json')!.data.toString());
   const names = m.notebooks.map((n: { name: string }) => n.name);
   assert.ok(names.includes('Mat shared'), 'a private notebook shared with the exporter is included');
   assert.ok(!names.includes('Mat only'), 'a private notebook not shared with the exporter is excluded');

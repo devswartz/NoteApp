@@ -1,6 +1,7 @@
 // Minimal ZIP writer/reader (deflate or stored, no zip64, no encryption):
 // enough for workspace export/import without a dependency. Files up to a few
 // hundred MB in total; everything is held in memory.
+import { promisify } from 'node:util';
 import zlib from 'node:zlib';
 
 export interface ZipEntry {
@@ -64,8 +65,18 @@ export function writeZip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...parts, cdBuf, end]);
 }
 
-/** Read every file entry. Throws on anything malformed, encrypted or oversized. */
-export function readZip(buf: Buffer, { maxTotal = 500 * 1024 * 1024 } = {}): ZipEntry[] {
+const inflateRaw = promisify(zlib.inflateRaw);
+
+/**
+ * Read every file entry. Throws (a plain Error, which callers turn into a 400) on anything malformed,
+ * truncated, encrypted or oversized; every offset is bounds-checked before it is read. Inflating runs on
+ * the libuv thread pool, so a large archive doesn't block the event loop, and each entry is inflated no
+ * further than its declared size (checked against `maxTotal` before anything is inflated).
+ */
+export async function readZip(buf: Buffer, { maxTotal = 300 * 1024 * 1024, maxEntries = 100_000 } = {}): Promise<ZipEntry[]> {
+  const need = (at: number, len: number, what: string) => {
+    if (!Number.isSafeInteger(at) || at < 0 || at + len > buf.length) throw new Error(`Truncated zip (${what})`);
+  };
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 22 - 65535); i--) {
     if (buf.readUInt32LE(i) === 0x06054b50) {
@@ -75,10 +86,12 @@ export function readZip(buf: Buffer, { maxTotal = 500 * 1024 * 1024 } = {}): Zip
   }
   if (eocd < 0) throw new Error('Not a zip file');
   const count = buf.readUInt16LE(eocd + 10);
+  if (count > maxEntries) throw new Error('Too many entries');
   let p = buf.readUInt32LE(eocd + 16);
-  const out: ZipEntry[] = [];
+  const found: { name: string; method: number; crc: number; start: number; compSize: number; size: number }[] = [];
   let total = 0;
   for (let n = 0; n < count; n++) {
+    need(p, 46, 'central directory');
     if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('Corrupt zip directory');
     const flags = buf.readUInt16LE(p + 8);
     const method = buf.readUInt16LE(p + 10);
@@ -89,20 +102,36 @@ export function readZip(buf: Buffer, { maxTotal = 500 * 1024 * 1024 } = {}): Zip
     const extraLen = buf.readUInt16LE(p + 30);
     const commentLen = buf.readUInt16LE(p + 32);
     const localOff = buf.readUInt32LE(p + 42);
+    need(p + 46, nameLen, 'file name');
     const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8');
     p += 46 + nameLen + extraLen + commentLen;
     if (flags & 1) throw new Error('Encrypted zip entries are not supported');
     if (name.endsWith('/')) continue;
+    if (method !== 0 && method !== 8) throw new Error(`Unsupported compression in ${name}`);
     total += size;
     if (total > maxTotal) throw new Error('Archive is too large');
-    const lNameLen = buf.readUInt16LE(localOff + 26);
-    const lExtraLen = buf.readUInt16LE(localOff + 28);
-    const start = localOff + 30 + lNameLen + lExtraLen;
-    const raw = buf.subarray(start, start + compSize);
-    const data = method === 0 ? Buffer.from(raw) : method === 8 ? zlib.inflateRawSync(raw, { maxOutputLength: size }) : null;
-    if (!data) throw new Error(`Unsupported compression in ${name}`);
-    if (data.length !== size || zlib.crc32(data) !== crc) throw new Error(`Corrupt entry ${name}`);
-    out.push({ name, data });
+    need(localOff, 30, 'local header');
+    if (buf.readUInt32LE(localOff) !== 0x04034b50) throw new Error(`Corrupt entry ${name}`);
+    const start = localOff + 30 + buf.readUInt16LE(localOff + 26) + buf.readUInt16LE(localOff + 28);
+    need(start, compSize, `data of ${name}`);
+    if (method === 0 && compSize !== size) throw new Error(`Corrupt entry ${name}`);
+    found.push({ name, method, crc, start, compSize, size });
+  }
+  const out: ZipEntry[] = [];
+  for (const e of found) {
+    const raw = buf.subarray(e.start, e.start + e.compSize);
+    let data: Buffer;
+    if (e.method === 0) data = Buffer.from(raw);
+    else if (e.size === 0) data = Buffer.alloc(0); // nothing to inflate (and zlib refuses maxOutputLength 0)
+    else {
+      try {
+        data = await inflateRaw(raw, { maxOutputLength: e.size });
+      } catch {
+        throw new Error(`Corrupt entry ${e.name}`);
+      }
+    }
+    if (data.length !== e.size || zlib.crc32(data) !== e.crc) throw new Error(`Corrupt entry ${e.name}`);
+    out.push({ name: e.name, data });
   }
   return out;
 }

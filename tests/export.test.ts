@@ -53,7 +53,7 @@ test('export → import round-trip keeps the tree, page content, tasks and files
   assert.equal(exp.headers.get('content-type'), 'application/zip');
 
   const { readZip } = await import('../server/zip.ts');
-  const entries = readZip(exp.buf);
+  const entries = await readZip(exp.buf);
   const names = entries.map((e) => e.name);
   assert.ok(names.includes('workspace.json'));
   assert.ok(!names.some((n) => n.includes('Mel secret')), 'private notebook of another user not exported');

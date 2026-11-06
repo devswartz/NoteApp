@@ -119,6 +119,8 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
   return { zip: writeZip(entries), filename: `${safeName(ws.name)} ${stamp}.zip` };
 }
 
+/** Largest total unpacked size of an import (the body itself is capped at 100 MB by the route). */
+export const MAX_UNPACKED_BYTES = 300 * 1024 * 1024;
 const PRIORITIES = [1, 2, 3, 4];
 const MAX_TEXT = 50_000;
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -143,12 +145,13 @@ const timeOrNull = (v: unknown) => (typeof v === 'string' && /^\d{2}:\d{2}$/.tes
  *   - every value written to the database is type-checked, clamped or replaced by a default
  *   - nothing is written to disk under a name from the archive: attachments get fresh ids (and the
  *     documents that mention them are rewritten), so an import can never touch an existing file
- *   - size: the request body is capped by the route, readZip caps the unpacked total and each entry
+ *   - size: the route caps the body (100 MB) and admits one import at a time, rate limited per user and
+ *     server-wide (server/ratelimit.ts); readZip caps the unpacked total (300 MB) and each entry
  */
-export function importWorkspace(zip: Buffer, userId: string): { workspaceId: string; name: string } {
+export async function importWorkspace(zip: Buffer, userId: string): Promise<{ workspaceId: string; name: string }> {
   let entries: ZipEntry[];
   try {
-    entries = readZip(zip);
+    entries = await readZip(zip, { maxTotal: MAX_UNPACKED_BYTES });
   } catch (e) {
     throw new HttpError(400, `That file isn't a valid export: ${(e as Error).message}`);
   }
