@@ -129,11 +129,13 @@ export async function focusEnd(page: Page) {
   return editor;
 }
 
-/** Types "[] title" at the end of the note, commits it and leaves task mode. Returns the task-ref locator. */
+/** Inserts a task with /task at the end of the note, titles and commits it, and leaves task mode. Returns the task-ref locator. */
 export async function addInlineTask(page: Page, title: string) {
   await focusEnd(page);
   await page.keyboard.press('Enter');
-  await page.keyboard.type('[] ');
+  await page.keyboard.type('/task');
+  await expect(page.locator('.slash-menu .slash-title').first()).toHaveText('Task');
+  await page.keyboard.press('Enter');
   const input = page.locator('.task-ref-title:focus');
   await expect(input).toBeVisible();
   await input.fill(title);

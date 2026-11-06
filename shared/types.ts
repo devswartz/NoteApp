@@ -37,11 +37,27 @@ export type Recurrence =
   | ({ freq: 'day' | 'week' | 'month' | 'year'; interval: number } & RecurrenceOptions)
   | ({ freq: 'weekday' } & RecurrenceOptions);
 
+/** GET /auth/account/deletion-preview: what deleting the signed-in account would do to workspaces. */
+export interface AccountDeletionPreview {
+  /** Owned, with no other owner or admin to hand over to: deleted for everyone. */
+  deletedWorkspaces: { id: string; name: string }[];
+  /** Owned, no other owner: the longest-standing admin becomes owner. */
+  transferredWorkspaces: { id: string; name: string; newOwnerName: string }[];
+  /** Owned together with another owner: that owner carries on. */
+  sharedOwnership: { id: string; name: string }[];
+  /** Workspaces owned by someone else (as admin, member or viewer): you are removed from them. */
+  leftWorkspaces: { id: string; name: string }[];
+  /** Private notebooks you created, deleted with everything in them. */
+  privateNotebooks: number;
+}
+
 export interface User {
   id: string;
   email: string;
   name: string;
   color: string;
+  /** False until the address is confirmed by email; unverified users only get the "check your email" screen. */
+  emailVerified: boolean;
 }
 
 /** Returned by /auth/register, /auth/login and /auth/refresh. */
@@ -62,7 +78,8 @@ export interface Workspace {
   createdAt: string;
 }
 
-export interface Member extends User {
+/** A workspace member as other members see them (verification status is private to the account). */
+export interface Member extends Omit<User, 'emailVerified'> {
   role: Role;
 }
 
@@ -191,6 +208,32 @@ export interface SearchResult {
   tasks: (Task & { snippet?: string })[];
 }
 
+/** A user-saved page template, as listed by GET /workspaces/:id/templates (no content). */
+export interface TemplateMeta {
+  id: string;
+  workspaceId: string;
+  name: string;
+  icon: string | null;
+  /** 'private': saved from a private notebook, visible to its creator only. */
+  visibility: 'workspace' | 'private';
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  taskCount: number;
+  fileCount: number;
+  /** The signed-in user may rename/delete it (creator, or an owner/admin for workspace-visible ones). */
+  canManage: boolean;
+}
+
+/** What POST /templates/:id/use returns: content ready to insert through the editor, with brand-new tasks and file copies. */
+export interface TemplateUse {
+  title: string;
+  icon: string | null;
+  /** TipTap JSON doc: taskRef nodes point at newly created tasks, attachments at new file copies. */
+  content: unknown;
+  taskIds: string[];
+}
+
 /** An uploaded image or attachment (POST /workspaces/:id/files). */
 export interface UploadedFile {
   id: string;
@@ -265,6 +308,8 @@ export type ServerEvent =
   | { type: 'notification'; notification: AppNotification }
   /** New entries in the workspace activity feed. */
   | { type: 'activity'; workspaceId: string }
+  /** A page template was created, renamed or deleted: refetch the list. Private templates only reach their creator. */
+  | { type: 'templates'; workspaceId: string }
   /** The server can't replay what was missed: reload tree, tasks and members. */
   | { type: 'resync' };
 

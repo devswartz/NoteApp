@@ -127,7 +127,7 @@ function fakeBridge() {
 
 test('mobile: notification payloads become safe in-app deep links', () => {
   const link = notificationLink({ url: '/w/ws1/tasks/today?task=t1', taskId: 't1' });
-  assert.equal(link, 'noteapp://w/ws1/tasks/today?task=t1');
+  assert.equal(link, 'notivelo://w/ws1/tasks/today?task=t1');
   assert.deepEqual(parseDeepLink(link!), { kind: 'path', path: '/w/ws1/tasks/today?task=t1' });
   assert.equal(notificationLink({ url: 'https://evil.example/x' }), null);
   assert.equal(notificationLink({ url: '//evil.example/x' }), null);
@@ -171,15 +171,15 @@ test('mobile: refresh token goes to the keychain plugin', async () => {
 });
 
 test('mobile: deep links — launch URL, queued before the router subscribes, then live', async () => {
-  const f = fakes({ launchUrl: 'noteapp://page/p1' });
+  const f = fakes({ launchUrl: 'notivelo://page/p1' });
   const p = createCapacitorPlatform(f.native, async () => fakeBridge().bridge);
   await p.init();
-  assert.equal(await p.deepLinks.initial(), 'noteapp://page/p1');
+  assert.equal(await p.deepLinks.initial(), 'notivelo://page/p1');
 
-  f.fire('App.appUrlOpen', { url: 'noteapp://w/ws/tasks/today' }); // before anyone listens
+  f.fire('App.appUrlOpen', { url: 'notivelo://w/ws/tasks/today' }); // before anyone listens
   const got: string[] = [];
   const off = p.deepLinks.subscribe((u) => got.push(u));
-  assert.deepEqual(got, ['noteapp://w/ws/tasks/today']);
+  assert.deepEqual(got, ['notivelo://w/ws/tasks/today']);
   f.fire('App.appUrlOpen', { url: 'https://notes.devswartz.com/w/ws/p/pg' });
   assert.equal(got.length, 2);
   off();
@@ -219,7 +219,7 @@ test('mobile: tapping a push opens the task; snooze actions call the server', as
   p.deepLinks.subscribe((u) => links.push(u));
   const data = { url: '/w/ws/tasks/today?task=t1', taskId: 't1', snoozeToken: 'snz' };
   f.fire('Push.pushNotificationActionPerformed', { actionId: 'tap', notification: { data } });
-  assert.deepEqual(links, ['noteapp://w/ws/tasks/today?task=t1']);
+  assert.deepEqual(links, ['notivelo://w/ws/tasks/today?task=t1']);
   f.fire('Push.pushNotificationActionPerformed', { actionId: '1h', notification: { data } });
   await tick();
   assert.deepEqual(b.posts.at(-1), ['/reminders/snooze', { token: 'snz', option: '1h' }]);
@@ -381,12 +381,12 @@ test('mobile: shares wait for sign-in, then open where they were saved', async (
   b.setUser('u1');
   await tick();
   assert.deepEqual(b.captured, [{ kind: 'note', text: 'From Safari' }]);
-  assert.deepEqual(links, ['noteapp://w/ws/p/new-page']);
+  assert.deepEqual(links, ['notivelo://w/ws/p/new-page']);
   shares.push({ kind: 'task', text: 'Buy milk' });
   f.fire('Native.shareReceived', {});
   await tick();
   assert.equal(b.captured.length, 2);
-  assert.equal(links.at(-1), 'noteapp://w/ws/tasks/today');
+  assert.equal(links.at(-1), 'notivelo://w/ws/tasks/today');
 });
 
 test('mobile: Today widget snapshot — my due tasks, overdue first, capped, with deep links', () => {

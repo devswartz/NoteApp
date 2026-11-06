@@ -1,9 +1,18 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import { initPlatform, installExternalLinkHandler } from './platform/index.ts';
+import { ErrorBoundary, installGlobalErrorHandlers } from './components/ErrorBoundary.tsx';
+import { installErrorReporting } from './lib/errorReporting.ts';
 import './styles.css';
+
+installErrorReporting(); // before anything else can fail; reports go to POST /api/client-errors
 
 void initPlatform().then(() => {
   installExternalLinkHandler();
-  createRoot(document.getElementById('root')!).render(<App />);
+  installGlobalErrorHandlers();
+  createRoot(document.getElementById('root')!).render(
+    <ErrorBoundary page>
+      <App />
+    </ErrorBoundary>,
+  );
 });

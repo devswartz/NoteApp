@@ -6,6 +6,7 @@ import { db, newId, now, pickColor } from './db.ts';
 import { createWorkspace } from './workspaces.ts';
 import { createTask } from './tasks.ts';
 import { addDays, today } from '../shared/dates.ts';
+import { seedDemoContent } from './demoContent.ts';
 
 export const DEMO_USERS = [
   { name: 'Demo User', email: 'demo@example.com' },
@@ -14,7 +15,7 @@ export const DEMO_USERS = [
 
 /** Returns true if it seeded. Does nothing unless the DB has no users. */
 export function seedDemoIfEmpty(): boolean {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number };
+  const { n } = db.prepare("SELECT COUNT(*) AS n FROM users WHERE id <> 'deleted-user'").get() as { n: number };
   if (n > 0) return false;
   const password = process.env.DEMO_PASSWORD || crypto.randomBytes(9).toString('base64url');
   const hash = bcrypt.hashSync(password, 10);
@@ -39,6 +40,8 @@ export function seedDemoIfEmpty(): boolean {
     createTask(demo, team, { title: 'Book the team retro', assigneeId: demo, dueDate: addDays(t, 2), dueTime: '10:00' });
     createTask(demo, team, { title: 'Weekly status update', assigneeId: demo, dueDate: addDays(t, 4), recurrence: { freq: 'week', interval: 1 } });
     createTask(sam, team, { title: 'Collect feedback from beta users', assigneeId: sam, dueDate: addDays(t, 7) });
+    // Notebooks and pages that show off the editor, tasks, links, comments and history.
+    seedDemoContent(team, demo, sam);
   })();
 
   console.log(`SEED_DEMO: created ${DEMO_USERS.map((u) => u.email).join(', ')}`);

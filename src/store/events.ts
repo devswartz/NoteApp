@@ -7,6 +7,10 @@ import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
 import type { EventMessage, ServerEvent } from '../../shared/types.ts';
 import { commentsChanged } from '../editor/collabComments.ts';
+import { loadUserTemplates } from '../editor/userTemplates.ts';
+import { receiveNotification } from '../components/sharing/inbox.ts';
+import { activityChanged } from '../components/sharing/ActivityFeed.tsx';
+import { toast } from './toasts.ts';
 
 let socket: WebSocket | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -45,14 +49,16 @@ async function open(first: boolean) {
   await freshAccessToken();
   if (!wanted || socket) return;
   const since = !first && cursor ? `?since=${cursor.boot}:${cursor.seq}` : '';
-  // Without a cursor (very first connect, or the first hello never arrived) we can't catch up: reload once open.
-  const reloadOnOpen = !first && !cursor;
+  // Without a cursor we can't ask for a replay, so reload what the channel feeds once we're live:
+  // - the very first connect: the initial data was loaded over REST before (or while) this socket
+  //   opened, and changes made in that gap would otherwise be lost until a reload (BUG-4);
+  // - a reconnect before any hello ever arrived.
+  const reloadWhenLive = !cursor;
   const ws = new WebSocket(wsUrl(`/api/events${since}`), wsProtocols());
   socket = ws;
   ws.onopen = () => {
     healthyTimer = setTimeout(() => (attempts = 0), HEALTHY_AFTER_MS);
     set({ online: true });
-    if (reloadOnOpen) resync();
   };
   ws.onclose = (e) => {
     if (healthyTimer) clearTimeout(healthyTimer);
@@ -76,8 +82,10 @@ async function open(first: boolean) {
       return;
     }
     if (msg.type === 'hello') {
-      // Sent after any replay (or `resync`): from here on we're up to date.
+      // Sent after any replay (or `resync`): from here on every change reaches us live.
+      const hadCursor = !!cursor;
       cursor = { boot: msg.boot, seq: msg.seq };
+      if (reloadWhenLive && !hadCursor) resync(); // close the gap before the first hello (see above)
       return;
     }
     if (typeof msg.seq === 'number' && cursor) cursor.seq = Math.max(cursor.seq, msg.seq);
@@ -97,6 +105,7 @@ function resync() {
   void loadTree();
   void loadTasks();
   void loadMembers();
+  void loadUserTemplates();
 }
 
 function handle(ev: ServerEvent) {
@@ -119,6 +128,17 @@ function handle(ev: ServerEvent) {
       break;
     case 'comments':
       if (ev.workspaceId === wsId) commentsChanged(ev.pageId);
+      break;
+    case 'activity':
+      if (ev.workspaceId === wsId) debounce('activity', activityChanged, 500);
+      break;
+    case 'notification':
+      receiveNotification(ev.notification);
+      if (ev.notification.kind === 'mention' || ev.notification.kind === 'shared' || ev.notification.kind === 'assigned')
+        toast(ev.notification.title);
+      break;
+    case 'templates':
+      if (ev.workspaceId === wsId) debounce('templates', () => void loadUserTemplates(ev.workspaceId));
       break;
     case 'workspaces':
       debounce('ws', () => void loadWorkspaces());

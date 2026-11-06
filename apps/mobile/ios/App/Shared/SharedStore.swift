@@ -5,7 +5,7 @@ import Foundation
 /// Today snapshot the app writes for the widget.
 enum SharedStore {
     /// Must match the App Group in App.entitlements and the extensions' entitlements.
-    static let appGroup = "group.com.devswartz.noteapp"
+    static let appGroup = "group.com.devswartz.notivelo"
     private static let sharesKey = "pendingShares"
 
     static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
@@ -58,9 +58,9 @@ struct TodaySnapshot: Codable {
     let total: Int
     let items: [Item]
 
-    /// Deep link for an in-app path ("/w/…" → "noteapp://w/…").
+    /// Deep link for an in-app path ("/w/…" → "notivelo://w/…").
     static func link(_ path: String?) -> URL? {
-        guard let path, path.hasPrefix("/") else { return URL(string: "noteapp://") }
-        return URL(string: "noteapp:/" + path)
+        guard let path, path.hasPrefix("/") else { return URL(string: "notivelo://") }
+        return URL(string: "notivelo:/" + path)
     }
 }

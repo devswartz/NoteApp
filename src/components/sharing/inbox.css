@@ -1,0 +1,26 @@
+/* Notification bell + inbox. Owner: Collaboration & Access. */
+.bell-btn { position: relative; }
+.bell-badge { position: absolute; top: -2px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; box-shadow: 0 0 0 2px var(--bg); }
+.inbox-pop { width: min(380px, calc(100vw - 24px)); padding: 0; }
+.inbox-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.inbox-list { max-height: min(460px, 70vh); overflow: auto; padding: 4px; }
+.inbox-empty { padding: 16px 12px; }
+.inbox-row { display: flex; gap: 10px; align-items: flex-start; width: 100%; text-align: left; padding: 8px; border: 0; background: none; border-radius: 8px; cursor: pointer; color: inherit; font: inherit; }
+.inbox-row:hover { background: var(--hover, rgba(127, 127, 127, 0.08)); }
+.inbox-row.is-unread .inbox-title { font-weight: 600; }
+.inbox-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.inbox-title { font-size: 13px; }
+.inbox-body { font-size: 12px; color: var(--muted, #777); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--hover, rgba(127, 127, 127, 0.12)); }
+.inbox-dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+/* Activity feed (src/components/sharing/ActivityFeed.tsx) */
+.activity-page { max-width: 760px; margin: 0 auto; padding: 32px 24px 64px; }
+.activity-page h1 { display: flex; align-items: center; gap: 8px; font-size: 24px; margin: 0 0 16px; }
+.activity-day { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted, #777); margin: 20px 0 6px; }
+.activity-list { display: grid; }
+.activity-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; }
+.activity-row.is-link { cursor: pointer; }
+.activity-row.is-link:hover { background: var(--hover, rgba(127, 127, 127, 0.08)); }
+.activity-row:disabled { opacity: 1; }
+.activity-text { flex: 1; min-width: 0; }
+@media (max-width: 760px) { .activity-page { padding: 16px; } }

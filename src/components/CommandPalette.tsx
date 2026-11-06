@@ -4,7 +4,7 @@ import { CircleCheck, FileText, Plus, Search } from 'lucide-react';
 import { formatKeys, isEnabled, useCommandList } from '../hooks/useShortcuts.ts';
 import { ui, useStore, toggleTask } from '../store.ts';
 import { get } from '../api.ts';
-import { Kbd, Modal } from './ui.tsx';
+import { ENTER, Kbd, MOD, Modal, keyLabel } from './ui.tsx';
 import type { SearchResult, Task } from '../../shared/types.ts';
 import { describeDue } from '../lib/format.ts';
 
@@ -185,7 +185,7 @@ function PaletteInner() {
         {q && !flat.length && <div className="empty">No results</div>}
       </div>
       <div className="palette-foot muted small">
-        ↑↓ navigate · ↵ open · ⌘↵ complete task · esc close
+        ↑↓ navigate · ↵ open · {keyLabel(MOD, ENTER)} complete task · esc close
       </div>
     </Modal>
   );

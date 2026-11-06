@@ -1,6 +1,7 @@
 // Email delivery channel (server/mail.ts). Skipped when SMTP isn't configured
 // or the user turned email off.
 import { db } from '../db.ts';
+import { APP_NAME } from '../../shared/config.ts';
 import { escapeHtml, mailConfigured, sendMail, type MailMessage, type MailResult } from '../mail.ts';
 import { getSettings } from './settings.ts';
 import type { DeliveryChannel, Notice } from './channels.ts';
@@ -25,7 +26,7 @@ export function emailChannel(opts: { force?: boolean; send?: (m: MailMessage) =>
       const text = `${n.body}${link ? `\n\nOpen: ${link}` : ''}`;
       const html =
         n.html ??
-        `<p>${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>${link ? `<p><a href="${escapeHtml(link)}">Open in NoteApp</a></p>` : ''}`;
+        `<p>${escapeHtml(n.body).replace(/\n/g, '<br>')}</p>${link ? `<p><a href="${escapeHtml(link)}">Open in ${escapeHtml(APP_NAME)}</a></p>` : ''}`;
       const r = await send({ to, subject: n.title, text, html });
       if (!r.sent) throw new Error(r.error ?? 'Email not sent');
     },

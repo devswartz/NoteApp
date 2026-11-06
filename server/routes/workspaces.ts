@@ -4,6 +4,7 @@ import { db, now } from '../db.ts';
 import { TASK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
+import { removeFiles, templateFilePaths } from '../templates.ts';
 import {
   createWorkspace,
   findInvite,
@@ -62,7 +63,9 @@ workspaceRoutes.delete(
     const wsId = param(req, 'id');
     requireRole(wsId, req.user.id, 'owner');
     const members = memberIds(wsId);
+    const templateFiles = templateFilePaths((db.prepare('SELECT id FROM templates WHERE workspace_id = ?').all(wsId) as { id: string }[]).map((t) => t.id));
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(wsId);
+    removeFiles(templateFiles); // template attachment copies don't outlive their workspace
     accessChanged();
     publish({ type: 'workspaces' }, { userIds: members });
     return { ok: true };
@@ -107,7 +110,9 @@ workspaceRoutes.post(
     if (role === 'owner' && myRole !== 'owner') throw new HttpError(403, 'Only owners can add owners');
     const base = publicUrl(req.get('origin'));
     const mail = { to: email, workspaceName: workspaceName(wsId), inviterName: userName(req.user.id), role };
-    const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email) as { id: string } | undefined;
+    // An account that hasn't confirmed its email can't be added directly (its owner may not own the address):
+    // it gets a pending invite, which is applied when the email is confirmed.
+    const user = db.prepare('SELECT id FROM users WHERE email = ? AND email_verified_at IS NOT NULL').get(email) as { id: string } | undefined;
     if (user) {
       if (roleIn(wsId, user.id)) throw new HttpError(409, 'That person is already a member');
       db.prepare('INSERT INTO workspace_members (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)').run(wsId, user.id, role, now());

@@ -271,6 +271,20 @@
 }
 .template-card:hover { background: var(--bg-subtle); border-color: var(--border-strong); color: var(--text); }
 .template-icon { font-size: 18px; line-height: 1; }
+.template-picker-label-2 { margin-top: 14px; }
+/* A user template: the card plus its rename / delete buttons, kept together. */
+.template-card-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.template-card-user[disabled] { opacity: 0.6; }
+.template-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+}
+.template-act:hover { background: var(--bg-subtle); color: var(--text); }
 
 /* ───────── Version history ───────── */
 .modal.history-modal { width: min(1040px, calc(100vw - 32px)); max-width: none; height: min(720px, 80vh); padding: 0; overflow: hidden; }
