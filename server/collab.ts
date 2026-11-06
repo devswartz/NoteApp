@@ -11,7 +11,7 @@ import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import { onAccessChange, pageAccess, taskVisible } from './access.ts';
-import { syncPageTasks } from './tasks.ts';
+import { canMoveTask, syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
 
 const MSG_SYNC = 0;
@@ -155,7 +155,7 @@ function persist(room: Room) {
   const authors = room.taskAuthors;
   room.taskAuthors = new Map();
   syncPageTasks(room.pageId, room.workspaceId, taskIds, (id) =>
-    [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit),
+    [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
   );
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;

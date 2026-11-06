@@ -338,6 +338,51 @@ test('a task reference only moves a task onto the page if whoever inserted it ca
   assert.equal(getTask(f.siblingTask)!.pageId, f.sibling, 'a task on a page they can’t see stays there');
 });
 
+test('a view-only share holder can’t pull a task off the shared page by referencing it from their own page', async () => {
+  const f = await fixture();
+  await share(f.page, { userId: teammate.user.id, canEdit: false });
+  const nb = (await app.call('POST', `/workspaces/${f.ws}/notebooks`, teammate.token, { name: 'Teammate notebook' })).data.id;
+  const sec = (await app.call('POST', `/notebooks/${nb}/sections`, teammate.token, { name: 'S' })).data.id;
+  const own = (await app.call('POST', `/sections/${sec}/pages`, teammate.token, { title: 'Own page' })).data.id as string;
+  const mine = (await app.call('POST', `/workspaces/${f.ws}/tasks`, teammate.token, { title: 'Teammate standalone 2' })).data.id as string;
+  const b = collabClient(app, own, teammate.token);
+  try {
+    await synced(b);
+    const refs = [f.task, mine].map((id) => {
+      const el = new Y.XmlElement('taskRef');
+      el.setAttribute('taskId', id);
+      return el;
+    });
+    b.doc.getXmlFragment('default').insert(0, refs);
+    await new Promise((r) => setTimeout(r, 300));
+  } finally {
+    b.destroy();
+  }
+  const { getTask } = await import('../server/tasks.ts');
+  await waitFor(() => getTask(mine)?.pageId === own, 3000, 'their own task attached');
+  assert.equal(getTask(f.task)!.pageId, f.page, 'the shared page’s task stays where it is');
+});
+
+test('moving a page into a private notebook ends page shares its creator didn’t grant', async () => {
+  const f = await fixture();
+  await share(f.openPage, { userId: viewer.user.id }, teammate.token); // granted by the teammate
+  await app.call('PUT', `/notebooks/${f.nb}/shares`, owner.token, { userIds: [teammate.user.id] });
+  assert.equal((await app.call('POST', `/pages/${f.openPage}/move`, teammate.token, { sectionId: f.sec })).status, 200);
+  assert.equal((await app.call('GET', `/pages/${f.openPage}`, viewer.token)).status, 404);
+});
+
+test('an invite accepted through its link records who sent it, so the share survives the notebook going private', async () => {
+  const f = await fixture();
+  const invitee = await app.signUp('PsLinkInvitee');
+  const { upsertPageInvite } = await import('../server/workspaces.ts');
+  const token = upsertPageInvite(f.openPage, invitee.user.email, false, owner.user.id);
+  assert.equal((await app.call('POST', `/invites/${token}/accept`, invitee.token)).status, 200);
+  const { db } = await import('../server/db.ts');
+  assert.equal((db.prepare('SELECT created_by FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.openPage, invitee.user.id) as { created_by: string }).created_by, owner.user.id);
+  assert.equal((await app.call('PATCH', `/notebooks/${f.openNb}`, owner.token, { visibility: 'private' })).data.removedPageShares, 0);
+  assert.equal((await app.call('GET', `/pages/${f.openPage}`, invitee.token)).status, 200);
+});
+
 test('making a notebook private ends page shares others granted on its pages', async () => {
   const f = await fixture();
   await share(f.openPage, { userId: viewer.user.id }, teammate.token); // granted by a member

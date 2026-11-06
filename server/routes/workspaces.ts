@@ -507,7 +507,7 @@ function acceptPageInvite(userId: string, email: string, token: string) {
     throw new HttpError(403, `This invite was sent to ${inv.email}. Sign in with that email address to accept it.`);
   db.transaction(() => {
     if (!db.prepare('SELECT 1 FROM page_shares WHERE page_id = ? AND user_id = ?').get(inv.pageId, userId))
-      grantPageShare(inv.pageId, userId, false, null); // invitees are outside the workspace: view-only
+      grantPageShare(inv.pageId, userId, false, inv.invitedBy); // invitees are outside the workspace: view-only
     db.prepare('DELETE FROM page_invites WHERE page_id = ? AND email = ?').run(inv.pageId, inv.email);
   })();
   publish({ type: 'shared-pages' }, { userIds: [userId] });
