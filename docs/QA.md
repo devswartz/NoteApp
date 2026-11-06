@@ -41,7 +41,7 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 6 | Markdown shortcuts, slash menu (filter, table, divider, task, Escape), image upload, attachment, bubble menu; ⌘K search over page text, titles and tasks; no private results | `06-editor-search.spec.ts` | ✅ |
 | 7 | Daily and weekly recurrence roll forward with a completed copy; Repeat from task details; reminder time + bell; Settings "Enable notifications"; in-app reminder toast | `07-recurrence-reminders.spec.ts` | ✅ incl. Settings → Notifications (email, digest, default time, quiet hours) |
 | 8 | Offline edit → reconnect → synced to server and another device; reload while offline | `08-offline.spec.ts` | ✅ |
-| 9 | iPhone 13: tab bar, quick add, tap to complete, drawer sidebar → note, no horizontal scroll, editing, search | `09-mobile.mobile.spec.ts` | ✅ |
+| 9 | iPhone 13: tab bar, quick add, tap to complete, drawer sidebar → note, no horizontal scroll, editing, search; new page from search → `/task` → on Today with its source note → tap to complete | `09-mobile.mobile.spec.ts` | ✅ |
 | 10 | Notes edge cases: ⌘↵ convert line to task, move page (tasks stay linked), delete page/notebook keeps tasks, live rename for others, theme | `10-notes-edge.spec.ts` | ✅ |
 | 11 | Live access changes: notebook made private, member removed, member demoted (server rejects edits; UI read-only live) | `11-live-access.spec.ts` | ✅ |
 | 12 | Bulk task actions + row keys (#16) | `12-bulk-tasks.spec.ts` | ✅ |
@@ -60,10 +60,18 @@ E2E_PORT=4500 npm run test:e2e           # pick other ports (uses E2E_PORT, +1 a
 | 25 | Client error reporting: an uncaught error in the page makes exactly one `POST /api/client-errors` (204) with message, stack, version and the page URL without query/fragment; the same error again, ResizeObserver noise and aborts are not reported; signed in the request carries the bearer token; nothing is sent while offline | `24-client-errors.spec.ts` | ✅ |
 | 26 | Send feedback (`verify-email` project, which runs with `ADMIN_EMAILS=feedback-admin@e2e.test`): ⌘K → "Send feedback" → Send is disabled until there is text, counter, success toast, and the admin mail in the outbox (subject, Reply-To = the user, id, path with query/hash stripped, HTML escaped). A failed send (500 stubbed) keeps the draft; the `?` overlay also opens the dialog. Server side in `tests/feedback.test.ts` | `24-feedback.verify.spec.ts` | ✅ |
 | 27 | Editor extras (#21): page icon (page, sidebar, saved), ⌘K on a selection adds a link (kept after reload), ⌘K without a selection opens the palette; attachment renders as a file card with size and a working download | `27-editor-extras.spec.ts` | ✅ |
+| 28 | Verification × invites (`verify-email`): an invited person who signs up unverified isn't a member yet (invite still pending, the team URL shows "Check your email"); confirming applies the invite and they land in the team | `28-verify-invites.verify.spec.ts` | ✅ |
+| 29 | Template privacy: a page in a private notebook (with a task) is saved as a private template (dialog says so, other members don't get it); a shared-notebook page is a workspace template other members see | `29-template-privacy.spec.ts` | ✅ |
 
 ## Open bugs
 
-None open.
+### BUG-5: a new task left with Escape keeps the quick-add words in its title
+- **Area / owner:** Editor & Notes (`src/editor/TaskRef.tsx`: Escape calls `commit()`, which saves the parsed title, then moves focus out, and the `onBlur` → `commit()` runs again with the stale raw `title` and overwrites it)
+- **Found on:** main @ 3d44a4b, 2026-11-06 (3/3; both "/task" and "Add a task to this page")
+- **Steps:** 1. In a page, start a task (`/task` or "Add a task to this page"). 2. Type `Buy lemons tomorrow p1`. 3. Press Escape.
+- **Expected:** like Enter, the title becomes "Buy lemons", due tomorrow, priority 1.
+- **Actual:** due date and priority are applied, but the title stays "Buy lemons tomorrow p1" (in the note, the dashboard and the server).
+- **Test:** `tests/e2e/10-notes-edge.spec.ts` › "a new task left with Escape gets the same cleaned-up title as with Enter" (`test.fixme`)
 
 ## Observations (not filed as bugs)
 
