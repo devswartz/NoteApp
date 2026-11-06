@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, MoveHorizontal } from 'lucide-react';
 import { api, get, patch, del, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
@@ -16,6 +16,7 @@ import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { promptDialog } from '../components/shell/dialogs.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
+import { Outline, usePageSetting } from '../editor/Outline.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -38,12 +39,14 @@ export function PageView() {
   const [save, setSave] = useState<SaveState>('saved');
   const [synced, setSynced] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     setSynced(false);
     setHistoryOpen(false);
   }, [pageId]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [fullWidth, setFullWidth] = usePageSetting(editor, 'fullWidth', false);
   const isMobile = useIsMobile();
   // Tasks / comments panel (#99): never opens by itself. Desktop restores the
   // last choice on this device; phones always open a page as just the note.
@@ -107,7 +110,18 @@ export function PageView() {
       if (el || ++tries > 30) {
         clearInterval(iv);
         if (el) {
-          el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (editor.view.dom.classList.contains('is-long')) {
+            // Long pages skip rendering off-screen blocks (estimated heights), so one smooth
+            // scroll can miss: jump, then re-settle for a few frames as real sizes come in.
+            let frames = 0;
+            const settle = () => {
+              el.scrollIntoView({ block: 'center' });
+              if (++frames < 4) requestAnimationFrame(settle);
+            };
+            settle();
+          } else {
+            el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }
           el.classList.add('flash');
           setTimeout(() => el.classList.remove('flash'), 1800);
         }
@@ -140,7 +154,8 @@ export function PageView() {
 
   return (
     <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
-      <div className="page-scroll">
+      <div className="page-scroll" ref={setScroller}>
+        {editor && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook && (
@@ -159,24 +174,25 @@ export function PageView() {
             <button
               className={`btn-ghost icon-btn panel-toggle ${panel === 'tasks' ? 'is-active' : ''}`}
               title="Tasks on this page"
-              aria-label={`Tasks on this page${openTasks ? ` (${openTasks} open)` : ''}`}
               aria-pressed={panel === 'tasks'}
               onClick={() => togglePanel('tasks')}
             >
-              <ListTodo size={18} />
-              {openTasks > 0 && <span className="panel-badge" aria-hidden>{openTasks > 99 ? '99+' : openTasks}</span>}
+              <ListTodo size={18} aria-hidden />
+              {/* The name comes from the content so it contains the visible count (axe: label-content-name-mismatch). */}
+              <span className="sr-only">Tasks on this page</span>
+              {openTasks > 0 && <PanelBadge n={openTasks} />}
             </button>
             <button
               className={`btn-ghost icon-btn panel-toggle ${panel === 'comments' ? 'is-active' : ''}`}
               title="Comments"
-              aria-label={`Comments${openThreads ? ` (${openThreads} open)` : ''}`}
               aria-pressed={panel === 'comments'}
               onClick={() => togglePanel('comments')}
             >
-              <MessageSquare size={18} />
-              {openThreads > 0 && <span className="panel-badge" aria-hidden>{openThreads > 99 ? '99+' : openThreads}</span>}
+              <MessageSquare size={18} aria-hidden />
+              <span className="sr-only">Comments</span>
+              {openThreads > 0 && <PanelBadge n={openThreads} />}
             </button>
-            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} />}
+            {canEdit && <PageMenu pageId={pageId} wsId={wsId} editor={editor} onHistory={() => setHistoryOpen(true)} fullWidth={fullWidth} onFullWidth={setFullWidth} />}
           </div>
         </header>
 
@@ -185,7 +201,7 @@ export function PageView() {
             Following {followed.name} · scroll, click or Esc to stop
           </div>
         )}
-        <article className="page-article" ref={setArticle}>
+        <article className={`page-article ${fullWidth ? 'is-full' : ''}`} ref={setArticle}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
@@ -353,7 +369,25 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   );
 }
 
-function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: string; editor: Editor | null; onHistory: () => void }) {
+/** The page "⋯" menu. Its items are a separate component so they're only built while the menu is open. */
+function PageMenu(props: PageMenuProps) {
+  return (
+    <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
+      {() => <PageMenuItems {...props} />}
+    </Dropdown>
+  );
+}
+
+type PageMenuProps = {
+  pageId: string;
+  wsId: string;
+  editor: Editor | null;
+  onHistory: () => void;
+  fullWidth: boolean;
+  onFullWidth: (v: boolean) => void;
+};
+
+function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -400,8 +434,6 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
     }
   };
   return (
-    <Dropdown trigger={<MoreHorizontal size={18} />} buttonClass="btn-ghost icon-btn" title="Page options" placement="bottom-end" className="menu-scroll">
-      {() => (
         <div className="menu page-menu">
           <MenuItem
             icon={<Copy size={15} />}
@@ -421,6 +453,9 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
           </MenuItem>
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
+          </MenuItem>
+          <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
+            Full width
           </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
@@ -473,8 +508,6 @@ function PageMenu({ pageId, wsId, editor, onHistory }: { pageId: string; wsId: s
             Delete page
           </MenuItem>
         </div>
-      )}
-    </Dropdown>
   );
 }
 
@@ -518,6 +551,18 @@ function Backlinks({ pageId, wsId }: { pageId: string; wsId: string }) {
         </Link>
       ))}
     </section>
+  );
+}
+
+/** Open-item count on a toolbar button; reads as "(3 open)" to screen readers. */
+function PanelBadge({ n }: { n: number }) {
+  return (
+    <>
+      <span className="sr-only"> ({n} open)</span>
+      <span className="panel-badge" aria-hidden>
+        {n > 99 ? '99+' : n}
+      </span>
+    </>
   );
 }
 

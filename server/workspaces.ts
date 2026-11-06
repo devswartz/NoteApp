@@ -4,6 +4,7 @@ import { seedWorkspace } from './seed.ts';
 import { IS_PROD } from './config.ts';
 import crypto from 'node:crypto';
 import { escapeHtml, sendMail } from './mail.ts';
+import { publish } from './events.ts';
 import { APP_NAME } from '../shared/config.ts';
 import type { InviteInfo, Role } from '../shared/types.ts';
 
@@ -115,4 +116,131 @@ export async function sendAddedEmail(opts: { to: string; link: string; workspace
     text: `${inviterName} added you to "${workspaceName}" on ${APP_NAME} as ${role === 'admin' ? 'an' : 'a'} ${role}.\n\nOpen it: ${link}`,
     html: `<p>${escapeHtml(inviterName)} added you to <strong>${escapeHtml(workspaceName)}</strong> on ${escapeHtml(APP_NAME)} as ${role === 'admin' ? 'an' : 'a'} ${role}.</p><p><a href="${escapeHtml(link)}">Open ${escapeHtml(workspaceName)}</a></p>`,
   });
+}
+
+// ───────────── Page invites (sharing one page, migration 013) ─────────────
+// Same token scheme as workspace invites, but the invite grants a page share
+// (view-only for anyone outside the workspace), not membership.
+
+/** Create or refresh the page invite for `email`. Returns the raw token. */
+export function upsertPageInvite(pageId: string, email: string, canEdit: boolean, invitedBy: string): string {
+  const token = crypto.randomBytes(24).toString('base64url');
+  const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86_400_000).toISOString();
+  db.prepare(
+    `INSERT INTO page_invites (page_id, email, can_edit, invited_by, token_hash, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (page_id, email) DO UPDATE SET can_edit = excluded.can_edit, invited_by = excluded.invited_by,
+       token_hash = excluded.token_hash, expires_at = excluded.expires_at, created_at = excluded.created_at`,
+  ).run(pageId, email, canEdit ? 1 : 0, invitedBy, hashInviteToken(token), expires, now());
+  return token;
+}
+
+export interface PageInvite {
+  pageId: string;
+  pageTitle: string;
+  workspaceId: string;
+  workspaceName: string;
+  invitedByName: string;
+  email: string;
+  canEdit: boolean;
+  expired: boolean;
+  /** Who sent it: recorded as the share's creator once accepted. */
+  invitedBy: string;
+}
+
+export function findPageInvite(token: string): PageInvite | null {
+  if (typeof token !== 'string' || token.length < 16) return null;
+  const r = db
+    .prepare(
+      `SELECT i.page_id, i.email, i.can_edit, i.expires_at, i.invited_by, p.title, n.workspace_id, w.name AS workspace_name, u.name AS inviter_name
+       FROM page_invites i JOIN pages p ON p.id = i.page_id JOIN sections s ON s.id = p.section_id
+       JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id JOIN users u ON u.id = i.invited_by
+       WHERE i.token_hash = ?`,
+    )
+    .get(hashInviteToken(token)) as
+    | { page_id: string; email: string; can_edit: number; expires_at: string | null; invited_by: string; title: string; workspace_id: string; workspace_name: string; inviter_name: string }
+    | undefined;
+  if (!r) return null;
+  return {
+    pageId: r.page_id,
+    pageTitle: r.title || 'Untitled',
+    workspaceId: r.workspace_id,
+    workspaceName: r.workspace_name,
+    invitedByName: r.inviter_name,
+    email: r.email,
+    canEdit: !!r.can_edit,
+    expired: !!r.expires_at && r.expires_at < now(),
+    invitedBy: r.invited_by,
+  };
+}
+
+/** Grant (or update) a page share. */
+export function grantPageShare(pageId: string, userId: string, canEdit: boolean, by: string | null) {
+  db.prepare(
+    `INSERT INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (page_id, user_id) DO UPDATE SET can_edit = excluded.can_edit`,
+  ).run(pageId, userId, canEdit ? 1 : 0, by, now());
+}
+
+/** Turn every live page invite for `email` into a page share for `userId`. Returns how many. Call inside a transaction. */
+export function acceptPendingPageInvites(userId: string, email: string, ts = now()): number {
+  const live = '(expires_at IS NULL OR expires_at > ?)';
+  const rows = db.prepare(`SELECT page_id, can_edit, invited_by FROM page_invites WHERE email = ? AND ${live}`).all(email, ts) as {
+    page_id: string;
+    can_edit: number;
+    invited_by: string;
+  }[];
+  for (const r of rows)
+    // View-only: the invitee isn't a workspace member (#98 review: outsider shares are stored can_edit = 0).
+    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, 0, ?, ?)').run(
+      r.page_id, userId, r.invited_by, ts,
+    );
+  db.prepare(`DELETE FROM page_invites WHERE email = ? AND ${live}`).run(email, ts);
+  return rows.length;
+}
+
+/** Tell someone a page was shared with them (with a link to it, or to the invite when they have no account yet). */
+export async function sendPageSharedEmail(opts: { to: string; link: string; pageTitle: string; inviterName: string; canEdit: boolean; invite: boolean }) {
+  const { to, link, pageTitle, inviterName, canEdit, invite } = opts;
+  const what = canEdit ? 'edit' : 'view';
+  const tail = invite ? `\n\nThe link works for ${INVITE_TTL_DAYS} days. If you weren't expecting this, you can ignore this email.` : '';
+  return sendMail({
+    to,
+    subject: `${inviterName} shared “${pageTitle}” with you on ${APP_NAME}`,
+    text: `${inviterName} shared the page "${pageTitle}" with you on ${APP_NAME}. You can ${what} it.\n\n${invite ? 'Accept and open it' : 'Open it'}: ${link}${tail}`,
+    html: `<p>${escapeHtml(inviterName)} shared the page <strong>${escapeHtml(pageTitle)}</strong> with you on ${escapeHtml(APP_NAME)}. You can ${what} it.</p>
+<p><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 16px;background:#6366f1;color:#fff;border-radius:6px;text-decoration:none">${invite ? 'Accept and open' : 'Open page'}</a></p>
+<p style="color:#666;font-size:13px">Or open this link: ${escapeHtml(link)}${invite ? `<br>It works for ${INVITE_TTL_DAYS} days. If you weren't expecting this, you can ignore this email.` : ''}</p>`,
+  });
+}
+
+/**
+ * A notebook was made private: page shares on its pages that someone other than its creator
+ * granted end (the creator's own stay). Also drops such pending page invites. Returns how many
+ * shares were removed; the caller calls accessChanged(). Holders are told to refresh.
+ */
+export function dropForeignPageShares(notebookId: string): number {
+  const pagesOf = `SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id WHERE s.notebook_id = @nb`;
+  const creator = `(SELECT created_by FROM notebooks WHERE id = @nb)`;
+  const users = (
+    db.prepare(`SELECT DISTINCT user_id FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).all({ nb: notebookId }) as { user_id: string }[]
+  ).map((r) => r.user_id);
+  const n = db.prepare(`DELETE FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).run({ nb: notebookId }).changes;
+  db.prepare(`DELETE FROM page_invites WHERE page_id IN (${pagesOf}) AND invited_by IS NOT ${creator}`).run({ nb: notebookId });
+  if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
+  return n;
+}
+
+/**
+ * A page moved into a private notebook: its page shares (and pending invites) that the new
+ * notebook's creator didn't grant end, as if that notebook had just been made private. Returns
+ * how many shares were removed; the caller calls accessChanged().
+ */
+export function dropForeignSharesOnPage(pageId: string, notebookId: string): number {
+  const creator = (db.prepare('SELECT created_by FROM notebooks WHERE id = ?').get(notebookId) as { created_by: string }).created_by;
+  const users = (db.prepare('SELECT user_id FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').all(pageId, creator) as { user_id: string }[]).map((r) => r.user_id);
+  const n = db.prepare('DELETE FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').run(pageId, creator).changes;
+  db.prepare('DELETE FROM page_invites WHERE page_id = ? AND invited_by IS NOT ?').run(pageId, creator);
+  if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
+  return n;
 }

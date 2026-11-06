@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { db, newId, now, pickColor } from '../db.ts';
 import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
+import { dropForeignPageShares } from '../workspaces.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt, refreshTasksForNotebook, validColor } from '../tree.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
@@ -68,15 +69,19 @@ treeRoutes.patch(
     if (b.name !== undefined) db.prepare('UPDATE notebooks SET name = ? WHERE id = ?').run(str(b.name, 'Name', 100), id);
     if (b.color !== undefined) db.prepare('UPDATE notebooks SET color = ? WHERE id = ?').run(validColor(b.color, () => { throw new HttpError(400, 'Colour must look like #4f46e5'); }), id);
     if (typeof b.position === 'number') db.prepare('UPDATE notebooks SET position = ? WHERE id = ?').run(b.position, id);
+    let removedPageShares = 0;
     if (b.visibility !== undefined) {
       if (!a.isNotebookOwner) throw new HttpError(403, 'Only the notebook creator can change its visibility');
       if (!['shared', 'private'].includes(b.visibility)) throw new HttpError(400, 'Invalid visibility');
+      const was = (db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(id) as { visibility: string }).visibility;
       db.prepare('UPDATE notebooks SET visibility = ? WHERE id = ?').run(b.visibility, id);
+      // Made private: single-page shares someone else granted on its pages end (#98).
+      if (was !== 'private' && b.visibility === 'private') removedPageShares = dropForeignPageShares(id);
       accessChanged(); // collaborators may have lost access
       refreshTasksForNotebook(id);
     }
     publish({ type: 'tree', workspaceId: a.workspaceId });
-    return { ok: true };
+    return { ok: true, removedPageShares };
   }),
 );
 

@@ -63,7 +63,16 @@ function maySignUp(email: string): boolean {
   if (signupMode() === 'open') return true;
   if (!db.prepare("SELECT 1 FROM users WHERE id <> 'deleted-user' LIMIT 1").get()) return true;
   if (adminEmails().includes(email)) return true;
-  return !!db.prepare('SELECT 1 FROM workspace_invites WHERE email = ? AND (expires_at IS NULL OR expires_at > ?)').get(email, now());
+  const live = '(expires_at IS NULL OR expires_at > ?)';
+  if (db.prepare(`SELECT 1 FROM workspace_invites WHERE email = ? AND ${live}`).get(email, now())) return true;
+  // A single-page invite (#98) counts only when a workspace owner or admin sent it.
+  return !!db
+    .prepare(
+      `SELECT 1 FROM page_invites i JOIN pages p ON p.id = i.page_id JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id
+       JOIN workspace_members m ON m.workspace_id = n.workspace_id AND m.user_id = i.invited_by AND m.role IN ('owner', 'admin')
+       WHERE i.email = ? AND (i.expires_at IS NULL OR i.expires_at > ?)`,
+    )
+    .get(email, now());
 }
 
 /** Routes that work without a token. */

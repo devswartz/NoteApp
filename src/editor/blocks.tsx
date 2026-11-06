@@ -1,7 +1,8 @@
 // Custom block nodes: callout, file attachment card, code block with a language picker.
 import { Node, mergeAttributes } from '@tiptap/core';
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
-import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
+import { CodeBlock as CodeBlockBase } from '@tiptap/extension-code-block';
+import { codeHighlightPlugin } from './codeHighlight.ts';
 import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details';
 import ImageExt from '@tiptap/extension-image';
 import { createLowlight, common } from 'lowlight';
@@ -104,13 +105,14 @@ function CalloutView({ node, updateAttributes, editor }: ReactNodeViewProps) {
   return (
     <NodeViewWrapper className="callout" data-type="callout">
       <span contentEditable={false} className="callout-emoji-wrap">
-        <Dropdown trigger={node.attrs.emoji as string} buttonClass="callout-emoji" title="Change icon" disabled={!editor.isEditable}>
+        <Dropdown trigger={node.attrs.emoji as string} buttonClass="callout-emoji" title="Change callout icon" disabled={!editor.isEditable}>
           {(close) => (
             <div className="emoji-grid">
               {CALLOUT_EMOJIS.map((e) => (
                 <button
                   key={e}
                   type="button"
+                  aria-label={`Use ${e}`}
                   className="emoji-btn"
                   onClick={() => {
                     updateAttributes({ emoji: e });
@@ -224,7 +226,9 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
   return (
     <NodeViewWrapper className={`file-card ${selected ? 'is-selected' : ''}`} data-type="file" data-drag-handle>
       <div className="file-card-inner" contentEditable={false}>
-        <span className="file-card-icon">{fileIcon(a.mime, a.name)}</span>
+        <span className="file-card-icon" aria-hidden="true">
+          {fileIcon(a.mime, a.name)}
+        </span>
         {href ? (
           <a className="file-card-name" href={href} target="_blank" rel="noopener noreferrer" title={`Open ${a.name}`}>
             {a.name}
@@ -236,7 +240,7 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
         )}
         <span className="file-card-size">{formatSize(a.size)}</span>
         {href && (
-          <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download">
+          <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download" aria-label={`Download ${a.name}`}>
             <Download size={15} />
           </a>
         )}
@@ -285,7 +289,27 @@ export const Toggle = Details.extend({
     const body = content ? (content.content ?? []).map((c) => h.renderChildren([c])).join('\n\n') : '';
     return `<details>\n<summary>${title}</summary>\n\n${body}\n\n</details>`;
   },
-}).configure({ persist: false, HTMLAttributes: { class: 'toggle' } });
+}).configure({
+  persist: false,
+  HTMLAttributes: { class: 'toggle' },
+  // The toggle button is a real <button>: give it a name and its state for screen readers.
+  renderToggleButton: ({ element, isOpen }) => {
+    // Outside the editable text, so it takes keyboard focus and Enter/Space toggle it.
+    element.contentEditable = 'false';
+    element.type = 'button';
+    // ProseMirror listens for keys on the editor root; handle Enter/Space here first.
+    element.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        element.click();
+      }
+    };
+    element.setAttribute('aria-expanded', String(isOpen));
+    element.setAttribute('aria-label', isOpen ? 'Collapse toggle' : 'Expand toggle');
+    element.title = isOpen ? 'Collapse' : 'Expand';
+  },
+});
 export const ToggleSummary = DetailsSummary;
 export const ToggleContent = DetailsContent;
 
@@ -294,7 +318,8 @@ export const ToggleContent = DetailsContent;
 export const lowlight = createLowlight(common);
 
 export const CODE_LANGUAGES: { id: string; label: string }[] = [
-  { id: '', label: 'Plain text' },
+  { id: '', label: 'Auto-detect' },
+  { id: 'plaintext', label: 'Plain text' },
   { id: 'bash', label: 'Bash' },
   { id: 'c', label: 'C' },
   { id: 'cpp', label: 'C++' },
@@ -319,11 +344,15 @@ export const CODE_LANGUAGES: { id: string; label: string }[] = [
   { id: 'yaml', label: 'YAML' },
 ];
 
-export const CodeBlock = CodeBlockLowlight.extend({
+export const CodeBlock = CodeBlockBase.extend({
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockView);
   },
-}).configure({ lowlight, defaultLanguage: null, enableTabIndentation: true });
+  addProseMirrorPlugins() {
+    // Incremental highlighting (see codeHighlight.ts) instead of code-block-lowlight's whole-doc rescans.
+    return [...(this.parent?.() ?? []), codeHighlightPlugin({ name: this.name, lowlight, defaultLanguage: null })];
+  },
+}).configure({ enableTabIndentation: true });
 
 function CodeBlockView({ node, updateAttributes, editor }: ReactNodeViewProps) {
   const [copied, setCopied] = useState(false);

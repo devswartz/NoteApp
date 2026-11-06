@@ -124,13 +124,14 @@ fileRoutes.post(
   raw,
   h((req) => {
     const workspaceId = param(req, 'id');
-    requireRole(workspaceId, req.user.id, 'member');
     let pageId: string | null = null;
     if (typeof req.query.pageId === 'string' && req.query.pageId) {
+      // Into a page: whoever may edit it (a page share with edit counts, #98).
       const a = pageAccess(req.query.pageId, req.user.id);
       if (!a || a.workspaceId !== workspaceId) throw new HttpError(404, 'Page not found');
+      if (!a.canEdit) throw new HttpError(403, 'You have view-only access');
       pageId = req.query.pageId;
-    }
+    } else requireRole(workspaceId, req.user.id, 'member');
     return store(req, workspaceId, pageId);
   }),
 );

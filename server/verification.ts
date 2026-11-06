@@ -22,7 +22,7 @@ import { db, now, DELETED_USER_ID } from './db.ts';
 import { escapeHtml, mailConfigured, sendMail } from './mail.ts';
 import { APP_NAME } from '../shared/config.ts';
 import { publish } from './events.ts';
-import { publicUrl } from './workspaces.ts';
+import { acceptPendingPageInvites, publicUrl } from './workspaces.ts';
 import { adminEmails } from './admin.ts';
 import { log } from './log.ts';
 import { deleteAccount } from './accounts.ts';
@@ -95,6 +95,7 @@ export function acceptPendingInvites(userId: string, email: string, ts = now()) 
     publish({ type: 'members', workspaceId: inv.workspace_id });
   }
   db.prepare(`DELETE FROM workspace_invites WHERE email = ? AND ${live}`).run(email, ts);
+  if (acceptPendingPageInvites(userId, email, ts)) publish({ type: 'shared-pages' }, { userIds: [userId] }); // single pages shared with this address (#98)
 }
 
 /**

@@ -8,7 +8,7 @@
 // the caller can see are searched.
 import { Router } from 'express';
 import { db } from '../db.ts';
-import { NOTEBOOK_VISIBLE, TASK_VISIBLE, requireRole } from '../access.ts';
+import { PAGE_VISIBLE, TASK_VISIBLE, requireRole } from '../access.ts';
 import { rowToTask } from '../tasks.ts';
 import { h, param } from '../http.ts';
 import type { SearchResult } from '../../shared/types.ts';
@@ -37,7 +37,7 @@ export function search(workspaceId: string, userId: string, q: string, limit = 2
          CASE WHEN length(f.text) > 0 THEN snippet(pages_fts, 2, '«', '»', '…', 14) ELSE '' END AS snippet,
          n.name AS notebookName, s.name AS sectionName
        FROM pages_fts f JOIN pages pg ON pg.id = f.page_id JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
-       WHERE pages_fts MATCH @fts AND n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE}
+       WHERE pages_fts MATCH @fts AND n.workspace_id = @workspaceId AND ${PAGE_VISIBLE}
        ORDER BY bm25(pages_fts, 0, 10, 1), pg.updated_at DESC LIMIT @limit`,
     )
     .all(p) as SearchResult['pages'];
