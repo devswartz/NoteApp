@@ -18,11 +18,19 @@ test('page icon: pick one; it shows on the page and in the sidebar, and is saved
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).locator('.sb-row', { hasText: 'Iconic page' })).toContainText(emoji);
 });
 
-test('⌘/Ctrl+K on selected text adds a link; without a selection it opens the palette', async ({ page, context, request }) => {
+test('⌘/Ctrl+K without a selection opens the palette; on selected text it adds a link', async ({ page, context, request }) => {
   const user = await createUser(request, 'Lou Link');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   const editor = await openPage(page, user.wsId, pageId);
+  await focusEnd(page);
+  // Nothing selected → the command palette.
+  await page.keyboard.press('ControlOrMeta+k');
+  await expect(page.getByRole('dialog', { name: 'Search' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog', { name: 'Search' })).toHaveCount(0);
+
+  // Text selected → the link editor.
   await focusEnd(page);
   await page.keyboard.type('Read the handbook');
   await page.keyboard.press('Shift+Home');
@@ -34,16 +42,7 @@ test('⌘/Ctrl+K on selected text adds a link; without a selection it opens the 
   await input.fill('https://example.com/handbook');
   await input.press('Enter');
   await expect(editor.locator('a[href="https://example.com/handbook"]')).toHaveText('Read the handbook');
-  // Focus returns to the editor (with the text still selected) a moment later; wait so End lands there.
-  await expect(editor).toBeFocused();
-
-  // Collapsed selection outside a link → command palette.
-  await page.keyboard.press('End');
-  await expect(page.locator('.bubble-menu')).toBeHidden(); // selection collapsed (otherwise Enter would replace the text)
-  await page.keyboard.press('Enter');
-  await page.keyboard.press('ControlOrMeta+k');
-  await expect(page.getByRole('dialog', { name: 'Search' })).toBeVisible();
-  await page.keyboard.press('Escape');
+  // (No further typing: with the text still selected, an early keystroke would replace it.)
 
   await page.reload();
   await expect(page.locator('.ProseMirror a[href="https://example.com/handbook"]')).toHaveText('Read the handbook');
