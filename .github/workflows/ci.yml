@@ -78,6 +78,13 @@ jobs:
     if: needs.check.outputs.has_e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Run inside Microsoft's Playwright image: Chromium and every system package it needs are
+    # preinstalled, so nothing is downloaded from the Ubuntu mirror (that download hung the job
+    # for 20 minutes several times). Keep the tag equal to the @playwright/test version in
+    # package.json; the first step below fails fast if they drift.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --user 1001
     steps:
       - uses: actions/checkout@v4
 
@@ -88,35 +95,13 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      # The browser download (and its apt packages) has hung on GitHub runners more than once,
-      # stalling e2e until the 20-minute job limit. Cache the browser per Playwright version, and
-      # give the install a short timeout with retries so a stuck download fails fast.
-      - name: Playwright version
-        id: pw
-        run: echo "version=$(npx playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: pw-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
-
-      - name: Install Playwright browser and system deps
-        timeout-minutes: 12
+      - name: Playwright version matches the container
         run: |
-          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then
-            cmd="npx playwright install-deps chromium"   # browser cached: only the OS packages
-          else
-            cmd="npx playwright install --with-deps chromium"
+          v="$(npx playwright --version | awk '{print $2}')"
+          if [ "$v" != "1.63.0" ]; then
+            echo "::error::@playwright/test is $v but the e2e container is v1.63.0; update the image tag in ci.yml"
+            exit 1
           fi
-          for attempt in 1 2 3; do
-            if timeout 240 $cmd; then exit 0; fi
-            echo "::warning::Playwright install attempt $attempt failed or timed out; retrying"
-            sleep 5
-          done
-          echo "::error::Playwright install failed after 3 attempts"
-          exit 1
 
       - run: npx playwright test
 
