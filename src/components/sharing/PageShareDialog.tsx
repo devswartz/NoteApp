@@ -1,6 +1,7 @@
-// Share one page (#98): pick people with "Can view" or "Can edit", or invite an
-// email address. They see only this page, under "Shared with me". People outside
-// the workspace can only view it. Open with openPageShareDialog(pageId, title);
+// Share one page (#98): pick people with "Can view" or "Can edit". They see only
+// this page, under "Shared with me". Members share with members; owners and admins
+// may also share with people outside the workspace (by email), who can only view.
+// A viewer stays view-only whatever the share says (rights = min(share, role)). Open with openPageShareDialog(pageId, title);
 // <PageShareDialogHost /> is mounted once in PageView. Owner: Collaboration & Access.
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, Lock, Search, X } from 'lucide-react';
@@ -27,6 +28,8 @@ type Level = 'view' | 'edit';
 function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
   const me = useStore((s) => s.user!);
   const members = useStore((s) => s.members);
+  const myRole = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role);
+  const canShareOutside = myRole === 'owner' || myRole === 'admin';
   const [data, setData] = useState<PageShares | null>(null);
   const [q, setQ] = useState('');
   const [level, setLevel] = useState<Level>('edit');
@@ -53,6 +56,8 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
   );
   const isEmail = EMAIL_RE.test(q.trim());
   const memberByEmail = members.find((m) => m.email.toLowerCase() === q.trim().toLowerCase());
+  /** An email that isn't a member: only owners and admins may share outside the workspace. */
+  const outsideEmail = isEmail && !memberByEmail;
 
   const add = async (body: { userId: string } | { email: string }, label: string) => {
     setBusy(true);
@@ -74,14 +79,18 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
   const submit = () => {
     if (suggestions.length === 1 && !isEmail) return void add({ userId: suggestions[0].id }, suggestions[0].name);
     if (memberByEmail) return void add({ userId: memberByEmail.id }, memberByEmail.name);
-    if (isEmail) return void add({ email: q.trim() }, q.trim());
+    if (outsideEmail && canShareOutside) return void add({ email: q.trim() }, q.trim());
   };
+  const canSubmit = !busy && (suggestions.length === 1 || !!memberByEmail || (outsideEmail && canShareOutside));
 
   return (
     <Modal open onClose={close} label={`Share ${title || 'Untitled'}`} className="share-dialog page-share-dialog">
       <h2>Share “{title || 'Untitled'}”</h2>
       <p className="muted small">
-        <Lock size={12} /> Only this page: not its notebook or other pages. People outside the workspace can view it but not edit.
+        <Lock size={12} /> Only this page: not its notebook or other pages.{' '}
+        {canShareOutside
+          ? 'You can also share it with people outside the workspace by email; they can view it but not edit.'
+          : 'You can share it with members of this workspace; owners and admins can also share it outside.'}
       </p>
 
       <form
@@ -94,7 +103,7 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
         <Search size={15} className="muted" />
         <input
           className="input grow"
-          placeholder="Name or email"
+          placeholder={canShareOutside ? 'Name or email' : 'Name or email of a member'}
           aria-label="Name or email"
           value={q}
           autoFocus
@@ -104,10 +113,15 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
           <option value="edit">Can edit</option>
           <option value="view">Can view</option>
         </select>
-        <button type="submit" className="btn btn-primary" disabled={busy || (!isEmail && suggestions.length !== 1 && !memberByEmail)}>
+        <button type="submit" className="btn btn-primary" disabled={!canSubmit}>
           Share
         </button>
       </form>
+      {outsideEmail && !canShareOutside && (
+        <p className="muted small" role="note">
+          {q.trim()} isn’t a member of this workspace. Ask a workspace owner or admin to share with people outside it.
+        </p>
+      )}
       {suggestions.length > 0 && (
         <div className="share-list page-share-suggestions" role="listbox" aria-label="Members">
           {suggestions.map((m) => (
@@ -117,6 +131,7 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
                 <div>{m.name}</div>
                 <div className="muted small">{m.email}</div>
               </div>
+              {m.role === 'viewer' && <span className="chip" title="Viewers can only view, even with an edit share">view only</span>}
             </button>
           ))}
         </div>
@@ -137,7 +152,11 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
 
       <div className="share-list" aria-label="People with access">
         {data && !data.shares.length && !data.invites.length && <p className="muted small">Not shared with anyone yet.</p>}
-        {data?.shares.map((s) => (
+        {data?.shares.map((s) => {
+          // Rights are min(share, role): outside the workspace, or as a viewer, it's view only.
+          const viewerRole = members.find((m) => m.id === s.userId)?.role === 'viewer';
+          const editable = s.member && !viewerRole;
+          return (
           <div key={s.userId} className="share-row" data-testid="page-share-row">
             <Avatar user={{ name: s.name, color: s.color }} size={28} />
             <div className="grow">
@@ -149,9 +168,9 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
             <select
               className="input page-share-level"
               aria-label={`Access for ${s.name}`}
-              value={s.member && s.canEdit ? 'edit' : 'view'}
-              disabled={!s.member}
-              title={s.member ? undefined : 'People outside the workspace can only view'}
+              value={editable && s.canEdit ? 'edit' : 'view'}
+              disabled={!editable}
+              title={editable ? undefined : s.member ? 'Viewers can only view' : 'People outside the workspace can only view'}
               onChange={(e) => patch<PageShares>(`/pages/${pageId}/shares/${s.userId}`, { canEdit: e.target.value === 'edit' }).then(setData).catch(errorToast)}
             >
               <option value="edit">Can edit</option>
@@ -174,7 +193,8 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
               <X size={15} />
             </button>
           </div>
-        ))}
+          );
+        })}
         {data?.invites.map((i) => (
           <div key={i.email} className="share-row">
             <span className="avatar-placeholder" aria-hidden>
