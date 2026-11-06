@@ -8,6 +8,7 @@ import { resolveMember } from './TaskRow.tsx';
 import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu } from './TaskControls.tsx';
 import { describeDue, formatTime } from '../lib/format.ts';
 import type { Priority } from '../../shared/types.ts';
+import '../styles/tasks.css'; // .qa-keys (hidden on phones), quick-add touch targets
 
 /** Global quick-add (Q). Parses natural language as you type. */
 export function QuickAdd() {
@@ -89,7 +90,10 @@ function QuickAddInner() {
           <input
             autoFocus
             className="qa-input"
-            placeholder="e.g. Review proposal tomorrow 3pm p1 @alex every week"
+            placeholder={
+              // The long example is clipped on phones; a shorter one shows the same syntax.
+              window.matchMedia('(max-width: 760px)').matches ? 'e.g. Call Sam tomorrow 3pm p1' : 'e.g. Review proposal tomorrow 3pm p1 @alex every week'
+            }
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -124,7 +128,7 @@ function QuickAddInner() {
           )}
         </div>
         <div className="qa-foot">
-          <span className="muted small">
+          <span className="muted small qa-keys">
             <Kbd>↵</Kbd> add · <Kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'} ↵</Kbd> add another
           </span>
           <div className="row gap-6">

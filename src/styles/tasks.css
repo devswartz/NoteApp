@@ -161,3 +161,14 @@ button.cal-more:hover { color: var(--accent); }
   .sheet .detail-title { min-height: 44px; }
   .sheet .subtask-title { min-height: 44px; }
 }
+
+/* Quick add: keyboard hints mean nothing without a keyboard; full-size buttons on phones. */
+@media (hover: none), (max-width: 760px) {
+  .qa-keys { display: none; }
+  .qa-foot .btn { min-height: 44px; }
+  div.qa-foot { justify-content: flex-end; }
+}
+@media (pointer: coarse), (max-width: 760px) {
+  .qa-chips { gap: 8px; }
+  .qa-chips .chip-btn { min-height: 44px; padding: 0 14px; }
+}
