@@ -33,8 +33,8 @@ What's new for testers since v0.1.2.
 - Demo accounts on staging were stuck on "Check your email".
 
 ### For the server (homelab)
-- Database migrations 013 (page shares) and 014 (OneNote import, if needed) run automatically on start.
-- New optional settings: `MS_CLIENT_ID` and `MS_CLIENT_SECRET` (OneNote import). Import and export have size and rate limits; see `docs/DEPLOY_CONTRACT.md`.
+- Database migration 013 (page shares) runs automatically on start. The OneNote import needs no migration.
+- New optional settings: `MS_CLIENT_ID` and `MS_CLIENT_SECRET` (OneNote import). The server needs outbound HTTPS to `login.microsoftonline.com` and `graph.microsoft.com` for it. Import and export have size and rate limits; see `docs/DEPLOY_CONTRACT.md`.
 
 ## v0.1.0 (unreleased)
 

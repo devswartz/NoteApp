@@ -18,7 +18,7 @@
 - QA: e2e for verify×invites, template privacy, mobile flow, page panel (#81, #105, #112). Open bugs: none.
 
 ### In flight
-- **#117 OneNote import** via Microsoft Graph — worker session "Notivelo: OneNote import (#117)". Owner has registered the Entra app; `MS_CLIENT_ID`/`MS_CLIENT_SECRET` are set on both stacks (redirect `${PUBLIC_URL}/api/import/onenote/callback`). Needs a careful security review (OAuth state, sanitising) before merge. Migration 014 reserved for it.
+- **#117 OneNote import** via Microsoft Graph — worker session "Notivelo: OneNote import (#117)". Owner has registered the Entra app; `MS_CLIENT_ID`/`MS_CLIENT_SECRET` are set on both stacks (redirect `${PUBLIC_URL}/api/import/onenote/callback`). PR #120 (no migration; jobs/tokens in memory). Security review in progress. DEPLOY_CONTRACT change: `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, and outbound HTTPS to login.microsoftonline.com + graph.microsoft.com; both redirect URIs must be registered as **Web** redirects in Entra.
 - **#39** follow a collaborator — reviewed; Collab merging main in.
 
 ### Open issues / later
