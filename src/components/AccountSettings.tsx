@@ -41,7 +41,7 @@ export function ChangePasswordForm() {
 
   return (
     <form
-      style={{ display: 'grid', gap: 10, maxWidth: 340 }}
+      style={{ display: 'grid', gap: 'var(--space-4)' }}
       onSubmit={async (e) => {
         e.preventDefault();
         if (error) return;
@@ -62,7 +62,7 @@ export function ChangePasswordForm() {
       <Input label="Current password" type="password" autoComplete="current-password" required value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
       <Input label="New password" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
       <Input label="Confirm new password" type="password" autoComplete="new-password" required value={pw.confirm} error={error} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} />
-      <div>
+      <div className="card-footer" style={{ marginTop: 'var(--space-1)' }}>
         <Button type="submit" variant="primary" loading={busy} disabled={!!error || !pw.current || !pw.next}>
           Change password
         </Button>

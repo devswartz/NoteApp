@@ -15,7 +15,7 @@ test.describe('invite links', () => {
     const email = uniqueEmail('linkee');
 
     const a = await signedIn(browser, owner);
-    await a.page.goto(`/w/${teamId}/settings`);
+    await a.page.goto(`/w/${teamId}/settings?s=members`);
     await a.page.getByPlaceholder('teammate@company.com').fill(email);
     await a.page.getByRole('button', { name: 'Invite', exact: true }).click();
     // Email isn't configured in tests, so the app shows the link to copy.
