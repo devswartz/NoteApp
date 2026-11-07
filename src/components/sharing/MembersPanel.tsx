@@ -71,17 +71,20 @@ export function MembersPanel() {
               .finally(() => setBusy(false));
           }}
         >
-          <Mail size={16} className="muted" />
-          <input
-            className="input"
-            type="email"
-            required
-            placeholder="teammate@company.com"
-            aria-label="Email to invite"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={{ flex: '1 1 220px' }}
-          />
+          <div className="input-wrap has-icon" style={{ flex: '1 1 220px' }}>
+            <span className="input-icon">
+              <Mail size={15} />
+            </span>
+            <input
+              className="input"
+              type="email"
+              required
+              placeholder="teammate@company.com"
+              aria-label="Email to invite"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
           <select className="input" aria-label="Role" title={ROLE_HELP[role]} value={role} onChange={(e) => setRole(e.target.value as Role)}>
             <option value="member">Member</option>
             <option value="viewer">Viewer</option>

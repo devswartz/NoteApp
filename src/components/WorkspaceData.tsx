@@ -44,7 +44,7 @@ export function WorkspaceData({ wsId, canExport }: { wsId: string; canExport: bo
   };
 
   return (
-    <div className="row gap-10">
+    <div className="row wrap gap-10 data-actions">
       {canExport && (
         <Button icon={<Download size={15} />} loading={busy === 'export'} disabled={!!busy} onClick={() => void doExport()}>
           Export workspace
