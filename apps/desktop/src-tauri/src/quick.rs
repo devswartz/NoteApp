@@ -38,8 +38,13 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
         }
         return;
     }
+    // The first press builds the window; off the main thread (see `build_window`).
+    crate::build_window(app, "quick capture", create);
+}
+
+fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let cfg = crate::config::load(app);
-    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
         .title("Quick Capture")
         .inner_size(WIDTH, HEIGHT)
         .resizable(false)
@@ -51,8 +56,6 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
         .center()
         .focused(true)
         .initialization_script(crate::config::init_script(&cfg))
-        .build();
-    if let Err(e) = built {
-        eprintln!("quick capture: {e}");
-    }
+        .build()?;
+    Ok(())
 }
