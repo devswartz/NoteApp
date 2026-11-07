@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.1.5
+
+### Fixes
+- Settings on phones: the workspace name field no longer slides under the Rename button, Export and Import stay inside their card, buttons line up with the fields beside them, and the invite email field has its icon inside it. (#126)
+
 ## v0.1.4
 
 What's new for testers since v0.1.3.
