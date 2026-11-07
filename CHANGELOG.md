@@ -11,7 +11,7 @@ What's new for testers since v0.1.3.
 - Menus and popovers have more even padding, full-width separators, and a red highlight on Delete-type items. (#125)
 
 ### Fixes
-- Desktop (Windows): reopening the app after closing its window could freeze it, and the quick-capture window could freeze on first open. Updates arrive automatically from this release on. (#124)
+- Desktop (Windows): reopening the app after closing its window could freeze it, and the quick-capture window could freeze on first open. (#124)
 - Import from OneNote: a Microsoft account without OneNote now shows "no notebooks" instead of an error. (#122)
 
 ## v0.1.3
