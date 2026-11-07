@@ -1,6 +1,8 @@
-// Settings: a sectioned page (Linear-style). Desktop shows a section nav on the
-// left; mobile shows the list of sections, then one section per screen.
-// The selected section is in the URL (?s=appearance) so it can be linked to.
+// Settings: a sectioned page (Linear-style), one section at a time. Desktop shows
+// the section nav on the left and the selected section beside it; mobile shows
+// the list of sections, then one section per screen.
+// The selected section is in the URL (?s=appearance) so it can be linked to;
+// without one, desktop opens the first section.
 //
 // Other areas plug panels in here as components:
 //   Notifications → Recurrence & Reminders (NotificationSettingsPanel)
@@ -27,6 +29,8 @@ import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
 interface SectionDef {
   id: string;
   title: string;
+  /** One line under the section title. */
+  description?: string;
   icon: ReactNode;
   group: 'Account' | 'Workspace' | 'App';
   render: () => ReactNode;
@@ -35,19 +39,19 @@ interface SectionDef {
 }
 
 const SECTIONS: SectionDef[] = [
-  { id: 'profile', title: 'Profile', icon: <User size={16} />, group: 'Account', render: () => <ProfileSection /> },
-  { id: 'appearance', title: 'Appearance', icon: <Palette size={16} />, group: 'Account', render: () => <AppearanceSettings /> },
+  { id: 'profile', title: 'Profile', description: 'How you appear to your team, and how you sign in.', icon: <User size={16} />, group: 'Account', render: () => <ProfileSection /> },
+  { id: 'appearance', title: 'Appearance', description: 'How the app looks on this device.', icon: <Palette size={16} />, group: 'Account', render: () => <Card><AppearanceSettings /></Card> },
   { id: 'security', title: 'Security', icon: <Lock size={16} />, group: 'Account', render: () => <AppLockSettings />, when: hasAppLock },
-  { id: 'notifications', title: 'Notifications', icon: <Bell size={16} />, group: 'Account', render: () => (
+  { id: 'notifications', title: 'Notifications', description: 'How and when you hear about due tasks.', icon: <Bell size={16} />, group: 'Account', render: () => (
       <>
         <DeviceNotifications />
         <NotificationSettingsPanel onError={errorToast} onMessage={toast} />
       </>
     ),
   },
-  { id: 'workspace', title: 'General', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
-  { id: 'members', title: 'Members', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
-  { id: 'shortcuts', title: 'Keyboard shortcuts', icon: <Keyboard size={16} />, group: 'App', render: () => <ShortcutList columns={false} /> },
+  { id: 'workspace', title: 'General', description: 'Name, backups and imports for this workspace.', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
+  { id: 'members', title: 'Members', description: 'Who can open this workspace, and what they can do.', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
+  { id: 'shortcuts', title: 'Keyboard shortcuts', description: 'Press ? anywhere to see these.', icon: <Keyboard size={16} />, group: 'App', render: () => <Card><ShortcutList columns={false} /></Card> },
   { id: 'about', title: 'About', icon: <Info size={16} />, group: 'App', render: () => <AboutSection /> },
 ];
 
@@ -57,41 +61,20 @@ export function Settings() {
   const [params, setParams] = useSearchParams();
   const isMobile = useIsMobile();
   const requested = sections.find((x) => x.id === params.get('s'));
-  const [visible, setVisible] = useState<string>(SECTIONS[0].id);
   const scroller = useRef<HTMLDivElement>(null);
+  // Desktop always shows a section: the requested one, else the first.
+  const current = requested ?? (isMobile ? undefined : sections[0]);
 
-  // Desktop: every section on one scrolling page; the nav jumps to a section and
-  // highlights the one in view. ?s=<id> scrolls to it on load.
+  // A new section starts at the top.
   useEffect(() => {
-    if (isMobile || !requested) return;
-    document.getElementById(`settings-${requested.id}`)?.scrollIntoView({ block: 'start' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMobile, requested?.id, !!ws]);
-  useEffect(() => {
-    if (isMobile || !scroller.current) return;
-    const root = scroller.current;
-    const onScroll = () => {
-      const line = root.getBoundingClientRect().top + 120;
-      const atEnd = root.scrollTop + root.clientHeight >= root.scrollHeight - 4;
-      const secs = [...root.querySelectorAll<HTMLElement>('.settings-section')];
-      const cur = atEnd ? secs[secs.length - 1] : secs.filter((el) => el.getBoundingClientRect().top <= line).pop() ?? secs[0];
-      if (cur) setVisible(cur.id.replace('settings-', ''));
-    };
-    onScroll();
-    root.addEventListener('scroll', onScroll, { passive: true });
-    return () => root.removeEventListener('scroll', onScroll);
-  }, [isMobile, ws?.id]);
+    scroller.current?.scrollTo({ top: 0 });
+  }, [current?.id]);
 
   if (!ws) return null;
   const groups = ['Account', 'Workspace', 'App'] as const;
-  const select = (id: string | null) => {
-    if (isMobile) setParams(id ? { s: id } : {});
-    else if (id) {
-      setParams({ s: id }, { replace: true });
-      document.getElementById(`settings-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    }
-  };
-  const active = isMobile ? requested?.id : visible;
+  // Mobile pushes a history entry per section (Back returns to the list); desktop replaces it.
+  const select = (id: string | null) => setParams(id ? { s: id } : {}, { replace: !isMobile });
+  const active = current?.id;
 
   const nav = (
     <nav className="settings-nav" aria-label="Settings sections">
@@ -116,41 +99,35 @@ export function Settings() {
     </nav>
   );
 
-  if (isMobile) {
-    if (!requested)
-      return (
-        <div className="settings is-list">
-          <h1>Settings</h1>
-          {nav}
-        </div>
-      );
+  if (isMobile && !current)
     return (
-      <div className="settings">
-        <div className="settings-content" key={requested.id}>
+      <div className="settings is-list">
+        <h1>Settings</h1>
+        {nav}
+      </div>
+    );
+
+  const section = current!;
+  return (
+    <div className="settings" ref={scroller}>
+      {!isMobile && (
+        <aside className="settings-side">
+          <div className="settings-side-title">Settings</div>
+          {nav}
+        </aside>
+      )}
+      <section className="settings-content settings-section" key={section.id} id={`settings-${section.id}`} aria-labelledby="settings-title">
+        {isMobile && (
           <button type="button" className="settings-back" onClick={() => select(null)}>
             <ChevronLeft size={18} /> Settings
           </button>
-          <h1>{requested.title}</h1>
-          {requested.render()}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="settings" ref={scroller}>
-      {nav}
-      <div className="settings-content">
-        <h1>Settings</h1>
-        {sections.map((x) => (
-          <section key={x.id} id={`settings-${x.id}`} className="settings-section" aria-labelledby={`settings-h-${x.id}`}>
-            <h2 id={`settings-h-${x.id}`} className="settings-section-title">
-              {x.title}
-            </h2>
-            {x.render()}
-          </section>
-        ))}
-      </div>
+        )}
+        <header className="settings-head">
+          <h1 id="settings-title">{section.title}</h1>
+          {section.description && <p className="muted">{section.description}</p>}
+        </header>
+        {section.render()}
+      </section>
     </div>
   );
 }
@@ -176,7 +153,6 @@ function ProfileSection() {
     <>
       <Card>
         <form
-          className="profile-row"
           onSubmit={(e) => {
             e.preventDefault();
             if (!dirty) return;
@@ -190,26 +166,37 @@ function ProfileSection() {
               .finally(() => setSaving(false));
           }}
         >
-          <Avatar user={{ name: name || user.name, color: user.color }} size={56} />
-          <div className="grow profile-fields">
-            <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
-            <Input label="Email" value={user.email} readOnly disabled hint="Your sign-in email can’t be changed yet." />
+          <div className="profile-row">
+            <Avatar user={{ name: name || user.name, color: user.color }} size={56} />
+            <div className="grow profile-fields">
+              <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+              <Input label="Email" value={user.email} readOnly disabled hint="Your sign-in email can’t be changed yet." />
+              <div className="field">
+                <span className="field-label">Avatar colour</span>
+                <AvatarColorPicker />
+              </div>
+            </div>
           </div>
-          <Button type="submit" variant="primary" disabled={!dirty} loading={saving}>
-            Save
-          </Button>
+          <div className="card-footer">
+            <Button type="submit" variant="primary" disabled={!dirty} loading={saving}>
+              Save changes
+            </Button>
+          </div>
         </form>
-      </Card>
-      <Card title="Avatar colour">
-        <AvatarColorPicker />
       </Card>
       <Card title="Password" description="Changing it signs you out on every other device.">
         <ChangePasswordForm />
       </Card>
-      <Card title="Session">
-        <Button icon={<LogOut size={15} />} onClick={() => void signOut().then(() => navigate('/login'))}>
-          Sign out
-        </Button>
+      <Card>
+        <div className="setting-row">
+          <div className="grow">
+            <div className="setting-title">Sign out</div>
+            <div className="muted small">Sign out of {APP_NAME} on this device.</div>
+          </div>
+          <Button icon={<LogOut size={15} />} onClick={() => void signOut().then(() => navigate('/login'))}>
+            Sign out
+          </Button>
+        </div>
       </Card>
       <DeleteAccountCard />
     </>
@@ -338,7 +325,7 @@ function AboutSection() {
         <dt>Platform</dt>
         <dd>{detectPlatform()}</dd>
         <dt>Legal</dt>
-        <dd>
+        <dd className="about-links">
           <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link>
         </dd>
       </dl>

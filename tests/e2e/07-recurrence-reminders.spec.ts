@@ -101,7 +101,7 @@ test('reminder settings: enabling notifications in Settings', async ({ page, con
     }
     Object.defineProperty(window, 'Notification', { value: FakeNotification, configurable: true });
   });
-  await page.goto(`/w/${user.wsId}/settings`);
+  await page.goto(`/w/${user.wsId}/settings?s=notifications`);
   await expect(page.getByText('Task reminders')).toBeVisible();
   await page.getByRole('button', { name: 'Enable notifications' }).click();
   await expect(page.getByText('Enabled on this device')).toBeVisible();

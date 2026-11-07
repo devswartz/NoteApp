@@ -2,6 +2,18 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.1.4
+
+What's new for testers since v0.1.3.
+
+### Settings and menus
+- Settings shows one section at a time, picked from the side list, each with a short description. Profile is now one card, with Save and Change password at the bottom right of their cards. (#125)
+- Menus and popovers have more even padding, full-width separators, and a red highlight on Delete-type items. (#125)
+
+### Fixes
+- Desktop (Windows): reopening the app after closing its window could freeze it, and the quick-capture window could freeze on first open. (#124)
+- Import from OneNote: a Microsoft account without OneNote now shows "no notebooks" instead of an error. (#122)
+
 ## v0.1.3
 
 What's new for testers since v0.1.2.

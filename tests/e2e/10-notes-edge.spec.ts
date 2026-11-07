@@ -96,7 +96,7 @@ test('renaming a page updates another member’s sidebar live', async ({ browser
 test('theme preference: dark mode applies and persists', async ({ page, context, request }) => {
   const user = await createUser(request, 'Theo Theme');
   await signInContext(context, user);
-  await page.goto(`/w/${user.wsId}/settings`);
+  await page.goto(`/w/${user.wsId}/settings?s=appearance`);
   const theme = page.getByRole('radiogroup', { name: 'Theme' });
   await theme.getByRole('radio', { name: 'Dark' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
