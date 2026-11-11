@@ -83,13 +83,22 @@ test('fast typing with Markdown shortcuts in the middle of a long page lands in 
   const anchor = editor.locator('h2', { hasText: /^Section 15$/ });
   // Off-screen blocks settle their real sizes as they scroll in, so a click can land
   // before the heading stops moving: wait until the cursor really is in it.
+  // The caret must end up at the end of the heading (a block settling its size can still move it).
   await expect(async () => {
     await anchor.click();
+    await page.keyboard.press('End');
     await expect
-      .poll(() => page.evaluate(() => (getSelection()?.anchorNode?.parentElement?.closest('h2')?.textContent ?? '')), { timeout: 500 })
-      .toBe('Section 15');
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const s = getSelection();
+            const h2 = s?.anchorNode?.parentElement?.closest('h2');
+            return h2 ? `${h2.textContent}@${s!.anchorNode === h2.lastChild || s!.anchorNode?.parentElement === h2 ? s!.anchorOffset : -1}` : '';
+          }),
+        { timeout: 500 },
+      )
+      .toBe('Section 15@10');
   }).toPass({ timeout: 10_000 });
-  await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('## Inserted heading');
   await page.keyboard.press('Enter');
