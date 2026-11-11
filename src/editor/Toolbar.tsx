@@ -314,14 +314,9 @@ function setBlock(editor: Editor, id: BlockId) {
   else chain.setHeading({ level: Number(id.slice(1)) as 1 | 2 | 3 }).run();
 }
 
-/** Link: edits the link at the selection; with nothing selected, inserts "link" and edits that (as the slash menu does). */
+/** Link: edits the link at the selection; with nothing selected, opens the editor to insert a new link at the cursor. */
 function insertLink(editor: Editor) {
-  if (editor.state.selection.empty && !editor.isActive('link')) {
-    const from = editor.state.selection.from;
-    const label = 'link';
-    editor.chain().focus().insertContent(label).setTextSelection({ from, to: from + label.length }).run();
-  }
-  openLinkEditor(editor);
+  openLinkEditor(editor, { insert: true });
 }
 
 export const Sep = () => <span className="bm-sep rb-sep" aria-hidden />;

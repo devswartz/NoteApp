@@ -271,7 +271,7 @@ export function useSlashFilePickers(pageId: string, workspaceId: string) {
     };
     slashHooks.pickImage = (ed) => void pick(ed, 'image/*');
     slashHooks.pickFile = (ed) => void pick(ed);
-    slashHooks.editLink = (ed) => openLinkEditor(ed);
+    slashHooks.editLink = (ed) => openLinkEditor(ed, { insert: true });
   }, []);
 }
 

@@ -151,8 +151,7 @@ export const SLASH_ITEMS: SlashItem[] = [
     keywords: 'url href hyperlink web',
     icon: <Link2 size={18} />,
     run: (e, r) => {
-      const label = 'link';
-      e.chain().focus().deleteRange(r).insertContent(label).setTextSelection({ from: r.from, to: r.from + label.length }).run();
+      e.chain().focus().deleteRange(r).run();
       slashHooks.editLink(e);
     },
   },
