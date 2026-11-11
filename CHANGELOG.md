@@ -6,6 +6,7 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 
 ### New
 - **Ribbon:** the formatting toolbar is now a OneNote-style ribbon fixed across the top of the note area (text style, basic text, lists, insert, undo/redo). It stays put while the page scrolls, acts on the box you were last in on a canvas, shows its controls greyed out when there's nothing to edit, and is its own F6 stop with arrow keys between buttons. Phones keep the floating toolbar.
+- **Ribbon:** each group has a small label underneath (Text, Basic text, Lists, Insert, History), dropped on narrower windows. The floating toolbar over a selection now always shows above the ribbon, flipping below the selection when it's right under the ribbon, including in canvas boxes near the top.
 - **Canvas pages:** click anywhere on a page and type. Each text box is a full editor (headings, lists, tasks, tables, images); drag its top edge to move it and its right edge to set its width. Boxes can sit side by side or overlap, and collaborators see them appear and move live. Search, tasks, mentions, links and exports see every box. (#134, #137)
 - **"New page" makes a canvas.** "New document page" is right beside it when you want one flowing document, and canvas pages have their own icon in the page lists and search.
 - **Convert a page** between a document and a canvas from the page menu: a document becomes one text box you can then split up, and a canvas becomes a document with its boxes in reading order. Nothing is lost, and the version from before is kept in Version history.

@@ -3,7 +3,7 @@
 // shares with the floating toolbar over selected text (NoteEditor.tsx).
 // WAI-ARIA toolbar pattern: one tab stop (roving tabindex), ←/→/Home/End move between
 // controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
 import {
   Baseline,
@@ -234,6 +234,19 @@ function ribbonState(e: Editor) {
 
 const Sep = () => <span className="bm-sep rb-sep" aria-hidden />;
 
+/** A ribbon group with its small OneNote-style label underneath (hidden on narrow windows; it still names the group). */
+function Group({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
+  return (
+    <div className="rb-group" role="group" aria-labelledby={id}>
+      <div className="rb-items">{children}</div>
+      <span id={id} className="rb-label">
+        {label}
+      </span>
+    </div>
+  );
+}
+
 /**
  * The ribbon across the top of the note area (OneNote's Home tab). It acts on the active
  * editor, the one last focused on this page; with none (an empty canvas, a viewer) every
@@ -280,7 +293,7 @@ export function Ribbon() {
       onFocus={roving.onFocus}
       onKeyDown={(e) => toolbarKeys(e, editor)}
     >
-      <div className="rb-group" role="group" aria-label="Text style">
+      <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
           className="tb-block"
@@ -311,34 +324,34 @@ export function Ribbon() {
             ))
           }
         </ToolbarMenu>
-      </div>
+      </Group>
       <Sep />
-      <div className="rb-group" role="group" aria-label="Basic text">
+      <Group label="Basic text">
         {btn(`Bold (${keyLabel(MOD, 'B')})`, <Bold size={16} />, () => chain().toggleBold().run(), { active: s?.bold })}
         {btn(`Italic (${keyLabel(MOD, 'I')})`, <Italic size={16} />, () => chain().toggleItalic().run(), { active: s?.italic })}
         {btn(`Underline (${keyLabel(MOD, 'U')})`, <Underline size={16} />, () => chain().toggleUnderline().run(), { active: s?.underline })}
         {btn(`Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, <Strikethrough size={16} />, () => chain().toggleStrike().run(), { active: s?.strike })}
         <ColorMenu editor={editor} kind="text" />
         <ColorMenu editor={editor} kind="highlight" />
-      </div>
+      </Group>
       <Sep />
-      <div className="rb-group" role="group" aria-label="Lists">
+      <Group label="Lists">
         {btn('Bulleted list', <List size={16} />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
         {btn('Numbered list', <ListOrdered size={16} />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
         {btn('Checklist', <ListChecks size={16} />, () => chain().toggleTaskList().run(), { active: s?.check })}
         {btn(`Turn into task (${keyLabel(MOD, ENTER)})`, <CircleCheck size={16} />, () => chain().convertToTask().run(), { disabled: !s?.canTask, text: 'Task' })}
-      </div>
+      </Group>
       <Sep />
-      <div className="rb-group" role="group" aria-label="Insert">
+      <Group label="Insert">
         {btn(`Link (${keyLabel(MOD, 'K')})`, <Link2 size={16} />, () => openLinkEditor(editor!), { active: s?.link, disabled: !s?.canLink })}
         {btn('Image', <ImagePlus size={16} />, () => slashHooks.pickImage?.(editor!))}
         {btn('Table', <Table size={16} />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
-      </div>
+      </Group>
       <span className="tb-spacer" />
-      <div className="rb-group" role="group" aria-label="History">
+      <Group label="History">
         {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 size={16} />, () => chain().undo().run(), { disabled: !s?.canUndo })}
         {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 size={16} />, () => chain().redo().run(), { disabled: !s?.canRedo })}
-      </div>
+      </Group>
     </div>
   );
 }
