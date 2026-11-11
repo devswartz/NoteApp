@@ -51,7 +51,7 @@ If email or push settings are missing, the app still starts and logs a warning; 
 ## Hostnames
 - Production: `notes.devswartz.com`
 - Staging: `notes-staging.devswartz.com`
-- Both go through a Cloudflare Tunnel. **The app's port must not be reachable any other way** (bind it to localhost or the Docker network only; no published host port on the LAN or internet), because rate limiting trusts `CF-Connecting-IP` when `TRUST_PROXY_HEADER=cf`.
+- Both go through a Cloudflare Tunnel. **The app's port must not be reachable any other way** (bind it to localhost or the Docker network, or publish it only to the cloudflared host behind a host firewall; never open to the LAN or internet), because rate limiting trusts `CF-Connecting-IP` when `TRUST_PROXY_HEADER=cf`.
 - **Cloudflare Access must be off**, because the desktop and mobile apps call the API directly; the app does its own auth.
 
 ## Request size and rate limits
