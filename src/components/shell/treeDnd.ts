@@ -11,6 +11,7 @@ import type { DragEvent } from 'react';
 import { post } from '../../api.ts';
 import { errorToast, loadTree, useStore } from '../../store.ts';
 import type { Tree } from '../../../shared/types.ts';
+import { canNestUnder, sectionDescendants } from '../../../shared/sections.ts';
 import { sidebar } from './sidebarState.ts';
 import { byPos, positionAt } from './treePosition.ts';
 
@@ -68,7 +69,9 @@ export function dropProps(kind: DragKind | 'favorites', id: string, onDrop: (whe
       else if (!ok.includes('inside')) where = y < 0.5 ? 'before' : 'after';
       else where = y < 0.3 ? 'before' : y > 0.7 ? 'after' : 'inside';
       if (where === 'inside' && drag.kind === kind && kind === 'notebook') where = y < 0.5 ? 'before' : 'after';
-      if (where === 'inside' && drag.kind === kind && kind === 'section') where = y < 0.5 ? 'before' : 'after';
+      // A section dropped in the middle of another becomes its subsection, when nesting allows it.
+      if (where === 'inside' && drag.kind === kind && kind === 'section' && !canNestUnder(useStore.getState().tree, drag.id, id))
+        where = y < 0.5 ? 'before' : 'after';
       const cur = useDnd.getState().drop;
       if (cur?.id !== id || cur.where !== where || cur.kind !== kind) useDnd.setState({ drop: { kind, id, where } });
     },
@@ -122,14 +125,22 @@ export function movePage(pageId: string, sectionId: string, targetId: string | n
   return send(`/pages/${pageId}/move`, { sectionId, index });
 }
 
-export function moveSection(sectionId: string, notebookId: string, targetId: string | null, where: Where) {
+/**
+ * Move a section under `parentId` (null = the top level of `notebookId`), before/after `targetId`
+ * among its new siblings or at the end. Its subsections move with it.
+ */
+export function moveSection(sectionId: string, notebookId: string, parentId: string | null, targetId: string | null, where: Where) {
   const { tree } = useStore.getState();
-  const sibs = tree.sections.filter((s) => s.notebookId === notebookId && s.id !== sectionId).sort(byPos);
+  const sibs = tree.sections.filter((s) => s.notebookId === notebookId && (s.parentId ?? null) === parentId && s.id !== sectionId).sort(byPos);
   const index = targetId && where !== 'inside' ? indexFor(sibs, targetId, where) : sibs.length;
   const position = positionAt(sibs, index);
-  patchTree((t) => ({ ...t, sections: t.sections.map((s) => (s.id === sectionId ? { ...s, notebookId, position } : s)) }));
-  sidebar.toggleNode(notebookId, false);
-  return send(`/sections/${sectionId}/move`, { notebookId, index });
+  const subtree = sectionDescendants(tree, sectionId);
+  patchTree((t) => ({
+    ...t,
+    sections: t.sections.map((s) => (s.id === sectionId ? { ...s, notebookId, parentId, position } : subtree.has(s.id) ? { ...s, notebookId } : s)),
+  }));
+  sidebar.toggleNode(parentId ?? notebookId, false);
+  return send(`/sections/${sectionId}/move`, { notebookId, parentId, index });
 }
 
 export function moveNotebook(notebookId: string, targetId: string, where: Where) {

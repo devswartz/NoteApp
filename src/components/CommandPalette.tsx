@@ -7,6 +7,7 @@ import { get } from '../api.ts';
 import { ENTER, Kbd, MOD, Modal, keyLabel } from './ui.tsx';
 import type { SearchResult, Task } from '../../shared/types.ts';
 import { describeDue } from '../lib/format.ts';
+import { sectionPathLabel } from '../../shared/sections.ts';
 
 interface Item {
   key: string;
@@ -57,7 +58,7 @@ function PaletteInner() {
     const crumb = (sectionId: string) => {
       const s = tree.sections.find((x) => x.id === sectionId);
       const n = tree.notebooks.find((x) => x.id === s?.notebookId);
-      return `${n?.name ?? ''} › ${s?.name ?? ''}`;
+      return sectionPathLabel(tree, sectionId, n?.name ?? '');
     };
     const pageItem = (p: { id: string; title: string }, sub: React.ReactNode): Item => ({
       key: `p${p.id}`,
@@ -110,7 +111,7 @@ function PaletteInner() {
     const taskHits = [...taskMap.values()].sort((a, b) => (a.status === b.status ? 0 : a.status === 'open' ? -1 : 1)).slice(0, 8);
 
     return [
-      { title: 'Pages', items: [...titleHits.map((p) => pageItem(p, crumb(p.sectionId))), ...contentHits.map((p) => pageItem(p, <span className="snippet">{highlightSnippet(p.snippet)}</span>))] },
+      { title: 'Pages', items: [...titleHits.map((p) => pageItem(p, crumb(p.sectionId))), ...contentHits.map((p) => pageItem(p, <span className="snippet">{p.path ? `${p.path} · ` : ''}{highlightSnippet(p.snippet)}</span>))] },
       { title: 'Tasks', items: taskHits.map(taskItem) },
       { title: 'Actions', items: actions.filter((a) => needle.split(/\s+/).every((w) => a.match!.includes(w))) },
       {
