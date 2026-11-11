@@ -254,12 +254,15 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
       editor.chain().insertContentAt(p + node.nodeSize, { type: 'taskRef', attrs: { taskId: newId } }).run();
     } else if (e.key === 'Backspace' && !title && p !== undefined) {
       e.preventDefault();
+      // Backspace in an empty task turns it into an ordinary empty line in its place (like a
+      // checklist item), so you can switch between tasks and text without leaving the spot.
       void deleteTask(id);
-      editor.chain().deleteRange({ from: p, to: p + node.nodeSize }).run();
-      const { state, view } = editor;
-      const sel = Selection.near(state.doc.resolve(Math.max(0, Math.min(p, state.doc.content.size))), -1);
-      view.dispatch(state.tr.setSelection(sel));
-      view.focus();
+      editor
+        .chain()
+        .insertContentAt({ from: p, to: p + node.nodeSize }, { type: 'paragraph' })
+        .setTextSelection(p + 1)
+        .focus()
+        .run();
     } else if (e.key === 'ArrowDown' || (e.key === 'Escape' && !e.defaultPrevented)) {
       e.preventDefault();
       commit();
