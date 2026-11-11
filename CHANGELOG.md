@@ -2,6 +2,21 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.2.0
+
+The first round of tester feedback.
+
+### New
+- **Navigation:** a slim rail on the left switches between Notes, Tasks and Calendar, each with its own panel. Notes has a notebook picker, the section tree and a separate pages list (folded into one on narrow windows and phones). On phones the tab bar is Notes / Tasks / Calendar / Search; Today and My Tasks are in the menu. (#131)
+- **Subsections:** sections can nest up to three levels. Create one from a section's menu, drag sections in and out, and OneNote section groups now import as subsections. (#129)
+- **Templates per section:** when saving a template you can tick the sections it belongs to; empty pages there offer it first. (#129)
+- **Tags, teams and assignments:** tasks can carry tags and a team, and show who assigned them. Manage teams and tags in Settings. (#130)
+- **Filters and saved views:** filter chips on All Tasks (tag, team, assignee, section and more), and saved views are now stored on the server, optionally shared with the whole workspace. (#130)
+- **Editor toolbar:** a fixed formatting toolbar on desktop, text and highlight colours, and a quick button to turn a line into a task. (#128)
+
+### Fixes
+- Desktop quick capture lists workspace members correctly again. (#130)
+
 ## v0.1.5
 
 ### Fixes
