@@ -32,8 +32,11 @@ import {
   ArrowDownToLine,
   ArrowRightToLine,
   PanelTop,
+  Palette,
 } from 'lucide-react';
-import { TaskRef } from './TaskRef.tsx';
+import { TaskRef, canConvert, convertToTasks } from './TaskRef.tsx';
+import { colorExtensions } from './colors.ts';
+import { ColorChoices, EditorToolbar, ToolbarMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
 import { UndoTasks } from './undoTasks.ts';
@@ -48,7 +51,7 @@ import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
-import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
+import { ENTER, MOD, SHIFT, keyLabel, useIsMobile } from '../components/ui.tsx';
 import '../styles/editor.css';
 
 export type { PresenceUser, SaveState, SyncStatus };
@@ -116,6 +119,7 @@ export function documentExtensions(pageId: string): Extensions {
     ToggleContent,
     TaskRef.configure({ pageId }),
     PageLink.configure({ pageId }),
+    ...colorExtensions, // text colour + highlight, stored as palette names (./colors.ts)
     MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
   ];
@@ -145,10 +149,12 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
       editorProps: {
         attributes: { class: 'prose', spellcheck: 'true', 'aria-label': 'Page content', 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => {
-          // Alt+F10 moves focus into the formatting toolbar (WAI-ARIA toolbar pattern).
-          if (event.altKey && event.key === 'F10' && !_view.state.selection.empty) {
+          // Alt+F10 moves focus into a toolbar (WAI-ARIA toolbar pattern): the floating one
+          // over selected text, otherwise the fixed one at the top.
+          if (event.altKey && event.key === 'F10') {
+            if (_view.state.selection.empty && !focusFixedToolbar()) return false;
             event.preventDefault();
-            focusToolbar();
+            if (!_view.state.selection.empty) focusToolbar();
             return true;
           }
           // ⌘K with text selected (or inside a link) edits the link; otherwise it opens the command palette.
@@ -180,6 +186,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   );
   const editorRef = useRef<Editor | null>(null);
   editorRef.current = editor;
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (session.serverSynced) onServerSynced?.();
@@ -207,6 +214,7 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
 
   return (
     <div className={`editor-wrap ${session.synced ? '' : 'is-loading'}`}>
+      {editor && canEdit && !isMobile && <EditorToolbar editor={editor} />}
       {editor && canEdit && <FormattingMenu editor={editor} />}
       {editor && canEdit && <TableBar editor={editor} />}
       {editor && canEdit && <ImageBar editor={editor} />}
@@ -239,17 +247,45 @@ export async function insertFiles(editor: Editor, files: File[], pos: number, at
   }
 }
 
+/** Blocks the hover ✓ can turn into tasks. */
+const TASKABLE = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList']);
+
 /** Notion-style handle left of each block: drag to move, click to select, "+" to insert below. */
 function BlockHandle({ editor }: { editor: Editor }) {
   const current = useRef<{ pos: number; size: number } | null>(null);
+  const [taskable, setTaskable] = useState(false);
   return (
     <DragHandle
       editor={editor}
       className="block-handle"
       onNodeChange={({ node, pos }) => {
         current.current = node ? { pos, size: node.nodeSize } : null;
+        setTaskable(!!node && TASKABLE.has(node.type.name) && node.textContent.trim() !== '');
       }}
     >
+      {taskable && (
+        <button
+          type="button"
+          className="block-handle-btn block-handle-task"
+          title={`Turn into task (${keyLabel(MOD, ENTER)})`}
+          aria-label="Turn this line into a task"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            const c = current.current;
+            if (!c) return;
+            const { doc } = editor.state;
+            // A text block: put the cursor in it. A list: select all of it (each item becomes a task).
+            const node = doc.nodeAt(c.pos);
+            const sel = node?.isTextblock
+              ? TextSelection.near(doc.resolve(c.pos + 1))
+              : TextSelection.between(doc.resolve(c.pos + 1), doc.resolve(c.pos + c.size - 1));
+            editor.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).run();
+            if (canConvert(editor)) convertToTasks(editor);
+          }}
+        >
+          <CircleCheck size={15} />
+        </button>
+      )}
       <button
         type="button"
         className="block-handle-btn"
@@ -325,7 +361,7 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       }}
     >
       {/* BubbleMenu renders its own container; the toolbar semantics and keys live on this one. */}
-      <div className="bubble-menu-bar" role="toolbar" aria-label="Formatting" aria-orientation="horizontal" onKeyDown={(e) => toolbarKeys(e, editor)}>
+      <div className="bubble-menu-bar" role="toolbar" aria-label="Formatting" aria-orientation="horizontal" onKeyDown={(e) => toolbarKeys(e, editor, 'button')}>
       {btn(s.h1, 'Heading 1', () => editor.chain().focus().toggleHeading({ level: 1 }).run(), <Heading1 size={16} />)}
       {btn(s.h2, 'Heading 2', () => editor.chain().focus().toggleHeading({ level: 2 }).run(), <Heading2 size={16} />)}
       {btn(s.h3, 'Heading 3', () => editor.chain().focus().toggleHeading({ level: 3 }).run(), <Heading3 size={16} />)}
@@ -337,6 +373,14 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       {btn(s.strike, `Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, () => editor.chain().focus().toggleStrike().run(), <Strikethrough size={16} />)}
       {btn(s.code, `Inline code (${keyLabel(MOD, 'E')})`, () => editor.chain().focus().toggleCode().run(), <Code size={16} />)}
       {btn(s.link, `Link (${keyLabel(MOD, 'K')})`, () => openLinkEditor(editor), <Link2 size={16} />)}
+      <ToolbarMenu label="Colour" trigger={<Palette size={16} />}>
+        {(close) => (
+          <>
+            <ColorChoices editor={editor} kind="text" done={close} />
+            <ColorChoices editor={editor} kind="highlight" done={close} />
+          </>
+        )}
+      </ToolbarMenu>
       <span className="bm-sep" />
       <button
         type="button"
@@ -409,25 +453,6 @@ function focusToolbar(attempt = 0) {
   const visible = !!bar && bar.getBoundingClientRect().width > 0 && getComputedStyle(bar).visibility !== 'hidden';
   if (first && visible) first.focus();
   else if (attempt < 90) requestAnimationFrame(() => focusToolbar(attempt + 1)); // ~1.5 s for the bubble menu to show on a slow machine
-}
-
-/** Toolbar keyboard pattern: ←/→ (and Home/End) move between buttons, Escape returns to the text. */
-function toolbarKeys(e: React.KeyboardEvent<HTMLDivElement>, editor: Editor) {
-  const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
-  const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
-  if (i < 0) return;
-  const go = (n: number) => {
-    e.preventDefault();
-    buttons[(n + buttons.length) % buttons.length].focus();
-  };
-  if (e.key === 'ArrowRight') go(i + 1);
-  else if (e.key === 'ArrowLeft') go(i - 1);
-  else if (e.key === 'Home') go(0);
-  else if (e.key === 'End') go(buttons.length - 1);
-  else if (e.key === 'Escape') {
-    e.preventDefault();
-    editor.commands.focus();
-  }
 }
 
 function TableBar({ editor }: { editor: Editor }) {
