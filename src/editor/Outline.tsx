@@ -1,4 +1,4 @@
-// Table of contents for long pages, and the per-page "full width" setting.
+// Table of contents for long pages.
 // The outline lists the headings of every text box, in reading order, read from the page's
 // Y.Doc (so boxes whose editors aren't mounted yet are included); clicking one mounts its box
 // if needed, puts the caret in the heading and scrolls to it.
@@ -49,35 +49,6 @@ function usePageHeadings(doc: Y.Doc): PageHeading[] {
     };
   }, [doc]);
   return items;
-}
-
-/** The shared Y.Doc behind the editor (from the Collaboration extension). */
-function docOf(editor: Editor): Y.Doc | null {
-  const ext = editor.extensionManager.extensions.find((e) => e.name === 'collaboration');
-  return (ext?.options as { document?: Y.Doc } | undefined)?.document ?? null;
-}
-
-/**
- * A per-page setting stored in the page's Yjs doc (map "meta"), so it syncs to
- * collaborators and works offline without a schema change.
- */
-export function usePageSetting<T>(editor: Editor | null, key: string, fallback: T): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(fallback);
-  useEffect(() => {
-    const doc = editor && docOf(editor);
-    if (!doc) return;
-    const meta = doc.getMap('meta');
-    const read = () => setValue(meta.has(key) ? (meta.get(key) as T) : fallback);
-    read();
-    meta.observe(read);
-    return () => meta.unobserve(read);
-  }, [editor, key]); // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (v: T) => {
-    const doc = editor && docOf(editor);
-    if (doc) doc.getMap('meta').set(key, v);
-    else setValue(v);
-  };
-  return [value, set];
 }
 
 /** Where a heading is on screen: the heading itself if its box's editor is mounted, else its box. */

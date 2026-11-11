@@ -362,10 +362,9 @@
   .ProseMirror .code-block pre { padding-top: 12px; }
 }
 
-/* ───────── Full width & outline ───────── */
+/* ───────── Outline ───────── */
 .page-scroll { position: relative; container-type: inline-size; }
-.page-article.is-full { max-width: none; padding-left: clamp(48px, 7vw, 120px); padding-right: clamp(48px, 7vw, 120px); }
-.page-toc-rail { position: absolute; top: 0; bottom: 0; right: 0; width: 220px; pointer-events: none; z-index: 2; /* over a canvas reaching under it; under the ribbon (3) */ }
+.page-toc-rail { position: absolute; top: 0; bottom: 0; right: 0; width: 36px; pointer-events: none; z-index: 2; /* over a canvas reaching under it; under the ribbon (3) */ }
 .page-toc {
   position: sticky;
   top: calc(72px + var(--ribbon-h, 0px));
@@ -395,30 +394,28 @@
 }
 .page-toc-item:hover { background: var(--bg-hover); color: var(--text); }
 .page-toc-item.is-active { color: var(--accent); border-left-color: var(--accent); border-radius: 0 5px 5px 0; }
-/* Not enough room beside the 760px column: a strip of bars at the edge that expands on hover. */
-@container (max-width: 1220px) {
-  .page-toc-rail { width: 36px; }
-  .page-toc { margin-right: 8px; opacity: 1; width: 28px; }
-  .page-toc-title { display: none; }
-  .page-toc-item { font-size: 0; height: 12px; padding: 5px 4px !important; border-left: 0; background: none !important; }
-  .page-toc-item::before { content: ''; display: block; height: 2px; width: 16px; margin-left: auto; border-radius: 1px; background: var(--border-strong); }
-  .page-toc-item.is-active::before { background: var(--accent); }
-  .page-toc:hover, .page-toc:focus-within {
-    width: 240px;
-    margin-left: -204px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 6px;
-  }
-  .page-toc:hover .page-toc-title, .page-toc:focus-within .page-toc-title { display: block; }
-  .page-toc:hover .page-toc-item, .page-toc:focus-within .page-toc-item { font-size: 12.5px; height: auto; padding: 4px 8px !important; }
-  .page-toc:hover .page-toc-item:hover, .page-toc:focus-within .page-toc-item:hover { background: var(--bg-hover) !important; }
-  .page-toc:hover .page-toc-item::before, .page-toc:focus-within .page-toc-item::before { display: none; }
+/* Pages run full width (OneNote-style), so the outline is a strip of bars in the page's right
+   margin that expands on hover. */
+.page-toc { margin-right: 8px; opacity: 1; width: 28px; }
+.page-toc-title { display: none; }
+.page-toc-item { font-size: 0; height: 12px; padding: 5px 4px !important; border-left: 0; background: none !important; }
+.page-toc-item::before { content: ''; display: block; height: 2px; width: 16px; margin-left: auto; border-radius: 1px; background: var(--border-strong); }
+.page-toc-item.is-active::before { background: var(--accent); }
+.page-toc:hover, .page-toc:focus-within {
+  width: 240px;
+  margin-left: -204px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 6px;
 }
+.page-toc:hover .page-toc-title, .page-toc:focus-within .page-toc-title { display: block; }
+.page-toc:hover .page-toc-item, .page-toc:focus-within .page-toc-item { font-size: 12.5px; height: auto; padding: 4px 8px !important; }
+.page-toc:hover .page-toc-item:hover, .page-toc:focus-within .page-toc-item:hover { background: var(--bg-hover) !important; }
+.page-toc:hover .page-toc-item::before, .page-toc:focus-within .page-toc-item::before { display: none; }
 @container (max-width: 700px) { .page-toc-rail { display: none; } }
-@media print { .page-toc-rail { display: none !important; } .page-article.is-full { padding: 0; } }
+@media print { .page-toc-rail { display: none !important; } }
 
 /* ───────── Long pages ─────────
    Let the browser skip layout and paint for blocks far off-screen. `auto` remembers each

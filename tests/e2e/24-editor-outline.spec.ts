@@ -1,4 +1,4 @@
-// "On this page" outline and full-width pages. Owner: Editor & Notes (agent 2), coordinated with QA.
+// "On this page" outline and full-width (OneNote-style) pages. Owner: Editor & Notes (agent 2), coordinated with QA.
 import { test, expect, type Page } from '@playwright/test';
 import { createPage, createUser, eventually, focusEnd, listTasks, openPage, signInContext } from './helpers.ts';
 
@@ -52,22 +52,34 @@ test.describe('outline and full width', () => {
     await expect(heading).toHaveText('!Section 3');
   });
 
-  test('full width is a per-page setting that persists and hides the outline', async ({ page, context, request }) => {
+  test('pages are left-aligned and full width (OneNote-style), with the outline in the right margin', async ({ page, context, request }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     const user = await createUser(request, 'Full Width');
     const { pageId } = await createPage(request, user, { page: 'Wide' });
     await signInContext(context, user);
     await openPage(page, user.wsId, pageId);
     await writeSections(page, 3);
-    const article = page.locator('.page-article');
-    const narrow = (await article.boundingBox())!.width;
+    await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+    // No "Full width" setting any more: it is always on.
     await page.locator('.page-topbar').getByTitle('Page options').click();
-    await page.getByRole('menuitem', { name: /Full width/ }).click();
-    await expect(article).toHaveClass(/is-full/);
-    expect((await article.boundingBox())!.width).toBeGreaterThan(narrow + 200);
-    await expect(page.getByRole('navigation', { name: 'On this page' })).toHaveCount(0);
-    await page.waitForTimeout(1500);
-    await page.reload();
-    await expect(page.locator('.page-article')).toHaveClass(/is-full/, { timeout: 15_000 });
+    await expect(page.getByRole('menuitem', { name: 'Version history' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: /Full width/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    const area = (await page.locator('.page-scroll').boundingBox())!;
+    const box = (await page.locator('.canvas-box.is-wide').first().boundingBox())!;
+    expect(box.x - area.x).toBeLessThan(60);
+    expect(area.x + area.width - (box.x + box.width)).toBeLessThan(60);
+    const title = (await page.locator('.page-title').boundingBox())!;
+    expect(title.x - area.x).toBeLessThan(60);
+    // The box follows the window.
+    await page.setViewportSize({ width: 1200, height: 900 });
+    await expect
+      .poll(async () => {
+        const a = (await page.locator('.page-scroll').boundingBox())!;
+        const b = (await page.locator('.canvas-box.is-wide').first().boundingBox())!;
+        return Math.round(a.x + a.width - (b.x + b.width));
+      })
+      .toBeLessThan(60);
   });
 });
 
