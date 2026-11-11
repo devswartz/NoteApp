@@ -26,7 +26,7 @@ test('desktop: page panel is closed by default and the choice is remembered acro
   // Switch to Comments, then close: it stays closed everywhere.
   await panel.getByRole('tab', { name: 'Comments' }).click();
   await expect(panel.locator('.comments-panel')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Comments', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.page-topbar').getByRole('button', { name: 'Comments', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: 'Tasks on this page', exact: true })).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('button', { name: 'Close panel' }).click();
   await expect(panel).toHaveCount(0);
