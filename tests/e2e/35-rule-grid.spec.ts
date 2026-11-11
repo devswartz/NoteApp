@@ -11,23 +11,18 @@ async function slash(page: Page, query: string) {
 
 const LONG ='A long task title that wraps onto a second line '.repeat(6).trim();
 
-/** Each text line's baseline, offset (px) from the nearest rule line, keyed by a label. */
+/** Each text line's vertical centre, offset (px) from the middle between two rule lines, keyed by a label. */
 async function offsets(page: Page) {
   return page.evaluate(() => {
     const rules = document.querySelector<HTMLElement>('.page-rules')!;
     const unit = parseFloat(getComputedStyle(rules).getPropertyValue('--rule'));
-    // Lines are the last pixel of each unit from the top of .page-rules.
-    const lineAt = rules.getBoundingClientRect().top + unit - 0.5;
+    const inset = parseFloat(getComputedStyle(rules).getPropertyValue('--rule-inset'));
+    // Lines are the last pixel of each unit, the pattern shifted down by the box inset; text
+    // should be centred between two lines, i.e. half a unit past a line.
+    const middleAt = rules.getBoundingClientRect().top + inset + unit - 0.5 + unit / 2;
     const off = (y: number) => {
-      const d = (((y - lineAt) % unit) + unit) % unit;
+      const d = (((y - middleAt) % unit) + unit) % unit;
       return d > unit / 2 ? d - unit : d;
-    };
-    const ctx = document.createElement('canvas').getContext('2d')!;
-    const metrics = (el: Element) => {
-      const cs = getComputedStyle(el);
-      ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-      const m = ctx.measureText('Hg');
-      return { asc: m.fontBoundingBoxAscent, desc: m.fontBoundingBoxDescent };
     };
     const out: { label: string; off: number }[] = [];
     const root = document.querySelector('.canvas-box .ProseMirror')!;
@@ -35,29 +30,27 @@ async function offsets(page: Page) {
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const parent = n.parentElement!;
       if (!n.textContent!.trim() || parent.closest('[contenteditable="false"]')) continue;
-      const { desc } = metrics(parent);
       const range = document.createRange();
       range.selectNodeContents(n);
       const seen = new Set<number>();
       for (const r of range.getClientRects()) {
         if (seen.has(Math.round(r.bottom))) continue;
         seen.add(Math.round(r.bottom));
-        out.push({ label: `${parent.closest('p, h1, h2, h3, li, td, th')?.tagName}:${n.textContent!.slice(0, 20)}`, off: off(r.bottom - desc) });
+        out.push({ label: `${parent.closest('p, h1, h2, h3, li, td, th')?.tagName}:${n.textContent!.slice(0, 20)}`, off: off(r.top + r.height / 2) });
       }
     }
     for (const ta of root.querySelectorAll<HTMLTextAreaElement>('.task-ref-title')) {
       const cs = getComputedStyle(ta);
       const lh = parseFloat(cs.lineHeight);
-      const { asc, desc } = metrics(ta);
       const top = ta.getBoundingClientRect().top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop);
       const lines = Math.round((ta.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / lh);
-      for (let k = 0; k < lines; k++) out.push({ label: `task line ${k + 1}/${lines}`, off: off(top + k * lh + (lh - asc - desc) / 2 + asc) });
+      for (let k = 0; k < lines; k++) out.push({ label: `task line ${k + 1}/${lines}`, off: off(top + k * lh + lh / 2) });
     }
     return out;
   });
 }
 
-test('rule lines: text in every block sits on the lines', async ({ page, context, request }) => {
+test('rule lines: text in every block sits centred between the lines', async ({ page, context, request }) => {
   const user = await createUser(request, 'Rhea Rules');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);

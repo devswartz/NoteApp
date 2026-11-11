@@ -243,7 +243,7 @@ export function PageView() {
         {canvas && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
         {/* Rule lines / grid: across the whole page width, from the canvas down, behind the boxes. */}
         {settings.rules !== 'none' && rules && (
-          <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height, backgroundPosition: `${rules.left}px 0` }} />
+          <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height, backgroundPosition: `${rules.left}px var(--rule-inset)` }} />
         )}
         <header className="page-topbar">
           <div className="crumbs">
