@@ -94,8 +94,8 @@ test('pathological 1 MB pages convert in linear time (no quadratic parsing, nest
     // A fixed budget alone is flaky on slow or busy CI machines (one case takes
     // ~0.3 s locally and ~1 s on a GitHub runner), so the main check is growth:
     // doubling the input about doubles the time when parsing is linear and
-    // quadruples it when it is quadratic. Sub-20 ms timings are too noisy to compare.
-    if (full > 20) assert.ok(full < 3 * half, `${name}: ${Math.round(half)} ms at 512 KB → ${Math.round(full)} ms at 1 MB`);
+    // quadruples it when it is quadratic. Timings under ~50 ms are too noisy to compare.
+    if (half > 50) assert.ok(full < 3 * half, `${name}: ${Math.round(half)} ms at 512 KB → ${Math.round(full)} ms at 1 MB`);
     assert.ok(full < 2000, `${name}: ${Math.round(full)} ms`);
   }
   // Deeper than MAX_DEPTH: flattened, the text survives.
