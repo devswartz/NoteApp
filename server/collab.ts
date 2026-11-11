@@ -345,6 +345,19 @@ export function editPageDoc(pageId: string, fn: (doc: Y.Doc) => void) {
   }
 }
 
+/**
+ * A page's current content as a Yjs update, read-only: the live room's state if the page is
+ * open (so unsaved edits are included), else the stored doc. null if the page doesn't exist.
+ * Printing a section reads pages this way instead of opening a collab session for each.
+ */
+export function pageDocState(pageId: string): Uint8Array | null {
+  const room = rooms.get(pageId);
+  if (room) return Y.encodeStateAsUpdate(room.doc);
+  const row = db.prepare('SELECT ydoc FROM pages WHERE id = ?').get(pageId) as { ydoc: Buffer | null } | undefined;
+  if (!row) return null;
+  return row.ydoc ? new Uint8Array(row.ydoc) : Y.encodeStateAsUpdate(new Y.Doc());
+}
+
 /** A new canvas box id (the `box:<id>` fragment name) made on the server. */
 export const newBoxId = () => crypto.randomBytes(8).toString('hex');
 

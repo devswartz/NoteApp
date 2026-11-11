@@ -64,7 +64,7 @@ test('menu-less desktop (Windows/Linux): every macOS menu accelerator still has 
   }));
   assert.ok(menu.length >= 10, 'found the menu accelerators in menu.rs');
   // ⌘K and ⌘\ are handled by the web app itself (components/shell/commands.tsx).
-  const inWebApp = new Set(['app.palette', 'app.sidebar']);
+  const inWebApp = new Set(['app.palette', 'app.sidebar', 'page.print']); // ⌘P: print the open page
   for (const { command, keys } of menu) {
     if (inWebApp.has(command)) continue;
     assert.ok(

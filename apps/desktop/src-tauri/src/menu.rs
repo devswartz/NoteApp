@@ -30,6 +30,7 @@ mod app_menu {
     const FILE: &[Item] = &[
         ("pages.new", "New Page", Some("CmdOrCtrl+N")),
         ("tasks.new", "New Task", Some("CmdOrCtrl+Shift+T")),
+        ("page.print", "Print…", Some("CmdOrCtrl+P")),
     ];
     const VIEW: &[Item] = &[
         ("app.palette", "Search or Run a Command…", Some("CmdOrCtrl+K")),

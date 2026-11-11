@@ -138,6 +138,14 @@ export const tauriPlatform: Platform = {
     },
   },
 
+  // Windows (WebView2) and Linux: window.print() opens the system dialog. macOS: WKWebView
+  // ignores window.print, so Tauri replaces it with its `plugin:webview|print` command, which
+  // runs WKWebView's print operation (the native panel with "Save as PDF"); it needs the
+  // core:webview:allow-print permission (src-tauri/capabilities/default.json).
+  async print() {
+    await (window.print() as unknown as Promise<void> | undefined);
+  },
+
   // WebKit/WebView2 show the native file panel for <input type=file>, and
   // drag-and-drop goes to the page (the Rust side disables Tauri's own handler).
   pickFiles: webPlatform.pickFiles,

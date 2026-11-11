@@ -1,7 +1,12 @@
 package com.devswartz.notivelo;
 
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
+import android.webkit.WebView;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -81,6 +86,27 @@ public class NoteAppNativePlugin extends Plugin {
     public void setConfig(PluginCall call) {
         SnoozeReceiver.setApiBase(getContext(), call.getString("apiBase"));
         call.resolve();
+    }
+
+    /**
+     * Prints the web view (Android's WebView ignores window.print()): PrintManager with the
+     * WebView's print adapter, which lays the page out with the print stylesheet. The system
+     * dialog offers printers and "Save as PDF". Resolves once the job is handed to the system.
+     */
+    @PluginMethod
+    public void print(PluginCall call) {
+        String name = call.getString("jobName", "Note");
+        getActivity().runOnUiThread(() -> {
+            PrintManager pm = (PrintManager) getContext().getSystemService(Context.PRINT_SERVICE);
+            WebView webView = getBridge().getWebView();
+            if (pm == null || webView == null) {
+                call.reject("Printing is not available");
+                return;
+            }
+            PrintDocumentAdapter adapter = webView.createPrintDocumentAdapter(name);
+            pm.print(name, adapter, new PrintAttributes.Builder().build());
+            call.resolve();
+        });
     }
 
     /** Shared items received since the last call. */

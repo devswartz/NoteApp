@@ -1,0 +1,108 @@
+/* ───────── Printing notes (src/print/) ─────────
+   A print job renders pages into #print-root: a flow layout of the canvas boxes (rows of
+   columns, see src/print/printLayout.ts) with the page's title on top. While a job is
+   prepared (html.print-job), paper shows only that; on screen it is never shown.
+   Colours are the light theme's whatever the app's theme is, so dark-mode notes print legibly
+   on white. Page colour prints only when chosen ("Print page colour"); rule lines never. */
+@media screen {
+  .print-root { display: none !important; }
+}
+
+/* A4 and Letter both: ~16 mm sides, room for the page number at the bottom (Chromium's
+   margin boxes; WebKit prints without them). */
+@page {
+  margin: 16mm 16mm 18mm;
+  @bottom-right {
+    content: counter(page) ' / ' counter(pages);
+    font: 8.5pt -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: #777;
+  }
+}
+
+@media print {
+  html.print-job, html.print-job body { height: auto !important; overflow: visible !important; background: #fff !important; }
+  html.print-job body > :not(#print-root) { display: none !important; }
+
+  .print-root {
+    display: block;
+    /* Borders at the very edge of the printable area aren't cut off by rounding (Letter). */
+    padding: 0 1mm;
+    color-scheme: light;
+    /* The light theme's tokens, here whatever the app's theme. */
+    --bg: #fff; --bg-subtle: #f6f6f7; --text: #111; --text-2: #333; --text-muted: #666; --border: #d4d4d8; --border-strong: #b4b4bb;
+    --accent: #1f4fbf; --radius: 4px;
+    --tc-gray: #6b6b74; --tc-red: #c42b2b; --tc-orange: #b4500c; --tc-yellow: #8c6400; --tc-green: #22783a; --tc-blue: #1f62c4; --tc-purple: #7a3fd6; --tc-pink: #bb2a75;
+    --hl-gray: #e9e9ec; --hl-red: #fde0de; --hl-orange: #fde6cf; --hl-yellow: #fcf0b0; --hl-green: #d9f2dc; --hl-blue: #dbe8fd; --hl-purple: #ebe2fc; --hl-pink: #fbdeec;
+    color: var(--text);
+    background: #fff;
+    font-family: var(--font, -apple-system, 'Segoe UI', Roboto, sans-serif);
+    font-size: 10.5pt;
+    line-height: 1.5;
+  }
+
+  /* Each page starts on a new sheet. */
+  .print-page + .print-page { break-before: page; }
+  .print-page[data-page-color] { print-color-adjust: exact; -webkit-print-color-adjust: exact; background: var(--print-tint); box-decoration-break: clone; -webkit-box-decoration-break: clone; padding: 6mm; border-radius: 2mm; }
+  .print-page[data-page-color='yellow'] { --print-tint: #fdf8e3; }
+  .print-page[data-page-color='green'] { --print-tint: #eff7f0; }
+  .print-page[data-page-color='blue'] { --print-tint: #eef4fb; }
+  .print-page[data-page-color='purple'] { --print-tint: #f5f1fb; }
+  .print-page[data-page-color='pink'] { --print-tint: #fcf1f5; }
+  .print-page[data-page-color='grey'] { --print-tint: #f4f4f5; }
+
+  .print-head { margin: 0 0 6mm; padding-bottom: 3mm; border-bottom: 0.6pt solid var(--border); break-after: avoid; }
+  .print-title { font-size: 20pt; line-height: 1.2; margin: 0; letter-spacing: -0.01em; font-weight: 650; }
+  .print-sub { margin-top: 1.5mm; font-size: 8.5pt; color: var(--text-muted); }
+  .print-muted { color: var(--text-muted); }
+
+  /* Rows of boxes: side-by-side boxes as columns, everything else full width. */
+  .print-row + .print-row { margin-top: 4mm; }
+  .print-row.is-columns { display: flex; gap: 24px; align-items: flex-start; }
+  .print-box { min-width: 0; }
+  .print-row.is-columns > .print-box { break-inside: auto; }
+
+  /* Editor content, statically rendered (no editor): the .ProseMirror rules apply; these adjust for paper. */
+  .print-box-content.ProseMirror { min-height: 0; font-size: 10.5pt; line-height: 1.5; outline: none; overflow-wrap: anywhere; }
+  .print-box-content > :first-child { margin-top: 0; }
+  .print-box-content :is(h1, h2, h3) { break-after: avoid; break-inside: avoid; }
+  .print-box-content :is(p, li) { orphans: 2; widows: 2; }
+  .print-box-content :is(pre, .callout, .file-card, img, tr, li[data-checked], blockquote, .print-task, details > summary) { break-inside: avoid; }
+  .print-box-content pre { white-space: pre-wrap; overflow: visible; font-size: 8.5pt; background: #f6f6f7; border: 0.6pt solid var(--border); padding: 2.5mm 3mm; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .print-box-content pre code { white-space: inherit; }
+  .print-box-content img { max-width: 100% !important; height: auto !important; break-inside: avoid; }
+  .print-box-content table { width: 100%; table-layout: auto; font-size: 9.5pt; }
+  .print-box-content :is(td, th) { border: 0.6pt solid #c8c8cd; padding: 1.2mm 2mm; min-width: 0; }
+  .print-box-content th { background: #f3f3f5; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .print-box-content thead { display: table-header-group; }
+  .print-box-content col { width: auto !important; }
+
+  /* Links: the text, with the address in small print after web links. */
+  .print-box-content a { color: inherit; text-decoration: underline; text-decoration-color: #999; }
+  .print-box-content a[href^='http']::after { content: ' (' attr(href) ')'; font-size: 0.8em; color: var(--text-muted); text-decoration: none; overflow-wrap: anywhere; }
+  .print-box-content a.page-link::after, .print-box-content .file-card a::after { content: none; }
+  .print-box-content .mention { background: none; color: inherit; padding: 0; font-weight: 600; }
+
+  /* Callouts: emoji then content, lightly boxed. */
+  .print-box-content .callout { display: flex; gap: 2.5mm; border: 0.6pt solid var(--border); border-radius: 2mm; padding: 2.5mm 3mm; margin: 0.6em 0; background: none; }
+  .print-box-content .callout::before { content: attr(data-emoji); }
+  .print-box-content .callout > * { min-width: 0; }
+  .print-box-content .file-card { margin: 0.4em 0; }
+  .print-box-content .file-card a::before { content: '📎 '; }
+  .print-box-content details > summary { list-style: none; font-weight: 600; }
+  .print-box-content details > summary::-webkit-details-marker { display: none; }
+
+  /* Checklists (plain to-dos) and tasks: a drawn box, done ones ticked and struck through. */
+  .print-box-content ul[data-type='taskList'] li > label input { appearance: none; -webkit-appearance: none; width: 3mm; height: 3mm; border: 0.8pt solid #555; border-radius: 0.6mm; margin: 0.35em 0 0; display: block; }
+  .print-box-content ul[data-type='taskList'] li[data-checked='true'] > label input { background: #555; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .print-task { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 2mm; margin: 1mm 0; }
+  .print-check { flex: none; width: 3mm; height: 3mm; border: 0.8pt solid #555; border-radius: 50%; align-self: flex-start; margin-top: 0.38em; position: relative; }
+  .print-task.is-done .print-check { background: #555; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .print-task.is-done .print-check::after, .print-box-content ul[data-type='taskList'] li[data-checked='true'] > label::after {
+    content: ''; position: absolute; left: 0.95mm; top: 0.45mm; width: 0.7mm; height: 1.4mm; border: solid #fff; border-width: 0 0.5mm 0.5mm 0; transform: rotate(45deg);
+  }
+  .print-box-content ul[data-type='taskList'] li > label { position: relative; }
+  .print-task.is-done .print-task-title { text-decoration: line-through; color: var(--text-muted); }
+  .print-task-meta { font-size: 8.5pt; color: var(--text-muted); }
+
+  .print-root * { animation: none !important; transition: none !important; box-shadow: none !important; }
+}

@@ -105,6 +105,11 @@ export const webPlatform: Platform = {
     subscribe: () => () => {},
   },
 
+  // The browser's dialog is modal: print() returns once it closes.
+  async print() {
+    window.print();
+  },
+
   async saveFile(name, data) {
     const url = URL.createObjectURL(data);
     const a = document.createElement('a');

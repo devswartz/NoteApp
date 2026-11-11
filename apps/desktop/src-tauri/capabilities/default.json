@@ -13,6 +13,7 @@
     "core:window:allow-hide",
     "core:window:allow-unminimize",
     "core:window:allow-close",
+    "core:webview:allow-print",
     "notification:default",
     "opener:default",
     "deep-link:default",

@@ -17,6 +17,7 @@ import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, takePendingImport } from '../editor/exportPage.ts';
 import { Outline } from '../editor/Outline.tsx';
+import { installPrintHandlers, printPageColour, setPrintPageColour } from '../print/print.ts';
 import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -194,6 +195,8 @@ export function PageView() {
     setRibbonPage({ pageId, doc: canvas.doc, canEdit });
     return () => setRibbonPage(null);
   }, [canvas, canEdit, pageId]);
+  // Printing from the browser's own menu prints this page laid out for paper, not the app.
+  useEffect(() => installPrintHandlers(), []);
   // Markdown picked from the Notes ribbon's Import before this page existed.
   useEffect(() => {
     if (!canvas || !canEdit) return;
@@ -614,9 +617,10 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
           <MenuItem icon={<FileDown size={15} />} onSelect={() => source && void exportMarkdown(source, pageId).catch(errorToast)}>
             Export as Markdown
           </MenuItem>
-          <MenuItem icon={<Printer size={15} />} onSelect={() => printPage(current?.title ?? '')}>
+          <MenuItem icon={<Printer size={15} />} hint={keyLabel(MOD, 'P')} onSelect={() => printPage()}>
             Print / save as PDF
           </MenuItem>
+          <PrintColourItem />
           {canEdit && (
             <MenuItem icon={<FileUp size={15} />} onSelect={() => source && void importMarkdown(source, pageId)}>
               Import Markdown…
@@ -826,5 +830,22 @@ function PageTasks({ pageId }: { pageId: string }) {
         {showDone && done.map((t) => <TaskRow key={t.id} task={t} showSource={false} />)}
       </div>
     </>
+  );
+}
+
+/** "Print page colour" (off by default; a per-device choice): rule lines never print. */
+function PrintColourItem() {
+  const [on, setOn] = useState(printPageColour);
+  return (
+    <MenuItem
+      checked={on}
+      keepOpen
+      onSelect={() => {
+        setPrintPageColour(!on);
+        setOn(!on);
+      }}
+    >
+      Print page colour
+    </MenuItem>
   );
 }

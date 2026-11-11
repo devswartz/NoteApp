@@ -32,6 +32,7 @@ import {
   Minus,
   PaintBucket,
   Paperclip,
+  Printer,
   Redo2,
   RemoveFormatting,
   Rows3,
@@ -44,6 +45,7 @@ import { canConvert } from './TaskRef.tsx';
 import { useActiveEditor } from './activeEditor.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
+import { printPage } from './exportPage.ts';
 import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, type ColorName } from './colors.ts';
 import { setOutlineHidden, setRibbonCollapsed, syncRibbonPrefs, usePageSettings, useRibbon } from './ribbonState.ts';
 import { PAGE_COLORS, RULE_LINES, setPageSettings, type PageColor, type RuleLines } from '../../shared/pageDoc.ts';
@@ -762,6 +764,7 @@ export function Ribbon() {
             ))
           }
         </ToolbarMenu>
+        {viewBtn(`Print (${keyLabel(MOD, 'P')})`, <Printer />, () => printPage(), { text: 'Print', disabled: !page })}
       </Group>
       <Sep />
       <Group label="View">
