@@ -113,13 +113,14 @@ test.describe('editor blocks', () => {
     await group.locator('button[title="Delete row"]').click();
     await expect(rows).toHaveCount(3);
     // Tab still moves between cells; F6 reaches the Table group in the ribbon's arrow navigation.
-    await editor.locator('td').first().click();
+    const last = editor.locator('tr').last().locator('td');
+    await last.first().click();
     await page.keyboard.press('Tab');
     await page.keyboard.type('next');
-    await expect(editor.locator('tr').nth(1).locator('td').nth(1)).toHaveText('next');
+    await expect(last.nth(1)).toHaveText('next');
     await page.keyboard.press('Shift+Tab');
     await page.keyboard.type('prev');
-    await expect(editor.locator('tr').nth(1).locator('td').first()).toHaveText('prev');
+    await expect(last.first()).toHaveText('prev');
     await page.keyboard.press('F6');
     await expect(ribbon.locator('button:focus')).toBeVisible();
     for (let i = 0; i < 40 && !(await group.locator('button:focus').count()); i++) await page.keyboard.press('ArrowRight');
