@@ -77,6 +77,33 @@ export function UpcomingView() {
 }
 
 export function TeamView() {
+  const [by, setBy] = useState<'person' | 'team'>('person');
+  const hasTeams = useStore((s) => s.teams.length > 0);
+  return (
+    <>
+      {hasTeams && (
+        <div className="toolbar">
+          <Segmented value={by} onChange={setBy} options={[['person', 'By person'], ['team', 'By team']]} />
+        </div>
+      )}
+      {by === 'team' && hasTeams ? <ByTeam /> : <ByPerson />}
+    </>
+  );
+}
+
+/** Open tasks grouped by their team (subteams as "Team › Subteam"), then "No team". */
+function ByTeam() {
+  const open = useOpen();
+  const members = useStore((s) => s.members);
+  const tree = useStore((s) => s.tree);
+  const teams = useStore((s) => s.teams);
+  const loaded = useStore((s) => s.tasksLoaded);
+  const groups = useMemo(() => groupBy(open, 'team', 'due', { members, tree, teams }), [open, members, tree, teams]);
+  if (!loaded) return <Loading />;
+  return <TaskGroups groups={groups.length ? groups : [{ key: 'none', label: '', tasks: [] }]} emptyText="No open tasks." />;
+}
+
+function ByPerson() {
   const tasks = useStore((s) => s.tasks);
   const members = useStore((s) => s.members);
   const open = useOpen();

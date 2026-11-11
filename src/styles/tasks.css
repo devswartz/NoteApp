@@ -173,3 +173,66 @@ button.cal-more:hover { color: var(--accent); }
   .qa-chips { gap: 8px; }
   .qa-chips .chip-btn { min-height: 44px; padding: 0 14px; }
 }
+
+/* Tags and teams (track 1): row chips, pickers, filter chips, settings */
+.label-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.chip.tag-chip {
+  --tag: var(--text-muted);
+  display: inline-block;
+  color: color-mix(in srgb, var(--tag) 70%, var(--text));
+  background: color-mix(in srgb, var(--tag) 16%, transparent);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 22px;
+}
+.task-meta .chip.tag-chip { height: 18px; line-height: 18px; padding: 0 6px; border-radius: 9px; font-weight: 500; background: color-mix(in srgb, var(--tag) 16%, transparent); }
+.chip.team-badge { --tag: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; max-width: 160px; color: var(--text-muted); }
+.chip.team-badge svg { flex: none; color: var(--tag); }
+.task-tags { display: inline-flex; gap: 4px; min-width: 0; overflow: hidden; }
+.task-meta { min-width: 0; }
+.prop-tag-list { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.prop-tags { height: auto; min-height: 30px; }
+.assigned-by { margin: 2px 0 0 8px; }
+.menu-indent { padding-left: 14px; }
+.tag-menu { min-width: 220px; max-height: 340px; overflow-y: auto; }
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 12px; }
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  font-size: 12px;
+  max-width: 100%;
+}
+.filter-chip-btn { display: inline-flex; align-items: center; gap: 0; height: 100%; padding: 0 4px 0 10px; color: var(--text-2); min-width: 0; max-width: 260px; border-radius: 999px 0 0 999px; }
+.filter-chip-btn:hover { color: var(--text); }
+.filter-chip-key { font-weight: 600; color: var(--text); white-space: nowrap; }
+.filter-chip-btn .muted { white-space: pre; }
+.filter-chip-val { color: var(--accent); font-weight: 500; }
+.filter-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 100%; color: var(--text-muted); border-radius: 0 999px 999px 0; }
+.filter-chip-x:hover { color: var(--text); background: var(--bg-hover); }
+.add-filter { height: 28px; border-radius: 999px; }
+.filter-menu { min-width: 220px; max-height: 360px; overflow-y: auto; }
+.menu-back { font-weight: 600; }
+.color-menu { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 8px 6px; max-width: 220px; }
+.color-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; }
+.color-swatch.is-active { border-color: var(--text); box-shadow: inset 0 0 0 2px var(--bg-elevated); }
+.team-row.is-sub { padding-left: 18px; }
+.team-row-main { min-width: 0; }
+.avatar-stack { display: flex; }
+.avatar-stack > * + * { margin-left: -6px; }
+.card-desc { margin-top: 0; }
+@media (max-width: 760px) {
+  /* Phones: at most two tag chips per row. */
+  .task-tags > :nth-child(n + 3) { display: none; }
+  .chip.tag-chip { max-width: 96px; }
+  .chip.team-badge { max-width: 110px; }
+  .avatar-stack { display: none; }
+  .filter-chip-btn { max-width: 220px; }
+  .filter-chip, .add-filter { height: 36px; }
+  .filter-chip-x { width: 36px; }
+}

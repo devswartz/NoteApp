@@ -204,6 +204,12 @@ export interface Task {
   pageId: string | null;
   /** Parent task for a subtask (one level deep); null for top-level tasks. */
   parentId: string | null;
+  /** The task's team (independent of the assignee's teams). */
+  teamId: string | null;
+  /** Tag ids, in no particular order. */
+  tagIds: string[];
+  /** Who last set the assignee; null while unassigned. Set by the server. */
+  assignedBy: string | null;
   completedAt: string | null;
   completedBy: string | null;
   createdAt: string;
@@ -224,8 +230,52 @@ export type TaskPatch = Partial<
     | 'assigneeId'
     | 'pageId'
     | 'parentId'
+    | 'teamId'
+    | 'tagIds'
   >
 >;
+
+/** A workspace-wide task tag (GET /workspaces/:id/tags). */
+export interface Tag {
+  id: string;
+  workspaceId: string;
+  name: string;
+  /** #rrggbb */
+  color: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** A team or (with parentId) a subteam, one level deep (GET /workspaces/:id/teams). */
+export interface Team {
+  id: string;
+  workspaceId: string;
+  parentId: string | null;
+  name: string;
+  color: string;
+  position: number;
+  memberIds: string[];
+}
+
+/** What a saved task view stores: the All Tasks filters, sort and grouping (validated by the client). */
+export interface TaskViewQuery {
+  filters: Record<string, unknown>;
+  sort: string;
+  group: string;
+}
+
+/** A saved view of All Tasks (GET /workspaces/:id/task-views): the caller's own plus shared ones. */
+export interface TaskView {
+  id: string;
+  workspaceId: string;
+  ownerId: string;
+  /** Every member sees it (only owners and admins can share). */
+  shared: boolean;
+  name: string;
+  query: TaskViewQuery;
+  position: number;
+  createdAt: string;
+}
 
 /**
  * GET /workspaces/:id/search?q=…&limit=… — best match first.
@@ -354,6 +404,11 @@ export type ServerEvent =
   | { type: 'activity'; workspaceId: string }
   /** A page template was created, renamed or deleted: refetch the list. Private templates only reach their creator. */
   | { type: 'templates'; workspaceId: string }
+  /** Tags or teams changed: refetch them. */
+  | { type: 'tags'; workspaceId: string }
+  | { type: 'teams'; workspaceId: string }
+  /** Saved task views changed: refetch. Personal views only reach their owner. */
+  | { type: 'task-views'; workspaceId: string }
   /** The pages shared with you (GET /shared-pages) changed: refetch. Sent only to the people affected. */
   | { type: 'shared-pages' }
   /** The server can't replay what was missed: reload tree, tasks and members. */

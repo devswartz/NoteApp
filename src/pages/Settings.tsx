@@ -9,7 +9,8 @@
 //   Members       → Collaboration & Access (MembersPanel)
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Trash2, User, Users, Building2 } from 'lucide-react';
+import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Tag, Trash2, User, Users, UsersRound, Building2 } from 'lucide-react';
+import { TagsPanel, TeamsPanel } from '../components/TeamsSettings.tsx';
 import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
 import { Avatar, Button, Input, useIsMobile } from '../components/ui.tsx';
@@ -51,6 +52,8 @@ const SECTIONS: SectionDef[] = [
   },
   { id: 'workspace', title: 'General', description: 'Name, backups and imports for this workspace.', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
   { id: 'members', title: 'Members', description: 'Who can open this workspace, and what they can do.', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
+  { id: 'teams', title: 'Teams', description: 'Groups of people that tasks can belong to, with subteams.', icon: <UsersRound size={16} />, group: 'Workspace', render: () => <TeamsPanel /> },
+  { id: 'tags', title: 'Tags', description: 'Labels for tasks, shared across the workspace.', icon: <Tag size={16} />, group: 'Workspace', render: () => <TagsPanel /> },
   { id: 'shortcuts', title: 'Keyboard shortcuts', description: 'Press ? anywhere to see these.', icon: <Keyboard size={16} />, group: 'App', render: () => <Card><ShortcutList columns={false} /></Card> },
   { id: 'about', title: 'About', icon: <Info size={16} />, group: 'App', render: () => <AboutSection /> },
 ];

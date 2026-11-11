@@ -50,6 +50,10 @@ interface Fx {
   target: string;
   email: string;
   invite: string;
+  /** A tag, a team and a shared saved task view, all made by the owner (migration 014). */
+  tag: string;
+  team: string;
+  view: string;
 }
 
 let seq = 0;
@@ -107,7 +111,10 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
       await app.call('POST', `/pages/${page}/shares`, o, { userId: target.user.id, canEdit: true });
       if (visibility === 'private') await app.call('POST', `/pages/${page}/shares`, o, { email: sharee.user.email, canEdit: false });
     }
-    return { ws, nb, sec, page, task, file, thread, comment, template, reminder, version, target: target.user.id, email, invite };
+    const tag = (await app.call('POST', `/workspaces/${ws}/tags`, o, { name: `Tag ${visibility}` })).data?.id ?? 'no-tag';
+    const team = (await app.call('POST', `/workspaces/${ws}/teams`, o, { name: `Team ${visibility}` })).data?.id ?? 'no-team';
+    const view = (await app.call('POST', `/workspaces/${ws}/task-views`, o, { name: `View ${visibility}`, shared: true, query: { filters: {}, sort: 'due', group: 'none' } })).data?.id ?? 'no-view';
+    return { ws, nb, sec, page, task, file, thread, comment, template, reminder, version, target: target.user.id, email, invite, tag, team, view };
   };
   return { shared: await make('shared'), priv: await make('private') };
 }
@@ -187,6 +194,20 @@ const ROWS: Row[] = [
   { method: 'GET', route: '/workspaces/:id/tasks', path: (f) => `/workspaces/${f.ws}/tasks`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/tasks/completed', path: (f) => `/workspaces/${f.ws}/tasks/completed`, expect: READ },
   { method: 'POST', route: '/workspaces/:id/tasks', path: (f) => `/workspaces/${f.ws}/tasks`, body: () => ({ title: 'New' }), expect: WRITE },
+  // Tags (anyone who can edit creates; owners/admins rename/delete), teams (owners/admins), saved views (personal for anyone; shared ones owners/admins).
+  { method: 'GET', route: '/workspaces/:id/tags', path: (f) => `/workspaces/${f.ws}/tags`, expect: READ },
+  { method: 'POST', route: '/workspaces/:id/tags', path: (f) => `/workspaces/${f.ws}/tags`, body: () => ({ name: `T${++seq}` }), expect: WRITE },
+  { method: 'PATCH', route: '/tags/:id', path: (f) => `/tags/${f.tag}`, body: () => ({ color: '#123456' }), expect: ADMIN },
+  { method: 'DELETE', route: '/tags/:id', path: (f) => `/tags/${f.tag}`, expect: ADMIN },
+  { method: 'GET', route: '/workspaces/:id/teams', path: (f) => `/workspaces/${f.ws}/teams`, expect: READ },
+  { method: 'POST', route: '/workspaces/:id/teams', path: (f) => `/workspaces/${f.ws}/teams`, body: () => ({ name: 'New team' }), expect: ADMIN },
+  { method: 'PATCH', route: '/teams/:id', path: (f) => `/teams/${f.team}`, body: () => ({ name: 'Renamed' }), expect: ADMIN },
+  { method: 'DELETE', route: '/teams/:id', path: (f) => `/teams/${f.team}`, expect: ADMIN },
+  { method: 'PUT', route: '/teams/:id/members', path: (f) => `/teams/${f.team}/members`, body: () => ({ userIds: [] }), expect: ADMIN },
+  { method: 'GET', route: '/workspaces/:id/task-views', path: (f) => `/workspaces/${f.ws}/task-views`, expect: READ },
+  { method: 'POST', route: '/workspaces/:id/task-views', path: (f) => `/workspaces/${f.ws}/task-views`, body: () => ({ name: 'Mine', query: { filters: {}, sort: 'due', group: 'none' } }), expect: READ },
+  { method: 'PATCH', route: '/task-views/:id', path: (f) => `/task-views/${f.view}`, body: () => ({ name: 'Renamed' }), expect: ADMIN },
+  { method: 'DELETE', route: '/task-views/:id', path: (f) => `/task-views/${f.view}`, expect: ADMIN },
   { method: 'POST', route: '/workspaces/:id/notebooks', path: (f) => `/workspaces/${f.ws}/notebooks`, body: () => ({ name: 'New' }), expect: WRITE },
 
   // ── Notebook-scoped (private: the member can't see the owner's private notebook → 404) ──
