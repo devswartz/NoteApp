@@ -44,6 +44,25 @@ for (const [theme, sel, overlays] of [
   });
 }
 
+// Page colours (ribbon › Page colour; names in shared/pageDoc.ts): the page's text, and the
+// hover/active rows on it, stay readable on every tint.
+for (const [theme, sel, overlays] of [
+  ['light', ':root', [[15, 15, 30, 0.05], [79, 70, 229, 0.09]]],
+  ['dark', ":root[data-theme='dark']", [[255, 255, 255, 0.06], [129, 140, 248, 0.16]]],
+] as const) {
+  test(`${theme}: text tokens reach 4.5:1 on every page colour`, async () => {
+    const { PAGE_COLORS } = await import('../shared/pageDoc.ts');
+    const b = block(sel);
+    for (const name of PAGE_COLORS.filter((c) => c !== 'none')) {
+      const tint = token(b, `page-${name}`);
+      const all = [tint, ...overlays.map((o) => over(o as unknown as [number, number, number, number], tint))];
+      // A tinted page shows muted text and placeholders in --page-text-muted (src/styles/canvas.css).
+      for (const t of ['text', 'text-2', 'page-text-muted', 'accent'])
+        for (const s of all) assert.ok(ratio(token(b, t), s) >= 4.5, `--${t} on --page-${name} ${s}: ${ratio(token(b, t), s).toFixed(2)}`);
+    }
+  });
+}
+
 // Editor text and highlight colours (src/styles/colors.css; names in shared/colors.ts).
 const { COLOR_NAMES } = await import('../shared/colors.ts');
 const colorsCss = readFileSync(new URL('../src/styles/colors.css', import.meta.url), 'utf8');

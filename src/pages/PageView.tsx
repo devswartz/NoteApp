@@ -17,7 +17,7 @@ import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { Outline, usePageSetting } from '../editor/Outline.tsx';
-import { Ribbon } from '../editor/Toolbar.tsx';
+import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
@@ -189,6 +189,14 @@ export function PageView() {
   const [article, setArticle] = useState<HTMLElement | null>(null);
   const follow = useFollow(awareness, article);
   const followed = presence.find((p) => p.id === follow.id);
+  // The ribbon's Page and View groups act on this page while it is open.
+  useEffect(() => {
+    if (!canvas || canEdit === null) return;
+    setRibbonPage({ pageId, doc: canvas.doc, canEdit });
+    return () => setRibbonPage(null);
+  }, [canvas, canEdit, pageId]);
+  const settings = usePageSettings(canvas?.doc);
+  const outlineHidden = useRibbon((r) => r.outlineHidden);
 
   if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
     return (
@@ -217,8 +225,13 @@ export function PageView() {
 
   return (
     <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
-      <div className="page-scroll" ref={setScroller}>
-        {canvas && !fullWidth && !isMobile && <Outline canvas={canvas} scroller={scroller} />}
+      <div
+        className="page-scroll"
+        ref={setScroller}
+        data-page-color={settings.color === 'none' ? undefined : settings.color}
+        data-rules={settings.rules === 'none' ? undefined : settings.rules}
+      >
+        {canvas && !fullWidth && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -285,9 +298,6 @@ export function PageView() {
             )}
           </div>
         </header>
-        {/* Desktop and tablet: the ribbon, fixed under the top bar; phones use the floating toolbar. */}
-        {!isMobile && <Ribbon />}
-
         {followed && (
           <div className="follow-banner" role="status" style={{ ['--ring' as string]: followed.color }}>
             Following {followed.name} · scroll, click or Esc to stop

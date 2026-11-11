@@ -6,7 +6,19 @@ import { Editor, getSchema, type JSONContent } from '@tiptap/core';
 import type { Schema } from '@tiptap/pm/model';
 import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap';
 import * as Y from 'yjs';
-import { BOXES_KEY, READABLE_BOX_W, boxField, boxGeoms, fragmentIsEmpty, newBoxMap, readingOrder, type BoxGeom } from '../../shared/pageDoc.ts';
+import {
+  BOXES_KEY,
+  READABLE_BOX_W,
+  boxField,
+  boxGeoms,
+  fragmentIsEmpty,
+  newBoxMap,
+  pageSettingsAttrs,
+  parsePageSettings,
+  readingOrder,
+  setPageSettings,
+  type BoxGeom,
+} from '../../shared/pageDoc.ts';
 import { documentExtensions } from './NoteEditor.tsx';
 import { newBoxId } from './canvasGeom.ts';
 import { sanitizeContent } from './urls.ts';
@@ -64,16 +76,24 @@ export function canvasBoxes(doc: Y.Doc, schema: Schema): (BoxGeom & { json: JSON
     .map((b) => ({ ...b, json: boxJSON(doc, b.id, schema) }));
 }
 
-/** A canvas as template content: a doc of canvasBox nodes (attrs = geometry). */
+/** A canvas as template content: a doc of canvasBox nodes (attrs = geometry); the doc's attrs keep the page settings. */
 export function canvasTemplateJSON(doc: Y.Doc, schema: Schema): JSONContent {
+  const settings = pageSettingsAttrs(doc);
   return {
     type: 'doc',
+    ...(settings ? { attrs: { pageSettings: settings } } : {}),
     content: canvasBoxes(doc, schema).map((b) => ({
       type: CANVAS_BOX_NODE,
       attrs: { x: b.x, y: b.y, w: b.w, z: b.z, ...(b.wide ? { wide: true } : {}) },
       content: b.json.content ?? [],
     })),
   };
+}
+
+/** Apply the page settings a template carries (canvasTemplateJSON), if any. */
+export function applyTemplateSettings(doc: Y.Doc, content: JSONContent) {
+  const s = content.attrs?.pageSettings;
+  if (s && typeof s === 'object') setPageSettings(doc, parsePageSettings(s));
 }
 
 /** The boxes of canvas template content (the inverse of canvasTemplateJSON). */

@@ -18,6 +18,7 @@ import { CommandPalette } from './CommandPalette.tsx';
 import { OfflineBanner, ShortcutsHelp } from './Overlays.tsx';
 import { useIsMobile } from './ui.tsx';
 import { platform } from '../platform/index.ts';
+import { Ribbon } from '../editor/Toolbar.tsx';
 
 /** True while a modal-like overlay is open; plain shortcuts pause then. */
 const overlayOpen = () => {
@@ -52,15 +53,19 @@ export function AppShell() {
   return (
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'is-mobile' : ''}`}>
       <OfflineBanner />
-      {isMobile && sidebarOpen && <div className="drawer-backdrop" onClick={() => ui.setSidebar(false)} />}
-      {!isMobile && <Rail wsId={wsId} view={viewOf(location.pathname)} />}
-      <Sidebar />
-      <main className="main" tabIndex={-1}>
-        {isMobile && <MobileTopBar />}
-        <div className="route" key={routeKey}>
-          <Outlet />
-        </div>
-      </main>
+      {/* Desktop and tablet: the ribbon across the whole window, above the rail, panels and note (OneNote). Phones use the floating toolbar. */}
+      {!isMobile && <Ribbon />}
+      <div className="app-body">
+        {isMobile && sidebarOpen && <div className="drawer-backdrop" onClick={() => ui.setSidebar(false)} />}
+        {!isMobile && <Rail wsId={wsId} view={viewOf(location.pathname)} />}
+        <Sidebar />
+        <main className="main" tabIndex={-1}>
+          {isMobile && <MobileTopBar />}
+          <div className="route" key={routeKey}>
+            <Outlet />
+          </div>
+        </main>
+      </div>
       {isMobile && <MobileTabBar wsId={wsId} />}
       <TaskDetail />
       <QuickAdd />

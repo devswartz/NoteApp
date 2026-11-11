@@ -72,8 +72,8 @@ test('ribbon stays put while scrolling and is reachable with Alt+F10 and F6', as
   await page.keyboard.type('bottom line');
   await expect(bar).toBeInViewport();
   const after = (await bar.boundingBox())!;
-  // Fixed under the top bar, across the note column, whether or not the page has scrolled.
-  expect(after.y).toBeLessThan(120);
+  // Fixed at the top of the window, across it, whether or not the page has scrolled.
+  expect(after.y).toBeLessThan(2);
   expect(Math.abs(after.y - before.y)).toBeLessThan(2);
   expect(after.width).toBeGreaterThan((await editor.boundingBox())!.width);
 
@@ -225,9 +225,10 @@ test('ribbon groups are labelled (OneNote-style) and the labels drop on narrow w
   await page.setViewportSize({ width: 1280, height: 720 });
   await openPage(page, user.wsId, pageId);
   const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
-  for (const name of ['Text', 'Basic text', 'Lists', 'Insert']) await expect(ribbon.getByRole('group', { name, exact: true })).toBeVisible();
+  for (const name of ['Text', 'Lists', 'Insert', 'Page', 'View']) await expect(ribbon.getByRole('group', { name, exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 720 });
   await expect(ribbon.locator('.rb-label', { hasText: 'Lists' })).toBeVisible();
-  expect((await ribbon.boundingBox())!.height).toBeLessThanOrEqual(60);
+  expect((await ribbon.boundingBox())!.height).toBeLessThanOrEqual(80);
   await page.setViewportSize({ width: 1000, height: 720 });
   await expect(ribbon.locator('.rb-label').first()).toBeHidden();
   await expect(ribbon.getByRole('group', { name: 'Lists', exact: true })).toBeVisible(); // still named

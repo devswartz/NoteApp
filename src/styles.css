@@ -112,6 +112,16 @@
   --p3: #2563eb;
   --skeleton: rgba(15, 15, 30, 0.06);
   --skeleton-shine: rgba(15, 15, 30, 0.02);
+  /* Page colours (ribbon › Page colour): soft tints; text stays ≥ 4.5:1 on them, with muted
+     text and placeholders a touch darker on a tinted page (--page-text-muted). */
+  --page-yellow: #fdf8e3;
+  --page-green: #eff7f0;
+  --page-blue: #eef4fb;
+  --page-purple: #f5f1fb;
+  --page-pink: #fcf1f5;
+  --page-grey: #f4f4f5;
+  --page-text-muted: #5c5c65;
+  --page-rule: rgba(70, 110, 180, 0.2); /* rule lines and grid */
 
   --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.04);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -155,6 +165,14 @@
   --p3: #60a5fa;
   --skeleton: rgba(255, 255, 255, 0.06);
   --skeleton-shine: rgba(255, 255, 255, 0.1);
+  --page-yellow: #23211a;
+  --page-green: #1a221d;
+  --page-blue: #1a1f2a;
+  --page-purple: #211d29;
+  --page-pink: #261d22;
+  --page-grey: #212124;
+  --page-text-muted: #a3a3ac;
+  --page-rule: rgba(150, 170, 220, 0.16);
   --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -653,7 +671,9 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
 .form-error { color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: var(--radius); font-size: 13px; }
 
 /* ───────────────────────── App layout ───────────────────────── */
-.app { display: flex; height: 100%; overflow: hidden; }
+.app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* Under the ribbon (desktop/tablet): rail, panels and the note side by side. Phones have no ribbon and lay these out themselves. */
+.app-body { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .main { flex: 1; min-width: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .route { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: route-in var(--dur) var(--ease-out); }
 @keyframes route-in { from { opacity: 0; transform: translateY(4px); } }
@@ -1517,6 +1537,7 @@ body.is-resizing .sidebar { transition: none; }
 @media (max-width: 760px) {
   body { font-size: 15px; }
   .app { flex-direction: column; }
+  .app-body { display: contents; }
   .sidebar {
     position: fixed;
     z-index: var(--z-drawer);

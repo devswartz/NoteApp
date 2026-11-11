@@ -2,7 +2,8 @@
 // panel → ribbon (when a page is open on desktop/tablet) → main (the editor) → rail.
 import { useEffect } from 'react';
 
-// The ribbon sits inside main, so it is listed first: focus in it counts as the ribbon.
+// The ribbon spans the window above everything (desktop/tablet); in this order it comes
+// just before the note, so Shift+F6 from the text reaches it.
 const REGIONS = ['.rail', '.sidebar .sb-panel', '.sidebar .pages-panel', '.ribbon', '.main'];
 
 /** Pure order rule (unit-tested): the next region index from `current` (-1 = none). */

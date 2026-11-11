@@ -42,7 +42,9 @@ test.describe('outline and full width', () => {
     await expect(nav.getByRole('button')).toHaveText(['One', 'Two', 'Section 1', 'Section 2', 'Section 3', 'Section 4']);
     await nav.getByRole('button', { name: 'Section 3' }).click();
     const heading = editor.locator('h2', { hasText: 'Section 3' });
-    await expect.poll(async () => Math.round((await heading.boundingBox())!.y)).toBeLessThan(120);
+    // Near the top of the page scroller (which starts under the full-width ribbon).
+    const scrollerTop = (await page.locator('.page-scroll').boundingBox())!.y;
+    await expect.poll(async () => Math.round((await heading.boundingBox())!.y - scrollerTop)).toBeLessThan(120);
     await expect(nav.locator('.is-active')).toHaveText('Section 3');
     // The cursor lands in the heading, so you can start typing there.
     await expect(editor).toBeFocused();

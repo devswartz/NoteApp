@@ -17,7 +17,7 @@ import { templateDialog } from './TemplateDialog.tsx';
 import { templateOffer } from '../../shared/sections.ts';
 import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
 import { BOXES_KEY } from '../../shared/pageDoc.ts';
-import { documentAsBox, editorDoc, pageSchema, templateBoxes, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
+import { applyTemplateSettings, documentAsBox, editorDoc, pageSchema, templateBoxes, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 
 /** Where a template goes: the page's document editor, or its canvas. */
 export type TemplateTarget = { editor: Editor; canvas?: null } | { editor?: null; canvas: CanvasHandle };
@@ -64,6 +64,7 @@ export async function applyUserTemplate(target: TemplateTarget, pageId: string, 
   const doc = target.canvas ? target.canvas.doc : editorDoc(target.editor!);
   if (!doc) return;
   writeBoxes(doc, schema, r.kind === 'canvas' ? templateBoxes(content) : [documentAsBox(content)]);
+  applyTemplateSettings(doc, content);
   fillMeta(pageId, r.title, r.icon ?? t.icon);
 }
 
