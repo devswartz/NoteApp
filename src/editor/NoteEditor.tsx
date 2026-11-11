@@ -45,7 +45,7 @@ import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, Toggl
 import { LinkEditorView, openLinkEditor } from './LinkEditor.tsx';
 import { PageLink, PageLinkMenuView } from './PageLink.tsx';
 import { MentionNode } from './collabMentions.ts';
-import { collabExtensions, useCollab, usePresenceRole, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
+import { collabExtensions, useCollab, usePresenceRole, type CollabSession, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { uploadFile } from './upload.ts';
 import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
@@ -132,9 +132,52 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
     return () => onAwareness?.(null);
   }, [session, onAwareness]);
   usePresenceRole(session, user, canEdit); // others see 'editing' or 'viewing'
+  const editor = usePageEditor(session, { pageId, workspaceId, user, canEdit, long: true });
+  const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (session.serverSynced) onServerSynced?.();
+  }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (editor) onReady(editor);
+  }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
+  useCommentBinding(editor);
+  useSlashFilePickers(pageId, workspaceId);
+
+  return (
+    <div className={`editor-wrap ${session.synced ? '' : 'is-loading'}`}>
+      {editor && canEdit && !isMobile && <EditorToolbar editor={editor} />}
+      {editor && canEdit && <EditorChrome editor={editor} />}
+      <EditorContent editor={editor} />
+      <EditorMenus />
+    </div>
+  );
+}
+
+export interface PageEditorOptions {
+  pageId: string;
+  workspaceId: string;
+  user: User;
+  canEdit: boolean;
+  /** The Y.Doc fragment to edit: 'default' for documents, 'box:<id>' for a canvas box. */
+  field?: string;
+  /** Render-skipping for long pages (documents only; boxes are short). */
+  long?: boolean;
+  /** Accessible name of the editable area. */
+  label?: string;
+  /** More extensions (e.g. canvas box keys). */
+  extensions?: Extensions;
+}
+
+/**
+ * A rich-text editor bound to one fragment of the page's shared doc: the document
+ * schema, the slash menu, tasks, uploads and collaboration (carets share the page's awareness).
+ */
+export function usePageEditor(session: CollabSession, { pageId, workspaceId, user, canEdit, field = 'default', long = false, label = 'Page content', extensions = [] }: PageEditorOptions): Editor | null {
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
-
+  const editorRef = useRef<Editor | null>(null);
   const editor = useEditor(
     {
       editable: canEdit,
@@ -143,11 +186,12 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         BlockMove, // Alt+Shift+↑/↓ moves blocks
         UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
-        LongPage, // long pages: render-skipping CSS away from the cursor
-        ...collabExtensions(session, user),
+        ...(long ? [LongPage] : []), // long pages: render-skipping CSS away from the cursor
+        ...collabExtensions(session, user, field),
+        ...extensions,
       ],
       editorProps: {
-        attributes: { class: 'prose', spellcheck: 'true', 'aria-label': 'Page content', 'aria-multiline': 'true' },
+        attributes: { class: 'prose', spellcheck: 'true', 'aria-label': label, 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => {
           // Alt+F10 moves focus into a toolbar (WAI-ARIA toolbar pattern): the floating one
           // over selected text, otherwise the fixed one at the top.
@@ -182,26 +226,19 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
         },
       },
     },
-    [pageId],
+    [pageId, field],
   );
-  const editorRef = useRef<Editor | null>(null);
   editorRef.current = editor;
-  const isMobile = useIsMobile();
-
-  useEffect(() => {
-    if (session.serverSynced) onServerSynced?.();
-  }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
-
   useEffect(() => {
     editor?.setEditable(canEdit);
   }, [editor, canEdit]);
+  return editor;
+}
 
-  useEffect(() => {
-    if (editor) onReady(editor);
-  }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
-  useCommentBinding(editor);
-
-  // File pickers for the slash menu.
+/** File pickers for the slash menu ("/image", "/file"); once per page view. */
+export function useSlashFilePickers(pageId: string, workspaceId: string) {
+  const target = useRef({ pageId, workspaceId });
+  target.current = { pageId, workspaceId };
   useEffect(() => {
     const pick = async (ed: Editor, accept?: string) => {
       const files = await platform.pickFiles({ accept, multiple: true });
@@ -211,19 +248,28 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
     slashHooks.pickFile = (ed) => void pick(ed);
     slashHooks.editLink = (ed) => openLinkEditor(ed);
   }, []);
+}
 
+/** The floating bits that belong to one editor: the bubble menu, table and image bars, and the block handle. */
+export function EditorChrome({ editor, handle = true }: { editor: Editor; handle?: boolean }) {
   return (
-    <div className={`editor-wrap ${session.synced ? '' : 'is-loading'}`}>
-      {editor && canEdit && !isMobile && <EditorToolbar editor={editor} />}
-      {editor && canEdit && <FormattingMenu editor={editor} />}
-      {editor && canEdit && <TableBar editor={editor} />}
-      {editor && canEdit && <ImageBar editor={editor} />}
-      {editor && canEdit && <BlockHandle editor={editor} />}
-      <EditorContent editor={editor} />
+    <>
+      <FormattingMenu editor={editor} />
+      <TableBar editor={editor} />
+      <ImageBar editor={editor} />
+      {handle && <BlockHandle editor={editor} />}
+    </>
+  );
+}
+
+/** Page-wide popups shared by every editor on the page: slash menu, [[page link]] menu, link editor. */
+export function EditorMenus() {
+  return (
+    <>
       <SlashMenuView />
       <PageLinkMenuView />
       <LinkEditorView />
-    </div>
+    </>
   );
 }
 

@@ -21,6 +21,7 @@ import { TasksPanel } from './shell/TasksPanel.tsx';
 import { CalendarPanel } from './shell/CalendarPanel.tsx';
 import { UserMenu, WorkspaceSwitcher } from './shell/Rail.tsx';
 import type { MoveItem, NodeProps } from './shell/notesRows.tsx';
+import type { PageKind } from '../../shared/types.ts';
 
 /** Below this width the pages panel folds into the section tree. */
 // Below this width the pages list folds into the sections tree (one panel instead of two).
@@ -60,14 +61,14 @@ export function Sidebar() {
     if (view === 'notes' && sel.notebookId) sidebar.selectNotes(wsId, sel.notebookId, sel.sectionId ?? undefined, sel.pageId ?? undefined);
   }, [view, wsId, sel.notebookId, sel.sectionId, sel.pageId]);
 
-  const createPage = async (sectionId: string) => {
+  const createPage = async (sectionId: string, kind: PageKind = 'document') => {
     try {
-      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
+      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '', kind });
       sidebar.toggleNode(sectionId, false);
       useStore.setState((s) => ({
         tree: {
           ...s.tree,
-          pages: [...s.tree.pages, { id, sectionId, title: '', icon: null, kind: 'document', position: 1e9, updatedAt: new Date().toISOString(), updatedBy: user.id }],
+          pages: [...s.tree.pages, { id, sectionId, title: '', icon: null, kind, position: 1e9, updatedAt: new Date().toISOString(), updatedBy: user.id }],
         },
       }));
       navigate(`/w/${wsId}/p/${id}`);

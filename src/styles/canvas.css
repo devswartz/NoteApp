@@ -1,0 +1,76 @@
+/* Canvas pages (src/editor/CanvasEditor.tsx): text boxes placed anywhere on a surface
+   that grows right and down; the viewport scrolls sideways, the page scrolls down. */
+.page-article.is-canvas { max-width: none; padding-left: clamp(24px, 4vw, 64px); padding-right: clamp(24px, 4vw, 64px); }
+.page-article.is-canvas .page-title,
+.page-article.is-canvas .page-sub,
+.page-article.is-canvas .page-icon-row { max-width: 760px; }
+
+.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px; padding: 14px 8px 0; }
+.canvas-surface { position: relative; min-height: 320px; }
+.canvas-surface.can-edit { cursor: text; }
+.canvas-hint { position: absolute; top: 24px; left: 0; margin: 0; pointer-events: none; }
+
+.canvas-box {
+  position: absolute;
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 10px 6px;
+  cursor: auto;
+  outline: none;
+}
+.canvas-wrap:not(.is-stacked) .canvas-box:hover { border-color: var(--border); }
+.canvas-box.is-active,
+.canvas-box:focus-within { border-color: var(--border-strong); }
+/* Selected (Escape in a box): the whole box is focused, not its text. */
+.canvas-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-active); }
+.canvas-box .ProseMirror { min-height: 1.7em; }
+.canvas-box-placeholder { min-height: 24px; }
+
+/* Top edge: drag to move. Right edge: drag to set the width. */
+.canvas-box-move {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: -9px;
+  height: 12px;
+  cursor: move;
+  border-radius: 6px 6px 0 0;
+  touch-action: none;
+}
+.canvas-box:hover > .canvas-box-move,
+.canvas-box:focus-within > .canvas-box-move,
+.canvas-box-move:active { background: var(--bg-pressed); }
+.canvas-box-width {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -5px;
+  width: 9px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.canvas-box:hover > .canvas-box-width::after,
+.canvas-box:focus-within > .canvas-box-width::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 24px;
+  margin-top: -12px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+body.canvas-dragging, body.canvas-dragging * { user-select: none; }
+
+/* Phones: boxes one under the other in reading order, edited normally. */
+.canvas-wrap.is-stacked .canvas-viewport { overflow: visible; margin: 0; padding: 0; }
+.canvas-wrap.is-stacked .canvas-surface { min-height: 0; cursor: auto; }
+.canvas-wrap.is-stacked .canvas-box { position: relative; padding: 0; margin-bottom: 16px; border: 0; }
+.canvas-wrap.is-stacked .canvas-hint { position: static; }
+
+@media print {
+  .canvas-viewport { overflow: visible; }
+  .canvas-box-move, .canvas-box-width { display: none; }
+}

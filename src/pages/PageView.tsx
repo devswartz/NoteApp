@@ -10,6 +10,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
 import { loadComments, useComments } from '../editor/collabComments.ts';
 import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
+import { CanvasEditor } from '../editor/CanvasEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
@@ -193,11 +194,24 @@ export function PageView() {
     );
   }
   if (!meta || canEdit === null) return <div className="page-loading" />;
+  const canvas = (info?.page.kind ?? meta.kind) === 'canvas';
+  const editorProps = {
+    pageId,
+    workspaceId: wsId,
+    user,
+    canEdit,
+    onStatus: setStatus,
+    onSave: setSave,
+    onServerSynced: () => setSynced(true),
+    onPresence: setPresence,
+    onReady,
+    onAwareness: setAwareness,
+  };
 
   return (
     <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
       <div className="page-scroll" ref={setScroller}>
-        {editor && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
+        {editor && !canvas && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -255,6 +269,7 @@ export function PageView() {
                 onHistory={() => setHistoryOpen(true)}
                 fullWidth={fullWidth}
                 onFullWidth={setFullWidth}
+                canvas={canvas}
                 canManage={info ? info.canManage : !!treeMeta}
                 canShare={!!info?.canShare}
                 canEdit={canEdit}
@@ -269,28 +284,21 @@ export function PageView() {
             Following {followed.name} · scroll, click or Esc to stop
           </div>
         )}
-        <article className={`page-article ${fullWidth ? 'is-full' : ''}`} ref={setArticle}>
+        <article className={`page-article ${canvas ? 'is-canvas' : fullWidth ? 'is-full' : ''}`} ref={setArticle}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
             Edited {relativeTime(meta.updatedAt)}
             {updatedBy ? ` by ${updatedBy.id === user.id ? 'you' : updatedBy.name}` : ''}
           </div>
-          <NoteEditor
-            key={`editor-${pageId}`}
-            pageId={pageId}
-            workspaceId={wsId}
-            user={user}
-            canEdit={canEdit}
-            onStatus={setStatus}
-            onSave={setSave}
-            onServerSynced={() => setSynced(true)}
-            onPresence={setPresence}
-            onReady={onReady}
-            onAwareness={setAwareness}
-          />
-          {canEdit && editor && synced && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
-          {canEdit && editor && (
+          {canvas ? (
+            <CanvasEditor key={`canvas-${pageId}`} {...editorProps} mountAll={!!focusTask} />
+          ) : (
+            <NoteEditor key={`editor-${pageId}`} {...editorProps} />
+          )}
+          {/* A canvas has its own "Add a task" (into the box you were last in). */}
+          {canEdit && editor && synced && !canvas && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
+          {canEdit && editor && !canvas && (
             <button className="add-task-end" onClick={() => insertTaskAtEnd(editor, pageId)}>
               <Plus size={15} /> Add a task to this page
             </button>
@@ -298,7 +306,7 @@ export function PageView() {
           <Backlinks pageId={pageId} wsId={wsId} />
         </article>
       </div>
-      <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
+      <VersionHistory pageId={pageId} editor={canvas ? null : editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       <CommentHighlights />
       <PageShareDialogHost />
       <TemplateDialogHost />
@@ -463,9 +471,11 @@ type PageMenuProps = {
   canShare: boolean;
   canEdit: boolean;
   title: string;
+  /** Canvas pages: the items that act on one editor's content (template, history, Markdown, width) wait for phase 3. */
+  canvas: boolean;
 };
 
-function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title }: PageMenuProps) {
+function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -535,25 +545,29 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
               Duplicate
             </MenuItem>
           )}
-          {canManage && (
+          {canManage && !canvas && (
             <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => editor && void saveTemplate()}>
               Save as template…
             </MenuItem>
           )}
-          <MenuItem icon={<History size={15} />} onSelect={onHistory}>
-            Version history
-          </MenuItem>
-          <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
-            Full width
-          </MenuItem>
-          <MenuSeparator />
-          <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
-            Export as Markdown
-          </MenuItem>
+          {!canvas && (
+            <>
+              <MenuItem icon={<History size={15} />} onSelect={onHistory}>
+                Version history
+              </MenuItem>
+              <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
+                Full width
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem icon={<FileDown size={15} />} onSelect={() => editor && void exportMarkdown(editor, pageId).catch(errorToast)}>
+                Export as Markdown
+              </MenuItem>
+            </>
+          )}
           <MenuItem icon={<Printer size={15} />} onSelect={() => printPage(current?.title ?? '')}>
             Print / save as PDF
           </MenuItem>
-          {canEdit && (
+          {canEdit && !canvas && (
             <MenuItem icon={<FileUp size={15} />} onSelect={() => editor && void importMarkdown(editor, pageId)}>
               Import Markdown…
             </MenuItem>

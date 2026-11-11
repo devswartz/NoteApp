@@ -275,12 +275,16 @@ export const SyncSizeGuard = Extension.create<{ doc: Y.Doc | null }>({
   },
 });
 
-/** TipTap extensions that bind the editor to the shared doc and show other people's carets. */
-export function collabExtensions(session: CollabSession, user: User): Extensions {
+/**
+ * TipTap extensions that bind the editor to the shared doc and show other people's carets.
+ * Canvas boxes each bind their own fragment and share the page's awareness: a caret is
+ * a relative position, so each editor only draws the ones that fall inside its fragment.
+ */
+export function collabExtensions(session: CollabSession, user: User, field = 'default'): Extensions {
   return [
     SyncSizeGuard.configure({ doc: session.doc }),
     CommentMark, // anchors of comment threads (./collabComments.ts)
-    Collaboration.configure({ document: session.doc, field: 'default' }),
+    Collaboration.configure({ document: session.doc, field }), // 'default', or 'box:<id>' on canvas pages
     CollaborationCaret.configure({
       provider: session.provider,
       user: { id: user.id, name: user.name, color: user.color },
