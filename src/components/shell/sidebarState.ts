@@ -62,11 +62,16 @@ function load(): Persisted {
 export const useSidebar = create<Persisted>(load);
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
-useSidebar.subscribe((s) => {
+const save = () => {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    platform.kv.set(KEY, JSON.stringify(s));
-  }, 150);
+  saveTimer = undefined;
+  platform.kv.set(KEY, JSON.stringify(useSidebar.getState()));
+};
+// Leaving or reloading within the debounce must not lose the last change (recent pages, selection).
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => saveTimer !== undefined && save());
+useSidebar.subscribe(() => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 150);
 });
 
 const clamp = (w: number, min = SIDEBAR_MIN, max = SIDEBAR_MAX) => Math.round(Math.min(max, Math.max(min, w)));
