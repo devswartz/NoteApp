@@ -21,13 +21,20 @@ interface TaskRow {
   created_by: string;
   page_id: string | null;
   parent_id: string | null;
+  team_id?: string | null;
+  assigned_by?: string | null;
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export function rowToTask(r: TaskRow): Task {
+/** Tag ids of one task (task_tags, migration 014). */
+export function taskTagIds(taskId: string): string[] {
+  return (db.prepare('SELECT tag_id FROM task_tags WHERE task_id = ?').all(taskId) as { tag_id: string }[]).map((x) => x.tag_id);
+}
+
+export function rowToTask(r: TaskRow, tagIds?: string[]): Task {
   return {
     id: r.id,
     workspaceId: r.workspace_id,
@@ -43,6 +50,9 @@ export function rowToTask(r: TaskRow): Task {
     createdBy: r.created_by,
     pageId: r.page_id,
     parentId: r.parent_id ?? null,
+    teamId: r.team_id ?? null,
+    tagIds: tagIds ?? taskTagIds(r.id),
+    assignedBy: r.assigned_by ?? null,
     completedAt: r.completed_at,
     completedBy: r.completed_by,
     createdAt: r.created_at,
@@ -65,7 +75,18 @@ export function listTasks(workspaceId: string, userId: string): Task[] {
        ORDER BY t.created_at`,
     )
     .all({ workspaceId, userId, since: new Date(Date.now() - 30 * 864e5).toISOString() }) as TaskRow[];
-  return rows.map(rowToTask);
+  const tags = workspaceTaskTags(workspaceId);
+  return rows.map((r) => rowToTask(r, tags.get(r.id) ?? []));
+}
+
+/** task id → tag ids for every tagged task in a workspace (one query for list endpoints). */
+function workspaceTaskTags(workspaceId: string): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  const rows = db
+    .prepare('SELECT tt.task_id, tt.tag_id FROM task_tags tt JOIN tags g ON g.id = tt.tag_id WHERE g.workspace_id = ?')
+    .all(workspaceId) as { task_id: string; tag_id: string }[];
+  for (const r of rows) m.set(r.task_id, [...(m.get(r.task_id) ?? []), r.tag_id]);
+  return m;
 }
 
 export function listCompleted(workspaceId: string, userId: string, before: string | null, limit = 100): Task[] {
@@ -76,7 +97,7 @@ export function listCompleted(workspaceId: string, userId: string, before: strin
        ORDER BY t.completed_at DESC LIMIT @limit`,
     )
     .all({ workspaceId, userId, before, limit }) as TaskRow[];
-  return rows.map(rowToTask);
+  return rows.map((r) => rowToTask(r));
 }
 
 function validate(p: TaskPatch, workspaceId: string) {
@@ -97,6 +118,24 @@ function validate(p: TaskPatch, workspaceId: string) {
   }
   if (p.parentId !== undefined && p.parentId !== null && typeof p.parentId !== 'string') throw new HttpError(400, 'Invalid parent');
   if (p.assigneeId && !roleIn(workspaceId, p.assigneeId)) throw new HttpError(400, 'Assignee is not a workspace member');
+  if (p.teamId !== undefined && p.teamId !== null) {
+    if (typeof p.teamId !== 'string' || !db.prepare('SELECT 1 FROM teams WHERE id = ? AND workspace_id = ?').get(p.teamId, workspaceId))
+      throw new HttpError(400, 'Invalid team');
+  }
+  if (p.tagIds !== undefined && (!Array.isArray(p.tagIds) || p.tagIds.length > 50 || p.tagIds.some((x) => typeof x !== 'string')))
+    throw new HttpError(400, 'Invalid tags');
+}
+
+/**
+ * Replace a task's tags. Ids that aren't tags of this workspace are ignored (a tag may have been
+ * deleted while an offline edit was queued).
+ */
+function setTaskTags(taskId: string, workspaceId: string, tagIds: string[]) {
+  db.prepare('DELETE FROM task_tags WHERE task_id = ?').run(taskId);
+  const add = db.prepare(
+    'INSERT OR IGNORE INTO task_tags (task_id, tag_id) SELECT ?, id FROM tags WHERE id = ? AND workspace_id = ?',
+  );
+  for (const id of new Set(tagIds)) add.run(taskId, id, workspaceId);
 }
 
 const IN_PRIVATE_NOTEBOOK = `SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id
@@ -180,9 +219,9 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
   const ts = now();
   db.prepare(
     `INSERT INTO tasks (id, workspace_id, title, description, priority, due_date, due_time, recurrence, reminder_at,
-       assignee_id, created_by, page_id, parent_id, private_owner_only, created_at, updated_at)
+       assignee_id, assigned_by, team_id, created_by, page_id, parent_id, private_owner_only, created_at, updated_at)
      VALUES (@id, @workspaceId, @title, @description, @priority, @dueDate, @dueTime, @recurrence, @reminderAt,
-       @assigneeId, @userId, @pageId, @parentId, @privateOnly, @ts, @ts)`,
+       @assigneeId, @assignedBy, @teamId, @userId, @pageId, @parentId, @privateOnly, @ts, @ts)`,
   ).run({
     id,
     workspaceId,
@@ -196,11 +235,14 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
     recurrence: input.recurrence ? JSON.stringify(input.recurrence) : null,
     reminderAt: input.reminderAt ?? null,
     assigneeId: input.assigneeId === undefined ? null : input.assigneeId,
+    assignedBy: input.assigneeId ? userId : null,
+    teamId: input.teamId ?? null,
     pageId,
     parentId,
     // A subtask of a private standalone task is just as private.
     privateOnly: parentId && !pageId ? privateOwnerOnly(parentId) : 0,
   });
+  if (input.tagIds?.length) setTaskTags(id, workspaceId, input.tagIds);
   const task = getTask(id)!;
   publish({ type: 'task', task });
   return task;
@@ -218,6 +260,8 @@ const COLUMNS: Record<keyof TaskPatch, string> = {
   assigneeId: 'assignee_id',
   pageId: 'page_id',
   parentId: 'parent_id',
+  teamId: 'team_id',
+  tagIds: '', // task_tags, not a column
 };
 
 /**
@@ -268,13 +312,20 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   else if (patch.parentId && privateOwnerOnly(patch.parentId)) sets.push('private_owner_only = 1');
   const params: Record<string, unknown> = { id, ts };
   for (const [key, col] of Object.entries(COLUMNS) as [keyof TaskPatch, string][]) {
-    if (patch[key] === undefined) continue;
+    if (patch[key] === undefined || key === 'tagIds') continue;
     let v: unknown = patch[key];
     if (key === 'recurrence') v = v ? JSON.stringify(v) : null;
     if (key === 'title') v = String(v).trim();
     sets.push(`${col} = @${key}`);
     params[key] = v;
   }
+
+  // "Assigned by" is whoever changed the assignee, and clears when the task is unassigned.
+  if (patch.assigneeId !== undefined && (patch.assigneeId ?? null) !== task.assigneeId) {
+    sets.push('assigned_by = @assignedBy');
+    params.assignedBy = patch.assigneeId ? userId : null;
+  }
+  const tagsChanged = patch.tagIds !== undefined;
 
   const completing = patch.status === 'done' && task.status === 'open';
   const reopening = patch.status === 'open' && task.status === 'done';
@@ -284,6 +335,7 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   db.transaction(() => {
     // Leaving a private note keeps the task private (entering a note clears it, above).
     if (patch.pageId === null && task.pageId) keepPrivateWhenDetaching('id = ?', id);
+    if (tagsChanged) setTaskTags(id, task.workspaceId, patch.tagIds!);
     // Recurring: the next due date in the completing user's time zone, or null
     // when the series has ended (until / count) and the task completes for good.
     const dueDate = completing && recurrence ? nextDueDate(recurrence, patch.dueDate ?? task.dueDate, id, userId) : null;
@@ -294,11 +346,12 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
       // them, so history is exactly as private as the task (reconcile skips occurrences).
       const occId = newId();
       db.prepare(
-        `INSERT INTO tasks (id, workspace_id, title, description, status, priority, due_date, due_time, assignee_id,
+        `INSERT INTO tasks (id, workspace_id, title, description, status, priority, due_date, due_time, assignee_id, assigned_by, team_id,
            created_by, page_id, private_owner_only, occurrence_of, completed_at, completed_by, created_at, updated_at)
-         SELECT @occId, workspace_id, title, description, 'done', priority, due_date, due_time, assignee_id,
+         SELECT @occId, workspace_id, title, description, 'done', priority, due_date, due_time, assignee_id, assigned_by, team_id,
            created_by, page_id, private_owner_only, id, @ts, @userId, @ts, @ts FROM tasks WHERE id = @id`,
       ).run({ occId, id, ts, userId });
+      db.prepare('INSERT INTO task_tags (task_id, tag_id) SELECT ?, tag_id FROM task_tags WHERE task_id = ?').run(occId, id);
       // Shift the reminder by the same offset relative to the due date.
       let reminderAt = task.reminderAt;
       if (reminderAt && task.dueDate) {
@@ -324,7 +377,7 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
     if (completing) sets.push('completed_at = @ts', 'completed_by = @userId');
     if (reopening) sets.push('completed_at = NULL', 'completed_by = NULL');
     params.userId = userId;
-    if (sets.length) db.prepare(`UPDATE tasks SET ${sets.join(', ')}, updated_at = @ts WHERE id = @id`).run(params);
+    if (sets.length || tagsChanged) db.prepare(`UPDATE tasks SET ${[...sets, 'updated_at = @ts'].join(', ')} WHERE id = @id`).run(params);
   })();
 
   const updated = getTask(id)!;

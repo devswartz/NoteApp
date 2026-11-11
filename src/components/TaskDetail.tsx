@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, CalendarDays, Clock, CornerDownRight, FileText, Flag, ListChecks, Plus, Repeat, Trash2, UserRound, X } from 'lucide-react';
+import { Bell, CalendarDays, Clock, CornerDownRight, FileText, Flag, ListChecks, Plus, Repeat, Tag as TagIcon, Trash2, UserRound, Users, X } from 'lucide-react';
+import { LabelDot, TagChip, TagMenu, TeamMenu } from './Labels.tsx';
+import { teamLabel } from '../lib/taskViews.ts';
 import { createTask, deleteTask, errorToast, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
 import { subtaskIndex } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
@@ -21,6 +23,8 @@ export function TaskDetail() {
   const page = useStore((s) => (task?.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const members = useStore((s) => s.members);
+  const teams = useStore((s) => s.teams);
+  const tags = useStore((s) => s.tags);
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
   const titleRef = useRef<HTMLTextAreaElement>(null);
@@ -44,6 +48,7 @@ export function TaskDetail() {
   const creator = members.find((m) => m.id === task.createdBy);
   const completer = memberById(task.completedBy);
   const assignee = memberById(task.assigneeId);
+  const assigner = memberById(task.assignedBy);
 
   return (
     <Modal open onClose={close} className="sheet" label="Task details">
@@ -110,8 +115,39 @@ export function TaskDetail() {
               buttonClass="prop-btn"
               trigger={assignee ? <><Avatar user={assignee} size={18} /> {assignee.name}</> : <span className="muted">Unassigned</span>}
             >
-              <AssigneeMenu value={task.assigneeId} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
+              <AssigneeMenu value={task.assigneeId} teamId={task.teamId} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
             </Dropdown>
+            {task.assigneeId && task.assignedBy && task.assignedBy !== task.assigneeId && (
+              <div className="muted small assigned-by">Assigned by {assigner?.name ?? 'a former member'}</div>
+            )}
+          </Prop>
+          <Prop icon={<Users size={15} />} label="Team">
+            {(() => {
+              const team = teams.find((t) => t.id === task.teamId);
+              return (
+                <Dropdown
+                  disabled={!canEdit}
+                  buttonClass="prop-btn"
+                  trigger={team ? <><LabelDot color={team.color} /> {teamLabel(team, teams)}</> : <span className="muted">No team</span>}
+                >
+                  <TeamMenu value={task.teamId} onChange={(teamId) => void updateTask(task.id, { teamId })} />
+                </Dropdown>
+              );
+            })()}
+          </Prop>
+          <Prop icon={<TagIcon size={15} />} label="Tags">
+            {(() => {
+              const own = (task.tagIds ?? []).map((id) => tags.find((t) => t.id === id)).filter((t) => !!t);
+              return (
+                <Dropdown
+                  disabled={!canEdit}
+                  buttonClass="prop-btn prop-tags"
+                  trigger={own.length ? <span className="prop-tag-list">{own.map((t) => <TagChip key={t!.id} tag={t!} />)}</span> : <span className="muted">No tags</span>}
+                >
+                  <TagMenu value={own.map((t) => t!.id)} onChange={(tagIds) => void updateTask(task.id, { tagIds })} />
+                </Dropdown>
+              );
+            })()}
           </Prop>
           <Prop icon={<CalendarDays size={15} />} label="Due date">
             <Dropdown

@@ -242,7 +242,8 @@ workspaceRoutes.delete(
     if (current === 'owner' && ownerCount(wsId) === 1) throw new HttpError(400, 'A workspace needs at least one owner');
     db.transaction(() => {
       db.prepare('DELETE FROM workspace_members WHERE workspace_id = ? AND user_id = ?').run(wsId, target);
-      db.prepare("UPDATE tasks SET assignee_id = NULL WHERE workspace_id = ? AND assignee_id = ? AND status = 'open'").run(wsId, target);
+      db.prepare("UPDATE tasks SET assignee_id = NULL, assigned_by = NULL WHERE workspace_id = ? AND assignee_id = ? AND status = 'open'").run(wsId, target);
+      db.prepare('DELETE FROM team_members WHERE user_id = ? AND team_id IN (SELECT id FROM teams WHERE workspace_id = ?)').run(target, wsId);
       db.prepare('DELETE FROM notebook_shares WHERE user_id = ? AND notebook_id IN (SELECT id FROM notebooks WHERE workspace_id = ?)').run(target, wsId);
       db.prepare(
         `DELETE FROM page_shares WHERE user_id = ? AND page_id IN
@@ -494,7 +495,7 @@ workspaceRoutes.get(
     const rows = db
       .prepare(`SELECT * FROM tasks t WHERE t.page_id = @id AND t.occurrence_of IS NULL AND ${TASK_VISIBLE} ORDER BY t.created_at LIMIT 1000`)
       .all({ id, userId: req.user.id }) as Parameters<typeof rowToTask>[0][];
-    return rows.map(rowToTask);
+    return rows.map((r) => rowToTask(r));
   }),
 );
 

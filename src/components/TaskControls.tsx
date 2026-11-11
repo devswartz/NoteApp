@@ -69,14 +69,24 @@ function shortDay(d: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(parseISODate(d));
 }
 
-export function AssigneeMenu({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+/** Pick an assignee. With `teamId`, that team's members come first; anyone in the workspace can still be picked. */
+export function AssigneeMenu({ value, onChange, teamId }: { value: string | null; onChange: (id: string | null) => void; teamId?: string | null }) {
   const members = useStore((s) => s.members);
   const me = useStore((s) => s.user?.id);
+  const team = useStore((s) => (teamId ? s.teams.find((t) => t.id === teamId) : undefined));
   const [q, setQ] = useState('');
   const list = members
     .filter((m) => m.role !== 'viewer' || m.id === value)
     .filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()) || m.email.includes(q.toLowerCase()))
     .sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
+  const inTeam = team ? list.filter((m) => team.memberIds.includes(m.id)) : [];
+  const rest = team ? list.filter((m) => !team.memberIds.includes(m.id)) : list;
+  const item = (m: (typeof list)[number]) => (
+    <MenuItem key={m.id} icon={<Avatar user={m} size={18} />} onSelect={() => onChange(m.id)} checked={value === m.id}>
+      {m.name}
+      {m.id === me && <span className="muted"> (you)</span>}
+    </MenuItem>
+  );
   return (
     <div className="menu">
       {members.length > 6 && (
@@ -84,13 +94,14 @@ export function AssigneeMenu({ value, onChange }: { value: string | null; onChan
           <input autoFocus className="input input-sm" placeholder="Search people…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       )}
-      <MenuLabel>Assign to</MenuLabel>
-      {list.map((m) => (
-        <MenuItem key={m.id} icon={<Avatar user={m} size={18} />} onSelect={() => onChange(m.id)} checked={value === m.id}>
-          {m.name}
-          {m.id === me && <span className="muted"> (you)</span>}
-        </MenuItem>
-      ))}
+      {inTeam.length > 0 && (
+        <>
+          <MenuLabel>{team!.name}</MenuLabel>
+          {inTeam.map(item)}
+        </>
+      )}
+      {rest.length > 0 && <MenuLabel>{inTeam.length ? 'Everyone else' : 'Assign to'}</MenuLabel>}
+      {rest.map(item)}
       <MenuSeparator />
       <MenuItem icon={<UserRound size={15} />} onSelect={() => onChange(null)} checked={!value}>
         Unassigned

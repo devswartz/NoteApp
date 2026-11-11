@@ -7,6 +7,7 @@ import { createTask, toast, toggleTask, ui, updateTask, useStore } from '../stor
 import { addDays, today } from '../../shared/dates.ts';
 import type { PageMeta, Task } from '../../shared/types.ts';
 import { AssigneeChip, DueChip, PriorityChip, TaskCheckbox } from './TaskControls.tsx';
+import { TaskLabels } from './Labels.tsx';
 import { subtaskIndex, type Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { selection, useSelection } from '../pages/tasks/selection.ts';
@@ -131,6 +132,7 @@ export const TaskRow = memo(function TaskRow({
           <div className="task-meta">
             <DueChip task={task} readOnly={!canEdit} onChange={(dueDate) => void updateTask(task.id, { dueDate })} />
             <PriorityChip task={task} readOnly={!canEdit} onChange={(priority) => void updateTask(task.id, { priority })} />
+            <TaskLabels task={task} />
             {subs && subs.length > 0 && (
               <span className={`chip ${subsDone === subs.length ? 'chip-active' : ''}`} title={`${subsDone} of ${subs.length} subtasks done`}>
                 <ListChecks size={12} /> {subsDone}/{subs.length}
@@ -243,6 +245,7 @@ export function InlineAdd({ group, defaults }: { group?: Group; defaults?: { pag
       recurrence: p.recurrence,
       assigneeId: assignee ?? (group && 'assigneeId' in group ? group.assigneeId : defaults?.assigneeId ?? me),
       pageId: defaults?.pageId ?? null,
+      ...(group?.teamId ? { teamId: group.teamId } : {}),
     });
     setValue('');
   };
@@ -265,6 +268,23 @@ export function InlineAdd({ group, defaults }: { group?: Group; defaults?: { pag
       />
     </form>
   );
+}
+
+/** "+elders" → the team whose name (ignoring case and spaces) is or starts with the text. Subteams match by their own name. */
+export function resolveTeam(text: string, teams: { id: string; name: string }[]): string | undefined {
+  const q = text.toLowerCase();
+  const key = (n: string) => n.toLowerCase().replace(/\s+/g, '');
+  return (teams.find((t) => key(t.name) === q) ?? teams.find((t) => key(t.name).startsWith(q)))?.id;
+}
+
+/** Tag names from quick add → tag ids, creating tags that don't exist yet (anyone who can edit may). */
+export async function resolveTags(names: string[], ensure: (name: string) => Promise<{ id: string } | null>): Promise<string[]> {
+  const ids: string[] = [];
+  for (const n of names) {
+    const t = await ensure(n);
+    if (t && !ids.includes(t.id)) ids.push(t.id);
+  }
+  return ids;
 }
 
 export function resolveMember(mention: string, members: { id: string; name: string; email: string }[], me: string) {
