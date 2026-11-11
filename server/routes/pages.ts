@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
 import { accessChanged, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import { editPageDoc, flushAll, newBoxId } from '../collab.ts';
+import { editPageDoc, flushAll, newBoxId, pageDocState } from '../collab.ts';
 import { convertPageDoc } from '../../shared/pageDoc.ts';
 import { rowToTask } from '../tasks.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
@@ -60,6 +60,21 @@ pageRoutes.get(
     const id = param(req, 'id');
     const a = mustAccess(pageAccess(id, req.user.id));
     return backlinks(id, a.workspaceId, req.user.id);
+  }),
+);
+
+/**
+ * GET /pages/:id/doc → { ydoc: base64 Yjs state }: the page's current content, read-only.
+ * Printing a section renders each page from this instead of opening a collab session.
+ */
+pageRoutes.get(
+  '/pages/:id/doc',
+  h((req) => {
+    const id = param(req, 'id');
+    mustAccess(pageAccess(id, req.user.id));
+    const state = pageDocState(id);
+    if (!state) throw new HttpError(404, 'Page not found');
+    return { ydoc: Buffer.from(state).toString('base64') };
   }),
 );
 

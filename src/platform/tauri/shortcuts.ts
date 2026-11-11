@@ -1,7 +1,7 @@
 // Keyboard shortcuts that only the macOS native menu used to provide. Windows and
 // Linux have no menu bar any more (see menuless.ts), so these are registered as
 // ordinary shortcuts instead. ⌘K and ⌘\ are not listed: the web app already
-// handles them itself (components/shell/commands.tsx). Pure data, so tests can
+// handles them itself (components/shell/commands.tsx), and so it does ⌘P (print the page). Pure data, so tests can
 // import it without Vite.
 
 export interface DesktopShortcut {

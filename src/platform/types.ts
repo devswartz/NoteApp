@@ -53,6 +53,14 @@ export interface Platform {
   /** Hand the user a file to keep (download on the web, a save dialog in the shells). */
   saveFile(name: string, data: Blob): Promise<void>;
 
+  /**
+   * Open the system's print dialog for what the print stylesheet shows (src/print/: the
+   * prepared #print-root). `title` names the job (and the default PDF file name). Web and
+   * Windows: window.print(); macOS: WKWebView's print operation; iOS: UIPrintInteractionController;
+   * Android: PrintManager. Each dialog offers "Save as PDF".
+   */
+  print(title: string): Promise<void>;
+
   /** Let the user pick files. Resolves to [] if they cancel. */
   pickFiles(opts?: { accept?: string; multiple?: boolean }): Promise<File[]>;
 

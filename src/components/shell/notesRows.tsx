@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Printer,
   Star,
   StarOff,
   Trash2,
@@ -202,6 +203,9 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
       </MenuItem>
       <MenuItem icon={<FolderInput size={15} />} onSelect={() => p.setMoving({ kind: 'section', id: section.id })}>
         Move to…
+      </MenuItem>
+      <MenuItem icon={<Printer size={15} />} onSelect={() => void import('../../print/print.ts').then((m) => m.printSection(section.id))}>
+        Print section
       </MenuItem>
       <ColorRow value={section.color} onPick={(color) => patch(`/sections/${section.id}`, { color }).catch(errorToast)} />
       <MenuSeparator />

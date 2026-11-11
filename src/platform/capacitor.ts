@@ -65,6 +65,8 @@ export interface NativePlugins {
     writeWidgetSnapshot(options: { json: string }): Promise<void>;
     /** Values the native side needs on its own (Android snooze actions call the API directly). */
     setConfig(options: { apiBase: string | null }): Promise<void>;
+    /** Opens the system print dialog for the web view (print stylesheet applied). */
+    print(options: { jobName: string }): Promise<void>;
     addListener(event: 'shareReceived', fn: () => void): Promise<unknown>;
   };
   BiometricAuth: {
@@ -736,6 +738,14 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
 
     // TODO(Mobile): save via @capacitor/filesystem + share sheet; the web download is a stopgap.
     saveFile: (name, data) => webPlatform.saveFile(name, data),
+
+    // A WKWebView / Android WebView ignores window.print(): the app's plugin prints the web
+    // view natively (iOS UIPrintInteractionController with the web view's print formatter;
+    // Android PrintManager with the WebView's print adapter). Both use the print stylesheet
+    // and offer saving a PDF.
+    async print(title) {
+      await native.NoteAppNative.print({ jobName: title || 'Note' });
+    },
 
     async init() {
       // Keychain items readable after the first unlock (so a background token

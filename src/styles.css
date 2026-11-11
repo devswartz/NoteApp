@@ -1751,7 +1751,7 @@ body.is-resizing .sidebar { transition: none; }
 
 /* ───────────────────────── Print ─────────────────────────
    Printing a page gives just the note: no chrome, light colours, full width. */
-@page { margin: 18mm 16mm; }
+@page { margin: 16mm 16mm 18mm; } /* notes print through src/styles/print.css (same margins) */
 @media print {
   :root { color-scheme: light; --bg: #fff; --text: #000; --text-2: #222; --text-muted: #555; --border: #ccc; }
   html, body, #root, .app, .main, .route { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; }

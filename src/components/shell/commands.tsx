@@ -15,6 +15,7 @@ import {
   NotebookText,
   PanelLeft,
   Plus,
+  Printer,
   Search,
   Settings,
   SunMoon,
@@ -27,6 +28,7 @@ import { cycleTheme } from '../../store/ui.ts';
 import { useCommands, type Command } from '../../hooks/useShortcuts.ts';
 import { openNewNotebook } from './NewNotebookDialog.tsx';
 import { openFeedback } from './FeedbackDialog.tsx';
+import { useRibbon } from '../../editor/ribbonState.ts';
 
 const currentPageId = () => location.pathname.match(/\/p\/([^/?#]+)/)?.[1];
 
@@ -87,6 +89,18 @@ export function useShellCommands(wsId: string) {
         },
       },
       { id: 'notebooks.new', title: 'New notebook…', group: 'Create', keywords: 'template project personal meetings', icon: <BookPlus size={16} />, when: canEditWorkspace, run: openNewNotebook },
+      {
+        id: 'page.print',
+        title: 'Print page…',
+        group: 'Notes',
+        keys: 'mod+p',
+        keywords: 'pdf save paper',
+        icon: <Printer size={16} />,
+        allowInInput: true,
+        // Only on an open page: elsewhere the browser prints the view as usual.
+        when: () => !!useRibbon.getState().page,
+        run: () => void import('../../print/print.ts').then((m) => m.printCurrentPage()),
+      },
       { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note canvas', icon: <FilePlus size={16} />, when: canEditWorkspace, run: () => newPage() },
       nav('today', 'Today', 't', 'tasks/today', <Sun size={16} />),
       nav('my', 'My Tasks', 'm', 'tasks/my', <Inbox size={16} />),

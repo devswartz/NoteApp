@@ -49,16 +49,9 @@ export async function exportMarkdown(source: Editor | CanvasHandle, pageId: stri
   await saveFile(fileName(title, 'md'), md, 'text/markdown;charset=utf-8');
 }
 
-/** Print the page alone (the print stylesheet hides the app around it); "Save as PDF" in the dialog. */
-export function printPage(title: string) {
-  const prev = document.title;
-  document.title = title || 'Untitled'; // becomes the PDF's default file name
-  const restore = () => {
-    document.title = prev;
-    window.removeEventListener('afterprint', restore);
-  };
-  window.addEventListener('afterprint', restore);
-  window.print();
+/** Print the open page alone, laid out for paper (src/print/); "Save as PDF" in the dialog. */
+export function printPage() {
+  void import('../print/print.ts').then((m) => m.printCurrentPage());
 }
 
 /**
