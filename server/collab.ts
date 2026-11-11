@@ -4,6 +4,7 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
+import { observePageContent, pageFragments } from '../shared/pageDoc.ts';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
@@ -102,6 +103,20 @@ function revoke(conn: WebSocket, a: ConnAuth, code: number, reason: string) {
 onAccessChange(revalidateCollab);
 setInterval(revalidateCollab, REVALIDATE_MS).unref();
 
+/** Text, task references and mentions of a whole page: every fragment (all canvas boxes) in reading order. */
+export function extractPage(doc: Y.Doc): { text: string; taskIds: Set<string>; mentionIds: Set<string> } {
+  const taskIds = new Set<string>();
+  const mentionIds = new Set<string>();
+  const texts: string[] = [];
+  for (const frag of pageFragments(doc)) {
+    const r = extractDoc(frag);
+    r.taskIds.forEach((id) => taskIds.add(id));
+    r.mentionIds.forEach((id) => mentionIds.add(id));
+    if (r.text) texts.push(r.text);
+  }
+  return { text: texts.join('\n\n'), taskIds, mentionIds };
+}
+
 /** Walk a ProseMirror-shaped Y.XmlFragment and collect plain text and task references. */
 export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Set<string>; mentionIds: Set<string> } {
   const taskIds = new Set<string>();
@@ -138,7 +153,7 @@ function persist(room: Room) {
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);
   if (!exists) return; // page deleted while open
   const state = Buffer.from(Y.encodeStateAsUpdate(room.doc));
-  const { text, taskIds, mentionIds } = extractDoc(room.doc.getXmlFragment('default'));
+  const { text, taskIds, mentionIds } = extractPage(room.doc);
   db.transaction(() => {
     db.prepare('UPDATE pages SET ydoc = ?, text = ?, updated_at = ?, updated_by = COALESCE(?, updated_by) WHERE id = ?').run(
       state,
@@ -199,13 +214,14 @@ function getRoom(pageId: string, workspaceId: string): Room {
     saveTimer: null,
     dirtySince: 0,
     lastEditor: null,
-    mentioned: extractDoc(doc.getXmlFragment('default')).mentionIds,
+    mentioned: extractPage(doc).mentionIds,
     mentionAuthors: new Map(),
     taskAuthors: new Map(),
   };
 
   // Attribute new @mentions to whoever's update inserted them (not just the last editor).
-  doc.getXmlFragment('default').observeDeep((events, tr) => {
+  // Every content fragment, canvas boxes included (also boxes added later).
+  observePageContent(doc, (events, tr) => {
     const actor = tr.origin instanceof WebSocket ? connAuth.get(tr.origin)?.userId : undefined;
     if (!actor) return;
     const addTask = (n: Y.XmlElement) => {
@@ -302,7 +318,7 @@ export function closeUserCollab(userId: string) {
 export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void) {
   const doc = new Y.Doc();
   build(doc.getXmlFragment('default'));
-  const { text } = extractDoc(doc.getXmlFragment('default'));
+  const { text } = extractPage(doc);
   db.prepare('UPDATE pages SET ydoc = ?, text = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(doc)), text, pageId);
   const title = (db.prepare('SELECT title FROM pages WHERE id = ?').get(pageId) as { title: string }).title;
   db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pageId);

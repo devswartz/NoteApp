@@ -23,9 +23,11 @@ pageRoutes.post(
     const id = newId();
     const ts = now();
     const title = typeof req.body.title === 'string' ? req.body.title.slice(0, 300) : '';
+    // 'document' (one flowing text) unless asked for a 'canvas' (text boxes anywhere; docs/PLAN_CANVAS.md).
+    const kind = req.body.kind === 'canvas' ? 'canvas' : 'document';
     db.prepare(
-      `INSERT INTO pages (id, section_id, title, position, created_by, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, sectionId, title, nextPos('pages', 'section_id', sectionId), req.user.id, ts, ts, req.user.id);
+      `INSERT INTO pages (id, section_id, title, kind, position, created_by, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, sectionId, title, kind, nextPos('pages', 'section_id', sectionId), req.user.id, ts, ts, req.user.id);
     db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(id, title, '');
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { id };

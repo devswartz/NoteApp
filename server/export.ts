@@ -19,7 +19,8 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { db, newId, now } from './db.ts';
 import { NOTEBOOK_VISIBLE, TASK_VISIBLE, HttpError } from './access.ts';
-import { extractDoc } from './collab.ts';
+import { extractPage } from './collab.ts';
+import { pageFragments } from '../shared/pageDoc.ts';
 import { FILES_DIR, VERSION } from './config.ts';
 import { toMarkdown } from './markdown.ts';
 import { SAFE_TYPES } from './routes/files.ts';
@@ -107,7 +108,7 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
       .join('/');
     const doc = new Y.Doc();
     if (pg.ydoc) Y.applyUpdate(doc, new Uint8Array(pg.ydoc));
-    const md = toMarkdown(pg.title, doc.getXmlFragment('default'), (id) => {
+    const md = toMarkdown(pg.title, pageFragments(doc), (id) => {
       const t = taskById.get(id);
       return t && { title: t.title, done: t.status === 'done', due: t.due_date };
     });
@@ -301,7 +302,7 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
             },
           });
           ydoc = Buffer.from(Y.encodeStateAsUpdate(doc));
-          body = extractDoc(doc.getXmlFragment('default')).text;
+          body = extractPage(doc).text;
         }
         const id = fresh(pg.id);
         importedPages.add(pg.id);
