@@ -66,7 +66,25 @@ export function printPage(title: string) {
  * On a canvas, each file becomes a new text box under the others.
  */
 export async function importMarkdown(target: Editor | CanvasHandle, pageId: string) {
-  const files = await platform.pickFiles({ accept: '.md,.markdown,.txt,text/markdown,text/plain', multiple: true });
+  await importMarkdownFiles(target, pageId, await pickMarkdownFiles());
+}
+
+export const pickMarkdownFiles = () => platform.pickFiles({ accept: '.md,.markdown,.txt,text/markdown,text/plain', multiple: true });
+
+/**
+ * Markdown files picked before their page existed (the Notes ribbon's Import: pick, create a
+ * page, open it); the page imports them once its canvas is ready (PageView).
+ */
+let pending: { pageId: string; files: File[] } | null = null;
+export const setPendingImport = (pageId: string, files: File[]) => void (pending = { pageId, files });
+export function takePendingImport(pageId: string): File[] | null {
+  if (pending?.pageId !== pageId) return null;
+  const { files } = pending;
+  pending = null;
+  return files;
+}
+
+export async function importMarkdownFiles(target: Editor | CanvasHandle, pageId: string, files: File[]) {
   for (const [i, file] of files.entries()) {
     try {
       const { title, body } = splitTitle(await file.text());

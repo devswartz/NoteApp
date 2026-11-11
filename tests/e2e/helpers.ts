@@ -161,14 +161,40 @@ export function taskRow(page: Page, title: string) {
   return page.locator('.task-row').filter({ has: page.locator('.task-title', { hasText: title }) });
 }
 
-/** All Tasks: Add filter → kind → value (the filter bar's chips). */
+/** The ribbon (desktop and tablet; phones have none). */
+export const ribbon = (page: Page) => page.getByRole('toolbar', { name: 'Ribbon' });
+
+/** Filter kinds with their own ribbon button on Tasks; the rest are under "More filters". */
+const RIBBON_FILTERS = ['Assignee', 'Tags', 'Team', 'Priority'];
+
+/**
+ * All Tasks: filter by kind → value. Desktop: the ribbon's Filter group (the kind's button, or More
+ * filters → kind). Phones: the filter bar's Add filter → kind.
+ */
 export async function addFilter(page: Page, kind: string, value: string) {
-  await page.getByRole('button', { name: 'Add filter' }).click();
-  await page.getByRole('menuitem', { name: kind, exact: true }).click();
+  const bar = ribbon(page);
+  if (await bar.isVisible()) {
+    if (RIBBON_FILTERS.includes(kind)) await bar.getByRole('button', { name: new RegExp(`^${kind} filter`) }).click();
+    else {
+      await bar.getByRole('button', { name: 'More filters' }).click();
+      await page.getByRole('menuitem', { name: kind, exact: true }).click();
+    }
+  } else {
+    await page.getByRole('button', { name: 'Add filter' }).click();
+    await page.getByRole('menuitem', { name: kind, exact: true }).click();
+  }
   const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Match the item's label exactly (people items also contain their avatar's initials).
   await page.getByRole('menuitem').filter({ has: page.locator('.menu-label', { hasText: new RegExp(`^${esc}$`) }) }).click();
   await page.keyboard.press('Escape'); // multi-select kinds (tags) stay open
+}
+
+/** Desktop: remove one filter from its ribbon menu. */
+export async function removeFilter(page: Page, kind: string) {
+  const bar = ribbon(page);
+  if (RIBBON_FILTERS.includes(kind)) await bar.getByRole('button', { name: new RegExp(`^${kind} filter`) }).click();
+  else throw new Error(`removeFilter: ${kind} has no ribbon button`);
+  await page.getByRole('menuitem', { name: `Remove ${kind} filter` }).click();
 }
 
 /** Polls the API until `check` passes (for server-side effects such as the debounced page save). */

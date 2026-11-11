@@ -46,9 +46,31 @@
 .ribbon.is-collapsed { min-height: 0; height: 30px; padding: 0 10px 0 16px; justify-content: space-between; align-items: center; cursor: pointer; }
 .rb-strip-groups { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ribbon .rb-expand { height: 26px; padding: 0 8px; gap: 4px; font-size: var(--text-sm); font-weight: 500; }
-/* Not on a page (Tasks, Calendar, Settings): a quiet strip, nothing to press. */
-.ribbon.is-off { cursor: default; justify-content: flex-start; }
-.rb-off-hint { font-size: var(--text-xs); color: var(--text-muted); }
+/* Tasks, Calendar, Notes and Settings ribbons (src/components/shell/SectionRibbons.tsx): menu
+   buttons carry a small caret; an active filter highlights its button and shows a count. */
+.ribbon.is-section .rb-group { flex: none; }
+/* Below very wide windows the filter buttons drop their words (the icon, count and tooltip stay). */
+@media (max-width: 1599px) {
+  .ribbon .rb-compact .rb-btn-label { display: none; }
+}
+.ribbon .rb-menu-btn { gap: 4px; }
+.ribbon .rb-menu-btn .rb-caret { width: 12px; height: 12px; margin-left: -2px; opacity: 0.7; }
+.rb-count {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent-solid);
+  color: var(--text-on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.rb-popover .menu { min-width: 200px; max-height: min(420px, 70vh); overflow-y: auto; }
+.rb-menu-empty { padding: 6px 10px; max-width: 260px; }
+/* All Tasks (desktop): the active filters in words after the result count. */
+.filter-summary-part::before { content: ' · '; }
 /* Narrower windows: names and text labels go, then buttons shrink; never a second row. */
 @media (max-width: 1279px) {
   .ribbon { min-height: 0; padding-top: 5px; padding-bottom: 5px; }

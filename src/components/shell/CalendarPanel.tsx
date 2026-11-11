@@ -1,6 +1,6 @@
 // The Calendar view's panel: a small month calendar to jump to a date, and
-// filters. Both live in the URL (?d=YYYY-MM-DD&who=…) so CalendarView reads
-// them too. Track 1 adds team and tag filters under "Filters".
+// on phones the assignee filter (desktop has Mine / Everyone in the ribbon). Both live in
+// the URL (?d=YYYY-MM-DD&who=…) so CalendarView reads them too.
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -8,6 +8,7 @@ import { useStore } from '../../store.ts';
 import { calendarDate, calendarWho, monthGrid } from '../../pages/tasks/CalendarView.tsx';
 import { parseISODate, toISODate, today } from '../../../shared/dates.ts';
 import { Group } from './NotesPanel.tsx';
+import { useIsMobile } from '../ui.tsx';
 
 export function CalendarPanel({ wsId }: { wsId: string }) {
   const [params, setParams] = useSearchParams();
@@ -16,6 +17,7 @@ export function CalendarPanel({ wsId }: { wsId: string }) {
   const me = useStore((s) => s.user!.id);
   const selected = calendarDate(params);
   const who = calendarWho(params);
+  const isMobile = useIsMobile();
   const [shown, setShown] = useState(selected.slice(0, 8) + '01');
   const [lastSelected, setLastSelected] = useState(selected);
   // Follow the big calendar when it moves to another month.
@@ -75,6 +77,8 @@ export function CalendarPanel({ wsId }: { wsId: string }) {
             })}
           </div>
         </div>
+        {/* Desktop and tablet: Mine / Everyone is in the ribbon (SectionRibbons.tsx); phones have no ribbon. */}
+        {isMobile && (
         <Group id={`calfilters:${wsId}`} title="Filters">
           <label className="panel-field">
             <span className="muted small">Assignee</span>
@@ -94,6 +98,7 @@ export function CalendarPanel({ wsId }: { wsId: string }) {
             </select>
           </label>
         </Group>
+        )}
       </div>
     </>
   );

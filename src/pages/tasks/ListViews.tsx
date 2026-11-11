@@ -2,8 +2,9 @@
 import { useMemo, useState } from 'react';
 import { useStore } from '../../store.ts';
 import { RowList, TaskGroups } from '../../components/TaskRow.tsx';
-import { Avatar } from '../../components/ui.tsx';
-import { groupBy, isMine, memberStats, productivity, sortTasks, todayGroups, upcomingGroups, type GroupKey } from '../../lib/taskViews.ts';
+import { Avatar, useIsMobile } from '../../components/ui.tsx';
+import { groupBy, isMine, memberStats, productivity, sortTasks, todayGroups, upcomingGroups } from '../../lib/taskViews.ts';
+import { taskView, useTaskView } from './taskViewState.ts';
 import { addDays, parseISODate, today } from '../../../shared/dates.ts';
 import { Loading, Segmented, useOpen } from './common.tsx';
 
@@ -35,7 +36,9 @@ export function MyView() {
   const tree = useStore((s) => s.tree);
   const members = useStore((s) => s.members);
   const loaded = useStore((s) => s.tasksLoaded);
-  const [group, setGroup] = useState<GroupKey>('due');
+  // Grouping is in the ribbon on desktop and tablet (./taskViewState.ts); phones get the switch here.
+  const group = useTaskView((s) => s.myGroup);
+  const isMobile = useIsMobile();
   const groups = useMemo(
     () => groupBy(open.filter((t) => isMine(t, me)), group, 'due', { members, tree }),
     [open, me, group, members, tree],
@@ -43,17 +46,19 @@ export function MyView() {
   if (!loaded) return <Loading />;
   return (
     <>
-      <div className="toolbar">
-        <Segmented
-          value={group}
-          onChange={setGroup}
-          options={[
-            ['due', 'By date'],
-            ['note', 'By note'],
-            ['priority', 'By priority'],
-          ]}
-        />
-      </div>
+      {isMobile && (
+        <div className="toolbar">
+          <Segmented
+            value={group}
+            onChange={taskView.setMyGroup}
+            options={[
+              ['due', 'By date'],
+              ['note', 'By note'],
+              ['priority', 'By priority'],
+            ]}
+          />
+        </div>
+      )}
       <TaskGroups groups={groups.length ? groups : [{ key: 'none', label: '', tasks: [] }]} emptyText="No tasks assigned to you." />
     </>
   );
@@ -62,15 +67,18 @@ export function MyView() {
 export function UpcomingView() {
   const open = useOpen();
   const me = useStore((s) => s.user!.id);
-  const [scope, setScope] = useState<'mine' | 'all'>('mine');
+  const scope = useTaskView((s) => s.upcomingScope);
+  const isMobile = useIsMobile();
   const loaded = useStore((s) => s.tasksLoaded);
   const groups = useMemo(() => upcomingGroups(scope === 'mine' ? open.filter((t) => isMine(t, me)) : open), [open, me, scope]);
   if (!loaded) return <Loading />;
   return (
     <>
-      <div className="toolbar">
-        <Segmented value={scope} onChange={setScope} options={[['mine', 'Mine'], ['all', 'Everyone']]} />
-      </div>
+      {isMobile && (
+        <div className="toolbar">
+          <Segmented value={scope} onChange={taskView.setUpcomingScope} options={[['mine', 'Mine'], ['all', 'Everyone']]} />
+        </div>
+      )}
       <TaskGroups groups={groups} emptyText="Nothing scheduled." />
     </>
   );

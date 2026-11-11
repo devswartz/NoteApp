@@ -4,13 +4,14 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { ui, updateTask, useStore } from '../../store.ts';
-import { isMine, sortTasks } from '../../lib/taskViews.ts';
+import { isMine, sortTasks, teamScope } from '../../lib/taskViews.ts';
+import { useIsMobile } from '../../components/ui.tsx';
 import { addDays, parseISODate, toISODate, today } from '../../../shared/dates.ts';
 import type { Task } from '../../../shared/types.ts';
 import { formatTime } from '../../lib/format.ts';
 import { Segmented, useOpen } from './common.tsx';
 
-type Mode = 'month' | 'week';
+export type Mode = 'month' | 'week';
 const DRAG_TYPE = 'application/x-task';
 
 /** Monday on or before `d`. */
@@ -32,38 +33,71 @@ export const calendarDate = (params: URLSearchParams) => {
 };
 /** Assignee filter (?who=): 'mine' (default), 'all', 'none' (unassigned) or a user id. */
 export const calendarWho = (params: URLSearchParams) => params.get('who') || 'mine';
+/** Month (default) or week (?mode=week). The calendar has no day layout. */
+export const calendarMode = (params: URLSearchParams): Mode => (params.get('mode') === 'week' ? 'week' : 'month');
+/** Tag filter (?tags=id,id): tasks with any of these tags. */
+export const calendarTags = (params: URLSearchParams) => (params.get('tags') ?? '').split(',').filter(Boolean);
+/** Team filter (?team=id, or 'none'); a team includes its subteams. */
+export const calendarTeam = (params: URLSearchParams) => params.get('team');
+
+/** The date one month or week before (n = -1) or after (n = 1) `cursor`. */
+export function stepCalendar(cursor: string, mode: Mode, n: number): string {
+  if (mode === 'week') return addDays(cursor, 7 * n);
+  const d = parseISODate(cursor);
+  return toISODate(new Date(d.getFullYear(), d.getMonth() + n, 1));
+}
+
+/** Show `d` (today drops the param); optionally switch to week. Shared by the page and the ribbon. */
+export const setCalendarDate = (p: URLSearchParams, d: string, toMode?: Mode) => {
+  if (d === today()) p.delete('d');
+  else p.set('d', d);
+  if (toMode === 'week') p.set('mode', 'week');
+  return p;
+};
+export const setCalendarMode = (p: URLSearchParams, m: Mode) => {
+  if (m === 'week') p.set('mode', 'week');
+  else p.delete('mode');
+  return p;
+};
 
 export function CalendarView() {
   const open = useOpen();
   const tasks = useStore((s) => s.tasks);
   const me = useStore((s) => s.user!.id);
+  const teams = useStore((s) => s.teams);
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
+  // Desktop and tablet: Today, ◀ ▶ and Week / Month are in the ribbon (src/components/shell/SectionRibbons.tsx).
+  const isMobile = useIsMobile();
   const [params, setParams] = useSearchParams();
-  const mode: Mode = params.get('mode') === 'week' ? 'week' : 'month';
+  const mode = calendarMode(params);
   const scope = calendarWho(params);
+  const tagsParam = params.get('tags') ?? '';
+  const teamParam = calendarTeam(params);
   const [showDone, setShowDone] = useState(false);
   const cursor = calendarDate(params);
-  const setCursor = (d: string, toMode?: Mode) =>
-    setParams((p) => (d === today() ? p.delete('d') : p.set('d', d), toMode === 'week' && p.set('mode', 'week'), p), { replace: true });
+  const setCursor = (d: string, toMode?: Mode) => setParams((p) => setCalendarDate(p, d, toMode), { replace: true });
   const [dropDay, setDropDay] = useState<string | null>(null);
   const t = today();
 
-  const inScope = (x: Task) => (scope === 'all' ? true : scope === 'mine' ? isMine(x, me) : scope === 'none' ? !x.assigneeId : x.assigneeId === scope);
+  const inScope = useMemo(() => {
+    const tags = tagsParam.split(',').filter(Boolean);
+    const team = teamParam && teamParam !== 'none' ? teamScope(teamParam, true, teams) : null;
+    return (x: Task) =>
+      (scope === 'all' ? true : scope === 'mine' ? isMine(x, me) : scope === 'none' ? !x.assigneeId : x.assigneeId === scope) &&
+      (!tags.length || x.tagIds.some((id) => tags.includes(id))) &&
+      (!teamParam || (teamParam === 'none' ? !x.teamId : !!x.teamId && team!.has(x.teamId)));
+  }, [scope, me, tagsParam, teamParam, teams]);
   const byDay = useMemo(() => {
     const list = (showDone ? Object.values(tasks) : open).filter((x) => x.dueDate && inScope(x));
     const map = new Map<string, Task[]>();
     for (const x of sortTasks(list)) map.set(x.dueDate!, [...(map.get(x.dueDate!) ?? []), x]);
     return map;
-  }, [tasks, open, showDone, scope, me]); // eslint-disable-line react-hooks/exhaustive-deps
-  const undated = useMemo(() => sortTasks(open.filter((x) => !x.dueDate && x.status === 'open' && inScope(x)), 'priority'), [open, scope, me]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tasks, open, showDone, inScope]);
+  const undated = useMemo(() => sortTasks(open.filter((x) => !x.dueDate && x.status === 'open' && inScope(x)), 'priority'), [open, inScope]);
 
   const days = mode === 'month' ? monthGrid(cursor) : Array.from({ length: 7 }, (_, i) => addDays(weekStart(cursor), i));
   const month = parseISODate(cursor).getMonth();
-  const step = (n: number) => {
-    if (mode === 'week') return setCursor(addDays(cursor, 7 * n));
-    const d = parseISODate(cursor);
-    setCursor(toISODate(new Date(d.getFullYear(), d.getMonth() + n, 1)));
-  };
+  const step = (n: number) => setCursor(stepCalendar(cursor, mode, n));
   const title =
     mode === 'month'
       ? new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' }).format(parseISODate(cursor))
@@ -117,26 +151,26 @@ export function CalendarView() {
     <div className={`calendar cal-${mode}`}>
       <header className="cal-head">
         <h1>{title}</h1>
-        <div className="row gap-6">
-          <button className="btn btn-secondary btn-sm" onClick={() => setCursor(today())}>
-            Today
-          </button>
-          <button className="btn-ghost icon-btn" aria-label={`Previous ${mode}`} onClick={() => step(-1)}>
-            <ChevronLeft size={18} />
-          </button>
-          <button className="btn-ghost icon-btn" aria-label={`Next ${mode}`} onClick={() => step(1)}>
-            <ChevronRight size={18} />
-          </button>
-        </div>
+        {isMobile && (
+          <div className="row gap-6">
+            <button className="btn btn-secondary btn-sm" onClick={() => setCursor(today())}>
+              Today
+            </button>
+            <button className="btn-ghost icon-btn" aria-label={`Previous ${mode}`} onClick={() => step(-1)}>
+              <ChevronLeft size={18} />
+            </button>
+            <button className="btn-ghost icon-btn" aria-label={`Next ${mode}`} onClick={() => step(1)}>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
         <div className="row gap-10 wrap" style={{ marginLeft: 'auto' }}>
           <label className="check-label">
             <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Completed
           </label>
-          <Segmented
-            value={mode}
-            onChange={(m) => setParams((p) => (m === 'week' ? p.set('mode', 'week') : p.delete('mode'), p), { replace: true })}
-            options={[['month', 'Month'], ['week', 'Week']]}
-          />
+          {isMobile && (
+            <Segmented value={mode} onChange={(m) => setParams((p) => setCalendarMode(p, m), { replace: true })} options={[['month', 'Month'], ['week', 'Week']]} />
+          )}
         </div>
       </header>
       <div className="cal-body">

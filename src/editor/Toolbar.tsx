@@ -5,7 +5,7 @@
 // text (NoteEditor.tsx).
 // WAI-ARIA toolbar pattern: one tab stop (roving tabindex), ←/→/Home/End move between
 // controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
 import {
   Baseline,
@@ -47,7 +47,7 @@ import { slashHooks } from './SlashMenu.tsx';
 import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, type ColorName } from './colors.ts';
 import { setOutlineHidden, setRibbonCollapsed, syncRibbonPrefs, usePageSettings, useRibbon } from './ribbonState.ts';
 import { PAGE_COLORS, RULE_LINES, setPageSettings, type PageColor, type RuleLines } from '../../shared/pageDoc.ts';
-import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
+import { ENTER, MOD, Popover, SHIFT, keyLabel } from '../components/ui.tsx';
 import '../styles/colors.css';
 import '../styles/toolbar.css';
 
@@ -322,10 +322,10 @@ function insertLink(editor: Editor) {
   openLinkEditor(editor);
 }
 
-const Sep = () => <span className="bm-sep rb-sep" aria-hidden />;
+export const Sep = () => <span className="bm-sep rb-sep" aria-hidden />;
 
 /** A ribbon group with its small OneNote-style label underneath (hidden on narrow windows; it still names the group). */
-function Group({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+export function Group({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
   const id = useId();
   return (
     <div className={`rb-group ${className}`} role="group" aria-labelledby={id}>
@@ -344,25 +344,9 @@ interface BtnOpts {
   text?: string;
 }
 
-/**
- * The ribbon (OneNote's Home tab, one tab only). Editing controls act on the active editor,
- * the one last focused on the open page; with none (no page open, an empty canvas, a viewer)
- * they are disabled, not hidden. The Page group needs a page you may edit; View and the
- * collapse chevron always work. Presses keep the editor's selection (mousedown is prevented).
- * Collapsed, it is a thin strip that restores on click (remembered on this device).
- */
-export function Ribbon({ onPage }: { onPage: boolean }) {
-  const active = useActiveEditor();
-  const editor = active && !active.isDestroyed && active.isEditable ? active : null;
-  const ref = useRef<HTMLDivElement>(null);
-  const roving = useRovingTabIndex(ref);
-  const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
-  const page = useRibbon((r) => r.page);
-  const collapsed = useRibbon((r) => r.collapsed);
-  const outlineHidden = useRibbon((r) => r.outlineHidden);
-  const settings = usePageSettings(page?.doc);
+/** Ctrl+F1 collapses / restores the ribbon (as in Office), in every section. */
+function useCollapseShortcut() {
   useEffect(syncRibbonPrefs, []); // the shell's storage is ready now (see store/ui.ts)
-  // Ctrl+F1 collapses / restores the ribbon (as in Office).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'F1' || !e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
@@ -372,6 +356,214 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+}
+
+/**
+ * The ribbon's frame, the same in every section: a WAI-ARIA toolbar with roving focus, the
+ * collapse chevron at its end, and the collapsed strip (naming the groups) that restores on
+ * click. Collapsed or not is remembered on this device, across sections.
+ */
+export function RibbonFrame({
+  strip,
+  editor = null,
+  idle = false,
+  section = false,
+  children,
+}: {
+  strip: string;
+  editor?: Editor | null;
+  idle?: boolean;
+  /** Tasks, Calendar, Notes, Settings (not the note's ribbon). */
+  section?: boolean;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const roving = useRovingTabIndex(ref);
+  const collapsed = useRibbon((r) => r.collapsed);
+  useCollapseShortcut();
+  if (collapsed)
+    return (
+      <div
+        ref={ref}
+        className="ribbon is-collapsed"
+        role="toolbar"
+        aria-label="Ribbon"
+        aria-orientation="horizontal"
+        onFocus={roving.onFocus}
+        onKeyDown={(e) => toolbarKeys(e, editor)}
+        onClick={(e) => e.target === e.currentTarget && setRibbonCollapsed(false)}
+      >
+        <span className="rb-strip-groups" aria-hidden onClick={() => setRibbonCollapsed(false)}>
+          {strip}
+        </span>
+        <button
+          type="button"
+          data-tb-item
+          className="bm-btn rb-expand"
+          title="Show the ribbon (Ctrl+F1)"
+          aria-label="Show the ribbon"
+          aria-expanded={false}
+          tabIndex={-1}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setRibbonCollapsed(false)}
+        >
+          <span>Show ribbon</span>
+          <ChevronDown size={14} />
+        </button>
+      </div>
+    );
+  return (
+    <div
+      ref={ref}
+      className={`ribbon ${idle ? 'is-idle' : ''} ${section ? 'is-section' : ''}`}
+      role="toolbar"
+      aria-label="Ribbon"
+      aria-orientation="horizontal"
+      onFocus={roving.onFocus}
+      onKeyDown={(e) => toolbarKeys(e, editor)}
+    >
+      {children}
+      <button
+        type="button"
+        data-tb-item
+        className="bm-btn rb-collapse"
+        title="Collapse the ribbon (Ctrl+F1)"
+        aria-label="Collapse the ribbon"
+        aria-expanded
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setRibbonCollapsed(true)}
+      >
+        <ChevronUp size={16} />
+      </button>
+    </div>
+  );
+}
+
+/** A ribbon button outside the note's ribbon (Tasks, Calendar, Notes, Settings): same look, its own reason when disabled. */
+export function RibbonButton({
+  label,
+  icon,
+  onClick,
+  text,
+  active,
+  disabled,
+  title,
+}: {
+  label: string;
+  icon?: ReactNode;
+  onClick: () => void;
+  /** Visible text next to the icon (dropped on narrow windows). */
+  text?: string;
+  /** Toggle / current state: shows as pressed. */
+  active?: boolean;
+  /** A reason string disables the button and becomes its tooltip. */
+  disabled?: string | false;
+  title?: string;
+}) {
+  const on = !disabled && !!active;
+  return (
+    <button
+      type="button"
+      data-tb-item
+      className={`bm-btn rb-btn ${on ? 'is-active' : ''} ${text ? 'rb-text' : ''}`}
+      title={disabled || title || label}
+      aria-label={label}
+      aria-pressed={active === undefined ? undefined : on}
+      aria-disabled={disabled ? true : undefined}
+      tabIndex={-1}
+      onClick={() => !disabled && onClick()}
+    >
+      {icon}
+      {text && <span className="rb-btn-label">{text}</span>}
+    </button>
+  );
+}
+
+/**
+ * A ribbon button that opens an app menu (MenuItem rows) in a popover. `count` shows a small
+ * badge and highlights the button, so an active filter stays visible while the menu is closed.
+ */
+export function RibbonMenu({
+  label,
+  icon,
+  text,
+  count,
+  disabled,
+  title,
+  bare = false,
+  compact = false,
+  children,
+}: {
+  label: string;
+  icon?: ReactNode;
+  text?: string;
+  count?: number;
+  disabled?: string | false;
+  title?: string;
+  /** The content brings its own .menu wrapper. */
+  bare?: boolean;
+  /** Its text goes first when the window is not wide enough for every label. */
+  compact?: boolean;
+  children: ReactNode | ((close: () => void) => ReactNode);
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  useEffect(() => {
+    // Focus the first row so the menu works from the keyboard (↑/↓ move, Escape returns).
+    if (!open) return;
+    const t = setTimeout(() => pop.current?.querySelector<HTMLElement>('.menu-item')?.focus());
+    return () => clearTimeout(t);
+  }, [open]);
+  const on = !disabled && !!count;
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        data-tb-item
+        className={`bm-btn rb-btn rb-menu-btn ${on ? 'is-active' : ''} ${text ? 'rb-text' : ''} ${compact ? 'rb-compact' : ''}`}
+        title={disabled || title || label}
+        aria-label={label}
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-disabled={disabled ? true : undefined}
+        tabIndex={-1}
+        onClick={() => !disabled && setOpen((o) => !o)}
+      >
+        {icon}
+        {text && <span className="rb-btn-label">{text}</span>}
+        {on && (
+          <span className="rb-count" aria-hidden>
+            {count}
+          </span>
+        )}
+        <ChevronDown size={12} className="rb-caret" />
+      </button>
+      <Popover anchor={ref} open={open && !disabled} onClose={close} className="rb-popover">
+        <div className={bare ? undefined : 'menu filter-menu'} ref={pop}>
+          {typeof children === 'function' ? children(close) : children}
+        </div>
+      </Popover>
+    </>
+  );
+}
+
+/**
+ * The note's ribbon (OneNote's Home tab, one tab only). Editing controls act on the active editor,
+ * the one last focused on the open page; with none (an empty canvas, a viewer) they are
+ * disabled, not hidden. The Page group needs a page you may edit; View always works.
+ * Presses keep the editor's selection (mousedown is prevented).
+ */
+export function Ribbon() {
+  const active = useActiveEditor();
+  const editor = active && !active.isDestroyed && active.isEditable ? active : null;
+  const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
+  const page = useRibbon((r) => r.page);
+  const outlineHidden = useRibbon((r) => r.outlineHidden);
+  const settings = usePageSettings(page?.doc);
   const off = !editor || !s;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
@@ -400,58 +592,10 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
   const btn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, opts);
   const viewBtn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, { ...opts, always: true });
 
-  // Tasks, Calendar, Settings: nothing to format, so a quiet strip instead of a row of dead buttons.
-  if (!onPage)
-    return (
-      <div className="ribbon is-collapsed is-off">
-        <span className="rb-off-hint">Open a note to use the ribbon</span>
-      </div>
-    );
-
-  if (collapsed)
-    return (
-      <div
-        ref={ref}
-        className="ribbon is-collapsed"
-        role="toolbar"
-        aria-label="Ribbon"
-        aria-orientation="horizontal"
-        onFocus={roving.onFocus}
-        onKeyDown={(e) => toolbarKeys(e, editor)}
-        onClick={(e) => e.target === e.currentTarget && setRibbonCollapsed(false)}
-      >
-        <span className="rb-strip-groups" aria-hidden onClick={() => setRibbonCollapsed(false)}>
-          Text · Lists · Insert · Page · View
-        </span>
-        <button
-          type="button"
-          data-tb-item
-          className="bm-btn rb-expand"
-          title="Show the ribbon (Ctrl+F1)"
-          aria-label="Show the ribbon"
-          aria-expanded={false}
-          tabIndex={-1}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setRibbonCollapsed(false)}
-        >
-          <span>Show ribbon</span>
-          <ChevronDown size={14} />
-        </button>
-      </div>
-    );
-
   const block = s?.block ?? 'p';
   const blockLabel = BLOCKS.find((b) => b.id === block)!.label;
   return (
-    <div
-      ref={ref}
-      className={`ribbon ${off ? 'is-idle' : ''}`}
-      role="toolbar"
-      aria-label="Ribbon"
-      aria-orientation="horizontal"
-      onFocus={roving.onFocus}
-      onKeyDown={(e) => toolbarKeys(e, editor)}
-    >
+    <RibbonFrame strip="Text · Lists · Insert · Page · View" editor={editor} idle={off}>
       <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
@@ -628,20 +772,7 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
         {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 />, () => chain().undo().run(), { disabled: !s?.canUndo })}
         {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 />, () => chain().redo().run(), { disabled: !s?.canRedo })}
       </Group>
-      <button
-        type="button"
-        data-tb-item
-        className="bm-btn rb-collapse"
-        title="Collapse the ribbon (Ctrl+F1)"
-        aria-label="Collapse the ribbon"
-        aria-expanded
-        tabIndex={-1}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setRibbonCollapsed(true)}
-      >
-        <ChevronUp size={16} />
-      </button>
-    </div>
+    </RibbonFrame>
   );
 }
 

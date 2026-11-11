@@ -18,7 +18,7 @@ import { CommandPalette } from './CommandPalette.tsx';
 import { OfflineBanner, ShortcutsHelp } from './Overlays.tsx';
 import { useIsMobile } from './ui.tsx';
 import { platform } from '../platform/index.ts';
-import { Ribbon } from '../editor/Toolbar.tsx';
+import { AppRibbon } from './shell/SectionRibbons.tsx';
 
 /** True while a modal-like overlay is open; plain shortcuts pause then. */
 const overlayOpen = () => {
@@ -54,7 +54,7 @@ export function AppShell() {
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'is-mobile' : ''}`}>
       <OfflineBanner />
       {/* Desktop and tablet: the ribbon across the whole window, above the rail, panels and note (OneNote). Phones use the floating toolbar. */}
-      {!isMobile && <Ribbon onPage={/^\/w\/[^/]+\/p\//.test(location.pathname)} />}
+      {!isMobile && <AppRibbon wsId={wsId} pathname={location.pathname} />}
       <div className="app-body">
         {isMobile && sidebarOpen && <div className="drawer-backdrop" onClick={() => ui.setSidebar(false)} />}
         {!isMobile && <Rail wsId={wsId} view={viewOf(location.pathname)} />}
