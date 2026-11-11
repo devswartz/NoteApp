@@ -129,13 +129,14 @@ export function documentExtensions(pageId: string): Extensions {
 
 /**
  * Shortcuts OneNote users expect, on top of TipTap's own (Ctrl+Alt+1/2/3 headings come from
- * StarterKit): Ctrl+1 checklist (OneNote's To Do tag), Ctrl+. bullets.
+ * StarterKit): Ctrl+1 makes a task (where OneNote's To Do tag was; a task is what people
+ * mean here), Ctrl+. bullets.
  */
 const OneNoteKeys = Extension.create({
   name: 'oneNoteKeys',
   addKeyboardShortcuts() {
     return {
-      'Mod-1': () => this.editor.commands.toggleTaskList(),
+      'Mod-1': () => this.editor.commands.convertToTask() || this.editor.commands.insertTask(),
       'Mod-.': () => this.editor.commands.toggleBulletList(),
     };
   },

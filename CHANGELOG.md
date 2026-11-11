@@ -28,6 +28,7 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 - **OneNote import keeps box positions:** pages made in OneNote come in as canvases with each box where it was; pages without positions become one wide box. (#135)
 
 ### Fixes
+- Ribbon: **Task** is now the main list button (and Ctrl+1): it makes the line a tracked task, or starts a new one. A plain checkbox is in its dropdown.
 - Desktop: checks for updates every time the app opens (was at most once a day).
 
 ## v0.2.1

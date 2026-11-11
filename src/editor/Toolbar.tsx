@@ -678,14 +678,14 @@ export function Ribbon() {
         {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
         <span className="rb-split">
           {btn(
-            `To Do: a checkbox item (${keyLabel(MOD, '1')}). Use the arrow, or ${keyLabel(MOD, ENTER)}, to make it a tracked task with a due date and assignee`,
-            <ListChecks />,
-            () => chain().toggleTaskList().run(),
-            { active: s?.check, text: 'To Do' },
+            `Task: make this line a tracked task, or start a new one (${keyLabel(MOD, '1')} or ${keyLabel(MOD, ENTER)})`,
+            <CircleCheck />,
+            () => (s?.canTask ? chain().convertToTask().run() : chain().insertTask().run()),
+            { text: 'Task' },
           )}
           <ToolbarMenu
-            label="To Do options"
-            title={off ? IDLE_HINT : 'More To Do options'}
+            label="More list options"
+            title={off ? IDLE_HINT : 'Plain checkbox'}
             className="rb-split-arrow"
             disabled={off}
             trigger={<ChevronDown size={14} />}
@@ -694,19 +694,14 @@ export function Ribbon() {
               <button
                 type="button"
                 className="tb-pop-item rb-rule-item"
-                aria-disabled={!s?.canTask || undefined}
-                title={`Make it a tracked task (${keyLabel(MOD, ENTER)})`}
+                title="A plain checkbox item: no due date or assignee, not on the Tasks dashboard"
                 onClick={() => {
-                  if (!s?.canTask) return;
                   close();
-                  chain().convertToTask().run();
+                  chain().toggleTaskList().run();
                 }}
               >
-                <CircleCheck size={16} />
-                Make it a task
-                <kbd className="tb-pop-key" aria-hidden>
-                  {keyLabel(MOD, ENTER)}
-                </kbd>
+                <ListChecks size={16} />
+                Plain checkbox
               </button>
             )}
           </ToolbarMenu>
