@@ -2,34 +2,52 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
-## Unreleased
+## v0.3.0
 
-### New
-- **Tables in the ribbon:** with the cursor in a table, the ribbon shows a highlighted **Table** group after Insert: insert row above/below, insert column left/right, header row, merge/split cells, delete row/column/table. The floating table bar no longer covers the first rows on desktop and tablet; on phones it floats above the table (below it when there's no room) and never over a cell.
-- **Backspace leaves toggles, callouts and quotes:** like outlines in Word, Backspace on an empty line at the end of a toggle, callout or quote moves that line out to just after the block (one Ctrl+Z puts it back); a second Backspace joins as usual. Enter on an empty last line of a toggle exits the same way, and a toggle always keeps at least one line. Lists already outdent on Backspace at the start of an item.
-- **Links: edit the link text.** The link editor (Ctrl/Cmd+K, the ribbon's and floating toolbar's link buttons, /link) has two fields like OneNote: **Text** and **Address**. Changing the text replaces the linked text, keeping its bold, colour and other formatting; with nothing selected the link is inserted at the cursor; empty Text uses the address. Enter applies, Escape cancels, Tab moves between the fields, and one undo reverts it.
-- **Printing:** Ctrl/Cmd+P, **Print** in the ribbon's Page group and "Print / save as PDF" in the page menu print the open page laid out for paper: title with notebook › section and date on top, boxes in reading order (boxes side by side on the canvas print as columns when they fit, otherwise one under the other), text reflowed to the paper width so nothing is clipped, page numbers in the footer, good page breaks (not inside tasks, table rows, images, callouts or code), A4 and Letter. Tasks print as a compact checkbox line with due date, assignee and priority (done ones struck through); dark-mode colours print in their light versions; links show their address in small print; code wraps. Page colour prints only with "Print page colour" (page menu); rule lines never. **Print section** in a section's menu prints all its pages and subsections in tree order, each on a new sheet. Every platform opens its native print dialog (with Save as PDF): macOS and iOS print through WebKit's print operation, Android through PrintManager.
-- **Rule lines: content snaps to the line grid.** With Lines or Grid on, everything on the page sits on one 28px grid like ruled paper: each line of text rests on a rule line, headings take two lines, tasks and checklist items one line per title line, table rows whole lines, and images, callouts, code blocks, dividers and file cards are rounded up so the text after them is back on the lines. New and moved boxes snap to the lines (older boxes are drawn on them). With rule lines off nothing changes.
-- **Contextual ribbon:** the ribbon now stays in every section with controls for it. Tasks: New task, Show (Today, Upcoming, My Tasks, All, Completed), Organise (Group, Sort, Show completed), Filter (Assignee, Tags, Team, Priority, More filters, Clear) and Views (Saved views, Save view); controls that don't apply to a view are disabled with a tooltip saying why, and active filters highlight their button with a count (All Tasks also lists them next to the task count). Calendar: New task, Today ◀ ▶, Week / Month, and Mine / Everyone, Tags and Team filters. Notes overview: New page, New section, New notebook and Import (OneNote, Markdown). Settings: Back to notes. Collapsing it is remembered across sections. On desktop the matching in-page controls (filter chips, sort/group selects, saved-view tabs, calendar switches) are gone; phones keep them.
-- **Pages and task views are left-aligned and full width, like OneNote:** a page's title and boxes start just inside the left edge of the note area instead of in a centred column, and its main box runs to the right edge, following window and panel resizes (a box you've resized keeps its width). The "Full width" page setting is gone (it's always on); the outline is a strip in the right margin. Today, Upcoming, My Tasks, All Tasks, Completed, Calendar and the Notes overview use the same left-aligned, full-width layout. Phones are unchanged.
-- **Ribbon, full width:** the ribbon now runs across the whole window at the very top, above the rail, the panels and the note, like OneNote. It's taller with larger buttons, text labels on key buttons and group names (Text, Lists, Insert, Page, View). New: Quote and Code styles, Clear formatting, File, Page link and Divider, and an Outline toggle. **To Do** replaces Checklist and Task: it makes a checkbox item, and its arrow (or Ctrl+Enter) makes it a tracked task. It's live as soon as a page opens (acting on the first box, even with the caret in the title); Tasks, Calendar and Settings show a quiet strip instead. A chevron or Ctrl+F1 collapses it to a strip with "Show ribbon" (remembered on this device). F6 reaches it first from the note. Narrow windows compact it to one row. The floating toolbar uses the same colour controls and icons.
-- **OneNote shortcuts:** Ctrl+1 To Do checkbox, Ctrl+. bullets, Ctrl+Alt+1/2/3 headings; shown in the ribbon's tooltips.
-- **Page colour and rule lines:** give a page a soft background colour (yellow, green, blue, purple, pink or grey; light and gentler dark variants) and faint rule lines or a grid across the page behind its boxes (not through tables or the box you're typing in), from the ribbon's Page group. Saved with the page, synced live to everyone, kept in templates, exports and version restores.
-- **Ribbon:** the formatting toolbar is now a OneNote-style ribbon fixed across the top of the note area (text style, basic text, lists, insert, undo/redo). It stays put while the page scrolls, acts on the box you were last in on a canvas, shows its controls greyed out when there's nothing to edit, and is its own F6 stop with arrow keys between buttons. Phones keep the floating toolbar.
-- **Ribbon:** each group has a small label underneath (Text, Basic text, Lists, Insert, History), dropped on narrower windows. The floating toolbar over a selection now always shows above the ribbon, flipping below the selection when it's right under the ribbon, including in canvas boxes near the top.
-- **Canvas pages:** click anywhere on a page and type. Each text box is a full editor (headings, lists, tasks, tables, images); drag its top edge to move it and its right edge to set its width. Boxes can sit side by side or overlap, and collaborators see them appear and move live. Search, tasks, mentions, links and exports see every box. (#134, #137)
-- **Every page is a canvas, like OneNote.** Open a blank page and just start typing: the first text box is ready at the top left, as wide as the old document column (the whole page with "Full width"), and is only saved once you type. Click anywhere else to start another box. Existing pages are converted automatically when the server updates: each becomes a canvas with one wide box holding its content, looking as it did, and the page as it was is kept in Version history. Document pages, "New document page" and the convert menu items are gone.
-- A text box stays opaque while its floating formatting toolbar has keyboard focus.
-- The "On this page" outline lists the headings of every box in reading order and jumps into the right box; task links (`?task=`) find tasks in any box. On phones a page with one box is simply one full-width editor.
-- **Templates on canvases:** the built-in templates (meeting notes, project, daily journal) come laid out as boxes on a canvas, and notebook templates make canvas pages. A template saved from a document page before this release fills one wide box.
-- **Undo on canvases:** Ctrl+Z outside a text box undoes creating, moving, resizing or deleting a box.
-- **Canvas pages on phones** show the boxes one under the other in reading order, full width, with "Add a text box" at the end.
-- Save as template, Version history (preview and restore the whole canvas), Markdown export and Markdown import (into a new box) now work on canvas pages.
-- **OneNote import keeps box positions:** pages made in OneNote come in as canvases with each box where it was; pages without positions become one wide box. (#135)
+The OneNote release: every page is a canvas, with a OneNote-style ribbon, printing, and a roomier layout.
+
+**When the server updates, it converts every existing page to a canvas** with one wide box holding its content, so pages look as they did. Each page's previous version is kept in Version history.
+
+### Pages
+- **Every page is a canvas, like OneNote.** Open a page and start typing. Click anywhere to start another text box. Drag a box by its top edge to move it and by its right edge to resize it. Boxes can sit side by side or overlap, and collaborators see them appear and move live. Ctrl+Z outside a box undoes creating, moving, resizing or deleting it.
+- **Boxes are see-through.** Only the box you're typing in is opaque.
+- **Every box is included.** Search, tasks, mentions, links, the outline, version history, templates and Markdown export and import cover every box. The built-in templates come laid out as boxes.
+- **OneNote import keeps box positions.** Pages without positions come in as one wide box.
+- **Left-aligned and full width.** Pages, task views, the calendar and the Notes overview start at the left and use the whole width. The page's main box runs to the right edge. The "Full width" option is gone.
+- **Phones:** boxes are shown one under the other, with "Add a text box" at the end. A page with one box is a normal editor.
+
+### Ribbon
+- **A OneNote-style ribbon** runs across the top of the window. It has these groups: Text, Lists, Insert, Page and View. Larger buttons have labels.
+- **Collapse it** with the chevron or Ctrl+F1. The setting is remembered.
+- **Keyboard:** F6 reaches the ribbon.
+- **Phones** keep the floating toolbar.
+- **Task** is the main list button. It makes the line a tracked task, or starts a new one. A plain checkbox is in its dropdown.
+- **OneNote shortcuts:** Ctrl+1 makes a task, Ctrl+. makes bullets, and Ctrl+Alt+1/2/3 make headings.
+- **Tables:** with the cursor in a table, a **Table** group appears. It inserts and deletes rows and columns, toggles the header row, and merges and splits cells. Nothing covers the table any more. On phones the table menu sits above the table.
+- **It changes with the section.** Tasks has new task, view, group, sort, filters and saved views. Calendar has today, back and forward, week or month, and filters. The Notes overview has new page, section and notebook, and import. The duplicate controls on those pages are gone on desktop.
+
+### Page colour and rule lines
+- **Page colour:** a soft background colour per page, with gentler tints in dark mode. It syncs live and is kept in templates and versions.
+- **Rule lines or grid:** with them on, text, headings, tasks and tables snap to the lines, centred between them like ruled paper. With them off, nothing changes.
+
+### Printing
+- **Print** with Ctrl/Cmd+P, the ribbon's Print button or the page menu. Every platform opens its native print dialog, which also offers Save as PDF.
+- **Laid out for paper:**
+  - boxes print in reading order, as columns when they fit;
+  - nothing is clipped, and page breaks avoid splitting content;
+  - the title and notebook › section print at the top, with page numbers (not on Apple devices);
+  - tasks print as compact checkboxes;
+  - page colour prints only if you ask; rule lines never print.
+- **Print section** prints every page in a section.
+
+### Editing
+- **Links:** the link editor has **Text** and **Address** fields, like OneNote.
+- **Backspace leaves a block:** Backspace on an empty last line in a toggle, callout or quote moves the line out of it, Word-outline style. Enter does the same in toggles.
+- **Backspace in an empty new task** leaves a normal line instead of selecting the task above.
+- **Task circles** line up with the title.
 
 ### Fixes
-- Ribbon: **Task** is now the main list button (and Ctrl+1): it makes the line a tracked task, or starts a new one. A plain checkbox is in its dropdown.
-- Desktop: checks for updates every time the app opens (was at most once a day).
+- Desktop: checks for updates every time the app opens. It used to check at most once a day, and the check still never slows startup.
 
 ## v0.2.1
 
