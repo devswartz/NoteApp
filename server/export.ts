@@ -34,6 +34,7 @@ import {
   type TplTask,
 } from './templates.ts';
 import { APP_NAME } from '../shared/config.ts';
+import { MAX_SECTION_DEPTH, sectionAncestry } from '../shared/sections.ts';
 import { recurrenceError } from '../shared/recurrence.ts';
 import { sanitizeContent } from '../shared/urls.ts';
 import type { Priority } from '../shared/types.ts';
@@ -56,7 +57,7 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     .prepare(`SELECT n.id, n.name, n.color, n.visibility, n.created_by, n.position FROM notebooks n WHERE n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE} ORDER BY n.position`)
     .all(p) as Row[];
   const nbIds = new Set(notebooks.map((n) => n.id));
-  const sections = (db.prepare('SELECT id, notebook_id, name, color, position FROM sections ORDER BY position').all() as Row[]).filter((s) =>
+  const sections = (db.prepare('SELECT id, notebook_id, parent_id, name, color, position FROM sections ORDER BY position').all() as Row[]).filter((s) =>
     nbIds.has(s.notebook_id),
   );
   const secIds = new Set(sections.map((s) => s.id));
@@ -70,6 +71,10 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     .prepare(`SELECT * FROM templates WHERE workspace_id = ? AND (visibility = 'workspace' OR created_by = ?) ORDER BY created_at, id`)
     .all(workspaceId, userId) as Row[];
   const tplIds = new Set(templates.map((t) => t.id));
+  // Where each template is offered (only rows for exported templates and sections).
+  const templateSections = (
+    db.prepare('SELECT ts.* FROM template_sections ts JOIN templates t ON t.id = ts.template_id WHERE t.workspace_id = ?').all(workspaceId) as Row[]
+  ).filter((r) => tplIds.has(r.template_id) && secIds.has(r.section_id));
   // A file goes with its page or its template, so nothing in a private notebook or another
   // person's private template is exported.
   const files = (db.prepare('SELECT * FROM files WHERE workspace_id = ?').all(workspaceId) as Row[]).filter((f) =>
@@ -79,17 +84,22 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
   const entries: ZipEntry[] = [];
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const used = new Set<string>();
+  const sectionLinks = sections.map((s) => ({ id: s.id as string, parentId: s.parent_id as string | null, name: s.name as string }));
   for (const pg of pages) {
     const sec = sections.find((s) => s.id === pg.section_id)!;
     const nb = notebooks.find((n) => n.id === sec.notebook_id)!;
+    // Subsections are nested folders: pages/<Notebook>/<Section>/<Subsection>/<Title>.md
+    const dir = sectionAncestry(sectionLinks, sec.id)
+      .map((s) => safeName(s.name))
+      .join('/');
     const doc = new Y.Doc();
     if (pg.ydoc) Y.applyUpdate(doc, new Uint8Array(pg.ydoc));
     const md = toMarkdown(pg.title, doc.getXmlFragment('default'), (id) => {
       const t = taskById.get(id);
       return t && { title: t.title, done: t.status === 'done', due: t.due_date };
     });
-    let file = `pages/${safeName(nb.name)}/${safeName(sec.name)}/${safeName(pg.title)}`;
-    for (let i = 2; used.has(file); i++) file = `pages/${safeName(nb.name)}/${safeName(sec.name)}/${safeName(pg.title)} (${i})`;
+    let file = `pages/${safeName(nb.name)}/${dir}/${safeName(pg.title)}`;
+    for (let i = 2; used.has(file); i++) file = `pages/${safeName(nb.name)}/${dir}/${safeName(pg.title)} (${i})`;
     used.add(file);
     entries.push({ name: `${file}.md`, data: Buffer.from(md) });
   }
@@ -112,6 +122,7 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     tasks,
     files,
     templates: templates.map(({ content, tasks: snaps, ...t }) => ({ ...t, content: JSON.parse(content), tasks: JSON.parse(snaps) })),
+    templateSections,
   };
   entries.unshift({ name: 'workspace.json', data: Buffer.from(JSON.stringify(manifest, null, 2)) });
   entries.push(...fileEntries);
@@ -227,6 +238,25 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
         );
       }
       const importedSections = new Set(sections.filter((s) => notebooks.some((n) => n.id === s.notebook_id)).map((s) => s.id));
+      // Nesting: kept when the whole chain of parents is imported, in the same notebook, without a
+      // cycle and within MAX_SECTION_DEPTH levels; otherwise the section lands at the top level.
+      const byId = new Map(sections.filter((s) => importedSections.has(s.id)).map((s) => [String(s.id), s]));
+      const setParent = db.prepare('UPDATE sections SET parent_id = ? WHERE id = ?');
+      for (const s of byId.values()) {
+        if (typeof s.parent_id !== 'string') continue;
+        let ok = true;
+        const seen = new Set<string>([String(s.id)]);
+        for (let cur = s; typeof cur.parent_id === 'string'; ) {
+          const parent = byId.get(cur.parent_id);
+          if (!parent || parent.notebook_id !== s.notebook_id || seen.has(cur.parent_id) || seen.size >= MAX_SECTION_DEPTH) {
+            ok = false;
+            break;
+          }
+          seen.add(cur.parent_id);
+          cur = parent;
+        }
+        if (ok) setParent.run(map.get(s.parent_id), map.get(String(s.id)));
+      }
       const importedPages = new Set<string>();
       for (const pg of pages) {
         if (!importedSections.has(pg.section_id)) continue;
@@ -297,6 +327,11 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
         ).run(fresh(t.id), workspaceId, text(t.name, MAX_TEMPLATE_NAME) || 'Template', icon(t.icon), t.visibility === 'private' ? 'private' : 'workspace', content, JSON.stringify(snaps), userId, isoOr(t.created_at, ts), ts);
       }
       const importedTemplates = new Set(templates.filter((t) => map.has(String(t.id))).map((t) => String(t.id)));
+      const scope = db.prepare('INSERT OR IGNORE INTO template_sections (template_id, section_id, include_subsections) VALUES (?, ?, ?)');
+      for (const r of list(m.templateSections, 'templateSections')) {
+        if (importedTemplates.has(String(r.template_id)) && importedSections.has(r.section_id))
+          scope.run(map.get(String(r.template_id)), map.get(r.section_id), r.include_subsections ? 1 : 0);
+      }
 
       fs.mkdirSync(FILES_DIR, { recursive: true });
       for (const { row: f, data, id, ext } of fileRows) {

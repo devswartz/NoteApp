@@ -10,6 +10,7 @@ import { Router } from 'express';
 import { db } from '../db.ts';
 import { PAGE_VISIBLE, TASK_VISIBLE, requireRole } from '../access.ts';
 import { rowToTask } from '../tasks.ts';
+import { sectionPathNames } from '../tree.ts';
 import { h, param } from '../http.ts';
 import type { SearchResult } from '../../shared/types.ts';
 
@@ -35,12 +36,17 @@ export function search(workspaceId: string, userId: string, q: string, limit = 2
     .prepare(
       `SELECT pg.id, pg.title, pg.icon,
          CASE WHEN length(f.text) > 0 THEN snippet(pages_fts, 2, '«', '»', '…', 14) ELSE '' END AS snippet,
-         n.name AS notebookName, s.name AS sectionName
+         n.name AS notebookName, s.name AS sectionName, s.id AS sectionId
        FROM pages_fts f JOIN pages pg ON pg.id = f.page_id JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
        WHERE pages_fts MATCH @fts AND n.workspace_id = @workspaceId AND ${PAGE_VISIBLE}
        ORDER BY bm25(pages_fts, 0, 10, 1), pg.updated_at DESC LIMIT @limit`,
     )
-    .all(p) as SearchResult['pages'];
+    .all(p)
+    .map((r) => {
+      const { sectionId, ...hit } = r as Omit<SearchResult['pages'][number], 'path'> & { sectionId: string };
+      // "Notebook › Section › Subsection": sections share their notebook's access, so the whole path is visible.
+      return { ...hit, path: [hit.notebookName, ...sectionPathNames(sectionId)].join(' › ') };
+    });
   const rows = db
     .prepare(
       `SELECT t.*, snippet(tasks_fts, 2, '«', '»', '…', 10) AS fts_snippet

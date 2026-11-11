@@ -4,7 +4,18 @@ import { db, newId, now, pickColor } from '../db.ts';
 import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { dropForeignPageShares } from '../workspaces.ts';
-import { copyPage, detachPagesTasks, nextPos, positionAt, refreshTasksForNotebook, validColor } from '../tree.ts';
+import {
+  checkSectionParent,
+  copyPage,
+  detachPagesTasks,
+  nextPos,
+  nextSectionPos,
+  positionAt,
+  refreshTasksForNotebook,
+  sectionPositionAt,
+  sectionSubtree,
+  validColor,
+} from '../tree.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
 
@@ -24,7 +35,7 @@ treeRoutes.get(
       .all(p) as Notebook[];
     const sections = db
       .prepare(
-        `SELECT s.id, s.notebook_id AS notebookId, s.name, s.color, s.position FROM sections s
+        `SELECT s.id, s.notebook_id AS notebookId, s.parent_id AS parentId, s.name, s.color, s.position FROM sections s
          JOIN notebooks n ON n.id = s.notebook_id WHERE n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE} ORDER BY s.position`,
       )
       .all(p) as Section[];
@@ -104,9 +115,12 @@ treeRoutes.post(
   h((req) => {
     const notebookId = param(req, 'id');
     const a = mustAccess(notebookAccess(notebookId, req.user.id), true);
+    // { parentId } makes it a subsection of that section (same notebook, at most MAX_SECTION_DEPTH levels).
+    const parentId = typeof req.body.parentId === 'string' && req.body.parentId ? req.body.parentId : null;
+    checkSectionParent(null, notebookId, parentId);
     const id = newId();
-    db.prepare('INSERT INTO sections (id, notebook_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-      id, notebookId, str(req.body.name, 'Name', 100), validColor(req.body.color, pickColor), nextPos('sections', 'notebook_id', notebookId), now(),
+    db.prepare('INSERT INTO sections (id, notebook_id, parent_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      id, notebookId, parentId, str(req.body.name, 'Name', 100), validColor(req.body.color, pickColor), nextSectionPos(notebookId, parentId), now(),
     );
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { id };
@@ -121,7 +135,12 @@ treeRoutes.patch(
     const b = req.body;
     if (b.name !== undefined) db.prepare('UPDATE sections SET name = ? WHERE id = ?').run(str(b.name, 'Name', 100), id);
     if (b.color !== undefined) db.prepare('UPDATE sections SET color = ? WHERE id = ?').run(validColor(b.color, () => { throw new HttpError(400, 'Colour must look like #4f46e5'); }), id);
-    if (b.notebookId !== undefined && b.notebookId !== a.notebookId) moveSectionTo(id, a, String(b.notebookId), req.user.id);
+    if ((b.notebookId !== undefined && b.notebookId !== a.notebookId) || b.parentId !== undefined) {
+      const notebookId = b.notebookId !== undefined ? String(b.notebookId) : a.notebookId;
+      const parentId = b.parentId === undefined ? (notebookId === a.notebookId ? currentParent(id) : null) : b.parentId ? String(b.parentId) : null;
+      moveSectionTo(id, a, notebookId, parentId, req.user.id);
+      if (typeof b.position !== 'number') db.prepare('UPDATE sections SET position = ? WHERE id = ?').run(sectionPositionAt(notebookId, parentId, Infinity, id), id);
+    }
     if (typeof b.position === 'number') db.prepare('UPDATE sections SET position = ? WHERE id = ?').run(b.position, id);
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };
@@ -133,21 +152,41 @@ treeRoutes.delete(
   h((req) => {
     const id = param(req, 'id');
     const a = mustAccess(sectionAccess(id, req.user.id), true);
-    const pages = db.prepare('SELECT id FROM pages WHERE section_id = ?').all(id) as { id: string }[];
+    // Its subsections go with it (ON DELETE CASCADE), so their pages' tasks are detached too.
+    const subtree = sectionSubtree(id);
+    const pages = db
+      .prepare(`SELECT id FROM pages WHERE section_id IN (${subtree.map(() => '?').join(', ')})`)
+      .all(...subtree) as { id: string }[];
     detachPagesTasks(pages.map((p) => p.id), () => db.prepare('DELETE FROM sections WHERE id = ?').run(id));
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { ok: true };
   }),
 );
 
-/** Move a section (with its pages) into another notebook of the same workspace. */
-function moveSectionTo(id: string, a: { workspaceId: string; notebookId: string }, notebookId: string, userId: string) {
-  const t = mustAccess(notebookAccess(notebookId, userId), true);
+const currentParent = (id: string) => (db.prepare('SELECT parent_id FROM sections WHERE id = ?').get(id) as { parent_id: string | null }).parent_id;
+
+/**
+ * Move a section (with its subsections and pages) under `parentId`, or to the top level of
+ * `notebookId` when it's null; the notebook may be another one in the same workspace.
+ * Checks access to the target, cycles and the depth limit. Position is set by the caller.
+ */
+function moveSectionTo(id: string, a: { workspaceId: string; notebookId: string }, notebookId: string, parentId: string | null, userId: string) {
+  const t = notebookId === a.notebookId ? a : mustAccess(notebookAccess(notebookId, userId), true);
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
-  db.prepare('UPDATE sections SET notebook_id = ? WHERE id = ?').run(notebookId, id);
-  // Visibility may differ between the two notebooks.
-  accessChanged(); // collaborators may have lost access to its pages
-  refreshTasksForNotebook(notebookId);
+  checkSectionParent(id, notebookId, parentId);
+  const subtree = sectionSubtree(id);
+  db.transaction(() => {
+    db.prepare('UPDATE sections SET parent_id = ? WHERE id = ?').run(parentId, id);
+    if (notebookId !== a.notebookId) {
+      const upd = db.prepare('UPDATE sections SET notebook_id = ? WHERE id = ?');
+      for (const s of subtree) upd.run(notebookId, s);
+    }
+  })();
+  if (notebookId !== a.notebookId) {
+    // Visibility may differ between the two notebooks.
+    accessChanged(); // collaborators may have lost access to its pages
+    refreshTasksForNotebook(notebookId);
+  }
 }
 
 /** POST /notebooks/:id/move { index } — reorder notebooks in the sidebar. */
@@ -164,19 +203,32 @@ treeRoutes.post(
   }),
 );
 
-/** POST /sections/:id/move { notebookId?, index? } — reorder, or move into another notebook. */
+/**
+ * POST /sections/:id/move { notebookId?, parentId?, index? } — reorder, nest, un-nest, or move into
+ * another notebook. parentId: a section id (nest under it; its notebook wins), null (top level), or
+ * omitted (keep the parent when staying in the same notebook, else top level).
+ */
 treeRoutes.post(
   '/sections/:id/move',
   h((req) => {
     const id = param(req, 'id');
     const a = mustAccess(sectionAccess(id, req.user.id), true);
-    const notebookId = typeof req.body.notebookId === 'string' ? req.body.notebookId : a.notebookId;
-    if (notebookId !== a.notebookId) moveSectionTo(id, a, notebookId, req.user.id);
-    const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
-    const position = positionAt('sections', 'notebook_id', notebookId, index, id);
+    const b = req.body ?? {};
+    let parentId: string | null;
+    let notebookId = typeof b.notebookId === 'string' ? b.notebookId : a.notebookId;
+    if (typeof b.parentId === 'string' && b.parentId) {
+      parentId = b.parentId;
+      const p = db.prepare('SELECT notebook_id FROM sections WHERE id = ?').get(parentId) as { notebook_id: string } | undefined;
+      if (!p) throw new HttpError(404, 'That section no longer exists');
+      notebookId = p.notebook_id;
+    } else if (b.parentId === null) parentId = null;
+    else parentId = notebookId === a.notebookId ? currentParent(id) : null;
+    if (notebookId !== a.notebookId || parentId !== currentParent(id)) moveSectionTo(id, a, notebookId, parentId, req.user.id);
+    const index = typeof b.index === 'number' ? b.index : Infinity;
+    const position = sectionPositionAt(notebookId, parentId, index, id);
     db.prepare('UPDATE sections SET position = ? WHERE id = ?').run(position, id);
     publish({ type: 'tree', workspaceId: a.workspaceId });
-    return { ok: true, notebookId, position };
+    return { ok: true, notebookId, parentId, position };
   }),
 );
 
@@ -189,14 +241,28 @@ treeRoutes.post(
     const notebookId = typeof req.body.notebookId === 'string' ? req.body.notebookId : a.notebookId;
     const t = mustAccess(notebookAccess(notebookId, req.user.id), true);
     if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot copy between workspaces');
-    const src = db.prepare('SELECT name, color FROM sections WHERE id = ?').get(id) as { name: string; color: string };
+    const src = db.prepare('SELECT name, color, parent_id FROM sections WHERE id = ?').get(id) as { name: string; color: string; parent_id: string | null };
     const name = typeof req.body.name === 'string' && req.body.name.trim() ? str(req.body.name, 'Name', 100) : notebookId === a.notebookId ? `${src.name} (copy)` : src.name;
-    const newSection = newId();
-    db.prepare('INSERT INTO sections (id, notebook_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-      newSection, notebookId, name, src.color, nextPos('sections', 'notebook_id', notebookId), now(),
-    );
-    const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? ORDER BY position').all(id) as { id: string; position: number }[];
-    for (const p of pages) copyPage(p.id, newSection, req.user.id, { position: p.position });
+    // A copy in the same notebook sits next to the original; in another notebook, at its top level.
+    const parentId = notebookId === a.notebookId ? src.parent_id : null;
+    // Subsections are copied too, keeping their nesting.
+    const copySection = (from: string, parent: string | null, sectionName: string, color: string, position: number): string => {
+      const newSection = newId();
+      db.prepare('INSERT INTO sections (id, notebook_id, parent_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        newSection, notebookId, parent, sectionName, color, position, now(),
+      );
+      const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? ORDER BY position').all(from) as { id: string; position: number }[];
+      for (const p of pages) copyPage(p.id, newSection, req.user.id, { position: p.position });
+      const subs = db.prepare('SELECT id, name, color, position FROM sections WHERE parent_id = ? ORDER BY position').all(from) as {
+        id: string;
+        name: string;
+        color: string;
+        position: number;
+      }[];
+      for (const s of subs) copySection(s.id, newSection, s.name, s.color, s.position);
+      return newSection;
+    };
+    const newSection = copySection(id, parentId, name, src.color, nextSectionPos(notebookId, parentId));
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { id: newSection };
   }),
