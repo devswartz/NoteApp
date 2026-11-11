@@ -23,7 +23,8 @@ import { UserMenu, WorkspaceSwitcher } from './shell/Rail.tsx';
 import type { MoveItem, NodeProps } from './shell/notesRows.tsx';
 
 /** Below this width the pages panel folds into the section tree. */
-export const FOLD_QUERY = '(max-width: 1100px)';
+// Below this width the pages list folds into the sections tree (one panel instead of two).
+export const FOLD_QUERY = '(max-width: 1400px)';
 
 export function Sidebar() {
   const { wsId } = useParams() as { wsId: string };

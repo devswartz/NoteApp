@@ -114,3 +114,21 @@ test('rail and panels pass axe on every view; the user menu switches the theme',
   await page.getByRole('group', { name: 'Theme' }).getByRole('button', { name: 'Light' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
+
+test('narrower windows fold the pages into the sections tree; hidden panels stay hidden after a reload', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Nora Narrow');
+  const { pageId } = await createPage(request, user, { notebook: 'Narrow Notebook', page: 'Folded page' });
+  await signInContext(context, user);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openPage(page, user.wsId, pageId);
+
+  const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
+  await expect(sidebar.getByRole('tree', { name: 'Sections' }).getByText('Folded page')).toBeVisible();
+  await expect(sidebar.getByRole('tree', { name: 'Pages' })).toHaveCount(0);
+
+  await page.keyboard.press('ControlOrMeta+Backslash');
+  await expect(sidebar).toBeHidden();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
+  await expect(sidebar).toBeHidden();
+});

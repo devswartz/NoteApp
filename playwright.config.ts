@@ -54,7 +54,8 @@ export default defineConfig({
     locale: 'en-US',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: ['**/*.mobile.spec.ts', '**/*.tokens.spec.ts', '**/*.invite.spec.ts', '**/*.verify.spec.ts'] },
+    // Wide enough for the two Notes panels (they fold into one below 1400px).
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } }, testIgnore: ['**/*.mobile.spec.ts', '**/*.tokens.spec.ts', '**/*.invite.spec.ts', '**/*.verify.spec.ts'] },
     { name: 'mobile', use: { ...devices['iPhone 13'], browserName: 'chromium' }, testMatch: '**/*.mobile.spec.ts' },
     ...(external && !process.env.E2E_VERIFY_URL
       ? []

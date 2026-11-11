@@ -1065,7 +1065,7 @@ body.is-resizing .sidebar { transition: none; }
 .task-ref { margin: 2px 0; position: relative; }
 .task-ref-inner {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 36px;
   padding: 3px 6px 3px 4px;
@@ -1094,8 +1094,16 @@ body.is-resizing .sidebar { transition: none; }
   border: 0;
   outline: 0;
   background: none;
+  color: inherit;
+  font: inherit;
   font-size: 16px;
+  line-height: 1.5;
   padding: 2px 0;
+  resize: none;
+  overflow: hidden;
+  /* Long titles wrap onto more lines (the height follows the text, see useAutoHeight). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .task-ref-title::placeholder { color: var(--text-muted); opacity: 0.7; }
 .task-ref.is-done .task-ref-title { text-decoration: line-through; color: var(--text-muted); }
