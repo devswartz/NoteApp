@@ -1,0 +1,105 @@
+/* ==== Editor toolbar (Track 4): fixed toolbar, colour menus, hover "turn into task" ==== */
+
+/* Fixed toolbar: sticks just under the page top bar (48px) while the page scrolls. */
+.editor-toolbar {
+  position: sticky;
+  top: 48px;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  row-gap: 2px;
+  margin: 4px -8px 20px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-xs);
+}
+.editor-toolbar .bm-sep { margin: 0 4px; }
+.editor-toolbar .bm-btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
+.editor-toolbar .bm-btn[aria-disabled='true']:hover { background: none; color: var(--text-2); }
+.tb-spacer { flex: 1; }
+/* The floating toolbar over a selection near the top must sit above the fixed one. */
+.bubble-menu { z-index: 5; }
+/* Phones: the floating toolbar wraps onto a second row instead of running off the screen. */
+@media (max-width: 760px) {
+  .bubble-menu { max-width: calc(100vw - 16px); }
+  .bubble-menu-bar { flex-wrap: wrap; row-gap: 2px; }
+}
+@media (max-width: 760px) { .editor-toolbar { display: none; } }
+@media print { .editor-toolbar { display: none !important; } }
+
+/* Menus (block type, colours) open below their button, inside the toolbar's DOM. */
+.tb-menu { position: relative; display: inline-flex; }
+.tb-menu-btn { gap: 2px; }
+.tb-block { min-width: 112px; justify-content: space-between; padding: 0 6px 0 10px; font-size: 13px; font-weight: 500; color: var(--text); }
+.tb-block-label { white-space: nowrap; }
+.tb-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+}
+.bubble-menu .tb-pop { left: auto; right: 0; }
+.tb-pop-item { display: block; width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; color: var(--text); font-size: 14px; }
+.tb-pop-item:hover, .tb-pop-item:focus-visible { background: var(--bg-hover); }
+.tb-pop-item[aria-pressed='true'] { color: var(--accent); background: var(--accent-soft); }
+.tb-pop-h1 { font-size: 18px; font-weight: 700; }
+.tb-pop-h2 { font-size: 16px; font-weight: 650; }
+.tb-pop-h3 { font-size: 14.5px; font-weight: 600; }
+
+/* The bar under the colour icons shows the colour at the selection. */
+.tb-color-bar { position: absolute; left: 8px; right: 8px; bottom: 4px; height: 3px; border-radius: 2px; }
+.tb-menu-btn:has(.tb-color-bar) { position: relative; padding-bottom: 4px; }
+.tb-color-bar.is-text { background: currentColor; opacity: 0; }
+.tb-color-bar.is-text[data-color] { opacity: 1; }
+.tb-color-bar.is-hl { background: transparent; }
+.tb-color-bar[data-color='gray'].is-text { background: var(--tc-gray); }
+.tb-color-bar[data-color='red'].is-text { background: var(--tc-red); }
+.tb-color-bar[data-color='orange'].is-text { background: var(--tc-orange); }
+.tb-color-bar[data-color='yellow'].is-text { background: var(--tc-yellow); }
+.tb-color-bar[data-color='green'].is-text { background: var(--tc-green); }
+.tb-color-bar[data-color='blue'].is-text { background: var(--tc-blue); }
+.tb-color-bar[data-color='purple'].is-text { background: var(--tc-purple); }
+.tb-color-bar[data-color='pink'].is-text { background: var(--tc-pink); }
+.tb-color-bar[data-color='gray'].is-hl { background: var(--hl-gray); }
+.tb-color-bar[data-color='red'].is-hl { background: var(--hl-red); }
+.tb-color-bar[data-color='orange'].is-hl { background: var(--hl-orange); }
+.tb-color-bar[data-color='yellow'].is-hl { background: var(--hl-yellow); }
+.tb-color-bar[data-color='green'].is-hl { background: var(--hl-green); }
+.tb-color-bar[data-color='blue'].is-hl { background: var(--hl-blue); }
+.tb-color-bar[data-color='purple'].is-hl { background: var(--hl-purple); }
+.tb-color-bar[data-color='pink'].is-hl { background: var(--hl-pink); }
+
+/* Colour choices: a 3×3 grid (Default + 8). */
+.color-choices + .color-choices { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.color-choices-label { padding: 2px 4px 6px; font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.color-grid { display: grid; grid-template-columns: repeat(3, 32px); gap: 4px; }
+.color-choice {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--bg-elevated);
+}
+.color-choice:hover { border-color: var(--border-strong); }
+.color-choice[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--accent); border-color: transparent; }
+.hl-swatch:not([data-color]) { background: var(--bg-elevated); }
+.hl-none { width: 18px; height: 2px; background: var(--text-muted); transform: rotate(-45deg); border-radius: 1px; }
+
+/* Hover "turn into task" next to the block handle. */
+.block-handle-task:hover { color: var(--accent); }
