@@ -101,7 +101,7 @@ src/               React web app
     tasks.ts       task list + optimistic create/update/toggle/delete
     events.ts      live event client
     toasts.ts, ui.ts  (ui.ts: overlay toggles + the light/dark/system theme, applied as <html data-theme>)
-  components/      App shell, sidebar, command palette, quick add, task row/detail/controls, overlays, ui primitives
+  components/      App shell, left rail (shell/Rail.tsx) and per-view panels (Sidebar.tsx → shell/NotesPanel, TasksPanel, CalendarPanel), command palette, quick add, task row/detail/controls, overlays, ui primitives
   editor/          The note editor (see "Editor" below); styles in src/styles/editor.css
   pages/           Route screens: Login, PageView, TasksView (all dashboard views), NotesHome, Settings
   lib/             Formatting and task-view filtering/sorting

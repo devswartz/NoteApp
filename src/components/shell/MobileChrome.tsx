@@ -2,10 +2,12 @@
 // quick-add button, and edge-swipe for the notes drawer (the sidebar).
 // Rendered by AppShell only at phone widths (useIsMobile).
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { BookOpen, Inbox, Menu, Plus, Search, Sun } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BookOpen, CalendarDays, ChevronLeft, ListChecks, Menu, Plus, Search } from 'lucide-react';
 import { ui, useStore } from '../../store.ts';
 import { NotificationBell } from '../sharing/NotificationBell.tsx';
+import { viewOf, viewTarget } from './navState.ts';
+import type { RailView } from './sidebarState.ts';
 
 const VIEW_TITLES: Record<string, string> = {
   today: 'Today',
@@ -64,16 +66,37 @@ function useHeadingVisible(): boolean {
   return visible;
 }
 
+/** On a page, Back goes up to the page's section in the Notes drill-down (notebook → section → page). */
+function usePageBack(): string | null {
+  const { pathname } = useLocation();
+  const wsId = useStore((s) => s.wsId);
+  const pageId = pathname.match(/\/p\/([^/?#]+)/)?.[1];
+  const section = useStore((s) => {
+    const page = pageId ? s.tree.pages.find((p) => p.id === pageId) : undefined;
+    return page ? s.tree.sections.find((x) => x.id === page.sectionId) : undefined;
+  });
+  if (!pageId || !wsId) return null;
+  return section ? `/w/${wsId}/notes?nb=${section.notebookId}&sec=${section.id}` : `/w/${wsId}/notes`;
+}
+
 export function MobileTopBar() {
   const title = useScreenTitle();
   const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
   const headingVisible = useHeadingVisible();
   const showTitle = !headingVisible && ws && title !== ws.name;
+  const back = usePageBack();
+  const navigate = useNavigate();
   return (
     <header className="mobile-top">
-      <button className="btn-ghost icon-btn touch" onClick={() => ui.setSidebar(true)} aria-label="Open menu">
-        <Menu size={21} />
-      </button>
+      {back ? (
+        <button className="btn-ghost icon-btn touch" onClick={() => navigate(back)} aria-label="Back">
+          <ChevronLeft size={22} />
+        </button>
+      ) : (
+        <button className="btn-ghost icon-btn touch" onClick={() => ui.setSidebar(true)} aria-label="Open menu">
+          <Menu size={21} />
+        </button>
+      )}
       <div className={`mobile-title ${showTitle ? 'has-title' : ''}`}>
         {showTitle ? (
           <>
@@ -100,17 +123,23 @@ export function MobileTabBar({ wsId }: { wsId: string }) {
   const { pathname } = useLocation();
   // Not on Settings, and not on a page: there the task sheet and inline tasks sit where the button would.
   const showFab = canEdit && !pathname.endsWith('/settings') && !/\/p\//.test(pathname);
-  const tab = (to: string, icon: React.ReactNode, label: string) => (
-    <NavLink to={to} className={({ isActive }) => `tab ${isActive ? 'is-active' : ''}`}>
+  // The same views as the desktop rail; each reopens where you last were in it.
+  const current = viewOf(pathname);
+  const tab = (view: RailView, icon: React.ReactNode, label: string) => (
+    <Link
+      to={view === 'notes' && current === 'notes' ? `/w/${wsId}/notes` : viewTarget(wsId, view)}
+      className={`tab ${current === view && !paletteOpen ? 'is-active' : ''}`}
+      aria-current={current === view ? 'page' : undefined}
+    >
       {icon}
       <span>{label}</span>
-    </NavLink>
+    </Link>
   );
   return (
     <nav className="tabbar" aria-label="Primary">
-      {tab(`/w/${wsId}/tasks/today`, <Sun size={22} />, 'Today')}
-      {tab(`/w/${wsId}/tasks/my`, <Inbox size={22} />, 'My Tasks')}
-      {tab(`/w/${wsId}/notes`, <BookOpen size={22} />, 'Notes')}
+      {tab('notes', <BookOpen size={22} />, 'Notes')}
+      {tab('tasks', <ListChecks size={22} />, 'Tasks')}
+      {tab('calendar', <CalendarDays size={22} />, 'Calendar')}
       <button className={`tab ${paletteOpen ? 'is-active' : ''}`} onClick={ui.openPalette}>
         <Search size={22} />
         <span>Search</span>

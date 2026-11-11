@@ -31,7 +31,7 @@ interface PopoverProps {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
-  placement?: 'bottom-start' | 'bottom-end' | 'top-start';
+  placement?: 'bottom-start' | 'bottom-end' | 'top-start' | 'right-end';
   className?: string;
 }
 
@@ -46,9 +46,10 @@ export function Popover({ anchor, point, open, onClose, children, placement = 'b
     const p = ref.current.getBoundingClientRect();
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    let left = placement === 'bottom-end' ? a.right - p.width : a.left;
-    let top = placement === 'top-start' ? a.top - p.height - 6 : a.bottom + 6;
-    if (top + p.height > vh - 8) top = Math.max(8, a.top - p.height - 6);
+    let left = placement === 'bottom-end' ? a.right - p.width : placement === 'right-end' ? a.right + 8 : a.left;
+    let top = placement === 'top-start' ? a.top - p.height - 6 : placement === 'right-end' ? a.bottom - p.height : a.bottom + 6;
+    if (placement === 'right-end') top = Math.min(Math.max(8, top), vh - p.height - 8);
+    else if (top + p.height > vh - 8) top = Math.max(8, a.top - p.height - 6);
     left = Math.min(Math.max(8, left), vw - p.width - 8);
     setPos({ top, left });
   }, [open, anchor, placement, point]);
@@ -162,6 +163,7 @@ export function Dropdown({
   buttonClass = 'btn-ghost',
   title,
   disabled,
+  nameFromContent,
 }: {
   trigger: ReactNode;
   children: ReactNode | ((close: () => void) => ReactNode);
@@ -170,6 +172,8 @@ export function Dropdown({
   buttonClass?: string;
   title?: string;
   disabled?: boolean;
+  /** Name the button by its visible content (title stays a tooltip only). */
+  nameFromContent?: boolean;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -181,7 +185,7 @@ export function Dropdown({
         type="button"
         className={buttonClass}
         title={title}
-        aria-label={title}
+        aria-label={nameFromContent ? undefined : title}
         disabled={disabled}
         aria-expanded={open}
         onClick={(e) => {

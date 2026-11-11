@@ -1,5 +1,6 @@
 // Sidebar section "Shared with me" (#98): pages shared with this user one by one.
-// Owner: Collaboration & Access. Rendered by Sidebar.tsx under the notebooks.
+// Owner: Collaboration & Access. Rendered in the Notes panel's notebook picker (shell/NotesPanel.tsx)
+// and on the phone's Notes screen.
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, useParams } from 'react-router-dom';
 import { FileText, Users, X } from 'lucide-react';
@@ -8,7 +9,7 @@ import { errorToast, toast, useStore } from '../../store.ts';
 import { loadSharedPages, sharedPagePath, useShared } from './sharedPages.ts';
 import './sharing.css';
 
-export function SharedWithMe({ wsId }: { wsId: string }) {
+export function SharedWithMe({ wsId, heading = true, onOpen }: { wsId: string; heading?: boolean; onOpen?: () => void }) {
   const pages = useShared((s) => s.pages);
   const me = useStore((s) => s.user?.id);
   // Workspaces I belong to change the link (open in its own workspace when I'm a member).
@@ -19,17 +20,20 @@ export function SharedWithMe({ wsId }: { wsId: string }) {
   if (!pages.length) return null;
   return (
     <div className="sb-group shared-with-me" data-testid="shared-with-me">
-      <div className="sb-heading">
-        <span className="sb-heading-btn sb-heading-static">
-          <Users size={12} />
-          <span>Shared with me</span>
-        </span>
-      </div>
+      {heading && (
+        <div className="sb-heading">
+          <span className="sb-heading-btn sb-heading-static">
+            <Users size={12} />
+            <span>Shared with me</span>
+          </span>
+        </div>
+      )}
       {pages.map((p) => (
         <NavLink
           key={p.id}
           to={sharedPagePath(p.workspaceId, p.id)}
           className={({ isActive }) => `sb-item sb-shared-page ${isActive ? 'is-active' : ''}`}
+          onClick={onOpen}
           title={`${p.title || 'Untitled'}: shared by ${p.sharedByName ?? 'someone'}${p.workspaceId !== wsId ? ` in ${p.workspaceName}` : ''}${p.canEdit ? '' : ' (view only)'}`}
         >
           {p.icon ? <span className="sb-page-icon">{p.icon}</span> : <FileText size={15} />}
