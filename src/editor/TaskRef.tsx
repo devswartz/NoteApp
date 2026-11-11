@@ -104,7 +104,7 @@ export const TaskRef = Node.create<TaskRefOptions>({
       stopEvent: ({ event }) => {
         const el = event.target as HTMLElement | null;
         if (!el || event.type === 'dragstart') return false;
-        return !!el.closest('input, button, a, .popover');
+        return !!el.closest('input, textarea, button, a, .popover');
       },
     });
   },
