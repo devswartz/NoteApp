@@ -6,7 +6,7 @@ import { Editor, getSchema, type JSONContent } from '@tiptap/core';
 import type { Schema } from '@tiptap/pm/model';
 import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap';
 import * as Y from 'yjs';
-import { BOXES_KEY, boxField, boxGeoms, fragmentIsEmpty, readingOrder, type BoxGeom } from '../../shared/pageDoc.ts';
+import { BOXES_KEY, READABLE_BOX_W, boxField, boxGeoms, fragmentIsEmpty, newBoxMap, readingOrder, type BoxGeom } from '../../shared/pageDoc.ts';
 import { documentExtensions } from './NoteEditor.tsx';
 import { newBoxId } from './canvasGeom.ts';
 import { sanitizeContent } from './urls.ts';
@@ -20,6 +20,10 @@ export interface CanvasHandle {
   doc: Y.Doc;
   /** Adds a box with these blocks under everything else; returns its id. */
   addBox: (blocks: JSONContent[]) => string;
+  /** Put the caret in a box's `index`-th heading and scroll there (mounting the box's editor first if needed). */
+  revealHeading: (boxId: string, index: number) => void;
+  /** A box's element on the page (null if it isn't shown). */
+  boxElement: (boxId: string) => HTMLElement | null;
 }
 
 /** A box as a template stores it: geometry plus its blocks. */
@@ -28,6 +32,8 @@ export interface CanvasBoxContent {
   y: number;
   w: number;
   z?: number;
+  /** The page's main box, drawn at the readable width (shared/pageDoc.ts). */
+  wide?: boolean;
   content: JSONContent[];
 }
 
@@ -62,7 +68,11 @@ export function canvasBoxes(doc: Y.Doc, schema: Schema): (BoxGeom & { json: JSON
 export function canvasTemplateJSON(doc: Y.Doc, schema: Schema): JSONContent {
   return {
     type: 'doc',
-    content: canvasBoxes(doc, schema).map((b) => ({ type: CANVAS_BOX_NODE, attrs: { x: b.x, y: b.y, w: b.w, z: b.z }, content: b.json.content ?? [] })),
+    content: canvasBoxes(doc, schema).map((b) => ({
+      type: CANVAS_BOX_NODE,
+      attrs: { x: b.x, y: b.y, w: b.w, z: b.z, ...(b.wide ? { wide: true } : {}) },
+      content: b.json.content ?? [],
+    })),
   };
 }
 
@@ -70,7 +80,14 @@ export function canvasTemplateJSON(doc: Y.Doc, schema: Schema): JSONContent {
 export function templateBoxes(content: JSONContent): CanvasBoxContent[] {
   return (content.content ?? [])
     .filter((n) => n.type === CANVAS_BOX_NODE)
-    .map((n) => ({ x: Number(n.attrs?.x) || 0, y: Number(n.attrs?.y) || 0, w: Number(n.attrs?.w) || 360, z: Number(n.attrs?.z) || 0, content: n.content ?? [] }));
+    .map((n) => ({
+      x: Number(n.attrs?.x) || 0,
+      y: Number(n.attrs?.y) || 0,
+      w: Number(n.attrs?.w) || 360,
+      z: Number(n.attrs?.z) || 0,
+      ...(n.attrs?.wide === true ? { wide: true } : {}),
+      content: n.content ?? [],
+    }));
 }
 
 /** Write boxes (geometry + blocks) into the doc in one transaction; returns their ids. */
@@ -82,16 +99,16 @@ export function writeBoxes(doc: Y.Doc, schema: Schema, boxes: CanvasBoxContent[]
       const id = newBoxId();
       const blocks = b.content.length ? b.content : [{ type: 'paragraph' }];
       prosemirrorJSONToYXmlFragment(schema, sanitizeContent({ type: 'doc', content: blocks }), doc.getXmlFragment(boxField(id)));
-      const m = new Y.Map<unknown>();
-      m.set('x', b.x);
-      m.set('y', b.y);
-      m.set('w', b.w);
-      m.set('z', top + 1 + (b.z ?? i));
-      doc.getMap<unknown>(BOXES_KEY).set(id, m);
+      doc.getMap<unknown>(BOXES_KEY).set(id, newBoxMap({ x: b.x, y: b.y, w: b.w, z: top + 1 + (b.z ?? i), wide: b.wide }));
       ids.push(id);
     });
   }, origin);
   return ids;
+}
+
+/** Document content (a `doc` node) as the one wide box of an empty canvas. */
+export function documentAsBox(content: JSONContent): CanvasBoxContent {
+  return { x: 0, y: 0, w: READABLE_BOX_W, wide: true, content: content.content ?? [] };
 }
 
 /** Write a document's blocks into the `default` fragment (replacing what's there). */

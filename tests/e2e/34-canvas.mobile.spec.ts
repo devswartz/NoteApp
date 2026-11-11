@@ -20,6 +20,8 @@ test('mobile: a new page is a canvas, stacked full width with "Add a text box" a
   await expect(surface).toBeVisible();
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
 
+  // A blank page is simply one full-width editor, ready for typing.
+  await expect(page.locator('.canvas-wrap.is-single .canvas-box.is-ready .ProseMirror')).toBeVisible();
   const add = page.getByRole('button', { name: 'Add a text box' });
   await add.tap();
   await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();

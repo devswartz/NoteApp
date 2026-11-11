@@ -22,6 +22,7 @@ import {
   nudge,
   surfaceSize,
   topZ,
+  wideWidth,
 } from '../src/editor/canvasGeom.ts';
 
 const box = (id: string, x: number, y: number, w = 300, z = 1) => ({ id, x, y, w, z });
@@ -56,6 +57,17 @@ test('the surface fills the viewport and grows to fit boxes', () => {
   assert.deepEqual(surfaceSize([], {}, 800, 600), { w: 800, h: 600 });
   const s = surfaceSize([box('a', 900, 1000, 400)], { a: 120 }, 800, 600);
   assert.deepEqual(s, { w: 900 + 400 + SURFACE_PAD_X, h: 1000 + 120 + SURFACE_PAD_Y });
+  // A wide box spans the page: no extra room to its right (no sideways scrolling).
+  assert.equal(surfaceSize([{ ...box('w', 0, 0, 1000), wide: true }], {}, 1000, 600).w, 1000);
+});
+
+test('a wide box is drawn at the readable width, or the page width with Full width, within the room there is', () => {
+  assert.equal(wideWidth(0, 1400, false, 686), 686);
+  assert.equal(wideWidth(0, 500, false, 686), 500, 'narrow window: the space there is');
+  assert.equal(wideWidth(0, 1400, true, 686), 1400);
+  assert.equal(wideWidth(200, 1400, true, 686), 1200);
+  assert.equal(wideWidth(1350, 1400, true, 686), BOX_MIN_W);
+  assert.equal(wideWidth(0, 0, true, 686), 686, 'not measured yet');
 });
 
 test('Tab order is reading order: top to bottom, then left to right', () => {

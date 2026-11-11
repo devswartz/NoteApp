@@ -7,7 +7,7 @@
 // section's pages under it in the tree instead.
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowDownUp, BookPlus, ChevronDown, Clock, FilePlus, FileText, Lock, Plus } from 'lucide-react';
+import { ArrowDownUp, BookPlus, ChevronDown, Clock, FilePlus, Lock, Plus } from 'lucide-react';
 import { patch, post } from '../../api.ts';
 import { errorToast, useStore } from '../../store.ts';
 import { Dropdown, IconButton, MenuItem, MenuLabel, MenuSeparator, useContextMenu } from '../ui.tsx';
@@ -252,9 +252,6 @@ export function PagesPanel({ sectionId, ...p }: NodeProps & { sectionId: string 
                 <IconButton label="New page" size="sm" onClick={() => p.createPage(section.id)}>
                   <FilePlus size={15} />
                 </IconButton>
-                <IconButton label="New document page" size="sm" onClick={() => p.createPage(section.id, 'document')}>
-                  <FileText size={15} />
-                </IconButton>
               </>
             )}
           </div>
@@ -280,9 +277,6 @@ export function PagesPanel({ sectionId, ...p }: NodeProps & { sectionId: string 
               <div className="panel-empty-actions">
                 <button className="btn btn-secondary btn-sm" onClick={() => p.createPage(section.id)}>
                   <Plus size={14} /> New page
-                </button>
-                <button className="btn btn-ghost btn-sm" onClick={() => p.createPage(section.id, 'document')}>
-                  <FileText size={14} /> New document page
                 </button>
               </div>
             )}

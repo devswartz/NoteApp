@@ -4,12 +4,15 @@ import { closeAllEvents } from './events.ts';
 import { db } from './db.ts';
 import { PORT, VERSION, DATA_DIR, SEED_DEMO, IS_PROD, PUBLIC_URL } from './config.ts';
 import { seedDemoIfEmpty } from './demo.ts';
+import { runDataMigrations } from './dataMigrations.ts';
 import { pruneRefreshTokens } from './auth.ts';
 import { pruneEmailVerifications, pruneUnverifiedAccounts } from './verification.ts';
 import { startReminderScheduler } from './reminders/scheduler.ts';
 import { APP_NAME } from '../shared/config.ts';
 
 if (IS_PROD && !PUBLIC_URL) console.warn('PUBLIC_URL is not set: links in emails (password reset, invites) will be broken');
+// Content changes SQL can't make (e.g. every page becomes a canvas); idempotent, after the schema migrations.
+runDataMigrations();
 if (SEED_DEMO) seedDemoIfEmpty();
 // Housekeeping: expired refresh tokens, expired email-confirmation tokens, and accounts never confirmed within
 // UNVERIFIED_ACCOUNT_DAYS (idempotent and capped, so it simply runs on every 6-hourly pass).

@@ -102,7 +102,7 @@ test('text, tasks, mentions, links, Markdown and sanitising cover every box', as
   assert.doesNotMatch(doc.getXmlFragment(boxField('below')).toString(), /javascript:/);
 });
 
-test('a canvas page is created as a canvas, and text typed in a box is saved and searchable', async () => {
+test('every page is created as a canvas, and text typed in a box is saved and searchable', async () => {
   const u = await app.signUp('Cara Canvas');
   const tree = (await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token)).data;
   const sec = tree.sections[0].id as string;
@@ -110,7 +110,7 @@ test('a canvas page is created as a canvas, and text typed in a box is saved and
   const plain = await app.call('POST', `/sections/${sec}/pages`, u.token, { title: 'Plain', kind: 'bogus' });
   const kinds = (await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token)).data.pages as { id: string; kind: string }[];
   assert.equal(kinds.find((p) => p.id === made.data.id)?.kind, 'canvas');
-  assert.equal(kinds.find((p) => p.id === plain.data.id)?.kind, 'document');
+  assert.equal(kinds.find((p) => p.id === plain.data.id)?.kind, 'canvas', 'any other kind asked for is ignored');
 
   const c = collabClient(app, made.data.id, u.token, { id: u.user.id, name: u.user.name, color: u.user.color });
   open.push(c);

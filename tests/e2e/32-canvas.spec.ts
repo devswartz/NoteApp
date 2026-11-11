@@ -16,11 +16,12 @@ async function openCanvas(page: Page, wsId: string, pageId: string) {
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
 }
 
-/** Click empty canvas space at (x, y) and type into the new box. */
+/** Click empty canvas space at (x, y) and type into the new box (a blank page's ready first box isn't counted: it isn't stored). */
 async function newBox(page: Page, x: number, y: number, text: string) {
-  const before = await page.locator('.canvas-box').count();
+  const stored = page.locator('.canvas-box:not(.is-ready)');
+  const before = await stored.count();
   await page.getByTestId('canvas-surface').click({ position: { x, y } });
-  await expect(page.locator('.canvas-box')).toHaveCount(before + 1);
+  await expect(stored).toHaveCount(before + 1);
   await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();
   await page.keyboard.type(text);
   return page.locator('.canvas-box', { hasText: text });
@@ -49,7 +50,7 @@ test('canvas page: click to make boxes, type, move one; it all persists; a task 
   await page.goto(pageUrl(user.wsId, docId));
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
 
-  // "New page" from the section's menu makes a canvas ("New document page" sits next to it).
+  // "New page" from the section's menu (every page is a canvas).
   const sidebarTree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Sections' });
   await sidebarTree.getByText('General', { exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'New page', exact: true }).click();
@@ -58,7 +59,7 @@ test('canvas page: click to make boxes, type, move one; it all persists; a task 
   await openCanvas(page, user.wsId, canvasId);
   await page.locator('.page-title').fill('Whiteboard');
 
-  const first = await newBox(page, 40, 40, 'Left box');
+  const first = await newBox(page, 40, 120, 'Left box'); // below the blank page's ready first box
   const second = await newBox(page, 520, 40, 'Right box');
   await expect(page.locator('.canvas-box')).toHaveCount(2);
   const start = await pos(first);
@@ -112,7 +113,7 @@ test('canvas page: an empty box goes away; Escape selects a box and Delete remov
   await signInContext(context, user);
   await openCanvas(page, user.wsId, id);
 
-  await newBox(page, 40, 40, 'Keep me');
+  await newBox(page, 40, 120, 'Keep me');
   // A box left empty disappears when you click elsewhere.
   await page.getByTestId('canvas-surface').click({ position: { x: 600, y: 60 } });
   await expect(page.locator('.canvas-box')).toHaveCount(2);

@@ -79,6 +79,34 @@ Phases 1 and 2 are the core. Phases 3 and 4 can run in parallel once phase 1 has
 2. **Built-in templates get canvas versions** (phase 3). A template keeps its kind, and
    using it makes a page of that kind.
 
+## Decision: canvas-only pages (Devon, 2026-11-11, later the same day)
+
+**Every page is a canvas, OneNote-style; document pages go away.** This replaces decisions 1
+and 2 above.
+
+- **Ready first box.** A blank page shows its first box (id `first`) at the top left, focused
+  for typing. It is only stored in `boxes` once something is typed in it, so pages you merely
+  open stay empty. Clicking elsewhere still starts a box there.
+- **Wide boxes.** That box, and the box a document becomes, has `wide: true` in its geometry:
+  it is drawn at the readable width (the old 760px column: `READABLE_BOX_W`, text lined up
+  with the title), or the page's width with "Full width", until someone drags its width. The
+  page keeps the old centred column for the title and the surface's left edge; the surface
+  reaches right to the edge of the page for boxes beside it. Wide boxes get the long-page
+  rendering and the block handle, so a converted document looks and behaves as it did.
+- **Outline** lists headings of every box in reading order (read from the Y.Doc) and jumps
+  into the box, mounting its editor if needed. `?task=` deep links mount every box.
+- **Conversion.** `server/dataMigrations.ts` runs at startup after the SQL migrations and
+  converts every remaining `kind = 'document'` page (in batches, keyset-paginated) with the
+  same lossless `convertPageDoc`, after saving a version. It is idempotent: a converted page
+  is no longer a document. Imports (OneNote, workspace export) and seeded pages are made
+  as canvases directly.
+- **API.** `POST /sections/:id/pages` always makes a canvas (`kind` is ignored);
+  `POST /pages/:id/convert` only accepts `canvas`. The server still reads `default` content
+  (`pageFragments` includes it) as a safety net, e.g. for an offline client's late edits
+  to a document page.
+- **UI.** No "New document page", no convert items, no kind icons; all built-in and
+  notebook templates are canvases, and a document template from before fills one wide box.
+
 ## Risks
 
 - **Phones.** Free placement doesn't suit small screens, hence the stacked view.

@@ -58,7 +58,7 @@ test('document → canvas: the whole content becomes one box at the top left, ma
   assert.equal(transactions, 1);
   assert.ok(id);
   assert.equal(doc.getXmlFragment('default').length, 0);
-  assert.deepEqual(boxGeoms(doc), [{ id, x: 0, y: 0, w: CONVERTED_BOX_W, z: 1 }]);
+  assert.deepEqual(boxGeoms(doc), [{ id, x: 0, y: 0, w: CONVERTED_BOX_W, z: 1, wide: true }]);
   const box = doc.getXmlFragment(boxField(id!));
   assert.equal(box.length, 3);
   assert.equal((box.get(1) as Y.XmlElement).getAttribute('taskId'), 't-9');
@@ -110,8 +110,16 @@ test('replacePageContent restores a document version onto a canvas page as one b
 const kindOf = async (pageId: string) =>
   ((await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token)).data.pages as { id: string; kind: string }[]).find((p) => p.id === pageId)?.kind;
 
-test('POST /pages/:id/convert on an open page: every client gets the change live; kind and search follow', async () => {
-  const pageId = (await app.call('POST', `/sections/${sec}/pages`, u.token, { title: 'Live convert' })).data.id as string;
+/** A page as legacy document pages were (before every page became a canvas). */
+async function legacyDocumentPage(title: string) {
+  const pageId = (await app.call('POST', `/sections/${sec}/pages`, u.token, { title })).data.id as string;
+  const { db } = await import('../server/db.ts');
+  db.prepare("UPDATE pages SET kind = 'document' WHERE id = ?").run(pageId);
+  return pageId;
+}
+
+test('POST /pages/:id/convert on an open (legacy document) page: every client gets the change live; kind and search follow', async () => {
+  const pageId = await legacyDocumentPage('Live convert');
   const a = collabClient(app, pageId, u.token);
   const b = collabClient(app, pageId, u.token);
   open.push(a, b);
@@ -134,35 +142,35 @@ test('POST /pages/:id/convert on an open page: every client gets the change live
   const found = (await app.call('GET', `/workspaces/${u.wsId}/search?q=quokka`, u.token)).data.pages as { id: string }[];
   assert.ok(found.some((p) => p.id === pageId));
 
-  const back = await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'document' });
-  assert.equal(back.status, 200);
-  for (let i = 0; i < 25 && a.doc.getMap(BOXES_KEY).size > 0; i++) await new Promise((res) => setTimeout(res, 100));
-  assert.equal(a.doc.getMap(BOXES_KEY).size, 0);
-  assert.match(a.doc.getXmlFragment('default').toString(), /Quokka minutes.*taskId="t-x"/);
-  assert.equal(await kindOf(pageId), 'document');
+  // Pages don't go back to documents.
+  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'document' })).status, 400);
+  assert.equal(await kindOf(pageId), 'canvas');
 });
 
 test('convert on a page nobody has open rewrites the stored doc; bad kinds and viewers are refused', async () => {
-  const pageId = (await app.call('POST', `/sections/${sec}/pages`, u.token, { title: 'Stored', kind: 'canvas' })).data.id as string;
+  const pageId = await legacyDocumentPage('Stored');
   const { db } = await import('../server/db.ts');
   const d = new Y.Doc();
-  addBox(d, 'one', 0, 0, [para('Stored box')]);
+  d.getXmlFragment('default').insert(0, [para('Stored text')]);
   db.prepare('UPDATE pages SET ydoc = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(d)), pageId);
 
   assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'table' })).status, 400);
+  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'document' })).status, 400);
   const stranger = await app.signUp('Stan Stranger');
-  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, stranger.token, { kind: 'document' })).status, 404);
+  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, stranger.token, { kind: 'canvas' })).status, 404);
 
-  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'document' })).status, 200);
+  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'canvas' })).status, 200);
   const row = db.prepare('SELECT ydoc, text, kind FROM pages WHERE id = ?').get(pageId) as { ydoc: Buffer; text: string; kind: string };
-  assert.equal(row.kind, 'document');
+  assert.equal(row.kind, 'canvas');
   const after = new Y.Doc();
   Y.applyUpdate(after, new Uint8Array(row.ydoc));
-  assert.equal(plain(after.getXmlFragment('default')), '|Stored box|');
-  assert.equal(after.getMap(BOXES_KEY).size, 0);
-  assert.match(row.text, /Stored box/);
+  const [box] = boxGeoms(after);
+  assert.equal(plain(after.getXmlFragment(boxField(box!.id))), '|Stored text|');
+  assert.equal(box!.wide, true);
+  assert.equal(after.getXmlFragment('default').length, 0);
+  assert.match(row.text, /Stored text/);
   // Converting to the kind it already is changes nothing.
-  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'document' })).data.kind, 'document');
+  assert.equal((await app.call('POST', `/pages/${pageId}/convert`, u.token, { kind: 'canvas' })).data.kind, 'canvas');
 });
 
 test('templates keep their kind: a canvas template is saved, listed and used as a canvas', async () => {
@@ -196,4 +204,74 @@ test('templates keep their kind: a canvas template is saved, listed and used as 
   assert.deepEqual(boxes.map((b) => [b.type, b.attrs.x, b.attrs.w]), [['canvasBox', 0, 320], ['canvasBox', 360, 400]]);
   const newTask = boxes[1]!.content[0]!.attrs!.taskId;
   assert.ok(newTask && newTask !== task, 'the box points at a new task');
+});
+
+test('the startup data migration turns every document page into a canvas with one wide box, losslessly and only once', async () => {
+  const { db } = await import('../server/db.ts');
+  const { convertDocumentPages } = await import('../server/dataMigrations.ts');
+  const { extractPage } = await import('../server/collab.ts');
+  // Any pages left over from other tests here are converted first, so this test sees only its own.
+  convertDocumentPages();
+
+  // A document page with formatted text, a task and a heading inside a callout; one never written in.
+  const full = await legacyDocumentPage('Old document');
+  const d = new Y.Doc();
+  const callout = new Y.XmlElement('callout');
+  const h = new Y.XmlElement('heading');
+  h.setAttribute('level', 2 as unknown as string);
+  h.insert(0, [new Y.XmlText('Inside')]);
+  callout.insert(0, [h]);
+  d.getXmlFragment('default').insert(0, [para('Bold start', { bold: true }), taskRef('t-keep'), callout, para('End')]);
+  const before = d.getXmlFragment('default').toString();
+  db.prepare("UPDATE pages SET ydoc = ?, updated_at = '2020-01-02T03:04:05.000Z' WHERE id = ?").run(Buffer.from(Y.encodeStateAsUpdate(d)), full);
+  const blank = await legacyDocumentPage('Never edited');
+
+  // Batches of one: every page is still reached.
+  assert.equal(convertDocumentPages(1), 2);
+  const row = db.prepare('SELECT kind, ydoc, updated_at FROM pages WHERE id = ?').get(full) as { kind: string; ydoc: Buffer; updated_at: string };
+  assert.equal(row.kind, 'canvas');
+  assert.equal(row.updated_at, '2020-01-02T03:04:05.000Z', 'edit times are left alone');
+  const after = new Y.Doc();
+  Y.applyUpdate(after, new Uint8Array(row.ydoc));
+  const geoms = boxGeoms(after);
+  assert.equal(geoms.length, 1);
+  assert.deepEqual({ ...geoms[0], id: '' }, { id: '', x: 0, y: 0, w: CONVERTED_BOX_W, z: 1, wide: true });
+  assert.equal(after.getXmlFragment(boxField(geoms[0]!.id)).toString(), before, 'the same nodes, marks and attributes');
+  assert.equal(after.getXmlFragment('default').length, 0);
+  assert.deepEqual([...extractPage(after).taskIds], ['t-keep']);
+  assert.equal((db.prepare('SELECT kind FROM pages WHERE id = ?').get(blank) as { kind: string }).kind, 'canvas');
+
+  // The document is kept as a version (none for the page that had no content).
+  const versions = db.prepare('SELECT page_id, ydoc FROM page_versions WHERE page_id IN (?, ?)').all(full, blank) as { page_id: string; ydoc: Buffer }[];
+  assert.deepEqual(versions.map((v) => v.page_id), [full]);
+  const kept = new Y.Doc();
+  Y.applyUpdate(kept, new Uint8Array(versions[0]!.ydoc));
+  assert.equal(kept.getXmlFragment('default').toString(), before);
+
+  // Running it again changes nothing.
+  assert.equal(convertDocumentPages(), 0);
+  assert.ok((db.prepare('SELECT ydoc FROM pages WHERE id = ?').get(full) as { ydoc: Buffer }).ydoc.equals(row.ydoc));
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM page_versions WHERE page_id = ?').get(full) as { n: number }).n, 1);
+});
+
+test('pageHeadings: the headings of every box in reading order, numbered within their box', async () => {
+  const { pageHeadings } = await import('../shared/pageDoc.ts');
+  const doc = new Y.Doc();
+  const heading = (text: string, level: number) => {
+    const h = new Y.XmlElement('heading');
+    h.setAttribute('level', level as unknown as string);
+    h.insert(0, [new Y.XmlText(text)]);
+    return h;
+  };
+  const toggle = new Y.XmlElement('details');
+  toggle.insert(0, [heading('Nested', 3)]);
+  addBox(doc, 'right', 400, 0, [heading('Right one', 1), heading('', 2), heading('Right two', 2)]);
+  addBox(doc, 'below', 0, 300, [para('text'), toggle]);
+  addBox(doc, 'left', 0, 0, [heading('Left', 1)]);
+  assert.deepEqual(pageHeadings(doc), [
+    { boxId: 'left', index: 0, level: 1, text: 'Left' },
+    { boxId: 'right', index: 0, level: 1, text: 'Right one' },
+    { boxId: 'right', index: 1, level: 2, text: 'Right two' },
+    { boxId: 'below', index: 0, level: 3, text: 'Nested' },
+  ]);
 });

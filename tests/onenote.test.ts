@@ -253,7 +253,8 @@ test('import: hierarchy, to-dos → tasks, image + attachment → files, malicio
   assert.match(wd.getXmlFragment(boxField(geoms[0].id)).toString(), /Agenda/);
   assert.match(wd.getXmlFragment(boxField(geoms[1].id)).toString(), /<image /);
   assert.equal(pages(sections[0].id)[1].kind, 'canvas', 'Follow-ups has one positioned outline');
-  assert.equal(pages(sections[1].id)[0].kind, 'document', 'a page without positions stays a document');
+  assert.equal(pages(sections[1].id)[0].kind, 'canvas', 'a page without positions is a canvas too');
+  assert.deepEqual(boxGeoms(ydocOf(pages(sections[1].id)[0])).map((b) => b.wide), [true], '… with one wide box');
 
   // Content: headings, marks, links, lists, a table.
   const xml = docOf(weekly);

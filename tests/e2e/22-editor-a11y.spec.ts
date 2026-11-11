@@ -179,11 +179,16 @@ test.describe('editor accessibility', () => {
       await page.keyboard.press('Alt+F10');
       await expect(toolbar.locator(':focus')).toHaveCount(1, { timeout: 1000 });
     }).toPass({ timeout: 10_000 });
+    // The toolbar lives outside the text box; while it has focus the box stays opaque (not see-through).
+    const box = page.locator('.canvas-box').first();
+    await expect(box).toHaveClass(/is-holding/);
+    expect(await box.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
     const bold = toolbar.getByRole('button', { name: /^Bold/ });
     for (let i = 0; i < 10 && !(await bold.evaluate((b) => b === document.activeElement)); i++) await page.keyboard.press('ArrowRight');
     await page.keyboard.press('Enter');
     await expect(editor.locator('strong')).toHaveText('first');
-    await page.keyboard.press('Escape');
+    // Escape from the toolbar goes back to the text (in a text box, Escape in the text would select the box).
+    if (await toolbar.locator(':focus').count()) await page.keyboard.press('Escape');
     await expect(editor).toBeFocused();
   });
 

@@ -623,7 +623,7 @@ async function importPage(job: JobStatus & { userId: string }, conn: Connection,
   db.prepare(
     `INSERT INTO pages (id, section_id, title, icon, kind, ydoc, text, position, created_by, created_at, updated_at, updated_by)
      VALUES (?, ?, ?, NULL, ?, NULL, '', ?, ?, ?, ?, ?)`,
-  ).run(pageId, sectionId, page.title, page.kind, nextPos('pages', 'section_id', sectionId), userId, ts, ts, userId);
+  ).run(pageId, sectionId, page.title, 'canvas', nextPos('pages', 'section_id', sectionId), userId, ts, ts, userId);
 
   // Images and attachments → our own files (fresh ids, allow-listed extensions, upload size limit).
   const stored = new Map<string, PMNode['attrs']>();
@@ -671,7 +671,7 @@ async function importPage(job: JobStatus & { userId: string }, conn: Connection,
         boxes.set(id, geom);
         jsonToYFragment(clean(b.doc), ydoc.getXmlFragment(boxField(id)));
       }
-    } else jsonToYFragment(clean(page.doc), frag);
+    } else jsonToYFragment(clean(page.doc), frag); // no positions: seedPageDoc makes it one wide box
     sanitizeYDoc(ydoc); // every fragment, boxes included
   });
 }

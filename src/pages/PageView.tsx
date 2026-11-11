@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, Plus, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, MoveHorizontal, LayoutDashboard } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, MoveHorizontal } from 'lucide-react';
 import { api, get, patch, del, post, ApiError } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
@@ -9,7 +9,7 @@ import { useFollow } from '../editor/collabFollow.ts';
 import type { Awareness } from 'y-protocols/awareness';
 import { CommentHighlights, CommentsPanel } from '../editor/collabCommentsPanel.tsx';
 import { loadComments, useComments } from '../editor/collabComments.ts';
-import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '../editor/NoteEditor.tsx';
+import type { PresenceUser, SaveState, SyncStatus } from '../editor/NoteEditor.tsx';
 import { CanvasEditor } from '../editor/CanvasEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
@@ -18,7 +18,6 @@ import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { Outline, usePageSetting } from '../editor/Outline.tsx';
 import { Ribbon } from '../editor/Toolbar.tsx';
-import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
@@ -32,8 +31,6 @@ import type { PageMeta } from '../../shared/types.ts';
 import { sectionPathLabel, sectionsInOrder } from '../../shared/sections.ts';
 import { TemplateDialogHost, templateDialog } from '../editor/TemplateDialog.tsx';
 import type { CanvasHandle } from '../editor/canvasDoc.ts';
-import { convertPage } from '../editor/pageKind.ts';
-import type { PageKind } from '../../shared/types.ts';
 import { UserPlus, Users } from 'lucide-react';
 
 /** GET /pages/:id. viaPageShare: opened through a page share (#98), so it isn't in the tree. */
@@ -76,14 +73,12 @@ export function PageView() {
     setHistoryOpen(false);
   }, [pageId]);
   const [presence, setPresence] = useState<PresenceUser[]>([]);
-  // The tree first: it follows conversions made anywhere (a tree event); a page opened through a
-  // page share isn't in the tree, so its own info is updated when converted here.
-  const kind: PageKind | undefined = treeMeta?.kind ?? info?.page.kind;
-  // The editor the page chrome acts on, tagged with the view it came from, so after a conversion
-  // the old view's editor is never used while the new one starts.
-  const [ready, setReady] = useState<{ e: Editor; canvas: boolean; pageId: string } | null>(null);
-  const editor = ready && ready.pageId === pageId && ready.canvas === (kind === 'canvas') && !ready.e.isDestroyed ? ready.e : null;
+  // Every page is a canvas of text boxes (docs/PLAN_CANVAS.md). The editor the page chrome acts
+  // on is the box last focused (or the first to mount), tagged with its page.
+  const [ready, setReady] = useState<{ e: Editor; pageId: string } | null>(null);
+  const editor = ready && ready.pageId === pageId && !ready.e.isDestroyed ? ready.e : null;
   const [canvasHandle, setCanvasHandle] = useState<CanvasHandle | null>(null);
+  const canvas = canvasHandle?.pageId === pageId ? canvasHandle : null;
   const [fullWidth, setFullWidth] = usePageSetting(editor, 'fullWidth', false);
   const isMobile = useIsMobile();
   // Tasks / comments panel (#99): never opens by itself. Desktop restores the
@@ -164,18 +159,20 @@ export function PageView() {
       if (el || ++tries > 30) {
         clearInterval(iv);
         if (el) {
-          if (editor.view.dom.classList.contains('is-long')) {
-            // Long pages skip rendering off-screen blocks (estimated heights), so one smooth
-            // scroll can miss: jump, then re-settle for a few frames as real sizes come in.
-            let frames = 0;
-            const settle = () => {
-              el.scrollIntoView({ block: 'center' });
-              if (++frames < 4) requestAnimationFrame(settle);
-            };
-            settle();
-          } else {
-            el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          }
+          // The task may be in any box (all are mounted for the link). Long boxes skip rendering
+          // off-screen blocks (estimated heights) and boxes measure themselves as they mount, so
+          // one smooth scroll can miss: jump, then re-jump each frame until it stays put.
+          let frames = 0;
+          let still = 0;
+          let last = NaN;
+          const settle = () => {
+            el.scrollIntoView({ block: 'center' });
+            const top = Math.round(el.getBoundingClientRect().top);
+            still = top === last ? still + 1 : 0;
+            last = top;
+            if (still < 5 && ++frames < 90) requestAnimationFrame(settle);
+          };
+          settle();
           el.classList.add('flash');
           setTimeout(() => el.classList.remove('flash'), 1800);
         }
@@ -186,8 +183,7 @@ export function PageView() {
     return () => clearInterval(iv);
   }, [focusTask, editor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onReady = useCallback((e: Editor) => setReady({ e, canvas: false, pageId }), [pageId]);
-  const onCanvasReady = useCallback((e: Editor) => setReady({ e, canvas: true, pageId }), [pageId]);
+  const onReady = useCallback((e: Editor) => setReady({ e, pageId }), [pageId]);
   // Follow a collaborator: click their avatar and their cursor stays in view (./editor/collabFollow.ts).
   const [awareness, setAwareness] = useState<Awareness | null>(null);
   const [article, setArticle] = useState<HTMLElement | null>(null);
@@ -206,8 +202,6 @@ export function PageView() {
     );
   }
   if (!meta || canEdit === null) return <div className="page-loading" />;
-  const canvas = (kind ?? meta.kind) === 'canvas';
-  const onConverted = (k: PageKind) => setInfo((i) => (i ? { ...i, page: { ...i.page, kind: k } } : i));
   const editorProps = {
     pageId,
     workspaceId: wsId,
@@ -224,7 +218,7 @@ export function PageView() {
   return (
     <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
       <div className="page-scroll" ref={setScroller}>
-        {editor && !canvas && !fullWidth && !isMobile && <Outline editor={editor} scroller={scroller} />}
+        {canvas && !fullWidth && !isMobile && <Outline canvas={canvas} scroller={scroller} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -283,8 +277,6 @@ export function PageView() {
                 fullWidth={fullWidth}
                 onFullWidth={setFullWidth}
                 canvas={canvas}
-                canvasHandle={canvasHandle}
-                onConverted={onConverted}
                 canManage={info ? info.canManage : !!treeMeta}
                 canShare={!!info?.canShare}
                 canEdit={canEdit}
@@ -301,33 +293,28 @@ export function PageView() {
             Following {followed.name} · scroll, click or Esc to stop
           </div>
         )}
-        <article className={`page-article ${canvas ? 'is-canvas' : fullWidth ? 'is-full' : ''}`} ref={setArticle}>
+        <article className={`page-article is-canvas ${fullWidth ? 'is-full' : ''}`} ref={setArticle}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
             Edited {relativeTime(meta.updatedAt)}
             {updatedBy ? ` by ${updatedBy.id === user.id ? 'you' : updatedBy.name}` : ''}
           </div>
-          {canvas ? (
-            <CanvasEditor key={`canvas-${pageId}`} {...editorProps} onReady={onCanvasReady} mountAll={!!focusTask} onCanvas={setCanvasHandle} />
-          ) : (
-            <NoteEditor key={`editor-${pageId}`} {...editorProps} />
-          )}
-          {/* A canvas has its own "Add a task" (into the box you were last in). */}
-          {canEdit && synced && !canvas && editor && !editor.isDestroyed && <TemplatePicker key={pageId} editor={editor} pageId={pageId} />}
-          {canEdit && synced && canvas && canvasHandle?.pageId === pageId && <TemplatePicker key={`c-${pageId}`} canvas={canvasHandle} pageId={pageId} />}
-          {canEdit && editor && !canvas && (
-            <button className="add-task-end" onClick={() => insertTaskAtEnd(editor, pageId)}>
-              <Plus size={15} /> Add a task to this page
-            </button>
-          )}
+          <CanvasEditor
+            key={`canvas-${pageId}`}
+            {...editorProps}
+            mountAll={!!focusTask}
+            onCanvas={setCanvasHandle}
+            fullWidth={fullWidth}
+            autoFocus={!!meta.title}
+          />
+          {canEdit && synced && canvas && <TemplatePicker key={`c-${pageId}`} canvas={canvas} pageId={pageId} />}
           <Backlinks pageId={pageId} wsId={wsId} />
         </article>
       </div>
       <VersionHistory
         pageId={pageId}
-        editor={canvas ? null : editor}
-        canvas={canvas ? canvasHandle : null}
+        canvas={canvas}
         canvasEditable={!!canEdit}
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
@@ -497,13 +484,11 @@ type PageMenuProps = {
   canShare: boolean;
   canEdit: boolean;
   title: string;
-  /** A canvas page: whole-page actions go through `canvasHandle`; no full width. */
-  canvas: boolean;
-  canvasHandle: CanvasHandle | null;
-  onConverted: (kind: PageKind) => void;
+  /** Whole-page actions (export, import, templates) act on the page's canvas. */
+  canvas: CanvasHandle | null;
 };
 
-function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title, canvas, canvasHandle, onConverted }: PageMenuProps) {
+function PageMenuItems({ pageId, wsId, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -511,16 +496,7 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
   const sectionsOf = (notebookId: string) => sectionsInOrder(tree, notebookId).map((x) => x.section); // subsections after their parent
   const inPrivate = tree.notebooks.find((n) => n.id === tree.sections.find((s) => s.id === current?.sectionId)?.notebookId)?.visibility === 'private';
   /** "Save as template": a snapshot of the live editor content; the server copies the page's tasks (as new ones) and attachments. */
-  /** What whole-page actions act on: the canvas, or the document editor. */
-  const source = canvas ? canvasHandle : editor;
-  const convert = (to: PageKind) => {
-    convertPage(pageId, to)
-      .then(() => {
-        onConverted(to);
-        toast(to === 'canvas' ? 'Converted to a canvas page' : 'Converted to a document page');
-      })
-      .catch(errorToast);
-  };
+  const source = canvas;
   const saveTemplate = async () => {
     if (!source) return;
     const r = await templateDialog({
@@ -588,24 +564,12 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
               Save as template…
             </MenuItem>
           )}
-          {canEdit &&
-            (canvas ? (
-              <MenuItem icon={<FileText size={15} />} onSelect={() => convert('document')}>
-                Convert to document
-              </MenuItem>
-            ) : (
-              <MenuItem icon={<LayoutDashboard size={15} />} onSelect={() => convert('canvas')}>
-                Convert to canvas
-              </MenuItem>
-            ))}
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
           </MenuItem>
-          {!canvas && (
-            <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
-              Full width
-            </MenuItem>
-          )}
+          <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
+            Full width
+          </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<FileDown size={15} />} onSelect={() => source && void exportMarkdown(source, pageId).catch(errorToast)}>
             Export as Markdown

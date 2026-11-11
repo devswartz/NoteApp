@@ -11,7 +11,6 @@ import {
   ChevronRight,
   CircleCheck,
   Copy,
-  FilePlus,
   FolderInput,
   FolderPlus,
   LayoutDashboard,
@@ -29,7 +28,7 @@ import {
 import { del, patch, post } from '../../api.ts';
 import { errorToast, toast, useStore } from '../../store.ts';
 import { IconButton, MenuItem, MenuSeparator, useContextMenu } from '../ui.tsx';
-import type { Notebook, PageKind, PageMeta, Section } from '../../../shared/types.ts';
+import type { Notebook, PageMeta, Section } from '../../../shared/types.ts';
 import { sidebar, useSidebar } from './sidebarState.ts';
 import { byPos, dragProps, dropClass, dropProps, movePage, moveSection, useDnd } from './treeDnd.ts';
 import { confirmDialog, promptDialog } from './dialogs.tsx';
@@ -45,7 +44,7 @@ export interface NodeProps {
   editing: string | null;
   setEditing: (id: string | null) => void;
   canEdit: boolean;
-  createPage: (sectionId: string, kind?: PageKind) => void;
+  createPage: (sectionId: string) => void;
   setMoving: (m: MoveItem) => void;
 }
 
@@ -189,9 +188,6 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
     <div className="menu" role="menu">
       <MenuItem icon={<LayoutDashboard size={15} />} onSelect={() => p.createPage(section.id)}>
         New page
-      </MenuItem>
-      <MenuItem icon={<FilePlus size={15} />} onSelect={() => p.createPage(section.id, 'document')}>
-        New document page
       </MenuItem>
       {canNest && (
         <MenuItem icon={<FolderPlus size={15} />} onSelect={createSubsection}>

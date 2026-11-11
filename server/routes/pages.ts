@@ -3,8 +3,7 @@ import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
 import { accessChanged, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import crypto from 'node:crypto';
-import { editPageDoc, flushAll } from '../collab.ts';
+import { editPageDoc, flushAll, newBoxId } from '../collab.ts';
 import { convertPageDoc } from '../../shared/pageDoc.ts';
 import { rowToTask } from '../tasks.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
@@ -25,8 +24,8 @@ pageRoutes.post(
     const id = newId();
     const ts = now();
     const title = typeof req.body.title === 'string' ? req.body.title.slice(0, 300) : '';
-    // 'document' (one flowing text) unless asked for a 'canvas' (text boxes anywhere; docs/PLAN_CANVAS.md).
-    const kind = req.body.kind === 'canvas' ? 'canvas' : 'document';
+    // Every page is a canvas of text boxes (docs/PLAN_CANVAS.md); a `kind` in the body is ignored.
+    const kind = 'canvas';
     db.prepare(
       `INSERT INTO pages (id, section_id, title, kind, position, created_by, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(id, sectionId, title, kind, nextPos('pages', 'section_id', sectionId), req.user.id, ts, ts, req.user.id);
@@ -101,11 +100,11 @@ pageRoutes.post(
 );
 
 /**
- * POST /pages/:id/convert { kind: 'canvas' | 'document' } → { kind }
- * Document → canvas: the whole content becomes one box at the top left. Canvas → document:
- * the boxes are joined in reading order. One Yjs transaction on the live room if the page is
- * open (clients switch views on the tree event), else on the stored doc. The state before is
- * kept as a version, so a conversion can be undone from Version history.
+ * POST /pages/:id/convert { kind: 'canvas' } → { kind }
+ * Turns a (legacy) document page into a canvas: the whole content becomes one wide box at the
+ * top left. Pages are all canvases now (the startup data migration converts the rest), so
+ * 'document' is refused. One Yjs transaction on the live room if the page is open, else on the
+ * stored doc. The state before is kept as a version, so it can be undone from Version history.
  */
 pageRoutes.post(
   '/pages/:id/convert',
@@ -113,13 +112,13 @@ pageRoutes.post(
     const id = param(req, 'id');
     const a = mustAccess(pageAccess(id, req.user.id), true);
     const kind = req.body?.kind;
-    if (kind !== 'canvas' && kind !== 'document') throw new HttpError(400, "kind must be 'canvas' or 'document'");
+    if (kind !== 'canvas') throw new HttpError(400, "Every page is a canvas: kind must be 'canvas'");
     const cur = (db.prepare('SELECT kind FROM pages WHERE id = ?').get(id) as { kind: string }).kind;
     if (cur === kind) return { kind };
     flushAll();
     snapshot(id, 'manual');
     db.prepare('UPDATE pages SET kind = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(kind, now(), req.user.id, id);
-    editPageDoc(id, (doc) => convertPageDoc(doc, kind, () => crypto.randomBytes(8).toString('hex')));
+    editPageDoc(id, (doc) => convertPageDoc(doc, kind, newBoxId));
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { kind };
   }),

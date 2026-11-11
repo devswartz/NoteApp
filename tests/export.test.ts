@@ -1,6 +1,7 @@
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
+import { mainFragment } from '../shared/pageDoc.ts';
 import { startTestApp, type TestApp } from './helpers/app.ts';
 
 let app: TestApp;
@@ -86,7 +87,7 @@ test('export → import round-trip keeps the tree, page content, tasks and files
   const doc = new Y.Doc();
   Y.applyUpdate(doc, new Uint8Array(row.ydoc));
   const { extractDoc } = await import('../server/collab.ts');
-  assert.deepEqual([...extractDoc(doc.getXmlFragment('default')).taskIds], [newTask.id]);
+  assert.deepEqual([...extractDoc(mainFragment(doc)).taskIds], [newTask.id]);
   const search = await app.call('GET', `/workspaces/${workspaceId}/search?q=Goals`, other.token);
   assert.ok(search.data.pages.length >= 1, 'imported pages are searchable');
 });

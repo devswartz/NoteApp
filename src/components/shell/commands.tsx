@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   BookPlus,
   FilePlus,
-  FileText,
   Inbox,
   Keyboard,
   ListChecks,
@@ -45,14 +44,14 @@ export function useShellCommands(wsId: string) {
       run: go(path),
     });
 
-    const newPage = async (kind: 'canvas' | 'document') => {
+    const newPage = async () => {
       const s = useStore.getState();
       const pid = currentPageId();
       const current = pid ? s.tree.pages.find((p) => p.id === pid) : undefined;
       const sectionId = current?.sectionId ?? s.tree.sections[0]?.id;
       if (!sectionId) return toast('Create a notebook first');
       try {
-        const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '', kind });
+        const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
         navigate(`/w/${wsId}/p/${id}`);
       } catch (err) {
         errorToast(err);
@@ -88,8 +87,7 @@ export function useShellCommands(wsId: string) {
         },
       },
       { id: 'notebooks.new', title: 'New notebook…', group: 'Create', keywords: 'template project personal meetings', icon: <BookPlus size={16} />, when: canEditWorkspace, run: openNewNotebook },
-      { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note canvas', icon: <FilePlus size={16} />, when: canEditWorkspace, run: () => newPage('canvas') },
-      { id: 'pages.newDocument', title: 'New document page', group: 'Create', keywords: 'note document text', icon: <FileText size={16} />, when: canEditWorkspace, run: () => newPage('document') },
+      { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note canvas', icon: <FilePlus size={16} />, when: canEditWorkspace, run: () => newPage() },
       nav('today', 'Today', 't', 'tasks/today', <Sun size={16} />),
       nav('my', 'My Tasks', 'm', 'tasks/my', <Inbox size={16} />),
       nav('upcoming', 'Upcoming', 'u', 'tasks/upcoming', <CalendarRange size={16} />),
