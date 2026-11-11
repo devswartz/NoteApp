@@ -1,80 +1,136 @@
-// Saved views for All Tasks: named filter + sort + group presets, stored per
-// workspace on this device (platform.kv). A server-side copy can come later.
-import { useEffect, useState } from 'react';
+// Saved views for All Tasks: named filter + sort + group presets, stored on the server
+// (task_views, migration 014) so they follow the user to every device. Personal by
+// default; owners and admins can share one with the whole workspace.
+//
+// Views that older versions kept on this device (platform.kv) are uploaded the first
+// time the views of that workspace load, then removed from the device.
+//
+// Stable interface for other areas (the Tasks side panel lists these):
+//   useSavedViews(wsId) → SavedView[]   (each has id, name, shared, …)
+//   savedViewPath(wsId, viewId) → the URL that opens the view in All Tasks
+import { useEffect } from 'react';
+import { create } from 'zustand';
+import { del, patch, post } from '../../api.ts';
 import { platform } from '../../platform/index.ts';
-import { DEFAULT_FILTERS, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
+import { cached } from '../../store/cache.ts';
+import { errorToast } from '../../store/toasts.ts';
+import { normalizeFilters, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
+import { groupOf, parseSavedViews, sortOf, type SavedView } from './savedViewsCore.ts';
+import type { TaskView } from '../../../shared/types.ts';
 
-export interface SavedView {
-  id: string;
-  name: string;
-  filters: Filters;
-  sort: SortKey;
-  group: GroupKey;
+const deviceKey = (wsId: string) => `noteapp.taskViews.${wsId}`;
+
+export { parseSavedViews, sameView, savedViewPath, type SavedView } from './savedViewsCore.ts';
+function fromServer(v: TaskView): SavedView {
+  return {
+    id: v.id,
+    name: v.name,
+    filters: normalizeFilters(v.query?.filters),
+    sort: sortOf(v.query?.sort),
+    group: groupOf(v.query?.group),
+    shared: v.shared,
+    ownerId: v.ownerId,
+    position: v.position,
+  };
 }
 
-const key = (wsId: string) => `noteapp.taskViews.${wsId}`;
-const SORTS: SortKey[] = ['due', 'priority', 'created', 'title'];
-const GROUPS: GroupKey[] = ['none', 'due', 'assignee', 'note', 'priority'];
+const useViews = create<{ byWs: Record<string, SavedView[] | undefined> }>(() => ({ byWs: {} }));
+const inFlight = new Map<string, Promise<void>>();
 
-/** Parse stored JSON defensively: unknown fields dropped, missing ones defaulted. */
-export function parseSavedViews(raw: string | null): SavedView[] {
-  if (!raw) return [];
-  let data: unknown;
-  try {
-    data = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(data)) return [];
-  const out: SavedView[] = [];
-  for (const v of data) {
-    if (!v || typeof v !== 'object' || typeof v.name !== 'string' || typeof v.id !== 'string') continue;
-    const filters = { ...DEFAULT_FILTERS };
-    for (const k of Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]) {
-      if (typeof v.filters?.[k] === 'string') (filters as Record<string, string>)[k] = v.filters[k];
+/** Upload views an older version kept on this device; ids make it safe to retry. */
+async function uploadDeviceViews(wsId: string) {
+  const local = parseSavedViews(platform.kv.get(deviceKey(wsId)));
+  if (!local.length) return false;
+  for (const v of local) {
+    try {
+      await post(`/workspaces/${wsId}/task-views`, { id: v.id, name: v.name, query: { filters: v.filters, sort: v.sort, group: v.group } });
+    } catch (e) {
+      // 409: that id is someone else's (another account on this device): skip it. Anything else: try again next time.
+      if ((e as { status?: number }).status !== 409) return false;
     }
-    out.push({
-      id: v.id,
-      name: v.name.slice(0, 60),
-      filters,
-      sort: SORTS.includes(v.sort) ? v.sort : 'due',
-      group: GROUPS.includes(v.group) ? v.group : 'none',
-    });
   }
-  return out;
+  platform.kv.remove(deviceKey(wsId));
+  return true;
 }
 
-export function loadSavedViews(wsId: string): SavedView[] {
-  return parseSavedViews(platform.kv.get(key(wsId)));
+/** (Re)load a workspace's views from the server. */
+export function loadSavedViews(wsId: string): Promise<void> {
+  const running = inFlight.get(wsId);
+  if (running) return running;
+  const p = (async () => {
+    try {
+      await uploadDeviceViews(wsId).catch(() => false);
+      const list = await cached<TaskView[]>(`task-views:${wsId}`, `/workspaces/${wsId}/task-views`);
+      useViews.setState((s) => ({ byWs: { ...s.byWs, [wsId]: list.map(fromServer).sort((a, b) => a.position - b.position) } }));
+    } catch {
+      // Offline with nothing cached: no views yet.
+      useViews.setState((s) => ({ byWs: { ...s.byWs, [wsId]: s.byWs[wsId] ?? [] } }));
+    } finally {
+      inFlight.delete(wsId);
+    }
+  })();
+  inFlight.set(wsId, p);
+  return p;
 }
 
-export function storeSavedViews(wsId: string, views: SavedView[]) {
-  platform.kv.set(key(wsId), JSON.stringify(views));
-  listeners.forEach((fn) => fn());
+/** Live event: views changed on the server. Reloads only workspaces already loaded. */
+export function savedViewsChanged(wsId: string | null) {
+  if (wsId && useViews.getState().byWs[wsId] !== undefined) void loadSavedViews(wsId);
 }
 
-const listeners = new Set<() => void>();
+const EMPTY: SavedView[] = [];
 
-/**
- * The saved views of a workspace, kept current when they change (the Tasks
- * panel lists them). Track 1 moves them to the server behind this same signature.
- */
+/** The signed-in user's saved views in a workspace (their own and shared ones), in order. Loads on first use. */
 export function useSavedViews(wsId: string): SavedView[] {
-  const [views, setViews] = useState(() => loadSavedViews(wsId));
+  const views = useViews((s) => s.byWs[wsId]);
   useEffect(() => {
-    const reload = () => setViews(loadSavedViews(wsId));
-    reload();
-    listeners.add(reload);
-    return () => void listeners.delete(reload);
-  }, [wsId]);
-  return views;
+    if (wsId && views === undefined) void loadSavedViews(wsId);
+  }, [wsId, views]);
+  return views ?? EMPTY;
 }
 
-/** Link that opens All Tasks with a saved view applied. */
-export function savedViewPath(wsId: string, viewId: string): string {
-  return `/w/${wsId}/tasks/all?view=${encodeURIComponent(viewId)}`;
+const setLocal = (wsId: string, fn: (list: SavedView[]) => SavedView[]) =>
+  useViews.setState((s) => ({ byWs: { ...s.byWs, [wsId]: fn(s.byWs[wsId] ?? []) } }));
+
+export async function createSavedView(wsId: string, v: { name: string; filters: Filters; sort: SortKey; group: GroupKey; shared?: boolean }): Promise<SavedView | null> {
+  try {
+    const created = fromServer(
+      await post<TaskView>(`/workspaces/${wsId}/task-views`, { name: v.name, shared: !!v.shared, query: { filters: v.filters, sort: v.sort, group: v.group } }),
+    );
+    setLocal(wsId, (list) => [...list.filter((x) => x.id !== created.id), created]);
+    return created;
+  } catch (e) {
+    errorToast(e);
+    return null;
+  }
 }
 
-export function sameView(v: SavedView, filters: Filters, sort: SortKey, group: GroupKey) {
-  return v.sort === sort && v.group === group && (Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]).every((k) => v.filters[k] === filters[k]);
+export async function updateSavedView(
+  wsId: string,
+  id: string,
+  p: Partial<{ name: string; shared: boolean; position: number; filters: Filters; sort: SortKey; group: GroupKey }>,
+) {
+  const body: Record<string, unknown> = {};
+  if (p.name !== undefined) body.name = p.name;
+  if (p.shared !== undefined) body.shared = p.shared;
+  if (p.position !== undefined) body.position = p.position;
+  if (p.filters && p.sort && p.group) body.query = { filters: p.filters, sort: p.sort, group: p.group };
+  try {
+    const updated = fromServer(await patch<TaskView>(`/task-views/${id}`, body));
+    setLocal(wsId, (list) => list.map((x) => (x.id === id ? updated : x)).sort((a, b) => a.position - b.position));
+  } catch (e) {
+    errorToast(e);
+  }
 }
+
+export async function deleteSavedView(wsId: string, id: string) {
+  const before = useViews.getState().byWs[wsId];
+  setLocal(wsId, (list) => list.filter((x) => x.id !== id));
+  try {
+    await del(`/task-views/${id}`);
+  } catch (e) {
+    useViews.setState((s) => ({ byWs: { ...s.byWs, [wsId]: before } }));
+    errorToast(e);
+  }
+}
+

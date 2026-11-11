@@ -64,6 +64,7 @@ server/
     tree.ts        /workspaces/:id/tree, notebooks, sections
     pages.ts       /sections/:id/pages, /pages/:id
     tasks.ts       /workspaces/:id/tasks, /tasks/:id
+    teams.ts       tags (/workspaces/:id/tags, /tags/:id), teams (/workspaces/:id/teams, /teams/:id[/members]), saved task views (/workspaces/:id/task-views, /task-views/:id)
     search.ts      /workspaces/:id/search
     files.ts       /uploads (stored in $DATA_DIR/files)
     health.ts      /health
@@ -139,13 +140,17 @@ workspaces ──< workspace_members (role: owner | admin | member | viewer) >�
                         ──< pages (ydoc BLOB = Yjs state, text = extracted plain text, kind = 'document' | 'canvas')
                                ──< page_shares (user_id, can_edit: one page shared with one person, #98)
                                ──< page_invites (email, can_edit, token_hash: page shares for addresses without an account)
-          ──< tasks (page_id → pages, nullable)
+          ──< tasks (page_id → pages, nullable; team_id → teams; assigned_by → users)
+                 ──< task_tags >── tags (name unique per workspace, ignoring case; color)
+          ──< teams (parent_id → teams: one level of subteams) ──< team_members >── users
+          ──< task_views (owner_id, shared, name, query = JSON {filters, sort, group})
 pages_fts (FTS5: page_id, title, text)
 tasks_fts (FTS5: task_id, title, description; kept in sync by triggers)
 files (uploads: workspace_id, page_id, template_id, name, mime, size)
 templates (workspace_id, name, icon, visibility 'workspace' | 'private', content = TipTap JSON, tasks = task snapshots, created_by)
 ```
 
+- **Tags, teams and saved views** (migration 014, `server/routes/teams.ts`): tags are shared across a workspace; anyone who can edit creates one (creating an existing name returns it), owners/admins rename, recolour and delete. Teams (one level of subteams) and their members are managed by owners/admins and visible to every member; removing someone from the workspace removes them from its teams. A task's `team_id` is independent of its assignee's teams. `assigned_by` is set by the server whenever `assignee_id` changes (the person who changed it) and cleared when unassigned; the client can't set it. Tasks carry `teamId`, `tagIds` and `assignedBy`; `PATCH /tasks/:id {tagIds}` replaces the tags (ids that aren't tags of the workspace are ignored). Saved views (`task_views`) are personal unless shared (owners/admins only); others' personal views are 404. Clients upload views older versions kept on the device on first load (client-chosen ids make it idempotent). Live events: `tags`, `teams`, `task-views` (personal views only to their owner); deleting a tag or team re-publishes the affected tasks. Export/import carry tags, task tags, teams (members map to the importer like assignees) and the exporter's own and shared views (ids inside their filters rewritten).
 - **Hierarchy:** workspace → notebook → section → page. Ordering uses a `position REAL` column per level (insert between two items by averaging).
 - **Migrations:** `server/migrations/NNN-name.sql`, applied at startup in numeric order, one transaction each, and recorded in `schema_migrations`. Numbers are **reserved per PR by the manager** and may merge out of order, so gaps are allowed: a lower number that lands after a higher one still runs. Duplicate numbers stop the server. A migration must not depend on a higher-numbered one. Databases created before `schema_migrations` existed are backfilled from `PRAGMA user_version`.
 - **Permissions** live in `server/access.ts`. Workspace roles: viewers read, members and up edit, admins manage members, owners manage everything. A private notebook (and its pages and tasks) is visible only to its creator and the people it is shared with (`notebook_shares`, managed by the creator via `PUT /notebooks/:id/shares`), except that a task's assignee and creator can always see it (`TASK_VISIBLE`).
@@ -202,7 +207,10 @@ One transaction, in this order: private notebooks the user created and the tasks
 |---|---|
 | `refresh_tokens.user_id`, `email_verifications`, `notification_settings`, `task_reminders.user_id`, `push_subscriptions`, `action_tokens`, `quiet_hours`, `calendar_feeds`, `device_tokens`, `notifications.user_id`, `workspace_members.user_id`, `notebook_shares.user_id`, `page_shares.user_id`, `page_invites.invited_by` | ON DELETE CASCADE: deleted with the user (page invites to their email are deleted too) |
 | `page_shares.created_by` | ON DELETE SET NULL: the share stays, "shared by" unknown |
-| `tasks.assignee_id` | ON DELETE SET NULL: the task stays, unassigned (clients get a `task` event) |
+| `tasks.assignee_id` | ON DELETE SET NULL: the task stays, unassigned (clients get a `task` event); its `assigned_by` is cleared too |
+| `tasks.assigned_by` | ON DELETE SET NULL: "assigned by" unknown |
+| `team_members.user_id`, `task_views.owner_id` | ON DELETE CASCADE: they leave their teams; their personal and shared views are deleted |
+| `tags.created_by` | tags are shared by the workspace and stay, re-pointed |
 | `notifications.actor_id`, `activity.actor_id`, `page_versions.author_id` | ON DELETE SET NULL: entries stay, author unknown. Private-notebook activity by the user is deleted instead |
 | `workspaces.created_by` | workspace continues: re-pointed to `deleted-user` |
 | `workspace_invites.invited_by` | their pending invites are deleted (invites to their email too) |

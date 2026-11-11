@@ -13,7 +13,7 @@ function task(p: Partial<Task> = {}): Task {
   return {
     id: `t${seq}`, workspaceId: 'w', title: `Task ${seq}`, description: '', status: 'open', priority: 4,
     dueDate: null, dueTime: null, recurrence: null, reminderAt: null, assigneeId: ME, createdBy: ME,
-    pageId: null, parentId: null, completedAt: null, completedBy: null, createdAt: ts, updatedAt: ts, ...p,
+    pageId: null, parentId: null, teamId: null, tagIds: [], assignedBy: null, completedAt: null, completedBy: null, createdAt: ts, updatedAt: ts, ...p,
   };
 }
 const T = today();
@@ -127,7 +127,7 @@ test('productivity: done today, tasks left, streak and week', async () => {
 });
 
 test('saved views: stored JSON is parsed defensively', async () => {
-  const { parseSavedViews, sameView } = await import('../src/pages/tasks/savedViews.ts');
+  const { parseSavedViews, sameView } = await import('../src/pages/tasks/savedViewsCore.ts');
   assert.deepEqual(parseSavedViews(null), []);
   assert.deepEqual(parseSavedViews('not json'), []);
   assert.deepEqual(parseSavedViews('{"a":1}'), []);
@@ -140,4 +140,50 @@ test('saved views: stored JSON is parsed defensively', async () => {
   assert.ok(!('bogus' in v.filters));
   assert.ok(sameView(v, { ...DEFAULT_FILTERS, assignee: 'me', priority: '1' }, 'due', 'priority'));
   assert.ok(!sameView(v, DEFAULT_FILTERS, 'due', 'priority'));
+});
+
+test('filters: tags (any / none), teams with and without subteams, assigned by, section', async () => {
+  const { normalizeFilters, activeFilterKeys } = await import('../src/lib/taskViews.ts');
+  const teams = [
+    { id: 'elders', workspaceId: 'w', parentId: null, name: 'Elders', color: '#000000', position: 1, memberIds: [] },
+    { id: 'shep', workspaceId: 'w', parentId: 'elders', name: 'Shepherds', color: '#000000', position: 2, memberIds: [] },
+    { id: 'staff', workspaceId: 'w', parentId: null, name: 'Staff', color: '#000000', position: 3, memberIds: [] },
+  ];
+  const a = task({ title: 'a', teamId: 'elders', tagIds: ['waiting'], assigneeId: 'scott', assignedBy: ME });
+  const b = task({ title: 'b', teamId: 'shep', tagIds: ['budget'], assigneeId: 'scott', assignedBy: 'scott' });
+  const c = task({ title: 'c', teamId: 'staff', assigneeId: 'scott', assignedBy: ME, pageId: 'p1' });
+  const d = task({ title: 'd', assigneeId: ME, assignedBy: ME });
+  const e = task({ title: 'e', teamId: 'elders', assigneeId: null });
+  const all = [a, b, c, d, e];
+  const run = (f: Partial<typeof DEFAULT_FILTERS>) => applyFilters(all, { ...DEFAULT_FILTERS, ...f }, ME, tree, teams).map((x) => x.title).sort();
+  assert.deepEqual(run({ tagsAny: ['waiting', 'budget'] }), ['a', 'b']);
+  assert.deepEqual(run({ tagsNone: ['waiting'] }), ['b', 'c', 'd', 'e']);
+  assert.deepEqual(run({ teamId: 'elders' }), ['a', 'b', 'e'], 'subteams included by default');
+  assert.deepEqual(run({ teamId: 'elders', includeSubteams: false }), ['a', 'e']);
+  assert.deepEqual(run({ teamId: 'none' }), ['d']);
+  // The tester's four views.
+  assert.deepEqual(run({ teamId: 'elders', status: 'open' }), ['a', 'b', 'e'], 'all unfinished Elders tasks');
+  assert.deepEqual(run({ assignee: 'scott' }), ['a', 'b', 'c'], 'everything assigned to Scott, across teams');
+  assert.deepEqual(run({ teamId: 'elders', assignee: 'scott' }), ['a', 'b'], 'Scott’s Elders tasks (not his Staff one)');
+  assert.deepEqual(run({ assignedBy: 'me', assignee: 'others' }), ['a', 'c'], 'tasks I assigned to others');
+  assert.deepEqual(run({ sectionId: 's1' }), ['c']);
+  // Saved filters are normalised: arrays and booleans kept, junk dropped.
+  const n = normalizeFilters({ tagsAny: ['x', 3], includeSubteams: false, priority: 'p9', teamId: 'elders', bogus: 1 });
+  assert.deepEqual(n.tagsAny, ['x']);
+  assert.equal(n.includeSubteams, false);
+  assert.equal(n.priority, 'any');
+  assert.deepEqual(activeFilterKeys(n).sort(), ['tagsAny', 'teamId']);
+});
+
+test('quick add: #tags and +team', () => {
+  const r = parseQuickAdd('Book the hall #waiting #Budget tomorrow +elders #waiting #123');
+  assert.deepEqual(r.tags, ['waiting', 'Budget']);
+  assert.equal(r.team, 'elders');
+  assert.equal(r.title, 'Book the hall #123');
+  assert.ok(r.dueDate);
+  assert.ok(r.tokens.some((t) => t.kind === 'team'));
+  assert.equal(r.tokens.filter((t) => t.kind === 'tag').length, 3);
+  const plain = parseQuickAdd('C++ and a+b stay as they are');
+  assert.equal(plain.team, null);
+  assert.equal(plain.title, 'C++ and a+b stay as they are');
 });

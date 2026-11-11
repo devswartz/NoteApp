@@ -3,7 +3,8 @@
 // ?since= so missed events are replayed; on `resync` it reloads everything.
 import { backoffMs, freshAccessToken, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import { set, st } from './state.ts';
-import { loadMembers, loadTree, loadWorkspaces } from './workspace.ts';
+import { loadMembers, loadTags, loadTeams, loadTree, loadWorkspaces } from './workspace.ts';
+import { savedViewsChanged } from '../pages/tasks/savedViews.ts';
 import { loadTasks, removeTaskLocal, upsertTask } from './tasks.ts';
 import type { EventMessage, ServerEvent } from '../../shared/types.ts';
 import { commentsChanged } from '../editor/collabComments.ts';
@@ -107,6 +108,9 @@ function resync() {
   void loadTree();
   void loadTasks();
   void loadMembers();
+  void loadTags();
+  void loadTeams();
+  savedViewsChanged(st().wsId);
   void loadUserTemplates();
 }
 
@@ -127,7 +131,16 @@ function handle(ev: ServerEvent) {
       if (ev.workspaceId === wsId) debounce('tree', () => void loadTree(), 400);
       break;
     case 'members':
-      if (ev.workspaceId === wsId) debounce('members', () => void loadMembers());
+      if (ev.workspaceId === wsId) debounce('members', () => (void loadMembers(), void loadTeams())); // removed members leave their teams
+      break;
+    case 'tags':
+      if (ev.workspaceId === wsId) debounce('tags', () => void loadTags());
+      break;
+    case 'teams':
+      if (ev.workspaceId === wsId) debounce('teams', () => void loadTeams());
+      break;
+    case 'task-views':
+      debounce(`views:${ev.workspaceId}`, () => savedViewsChanged(ev.workspaceId));
       break;
     case 'comments':
       if (ev.workspaceId === wsId || isSharedPage(ev.pageId)) commentsChanged(ev.pageId);

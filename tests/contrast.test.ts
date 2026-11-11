@@ -43,3 +43,28 @@ for (const [theme, sel, overlays] of [
     assert.ok(ratio(token(b, 'text-placeholder'), token(b, 'bg')) >= 4.5, 'placeholder on --bg');
   });
 }
+
+// Editor text and highlight colours (src/styles/colors.css; names in shared/colors.ts).
+const { COLOR_NAMES } = await import('../shared/colors.ts');
+const colorsCss = readFileSync(new URL('../src/styles/colors.css', import.meta.url), 'utf8');
+const colorBlock = (selector: string) => {
+  const start = colorsCss.indexOf(`${selector} {`);
+  assert.ok(start >= 0, `colors.css: missing ${selector}`);
+  return colorsCss.slice(start, colorsCss.indexOf('\n}', start));
+};
+for (const [theme, sel] of [
+  ['light', ':root'],
+  ['dark', ":root[data-theme='dark']"],
+] as const) {
+  test(`${theme}: editor text colours reach 4.5:1 on the page; text reaches 4.5:1 on every highlight`, () => {
+    const b = block(sel);
+    const c = colorBlock(sel);
+    const surfaces = ['bg', 'bg-subtle', 'bg-elevated'].map((n) => token(b, n));
+    for (const name of COLOR_NAMES) {
+      const fg = token(c, `tc-${name}`);
+      for (const s of surfaces) assert.ok(ratio(fg, s) >= 4.5, `--tc-${name} ${fg} on ${s}: ${ratio(fg, s).toFixed(2)}`);
+      const hl = token(c, `hl-${name}`);
+      for (const t of ['text', 'text-2']) assert.ok(ratio(token(b, t), hl) >= 4.5, `--${t} on --hl-${name} ${hl}: ${ratio(token(b, t), hl).toFixed(2)}`);
+    }
+  });
+}

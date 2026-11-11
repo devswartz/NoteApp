@@ -36,6 +36,7 @@ export const USER_FK_DECISIONS: { table: string; column: string; note: string }[
   { table: 'comment_threads', column: 'resolved_by', note: 'resolution stays' },
   { table: 'comments', column: 'author_id', note: 'comments stay, author shows as deleted' },
   { table: 'templates', column: 'created_by', note: 'private templates are deleted first; workspace-wide ones stay' },
+  { table: 'tags', column: 'created_by', note: 'tags are shared by the workspace and stay' },
 ];
 
 /** Create the stand-in user if needed. It can't sign in (the hash isn't bcrypt), is never verified, and sorts last by created_at. */
@@ -182,6 +183,7 @@ export function deleteAccount(userId: string): boolean {
 
     // 8. Re-point authorship in what stays, then delete the user. Memberships, notebook shares, sessions, push and device
     //    tokens, notifications, reminders and settings cascade; assignee, activity actor and version author become NULL.
+    db.prepare('UPDATE tasks SET assigned_by = NULL WHERE assignee_id = ?').run(userId); // losing their assignee below
     for (const d of USER_FK_DECISIONS) db.prepare(`UPDATE ${d.table} SET ${d.column} = ? WHERE ${d.column} = ?`).run(DELETED_USER_ID, userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   })();

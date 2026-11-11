@@ -155,6 +155,16 @@ export function taskRow(page: Page, title: string) {
   return page.locator('.task-row').filter({ has: page.locator('.task-title', { hasText: title }) });
 }
 
+/** All Tasks: Add filter → kind → value (the filter bar's chips). */
+export async function addFilter(page: Page, kind: string, value: string) {
+  await page.getByRole('button', { name: 'Add filter' }).click();
+  await page.getByRole('menuitem', { name: kind, exact: true }).click();
+  const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Match the item's label exactly (people items also contain their avatar's initials).
+  await page.getByRole('menuitem').filter({ has: page.locator('.menu-label', { hasText: new RegExp(`^${esc}$`) }) }).click();
+  await page.keyboard.press('Escape'); // multi-select kinds (tags) stay open
+}
+
 /** Polls the API until `check` passes (for server-side effects such as the debounced page save). */
 export async function eventually<T>(fn: () => Promise<T>, check: (v: T) => boolean, message: string, timeout = 10_000) {
   await expect.poll(async () => check(await fn()), { message, timeout }).toBe(true);

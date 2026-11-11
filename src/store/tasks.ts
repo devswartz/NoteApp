@@ -67,6 +67,9 @@ export async function createTask(input: TaskPatch & { title: string; id?: string
     createdBy: user.id,
     pageId: input.pageId ?? null,
     parentId: input.parentId ?? null,
+    teamId: input.teamId ?? null,
+    tagIds: input.tagIds ?? [],
+    assignedBy: input.assigneeId ? user.id : null,
     completedAt: null,
     completedBy: null,
     createdAt: ts,
@@ -91,6 +94,7 @@ export async function updateTask(id: string, p: TaskPatch, opts: { silent?: bool
   const prev = st().tasks[id];
   if (!prev) return;
   const optimistic: Task = { ...prev, ...p };
+  if (p.assigneeId !== undefined && p.assigneeId !== prev.assigneeId) optimistic.assignedBy = p.assigneeId ? (st().user?.id ?? null) : null;
   if (p.status === 'done' && prev.status === 'open') {
     optimistic.completedAt = new Date().toISOString();
     optimistic.completedBy = st().user?.id ?? null;

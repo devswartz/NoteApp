@@ -11,6 +11,7 @@ import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
 import { taskRoutes } from './tasks.ts';
+import { teamRoutes } from './teams.ts';
 import { searchRoutes } from './search.ts';
 import { fileRoutes } from './files.ts';
 import { publicReminderRoutes, reminderRoutes } from './reminders.ts';
@@ -54,6 +55,7 @@ api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);
 api.use(taskRoutes);
+api.use(teamRoutes); // tags, teams, saved task views
 api.use(searchRoutes);
 api.use(fileRoutes);
 api.use(reminderRoutes);

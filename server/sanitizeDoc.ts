@@ -3,10 +3,12 @@
 //   - images with an unsafe src are removed
 //   - file cards with an unsafe url are removed
 //   - link marks with an unsafe href are removed (the text stays)
+//   - text colour / highlight marks keep only palette names (shared/colors.ts); anything else is dropped
 // While walking, it can also rewrite references (ids, upload URLs) for the caller.
 // Owner: Foundation.
 import * as Y from 'yjs';
 import { safeFileUrl, safeImageUrl, safeLinkUrl } from '../shared/urls.ts';
+import { isColorName } from '../shared/colors.ts';
 
 export interface SanitizeOptions {
   /** Called for every element that is kept, before its children (e.g. to rewrite a taskRef's id). */
@@ -17,6 +19,7 @@ export interface SanitizeOptions {
 
 /** y-prosemirror stores a mark under its name, or `name--<hash>` for marks that can overlap. */
 const isLinkKey = (k: string) => k === 'link' || k.startsWith('link--');
+const isMarkKey = (k: string, name: string) => k === name || k.startsWith(`${name}--`);
 /** Element attributes that hold a URL, by node type. */
 const URL_ATTRS: Record<string, { attr: string; safe: (u: unknown) => string }> = {
   image: { attr: 'src', safe: safeImageUrl },
@@ -30,6 +33,10 @@ function cleanText(t: Y.XmlText, opts: SanitizeOptions): number {
     const len = typeof op.insert === 'string' ? op.insert.length : 1;
     const change: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(op.attributes ?? {})) {
+      // Colours: a text colour that isn't a palette name loses its styling; a highlight falls back to the default.
+      const color = (v as { color?: unknown } | null)?.color;
+      if (isMarkKey(k, 'textStyle') && !isColorName(color)) change[k] = null;
+      if (isMarkKey(k, 'highlight') && color != null && !isColorName(color)) change[k] = { ...(v as object), color: null };
       if (!isLinkKey(k)) continue;
       const href = (v as { href?: unknown } | null)?.href;
       const safe = safeLinkUrl(href);

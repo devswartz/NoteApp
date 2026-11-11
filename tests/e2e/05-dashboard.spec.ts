@@ -1,6 +1,6 @@
 // Priority 5: dashboard views (Today/Upcoming/Calendar/Completed/All), filters, quick add parsing.
 import { expect, test } from '@playwright/test';
-import { createTask, createUser, isoDay, listTasks, signInContext, taskRow, tasksUrl, eventually } from './helpers.ts';
+import { addFilter, createTask, createUser, isoDay, listTasks, signInContext, taskRow, tasksUrl, eventually } from './helpers.ts';
 
 test.describe('dashboard', () => {
   test('Today shows overdue + today; Upcoming shows the future; Completed shows done tasks', async ({ page, context, request }) => {
@@ -68,18 +68,18 @@ test.describe('dashboard', () => {
     await expect(taskRow(page, 'Alpha urgent')).toHaveCount(0);
     await page.getByPlaceholder('Filter tasks…').fill('');
 
-    await page.getByRole('button', { name: /Filters/ }).click();
-    await page.locator('.filters').getByLabel('Priority').selectOption('1');
+    await addFilter(page, 'Priority', 'Priority 1');
     await expect(taskRow(page, 'Alpha urgent')).toBeVisible();
     await expect(taskRow(page, 'Gamma medium')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /Filters · 1/ })).toBeVisible();
-    await page.getByRole('button', { name: 'Clear' }).click();
+    await expect(page.locator('.filter-chip[data-filter="priority"]')).toContainText('Priority 1');
+    await page.getByRole('button', { name: 'Remove Priority filter' }).click();
     await expect(taskRow(page, 'Gamma medium')).toBeVisible();
 
     // (A new personal workspace is seeded with an onboarding note that has tasks in it.)
-    await page.locator('.filters').getByLabel('Source').selectOption('notes');
+    await addFilter(page, 'Source', 'In notes');
     await expect(taskRow(page, 'Alpha urgent')).toHaveCount(0);
-    await page.locator('.filters').getByLabel('Source').selectOption('standalone');
+    await page.getByRole('button', { name: 'Source filter', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Standalone' }).click();
     await expect(taskRow(page, 'Alpha urgent')).toBeVisible();
   });
 
