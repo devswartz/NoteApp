@@ -358,8 +358,8 @@ function useRuleArea(scroller: HTMLElement | null, article: HTMLElement | null) 
       const sr = scroller.getBoundingClientRect();
       const base = sr.top - scroller.scrollTop;
       const s = surface.getBoundingClientRect();
-      const top = Math.round(s.top - base);
-      const left = Math.round(s.left - sr.left);
+      const top = s.top - base;
+      const left = s.left - sr.left;
       const height = Math.max(0, Math.round(article.getBoundingClientRect().bottom - base - top));
       setArea((a) => (a && a.top === top && a.left === left && a.height === height ? a : { top, left, height }));
     };

@@ -54,7 +54,9 @@ function measure(view: EditorView) {
   view.state.doc.forEach((node, offset) => {
     const el = view.nodeDOM(offset);
     if (!(el instanceof HTMLElement)) return;
-    const pad = (current.find(offset, offset + node.nodeSize, (s) => typeof s.pad === 'number')[0]?.spec.pad as number | undefined) ?? 0;
+    // find() also returns decorations that only touch the range (the block before's).
+    const own = current.find(offset, offset + node.nodeSize, (s) => typeof s.pad === 'number').find((d) => d.from === offset);
+    const pad = (own?.spec.pad as number | undefined) ?? 0;
     blocks.push({ from: offset, to: offset + node.nodeSize, bottom: el.getBoundingClientRect().bottom - origin, pad });
   });
   const pads = gridPads(blocks, unit);
@@ -76,13 +78,27 @@ export const RuleGrid = Extension.create({
         props: { decorations: (state) => key.getState(state) },
         view(view) {
           let frame = 0;
-          const schedule = () => {
-            if (!frame) frame = requestAnimationFrame(() => ((frame = 0), measure(view)));
-          };
           // Size changes cover rule lines turned on/off (the line height changes), images
-          // loading, a task title wrapping, and the box being made wider or narrower.
-          const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
-          ro?.observe(view.dom);
+          // loading, a task title wrapping, and the box being made wider or narrower. Each
+          // block is watched too: one can grow while another shrinks.
+          const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => schedule());
+          let watched: Element[] = [];
+          const watch = () => {
+            const now = [view.dom, ...view.dom.children];
+            if (!ro || (now.length === watched.length && now.every((el, i) => el === watched[i]))) return;
+            ro.disconnect();
+            for (const el of now) ro.observe(el);
+            watched = now;
+          };
+          const schedule = () => {
+            if (!frame)
+              frame = requestAnimationFrame(() => {
+                frame = 0;
+                measure(view);
+                watch();
+              });
+          };
+          watch();
           schedule();
           return {
             update: (_v, prev) => {
