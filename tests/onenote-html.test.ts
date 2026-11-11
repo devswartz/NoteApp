@@ -32,7 +32,50 @@ test('headings, marks, lists, nested lists, tables and breaks produce a valid ed
   assert.equal(c.doc.content[1].attrs?.level, 3, 'h4+ become level 3');
 });
 
-test('to-dos (open, completed, tagged with several tags, inside lists) become taskRef placeholders', () => {
+test('positioned outlines become canvas boxes with their geometry; loose content goes in a box below', () => {
+  const c = convertOneNotePage(`<html><head><title>P</title></head><body data-absolute-enabled="true" style="font-family:Calibri">
+    <div data-id="_default" style="position:absolute;left:48px;top:115px;width:624px"><p>Left</p><p data-tag="to-do">Task</p></div>
+    <div style="position: absolute; left: 700px; top: 40px; width: 300px"><p>Right, higher up</p></div>
+    <img style="position:absolute;left:48px;top:600px;width:320px;height:200px" src="https://graph.microsoft.com/v1.0/me/onenote/resources/i/$value" data-src-type="image/png" />
+    <div style="position:absolute;left:10px;top:10px"><p> </p></div>
+    <p>Loose paragraph</p>
+  </body></html>`);
+  assert.equal(c.kind, 'canvas');
+  assert.deepEqual(
+    c.boxes.map(({ x, y, w, z }) => ({ x, y, w, z })),
+    [
+      { x: 48, y: 115, w: 624, z: 0 },
+      { x: 700, y: 40, w: 300, z: 1 },
+      { x: 48, y: 600, w: 320, z: 2 },
+      { x: 48, y: 824, w: 624, z: 3 }, // below the image (600 + 200 + gap); the empty outline is dropped
+    ],
+  );
+  for (const b of c.boxes) schema.nodeFromJSON(b.doc).check();
+  assert.deepEqual(c.boxes.map((b) => b.doc.content.map((n) => n.type)), [['paragraph', 'taskRef'], ['paragraph'], ['image'], ['paragraph']]);
+  assert.deepEqual([c.resources.length, c.todos.length], [1, 1], 'resource and to-do keys are shared across boxes');
+  // `doc` is every box in reading order (top to bottom, then left to right).
+  assert.deepEqual(c.doc.content.map((n) => n.content?.[0]?.text ?? n.type), ['Right, higher up', 'Left', 'taskRef', 'image', 'Loose paragraph']);
+});
+
+test('pages without positioned top-level elements stay documents', () => {
+  const c = valid(`<body><div><p>a</p></div><div style="position:relative;left:5px"><p>b</p></div><div><div style="position:absolute;left:5px;top:5px"><p>nested</p></div></div></body>`);
+  assert.equal(c.kind, 'document');
+  assert.deepEqual(c.boxes, []);
+  assert.deepEqual(c.doc.content.map((n) => n.content?.[0]?.text), ['a', 'b', 'nested']);
+});
+
+test('malformed, negative and huge geometry is clamped to sane values', () => {
+  const box = (style: string, extra = '') => convertOneNotePage(`<body><div style="${style}" ${extra}><p>x</p></div></body>`).boxes[0];
+  const g = (b: ReturnType<typeof box>) => [b.x, b.y, b.w];
+  assert.deepEqual(g(box('position:absolute;left:-50px;top:1e308px;width:99999999999px')), [0, 48, 4000], 'exponent syntax is junk → default top');
+  assert.deepEqual(g(box('position:absolute;left:999999999px;top:-1px;width:2px')), [50_000, 0, 40]);
+  assert.deepEqual(g(box('position:absolute;left:abc;top:calc(1px + 2px);width:50%')), [48, 48, 624]);
+  assert.deepEqual(g(box('POSITION:ABSOLUTE;LEFT:10.6PX;TOP:30pt;width:NaNpx;left:20px')), [20, 40, 624], 'case-insensitive, pt → px, later wins');
+  assert.deepEqual(g(box('position:absolute', 'width="250"')), [48, 48, 250], 'width attribute as a fallback');
+  assert.deepEqual(g(box(`position:absolute;${'x:y;'.repeat(1500)}left:7px`)), [48, 48, 624], 'only the first 4 KB of a style is read');
+});
+
+test('to-dos (open, completed,tagged with several tags, inside lists) become taskRef placeholders', () => {
   const c = valid(`<body><p data-tag="to-do">Open one</p><p data-tag="to-do:completed">Done one</p>
     <ul><li>before</li><li data-tag="important,to-do">In a list</li><li>after</li></ul><p data-tag="important">not a to-do</p></body>`);
   assert.deepEqual(c.todos.map((t) => [t.title, t.done]), [['Open one', false], ['Done one', true], ['In a list', false]]);
@@ -78,6 +121,7 @@ test('pathological 1 MB pages convert in linear time (no quadratic parsing, nest
     'many titles': (n) => fill('<title', n),
     'entities': (n) => fill('&aaaaaaaa', n),
     'tables': (n) => fill('<table><tr><td>', n),
+    'positioned outlines': (n) => '<body>' + fill('<div style="position:absolute;left:9px;top:9px;width:9px"><p>x</p></div>', n),
   };
   // Fastest of two runs, to skip one-off GC pauses and JIT warm-up.
   const time = (html: string) =>
