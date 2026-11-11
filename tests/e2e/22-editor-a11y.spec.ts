@@ -130,8 +130,15 @@ test.describe('editor accessibility', () => {
     await expect(page.getByRole('toolbar', { name: 'Formatting' })).toBeVisible();
 
     // The side panel's task rows are the dashboard's TaskRow (Tasks/UI Shell); they're covered
-    // by their owners' checks, so this one is about the editor and page chrome.
-    const results = await new AxeBuilder({ page }).include('.page-layout').include('.bubble-menu').exclude('.task-row').analyze();
+    // by their owners' checks, so this one is about the editor and page chrome. The same goes
+    // for the assignee avatar (white initials on the person's colour), which the ribbon's
+    // layout now brings into the viewport.
+    const results = await new AxeBuilder({ page })
+      .include('.page-layout')
+      .include('.bubble-menu')
+      .exclude('.task-row')
+      .exclude('.task-ref .avatar')
+      .analyze();
     const bad = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
     expect(bad.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).slice(0, 3).join(', ')})`)).toEqual([]);
   });

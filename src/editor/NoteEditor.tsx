@@ -36,7 +36,8 @@ import {
 } from 'lucide-react';
 import { TaskRef, canConvert, convertToTasks } from './TaskRef.tsx';
 import { colorExtensions } from './colors.ts';
-import { ColorChoices, EditorToolbar, ToolbarMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
+import { ColorChoices, ToolbarMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
+import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
 import { UndoTasks } from './undoTasks.ts';
@@ -51,7 +52,7 @@ import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
-import { ENTER, MOD, SHIFT, keyLabel, useIsMobile } from '../components/ui.tsx';
+import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
 import '../styles/editor.css';
 
 export type { PresenceUser, SaveState, SyncStatus };
@@ -133,7 +134,6 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   }, [session, onAwareness]);
   usePresenceRole(session, user, canEdit); // others see 'editing' or 'viewing'
   const editor = usePageEditor(session, { pageId, workspaceId, user, canEdit, long: true });
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (session.serverSynced) onServerSynced?.();
@@ -142,12 +142,23 @@ export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPre
   useEffect(() => {
     if (editor) onReady(editor);
   }, [editor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A document has one editor: the ribbon acts on it whenever it is editable.
+  useEffect(() => {
+    if (!editor || !canEdit) return;
+    setActiveEditor(editor);
+    const onFocus = () => setActiveEditor(editor);
+    editor.on('focus', onFocus);
+    return () => {
+      editor.off('focus', onFocus);
+      clearActiveEditor(editor);
+    };
+  }, [editor, canEdit]);
   useCommentBinding(editor);
   useSlashFilePickers(pageId, workspaceId);
 
   return (
     <div className={`editor-wrap ${session.synced ? '' : 'is-loading'}`}>
-      {editor && canEdit && !isMobile && <EditorToolbar editor={editor} />}
       {editor && canEdit && <EditorChrome editor={editor} />}
       <EditorContent editor={editor} />
       <EditorMenus />

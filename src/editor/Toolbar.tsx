@@ -1,7 +1,8 @@
-// The fixed formatting toolbar at the top of the editor (desktop and tablet), and the
-// colour menus it shares with the floating toolbar over selected text (NoteEditor.tsx).
+// The ribbon: a OneNote-style bar fixed across the top of the note area (desktop and
+// tablet), acting on the page's active editor (./activeEditor.ts), and the colour menus it
+// shares with the floating toolbar over selected text (NoteEditor.tsx).
 // WAI-ARIA toolbar pattern: one tab stop (roving tabindex), ←/→/Home/End move between
-// controls, Escape returns to the text. Alt+F10 in the text focuses it (NoteEditor.tsx).
+// controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
 import {
@@ -23,6 +24,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { canConvert } from './TaskRef.tsx';
+import { useActiveEditor } from './activeEditor.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
 import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, type ColorName } from './colors.ts';
@@ -61,7 +63,7 @@ function useRovingTabIndex(ref: React.RefObject<HTMLElement | null>) {
 }
 
 /** ←/→, Home/End between toolbar items; Escape back to the text. */
-export function toolbarKeys(e: React.KeyboardEvent<HTMLElement>, editor: Editor, selector = ITEM) {
+export function toolbarKeys(e: React.KeyboardEvent<HTMLElement>, editor: Editor | null, selector = ITEM) {
   const items = [...e.currentTarget.querySelectorAll<HTMLElement>(selector)].filter((b) => !b.closest('.tb-pop'));
   const i = items.indexOf(document.activeElement as HTMLElement);
   if (i < 0) return;
@@ -73,7 +75,7 @@ export function toolbarKeys(e: React.KeyboardEvent<HTMLElement>, editor: Editor,
   else if (e.key === 'ArrowLeft') go(i - 1);
   else if (e.key === 'Home') go(0);
   else if (e.key === 'End') go(items.length - 1);
-  else if (e.key === 'Escape') {
+  else if (e.key === 'Escape' && editor && !editor.isDestroyed) {
     e.preventDefault();
     editor.commands.focus();
   }
@@ -88,11 +90,13 @@ export function ToolbarMenu({
   label,
   trigger,
   className = '',
+  disabled = false,
   children,
 }: {
   label: string;
   trigger: ReactNode;
   className?: string;
+  disabled?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -122,13 +126,14 @@ export function ToolbarMenu({
         aria-label={label}
         aria-haspopup="true"
         aria-expanded={open}
+        aria-disabled={disabled || undefined}
         tabIndex={-1}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => !disabled && setOpen((o) => !o)}
       >
         {trigger}
       </button>
-      {open && (
+      {open && !disabled && (
         <div
           className="tb-pop"
           role="group"
@@ -189,12 +194,13 @@ export function ColorChoices({ editor, kind, done }: { editor: Editor; kind: Col
 }
 
 /** Text colour / highlight menu buttons; the trigger shows the colour at the selection. */
-export function ColorMenu({ editor, kind }: { editor: Editor; kind: ColorKind }) {
-  const color = useEditorState({ editor, selector: ({ editor: e }) => currentColor(e, kind) });
+export function ColorMenu({ editor, kind }: { editor: Editor | null; kind: ColorKind }) {
+  const color = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? currentColor(e, kind) : null) });
   const label = kind === 'text' ? 'Text colour' : 'Highlight';
   return (
     <ToolbarMenu
       label={label}
+      disabled={!editor}
       trigger={
         <>
           {kind === 'text' ? <Baseline size={16} /> : <Highlighter size={16} />}
@@ -202,109 +208,144 @@ export function ColorMenu({ editor, kind }: { editor: Editor; kind: ColorKind })
         </>
       }
     >
-      {(close) => <ColorChoices editor={editor} kind={kind} done={close} />}
+      {(close) => editor && <ColorChoices editor={editor} kind={kind} done={close} />}
     </ToolbarMenu>
   );
 }
 
-export function EditorToolbar({ editor }: { editor: Editor }) {
+/** What the ribbon shows for the active editor's selection. */
+function ribbonState(e: Editor) {
+  return {
+    block: (e.isActive('heading', { level: 1 }) ? 'h1' : e.isActive('heading', { level: 2 }) ? 'h2' : e.isActive('heading', { level: 3 }) ? 'h3' : 'p') as BlockId,
+    bold: e.isActive('bold'),
+    italic: e.isActive('italic'),
+    underline: e.isActive('underline'),
+    strike: e.isActive('strike'),
+    bullet: e.isActive('bulletList'),
+    ordered: e.isActive('orderedList'),
+    check: e.isActive('taskList'),
+    link: e.isActive('link'),
+    canLink: !e.state.selection.empty || e.isActive('link'),
+    canTask: canConvert(e),
+    canUndo: e.can().undo(),
+    canRedo: e.can().redo(),
+  };
+}
+
+const Sep = () => <span className="bm-sep rb-sep" aria-hidden />;
+
+/**
+ * The ribbon across the top of the note area (OneNote's Home tab). It acts on the active
+ * editor, the one last focused on this page; with none (an empty canvas, a viewer) every
+ * control is disabled, not hidden. Presses keep the editor's selection (mousedown is prevented).
+ */
+export function Ribbon() {
+  const active = useActiveEditor();
+  const editor = active && !active.isDestroyed && active.isEditable ? active : null;
   const ref = useRef<HTMLDivElement>(null);
   const roving = useRovingTabIndex(ref);
-  const s = useEditorState({
-    editor,
-    selector: ({ editor: e }) => ({
-      block: (e.isActive('heading', { level: 1 }) ? 'h1' : e.isActive('heading', { level: 2 }) ? 'h2' : e.isActive('heading', { level: 3 }) ? 'h3' : 'p') as BlockId,
-      textBlock: e.state.selection.$from.parent.isTextblock && !e.isActive('codeBlock'),
-      bold: e.isActive('bold'),
-      italic: e.isActive('italic'),
-      underline: e.isActive('underline'),
-      strike: e.isActive('strike'),
-      bullet: e.isActive('bulletList'),
-      ordered: e.isActive('orderedList'),
-      check: e.isActive('taskList'),
-      link: e.isActive('link'),
-      canLink: !e.state.selection.empty || e.isActive('link'),
-      canTask: canConvert(e),
-      canUndo: e.can().undo(),
-      canRedo: e.can().redo(),
-    }),
-  });
-  const chain = () => editor.chain().focus();
-  const btn = (title: string, icon: ReactNode, run: () => void, opts: { active?: boolean; disabled?: boolean; text?: string } = {}) => (
-    <button
-      type="button"
-      data-tb-item
-      className={`bm-btn ${opts.active ? 'is-active' : ''} ${opts.text ? 'bm-text' : ''}`}
-      title={title}
-      aria-label={opts.text ? undefined : title}
-      aria-pressed={opts.active === undefined ? undefined : opts.active}
-      aria-disabled={opts.disabled || undefined}
-      tabIndex={-1}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={() => !opts.disabled && run()}
-    >
-      {icon}
-      {opts.text}
-    </button>
-  );
-  const blockLabel = BLOCKS.find((b) => b.id === s.block)!.label;
+  const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
+  const off = !editor || !s;
+  const chain = () => editor!.chain().focus();
+  const btn = (title: string, icon: ReactNode, run: () => void, opts: { active?: boolean; disabled?: boolean; text?: string } = {}) => {
+    const disabled = off || opts.disabled;
+    const on = !off && !!opts.active;
+    return (
+      <button
+        type="button"
+        data-tb-item
+        className={`bm-btn ${on ? 'is-active' : ''} ${opts.text ? 'bm-text' : ''}`}
+        title={title}
+        aria-label={opts.text ? undefined : title}
+        aria-pressed={opts.active === undefined ? undefined : on}
+        aria-disabled={disabled || undefined}
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => !disabled && run()}
+      >
+        {icon}
+        {opts.text}
+      </button>
+    );
+  };
+  const block = s?.block ?? 'p';
+  const blockLabel = BLOCKS.find((b) => b.id === block)!.label;
   return (
     <div
       ref={ref}
-      className="editor-toolbar"
+      className={`ribbon ${off ? 'is-idle' : ''}`}
       role="toolbar"
-      aria-label="Editor toolbar"
+      aria-label="Ribbon"
       aria-orientation="horizontal"
-      contentEditable={false}
       onFocus={roving.onFocus}
       onKeyDown={(e) => toolbarKeys(e, editor)}
     >
-      <ToolbarMenu label={`Block type: ${blockLabel}`} className="tb-block" trigger={<><span className="tb-block-label">{blockLabel}</span><ChevronDown size={14} /></>}>
-        {(close) =>
-          BLOCKS.map((b) => (
-            <button
-              key={b.id}
-              type="button"
-              className={`tb-pop-item tb-pop-${b.id}`}
-              aria-pressed={s.block === b.id}
-              onClick={() => {
-                if (b.id === 'p') chain().setParagraph().run();
-                else chain().setHeading({ level: Number(b.id.slice(1)) as 1 | 2 | 3 }).run();
-                close();
-                editor.commands.focus();
-              }}
-            >
-              {b.label}
-            </button>
-          ))
-        }
-      </ToolbarMenu>
-      <span className="bm-sep" />
-      {btn(`Bold (${keyLabel(MOD, 'B')})`, <Bold size={16} />, () => chain().toggleBold().run(), { active: s.bold })}
-      {btn(`Italic (${keyLabel(MOD, 'I')})`, <Italic size={16} />, () => chain().toggleItalic().run(), { active: s.italic })}
-      {btn(`Underline (${keyLabel(MOD, 'U')})`, <Underline size={16} />, () => chain().toggleUnderline().run(), { active: s.underline })}
-      {btn(`Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, <Strikethrough size={16} />, () => chain().toggleStrike().run(), { active: s.strike })}
-      <ColorMenu editor={editor} kind="text" />
-      <ColorMenu editor={editor} kind="highlight" />
-      <span className="bm-sep" />
-      {btn('Bulleted list', <List size={16} />, () => chain().toggleBulletList().run(), { active: s.bullet })}
-      {btn('Numbered list', <ListOrdered size={16} />, () => chain().toggleOrderedList().run(), { active: s.ordered })}
-      {btn('Checklist', <ListChecks size={16} />, () => chain().toggleTaskList().run(), { active: s.check })}
-      {btn(`Turn into task (${keyLabel(MOD, ENTER)})`, <CircleCheck size={16} />, () => chain().convertToTask().run(), { disabled: !s.canTask, text: 'Task' })}
-      <span className="bm-sep" />
-      {btn(`Link (${keyLabel(MOD, 'K')})`, <Link2 size={16} />, () => openLinkEditor(editor), { active: s.link, disabled: !s.canLink })}
-      {btn('Image', <ImagePlus size={16} />, () => slashHooks.pickImage?.(editor))}
-      {btn('Table', <Table size={16} />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
+      <div className="rb-group" role="group" aria-label="Text style">
+        <ToolbarMenu
+          label={`Block type: ${blockLabel}`}
+          className="tb-block"
+          disabled={off}
+          trigger={
+            <>
+              <span className="tb-block-label">{blockLabel}</span>
+              <ChevronDown size={14} />
+            </>
+          }
+        >
+          {(close) =>
+            BLOCKS.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                className={`tb-pop-item tb-pop-${b.id}`}
+                aria-pressed={block === b.id}
+                onClick={() => {
+                  if (b.id === 'p') chain().setParagraph().run();
+                  else chain().setHeading({ level: Number(b.id.slice(1)) as 1 | 2 | 3 }).run();
+                  close();
+                  editor?.commands.focus();
+                }}
+              >
+                {b.label}
+              </button>
+            ))
+          }
+        </ToolbarMenu>
+      </div>
+      <Sep />
+      <div className="rb-group" role="group" aria-label="Basic text">
+        {btn(`Bold (${keyLabel(MOD, 'B')})`, <Bold size={16} />, () => chain().toggleBold().run(), { active: s?.bold })}
+        {btn(`Italic (${keyLabel(MOD, 'I')})`, <Italic size={16} />, () => chain().toggleItalic().run(), { active: s?.italic })}
+        {btn(`Underline (${keyLabel(MOD, 'U')})`, <Underline size={16} />, () => chain().toggleUnderline().run(), { active: s?.underline })}
+        {btn(`Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, <Strikethrough size={16} />, () => chain().toggleStrike().run(), { active: s?.strike })}
+        <ColorMenu editor={editor} kind="text" />
+        <ColorMenu editor={editor} kind="highlight" />
+      </div>
+      <Sep />
+      <div className="rb-group" role="group" aria-label="Lists">
+        {btn('Bulleted list', <List size={16} />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
+        {btn('Numbered list', <ListOrdered size={16} />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
+        {btn('Checklist', <ListChecks size={16} />, () => chain().toggleTaskList().run(), { active: s?.check })}
+        {btn(`Turn into task (${keyLabel(MOD, ENTER)})`, <CircleCheck size={16} />, () => chain().convertToTask().run(), { disabled: !s?.canTask, text: 'Task' })}
+      </div>
+      <Sep />
+      <div className="rb-group" role="group" aria-label="Insert">
+        {btn(`Link (${keyLabel(MOD, 'K')})`, <Link2 size={16} />, () => openLinkEditor(editor!), { active: s?.link, disabled: !s?.canLink })}
+        {btn('Image', <ImagePlus size={16} />, () => slashHooks.pickImage?.(editor!))}
+        {btn('Table', <Table size={16} />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
+      </div>
       <span className="tb-spacer" />
-      {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 size={16} />, () => chain().undo().run(), { disabled: !s.canUndo })}
-      {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 size={16} />, () => chain().redo().run(), { disabled: !s.canRedo })}
+      <div className="rb-group" role="group" aria-label="History">
+        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 size={16} />, () => chain().undo().run(), { disabled: !s?.canUndo })}
+        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 size={16} />, () => chain().redo().run(), { disabled: !s?.canRedo })}
+      </div>
     </div>
   );
 }
 
-/** Move focus into the fixed toolbar (its current item). Returns false when there is none. */
+/** Move focus into the ribbon (its current item). Returns false when there is none. */
 export function focusFixedToolbar(): boolean {
-  const bar = document.querySelector<HTMLElement>('.editor-toolbar');
+  const bar = document.querySelector<HTMLElement>('.ribbon');
   const item = bar?.querySelector<HTMLElement>(`${ITEM}[tabindex="0"]`) ?? bar?.querySelector<HTMLElement>(ITEM);
   if (!item || bar!.getBoundingClientRect().width === 0) return false;
   item.focus();

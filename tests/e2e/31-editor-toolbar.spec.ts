@@ -1,6 +1,6 @@
-// Fixed editor toolbar, text colour / highlight, and the one-click "turn into task".
+// The ribbon, text colour / highlight, and the one-click "turn into task".
 import { expect, test, type Page } from '@playwright/test';
-import { createPage, createUser, focusEnd, openPage, signInContext, taskRef } from './helpers.ts';
+import { api, createPage, createUser, focusEnd, openPage, pageUrl, signInContext, taskRef } from './helpers.ts';
 
 async function typeLine(page: Page, text: string) {
   await focusEnd(page);
@@ -8,12 +8,12 @@ async function typeLine(page: Page, text: string) {
   await page.keyboard.type(text);
 }
 
-test('fixed toolbar: block type, bold, text colour and highlight (saved as names), undo', async ({ page, context, request }) => {
+test('ribbon: block type, bold, text colour and highlight (saved as names), undo', async ({ page, context, request }) => {
   const user = await createUser(request, 'Tia Toolbar');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   const editor = await openPage(page, user.wsId, pageId);
-  const bar = page.getByRole('toolbar', { name: 'Editor toolbar' });
+  const bar = page.getByRole('toolbar', { name: 'Ribbon' });
   await expect(bar).toBeVisible();
 
   await typeLine(page, 'Colourful words');
@@ -24,8 +24,13 @@ test('fixed toolbar: block type, bold, text colour and highlight (saved as names
   await expect(editor.locator('h2')).toHaveText('Colourful words');
   await expect(bar.getByRole('button', { name: 'Block type: Heading 2' })).toBeVisible();
 
-  await bar.getByRole('button', { name: /^Bold/ }).click();
+  const bold = bar.getByRole('button', { name: /^Bold/ });
+  await expect(bold).toHaveAttribute('aria-pressed', 'false');
+  await bold.click();
   await expect(editor.locator('h2 strong')).toHaveText('Colourful words');
+  // The selection is kept, and the active state follows it.
+  await expect(bold).toHaveAttribute('aria-pressed', 'true');
+  await expect(editor).toBeFocused();
 
   await bar.getByRole('button', { name: 'Text colour', exact: true }).click();
   await bar.getByRole('button', { name: 'Text colour: Red' }).click();
@@ -55,20 +60,24 @@ test('fixed toolbar: block type, bold, text colour and highlight (saved as names
   await expect(editor.locator('span[data-color="red"]')).toHaveCount(1);
 });
 
-test('toolbar stays visible while scrolling and is reachable with Alt+F10', async ({ page, context, request }) => {
+test('ribbon stays put while scrolling and is reachable with Alt+F10 and F6', async ({ page, context, request }) => {
   const user = await createUser(request, 'Sam Sticky');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   const editor = await openPage(page, user.wsId, pageId);
+  const bar = page.getByRole('toolbar', { name: 'Ribbon' });
+  const before = (await bar.boundingBox())!;
   await focusEnd(page);
   for (let i = 0; i < 40; i++) await page.keyboard.press('Enter');
   await page.keyboard.type('bottom line');
-  const bar = page.getByRole('toolbar', { name: 'Editor toolbar' });
   await expect(bar).toBeInViewport();
-  const top = (await bar.boundingBox())!.y;
-  expect(top).toBeLessThan(120);
+  const after = (await bar.boundingBox())!;
+  // Fixed under the top bar, across the note column, whether or not the page has scrolled.
+  expect(after.y).toBeLessThan(120);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(2);
+  expect(after.width).toBeGreaterThan((await editor.boundingBox())!.width);
 
-  // Alt+F10 with no selection: the fixed toolbar; arrows move; Escape returns to the text.
+  // Alt+F10 with no selection: the ribbon; arrows move; Escape returns to the text.
   await page.keyboard.press('Alt+F10');
   const first = bar.getByRole('button', { name: /^Block type/ });
   await expect(first).toBeFocused();
@@ -76,14 +85,68 @@ test('toolbar stays visible while scrolling and is reachable with Alt+F10', asyn
   await expect(bar.getByRole('button', { name: /^Bold/ })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(editor).toBeFocused();
+
+  // F6 regions: Shift+F6 from the text lands on the ribbon (its current item), F6 goes back.
+  await page.keyboard.press('Shift+F6');
+  await expect(bar.getByRole('button', { name: /^Bold/ })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(first).toBeFocused();
+  await page.keyboard.press('F6');
+  await expect(editor).toBeFocused();
 });
 
-test('turn a line into a task from the toolbar and from the hover ✓', async ({ page, context, request }) => {
+test('on a canvas the ribbon acts on the last-focused box, and is disabled with none', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Rae Ribbon');
+  const { sectionId } = await createPage(request, user);
+  const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: 'Board', kind: 'canvas' });
+  await signInContext(context, user);
+  await page.goto(pageUrl(user.wsId, id));
+  const surface = page.getByTestId('canvas-surface');
+  await expect(surface).toBeVisible();
+  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+
+  // An empty canvas: nothing to act on, so the controls are there but disabled.
+  const bar = page.getByRole('toolbar', { name: 'Ribbon' });
+  const bold = bar.getByRole('button', { name: /^Bold/ });
+  await expect(bold).toBeVisible();
+  await expect(bold).toHaveAttribute('aria-disabled', 'true');
+  const blockType = bar.getByRole('button', { name: /^Block type/ });
+  await expect(blockType).toHaveAttribute('aria-disabled', 'true');
+  await blockType.click({ force: true }); // aria-disabled: Playwright won't click it otherwise
+  await expect(bar.locator('.tb-pop')).toHaveCount(0);
+
+  // Two boxes; the second was focused last.
+  await surface.click({ position: { x: 40, y: 40 } });
+  await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();
+  await page.keyboard.type('first box');
+  await surface.click({ position: { x: 420, y: 200 } });
+  await expect(page.locator('.canvas-box')).toHaveCount(2);
+  await page.keyboard.type('second box');
+  await expect(bold).not.toHaveAttribute('aria-disabled', 'true');
+  await page.keyboard.press('Shift+Home');
+  await bold.click();
+  const second = page.locator('.canvas-box', { hasText: 'second box' });
+  const first = page.locator('.canvas-box', { hasText: 'first box' });
+  await expect(second.locator('strong')).toHaveText('second box');
+  await expect(first.locator('strong')).toHaveCount(0);
+  await expect(bold).toHaveAttribute('aria-pressed', 'true');
+
+  // Back in the first box: the ribbon follows it.
+  await first.locator('.ProseMirror').click();
+  await expect(bold).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Shift+Home');
+  await bar.getByRole('button', { name: /^Italic/ }).click();
+  await expect(first.locator('em')).toHaveText('first box');
+  await expect(second.locator('em')).toHaveCount(0);
+});
+
+test('turn a line into a task from the ribbon and from the hover ✓', async ({ page, context, request }) => {
   const user = await createUser(request, 'Hal Hover');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   const editor = await openPage(page, user.wsId, pageId);
-  const bar = page.getByRole('toolbar', { name: 'Editor toolbar' });
+  const bar = page.getByRole('toolbar', { name: 'Ribbon' });
 
   await typeLine(page, 'Book the venue');
   await bar.getByRole('button', { name: 'Task' }).click();

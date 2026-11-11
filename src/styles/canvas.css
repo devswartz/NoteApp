@@ -6,7 +6,8 @@
 .page-article.is-canvas .page-icon-row { max-width: 760px; }
 
 .canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px; padding: 14px 8px 0; }
-.canvas-surface { position: relative; min-height: 320px; }
+/* isolation: box z-indexes (which grow as boxes come to the front) stay under the ribbon. */
+.canvas-surface { position: relative; isolation: isolate; min-height: 320px; }
 .canvas-surface.can-edit { cursor: text; }
 .canvas-hint { position: absolute; top: 24px; left: 0; margin: 0; pointer-events: none; }
 

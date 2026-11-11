@@ -71,7 +71,7 @@ test('notes panels: the selected notebook, section and page are highlighted', as
   await page.keyboard.press('Escape');
 });
 
-test('keyboard: F6 cycles rail → panels → editor; arrows move in the tree', async ({ page, context, request }) => {
+test('keyboard: F6 cycles rail → panels → ribbon → editor; arrows move in the tree', async ({ page, context, request }) => {
   const user = await createUser(request, 'Kay Board');
   const a = await createPage(request, user, { notebook: 'Keys', page: 'First' });
   await api(request, 'POST', `/sections/${a.sectionId}/pages`, user.token, { title: 'Second' });
@@ -89,8 +89,13 @@ test('keyboard: F6 cycles rail → panels → editor; arrows move in the tree', 
   await expect(page.getByRole('tree', { name: 'Pages' }).getByRole('treeitem', { name: /First/ })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('tree', { name: 'Pages' }).getByRole('treeitem', { name: /Second/ })).toBeFocused();
+  // Then the ribbon (its first control), then the editor.
+  await page.keyboard.press('F6');
+  await expect(page.getByRole('toolbar', { name: 'Ribbon' }).getByRole('button', { name: /^Block type/ })).toBeFocused();
   await page.keyboard.press('F6');
   await expect(page.locator('.ProseMirror')).toBeFocused();
+  await page.keyboard.press('Shift+F6');
+  expect(await page.evaluate(() => !!document.activeElement?.closest('.ribbon'))).toBe(true);
   await page.keyboard.press('Shift+F6');
   expect(await page.evaluate(() => !!document.activeElement?.closest('.pages-panel'))).toBe(true);
 });

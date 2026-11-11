@@ -20,7 +20,7 @@ import { Plus } from 'lucide-react';
 import { BOXES_KEY, boxField, boxGeoms, readingOrder, type BoxGeom } from '../../shared/pageDoc.ts';
 import { useCollab, usePresenceRole, type CollabSession, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { EditorChrome, EditorMenus, usePageEditor, useSlashFilePickers } from './NoteEditor.tsx';
-import { EditorToolbar } from './Toolbar.tsx';
+import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { useCommentBinding } from './collabComments.ts';
 import { insertTaskAtEnd } from './TaskRef.tsx';
 import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, surfaceSize, UNMEASURED_H } from './canvasGeom.ts';
@@ -55,7 +55,7 @@ const DROP_ORIGIN = { canvas: 'drop-empty' };
 /** Bringing a focused box to the front: not an undo step. */
 const FOCUS_ORIGIN = { canvas: 'focus' };
 /** Focus moved here keeps the box "in use" (toolbar menus, link editor, dialogs…). */
-const KEEPS_BOX = '.editor-toolbar, .popover, .bubble-menu, .table-bar, .slash-menu, .link-editor, [role="menu"], [role="dialog"], [role="listbox"]';
+const KEEPS_BOX = '.ribbon,.popover, .bubble-menu, .table-bar, .slash-menu, .link-editor, [role="menu"], [role="dialog"], [role="listbox"]';
 
 /**
  * Escape in a box leaves the text and selects the box. Lowest priority, so open menus
@@ -153,6 +153,12 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   heightsRef.current = heights;
 
   useCommentBinding(active);
+  // The ribbon acts on the last-focused box (none until one is focused).
+  useEffect(() => {
+    if (!active || active.isDestroyed || !canEdit) return;
+    setActiveEditor(active);
+    return () => clearActiveEditor(active);
+  }, [active, canEdit]);
 
   const mount = useCallback((id: string) => setMounted((s) => (s.has(id) ? s : new Set(s).add(id))), []);
 
@@ -470,7 +476,6 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   return (
     <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''}`}>
-      {active && !active.isDestroyed && canEdit && !isMobile && <EditorToolbar editor={active} />}
       <div className="canvas-viewport">
         <div
           ref={surfaceRef}
