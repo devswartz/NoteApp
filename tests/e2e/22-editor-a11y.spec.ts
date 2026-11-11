@@ -137,7 +137,6 @@ test.describe('editor accessibility', () => {
       .include('.page-layout')
       .include('.bubble-menu')
       .exclude('.task-row')
-      .exclude('.task-ref .avatar')
       .analyze();
     const bad = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
     expect(bad.map((v) => `${v.id}: ${v.help} (${v.nodes.map((n) => n.target.join(' ')).slice(0, 3).join(', ')})`)).toEqual([]);

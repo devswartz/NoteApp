@@ -68,3 +68,24 @@ for (const [theme, sel] of [
     }
   });
 }
+
+test('avatar initials always reach 4.5:1 against the user colour', async () => {
+  const { initialsColor } = await import('../src/components/ui.tsx');
+  const lum = (hex: string) => {
+    const lin = (i: number) => {
+      const c = parseInt(hex.slice(1 + i, 3 + i), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4);
+  };
+  const ratio = (a: string, b: string) => {
+    const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+    return (x + 0.05) / (y + 0.05);
+  };
+  for (let r = 0; r < 256; r += 17)
+    for (let g = 0; g < 256; g += 17)
+      for (let b = 0; b < 256; b += 17) {
+        const bg = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+        assert.ok(ratio(bg, initialsColor(bg)) >= 4.5, bg);
+      }
+});
