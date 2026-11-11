@@ -39,6 +39,7 @@ import { ColorMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
 import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
+import { BlockExit } from './blockExit.ts';
 import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
@@ -209,6 +210,7 @@ export function usePageEditor(session: CollabSession, { pageId, workspaceId, use
       extensions: [
         ...documentExtensions(pageId),
         BlockMove, // Alt+Shift+↑/↓ moves blocks
+        BlockExit, // Backspace/Enter on an empty last line leaves a toggle, callout or quote
         UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
         ...(long ? [LongPage] : []), // long pages: render-skipping CSS away from the cursor
