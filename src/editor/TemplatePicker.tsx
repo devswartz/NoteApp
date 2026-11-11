@@ -2,8 +2,8 @@
 // The workspace's templates tied to this page's section (or a parent section) come first, under
 // "Templates for this section"; then the built-ins and the templates offered everywhere. Templates
 // tied only to other sections aren't shown. Each user template has rename, "Available in…" and delete.
-// On a canvas page the built-ins come as boxes; a user template keeps its kind, so using a canvas
-// template on an empty document page (or the other way round) converts the page first.
+// Every page is a canvas: the built-ins come as boxes, a canvas template's boxes keep their places,
+// and a template saved from a document page (before pages were all canvases) becomes one wide box.
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import type { Editor, JSONContent } from '@tiptap/core';
@@ -17,8 +17,7 @@ import { templateDialog } from './TemplateDialog.tsx';
 import { templateOffer } from '../../shared/sections.ts';
 import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
 import { BOXES_KEY } from '../../shared/pageDoc.ts';
-import { editorDoc, pageSchema, templateBoxes, writeBoxes, writeDocument, type CanvasHandle } from './canvasDoc.ts';
-import { convertPage } from './pageKind.ts';
+import { documentAsBox, editorDoc, pageSchema, templateBoxes, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 
 /** Where a template goes: the page's document editor, or its canvas. */
 export type TemplateTarget = { editor: Editor; canvas?: null } | { editor?: null; canvas: CanvasHandle };
@@ -62,17 +61,9 @@ export async function applyUserTemplate(target: TemplateTarget, pageId: string, 
   const r = await post<TemplateUse>(`/templates/${t.id}/use`, { pageId });
   const content = r.content as JSONContent;
   const schema = pageSchema(pageId);
-  if (r.kind === 'canvas') {
-    const doc = target.canvas ? target.canvas.doc : editorDoc(target.editor!);
-    if (!doc) return;
-    writeBoxes(doc, schema, templateBoxes(content));
-    if (!target.canvas) await convertPage(pageId, 'canvas');
-  } else if (target.editor) {
-    target.editor.chain().setContent(content).focus('start').run();
-  } else {
-    writeDocument(target.canvas!.doc, schema, content);
-    await convertPage(pageId, 'document');
-  }
+  const doc = target.canvas ? target.canvas.doc : editorDoc(target.editor!);
+  if (!doc) return;
+  writeBoxes(doc, schema, r.kind === 'canvas' ? templateBoxes(content) : [documentAsBox(content)]);
   fillMeta(pageId, r.title, r.icon ?? t.icon);
 }
 

@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as Y from 'yjs';
+import { mainFragment } from '../shared/pageDoc.ts';
 import { startTestApp, type TestApp } from './helpers/app.ts';
 
 let app: TestApp;
@@ -141,7 +142,7 @@ test('import removes unsafe links, images and file cards, and rewrites file URLs
 
   // The page document: only safe content remains, and file URLs point at the new copy.
   const newUrl = `/uploads/${pageFile.id}.png`;
-  const frag = (await pageDoc(page.id)).getXmlFragment('default');
+  const frag = mainFragment(await pageDoc(page.id));
   const els = frag.toArray().filter((c): c is Y.XmlElement => c instanceof Y.XmlElement);
   const srcs = els.filter((e) => e.nodeName === 'image').map((e) => e.getAttribute('src'));
   assert.deepEqual(srcs.sort(), ['https://example.com/ok.png', newUrl].sort(), 'unsafe images removed, upload rewritten');

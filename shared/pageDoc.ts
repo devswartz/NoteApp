@@ -18,6 +18,12 @@ export interface BoxGeom {
   w: number;
   /** Stacking order: higher is in front. */
   z: number;
+  /**
+   * The page's main text box: drawn at the page's readable width (the old document column,
+   * or the whole page with "Full width") until someone sets its width by hand; `w` is then
+   * only a fallback for readers that don't know the page width (the server).
+   */
+  wide?: boolean;
 }
 
 export const boxField = (id: string) => BOX_PREFIX + id;
@@ -31,7 +37,9 @@ export function boxGeoms(doc: Y.Doc): BoxGeom[] {
   const out: BoxGeom[] = [];
   doc.getMap<unknown>(BOXES_KEY).forEach((v, id) => {
     const get = (k: string) => (v instanceof Y.Map ? v.get(k) : v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined);
-    out.push({ id, x: num(get('x'), 0), y: num(get('y'), 0), w: num(get('w'), 400), z: num(get('z'), 0) });
+    const g: BoxGeom = { id, x: num(get('x'), 0), y: num(get('y'), 0), w: num(get('w'), 400), z: num(get('z'), 0) };
+    if (get('wide') === true) g.wide = true;
+    out.push(g);
   });
   return out;
 }
@@ -44,6 +52,12 @@ export function readingOrder<T extends Pick<BoxGeom, 'id' | 'x' | 'y'>>(boxes: T
 /** Every content fragment of a page in reading order: `default` first, then the boxes. */
 export function pageFragments(doc: Y.Doc): Y.XmlFragment[] {
   return [doc.getXmlFragment(DEFAULT_FIELD), ...readingOrder(boxGeoms(doc)).map((b) => doc.getXmlFragment(boxField(b.id)))];
+}
+
+/** The fragment holding a page's main text: its first box in reading order (`default` on a page without boxes). */
+export function mainFragment(doc: Y.Doc): Y.XmlFragment {
+  const first = readingOrder(boxGeoms(doc))[0];
+  return doc.getXmlFragment(first ? boxField(first.id) : DEFAULT_FIELD);
 }
 
 /**
@@ -64,8 +78,21 @@ export function observePageContent(doc: Y.Doc, fn: (events: Y.YEvent<Y.AbstractT
   return () => doc.off('afterTransaction', handler);
 }
 
-/** Width given to the one box a document becomes (roughly a document's text column). */
-export const CONVERTED_BOX_W = 720;
+/**
+ * The readable width of a box: a document's text column (760px article minus 2 × 48px padding)
+ * plus the box's own padding and border (2 × 11px), so text in it lines up as it did in documents.
+ */
+export const READABLE_BOX_W = 686;
+/** Width given to the one box a document becomes. */
+export const CONVERTED_BOX_W = READABLE_BOX_W;
+/**
+ * The id of a blank page's first box. A blank canvas offers a box with this id, ready for
+ * typing; it is only added to `boxes` once something is typed in it. A fixed id means two
+ * people starting the same blank page at once write into one box.
+ */
+export const FIRST_BOX_ID = 'first';
+/** Geometry of a blank page's first box: top left, at the readable width. */
+export const FIRST_BOX: BoxGeom = { id: FIRST_BOX_ID, x: 0, y: 0, w: READABLE_BOX_W, z: 1, wide: true };
 
 /** True when a fragment holds nothing a reader would see: no nodes, or only empty paragraphs. */
 export function fragmentIsEmpty(frag: Y.XmlFragment): boolean {
@@ -76,19 +103,22 @@ export function fragmentIsEmpty(frag: Y.XmlFragment): boolean {
 
 const cloneContent = (frag: Y.XmlFragment) => frag.toArray().map((n) => (n as Y.XmlElement | Y.XmlText).clone());
 
-function newBoxMap(g: Omit<BoxGeom, 'id'>): Y.Map<unknown> {
+/** A box's geometry as stored in `boxes`. */
+export function newBoxMap(g: Omit<BoxGeom, 'id'>): Y.Map<unknown> {
   const m = new Y.Map<unknown>();
   m.set('x', g.x);
   m.set('y', g.y);
   m.set('w', g.w);
   m.set('z', g.z);
+  if (g.wide) m.set('wide', true);
   return m;
 }
 
 /**
  * Turn a page's content into the layout of `kind`, in one transaction (lossless: nodes are
  * copied with their attributes and marks, so tasks, mentions and comments stay put):
- *   canvas:   the `default` content becomes one box at the top left (nothing if it's empty);
+ *   canvas:   the `default` content becomes one box at the top left, at the readable width
+ *             (nothing if it's empty);
  *   document: every non-empty box, in reading order, is appended to `default`; boxes go away.
  * Returns the id of the box created (canvas), if any.
  */
@@ -105,7 +135,7 @@ export function convertPageDoc(doc: Y.Doc, kind: 'canvas' | 'document', newBoxId
       const id = newBoxId();
       const z = boxGeoms(doc).reduce((m, b) => Math.max(m, b.z), 0) + 1;
       doc.getXmlFragment(boxField(id)).insert(0, cloneContent(def));
-      boxes.set(id, newBoxMap({ x: 0, y: 0, w: CONVERTED_BOX_W, z }));
+      boxes.set(id, newBoxMap({ x: 0, y: 0, w: CONVERTED_BOX_W, z, wide: true }));
       def.delete(0, def.length);
       created = id;
     } else {
@@ -149,3 +179,48 @@ export function replacePageContent(target: Y.Doc, source: Y.Doc, kind: 'canvas' 
 
 /** The layout a doc's content is in: canvas if it has boxes, else document. */
 export const docKind = (doc: Y.Doc): 'canvas' | 'document' => (doc.getMap(BOXES_KEY).size > 0 ? 'canvas' : 'document');
+
+/** A heading of a page, for the outline: which box it is in and which (non-empty) heading of that box it is. */
+export interface PageHeading {
+  boxId: string;
+  /** Index among the box's non-empty headings, in document order. */
+  index: number;
+  level: number;
+  text: string;
+}
+
+/** The text of an element as the editor shows it (marks dropped). */
+function elementText(el: Y.XmlElement): string {
+  return el
+    .toArray()
+    .map((c) =>
+      c instanceof Y.XmlText
+        ? (c.toDelta() as { insert: unknown }[]).map((d) => (typeof d.insert === 'string' ? d.insert : '')).join('')
+        : c instanceof Y.XmlElement
+          ? elementText(c)
+          : '',
+    )
+    .join('');
+}
+
+/**
+ * Every non-empty heading of a canvas, box by box in reading order (headings at the top level
+ * or inside containers such as callouts and toggles, like the editor's own outline).
+ */
+export function pageHeadings(doc: Y.Doc): PageHeading[] {
+  const out: PageHeading[] = [];
+  for (const b of readingOrder(boxGeoms(doc))) {
+    let index = 0;
+    const walk = (n: Y.XmlFragment | Y.XmlElement) => {
+      for (const c of n.toArray()) {
+        if (!(c instanceof Y.XmlElement)) continue;
+        if (c.nodeName === 'heading') {
+          const text = elementText(c).trim();
+          if (text) out.push({ boxId: b.id, index: index++, level: Number(c.getAttribute('level')) || 1, text });
+        } else walk(c);
+      }
+    };
+    walk(doc.getXmlFragment(boxField(b.id)));
+  }
+  return out;
+}

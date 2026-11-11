@@ -313,7 +313,8 @@ test('reconcile through the collab socket: removing a taskRef detaches it, addin
       const t = setTimeout(() => rej(new Error('collab sync timed out')), 3000);
       provider.once('sync', () => (clearTimeout(t), res()));
     });
-    const frag = doc.getXmlFragment('default');
+    const { mainFragment } = await import('../shared/pageDoc.ts');
+    const frag = mainFragment(doc); // seeded pages are canvases: the content is in their one box
     assert.equal((frag.get(0) as InstanceType<typeof Y.XmlElement>).getAttribute('taskId'), inNote.id);
     doc.transact(() => {
       frag.delete(0, 1);

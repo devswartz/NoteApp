@@ -98,7 +98,8 @@ test('ribbon stays put while scrolling and is reachable with Alt+F10 and F6', as
 test('on a canvas the ribbon acts on the last-focused box, and is disabled with none', async ({ page, context, request }) => {
   const user = await createUser(request, 'Rae Ribbon');
   const { sectionId } = await createPage(request, user);
-  const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: 'Board', kind: 'canvas' });
+  // Untitled, so the title has the caret rather than the blank page's ready first box.
+  const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: '' });
   await signInContext(context, user);
   await page.goto(pageUrl(user.wsId, id));
   const surface = page.getByTestId('canvas-surface');
@@ -115,11 +116,11 @@ test('on a canvas the ribbon acts on the last-focused box, and is disabled with 
   await blockType.click({ force: true }); // aria-disabled: Playwright won't click it otherwise
   await expect(bar.locator('.tb-pop')).toHaveCount(0);
 
-  // Two boxes; the second was focused last.
-  await surface.click({ position: { x: 40, y: 40 } });
+  // Two boxes; the second was focused last. The first is the blank page's ready box.
+  await page.locator('.canvas-box.is-ready .ProseMirror').click();
   await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();
   await page.keyboard.type('first box');
-  await surface.click({ position: { x: 420, y: 200 } });
+  await surface.click({ position: { x: 420, y: 320 } });
   await expect(page.locator('.canvas-box')).toHaveCount(2);
   await page.keyboard.type('second box');
   await expect(bold).not.toHaveAttribute('aria-disabled', 'true');

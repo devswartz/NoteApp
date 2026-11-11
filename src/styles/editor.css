@@ -365,7 +365,7 @@
 /* ───────── Full width & outline ───────── */
 .page-scroll { position: relative; container-type: inline-size; }
 .page-article.is-full { max-width: none; padding-left: clamp(48px, 7vw, 120px); padding-right: clamp(48px, 7vw, 120px); }
-.page-toc-rail { position: absolute; top: 0; bottom: 0; right: 0; width: 220px; pointer-events: none; }
+.page-toc-rail { position: absolute; top: 0; bottom: 0; right: 0; width: 220px; pointer-events: none; z-index: 2; /* over a canvas reaching under it; under the ribbon (3) */ }
 .page-toc {
   position: sticky;
   top: calc(72px + var(--ribbon-h, 0px));

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as Y from 'yjs';
+import { mainFragment } from '../shared/pageDoc.ts';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'noteapp-demo-'));
 process.env.DB_FILE = ':memory:';
@@ -25,7 +26,7 @@ const pageId = (title: string) => (db.prepare('SELECT id FROM pages WHERE title 
 const docOf = (id: string) => {
   const d = new Y.Doc();
   Y.applyUpdate(d, new Uint8Array((db.prepare('SELECT ydoc FROM pages WHERE id = ?').get(id) as { ydoc: Buffer }).ydoc));
-  return d.getXmlFragment('default');
+  return mainFragment(d);
 };
 const nodeNames = (frag: Y.XmlFragment) => {
   const out = new Set<string>();

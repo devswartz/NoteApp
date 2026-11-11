@@ -19,8 +19,8 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import { db, newId, now } from './db.ts';
 import { NOTEBOOK_VISIBLE, TASK_VISIBLE, HttpError } from './access.ts';
-import { extractPage } from './collab.ts';
-import { pageFragments } from '../shared/pageDoc.ts';
+import { extractPage, newBoxId } from './collab.ts';
+import { convertPageDoc, pageFragments } from '../shared/pageDoc.ts';
 import { FILES_DIR, VERSION } from './config.ts';
 import { toMarkdown } from './markdown.ts';
 import { SAFE_TYPES } from './routes/files.ts';
@@ -301,6 +301,8 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
               if (ref && typeof old === 'string' && map.has(old)) el.setAttribute(ref, map.get(old)!);
             },
           });
+          // Every page is a canvas: a document page in an older export becomes one wide box.
+          convertPageDoc(doc, 'canvas', newBoxId);
           ydoc = Buffer.from(Y.encodeStateAsUpdate(doc));
           body = extractPage(doc).text;
         }
@@ -310,7 +312,7 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
         db.prepare(
           `INSERT INTO pages (id, section_id, title, icon, kind, ydoc, text, position, created_by, created_at, updated_at, updated_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(id, map.get(pg.section_id), title, icon(pg.icon), pg.kind === 'canvas' ? 'canvas' : 'document', ydoc, body, Number(pg.position) || 0, userId, isoOr(pg.created_at, ts), ts, userId);
+        ).run(id, map.get(pg.section_id), title, icon(pg.icon), 'canvas', ydoc, body, Number(pg.position) || 0, userId, isoOr(pg.created_at, ts), ts, userId);
         db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(id, title, body);
       }
       const pageOf = (old: unknown) => (typeof old === 'string' && importedPages.has(old) ? map.get(old)! : null);

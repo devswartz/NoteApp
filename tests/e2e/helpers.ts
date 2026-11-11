@@ -112,18 +112,24 @@ export async function createTeam(request: APIRequestContext, owner: TestUser, me
 export const pageUrl = (wsId: string, pageId: string) => `/w/${wsId}/p/${pageId}`;
 export const tasksUrl = (wsId: string, view: string) => `/w/${wsId}/tasks/${view}`;
 
-/** Opens a page and waits until the editor is connected and editable. */
+/**
+ * The editor of a page's first text box. Every page is a canvas; a blank one offers its first
+ * box ready for typing (stored once something is typed), and a converted document is one box.
+ */
+export const firstEditor = (page: Page) => page.locator('.canvas-box .ProseMirror').first();
+
+/** Opens a page and waits until the editor (its first text box) is connected and editable. */
 export async function openPage(page: Page, wsId: string, pageId: string) {
   await page.goto(pageUrl(wsId, pageId));
-  const editor = page.locator('.ProseMirror');
+  const editor = firstEditor(page);
   await expect(editor).toBeVisible();
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
   return editor;
 }
 
-/** Puts the caret at the end of the document. */
+/** Puts the caret at the end of the first text box. */
 export async function focusEnd(page: Page) {
-  const editor = page.locator('.ProseMirror');
+  const editor = firstEditor(page);
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
   return editor;

@@ -94,17 +94,17 @@ test('mobile: create a page from search, add a task with /task, see it on Today,
   const tabbar = page.getByRole('navigation', { name: 'Primary' });
   await expect(tabbar).toBeVisible();
 
-  // "New document page" from the palette (the phone has no hover-revealed sidebar buttons).
+  // "New page" from the palette (the phone has no hover-revealed sidebar buttons).
   await page.getByRole('button', { name: 'Search' }).first().tap();
   const palette = page.getByRole('dialog', { name: 'Search' });
-  await palette.getByPlaceholder(/Search pages and tasks/).fill('new document page');
-  await expect(palette.locator('.palette-label', { hasText: 'New document page' }).first()).toBeVisible();
-  await page.keyboard.press('Enter');
+  await palette.getByPlaceholder(/Search pages and tasks/).fill('new page');
+  await expect(palette.locator('.palette-label', { hasText: /^New page$/ }).first()).toBeVisible();
+  await palette.locator('.palette-label', { hasText: /^New page$/ }).first().tap();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const pageId = page.url().split('/p/')[1]!;
 
   await page.locator('.page-title').fill('Groceries');
-  const editor = page.locator('.ProseMirror');
+  const editor = page.locator('.canvas-box .ProseMirror'); // a blank page's first box, ready for typing
   await editor.tap();
   await page.keyboard.type('/task');
   await expect(page.locator('.slash-menu .slash-title', { hasText: 'Task' }).first()).toBeVisible();

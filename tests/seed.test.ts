@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
+import { mainFragment } from '../shared/pageDoc.ts';
 
 process.env.DB_FILE = ':memory:';
 process.env.JWT_SECRET = 'test-secret';
@@ -15,7 +16,7 @@ test('onboarding page: formatting applies only to the marked words', () => {
     .get(ws) as { ydoc: Buffer };
   const doc = new Y.Doc();
   Y.applyUpdate(doc, new Uint8Array(row.ydoc));
-  const first = doc.getXmlFragment('default').toArray()[0] as Y.XmlElement;
+  const first = mainFragment(doc).toArray()[0] as Y.XmlElement;
   const delta = (first.toArray()[0] as Y.XmlText).toDelta() as { insert: string; attributes?: object }[];
   const bold = delta.filter((d) => d.attributes && 'bold' in d.attributes).map((d) => d.insert);
   assert.deepEqual(bold, ['notebooks', 'sections', 'pages']);

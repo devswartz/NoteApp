@@ -8,13 +8,14 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 - **Ribbon:** the formatting toolbar is now a OneNote-style ribbon fixed across the top of the note area (text style, basic text, lists, insert, undo/redo). It stays put while the page scrolls, acts on the box you were last in on a canvas, shows its controls greyed out when there's nothing to edit, and is its own F6 stop with arrow keys between buttons. Phones keep the floating toolbar.
 - **Ribbon:** each group has a small label underneath (Text, Basic text, Lists, Insert, History), dropped on narrower windows. The floating toolbar over a selection now always shows above the ribbon, flipping below the selection when it's right under the ribbon, including in canvas boxes near the top.
 - **Canvas pages:** click anywhere on a page and type. Each text box is a full editor (headings, lists, tasks, tables, images); drag its top edge to move it and its right edge to set its width. Boxes can sit side by side or overlap, and collaborators see them appear and move live. Search, tasks, mentions, links and exports see every box. (#134, #137)
-- **"New page" makes a canvas.** "New document page" is right beside it when you want one flowing document, and canvas pages have their own icon in the page lists and search.
-- **Convert a page** between a document and a canvas from the page menu: a document becomes one text box you can then split up, and a canvas becomes a document with its boxes in reading order. Nothing is lost, and the version from before is kept in Version history.
-- **Templates on canvases:** the built-in templates (meeting notes, project, daily journal) come laid out as boxes on a canvas. Saving a canvas as a template keeps it a canvas, and using it makes a canvas page.
+- **Every page is a canvas, like OneNote.** Open a blank page and just start typing: the first text box is ready at the top left, as wide as the old document column (the whole page with "Full width"), and is only saved once you type. Click anywhere else to start another box. Existing pages are converted automatically when the server updates: each becomes a canvas with one wide box holding its content, looking as it did, and the page as it was is kept in Version history. Document pages, "New document page" and the convert menu items are gone.
+- A text box stays opaque while its floating formatting toolbar has keyboard focus.
+- The "On this page" outline lists the headings of every box in reading order and jumps into the right box; task links (`?task=`) find tasks in any box. On phones a page with one box is simply one full-width editor.
+- **Templates on canvases:** the built-in templates (meeting notes, project, daily journal) come laid out as boxes on a canvas, and notebook templates make canvas pages. A template saved from a document page before this release fills one wide box.
 - **Undo on canvases:** Ctrl+Z outside a text box undoes creating, moving, resizing or deleting a box.
 - **Canvas pages on phones** show the boxes one under the other in reading order, full width, with "Add a text box" at the end.
 - Save as template, Version history (preview and restore the whole canvas), Markdown export and Markdown import (into a new box) now work on canvas pages.
-- **OneNote import keeps box positions:** pages made in OneNote come in as canvases with each box where it was. (#135)
+- **OneNote import keeps box positions:** pages made in OneNote come in as canvases with each box where it was; pages without positions become one wide box. (#135)
 
 ## v0.2.1
 

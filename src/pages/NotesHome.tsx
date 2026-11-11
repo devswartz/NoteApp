@@ -19,9 +19,8 @@ import { PageKindIcon } from '../components/PageKindIcon.tsx';
 
 function useCreatePage(wsId: string) {
   const navigate = useNavigate();
-  // New pages are canvases; "New document page" makes one flowing document.
-  return (sectionId: string, kind: 'canvas' | 'document' = 'canvas') =>
-    post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '', kind })
+  return (sectionId: string) =>
+    post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' })
       .then(({ id }) => navigate(`/w/${wsId}/p/${id}`))
       .catch(errorToast);
 }
@@ -183,11 +182,6 @@ function SectionScreen({ wsId, section }: { wsId: string; section: Section }) {
         ))}
         {!pages.length && <p className="muted">No pages in this section yet.</p>}
       </section>
-      {canEdit && (
-        <button className="btn btn-ghost btn-sm drill-new-doc" onClick={() => createPage(section.id, 'document')}>
-          <FileText size={15} /> New document page
-        </button>
-      )}
     </Screen>
   );
 }
@@ -204,9 +198,6 @@ function EmptySection({ wsId, section }: { wsId: string; section: Section }) {
         <div className="empty-section-actions">
           <button className="btn btn-primary" onClick={() => createPage(section.id)}>
             <FilePlus size={15} /> New page
-          </button>
-          <button className="btn btn-secondary" onClick={() => createPage(section.id, 'document')}>
-            <FileText size={15} /> New document page
           </button>
         </div>
       )}

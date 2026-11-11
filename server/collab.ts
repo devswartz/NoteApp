@@ -4,7 +4,8 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
-import { observePageContent, pageFragments } from '../shared/pageDoc.ts';
+import { DEFAULT_FIELD, convertPageDoc, observePageContent, pageFragments } from '../shared/pageDoc.ts';
+import crypto from 'node:crypto';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
@@ -344,12 +345,20 @@ export function editPageDoc(pageId: string, fn: (doc: Y.Doc) => void) {
   }
 }
 
-/** Seed an empty page with initial content (used for onboarding pages). */
+/** A new canvas box id (the `box:<id>` fragment name) made on the server. */
+export const newBoxId = () => crypto.randomBytes(8).toString('hex');
+
+/**
+ * Seed an empty page with initial content (onboarding and demo pages, imports). Every page is
+ * a canvas: whatever `build` writes into the fragment it gets becomes the page's one wide box
+ * (boxes it adds to the doc itself stay as they are).
+ */
 export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void) {
   const doc = new Y.Doc();
-  build(doc.getXmlFragment('default'));
+  build(doc.getXmlFragment(DEFAULT_FIELD));
+  convertPageDoc(doc, 'canvas', newBoxId);
   const { text } = extractPage(doc);
-  db.prepare('UPDATE pages SET ydoc = ?, text = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(doc)), text, pageId);
+  db.prepare("UPDATE pages SET ydoc = ?, text = ?, kind = 'canvas' WHERE id = ?").run(Buffer.from(Y.encodeStateAsUpdate(doc)), text, pageId);
   const title = (db.prepare('SELECT title FROM pages WHERE id = ?').get(pageId) as { title: string }).title;
   db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pageId);
   db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pageId, title, text);

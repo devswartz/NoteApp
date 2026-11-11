@@ -1,7 +1,12 @@
 // Table of contents for long pages, and the per-page "full width" setting.
+// The outline lists the headings of every text box, in reading order, read from the page's
+// Y.Doc (so boxes whose editors aren't mounted yet are included); clicking one mounts its box
+// if needed, puts the caret in the heading and scrolls to it.
 import { memo, useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/core';
 import type * as Y from 'yjs';
+import { BOXES_KEY, observePageContent, pageHeadings, type PageHeading } from '../../shared/pageDoc.ts';
+import type { CanvasHandle } from './canvasDoc.ts';
 
 export interface OutlineItem {
   level: number;
@@ -9,7 +14,7 @@ export interface OutlineItem {
   pos: number;
 }
 
-/** Headings in document order (empty ones skipped). */
+/** Headings of one editor in document order (empty ones skipped). */
 export function headingsOf(editor: Editor): OutlineItem[] {
   const out: OutlineItem[] = [];
   editor.state.doc.descendants((node, pos) => {
@@ -24,22 +29,25 @@ export function headingsOf(editor: Editor): OutlineItem[] {
   return out;
 }
 
-export function useHeadings(editor: Editor | null): OutlineItem[] {
-  const [items, setItems] = useState<OutlineItem[]>([]);
+/** The headings of every box, kept up to date as anyone edits (debounced). */
+function usePageHeadings(doc: Y.Doc): PageHeading[] {
+  const [items, setItems] = useState<PageHeading[]>(() => pageHeadings(doc));
   useEffect(() => {
-    if (!editor) return;
     let t: ReturnType<typeof setTimeout> | undefined;
     const update = () => {
       clearTimeout(t);
-      t = setTimeout(() => !editor.isDestroyed && setItems(headingsOf(editor)), 150);
+      t = setTimeout(() => setItems(pageHeadings(doc)), 150);
     };
     update();
-    editor.on('update', update);
+    const stop = observePageContent(doc, update);
+    const boxes = doc.getMap(BOXES_KEY);
+    boxes.observeDeep(update); // boxes moved (reading order) or removed
     return () => {
       clearTimeout(t);
-      editor.off('update', update);
+      stop();
+      boxes.unobserveDeep(update);
     };
-  }, [editor]);
+  }, [doc]);
   return items;
 }
 
@@ -72,9 +80,17 @@ export function usePageSetting<T>(editor: Editor | null, key: string, fallback: 
   return [value, set];
 }
 
+/** Where a heading is on screen: the heading itself if its box's editor is mounted, else its box. */
+function headingElement(canvas: CanvasHandle, h: PageHeading): HTMLElement | null {
+  const box = canvas.boxElement(h.boxId);
+  if (!box) return null;
+  const shown = [...box.querySelectorAll<HTMLElement>('.ProseMirror h1, .ProseMirror h2, .ProseMirror h3')].filter((el) => el.textContent?.trim());
+  return shown[h.index] ?? box;
+}
+
 /** Floating outline next to the page; highlights the section in view. */
-export const Outline = memo(function Outline({ editor, scroller }: { editor: Editor; scroller: HTMLElement | null }) {
-  const items = useHeadings(editor);
+export const Outline = memo(function Outline({ canvas, scroller }: { canvas: CanvasHandle; scroller: HTMLElement | null }) {
+  const items = usePageHeadings(canvas.doc);
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -85,46 +101,29 @@ export const Outline = memo(function Outline({ editor, scroller }: { editor: Edi
       const top = scroller.getBoundingClientRect().top + 96 + ribbon;
       let current = 0;
       items.forEach((h, i) => {
-        const el = editor.view.nodeDOM(h.pos);
-        // nodeDOM can be a text node (or stale) while the doc changes under the scroll handler.
-        if (el instanceof HTMLElement && el.getBoundingClientRect().top <= top) current = i;
+        const el = headingElement(canvas, h);
+        if (el && el.getBoundingClientRect().top <= top) current = i;
       });
       setActive(current);
     };
     onScroll();
     scroller.addEventListener('scroll', onScroll, { passive: true });
     return () => scroller.removeEventListener('scroll', onScroll);
-  }, [scroller, items, editor]);
+  }, [scroller, items, canvas]);
 
   if (items.length < 3) return null;
   const minLevel = Math.min(...items.map((h) => h.level));
-  const go = (h: OutlineItem) => {
-    // Off-screen blocks use estimated sizes (content-visibility), so jump, then re-jump
-    // for a few frames while the real sizes settle, instead of one smooth scroll that misses.
-    const jump = () => {
-      const el = editor.view.nodeDOM(h.pos);
-      if (el instanceof HTMLElement) el.scrollIntoView({ block: 'start' });
-    };
-    // Put the cursor in the heading right away (so typing works immediately), then settle the scroll.
-    editor.chain().setTextSelection(h.pos + 1).focus(undefined, { scrollIntoView: false }).run();
-    let frames = 0;
-    const settle = () => {
-      jump();
-      if (++frames < 4) requestAnimationFrame(settle);
-    };
-    settle();
-  };
   return (
     <div className="page-toc-rail" aria-hidden={false}>
       <nav className="page-toc" aria-label="On this page">
         <div className="page-toc-title">On this page</div>
         {items.map((h, i) => (
           <button
-            key={`${h.pos}-${i}`}
+            key={`${h.boxId}-${h.index}`}
             type="button"
             className={`page-toc-item ${i === active ? 'is-active' : ''}`}
             style={{ paddingLeft: 8 + (h.level - minLevel) * 12 }}
-            onClick={() => go(h)}
+            onClick={() => canvas.revealHeading(h.boxId, h.index)}
             title={h.text}
           >
             {h.text}

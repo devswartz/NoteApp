@@ -81,7 +81,7 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
 
   const firstPageUrl = page.url();
   await secRow.locator('.sb-label').click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'New document page' }).click();
+  await page.getByRole('menuitem', { name: 'New page', exact: true }).click();
   await expect(page).not.toHaveURL(firstPageUrl);
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const pageId = page.url().split('/p/')[1];

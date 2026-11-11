@@ -39,7 +39,7 @@ const fmt = (iso: string) =>
 
 export function VersionHistory({
   pageId,
-  editor,
+  editor = null,
   canvas = null,
   canvasEditable = false,
   open,
@@ -47,8 +47,8 @@ export function VersionHistory({
   othersEditing = 0,
 }: {
   pageId: string;
-  /** The live document editor (document pages). */
-  editor: Editor | null;
+  /** A live document editor (legacy: every page is a canvas now). */
+  editor?: Editor | null;
   /** The live canvas (canvas pages). */
   canvas?: CanvasHandle | null;
   /** May restore on a canvas page. */

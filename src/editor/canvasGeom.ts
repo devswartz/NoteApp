@@ -55,12 +55,15 @@ export function boxBelow(boxes: BoxGeom[], heights: Record<string, number>, left
   return { ...clampPos(left, boxes.length ? bottom + 24 : 0), w: BOX_DEFAULT_W, z: topZ(boxes) + 1 };
 }
 
-/** Size of the surface: at least the viewport, and big enough for every box plus room to grow. */
+/**
+ * Size of the surface: at least the viewport, and big enough for every box plus room to grow.
+ * A wide box (drawn at the page's width, see wideWidth) adds no room to its right.
+ */
 export function surfaceSize(boxes: BoxGeom[], heights: Record<string, number>, minW: number, minH: number): { w: number; h: number } {
   let w = minW;
   let h = minH;
   for (const b of boxes) {
-    w = Math.max(w, b.x + b.w + SURFACE_PAD_X);
+    w = Math.max(w, b.x + b.w + (b.wide ? 0 : SURFACE_PAD_X));
     h = Math.max(h, b.y + (heights[b.id] ?? UNMEASURED_H) + SURFACE_PAD_Y);
   }
   return { w: Math.ceil(w), h: Math.ceil(h) };
@@ -81,6 +84,17 @@ export function nudge(b: Pick<BoxGeom, 'x' | 'y'>, key: string, fine: boolean): 
   const d: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
   const v = d[key];
   return v ? clampPos(b.x + v[0], b.y + v[1]) : null;
+}
+
+/**
+ * The width a wide box (the page's main box) is drawn at: the readable width, or with "Full
+ * width" everything right of it; never wider than the space there is, never under BOX_MIN_W.
+ * `avail` is the surface's visible width (0 when not measured yet).
+ */
+export function wideWidth(x: number, avail: number, fullWidth: boolean, readable: number): number {
+  if (avail <= 0) return readable;
+  const room = Math.max(BOX_MIN_W, Math.floor(avail - x));
+  return fullWidth ? room : Math.min(readable, room);
 }
 
 /** A short random box id (the `box:<id>` fragment name). */

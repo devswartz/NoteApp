@@ -118,12 +118,13 @@ test('an empty page offers templates; "Meeting notes" fills in the structure and
   const user = await createUser(request, 'Tom Template');
   const { pageId } = await createPage(request, user, { page: '' });
   await signInContext(context, user);
-  const editor = await openPage(page, user.wsId, pageId);
+  await openPage(page, user.wsId, pageId);
   const picker = page.getByLabel('Start with a template');
   await expect(picker).toBeVisible();
   await picker.getByRole('button', { name: /Meeting notes/ }).click();
-  await expect(editor.locator('h2', { hasText: 'Attendees' })).toBeVisible();
-  await expect(editor.locator('h2', { hasText: 'Action items' })).toBeVisible();
+  // The canvas version: its sections laid out as text boxes.
+  await expect(page.locator('.canvas-box :is(h2, h3)', { hasText: 'Attendees' })).toBeVisible();
+  await expect(page.locator('.canvas-box :is(h2, h3)', { hasText: 'Action items' })).toBeVisible();
   await expect(page.locator('.page-title')).toHaveValue(/^Meeting · /);
   await expect(picker).toHaveCount(0);
 });

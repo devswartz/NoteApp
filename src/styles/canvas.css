@@ -1,11 +1,16 @@
 /* Canvas pages (src/editor/CanvasEditor.tsx): text boxes placed anywhere on a surface
-   that grows right and down; the viewport scrolls sideways, the page scrolls down. */
-.page-article.is-canvas { max-width: none; padding-left: clamp(24px, 4vw, 64px); padding-right: clamp(24px, 4vw, 64px); }
-.page-article.is-canvas .page-title,
-.page-article.is-canvas .page-sub,
-.page-article.is-canvas .page-icon-row { max-width: 760px; }
-
-.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px; padding: 14px 8px 0; }
+   that grows right and down; the viewport scrolls sideways, the page scrolls down.
+   The page keeps the old document column (title, and the surface's left edge, where they
+   were), so a page's main box at the readable width reads like a document did. The surface
+   reaches past the column to the right edge of the page, for boxes placed beside it.
+   Its 48px of left padding holds the main box's block handle; the extra 11px lines the text
+   of a box at x = 0 up with the title (a box's own padding and border). */
+.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px 0 -59px; padding: 14px 8px 0 48px; }
+@media (min-width: 761px) {
+  .page-article.is-canvas:not(.is-full) .canvas-viewport {
+    margin-right: calc(-1 * (max(0px, (100cqw - 760px) / 2) + 32px));
+  }
+}
 /* isolation: box z-indexes (which grow as boxes come to the front) stay under the ribbon. */
 .canvas-surface { position: relative; isolation: isolate; min-height: 320px; }
 .canvas-surface.can-edit { cursor: text; }
@@ -24,11 +29,16 @@
 }
 .canvas-wrap:not(.is-stacked) .canvas-box:hover { border-color: var(--border); }
 .canvas-box.is-active,
+.canvas-box.is-holding,
 .canvas-box:focus-within { border-color: var(--border-strong); }
-.canvas-box:focus-within { background: var(--bg); }
+.canvas-box:focus-within,
+.canvas-box.is-holding { background: var(--bg); }
 /* Selected (Escape in a box): the whole box is focused, not its text. */
 .canvas-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-active); }
 .canvas-box .ProseMirror { min-height: 1.7em; }
+/* The main (wide) box keeps a document's minimum height: room to click below short text. */
+.canvas-box.is-wide:not(.is-ready) .ProseMirror { min-height: 200px; }
+.canvas-wrap.is-stacked .canvas-box.is-wide .ProseMirror { min-height: 1.7em; }
 .canvas-box-placeholder { min-height: 24px; }
 
 /* Top edge: drag to move. Right edge: drag to set the width. */
@@ -82,6 +92,9 @@ body.canvas-dragging, body.canvas-dragging * { user-select: none; }
   box-shadow: none;
 }
 .canvas-wrap.is-stacked .canvas-box + .canvas-box { border-top: 1px solid var(--border); }
+/* One box: simply the page's editor, like a document. */
+.canvas-wrap.is-single .canvas-box { padding: 4px 0 0; }
+.canvas-wrap.is-single .canvas-box:focus { box-shadow: none; padding-left: 0; }
 .canvas-wrap.is-stacked .canvas-box:focus { box-shadow: inset 3px 0 0 var(--accent); padding-left: 10px; }
 .canvas-wrap.is-stacked .canvas-hint { position: static; padding: 12px 0; }
 .canvas-wrap.is-stacked .canvas-add-box { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 14px; width: 100%; }
