@@ -174,3 +174,60 @@ test('the floating toolbar has text colour and highlight too', async ({ page, co
   await bubble.getByRole('button', { name: 'Highlight: Green' }).click();
   await expect(editor.locator('mark[data-color="green"]')).toHaveText('Bright idea');
 });
+
+test('a canvas box just under the ribbon: the floating toolbar shows above the ribbon, not under it', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Pip Popup');
+  const { sectionId } = await createPage(request, user);
+  const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: 'Top board', kind: 'canvas' });
+  await signInContext(context, user);
+  await page.setViewportSize({ width: 1280, height: 560 });
+  await page.goto(pageUrl(user.wsId, id));
+  const surface = page.getByTestId('canvas-surface');
+  await expect(surface).toBeVisible();
+  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+
+  // A box at the very top of the canvas, scrolled up to sit just under the ribbon.
+  await surface.click({ position: { x: 40, y: 6 } });
+  await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();
+  await page.keyboard.type('Near the top');
+  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+  const box = page.locator('.canvas-box', { hasText: 'Near the top' });
+  await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>('.page-scroll')!;
+    const ribbonBottom = document.querySelector('.ribbon')!.getBoundingClientRect().bottom;
+    const boxTop = document.querySelector('.canvas-box')!.getBoundingClientRect().top;
+    scroller.scrollTop += boxTop - ribbonBottom - 6;
+  });
+  const ribbonBox = (await ribbon.boundingBox())!;
+  const ribbonBottom = ribbonBox.y + ribbonBox.height;
+  expect((await box.boundingBox())!.y - ribbonBottom).toBeLessThan(30); // really close to the ribbon
+
+  await page.keyboard.press('Shift+Home');
+  const bubble = page.locator('.bubble-menu');
+  await expect(bubble).toBeVisible();
+  // Not covered: it flips under the selection, clear of the ribbon, and is on top at its centre.
+  await expect.poll(async () => (await bubble.boundingBox())!.y).toBeGreaterThanOrEqual(ribbonBottom - 1);
+  const onTop = await bubble.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !!hit && el.contains(hit);
+  });
+  expect(onTop).toBe(true);
+  await bubble.getByRole('button', { name: /^Bold/ }).click();
+  await expect(box.locator('strong')).toHaveText('Near the top');
+});
+
+test('ribbon groups are labelled (OneNote-style) and the labels drop on narrow windows', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Gil Groups');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openPage(page, user.wsId, pageId);
+  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+  for (const name of ['Text', 'Basic text', 'Lists', 'Insert']) await expect(ribbon.getByRole('group', { name, exact: true })).toBeVisible();
+  await expect(ribbon.locator('.rb-label', { hasText: 'Lists' })).toBeVisible();
+  expect((await ribbon.boundingBox())!.height).toBeLessThanOrEqual(60);
+  await page.setViewportSize({ width: 1000, height: 720 });
+  await expect(ribbon.locator('.rb-label').first()).toBeHidden();
+  await expect(ribbon.getByRole('group', { name: 'Lists', exact: true })).toBeVisible(); // still named
+});

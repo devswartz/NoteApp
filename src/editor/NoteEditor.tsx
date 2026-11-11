@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import type { Extensions } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
@@ -374,7 +374,44 @@ function BlockHandle({ editor }: { editor: Editor }) {
   );
 }
 
+/**
+ * Where the floating toolbar is rendered: a host of its own in the page scroller, so it is never
+ * inside a canvas box (the canvas surface is its own stacking layer, under the ribbon) and it
+ * scrolls with the page. Its own host keeps TipTap's "focus moved into the menu" check narrow.
+ */
+function useFloatHost(editor: Editor) {
+  const host = useRef<HTMLDivElement | null>(null);
+  useEffect(
+    () => () => {
+      const el = host.current;
+      host.current = null;
+      requestAnimationFrame(() => el?.remove()); // after the BubbleMenu has taken its element out
+    },
+    [editor],
+  );
+  return useCallback(() => {
+    if (!host.current) {
+      host.current = document.createElement('div');
+      host.current.className = 'float-host';
+    }
+    const parent = (!editor.isDestroyed && editor.view.dom.closest('.page-scroll')) || document.body;
+    if (host.current.parentElement !== parent) parent.appendChild(host.current);
+    return host.current;
+  }, [editor]);
+}
+
+/** Space the floating toolbar keeps clear at the top of the scroller: the top bar and the ribbon. */
+const FLOATING_OPTIONS = {
+  flip: ({ elements }: { elements: { floating: HTMLElement } }) => {
+    const scroller = elements.floating.closest('.page-scroll');
+    const bottoms = scroller ? [...scroller.querySelectorAll(':scope > .page-topbar, :scope > .ribbon')].map((el) => el.getBoundingClientRect().bottom) : [];
+    const top = scroller && bottoms.length ? Math.max(0, ...bottoms.map((b) => b - scroller.getBoundingClientRect().top)) : 0;
+    return { padding: { top: top + 4 } };
+  },
+};
+
 function FormattingMenu({ editor }: { editor: Editor }) {
+  const appendTo = useFloatHost(editor);
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -408,6 +445,8 @@ function FormattingMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       editor={editor}
       className="bubble-menu"
+      appendTo={appendTo}
+      options={FLOATING_OPTIONS}
       shouldShow={({ editor: e, state }) => {
         const { empty } = state.selection;
         // Keep showing while keyboard focus is inside the toolbar itself.
