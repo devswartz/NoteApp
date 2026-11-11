@@ -296,6 +296,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           ref={inputRef}
           rows={1}
           className="task-ref-title"
+          data-value={title} // textareas have no value attribute; tests and styles can match the title here
           aria-label="Task title"
           value={title}
           placeholder="Task name — e.g. “Draft agenda tomorrow p2 @sam”"
