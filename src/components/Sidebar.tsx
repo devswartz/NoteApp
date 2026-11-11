@@ -18,6 +18,7 @@ import {
   FilePlus,
   FileText,
   FolderInput,
+  FolderPlus,
   Globe,
   Inbox,
   Link2,
@@ -43,6 +44,7 @@ import { Avatar, Badge, Dropdown, IconButton, Kbd, MenuItem, MenuSeparator, MOD,
 import { isMine } from '../lib/taskViews.ts';
 import { today } from '../../shared/dates.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
+import { MAX_SECTION_DEPTH, sectionDepth } from '../../shared/sections.ts';
 import { sidebar, useSidebar, SIDEBAR_MAX, SIDEBAR_MIN } from './shell/sidebarState.ts';
 import { byPos, dragProps, dropClass, dropProps, moveNotebook, movePage, moveSection, useDnd } from './shell/treeDnd.ts';
 import { confirmDialog, promptDialog } from './shell/dialogs.tsx';
@@ -518,7 +520,7 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
           ? dropProps('notebook', nb.id, (where) => {
               const drag = useDnd.getState().drag;
               if (drag?.kind === 'notebook') void moveNotebook(drag.id, nb.id, where);
-              if (drag?.kind === 'section') void moveSection(drag.id, nb.id, null, 'inside');
+              if (drag?.kind === 'section') void moveSection(drag.id, nb.id, null, null, 'inside');
             })
           : {})}
       >
@@ -545,8 +547,8 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
       {menu.menu}
       {!isCollapsed && (
         <div className="nb-children" role="group">
-          {sections.map((s) => (
-            <SectionNode key={s.id} section={s} pages={pages.filter((pg) => pg.sectionId === s.id).sort(byPos)} {...p} />
+          {sections.filter((s) => !s.parentId || !sections.some((x) => x.id === s.parentId)).map((s) => (
+            <SectionNode key={s.id} section={s} nbSections={sections} nbPages={pages} {...p} />
           ))}
           {!sections.length && <div className="muted small sb-empty">No sections</div>}
         </div>
@@ -555,14 +557,26 @@ function NotebookNode({ nb, sections, pages, isMine, isAdmin, ...p }: NodeProps 
   );
 }
 
-function SectionNode({ section, pages, ...p }: NodeProps & { section: Section; pages: PageMeta[] }) {
+function SectionNode({ section, nbSections, nbPages, ...p }: NodeProps & { section: Section; nbSections: Section[]; nbPages: PageMeta[] }) {
   const isCollapsed = !!p.collapsed[section.id];
+  const pages = nbPages.filter((pg) => pg.sectionId === section.id).sort(byPos);
+  const subsections = nbSections.filter((s) => s.parentId === section.id); // already sorted
+  const canNest = sectionDepth(nbSections, section.id) < MAX_SECTION_DEPTH;
+  const createSubsection = async () => {
+    const name = await promptDialog({ title: `New subsection in ${section.name}`, label: 'Name', confirmLabel: 'Create' });
+    if (name) post(`/notebooks/${section.notebookId}/sections`, { name, parentId: section.id }).then(() => sidebar.toggleNode(section.id, false)).catch(errorToast);
+  };
   const drop = useDnd((s) => s.drop);
   const menu = useContextMenu(() => (
     <div className="menu" role="menu">
       <MenuItem icon={<FilePlus size={15} />} onSelect={() => p.createPage(section.id)}>
         New page
       </MenuItem>
+      {canNest && (
+        <MenuItem icon={<FolderPlus size={15} />} onSelect={createSubsection}>
+          New subsection
+        </MenuItem>
+      )}
       <MenuItem icon={<Pencil size={15} />} onSelect={() => p.setEditing(section.id)}>
         Rename
       </MenuItem>
@@ -580,7 +594,9 @@ function SectionNode({ section, pages, ...p }: NodeProps & { section: Section; p
         onSelect={async () => {
           const ok = await confirmDialog({
             title: `Delete “${section.name}”?`,
-            message: `Its ${pages.length} page${pages.length === 1 ? '' : 's'} will be deleted. Tasks are kept as standalone tasks.`,
+            message: subsections.length
+              ? 'Its subsections and all their pages will be deleted. Tasks are kept as standalone tasks.'
+              : `Its ${pages.length} page${pages.length === 1 ? '' : 's'} will be deleted. Tasks are kept as standalone tasks.`,
             confirmLabel: 'Delete section',
             danger: true,
           });
@@ -606,7 +622,10 @@ function SectionNode({ section, pages, ...p }: NodeProps & { section: Section; p
         {...(p.canEdit
           ? dropProps('section', section.id, (where) => {
               const drag = useDnd.getState().drag;
-              if (drag?.kind === 'section') void moveSection(drag.id, section.notebookId, section.id, where);
+              if (drag?.kind === 'section')
+                void (where === 'inside'
+                  ? moveSection(drag.id, section.notebookId, section.id, null, 'inside')
+                  : moveSection(drag.id, section.notebookId, section.parentId ?? null, section.id, where));
               if (drag?.kind === 'page' || drag?.kind === 'favorite') void movePage(drag.id, section.id, null, 'inside');
             })
           : {})}
@@ -636,10 +655,13 @@ function SectionNode({ section, pages, ...p }: NodeProps & { section: Section; p
       {menu.menu}
       {!isCollapsed && (
         <div className="sec-children" role="group">
+          {subsections.map((s) => (
+            <SectionNode key={s.id} section={s} nbSections={nbSections} nbPages={nbPages} {...p} />
+          ))}
           {pages.map((pg) => (
             <PageRow key={pg.id} page={pg} {...p} />
           ))}
-          {!pages.length && p.canEdit && (
+          {!pages.length && !subsections.length && p.canEdit && (
             <button className="sb-row page-row muted" onClick={() => p.createPage(section.id)}>
               <Plus size={14} /> New page
             </button>

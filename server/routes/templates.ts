@@ -1,8 +1,9 @@
 // User page templates (workspace-scoped). Owner: Editor & Notes.
 //
 //   GET    /workspaces/:id/templates       → TemplateMeta[]   (the ones this user may see; no content)
-//   POST   /pages/:id/templates            { name, icon?, content } → TemplateMeta   "Save page as template"
-//   PATCH  /templates/:id                  { name?, icon? }   rename
+//   POST   /pages/:id/templates            { name, icon?, content, sections? } → TemplateMeta   "Save page as template"
+//   PATCH  /templates/:id                  { name?, icon?, sections? }   rename / change where it's offered
+//     sections: [{ sectionId, includeSubsections? (default true) }]; empty = offered everywhere
 //   DELETE /templates/:id                                     (also removes the template's attachment copies)
 //   POST   /templates/:id/use              { pageId } → TemplateUse   creates NEW tasks + file copies for that page
 //
@@ -22,7 +23,9 @@ import {
   MAX_TEMPLATE_NAME,
   createTemplate,
   removeFiles,
+  setTemplateScope,
   templateFilePaths,
+  templateScope,
   useTemplate,
   visibleTemplate,
   type TemplateRow,
@@ -33,6 +36,7 @@ import type { TemplateMeta } from '../../shared/types.ts';
 export const templateRoutes = Router();
 
 function meta(r: TemplateRow, userId: string): TemplateMeta {
+  const scope = templateScope(r.id, userId);
   const fileCount = (db.prepare('SELECT COUNT(*) AS n FROM files WHERE template_id = ?').get(r.id) as { n: number }).n;
   let taskCount = 0;
   try {
@@ -52,6 +56,8 @@ function meta(r: TemplateRow, userId: string): TemplateMeta {
     taskCount,
     fileCount,
     canManage: canManage(r, userId),
+    scoped: scope.scoped,
+    sections: scope.visible,
   };
 }
 
@@ -111,6 +117,15 @@ templateRoutes.post(
       content: body.content,
       canSeeFile: (f) => fileVisible(f, req.user.id),
     });
+    if (body.sections !== undefined) {
+      try {
+        setTemplateScope({ id: made.id, workspace_id: a.workspaceId }, req.user.id, body.sections);
+      } catch (e) {
+        removeFiles(templateFilePaths([made.id]));
+        db.prepare('DELETE FROM templates WHERE id = ?').run(made.id);
+        throw e;
+      }
+    }
     const row = db.prepare('SELECT * FROM templates WHERE id = ?').get(made.id) as TemplateRow;
     changed(row);
     return meta(row, req.user.id);
@@ -124,6 +139,7 @@ templateRoutes.patch(
     const b = req.body ?? {};
     const name = b.name === undefined ? r.name : str(b.name, 'name', MAX_TEMPLATE_NAME);
     const ic = b.icon === undefined ? r.icon : icon(b.icon);
+    if (b.sections !== undefined) setTemplateScope(r, req.user.id, b.sections);
     db.prepare('UPDATE templates SET name = ?, icon = ?, updated_at = ? WHERE id = ?').run(name, ic, new Date().toISOString(), r.id);
     changed(r);
     return meta(db.prepare('SELECT * FROM templates WHERE id = ?').get(r.id) as TemplateRow, req.user.id);

@@ -217,13 +217,21 @@ test('import: hierarchy, to-dos → tasks, image + attachment → files, malicio
   // The connection (and its tokens) is gone once the job ends.
   assert.equal((await app.call('GET', `/import/onenote/connections/${conn}/notebooks`, me.token)).status, 404);
 
-  // Hierarchy: a private notebook, section groups flattened into "Group / Section", pages in OneNote order.
+  // Hierarchy: a private notebook, section groups as subsections (Projects › Alpha, Projects › Archive),
+  // groups deeper than 3 levels flattened into "Group / Section" (Archive › "Old / 2019"), pages in OneNote order.
   const [nb] = db.prepare("SELECT * FROM notebooks WHERE workspace_id = ? AND name = 'Work'").all(me.wsId) as Record<string, string>[];
   assert.equal(nb.visibility, 'private');
   assert.equal(nb.created_by, me.user.id);
   assert.deepEqual(job.imported, [{ id: nb.id, name: 'Work' }]);
-  const sections = db.prepare('SELECT id, name FROM sections WHERE notebook_id = ? ORDER BY position').all(nb.id) as { id: string; name: string }[];
-  assert.deepEqual(sections.map((s) => s.name), ['Meetings', 'Projects / Alpha']);
+  const all = db.prepare('SELECT id, name, parent_id FROM sections WHERE notebook_id = ?').all(nb.id) as { id: string; name: string; parent_id: string | null }[];
+  const byName = (n: string) => all.find((s) => s.name === n)!;
+  const nameOf = (id: string | null) => all.find((s) => s.id === id)?.name ?? null;
+  assert.deepEqual(
+    all.map((s) => [s.name, nameOf(s.parent_id)]).sort(),
+    [['Alpha', 'Projects'], ['Archive', 'Projects'], ['Meetings', null], ['Old / 2019', 'Archive'], ['Projects', null]],
+  );
+  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM pages WHERE section_id = ?').get(byName('Projects').id) as { n: number }).n, 0, 'a group has no pages of its own');
+  const sections = [byName('Meetings'), byName('Alpha')];
   const pages = (sid: string) => db.prepare('SELECT * FROM pages WHERE section_id = ? ORDER BY position').all(sid) as Record<string, unknown>[];
   assert.deepEqual(pages(sections[0].id).map((p) => p.title), ['Weekly sync', 'Follow-ups']);
   const docOf = (p: Record<string, unknown>) => {

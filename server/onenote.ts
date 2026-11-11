@@ -22,7 +22,8 @@ import { FILES_DIR, PUBLIC_URL } from './config.ts';
 import { publish } from './events.ts';
 import { log } from './log.ts';
 import { createTask, updateTask } from './tasks.ts';
-import { nextPos } from './tree.ts';
+import { nextPos, nextSectionPos } from './tree.ts';
+import { MAX_SECTION_DEPTH } from '../shared/sections.ts';
 import { seedPageDoc } from './collab.ts';
 import { sanitizeYDoc } from './sanitizeDoc.ts';
 import { MAX_UPLOAD_BYTES, SAFE_TYPES, storedExt } from './routes/files.ts';
@@ -397,21 +398,45 @@ export async function listNotebooks(conn: Connection): Promise<{ id: string; nam
   return nbs.filter((n) => typeof n.id === 'string').map((n) => ({ id: n.id, name: String(n.displayName ?? 'Notebook').slice(0, 100) }));
 }
 
-/** Sections of a notebook, section groups flattened into a "Group / Section" name. `budget.left` counts sections + groups per job. */
-async function sectionsOf(conn: Connection, notebookId: string, budget: { left: number }): Promise<{ id: string; name: string }[]> {
-  const out: { id: string; name: string }[] = [];
-  const walk = async (base: string, prefix: string, depth: number) => {
+/**
+ * A section to create: a OneNote section (`graphId` set, its pages are imported) or a section group
+ * (`graphId` null: a section that only holds subsections). `parentKey` is the enclosing group's `key`.
+ */
+export interface ImportSection {
+  key: string;
+  graphId: string | null;
+  name: string;
+  parentKey: string | null;
+}
+
+/**
+ * Sections of a notebook, parents before children. Section groups become sections holding their
+ * contents as subsections, up to MAX_SECTION_DEPTH levels; groups nested deeper than that are
+ * flattened into a "Group / Section" name at the deepest level. `budget.left` counts sections + groups per job.
+ */
+async function sectionsOf(conn: Connection, notebookId: string, budget: { left: number }): Promise<ImportSection[]> {
+  const out: ImportSection[] = [];
+  // level: the level the sections found here are created at (1 = top of the notebook).
+  const walk = async (base: string, parentKey: string | null, level: number, prefix: string, depth: number) => {
     for (const s of await graphList<GSection>(conn, `${base}/sections?$select=id,displayName`)) {
       if (budget.left-- <= 0) return;
-      out.push({ id: s.id, name: `${prefix}${s.displayName ?? 'Section'}` });
+      out.push({ key: `s:${s.id}`, graphId: s.id, name: `${prefix}${s.displayName ?? 'Section'}`, parentKey });
     }
     if (depth > 10) return;
     for (const g of await graphList<GSection>(conn, `${base}/sectionGroups?$select=id,displayName`)) {
       if (budget.left-- <= 0) return;
-      await walk(`/me/onenote/sectionGroups/${seg(g.id)}`, `${prefix}${g.displayName ?? 'Group'} / `, depth + 1);
+      const groupBase = `/me/onenote/sectionGroups/${seg(g.id)}`;
+      const name = `${prefix}${g.displayName ?? 'Group'}`;
+      if (level < MAX_SECTION_DEPTH) {
+        const key = `g:${g.id}`;
+        out.push({ key, graphId: null, name, parentKey });
+        await walk(groupBase, key, level + 1, '', depth + 1);
+      } else {
+        await walk(groupBase, parentKey, level, `${name} / `, depth + 1);
+      }
     }
   };
-  await walk(`/me/onenote/notebooks/${seg(notebookId)}`, '', 0);
+  await walk(`/me/onenote/notebooks/${seg(notebookId)}`, null, 1, '', 0);
   return out;
 }
 
@@ -539,20 +564,31 @@ async function runJob(job: Job, conn: Connection, notebookIds: string[], unfinis
     );
     job.imported.push({ id: notebookId, name: nb.name });
     unfinished.add(notebookId);
+    const created = new Map<string, string>(); // ImportSection.key → our section id
+    const addSection = (s: ImportSection) => {
+      const sectionId = newId();
+      const parentId = s.parentKey ? (created.get(s.parentKey) ?? null) : null;
+      db.prepare('INSERT INTO sections (id, notebook_id, parent_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        sectionId, notebookId, parentId, s.name.slice(0, 100) || 'Section', pickColor(), nextSectionPos(notebookId, parentId), now(),
+      );
+      created.set(s.key, sectionId);
+      return sectionId;
+    };
     for (const s of sections) {
+      if (!s.graphId) {
+        addSection(s); // a section group: holds subsections, no pages of its own
+        continue;
+      }
       let pages: GPage[];
       try {
-        pages = await graphList<GPage>(conn, `/me/onenote/sections/${seg(s.id)}/pages?$select=id,title,order&pagelevel=true&$top=100`);
+        pages = await graphList<GPage>(conn, `/me/onenote/sections/${seg(s.graphId)}/pages?$select=id,title,order&pagelevel=true&$top=100`);
       } catch (e) {
         if (e instanceof Stopped) throw e;
         warn(job, `Section “${s.name}” in “${nb.name}” couldn't be read${e instanceof GraphError && e.status === 403 ? ' (password-protected sections can’t be imported)' : ''}`);
         continue;
       }
       pages.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-      const sectionId = newId();
-      db.prepare('INSERT INTO sections (id, notebook_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-        sectionId, notebookId, s.name.slice(0, 100) || 'Section', pickColor(), nextPos('sections', 'notebook_id', notebookId), now(),
-      );
+      const sectionId = addSection(s);
       job.pages.total += pages.length;
       for (const p of pages) {
         if (job.pages.done >= MAX_PAGES_PER_JOB) {
