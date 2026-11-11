@@ -16,7 +16,7 @@ test('subsection, a page in it, and a template offered in that section', async (
   await page.keyboard.type('Sprint goals go here');
 
   // ── New subsection from the section's menu ──
-  const sidebarTree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Notebooks' });
+  const sidebarTree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Sections' });
   await sidebarTree.getByText('General', { exact: true }).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'New subsection' }).click();
   await page.getByRole('dialog').getByRole('textbox').fill('Sprints');
