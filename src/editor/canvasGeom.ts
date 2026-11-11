@@ -87,14 +87,13 @@ export function nudge(b: Pick<BoxGeom, 'x' | 'y'>, key: string, fine: boolean): 
 }
 
 /**
- * The width a wide box (the page's main box) is drawn at: the readable width, or with "Full
- * width" everything right of it; never wider than the space there is, never under BOX_MIN_W.
- * `avail` is the surface's visible width (0 when not measured yet).
+ * The width a wide box (the page's main box) is drawn at: everything right of it, to the
+ * right edge of the visible surface (OneNote-style full width), never under BOX_MIN_W.
+ * `avail` is the surface's visible width (0 when not measured yet: `fallback` is used).
  */
-export function wideWidth(x: number, avail: number, fullWidth: boolean, readable: number): number {
-  if (avail <= 0) return readable;
-  const room = Math.max(BOX_MIN_W, Math.floor(avail - x));
-  return fullWidth ? room : Math.min(readable, room);
+export function wideWidth(x: number, avail: number, fallback: number): number {
+  if (avail <= 0) return fallback;
+  return Math.max(BOX_MIN_W, Math.floor(avail - x));
 }
 
 /** A short random box id (the `box:<id>` fragment name). */

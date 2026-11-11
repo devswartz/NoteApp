@@ -20,9 +20,9 @@ export interface BoxGeom {
   /** Stacking order: higher is in front. */
   z: number;
   /**
-   * The page's main text box: drawn at the page's readable width (the old document column,
-   * or the whole page with "Full width") until someone sets its width by hand; `w` is then
-   * only a fallback for readers that don't know the page width (the server).
+   * The page's main text box: drawn across the page's full width (OneNote-style) until
+   * someone sets its width by hand; `w` is then only a fallback for readers that don't know
+   * the page width (the server, or before the page is measured).
    */
   wide?: boolean;
 }
@@ -80,8 +80,9 @@ export function observePageContent(doc: Y.Doc, fn: (events: Y.YEvent<Y.AbstractT
 }
 
 /**
- * The readable width of a box: a document's text column (760px article minus 2 × 48px padding)
- * plus the box's own padding and border (2 × 11px), so text in it lines up as it did in documents.
+ * The stored width of a wide box: a document's old text column plus the box's padding and
+ * border. Wide boxes are drawn at the page's width; this is only the fallback where that isn't
+ * known (the server, exports, before the page is measured).
  */
 export const READABLE_BOX_W = 686;
 /** Width given to the one box a document becomes. */
@@ -92,7 +93,7 @@ export const CONVERTED_BOX_W = READABLE_BOX_W;
  * people starting the same blank page at once write into one box.
  */
 export const FIRST_BOX_ID = 'first';
-/** Geometry of a blank page's first box: top left, at the readable width. */
+/** Geometry of a blank page's first box: top left, wide. */
 export const FIRST_BOX: BoxGeom = { id: FIRST_BOX_ID, x: 0, y: 0, w: READABLE_BOX_W, z: 1, wide: true };
 
 /** True when a fragment holds nothing a reader would see: no nodes, or only empty paragraphs. */

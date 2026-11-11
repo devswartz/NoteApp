@@ -3,8 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from './dialogs.ts';
 
-const LAST_CHECK = 'noteapp.desktop.lastUpdateCheck';
-const DAY = 24 * 60 * 60_000;
+// Checked every time the app opens (and from the menu); the check is one small request.
 
 export async function checkForUpdates({ interactive }: { interactive: boolean }) {
   const enabled = await invoke<boolean>('updater_enabled').catch(() => false);
@@ -12,12 +11,6 @@ export async function checkForUpdates({ interactive }: { interactive: boolean })
     if (interactive) await message('Automatic updates aren’t set up for this build.');
     return;
   }
-  const { platform } = await import('../index.ts');
-  if (!interactive) {
-    const last = Number(platform.kv.get(LAST_CHECK) ?? 0);
-    if (Date.now() - last < DAY) return;
-  }
-  platform.kv.set(LAST_CHECK, String(Date.now()));
   try {
     const { check } = await import('@tauri-apps/plugin-updater');
     const update = await check();

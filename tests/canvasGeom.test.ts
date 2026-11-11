@@ -61,13 +61,12 @@ test('the surface fills the viewport and grows to fit boxes', () => {
   assert.equal(surfaceSize([{ ...box('w', 0, 0, 1000), wide: true }], {}, 1000, 600).w, 1000);
 });
 
-test('a wide box is drawn at the readable width, or the page width with Full width, within the room there is', () => {
-  assert.equal(wideWidth(0, 1400, false, 686), 686);
-  assert.equal(wideWidth(0, 500, false, 686), 500, 'narrow window: the space there is');
-  assert.equal(wideWidth(0, 1400, true, 686), 1400);
-  assert.equal(wideWidth(200, 1400, true, 686), 1200);
-  assert.equal(wideWidth(1350, 1400, true, 686), BOX_MIN_W);
-  assert.equal(wideWidth(0, 0, true, 686), 686, 'not measured yet');
+test('a wide box is drawn across the page to the right edge, within the room there is', () => {
+  assert.equal(wideWidth(0, 1400, 686), 1400);
+  assert.equal(wideWidth(200, 1400, 686), 1200);
+  assert.equal(wideWidth(0, 500, 686), 500, 'narrow window: the space there is');
+  assert.equal(wideWidth(1350, 1400, 686), BOX_MIN_W);
+  assert.equal(wideWidth(0, 0, 686), 686, 'not measured yet');
 });
 
 test('Tab order is reading order: top to bottom, then left to right', () => {

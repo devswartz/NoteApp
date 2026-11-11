@@ -4,10 +4,10 @@
 // collab session, so presence and carets work as on document pages, and moves made by
 // others show live.
 //
-// A blank page offers its first box at the top left, at the readable width, ready for typing
-// (OneNote: just start typing); it is only stored once something is typed in it, so a page
-// you merely open stays empty. That box, and the one a document became, is "wide": drawn at
-// the old document column's width (the page's width with "Full width") until resized.
+// A blank page offers its first box at the top left, ready for typing (OneNote: just start
+// typing); it is only stored once something is typed in it, so a page you merely open stays
+// empty. That box, and the one a document became, is "wide": drawn across the page's full
+// width (OneNote-style), following window and panel resizes, until resized by hand.
 //
 // Mouse: click empty space to start a box; drag a box's top edge to move it and its right
 // edge to set its width; an empty box goes away when you leave it.
@@ -53,8 +53,6 @@ interface Props {
   mountAll?: boolean;
   /** Whole-canvas actions for the page chrome (templates, import, version history, outline). */
   onCanvas?: (h: CanvasHandle | null) => void;
-  /** The page's "Full width" setting: wide boxes span the page instead of the readable width. */
-  fullWidth?: boolean;
   /** Put the caret in a blank page's first box when it opens (unless something else has focus). */
   autoFocus?: boolean;
 }
@@ -159,7 +157,7 @@ function useGeometryUndo(doc: Y.Doc) {
   return um;
 }
 
-export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness, mountAll, onCanvas, fullWidth = false, autoFocus = false }: Props) {
+export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness, mountAll, onCanvas, autoFocus = false }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const { doc } = session;
   useEffect(() => {
@@ -567,10 +565,10 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   };
   const addBoxBelow = () => createBox(below(), 'focus');
 
-  // Wide boxes as drawn: the readable width, or the page's width with "Full width".
+  // Wide boxes as drawn: the page's full width, right of where they start.
   const drawn = useMemo(
-    () => (ready ? [FIRST_BOX] : boxes).map((b) => (b.wide ? { ...b, w: wideWidth(b.x, viewport.w, fullWidth, READABLE_BOX_W) } : b)),
-    [ready, boxes, viewport.w, fullWidth],
+    () => (ready ? [FIRST_BOX] : boxes).map((b) => (b.wide ? { ...b, w: wideWidth(b.x, viewport.w, READABLE_BOX_W) } : b)),
+    [ready, boxes, viewport.w],
   );
   const size = surfaceSize(drawn, heights, viewport.w, viewport.h);
   const stacked = isMobile;
