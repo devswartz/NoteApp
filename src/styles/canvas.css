@@ -22,19 +22,69 @@
 .page-scroll[data-page-color] { --bg: var(--page-tint); --text-muted: var(--page-text-muted); --text-placeholder: var(--page-text-muted); background: var(--bg); }
 .rb-page-chip[data-page-color] { background: var(--page-tint, var(--bg)); }
 /* Rule lines are drawn faintly behind the boxes across the whole page width (.page-rules,
-   placed by PageView from the top of the canvas down), so they scroll with the page.
-   "Lines" sit under each line of body text (16px × 1.7) of a box at the top of the canvas.
+   placed by PageView from the top of the canvas surface down), so they scroll with the page.
+   With rule lines on (.has-rules) everything snaps to one grid unit, --rule: the lines (and
+   the grid's squares) are --rule apart, starting at the surface's origin; boxes sit on whole
+   units (CanvasEditor snaps their y), and their content is set on the same unit (below), so
+   text sits on the lines like ruled paper. Each line is the last pixel of its unit: a box's
+   text starts 7px into a unit (border + padding), and a 16px line's baseline then lands
+   just above the line.
    Tables and the box being typed in are opaque, so lines never run through them. */
-.page-scroll { --rule-h: 27.2px; }
+.page-scroll { --rule: 28px; }
 .page-rules { position: absolute; left: 0; right: 0; pointer-events: none; }
 .page-scroll[data-rules='lines'] .page-rules {
-  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--rule-h) - 1px), var(--page-rule) calc(var(--rule-h) - 1px), var(--page-rule) var(--rule-h));
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--rule) - 1px), var(--page-rule) calc(var(--rule) - 1px), var(--page-rule) var(--rule));
 }
 .page-scroll[data-rules='grid'] .page-rules {
-  background-image: linear-gradient(to bottom, var(--page-rule) 1px, transparent 1px), linear-gradient(to right, var(--page-rule) 1px, transparent 1px);
-  background-size: var(--rule-h) var(--rule-h);
+  background-image: linear-gradient(to bottom, transparent calc(var(--rule) - 1px), var(--page-rule) calc(var(--rule) - 1px)), linear-gradient(to right, var(--page-rule) 1px, transparent 1px);
+  background-size: var(--rule) var(--rule);
 }
 .page-scroll[data-rules] .canvas-box table { background: var(--bg); }
+
+/* Content on the grid. Every line of text is one unit; spacing between blocks is whole
+   units (block margins are zeroed here, and src/editor/ruleGrid.ts gives each top-level
+   block a bottom margin that rounds it up to whole units: tables, images, callouts, code
+   blocks, dividers, file cards). Headings take two units, their text on the second line. */
+.has-rules .canvas-box .ProseMirror { line-height: var(--rule); min-height: var(--rule); }
+.has-rules .canvas-box .ProseMirror > * { margin-top: 0; margin-bottom: 0; }
+.has-rules .canvas-box .ProseMirror :is(ul, ol, blockquote, li, p) { margin-top: 0; margin-bottom: 0; }
+.has-rules .canvas-box .ProseMirror :is(h1, h2, h3) { line-height: var(--rule); margin: 0; }
+/* The padding lifts the baseline of bigger text (it sits lower in a unit) back onto the line. */
+.has-rules .canvas-box .ProseMirror h1 { padding-top: 24px; }
+.has-rules .canvas-box .ProseMirror h2 { padding-top: 26px; }
+.has-rules .canvas-box .ProseMirror h3 { padding-top: var(--rule); }
+.has-rules .canvas-box .ProseMirror > :first-child:is(h1, h2, h3) { padding-top: 0; }
+.has-rules .canvas-box .ProseMirror > h1:first-child { margin-top: -4px; }
+.has-rules .canvas-box .ProseMirror > h2:first-child { margin-top: -2px; }
+.has-rules .canvas-box .ProseMirror hr { margin: 13px 0 14px; }
+.has-rules .canvas-box .ProseMirror img { margin: 0; }
+/* Checklists: the box centred on its line. */
+.has-rules .canvas-box .ProseMirror ul[data-type='taskList'] li > label { margin-top: 0; height: var(--rule); display: inline-flex; align-items: center; }
+/* Callouts and code blocks: borders that take no room, so their text stays on the lines. */
+.has-rules .canvas-box .ProseMirror .callout { padding-top: 0; padding-bottom: 0; border-color: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.has-rules .canvas-box .ProseMirror .callout-body > * + * { margin-top: 0; }
+.has-rules .canvas-box .ProseMirror pre { padding-top: 0; padding-bottom: 0; line-height: var(--rule); border-color: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+/* Tables: one unit per line of a cell, so rows are whole units; the cell borders are drawn
+   as inset shadows (no room taken). */
+.has-rules .canvas-box .ProseMirror table { margin: 0; outline: 1px solid var(--border); outline-offset: -1px; }
+.has-rules .canvas-box .ProseMirror :is(td, th) { border: 0; padding-top: 0; padding-bottom: 0; box-shadow: inset -1px -1px 0 var(--border); }
+/* Tasks: one unit per title line, the circle centred on the first line, chips within it. */
+.has-rules .canvas-box .task-ref { margin: 0; }
+.has-rules .canvas-box .task-ref-inner { min-height: var(--rule); padding-top: 0; padding-bottom: 0; }
+.has-rules .canvas-box .task-ref-title { line-height: var(--rule); padding: 0; }
+.has-rules .canvas-box .task-ref-inner > .task-check { margin-top: calc((var(--rule) - 18px) / 2); }
+.has-rules .canvas-box .task-ref-inner > .task-ref-meta { min-height: var(--rule); max-height: var(--rule); margin-top: 0; }
+.has-rules .canvas-box .task-ref-inner > .drag-handle { top: 2px; }
+/* The table bar (shown over a table being edited) takes two units, so text stays put. */
+.has-rules .canvas-box .table-bar { box-sizing: border-box; height: 36px; margin-bottom: 20px; }
+/* Boxes: the text of each starts 7px into a unit, whatever the layout. */
+.has-rules .canvas-wrap.is-stacked .canvas-box { padding: 7px 0 21px; }
+.has-rules .canvas-wrap.is-stacked .canvas-box + .canvas-box { padding-top: 6px; }
+.has-rules .canvas-wrap.is-single .canvas-box { padding: 7px 0 0; }
+.has-rules .canvas-wrap.is-stacked .canvas-box.is-wide .ProseMirror { min-height: var(--rule); }
+@media (max-width: 760px) {
+  .has-rules .canvas-box .task-ref-inner > .task-check { margin-top: calc((var(--rule) - 22px) / 2); }
+}
 @media print {
   .page-scroll[data-page-color] { --bg: #fff; background: none; }
   .page-rules { display: none; }

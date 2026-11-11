@@ -28,8 +28,10 @@ import { useCollab, usePresenceRole, type CollabSession, type PresenceUser, type
 import { EditorChrome, EditorMenus, usePageEditor, useSlashFilePickers } from './NoteEditor.tsx';
 import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { useCommentBinding } from './collabComments.ts';
-import { insertTaskAtEnd } from './TaskRef.tsx';
-import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, surfaceSize, UNMEASURED_H, wideWidth } from './canvasGeom.ts';
+import { insertTaskAtEnd, RELAYOUT_EVENT } from './TaskRef.tsx';
+import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, nudgeOnGrid, snapY, surfaceSize, UNMEASURED_H, wideWidth } from './canvasGeom.ts';
+import { RuleGrid } from './ruleGrid.ts';
+import { usePageSettings } from './ribbonState.ts';
 import { toast } from '../store.ts';
 import { GEOM_ORIGIN, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
@@ -90,7 +92,7 @@ const LeaveBoxOnEscape = Extension.create({
     };
   },
 });
-const BOX_EXTENSIONS = [LeaveBoxOnEscape];
+const BOX_EXTENSIONS = [LeaveBoxOnEscape, RuleGrid];
 
 /** Live geometry of every box. */
 function useBoxes(doc: Y.Doc): BoxGeom[] {
@@ -171,6 +173,15 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isMobile = useIsMobile();
+  // Rule lines on: boxes sit on the line grid (new and moved boxes are saved on it; older
+  // boxes are drawn on it), so their text lines up with the lines.
+  const ruled = usePageSettings(doc).rules !== 'none';
+  const ruledRef = useRef(ruled);
+  ruledRef.current = ruled;
+  useEffect(() => {
+    window.dispatchEvent(new Event(RELAYOUT_EVENT));
+  }, [ruled]);
+  const onGrid = <T extends { y: number }>(g: T): T => (ruledRef.current ? { ...g, y: snapY(g.y) } : g);
   const boxes = useBoxes(doc);
   const [heights, setHeights] = useState<Record<string, number>>({});
   const [mounted, setMounted] = useState<Set<string>>(() => new Set());
@@ -320,7 +331,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     [onReady], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const createBox = (g: Omit<BoxGeom, 'id'>, then: Pending['then']) => {
+  const createBox = (geom: Omit<BoxGeom, 'id'>, then: Pending['then']) => {
+    const g = onGrid(geom);
     const id = newBoxId();
     undo.stopCapturing(); // its own undo step
     doc.transact(() => doc.getMap<unknown>(BOXES_KEY).set(id, newBoxMap(g)), GEOM_ORIGIN);
@@ -487,7 +499,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       if (next) selectBox(next.id);
     } else if (canEdit && !isMobile && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const b = boxesRef.current.find((x) => x.id === id);
-      const to = b && nudge(b, e.key, e.shiftKey);
+      const to = b && (ruledRef.current ? nudgeOnGrid(b, e.key, e.shiftKey) : nudge(b, e.key, e.shiftKey));
       if (to) {
         e.preventDefault();
         setGeom(doc, id, to);
@@ -521,7 +533,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - start.px;
       const dy = ev.clientY - start.py;
-      next = mode === 'move' ? clampPos(start.x + dx, start.y + dy) : { w: clampWidth(start.w + dx), wide: undefined };
+      next = mode === 'move' ? onGrid(clampPos(start.x + dx, start.y + dy)) :{ w: clampWidth(start.w + dx), wide: undefined };
       if (!frame) frame = requestAnimationFrame(flush);
     };
     const up = () => {
@@ -567,8 +579,12 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   // Wide boxes as drawn: the page's full width, right of where they start.
   const drawn = useMemo(
-    () => (ready ? [FIRST_BOX] : boxes).map((b) => (b.wide ? { ...b, w: wideWidth(b.x, viewport.w, READABLE_BOX_W) } : b)),
-    [ready, boxes, viewport.w],
+    () =>
+      (ready ? [FIRST_BOX] : boxes).map((b) => {
+        const g = b.wide ? { ...b, w: wideWidth(b.x, viewport.w, READABLE_BOX_W) } : b;
+        return ruled && g.y !== snapY(g.y) ? { ...g, y: snapY(g.y) } : g;
+      }),
+    [ready, boxes, viewport.w, ruled],
   );
   const size = surfaceSize(drawn, heights, viewport.w, viewport.h);
   const stacked = isMobile;
