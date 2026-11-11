@@ -1,0 +1,66 @@
+/* ==== Editor text and highlight colours (Track 4) ====
+   Notes store a palette NAME (data-color="red", see shared/colors.ts); these tokens map
+   each name to a value per theme. tests/contrast.test.ts checks every value:
+   text colours reach 4.5:1 on the page surfaces, and body text reaches 4.5:1 on every highlight. */
+:root {
+  --tc-gray: #6b6b74;
+  --tc-red: #c42b2b;
+  --tc-orange: #b4500c;
+  --tc-yellow: #8c6400;
+  --tc-green: #22783a;
+  --tc-blue: #1f62c4;
+  --tc-purple: #7a3fd6;
+  --tc-pink: #bb2a75;
+
+  --hl-gray: #e9e9ec;
+  --hl-red: #fde0de;
+  --hl-orange: #fde6cf;
+  --hl-yellow: #fcf0b0;
+  --hl-green: #d9f2dc;
+  --hl-blue: #dbe8fd;
+  --hl-purple: #ebe2fc;
+  --hl-pink: #fbdeec;
+}
+:root[data-theme='dark'] {
+  --tc-gray: #a3a3ad;
+  --tc-red: #f47c7c;
+  --tc-orange: #f5a05a;
+  --tc-yellow: #e9c53a;
+  --tc-green: #5fcf80;
+  --tc-blue: #6ea8f7;
+  --tc-purple: #b893f5;
+  --tc-pink: #f07fb6;
+
+  --hl-gray: #3a3a41;
+  --hl-red: #5b2727;
+  --hl-orange: #563318;
+  --hl-yellow: #4f4313;
+  --hl-green: #1f4529;
+  --hl-blue: #1e3a5c;
+  --hl-purple: #3c2b5e;
+  --hl-pink: #552240;
+}
+
+.prose span[data-color='gray'], .color-swatch[data-color='gray'] { color: var(--tc-gray); }
+.prose span[data-color='red'], .color-swatch[data-color='red'] { color: var(--tc-red); }
+.prose span[data-color='orange'], .color-swatch[data-color='orange'] { color: var(--tc-orange); }
+.prose span[data-color='yellow'], .color-swatch[data-color='yellow'] { color: var(--tc-yellow); }
+.prose span[data-color='green'], .color-swatch[data-color='green'] { color: var(--tc-green); }
+.prose span[data-color='blue'], .color-swatch[data-color='blue'] { color: var(--tc-blue); }
+.prose span[data-color='purple'], .color-swatch[data-color='purple'] { color: var(--tc-purple); }
+.prose span[data-color='pink'], .color-swatch[data-color='pink'] { color: var(--tc-pink); }
+
+.prose mark { background: var(--hl-yellow); color: inherit; border-radius: 3px; padding: 0 1px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.prose mark[data-color='gray'], .hl-swatch[data-color='gray'] { background: var(--hl-gray); }
+.prose mark[data-color='red'], .hl-swatch[data-color='red'] { background: var(--hl-red); }
+.prose mark[data-color='orange'], .hl-swatch[data-color='orange'] { background: var(--hl-orange); }
+.prose mark[data-color='yellow'], .hl-swatch[data-color='yellow'] { background: var(--hl-yellow); }
+.prose mark[data-color='green'], .hl-swatch[data-color='green'] { background: var(--hl-green); }
+.prose mark[data-color='blue'], .hl-swatch[data-color='blue'] { background: var(--hl-blue); }
+.prose mark[data-color='purple'], .hl-swatch[data-color='purple'] { background: var(--hl-purple); }
+.prose mark[data-color='pink'], .hl-swatch[data-color='pink'] { background: var(--hl-pink); }
+
+/* PDF (print) keeps the colours. */
+@media print {
+  .prose mark, .prose span[data-color] { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
