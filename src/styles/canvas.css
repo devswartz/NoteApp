@@ -26,22 +26,23 @@
 [data-page-color='grey'] { --page-tint: var(--page-grey); }
 .page-scroll[data-page-color] { --bg: var(--page-tint); --text-muted: var(--page-text-muted); --text-placeholder: var(--page-text-muted); background: var(--bg); }
 .rb-page-chip[data-page-color] { background: var(--page-tint, var(--bg)); }
-/* Rule lines are drawn faintly behind the boxes, on the surface, so they scroll with the page.
-   "Lines" sit under each line of body text (16px × 1.7) of a box at the top of the surface
-   (its border and padding: 7px). */
+/* Rule lines are drawn faintly behind the boxes across the whole page width (.page-rules,
+   placed by PageView from the top of the canvas down), so they scroll with the page.
+   "Lines" sit under each line of body text (16px × 1.7) of a box at the top of the canvas.
+   Tables and the box being typed in are opaque, so lines never run through them. */
 .page-scroll { --rule-h: 27.2px; }
-.page-scroll[data-rules='lines'] .canvas-surface {
+.page-rules { position: absolute; left: 0; right: 0; pointer-events: none; }
+.page-scroll[data-rules='lines'] .page-rules {
   background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--rule-h) - 1px), var(--page-rule) calc(var(--rule-h) - 1px), var(--page-rule) var(--rule-h));
-  background-position: 0 7px;
 }
-.page-scroll[data-rules='grid'] .canvas-surface {
+.page-scroll[data-rules='grid'] .page-rules {
   background-image: linear-gradient(to bottom, var(--page-rule) 1px, transparent 1px), linear-gradient(to right, var(--page-rule) 1px, transparent 1px);
   background-size: var(--rule-h) var(--rule-h);
-  background-position: 0 7px;
 }
+.page-scroll[data-rules] .canvas-box table { background: var(--bg); }
 @media print {
   .page-scroll[data-page-color] { --bg: #fff; background: none; }
-  .page-scroll[data-rules] .canvas-surface { background-image: none; }
+  .page-rules { display: none; }
 }
 .canvas-hint { position: absolute; top: 24px; left: 0; margin: 0; pointer-events: none; }
 

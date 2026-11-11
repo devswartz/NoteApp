@@ -1,7 +1,7 @@
 // The full-width ribbon (OneNote layout): placement above the rail and panels, collapse,
 // disabled editing on non-page views, and the Page group (page colour, rule lines).
 import { expect, test, type Browser } from '@playwright/test';
-import { createPage, createTeam, createUser, openPage, signInContext, tasksUrl, type TestUser } from './helpers.ts';
+import { createPage, createTeam, createUser, focusEnd, openPage, signInContext, tasksUrl, type TestUser } from './helpers.ts';
 
 async function userPage(browser: Browser, user: TestUser) {
   const context = await browser.newContext();
@@ -47,9 +47,20 @@ test('collapse shrinks the ribbon to a strip, remembered across a reload; a clic
   await openPage(page, user.wsId, pageId);
   const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
   const tall = (await ribbon.boundingBox())!.height;
-  await ribbon.getByRole('button', { name: 'Collapse the ribbon' }).click();
+  // Live as soon as the page opens, before anything is clicked.
+  await expect(ribbon.getByRole('button', { name: /^Bold/ })).not.toHaveAttribute('aria-disabled', 'true');
+  const collapse = ribbon.getByRole('button', { name: 'Collapse the ribbon' });
+  expect((await collapse.boundingBox())!.height).toBeGreaterThanOrEqual(28);
+  await collapse.click();
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toHaveCount(0);
-  expect((await ribbon.boundingBox())!.height).toBeLessThan(Math.min(24, tall));
+  expect((await ribbon.boundingBox())!.height).toBeLessThan(tall / 2);
+  await expect(ribbon.getByRole('button', { name: 'Show the ribbon' })).toContainText('Show ribbon');
+
+  // Ctrl+F1 toggles it, as in Office.
+  await page.keyboard.press('Control+F1');
+  await expect(ribbon.getByRole('button', { name: /^Bold/ })).toBeVisible();
+  await page.keyboard.press('Control+F1');
+  await expect(ribbon.getByRole('button', { name: /^Bold/ })).toHaveCount(0);
 
   await page.reload();
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
@@ -62,22 +73,48 @@ test('collapse shrinks the ribbon to a strip, remembered across a reload; a clic
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toBeVisible();
 });
 
-test('on the Tasks view the editing buttons are disabled; View still works', async ({ page, context, request }) => {
+test('on the Tasks view the ribbon is a quiet strip, not a row of dead buttons; the Panels button works on a page', async ({ page, context, request }) => {
   const user = await createUser(request, 'Tad Tasks');
+  const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   await page.goto(tasksUrl(user.wsId, 'today'));
-  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
-  await expect(ribbon).toBeVisible();
-  for (const name of [/^Bold/, /^Block type/, /^Table/, /^Undo/, /^Page colour/, /^Rule lines/, /^Comments/])
-    await expect(ribbon.getByRole('button', { name }).first()).toHaveAttribute('aria-disabled', 'true');
-  const panels = ribbon.getByRole('button', { name: 'Panels' });
-  await expect(panels).not.toHaveAttribute('aria-disabled', 'true');
+  const strip = page.locator('.ribbon.is-off');
+  await expect(strip).toBeVisible();
+  await expect(strip).toContainText('Open a note to use the ribbon');
+  expect((await strip.boundingBox())!.height).toBeLessThan(40);
+  await expect(page.getByRole('toolbar', { name: 'Ribbon' })).toHaveCount(0);
+  await expect(page.locator('.ribbon button')).toHaveCount(0);
+
+  await openPage(page, user.wsId, pageId);
+  const panels = page.getByRole('toolbar', { name: 'Ribbon' }).getByRole('button', { name: 'Panels' });
   await expect(panels).toHaveAttribute('aria-pressed', 'true');
   await panels.click();
   await expect(page.locator('.sidebar')).toBeHidden();
   await expect(panels).toHaveAttribute('aria-pressed', 'false');
   await panels.click();
   await expect(page.locator('.sidebar')).toBeVisible();
+});
+
+test('OneNote shortcuts: Ctrl+1 checklist, Ctrl+. bullets, Ctrl+Alt+1/2/3 headings; tooltips show them', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Ona Keys');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  const editor = await openPage(page, user.wsId, pageId);
+  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+  await expect(ribbon.getByRole('button', { name: /^Checklist/ })).toHaveAttribute('title', /\+1\)$/);
+  await expect(ribbon.getByRole('button', { name: /^Bulleted list/ })).toHaveAttribute('title', /\+\.\)$/);
+
+  await focusEnd(page);
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('To do');
+  await page.keyboard.press('ControlOrMeta+1');
+  await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'To do' })).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+1');
+  await page.keyboard.press('ControlOrMeta+.');
+  await expect(editor.locator('ul:not([data-type]) li', { hasText: 'To do' })).toBeVisible();
+  await page.keyboard.press('ControlOrMeta+.');
+  await page.keyboard.press('ControlOrMeta+Alt+2');
+  await expect(editor.locator('h2', { hasText: 'To do' })).toBeVisible();
 });
 
 test('page colour and rule lines apply, sync to a second person, and persist', async ({ browser, request }) => {
@@ -104,7 +141,10 @@ test('page colour and rule lines apply, sync to a second person, and persist', a
   const plain = await a.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bg').trim());
   expect(tint).not.toBe('rgba(0, 0, 0, 0)');
   expect(tint).not.toBe(plain);
-  expect(await a.page.getByTestId('canvas-surface').evaluate((el) => getComputedStyle(el).backgroundImage)).toContain('repeating-linear-gradient');
+  // Lines run across the whole page width, behind the boxes.
+  const rules = a.page.locator('.page-rules');
+  expect(await rules.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain('repeating-linear-gradient');
+  expect((await rules.boundingBox())!.width).toBeGreaterThanOrEqual((await scroller(a.page).boundingBox())!.width - 20);
 
   // The viewer sees them live, read-only (the Page group is disabled for viewers).
   await expect(scroller(b.page)).toHaveAttribute('data-page-color', 'green');

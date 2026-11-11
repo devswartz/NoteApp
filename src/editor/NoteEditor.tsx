@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import type { Extensions } from '@tiptap/core';
+import { Extension, type Extensions } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { beginComment, useCommentBinding } from './collabComments.ts';
@@ -123,8 +123,23 @@ export function documentExtensions(pageId: string): Extensions {
     ...colorExtensions, // text colour + highlight, stored as palette names (./colors.ts)
     MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
+    OneNoteKeys,
   ];
 }
+
+/**
+ * Shortcuts OneNote users expect, on top of TipTap's own (Ctrl+Alt+1/2/3 headings come from
+ * StarterKit): Ctrl+1 checklist (OneNote's To Do tag), Ctrl+. bullets.
+ */
+const OneNoteKeys = Extension.create({
+  name: 'oneNoteKeys',
+  addKeyboardShortcuts() {
+    return {
+      'Mod-1': () => this.editor.commands.toggleTaskList(),
+      'Mod-.': () => this.editor.commands.toggleBulletList(),
+    };
+  },
+});
 
 export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });

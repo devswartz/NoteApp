@@ -70,6 +70,14 @@ export const PAGE_COLOR_LABELS: Record<PageColor, string> = {
 };
 const RULE_LABELS: Record<RuleLines, string> = { none: 'None', lines: 'Lines', grid: 'Grid' };
 
+/** Tooltip of an editing control while there is no editor to act on. */
+const IDLE_HINT = 'Click in a note to format';
+
+/** The keyboard shortcut of a block type (TipTap's own, OneNote's for headings), if it has one. */
+const ALT = MOD === '⌘' ? '⌥' : 'Alt';
+const blockKey = (id: BlockId) =>
+  id === 'p' ? keyLabel(MOD, ALT, '0') : id.startsWith('h') ? keyLabel(MOD, ALT, id.slice(1)) : id === 'code' ? keyLabel(MOD, ALT, 'C') : '';
+
 /** Items of a toolbar that take part in its arrow-key navigation (not the buttons inside an open menu). */
 const ITEM = '[data-tb-item]';
 
@@ -121,12 +129,15 @@ export function ToolbarMenu({
   trigger,
   className = '',
   disabled = false,
+  title,
   children,
 }: {
   label: string;
   trigger: ReactNode;
   className?: string;
   disabled?: boolean;
+  /** Tooltip, when it differs from the label. */
+  title?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -152,7 +163,7 @@ export function ToolbarMenu({
         type="button"
         data-tb-item
         className={`bm-btn tb-menu-btn ${className}`}
-        title={label}
+        title={title ?? label}
         aria-label={label}
         aria-haspopup="true"
         aria-expanded={open}
@@ -231,6 +242,7 @@ export function ColorMenu({ editor, kind }: { editor: Editor | null; kind: Color
     <ToolbarMenu
       label={label}
       disabled={!editor}
+      title={editor ? undefined : IDLE_HINT}
       trigger={
         <>
           {kind === 'text' ? <Baseline size={16} /> : <Highlighter size={16} />}
@@ -327,7 +339,7 @@ interface BtnOpts {
  * collapse chevron always work. Presses keep the editor's selection (mousedown is prevented).
  * Collapsed, it is a thin strip that restores on click (remembered on this device).
  */
-export function Ribbon() {
+export function Ribbon({ onPage }: { onPage: boolean }) {
   const active = useActiveEditor();
   const editor = active && !active.isDestroyed && active.isEditable ? active : null;
   const ref = useRef<HTMLDivElement>(null);
@@ -340,18 +352,29 @@ export function Ribbon() {
   const panel = usePagePanel((p) => p.panel);
   const settings = usePageSettings(page?.doc);
   useEffect(syncRibbonPrefs, []); // the shell's storage is ready now (see store/ui.ts)
+  // Ctrl+F1 collapses / restores the ribbon (as in Office).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F1' || !e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+      e.preventDefault();
+      setRibbonCollapsed(!useRibbon.getState().collapsed);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const off = !editor || !s;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
   const button = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts & { always?: boolean } = {}) => {
-    const disabled = (!opts.always && off) || !!opts.disabled;
+    const idle = !opts.always && off;
+    const disabled = idle || !!opts.disabled;
     const on = !disabled && !!opts.active;
     return (
       <button
         type="button"
         data-tb-item
         className={`bm-btn rb-btn ${on ? 'is-active' : ''} ${opts.text ? 'rb-text' : ''}`}
-        title={title}
+        title={idle ? IDLE_HINT : title}
         aria-label={opts.text ?? title}
         aria-pressed={opts.active === undefined ? undefined : on}
         aria-disabled={disabled || undefined}
@@ -367,6 +390,14 @@ export function Ribbon() {
   const btn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, opts);
   const viewBtn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, { ...opts, always: true });
 
+  // Tasks, Calendar, Settings: nothing to format, so a quiet strip instead of a row of dead buttons.
+  if (!onPage)
+    return (
+      <div className="ribbon is-collapsed is-off">
+        <span className="rb-off-hint">Open a note to use the ribbon</span>
+      </div>
+    );
+
   if (collapsed)
     return (
       <div
@@ -379,17 +410,21 @@ export function Ribbon() {
         onKeyDown={(e) => toolbarKeys(e, editor)}
         onClick={(e) => e.target === e.currentTarget && setRibbonCollapsed(false)}
       >
+        <span className="rb-strip-groups" aria-hidden onClick={() => setRibbonCollapsed(false)}>
+          Text · Lists · Insert · Page · View
+        </span>
         <button
           type="button"
           data-tb-item
           className="bm-btn rb-expand"
-          title="Show the ribbon"
+          title="Show the ribbon (Ctrl+F1)"
           aria-label="Show the ribbon"
           aria-expanded={false}
           tabIndex={-1}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => setRibbonCollapsed(false)}
         >
+          <span>Show ribbon</span>
           <ChevronDown size={14} />
         </button>
       </div>
@@ -410,6 +445,7 @@ export function Ribbon() {
       <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
+          title={off ? IDLE_HINT : undefined}
           className="tb-block"
           disabled={off}
           trigger={
@@ -426,6 +462,7 @@ export function Ribbon() {
                 type="button"
                 className={`tb-pop-item tb-pop-${b.id}`}
                 aria-pressed={block === b.id}
+                title={blockKey(b.id) ? `${b.label} (${blockKey(b.id)})` : undefined}
                 onClick={() => {
                   if (editor) setBlock(editor, b.id);
                   close();
@@ -433,6 +470,11 @@ export function Ribbon() {
                 }}
               >
                 {b.label}
+                {blockKey(b.id) && (
+                  <kbd className="tb-pop-key" aria-hidden>
+                    {blockKey(b.id)}
+                  </kbd>
+                )}
               </button>
             ))
           }
@@ -447,9 +489,9 @@ export function Ribbon() {
       </Group>
       <Sep />
       <Group label="Lists">
-        {btn('Bulleted list', <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
-        {btn('Numbered list', <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
-        {btn('Checklist', <ListChecks />, () => chain().toggleTaskList().run(), { active: s?.check })}
+        {btn(`Bulleted list (${keyLabel(MOD, '.')})`, <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
+        {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
+        {btn(`Checklist (${keyLabel(MOD, '1')})`, <ListChecks />, () => chain().toggleTaskList().run(), { active: s?.check })}
         {btn(`Turn into task (${keyLabel(MOD, ENTER)})`, <CircleCheck />, () => chain().convertToTask().run(), { disabled: !s?.canTask, text: 'Task' })}
       </Group>
       <Sep />
@@ -469,9 +511,11 @@ export function Ribbon() {
           disabled={pageOff}
           trigger={
             <>
-              <PaintBucket />
+              <span className="rb-icon-bar">
+                <PaintBucket />
+                <span className="tb-color-bar is-page" data-page-color={settings.color} aria-hidden />
+              </span>
               <span className="rb-btn-label">Page colour</span>
-              <span className="rb-page-chip" data-page-color={settings.color} aria-hidden />
             </>
           }
         >
@@ -544,7 +588,7 @@ export function Ribbon() {
         type="button"
         data-tb-item
         className="bm-btn rb-collapse"
-        title="Collapse the ribbon"
+        title="Collapse the ribbon (Ctrl+F1)"
         aria-label="Collapse the ribbon"
         aria-expanded
         tabIndex={-1}

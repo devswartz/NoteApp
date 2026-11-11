@@ -86,16 +86,16 @@ test('ribbon stays put while scrolling and is reachable with Alt+F10 and F6', as
   await page.keyboard.press('Escape');
   await expect(editor).toBeFocused();
 
-  // F6 regions: Shift+F6 from the text lands on the ribbon (its current item), F6 goes back.
-  await page.keyboard.press('Shift+F6');
+  // F6 regions: F6 from the text lands on the ribbon at the top (its current item), Shift+F6 goes back.
+  await page.keyboard.press('F6');
   await expect(bar.getByRole('button', { name: /^Bold/ })).toBeFocused();
   await page.keyboard.press('ArrowLeft');
   await expect(first).toBeFocused();
-  await page.keyboard.press('F6');
+  await page.keyboard.press('Shift+F6');
   await expect(editor).toBeFocused();
 });
 
-test('on a canvas the ribbon acts on the last-focused box, and is disabled with none', async ({ page, context, request }) => {
+test('on a canvas the ribbon is live from the start (the first box) and then acts on the last-focused box', async ({ page, context, request }) => {
   const user = await createUser(request, 'Rae Ribbon');
   const { sectionId } = await createPage(request, user);
   // Untitled, so the title has the caret rather than the blank page's ready first box.
@@ -106,15 +106,13 @@ test('on a canvas the ribbon acts on the last-focused box, and is disabled with 
   await expect(surface).toBeVisible();
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
 
-  // An empty canvas: nothing to act on, so the controls are there but disabled.
+  // A blank page with the caret in the title: the ribbon is already live (it acts on the first box).
+  await expect(page.locator('.page-title')).toBeFocused();
   const bar = page.getByRole('toolbar', { name: 'Ribbon' });
   const bold = bar.getByRole('button', { name: /^Bold/ });
   await expect(bold).toBeVisible();
-  await expect(bold).toHaveAttribute('aria-disabled', 'true');
-  const blockType = bar.getByRole('button', { name: /^Block type/ });
-  await expect(blockType).toHaveAttribute('aria-disabled', 'true');
-  await blockType.click({ force: true }); // aria-disabled: Playwright won't click it otherwise
-  await expect(bar.locator('.tb-pop')).toHaveCount(0);
+  await expect(bold).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(bar.getByRole('button', { name: /^Block type/ })).not.toHaveAttribute('aria-disabled', 'true');
 
   // Two boxes; the second was focused last. The first is the blank page's ready box.
   await page.locator('.canvas-box.is-ready .ProseMirror').click();

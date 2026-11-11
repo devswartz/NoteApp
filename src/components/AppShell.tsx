@@ -54,7 +54,7 @@ export function AppShell() {
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'is-mobile' : ''}`}>
       <OfflineBanner />
       {/* Desktop and tablet: the ribbon across the whole window, above the rail, panels and note (OneNote). Phones use the floating toolbar. */}
-      {!isMobile && <Ribbon />}
+      {!isMobile && <Ribbon onPage={/^\/w\/[^/]+\/p\//.test(location.pathname)} />}
       <div className="app-body">
         {isMobile && sidebarOpen && <div className="drawer-backdrop" onClick={() => ui.setSidebar(false)} />}
         {!isMobile && <Rail wsId={wsId} view={viewOf(location.pathname)} />}

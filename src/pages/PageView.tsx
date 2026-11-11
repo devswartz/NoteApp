@@ -197,6 +197,7 @@ export function PageView() {
   }, [canvas, canEdit, pageId]);
   const settings = usePageSettings(canvas?.doc);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
+  const rules = useRuleArea(settings.rules !== 'none' ? scroller : null, article);
 
   if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
     return (
@@ -232,6 +233,8 @@ export function PageView() {
         data-rules={settings.rules === 'none' ? undefined : settings.rules}
       >
         {canvas && !fullWidth && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
+        {/* Rule lines / grid: across the whole page width, from the canvas down, behind the boxes. */}
+        {settings.rules !== 'none' && rules && <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height }} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -336,6 +339,36 @@ export function PageView() {
       {panel && <PageSidePanel pageId={pageId} tab={panel} onTab={showPanel} canComment={!!canEdit} onClose={() => showPanel(null)} mobile={isMobile} />}
     </div>
   );
+}
+
+/**
+ * Where rule lines go, in the scroller's content coordinates: from the top of the canvas
+ * surface (plus a box's border and padding, so "lines" sit under a top box's text) to the
+ * bottom of the article. Re-measured as the page reflows.
+ */
+function useRuleArea(scroller: HTMLElement | null, article: HTMLElement | null) {
+  const [area, setArea] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!scroller || !article) {
+      setArea(null);
+      return;
+    }
+    const measure = () => {
+      const surface = article.querySelector('.canvas-surface');
+      if (!surface) return;
+      const base = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const top = Math.round(surface.getBoundingClientRect().top - base + 7);
+      const height = Math.max(0, Math.round(article.getBoundingClientRect().bottom - base - top));
+      setArea((a) => (a && a.top === top && a.height === height ? a : { top, height }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(article);
+    const surface = article.querySelector('.canvas-surface');
+    if (surface) ro.observe(surface);
+    return () => ro.disconnect();
+  }, [scroller, article]);
+  return area;
 }
 
 /** "Saved" / "Saving…" / "Offline": everything typed is in IndexedDB at once and on the server shortly after. */
