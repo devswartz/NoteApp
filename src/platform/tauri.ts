@@ -90,8 +90,10 @@ export const tauriPlatform: Platform = {
     setTimeout(() => {
       void import('./tauri/badge.ts').then((m) => m.startBadgeSync());
       if (!isApple) void import('./tauri/menuless.ts').then((m) => m.startWindowThemeSync());
-      void import('./tauri/updates.ts').then((m) => m.checkForUpdates({ interactive: false }));
     }, 0);
+    // The update check runs in the background a few seconds after opening, so it never
+    // competes with loading the workspace (opening must stay instant).
+    setTimeout(() => void import('./tauri/updates.ts').then((m) => m.checkForUpdates({ interactive: false })), 5000);
   },
 
   // The WebView's localStorage is per app and persistent, so the web implementation works as is.
