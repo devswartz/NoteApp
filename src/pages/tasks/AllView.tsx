@@ -1,5 +1,6 @@
 // All Tasks: search, filter, sort and group everything in the workspace.
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Bookmark, BookmarkPlus, SlidersHorizontal, X } from 'lucide-react';
 import { useStore } from '../../store.ts';
 import { TaskGroups } from '../../components/TaskRow.tsx';
@@ -24,6 +25,15 @@ export function AllView() {
   useEffect(() => setViews(loadSavedViews(wsId)), [wsId]); // the workspace can switch under a mounted view
   const saveViews = (v: SavedView[]) => (setViews(v), storeSavedViews(wsId, v));
   const current = views.find((v) => sameView(v, filters, sort, group));
+  // ?view=<id> (the Tasks panel's saved views) applies that view; ?new=1 opens the filters to build one.
+  const [params] = useSearchParams();
+  const viewParam = params.get('view');
+  const newParam = params.get('new');
+  useEffect(() => {
+    const v = viewParam ? loadSavedViews(wsId).find((x) => x.id === viewParam) : undefined;
+    if (v) (setFilters(v.filters), setSort(v.sort), setGroup(v.group));
+    if (newParam) (setFilters(DEFAULT_FILTERS), setShowFilters(true));
+  }, [viewParam, newParam, wsId]);
   // Filtering thousands of tasks shouldn't block typing in the search box.
   const deferred = useDeferredValue(filters);
   // "Open" reads from the open list so just-completed tasks linger for their check animation.
