@@ -165,12 +165,13 @@
   --p3: #60a5fa;
   --skeleton: rgba(255, 255, 255, 0.06);
   --skeleton-shine: rgba(255, 255, 255, 0.1);
-  --page-yellow: #23211a;
-  --page-green: #1a221d;
-  --page-blue: #1a1f2a;
-  --page-purple: #211d29;
-  --page-pink: #261d22;
-  --page-grey: #212124;
+  /* Dark tints are kept light-handed (close to --bg, warm rather than olive for yellow). */
+  --page-yellow: #221f1a;
+  --page-green: #1a1f1c;
+  --page-blue: #1a1d24;
+  --page-purple: #1e1b24;
+  --page-pink: #221b1f;
+  --page-grey: #1f1f22;
   --page-text-muted: #a3a3ac;
   --page-rule: rgba(150, 170, 220, 0.12);
   --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.3);

@@ -13,6 +13,12 @@ import {
   ChevronDown,
   ChevronUp,
   CircleCheck,
+  Code2,
+  Heading1,
+  Heading2,
+  Heading3,
+  Pilcrow,
+  Quote,
   FileSymlink,
   Grid3x3,
   Highlighter,
@@ -23,10 +29,8 @@ import {
   ListChecks,
   ListOrdered,
   ListTree,
-  MessageSquare,
   Minus,
   PaintBucket,
-  PanelLeft,
   Paperclip,
   Redo2,
   RemoveFormatting,
@@ -44,8 +48,6 @@ import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, ty
 import { setOutlineHidden, setRibbonCollapsed, syncRibbonPrefs, usePageSettings, useRibbon } from './ribbonState.ts';
 import { PAGE_COLORS, RULE_LINES, setPageSettings, type PageColor, type RuleLines } from '../../shared/pageDoc.ts';
 import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
-import { ui, useStore } from '../store.ts';
-import { setPagePanel, usePagePanel } from '../store/ui.ts';
 import '../styles/colors.css';
 import '../styles/toolbar.css';
 
@@ -69,6 +71,16 @@ export const PAGE_COLOR_LABELS: Record<PageColor, string> = {
   grey: 'Grey',
 };
 const RULE_LABELS: Record<RuleLines, string> = { none: 'None', lines: 'Lines', grid: 'Grid' };
+
+/** The same icons the floating toolbar and slash menu use for these blocks. */
+const BLOCK_ICONS: Record<BlockId, ReactNode> = {
+  p: <Pilcrow size={16} />,
+  h1: <Heading1 size={16} />,
+  h2: <Heading2 size={16} />,
+  h3: <Heading3 size={16} />,
+  quote: <Quote size={16} />,
+  code: <Code2 size={16} />,
+};
 
 /** Tooltip of an editing control while there is no editor to act on. */
 const IDLE_HINT = 'Click in a note to format';
@@ -348,8 +360,6 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
   const page = useRibbon((r) => r.page);
   const collapsed = useRibbon((r) => r.collapsed);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
-  const sidebarOpen = useStore((st) => st.sidebarOpen);
-  const panel = usePagePanel((p) => p.panel);
   const settings = usePageSettings(page?.doc);
   useEffect(syncRibbonPrefs, []); // the shell's storage is ready now (see store/ui.ts)
   // Ctrl+F1 collapses / restores the ribbon (as in Office).
@@ -469,7 +479,10 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
                   editor?.commands.focus();
                 }}
               >
-                {b.label}
+                <span className="tb-pop-icon" aria-hidden>
+                  {BLOCK_ICONS[b.id]}
+                </span>
+                <span className="tb-pop-text">{b.label}</span>
                 {blockKey(b.id) && (
                   <kbd className="tb-pop-key" aria-hidden>
                     {blockKey(b.id)}
@@ -491,8 +504,41 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
       <Group label="Lists">
         {btn(`Bulleted list (${keyLabel(MOD, '.')})`, <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
         {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
-        {btn(`Checklist (${keyLabel(MOD, '1')})`, <ListChecks />, () => chain().toggleTaskList().run(), { active: s?.check })}
-        {btn(`Turn into task (${keyLabel(MOD, ENTER)})`, <CircleCheck />, () => chain().convertToTask().run(), { disabled: !s?.canTask, text: 'Task' })}
+        <span className="rb-split">
+          {btn(
+            `To Do: a checkbox item (${keyLabel(MOD, '1')}). Use the arrow, or ${keyLabel(MOD, ENTER)}, to make it a tracked task with a due date and assignee`,
+            <ListChecks />,
+            () => chain().toggleTaskList().run(),
+            { active: s?.check, text: 'To Do' },
+          )}
+          <ToolbarMenu
+            label="To Do options"
+            title={off ? IDLE_HINT : 'More To Do options'}
+            className="rb-split-arrow"
+            disabled={off}
+            trigger={<ChevronDown size={14} />}
+          >
+            {(close) => (
+              <button
+                type="button"
+                className="tb-pop-item rb-rule-item"
+                aria-disabled={!s?.canTask || undefined}
+                title={`Make it a tracked task (${keyLabel(MOD, ENTER)})`}
+                onClick={() => {
+                  if (!s?.canTask) return;
+                  close();
+                  chain().convertToTask().run();
+                }}
+              >
+                <CircleCheck size={16} />
+                Make it a task
+                <kbd className="tb-pop-key" aria-hidden>
+                  {keyLabel(MOD, ENTER)}
+                </kbd>
+              </button>
+            )}
+          </ToolbarMenu>
+        </span>
       </Group>
       <Sep />
       <Group label="Insert">
@@ -575,9 +621,7 @@ export function Ribbon({ onPage }: { onPage: boolean }) {
       </Group>
       <Sep />
       <Group label="View">
-        {viewBtn('Panels', <PanelLeft />, () => ui.toggleSidebar(), { active: sidebarOpen })}
         {viewBtn('Outline', <ListTree />, () => setOutlineHidden(!outlineHidden), { active: !outlineHidden, disabled: !page })}
-        {viewBtn('Comments', <MessageSquare />, () => setPagePanel(panel === 'comments' ? null : 'comments'), { active: panel === 'comments', disabled: !page })}
       </Group>
       <span className="tb-spacer" />
       <Group label="History">

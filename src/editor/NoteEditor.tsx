@@ -32,11 +32,10 @@ import {
   ArrowDownToLine,
   ArrowRightToLine,
   PanelTop,
-  Palette,
 } from 'lucide-react';
 import { TaskRef, canConvert, convertToTasks } from './TaskRef.tsx';
 import { colorExtensions } from './colors.ts';
-import { ColorChoices, ToolbarMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
+import { ColorMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
 import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
@@ -484,14 +483,9 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       {btn(s.strike, `Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, () => editor.chain().focus().toggleStrike().run(), <Strikethrough size={16} />)}
       {btn(s.code, `Inline code (${keyLabel(MOD, 'E')})`, () => editor.chain().focus().toggleCode().run(), <Code size={16} />)}
       {btn(s.link, `Link (${keyLabel(MOD, 'K')})`, () => openLinkEditor(editor), <Link2 size={16} />)}
-      <ToolbarMenu label="Colour" trigger={<Palette size={16} />}>
-        {(close) => (
-          <>
-            <ColorChoices editor={editor} kind="text" done={close} />
-            <ColorChoices editor={editor} kind="highlight" done={close} />
-          </>
-        )}
-      </ToolbarMenu>
+      {/* The same colour controls (and icons) as the ribbon. */}
+      <ColorMenu editor={editor} kind="text" />
+      <ColorMenu editor={editor} kind="highlight" />
       <span className="bm-sep" />
       <button
         type="button"

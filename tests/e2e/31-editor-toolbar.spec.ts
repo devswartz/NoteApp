@@ -148,7 +148,11 @@ test('turn a line into a task from the ribbon and from the hover ✓', async ({ 
   const bar = page.getByRole('toolbar', { name: 'Ribbon' });
 
   await typeLine(page, 'Book the venue');
-  await bar.getByRole('button', { name: 'Task' }).click();
+  // To Do makes a plain checkbox item; its arrow makes that a tracked task.
+  await bar.getByRole('button', { name: 'To Do', exact: true }).click();
+  await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'Book the venue' })).toBeVisible();
+  await bar.getByRole('button', { name: 'To Do options' }).click();
+  await bar.getByRole('button', { name: /Make it a task/ }).click();
   await expect(taskRef(page, 'Book the venue')).toBeVisible();
 
   await typeLine(page, 'Send the invites');
@@ -169,7 +173,7 @@ test('the floating toolbar has text colour and highlight too', async ({ page, co
   await typeLine(page, 'Bright idea');
   await page.keyboard.press('Shift+Home');
   const bubble = page.locator('.bubble-menu');
-  await bubble.getByRole('button', { name: 'Colour' }).click();
+  await bubble.getByRole('button', { name: 'Highlight', exact: true }).click();
   await bubble.getByRole('button', { name: 'Highlight: Green' }).click();
   await expect(editor.locator('mark[data-color="green"]')).toHaveText('Bright idea');
 });

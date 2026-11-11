@@ -107,8 +107,16 @@
 .tb-pop-h1 { font-size: 18px; font-weight: 700; }
 .tb-pop-h2 { font-size: 16px; font-weight: 650; }
 .tb-pop-h3 { font-size: 14.5px; font-weight: 600; }
-.tb-pop-item:has(.tb-pop-key) { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
-.tb-pop-key { font: 500 var(--text-xs) var(--font); color: var(--text-muted); white-space: nowrap; }
+.tb-pop-item:has(.tb-pop-icon) { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.tb-pop-icon { display: inline-flex; color: var(--text-2); flex: none; }
+.tb-pop-key { margin-left: auto; padding-left: 16px; font: 500 var(--text-xs) var(--font); color: var(--text-muted); white-space: nowrap; }
+/* To Do: the button makes a checkbox item; its arrow offers "Make it a task". */
+.rb-split { display: inline-flex; align-items: center; }
+.ribbon .rb-split > .rb-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 4px; }
+.ribbon .rb-split .rb-split-arrow { min-width: 18px; padding: 0 2px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.ribbon .rb-split .rb-split-arrow svg { width: 14px; height: 14px; }
+.rb-split .tb-pop { min-width: 220px; }
+.tb-pop-item[aria-disabled='true'] { opacity: 0.45; cursor: default; }
 .tb-pop-item[aria-pressed='true'] .tb-pop-key { color: inherit; }
 .tb-pop-quote { font-style: italic; border-left: 3px solid var(--border-strong); }
 .tb-pop-code { font-family: var(--mono); font-size: 13px; }

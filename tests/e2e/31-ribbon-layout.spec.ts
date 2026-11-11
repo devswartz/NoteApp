@@ -73,9 +73,8 @@ test('collapse shrinks the ribbon to a strip, remembered across a reload; a clic
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toBeVisible();
 });
 
-test('on the Tasks view the ribbon is a quiet strip, not a row of dead buttons; the Panels button works on a page', async ({ page, context, request }) => {
+test('on the Tasks view the ribbon is a quiet strip, not a row of dead buttons', async ({ page, context, request }) => {
   const user = await createUser(request, 'Tad Tasks');
-  const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   await page.goto(tasksUrl(user.wsId, 'today'));
   const strip = page.locator('.ribbon.is-off');
@@ -84,15 +83,6 @@ test('on the Tasks view the ribbon is a quiet strip, not a row of dead buttons; 
   expect((await strip.boundingBox())!.height).toBeLessThan(40);
   await expect(page.getByRole('toolbar', { name: 'Ribbon' })).toHaveCount(0);
   await expect(page.locator('.ribbon button')).toHaveCount(0);
-
-  await openPage(page, user.wsId, pageId);
-  const panels = page.getByRole('toolbar', { name: 'Ribbon' }).getByRole('button', { name: 'Panels' });
-  await expect(panels).toHaveAttribute('aria-pressed', 'true');
-  await panels.click();
-  await expect(page.locator('.sidebar')).toBeHidden();
-  await expect(panels).toHaveAttribute('aria-pressed', 'false');
-  await panels.click();
-  await expect(page.locator('.sidebar')).toBeVisible();
 });
 
 test('OneNote shortcuts: Ctrl+1 checklist, Ctrl+. bullets, Ctrl+Alt+1/2/3 headings; tooltips show them', async ({ page, context, request }) => {
@@ -101,7 +91,10 @@ test('OneNote shortcuts: Ctrl+1 checklist, Ctrl+. bullets, Ctrl+Alt+1/2/3 headin
   await signInContext(context, user);
   const editor = await openPage(page, user.wsId, pageId);
   const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
-  await expect(ribbon.getByRole('button', { name: /^Checklist/ })).toHaveAttribute('title', /\+1\)$/);
+  await expect(ribbon.getByRole('button', { name: 'To Do', exact: true })).toHaveAttribute('title', /\+1\)/);
+  // View keeps only Outline (Panels and Comments live on the rail and the page's top bar).
+  await expect(ribbon.getByRole('group', { name: 'View', exact: true }).getByRole('button')).toHaveCount(1);
+  await expect(ribbon.getByRole('group', { name: 'View', exact: true }).getByRole('button')).toHaveAttribute('aria-label', 'Outline');
   await expect(ribbon.getByRole('button', { name: /^Bulleted list/ })).toHaveAttribute('title', /\+\.\)$/);
 
   await focusEnd(page);
