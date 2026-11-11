@@ -2,6 +2,7 @@
 import { addDays, today } from '../../shared/dates.ts';
 import type { Task, Team, Tree } from '../../shared/types.ts';
 import { describeDue, longDate } from './format.ts';
+import { sectionDescendants } from '../../shared/sections.ts';
 
 export type ViewId = 'today' | 'my' | 'upcoming' | 'team' | 'all' | 'calendar' | 'completed';
 
@@ -218,28 +219,12 @@ export function teamScope(teamId: string, includeSubteams: boolean, teams: Team[
   return ids;
 }
 
-/** A section and everything nested under it (sections may gain a parentId with subsections). */
-function sectionScope(sectionId: string, tree: Tree): Set<string> {
-  const ids = new Set([sectionId]);
-  for (let added = true; added; ) {
-    added = false;
-    for (const s of tree.sections) {
-      const parent = (s as { parentId?: string | null }).parentId;
-      if (parent && ids.has(parent) && !ids.has(s.id)) {
-        ids.add(s.id);
-        added = true;
-      }
-    }
-  }
-  return ids;
-}
-
 export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree, teams: Team[] = []): Task[] {
   const t = today();
   const q = f.q.trim().toLowerCase();
   const sectionNotebook = new Map(tree.sections.map((s) => [s.id, s.notebookId]));
   const pageSection = new Map(tree.pages.map((p) => [p.id, p.sectionId]));
-  const sections = f.sectionId !== 'any' ? sectionScope(f.sectionId, tree) : null;
+  const sections = f.sectionId !== 'any' ? sectionDescendants(tree, f.sectionId) : null;
   const teamIds = f.teamId !== 'any' && f.teamId !== 'none' ? teamScope(f.teamId, f.includeSubteams, teams) : null;
   const assignedBy = f.assignedBy === 'me' ? me : f.assignedBy;
   return list.filter((x) => {
