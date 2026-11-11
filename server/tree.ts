@@ -6,6 +6,7 @@ import { publish } from './events.ts';
 import { keepPrivateWhenDetaching, rowToTask } from './tasks.ts';
 import { closeRoom, flushAll } from './collab.ts';
 import { MAX_SECTION_DEPTH } from '../shared/sections.ts';
+import { pageFragments } from '../shared/pageDoc.ts';
 
 type TaskRow = Parameters<typeof rowToTask>[0];
 
@@ -75,7 +76,7 @@ export function taskRefsInDoc(doc: Y.Doc): Y.XmlElement[] {
       }
     }
   };
-  walk(doc.getXmlFragment('default'));
+  for (const frag of pageFragments(doc)) walk(frag);
   return out;
 }
 

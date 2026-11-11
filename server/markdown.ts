@@ -65,8 +65,9 @@ function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
   }
 }
 
-export function toMarkdown(title: string, frag: Y.XmlFragment, tasks: TaskLookup): string {
-  const nodes = kids(frag);
+/** `frag` may be several fragments (a canvas page's boxes in reading order); their blocks run on in that order. */
+export function toMarkdown(title: string, frag: Y.XmlFragment | Y.XmlFragment[], tasks: TaskLookup): string {
+  const nodes = (Array.isArray(frag) ? frag : [frag]).flatMap((f) => kids(f));
   let out = '';
   nodes.forEach((n, i) => {
     const text = block(n, tasks).join('\n');

@@ -9,6 +9,7 @@
 import * as Y from 'yjs';
 import { safeFileUrl, safeImageUrl, safeLinkUrl } from '../shared/urls.ts';
 import { isColorName } from '../shared/colors.ts';
+import { pageFragments } from '../shared/pageDoc.ts';
 
 export interface SanitizeOptions {
   /** Called for every element that is kept, before its children (e.g. to rewrite a taskRef's id). */
@@ -78,10 +79,11 @@ function cleanChildren(parent: Y.XmlElement | Y.XmlFragment, opts: SanitizeOptio
 }
 
 /** Sanitise in place; returns how many links or nodes were removed. */
-export function sanitizeYDoc(doc: Y.Doc, opts: SanitizeOptions = {}, field = 'default'): number {
+export function sanitizeYDoc(doc: Y.Doc, opts: SanitizeOptions = {}, field?: string): number {
   let removed = 0;
   doc.transact(() => {
-    removed = cleanChildren(doc.getXmlFragment(field), opts);
+    // Without a field: every content fragment of the page (all canvas boxes).
+    for (const frag of field ? [doc.getXmlFragment(field)] : pageFragments(doc)) removed += cleanChildren(frag, opts);
   });
   return removed;
 }

@@ -8,6 +8,7 @@
 import * as Y from 'yjs';
 import { db } from './db.ts';
 import { PAGE_VISIBLE } from './access.ts';
+import { pageFragments } from '../shared/pageDoc.ts';
 
 const cache = new Map<string, { updatedAt: string; targets: Set<string> }>();
 
@@ -36,7 +37,7 @@ export function linksInDoc(doc: Y.Doc): Set<string> {
       }
     }
   };
-  walk(doc.getXmlFragment('default'));
+  for (const frag of pageFragments(doc)) walk(frag);
   return out;
 }
 
