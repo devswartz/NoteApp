@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as Y from 'yjs';
 import { startTestApp, type TestApp, type TestUser } from './helpers/app.ts';
+import { boxField, boxGeoms, pageFragments } from '../shared/pageDoc.ts';
 
 process.env.MS_CLIENT_ID = 'test-client-id';
 process.env.MS_CLIENT_SECRET = 'test-client-secret';
@@ -234,14 +235,27 @@ test('import: hierarchy, to-dos → tasks, image + attachment → files, malicio
   const sections = [byName('Meetings'), byName('Alpha')];
   const pages = (sid: string) => db.prepare('SELECT * FROM pages WHERE section_id = ? ORDER BY position').all(sid) as Record<string, unknown>[];
   assert.deepEqual(pages(sections[0].id).map((p) => p.title), ['Weekly sync', 'Follow-ups']);
-  const docOf = (p: Record<string, unknown>) => {
+  const ydocOf = (p: Record<string, unknown>) => {
     const d = new Y.Doc();
     Y.applyUpdate(d, new Uint8Array(p.ydoc as Buffer));
-    return d.getXmlFragment('default').toString();
+    return d;
   };
+  /** Every fragment (all canvas boxes) in reading order. */
+  const docOf = (p: Record<string, unknown>) => pageFragments(ydocOf(p)).map((f) => f.toString()).join('');
+
+  // Positioned OneNote outlines → a canvas page, one box per outline, where it was on the page.
+  const weekly = pages(sections[0].id)[0];
+  assert.equal(weekly.kind, 'canvas');
+  const wd = ydocOf(weekly);
+  const geoms = boxGeoms(wd).sort((a, b) => a.z - b.z);
+  assert.deepEqual(geoms.map(({ x, y, w, z }) => ({ x, y, w, z })), [{ x: 48, y: 115, w: 624, z: 0 }, { x: 700, y: 115, w: 300, z: 1 }]);
+  assert.equal(wd.getXmlFragment('default').length, 0, 'a canvas leaves `default` empty');
+  assert.match(wd.getXmlFragment(boxField(geoms[0].id)).toString(), /Agenda/);
+  assert.match(wd.getXmlFragment(boxField(geoms[1].id)).toString(), /<image /);
+  assert.equal(pages(sections[0].id)[1].kind, 'canvas', 'Follow-ups has one positioned outline');
+  assert.equal(pages(sections[1].id)[0].kind, 'document', 'a page without positions stays a document');
 
   // Content: headings, marks, links, lists, a table.
-  const weekly = pages(sections[0].id)[0];
   const xml = docOf(weekly);
   assert.match(xml, /<heading level="1">Agenda &amp; notes<\/heading>|<heading level="1">Agenda & notes<\/heading>/);
   assert.match(xml, /<bold>Q4 plan<\/bold>/);

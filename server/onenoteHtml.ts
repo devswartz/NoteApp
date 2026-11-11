@@ -192,9 +192,23 @@ export interface Todo {
   title: string;
   done: boolean;
 }
+type DocNode = PMNode & { type: 'doc'; content: PMNode[] };
+/** One box of a canvas page: geometry in page pixels (already clamped) and its content. */
+export interface ConvertedBox {
+  x: number;
+  y: number;
+  w: number;
+  z: number;
+  doc: DocNode;
+}
 export interface Converted {
   title: string;
-  doc: PMNode & { type: 'doc'; content: PMNode[] };
+  /** 'canvas' when the page has absolutely positioned top-level outlines (then `boxes` holds them). */
+  kind: 'document' | 'canvas';
+  /** A document page's content; for a canvas, every box joined in reading order (for callers that want one doc). */
+  doc: DocNode;
+  /** Canvas pages only, in document order (z follows it); empty for documents. */
+  boxes: ConvertedBox[];
   resources: Resource[];
   todos: Todo[];
 }
@@ -489,8 +503,97 @@ export function convertOneNotePage(html: string, fallbackTitle = ''): Converted 
   const title = (fallbackTitle || decodeEntities(t)).replace(/\s+/g, ' ').trim().slice(0, 300) || 'Untitled';
   const body = findAll(root, 'body')[0] ?? root;
   const c = new Converter();
-  const content = c.blocks(body.children);
-  return { title, doc: { type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] }, resources: c.resources, todos: c.todos };
+  const asDoc = (content: PMNode[]): DocNode => ({ type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] });
+  const boxes = canvasBoxes(c, body.children);
+  if (!boxes) return { title, kind: 'document', doc: asDoc(c.blocks(body.children)), boxes: [], resources: c.resources, todos: c.todos };
+  const joined = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x || a.z - b.z).flatMap((b) => b.doc.content);
+  return { title, kind: 'canvas', doc: asDoc(joined), boxes, resources: c.resources, todos: c.todos };
+}
+
+// ───────── Positioned outlines → canvas boxes ─────────
+// Graph returns a OneNote page as `<body data-absolute-enabled="true">` with each outline a top-level
+// `<div style="position:absolute;left:48px;top:115px;width:624px">`; images and attachments can also sit
+// directly in the body, absolutely positioned (`<img style="position:absolute;left:…;top:…;width:…">`).
+// Only direct children of <body> count: OneNote doesn't nest positioned elements.
+
+/** Page coordinates are clamped to [0, MAX_COORD]; widths to [MIN_BOX_W, MAX_BOX_W]. */
+export const MAX_COORD = 50_000;
+export const MIN_BOX_W = 40;
+export const MAX_BOX_W = 4000;
+/** More positioned outlines than this: the rest join the box of unpositioned content. */
+export const MAX_BOXES = 200;
+const DEFAULT_X = 48;
+const DEFAULT_Y = 48;
+const DEFAULT_W = 624; // OneNote's default outline width
+const GAP = 24;
+
+/** A CSS length in px (or pt, or unitless) → px; anything else (%, em, calc(), junk) → undefined. */
+function cssPx(v: string | undefined): number | undefined {
+  const m = /^\s*(-?\d{1,12}(?:\.\d{1,6})?)\s*(px|pt)?\s*$/i.exec(v ?? '');
+  if (!m) return undefined;
+  const n = Number(m[1]) * (m[2]?.toLowerCase() === 'pt' ? 4 / 3 : 1);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** The declarations of an inline style (first 4 KB only; later ones win, as in CSS). */
+function styleProps(style: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const decl of (style ?? '').slice(0, 4096).split(';')) {
+    const i = decl.indexOf(':');
+    if (i > 0) out.set(decl.slice(0, i).trim().toLowerCase(), decl.slice(i + 1).trim());
+  }
+  return out;
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(n)));
+
+/** Geometry of a top-level element, or null when it isn't absolutely positioned. */
+function positioned(n: HNode): { x: number; y: number; w: number; h?: number } | null {
+  if (n.tag === '#text') return null;
+  const st = styleProps(n.attrs.style);
+  if ((st.get('position') ?? '').toLowerCase() !== 'absolute') return null;
+  const w = cssPx(st.get('width')) ?? cssPx(n.attrs.width);
+  const h = cssPx(st.get('height')) ?? cssPx(n.attrs.height);
+  return {
+    x: clamp(cssPx(st.get('left')) ?? DEFAULT_X, 0, MAX_COORD),
+    y: clamp(cssPx(st.get('top')) ?? DEFAULT_Y, 0, MAX_COORD),
+    w: clamp(w ?? DEFAULT_W, MIN_BOX_W, MAX_BOX_W),
+    ...(h !== undefined && h > 0 ? { h: Math.min(h, MAX_COORD) } : {}),
+  };
+}
+
+/** A rough height (the editor sizes boxes to their content; this only places the loose box below the others). */
+function estimateHeight(content: PMNode[], h?: number): number {
+  if (h !== undefined) return h;
+  return content.reduce((sum, b) => sum + (b.type === 'image' ? 240 : b.type === 'table' ? 32 * (b.content?.length ?? 1) : 28), 0);
+}
+
+/**
+ * Split a page into boxes, or null when nothing at the top level is absolutely positioned.
+ * Each positioned element becomes one box (empty ones are dropped); everything else goes, in order,
+ * into one more box placed below the others.
+ */
+function canvasBoxes(c: Converter, children: HNode[]): ConvertedBox[] | null {
+  const geoms = children.map(positioned);
+  if (!geoms.some(Boolean)) return null;
+  const boxes: (ConvertedBox & { bottom: number })[] = [];
+  const loose: HNode[] = [];
+  children.forEach((n, i) => {
+    const g = geoms[i];
+    if (!g || boxes.length >= MAX_BOXES) return void loose.push(n);
+    // A positioned <div> holds the content; a positioned <img>/<object>/<p> is the content.
+    const content = n.tag === 'div' ? c.blocks(n.children) : c.blocks([n]);
+    if (content.every((b) => b.type === 'paragraph' && !b.content?.length)) return; // nothing in it
+    boxes.push({ x: g.x, y: g.y, w: g.w, z: boxes.length, doc: { type: 'doc', content }, bottom: g.y + estimateHeight(content, g.h) });
+  });
+  const rest = c.blocks(loose);
+  if (rest.length) {
+    const y = boxes.length ? Math.max(...boxes.map((b) => b.bottom)) + GAP : DEFAULT_Y;
+    const x = boxes.length ? Math.min(...boxes.map((b) => b.x)) : DEFAULT_X;
+    boxes.push({ x, y: clamp(y, 0, MAX_COORD), w: DEFAULT_W, z: boxes.length, doc: { type: 'doc', content: rest }, bottom: 0 });
+  }
+  if (!boxes.length) return null; // positioned, but nothing in it: an ordinary empty document
+  return boxes.map(({ bottom: _bottom, ...b }) => b);
 }
 
 // ───────── ProseMirror JSON → Yjs (the shape y-prosemirror / @tiptap/y-tiptap uses) ─────────

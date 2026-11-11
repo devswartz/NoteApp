@@ -29,6 +29,8 @@ import { sanitizeYDoc } from './sanitizeDoc.ts';
 import { MAX_UPLOAD_BYTES, SAFE_TYPES, storedExt } from './routes/files.ts';
 import { convertOneNotePage, jsonToYFragment, RES_PREFIX, type PMNode, type Resource } from './onenoteHtml.ts';
 import { safeImageUrl, sanitizeContent } from '../shared/urls.ts';
+import { BOXES_KEY, boxField } from '../shared/pageDoc.ts';
+import * as Y from 'yjs';
 
 export const LOGIN_ORIGIN = 'https://login.microsoftonline.com';
 export const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
@@ -620,8 +622,8 @@ async function importPage(job: JobStatus & { userId: string }, conn: Connection,
   const ts = now();
   db.prepare(
     `INSERT INTO pages (id, section_id, title, icon, kind, ydoc, text, position, created_by, created_at, updated_at, updated_by)
-     VALUES (?, ?, ?, NULL, 'document', NULL, '', ?, ?, ?, ?, ?)`,
-  ).run(pageId, sectionId, page.title, nextPos('pages', 'section_id', sectionId), userId, ts, ts, userId);
+     VALUES (?, ?, ?, NULL, ?, NULL, '', ?, ?, ?, ?, ?)`,
+  ).run(pageId, sectionId, page.title, page.kind, nextPos('pages', 'section_id', sectionId), userId, ts, ts, userId);
 
   // Images and attachments → our own files (fresh ids, allow-listed extensions, upload size limit).
   const stored = new Map<string, PMNode['attrs']>();
@@ -655,10 +657,22 @@ async function importPage(job: JobStatus & { userId: string }, conn: Connection,
     }
     return n.content ? { ...n, content: n.content.map(fill).filter((c): c is PMNode => c !== null) } : n;
   };
-  const doc = sanitizeContent(fill(page.doc)!) as PMNode;
+  const clean = (d: PMNode) => sanitizeContent(fill(d)!) as PMNode;
+  // seedPageDoc stores the search text from extractPage, which reads every box.
   seedPageDoc(pageId, (frag) => {
-    jsonToYFragment(doc, frag);
-    sanitizeYDoc(frag.doc!);
+    const ydoc = frag.doc!;
+    if (page.kind === 'canvas') {
+      // A canvas: one box per positioned OneNote outline (shared/pageDoc.ts), `default` stays empty.
+      const boxes = ydoc.getMap<Y.Map<number>>(BOXES_KEY);
+      for (const b of page.boxes) {
+        const id = newId();
+        const geom = new Y.Map<number>();
+        for (const k of ['x', 'y', 'w', 'z'] as const) geom.set(k, b[k]);
+        boxes.set(id, geom);
+        jsonToYFragment(clean(b.doc), ydoc.getXmlFragment(boxField(id)));
+      }
+    } else jsonToYFragment(clean(page.doc), frag);
+    sanitizeYDoc(ydoc); // every fragment, boxes included
   });
 }
 
