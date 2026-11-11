@@ -17,7 +17,7 @@ import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { Outline, usePageSetting } from '../editor/Outline.tsx';
-import { Ribbon } from '../editor/Toolbar.tsx';
+import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
 import { relativeTime } from '../lib/format.ts';
@@ -189,6 +189,15 @@ export function PageView() {
   const [article, setArticle] = useState<HTMLElement | null>(null);
   const follow = useFollow(awareness, article);
   const followed = presence.find((p) => p.id === follow.id);
+  // The ribbon's Page and View groups act on this page while it is open.
+  useEffect(() => {
+    if (!canvas || canEdit === null) return;
+    setRibbonPage({ pageId, doc: canvas.doc, canEdit });
+    return () => setRibbonPage(null);
+  }, [canvas, canEdit, pageId]);
+  const settings = usePageSettings(canvas?.doc);
+  const outlineHidden = useRibbon((r) => r.outlineHidden);
+  const rules = useRuleArea(settings.rules !== 'none' ? scroller : null, article);
 
   if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
     return (
@@ -217,8 +226,15 @@ export function PageView() {
 
   return (
     <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
-      <div className="page-scroll" ref={setScroller}>
-        {canvas && !fullWidth && !isMobile && <Outline canvas={canvas} scroller={scroller} />}
+      <div
+        className="page-scroll"
+        ref={setScroller}
+        data-page-color={settings.color === 'none' ? undefined : settings.color}
+        data-rules={settings.rules === 'none' ? undefined : settings.rules}
+      >
+        {canvas && !fullWidth && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
+        {/* Rule lines / grid: across the whole page width, from the canvas down, behind the boxes. */}
+        {settings.rules !== 'none' && rules && <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height }} />}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -285,9 +301,6 @@ export function PageView() {
             )}
           </div>
         </header>
-        {/* Desktop and tablet: the ribbon, fixed under the top bar; phones use the floating toolbar. */}
-        {!isMobile && <Ribbon />}
-
         {followed && (
           <div className="follow-banner" role="status" style={{ ['--ring' as string]: followed.color }}>
             Following {followed.name} · scroll, click or Esc to stop
@@ -326,6 +339,36 @@ export function PageView() {
       {panel && <PageSidePanel pageId={pageId} tab={panel} onTab={showPanel} canComment={!!canEdit} onClose={() => showPanel(null)} mobile={isMobile} />}
     </div>
   );
+}
+
+/**
+ * Where rule lines go, in the scroller's content coordinates: from the top of the canvas
+ * surface (plus a box's border and padding, so "lines" sit under a top box's text) to the
+ * bottom of the article. Re-measured as the page reflows.
+ */
+function useRuleArea(scroller: HTMLElement | null, article: HTMLElement | null) {
+  const [area, setArea] = useState<{ top: number; height: number } | null>(null);
+  useEffect(() => {
+    if (!scroller || !article) {
+      setArea(null);
+      return;
+    }
+    const measure = () => {
+      const surface = article.querySelector('.canvas-surface');
+      if (!surface) return;
+      const base = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const top = Math.round(surface.getBoundingClientRect().top - base + 7);
+      const height = Math.max(0, Math.round(article.getBoundingClientRect().bottom - base - top));
+      setArea((a) => (a && a.top === top && a.height === height ? a : { top, height }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(article);
+    const surface = article.querySelector('.canvas-surface');
+    if (surface) ro.observe(surface);
+    return () => ro.disconnect();
+  }, [scroller, article]);
+  return area;
 }
 
 /** "Saved" / "Saving…" / "Offline": everything typed is in IndexedDB at once and on the server shortly after. */

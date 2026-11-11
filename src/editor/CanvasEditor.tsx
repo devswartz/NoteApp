@@ -302,6 +302,9 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         return;
       }
       editors.current.set(id, editor);
+      // Until a box is focused, the ribbon acts on the page's first box (so it is live as soon
+      // as the page opens, and while the caret is in the title).
+      if (id === (readingOrder(boxesRef.current)[0]?.id ?? FIRST_BOX_ID)) setActive((a) => a ?? editor);
       if (!reported.current) {
         reported.current = true;
         onReady(editor);

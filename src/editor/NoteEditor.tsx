@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
-import type { Extensions } from '@tiptap/core';
+import { Extension, type Extensions } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { beginComment, useCommentBinding } from './collabComments.ts';
@@ -32,11 +32,10 @@ import {
   ArrowDownToLine,
   ArrowRightToLine,
   PanelTop,
-  Palette,
 } from 'lucide-react';
 import { TaskRef, canConvert, convertToTasks } from './TaskRef.tsx';
 import { colorExtensions } from './colors.ts';
-import { ColorChoices, ToolbarMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
+import { ColorMenu, focusFixedToolbar, toolbarKeys } from './Toolbar.tsx';
 import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
@@ -123,8 +122,23 @@ export function documentExtensions(pageId: string): Extensions {
     ...colorExtensions, // text colour + highlight, stored as palette names (./colors.ts)
     MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
+    OneNoteKeys,
   ];
 }
+
+/**
+ * Shortcuts OneNote users expect, on top of TipTap's own (Ctrl+Alt+1/2/3 headings come from
+ * StarterKit): Ctrl+1 checklist (OneNote's To Do tag), Ctrl+. bullets.
+ */
+const OneNoteKeys = Extension.create({
+  name: 'oneNoteKeys',
+  addKeyboardShortcuts() {
+    return {
+      'Mod-1': () => this.editor.commands.toggleTaskList(),
+      'Mod-.': () => this.editor.commands.toggleBulletList(),
+    };
+  },
+});
 
 export function NoteEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
@@ -469,14 +483,9 @@ function FormattingMenu({ editor }: { editor: Editor }) {
       {btn(s.strike, `Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, () => editor.chain().focus().toggleStrike().run(), <Strikethrough size={16} />)}
       {btn(s.code, `Inline code (${keyLabel(MOD, 'E')})`, () => editor.chain().focus().toggleCode().run(), <Code size={16} />)}
       {btn(s.link, `Link (${keyLabel(MOD, 'K')})`, () => openLinkEditor(editor), <Link2 size={16} />)}
-      <ToolbarMenu label="Colour" trigger={<Palette size={16} />}>
-        {(close) => (
-          <>
-            <ColorChoices editor={editor} kind="text" done={close} />
-            <ColorChoices editor={editor} kind="highlight" done={close} />
-          </>
-        )}
-      </ToolbarMenu>
+      {/* The same colour controls (and icons) as the ribbon. */}
+      <ColorMenu editor={editor} kind="text" />
+      <ColorMenu editor={editor} kind="highlight" />
       <span className="bm-sep" />
       <button
         type="button"

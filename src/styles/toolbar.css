@@ -1,37 +1,75 @@
 /* ==== Editor ribbon, colour menus, hover "turn into task" ==== */
 
-/* The ribbon (OneNote's Home tab): full width of the note column, held just under the
-   page top bar (48px) so it never scrolls away. Its height is --ribbon-h, which the
-   heading scroll offsets and the outline use too. */
-.page-scroll { --ribbon-h: 54px; }
+/* The ribbon (OneNote's Home tab, one tab only): across the whole window at the very top,
+   above the rail, the panels and the note (AppShell). It never scrolls; the page scrolls
+   under its own top bar below it. One row of groups, each with its name underneath, split
+   by separators. Narrower windows compact it (labels and button text go, buttons shrink)
+   instead of wrapping; it never makes the page scroll sideways. */
 .ribbon {
-  position: sticky;
-  top: 48px;
-  z-index: 3; /* under the top bar (4), so its menus open over the ribbon */
+  position: relative;
+  z-index: 20; /* its menus open over the rail, the panels and the page's sticky top bar */
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: 2px;
-  min-height: var(--ribbon-h);
-  padding: 3px 16px 2px 20px;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
+  min-width: 0;
+  min-height: 70px;
+  padding: 6px 10px 3px 12px;
+  background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border);
+  overflow-x: clip; /* last resort on very narrow windows; menus still open below (overflow-y stays visible) */
 }
-.rb-group { display: flex; flex-direction: column; align-items: center; }
-.rb-items { display: flex; align-items: center; gap: 2px; }
-/* OneNote-style group names under each group: small and muted; dropped where space is tight. */
-.rb-label { margin-top: 1px; font-size: 10.5px; line-height: 13px; color: var(--text-muted); white-space: nowrap; user-select: none; }
-.ribbon .rb-sep { margin: 0 6px; align-self: stretch; height: auto; }
-@media (max-width: 1099px) {
-  .page-scroll { --ribbon-h: 42px; }
-  .ribbon { padding-top: 4px; padding-bottom: 4px; }
-  .rb-label { display: none; }
-  .ribbon .rb-sep { align-self: center; height: 18px; }
-}
+.rb-group { display: flex; flex-direction: column; align-items: center; justify-content: space-between; min-width: 0; }
+.rb-items { display: flex; align-items: center; gap: 2px; flex: 1; }
+.ribbon .rb-btn,
+.ribbon .tb-menu-btn { height: 36px; min-width: 36px; padding: 0 8px; color: var(--text-2); }
+.ribbon .rb-btn svg,
+.ribbon .tb-menu-btn svg { width: 18px; height: 18px; flex: none; }
+.ribbon .tb-block svg { width: 14px; height: 14px; }
+/* Key buttons carry a text label next to the icon. */
+.ribbon .rb-text { gap: 6px; font-size: 13px; font-weight: 500; }
+.rb-btn-label { white-space: nowrap; }
+/* OneNote-style group names under each group: small and muted. */
+.rb-label { margin-top: 2px; font-size: var(--text-2xs); line-height: 14px; color: var(--text-muted); white-space: nowrap; user-select: none; }
+.ribbon .rb-sep { margin: 2px 6px 4px; align-self: stretch; height: auto; flex: none; }
+.ribbon .tb-block { min-width: 124px; height: 36px; background: var(--bg); border: 1px solid var(--border); }
 .ribbon .bm-btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
 .ribbon .bm-btn[aria-disabled='true']:hover { background: none; color: var(--text-2); }
-.tb-spacer { flex: 1; }
+.tb-spacer { flex: 1 1 0; min-width: 0; }
+.ribbon .rb-collapse { align-self: flex-end; height: 28px; min-width: 28px; padding: 0 5px; margin: 0 0 1px 4px; }
+/* Page colour: the bar under the bucket shows the page's colour (like Text colour). */
+.rb-icon-bar { position: relative; display: inline-flex; padding-bottom: 3px; }
+.rb-icon-bar .tb-color-bar.is-page { left: 1px; right: 1px; bottom: -2px; background: var(--page-tint, transparent); }
+.rb-icon-bar .tb-color-bar.is-page:not([data-page-color='none']) { box-shadow: inset 0 0 0 1px var(--border-strong); }
+/* Collapsed: a thin strip with the group names and "Show ribbon"; a click anywhere brings it back. */
+.ribbon.is-collapsed { min-height: 0; height: 30px; padding: 0 10px 0 16px; justify-content: space-between; align-items: center; cursor: pointer; }
+.rb-strip-groups { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ribbon .rb-expand { height: 26px; padding: 0 8px; gap: 4px; font-size: var(--text-sm); font-weight: 500; }
+/* Not on a page (Tasks, Calendar, Settings): a quiet strip, nothing to press. */
+.ribbon.is-off { cursor: default; justify-content: flex-start; }
+.rb-off-hint { font-size: var(--text-xs); color: var(--text-muted); }
+/* Narrower windows: names and text labels go, then buttons shrink; never a second row. */
+@media (max-width: 1279px) {
+  .ribbon { min-height: 0; padding-top: 5px; padding-bottom: 5px; }
+  .rb-label { display: none; }
+  .rb-btn-label { display: none; }
+  .ribbon .rb-text { gap: 2px; }
+  .ribbon .rb-sep { align-self: center; height: 22px; margin: 0 4px; }
+  .ribbon .rb-collapse { align-self: center; }
+}
+@media (max-width: 1023px) {
+  .ribbon { padding-left: 6px; padding-right: 4px; gap: 0; }
+  .rb-items { gap: 0; }
+  .ribbon .rb-btn,
+  .ribbon .tb-menu-btn { height: 30px; min-width: 25px; padding: 0 3px; }
+  .ribbon .rb-btn svg,
+  .ribbon .tb-menu-btn svg { width: 16px; height: 16px; }
+  .ribbon .tb-block { min-width: 0; width: 84px; padding: 0 4px 0 6px; }
+  .ribbon .tb-block-label { overflow: hidden; text-overflow: ellipsis; }
+  .ribbon .rb-sep { margin: 0 2px; }
+  .ribbon .rb-collapse { min-width: 28px; height: 28px; }
+}
 /* The floating toolbar sits above the ribbon: it is rendered into the page scroller (not inside
    a canvas box, whose surface is its own stacking layer) and flips below a selection that is
    too close to the ribbon (see FormattingMenu). */
@@ -39,7 +77,6 @@
 .float-host { display: contents; }
 /* Phones: no ribbon; the floating toolbar wraps onto a second row instead of running off the screen. */
 @media (max-width: 760px) {
-  .page-scroll { --ribbon-h: 0px; }
   .ribbon { display: none; }
   .bubble-menu { max-width: calc(100vw - 16px); }
   .bubble-menu-bar { flex-wrap: wrap; row-gap: 2px; }
@@ -70,6 +107,29 @@
 .tb-pop-h1 { font-size: 18px; font-weight: 700; }
 .tb-pop-h2 { font-size: 16px; font-weight: 650; }
 .tb-pop-h3 { font-size: 14.5px; font-weight: 600; }
+.tb-pop-item:has(.tb-pop-icon) { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.tb-pop-icon { display: inline-flex; color: var(--text-2); flex: none; }
+.tb-pop-key { margin-left: auto; padding-left: 16px; font: 500 var(--text-xs) var(--font); color: var(--text-muted); white-space: nowrap; }
+/* To Do: the button makes a checkbox item; its arrow offers "Make it a task". */
+.rb-split { display: inline-flex; align-items: center; }
+.ribbon .rb-split > .rb-btn { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 4px; }
+.ribbon .rb-split .rb-split-arrow { min-width: 18px; padding: 0 2px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.ribbon .rb-split .rb-split-arrow svg { width: 14px; height: 14px; }
+.rb-split .tb-pop { min-width: 220px; }
+.tb-pop-item[aria-disabled='true'] { opacity: 0.45; cursor: default; }
+.tb-pop-item[aria-pressed='true'] .tb-pop-key { color: inherit; }
+.tb-pop-quote { font-style: italic; border-left: 3px solid var(--border-strong); }
+.tb-pop-code { font-family: var(--mono); font-size: 13px; }
+.ribbon .tb-block { color: var(--text); }
+
+/* Page colour: a swatch per tint (the page's own colour tokens), Rule lines: None / Lines / Grid. */
+.page-color-grid { display: grid; grid-template-columns: repeat(4, 32px); gap: 4px; }
+.page-color-choice { width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--page-tint, var(--bg)); }
+.page-color-choice:hover { border-color: var(--text-muted); }
+.page-color-choice[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--accent); border-color: transparent; }
+.page-color-choice[data-page-color='none'] { background: linear-gradient(135deg, var(--bg) 46%, var(--text-muted) 47%, var(--text-muted) 53%, var(--bg) 54%); }
+.rb-rule-item { display: flex; align-items: center; gap: 8px; }
+.rb-rule-none { width: 16px; height: 16px; flex: none; }
 
 /* The bar under the colour icons shows the colour at the selection. */
 .tb-color-bar { position: absolute; left: 8px; right: 8px; bottom: 4px; height: 3px; border-radius: 2px; }

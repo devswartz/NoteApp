@@ -2,6 +2,7 @@
 //   Document pages: one fragment, `default`.
 //   Canvas pages:   `boxes` (Y.Map: box id → Y.Map { x, y, w, z }) and one fragment per box,
 //                   `box:<id>`. `default` stays empty.
+//   Every page:     `pageSettings` (Y.Map: page colour, rule lines; see the end of this file).
 // Anything that reads a page's text, tasks, mentions or links goes through
 // pageFragments() so it sees every box, in reading order.
 import * as Y from 'yjs';
@@ -174,6 +175,8 @@ export function replacePageContent(target: Y.Doc, source: Y.Doc, kind: 'canvas' 
       boxes.set(b.id, newBoxMap(b));
     }
     convertPageDoc(target, kind, newBoxId);
+    // A version saved with page settings brings them back; one from before settings existed keeps the current ones.
+    if (source.getMap(PAGE_SETTINGS_KEY).size > 0) setPageSettings(target, readPageSettings(source));
   }, origin);
 }
 
@@ -223,4 +226,61 @@ export function pageHeadings(doc: Y.Doc): PageHeading[] {
     walk(doc.getXmlFragment(boxField(b.id)));
   }
   return out;
+}
+
+// ───────────── Page settings ─────────────
+// Per-page look (page colour, rule lines) in the `pageSettings` Y.Map. It is not a content
+// field, so pageFragments() and everything that reads text ignore it; it syncs live and is
+// saved with the page's Y.Doc (exports, versions). Values are stored explicitly, 'none'
+// included, so a version that has settings restores them (see replacePageContent).
+
+export const PAGE_SETTINGS_KEY = 'pageSettings';
+export const PAGE_COLORS = ['none', 'yellow', 'green', 'blue', 'purple', 'pink', 'grey'] as const;
+export type PageColor = (typeof PAGE_COLORS)[number];
+export const RULE_LINES = ['none', 'lines', 'grid'] as const;
+export type RuleLines = (typeof RULE_LINES)[number];
+
+export interface PageSettings {
+  color: PageColor;
+  rules: RuleLines;
+}
+export const DEFAULT_PAGE_SETTINGS: PageSettings = { color: 'none', rules: 'none' };
+
+const oneOf = <T extends string>(list: readonly T[], v: unknown, fallback: T): T => (list.includes(v as T) ? (v as T) : fallback);
+
+/** Settings from untrusted values (a Y.Map's entries, template attrs): unknown values fall back to the defaults. */
+export function parsePageSettings(src: unknown): PageSettings {
+  const o = src && typeof src === 'object' && !Array.isArray(src) ? (src as Record<string, unknown>) : {};
+  return { color: oneOf(PAGE_COLORS, o.color, 'none'), rules: oneOf(RULE_LINES, o.rules, 'none') };
+}
+
+/** A page's settings (defaults where unset or invalid). */
+export function readPageSettings(doc: Y.Doc): PageSettings {
+  return parsePageSettings(doc.getMap<unknown>(PAGE_SETTINGS_KEY).toJSON());
+}
+
+/** Change some of a page's settings in one transaction (invalid values are ignored). */
+export function setPageSettings(doc: Y.Doc, patch: Partial<PageSettings>, origin: unknown = null) {
+  const map = doc.getMap<unknown>(PAGE_SETTINGS_KEY);
+  doc.transact(() => {
+    if (patch.color !== undefined && PAGE_COLORS.includes(patch.color) && map.get('color') !== patch.color) map.set('color', patch.color);
+    if (patch.rules !== undefined && RULE_LINES.includes(patch.rules) && map.get('rules') !== patch.rules) map.set('rules', patch.rules);
+  }, origin);
+}
+
+/** Calls `fn` with the settings whenever they change (anyone's edit); returns the unsubscribe. */
+export function observePageSettings(doc: Y.Doc, fn: (s: PageSettings) => void): () => void {
+  const map = doc.getMap<unknown>(PAGE_SETTINGS_KEY);
+  const on = () => fn(readPageSettings(doc));
+  map.observe(on);
+  return () => map.unobserve(on);
+}
+
+/** The settings that differ from the defaults (kept in template JSON); null when there are none. */
+export function pageSettingsAttrs(doc: Y.Doc): Partial<PageSettings> | null {
+  const s = readPageSettings(doc);
+  const out: Partial<PageSettings> = {};
+  if (s.color !== 'none') out.color = s.color;
+  if (s.rules !== 'none') out.rules = s.rules;
+  return Object.keys(out).length ? out : null;
 }

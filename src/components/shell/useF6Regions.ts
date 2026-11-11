@@ -1,9 +1,10 @@
-// F6 / Shift+F6 move focus between the app's regions: rail → panel → pages
-// panel → ribbon (when a page is open on desktop/tablet) → main (the editor) → rail.
+// F6 / Shift+F6 move focus between the app's regions: ribbon (when a page is open on
+// desktop/tablet) → rail → panel → pages panel → main (the editor) → ribbon.
 import { useEffect } from 'react';
 
-// The ribbon sits inside main, so it is listed first: focus in it counts as the ribbon.
-const REGIONS = ['.rail', '.sidebar .sb-panel', '.sidebar .pages-panel', '.ribbon', '.main'];
+// Screen order: the ribbon spans the window above everything (desktop/tablet), so F6 from
+// the note wraps round to it first. Only a live ribbon (a toolbar) is a region.
+const REGIONS = ['.ribbon[role="toolbar"]', '.rail', '.sidebar .sb-panel', '.sidebar .pages-panel', '.main'];
 
 /** Pure order rule (unit-tested): the next region index from `current` (-1 = none). */
 export function nextRegion(count: number, current: number, back: boolean): number {

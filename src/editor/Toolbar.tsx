@@ -1,6 +1,8 @@
-// The ribbon: a OneNote-style bar fixed across the top of the note area (desktop and
-// tablet), acting on the page's active editor (./activeEditor.ts), and the colour menus it
-// shares with the floating toolbar over selected text (NoteEditor.tsx).
+// The ribbon: a OneNote-style bar across the full width of the window, above the rail, the
+// panels and the note (desktop and tablet; AppShell renders it). Its editing controls act on
+// the page's active editor (./activeEditor.ts), its Page group on the open page's settings
+// (./ribbonState.ts). Also the colour menus it shares with the floating toolbar over selected
+// text (NoteEditor.tsx).
 // WAI-ARIA toolbar pattern: one tab stop (roving tabindex), ←/→/Home/End move between
 // controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
@@ -9,7 +11,16 @@ import {
   Baseline,
   Bold,
   ChevronDown,
+  ChevronUp,
   CircleCheck,
+  Code2,
+  Heading1,
+  Heading2,
+  Heading3,
+  Pilcrow,
+  Quote,
+  FileSymlink,
+  Grid3x3,
   Highlighter,
   ImagePlus,
   Italic,
@@ -17,7 +28,13 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  ListTree,
+  Minus,
+  PaintBucket,
+  Paperclip,
   Redo2,
+  RemoveFormatting,
+  Rows3,
   Strikethrough,
   Table,
   Underline,
@@ -28,17 +45,50 @@ import { useActiveEditor } from './activeEditor.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
 import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, type ColorName } from './colors.ts';
+import { setOutlineHidden, setRibbonCollapsed, syncRibbonPrefs, usePageSettings, useRibbon } from './ribbonState.ts';
+import { PAGE_COLORS, RULE_LINES, setPageSettings, type PageColor, type RuleLines } from '../../shared/pageDoc.ts';
 import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
 import '../styles/colors.css';
 import '../styles/toolbar.css';
 
 const BLOCKS = [
-  { id: 'p', label: 'Text' },
+  { id: 'p', label: 'Normal' },
   { id: 'h1', label: 'Heading 1' },
   { id: 'h2', label: 'Heading 2' },
   { id: 'h3', label: 'Heading 3' },
+  { id: 'quote', label: 'Quote' },
+  { id: 'code', label: 'Code' },
 ] as const;
 type BlockId = (typeof BLOCKS)[number]['id'];
+
+export const PAGE_COLOR_LABELS: Record<PageColor, string> = {
+  none: 'No colour',
+  yellow: 'Yellow',
+  green: 'Green',
+  blue: 'Blue',
+  purple: 'Purple',
+  pink: 'Pink',
+  grey: 'Grey',
+};
+const RULE_LABELS: Record<RuleLines, string> = { none: 'None', lines: 'Lines', grid: 'Grid' };
+
+/** The same icons the floating toolbar and slash menu use for these blocks. */
+const BLOCK_ICONS: Record<BlockId, ReactNode> = {
+  p: <Pilcrow size={16} />,
+  h1: <Heading1 size={16} />,
+  h2: <Heading2 size={16} />,
+  h3: <Heading3 size={16} />,
+  quote: <Quote size={16} />,
+  code: <Code2 size={16} />,
+};
+
+/** Tooltip of an editing control while there is no editor to act on. */
+const IDLE_HINT = 'Click in a note to format';
+
+/** The keyboard shortcut of a block type (TipTap's own, OneNote's for headings), if it has one. */
+const ALT = MOD === '⌘' ? '⌥' : 'Alt';
+const blockKey = (id: BlockId) =>
+  id === 'p' ? keyLabel(MOD, ALT, '0') : id.startsWith('h') ? keyLabel(MOD, ALT, id.slice(1)) : id === 'code' ? keyLabel(MOD, ALT, 'C') : '';
 
 /** Items of a toolbar that take part in its arrow-key navigation (not the buttons inside an open menu). */
 const ITEM = '[data-tb-item]';
@@ -91,12 +141,15 @@ export function ToolbarMenu({
   trigger,
   className = '',
   disabled = false,
+  title,
   children,
 }: {
   label: string;
   trigger: ReactNode;
   className?: string;
   disabled?: boolean;
+  /** Tooltip, when it differs from the label. */
+  title?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -122,7 +175,7 @@ export function ToolbarMenu({
         type="button"
         data-tb-item
         className={`bm-btn tb-menu-btn ${className}`}
-        title={label}
+        title={title ?? label}
         aria-label={label}
         aria-haspopup="true"
         aria-expanded={open}
@@ -201,6 +254,7 @@ export function ColorMenu({ editor, kind }: { editor: Editor | null; kind: Color
     <ToolbarMenu
       label={label}
       disabled={!editor}
+      title={editor ? undefined : IDLE_HINT}
       trigger={
         <>
           {kind === 'text' ? <Baseline size={16} /> : <Highlighter size={16} />}
@@ -215,8 +269,19 @@ export function ColorMenu({ editor, kind }: { editor: Editor | null; kind: Color
 
 /** What the ribbon shows for the active editor's selection. */
 function ribbonState(e: Editor) {
+  const block: BlockId = e.isActive('codeBlock')
+    ? 'code'
+    : e.isActive('heading', { level: 1 })
+      ? 'h1'
+      : e.isActive('heading', { level: 2 })
+        ? 'h2'
+        : e.isActive('heading', { level: 3 })
+          ? 'h3'
+          : e.isActive('blockquote')
+            ? 'quote'
+            : 'p';
   return {
-    block: (e.isActive('heading', { level: 1 }) ? 'h1' : e.isActive('heading', { level: 2 }) ? 'h2' : e.isActive('heading', { level: 3 }) ? 'h3' : 'p') as BlockId,
+    block,
     bold: e.isActive('bold'),
     italic: e.isActive('italic'),
     underline: e.isActive('underline'),
@@ -225,20 +290,45 @@ function ribbonState(e: Editor) {
     ordered: e.isActive('orderedList'),
     check: e.isActive('taskList'),
     link: e.isActive('link'),
-    canLink: !e.state.selection.empty || e.isActive('link'),
     canTask: canConvert(e),
     canUndo: e.can().undo(),
     canRedo: e.can().redo(),
   };
 }
 
+/** Set the block type at the selection (Normal also takes it out of a quote). */
+function setBlock(editor: Editor, id: BlockId) {
+  const chain = editor.chain().focus();
+  if (id === 'code') {
+    if (!editor.isActive('codeBlock')) chain.toggleCodeBlock().run();
+    return;
+  }
+  if (id === 'quote') {
+    if (!editor.isActive('blockquote')) chain.setParagraph().toggleBlockquote().run();
+    return;
+  }
+  if (editor.isActive('blockquote')) chain.lift('blockquote');
+  if (id === 'p') chain.setParagraph().run();
+  else chain.setHeading({ level: Number(id.slice(1)) as 1 | 2 | 3 }).run();
+}
+
+/** Link: edits the link at the selection; with nothing selected, inserts "link" and edits that (as the slash menu does). */
+function insertLink(editor: Editor) {
+  if (editor.state.selection.empty && !editor.isActive('link')) {
+    const from = editor.state.selection.from;
+    const label = 'link';
+    editor.chain().focus().insertContent(label).setTextSelection({ from, to: from + label.length }).run();
+  }
+  openLinkEditor(editor);
+}
+
 const Sep = () => <span className="bm-sep rb-sep" aria-hidden />;
 
 /** A ribbon group with its small OneNote-style label underneath (hidden on narrow windows; it still names the group). */
-function Group({ label, children }: { label: string; children: ReactNode }) {
+function Group({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
   const id = useId();
   return (
-    <div className="rb-group" role="group" aria-labelledby={id}>
+    <div className={`rb-group ${className}`} role="group" aria-labelledby={id}>
       <div className="rb-items">{children}</div>
       <span id={id} className="rb-label">
         {label}
@@ -247,29 +337,55 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+interface BtnOpts {
+  active?: boolean;
+  disabled?: boolean;
+  /** A visible text label next to the icon (dropped on narrow windows); it is also the button's name. */
+  text?: string;
+}
+
 /**
- * The ribbon across the top of the note area (OneNote's Home tab). It acts on the active
- * editor, the one last focused on this page; with none (an empty canvas, a viewer) every
- * control is disabled, not hidden. Presses keep the editor's selection (mousedown is prevented).
+ * The ribbon (OneNote's Home tab, one tab only). Editing controls act on the active editor,
+ * the one last focused on the open page; with none (no page open, an empty canvas, a viewer)
+ * they are disabled, not hidden. The Page group needs a page you may edit; View and the
+ * collapse chevron always work. Presses keep the editor's selection (mousedown is prevented).
+ * Collapsed, it is a thin strip that restores on click (remembered on this device).
  */
-export function Ribbon() {
+export function Ribbon({ onPage }: { onPage: boolean }) {
   const active = useActiveEditor();
   const editor = active && !active.isDestroyed && active.isEditable ? active : null;
   const ref = useRef<HTMLDivElement>(null);
   const roving = useRovingTabIndex(ref);
   const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
+  const page = useRibbon((r) => r.page);
+  const collapsed = useRibbon((r) => r.collapsed);
+  const outlineHidden = useRibbon((r) => r.outlineHidden);
+  const settings = usePageSettings(page?.doc);
+  useEffect(syncRibbonPrefs, []); // the shell's storage is ready now (see store/ui.ts)
+  // Ctrl+F1 collapses / restores the ribbon (as in Office).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F1' || !e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+      e.preventDefault();
+      setRibbonCollapsed(!useRibbon.getState().collapsed);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const off = !editor || !s;
+  const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
-  const btn = (title: string, icon: ReactNode, run: () => void, opts: { active?: boolean; disabled?: boolean; text?: string } = {}) => {
-    const disabled = off || opts.disabled;
-    const on = !off && !!opts.active;
+  const button = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts & { always?: boolean } = {}) => {
+    const idle = !opts.always && off;
+    const disabled = idle || !!opts.disabled;
+    const on = !disabled && !!opts.active;
     return (
       <button
         type="button"
         data-tb-item
-        className={`bm-btn ${on ? 'is-active' : ''} ${opts.text ? 'bm-text' : ''}`}
-        title={title}
-        aria-label={opts.text ? undefined : title}
+        className={`bm-btn rb-btn ${on ? 'is-active' : ''} ${opts.text ? 'rb-text' : ''}`}
+        title={idle ? IDLE_HINT : title}
+        aria-label={opts.text ?? title}
         aria-pressed={opts.active === undefined ? undefined : on}
         aria-disabled={disabled || undefined}
         tabIndex={-1}
@@ -277,10 +393,53 @@ export function Ribbon() {
         onClick={() => !disabled && run()}
       >
         {icon}
-        {opts.text}
+        {opts.text && <span className="rb-btn-label">{opts.text}</span>}
       </button>
     );
   };
+  const btn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, opts);
+  const viewBtn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, { ...opts, always: true });
+
+  // Tasks, Calendar, Settings: nothing to format, so a quiet strip instead of a row of dead buttons.
+  if (!onPage)
+    return (
+      <div className="ribbon is-collapsed is-off">
+        <span className="rb-off-hint">Open a note to use the ribbon</span>
+      </div>
+    );
+
+  if (collapsed)
+    return (
+      <div
+        ref={ref}
+        className="ribbon is-collapsed"
+        role="toolbar"
+        aria-label="Ribbon"
+        aria-orientation="horizontal"
+        onFocus={roving.onFocus}
+        onKeyDown={(e) => toolbarKeys(e, editor)}
+        onClick={(e) => e.target === e.currentTarget && setRibbonCollapsed(false)}
+      >
+        <span className="rb-strip-groups" aria-hidden onClick={() => setRibbonCollapsed(false)}>
+          Text · Lists · Insert · Page · View
+        </span>
+        <button
+          type="button"
+          data-tb-item
+          className="bm-btn rb-expand"
+          title="Show the ribbon (Ctrl+F1)"
+          aria-label="Show the ribbon"
+          aria-expanded={false}
+          tabIndex={-1}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setRibbonCollapsed(false)}
+        >
+          <span>Show ribbon</span>
+          <ChevronDown size={14} />
+        </button>
+      </div>
+    );
+
   const block = s?.block ?? 'p';
   const blockLabel = BLOCKS.find((b) => b.id === block)!.label;
   return (
@@ -296,6 +455,7 @@ export function Ribbon() {
       <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
+          title={off ? IDLE_HINT : undefined}
           className="tb-block"
           disabled={off}
           trigger={
@@ -312,46 +472,175 @@ export function Ribbon() {
                 type="button"
                 className={`tb-pop-item tb-pop-${b.id}`}
                 aria-pressed={block === b.id}
+                title={blockKey(b.id) ? `${b.label} (${blockKey(b.id)})` : undefined}
                 onClick={() => {
-                  if (b.id === 'p') chain().setParagraph().run();
-                  else chain().setHeading({ level: Number(b.id.slice(1)) as 1 | 2 | 3 }).run();
+                  if (editor) setBlock(editor, b.id);
                   close();
                   editor?.commands.focus();
                 }}
               >
-                {b.label}
+                <span className="tb-pop-icon" aria-hidden>
+                  {BLOCK_ICONS[b.id]}
+                </span>
+                <span className="tb-pop-text">{b.label}</span>
+                {blockKey(b.id) && (
+                  <kbd className="tb-pop-key" aria-hidden>
+                    {blockKey(b.id)}
+                  </kbd>
+                )}
+              </button>
+            ))
+          }
+        </ToolbarMenu>
+        {btn(`Bold (${keyLabel(MOD, 'B')})`, <Bold />, () => chain().toggleBold().run(), { active: s?.bold })}
+        {btn(`Italic (${keyLabel(MOD, 'I')})`, <Italic />, () => chain().toggleItalic().run(), { active: s?.italic })}
+        {btn(`Underline (${keyLabel(MOD, 'U')})`, <Underline />, () => chain().toggleUnderline().run(), { active: s?.underline })}
+        {btn(`Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, <Strikethrough />, () => chain().toggleStrike().run(), { active: s?.strike })}
+        <ColorMenu editor={off ? null : editor} kind="text" />
+        <ColorMenu editor={off ? null : editor} kind="highlight" />
+        {btn('Clear formatting', <RemoveFormatting />, () => chain().unsetAllMarks().clearNodes().run())}
+      </Group>
+      <Sep />
+      <Group label="Lists">
+        {btn(`Bulleted list (${keyLabel(MOD, '.')})`, <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
+        {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
+        <span className="rb-split">
+          {btn(
+            `To Do: a checkbox item (${keyLabel(MOD, '1')}). Use the arrow, or ${keyLabel(MOD, ENTER)}, to make it a tracked task with a due date and assignee`,
+            <ListChecks />,
+            () => chain().toggleTaskList().run(),
+            { active: s?.check, text: 'To Do' },
+          )}
+          <ToolbarMenu
+            label="To Do options"
+            title={off ? IDLE_HINT : 'More To Do options'}
+            className="rb-split-arrow"
+            disabled={off}
+            trigger={<ChevronDown size={14} />}
+          >
+            {(close) => (
+              <button
+                type="button"
+                className="tb-pop-item rb-rule-item"
+                aria-disabled={!s?.canTask || undefined}
+                title={`Make it a tracked task (${keyLabel(MOD, ENTER)})`}
+                onClick={() => {
+                  if (!s?.canTask) return;
+                  close();
+                  chain().convertToTask().run();
+                }}
+              >
+                <CircleCheck size={16} />
+                Make it a task
+                <kbd className="tb-pop-key" aria-hidden>
+                  {keyLabel(MOD, ENTER)}
+                </kbd>
+              </button>
+            )}
+          </ToolbarMenu>
+        </span>
+      </Group>
+      <Sep />
+      <Group label="Insert">
+        {btn('Table', <Table />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), { text: 'Table' })}
+        {btn('Image', <ImagePlus />, () => slashHooks.pickImage(editor!))}
+        {btn('File attachment', <Paperclip />, () => slashHooks.pickFile(editor!))}
+        {btn(`Link (${keyLabel(MOD, 'K')})`, <Link2 />, () => insertLink(editor!), { active: s?.link })}
+        {btn('Link to page', <FileSymlink />, () => chain().insertContent('[[').run())}
+        {btn('Divider', <Minus />, () => chain().setHorizontalRule().run())}
+      </Group>
+      <Sep />
+      <Group label="Page">
+        <ToolbarMenu
+          label="Page colour"
+          className="rb-text"
+          disabled={pageOff}
+          trigger={
+            <>
+              <span className="rb-icon-bar">
+                <PaintBucket />
+                <span className="tb-color-bar is-page" data-page-color={settings.color} aria-hidden />
+              </span>
+              <span className="rb-btn-label">Page colour</span>
+            </>
+          }
+        >
+          {(close) => (
+            <div className="color-choices">
+              <div className="color-choices-label">Page colour</div>
+              <div className="page-color-grid">
+                {PAGE_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className="page-color-choice"
+                    data-page-color={c}
+                    title={PAGE_COLOR_LABELS[c]}
+                    aria-label={`Page colour: ${PAGE_COLOR_LABELS[c]}`}
+                    aria-pressed={settings.color === c}
+                    onClick={() => {
+                      if (page) setPageSettings(page.doc, { color: c });
+                      close();
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </ToolbarMenu>
+        <ToolbarMenu
+          label="Rule lines"
+          className="rb-text"
+          disabled={pageOff}
+          trigger={
+            <>
+              <Rows3 />
+              <span className="rb-btn-label">Rule lines</span>
+            </>
+          }
+        >
+          {(close) =>
+            RULE_LINES.map((r) => (
+              <button
+                key={r}
+                type="button"
+                className="tb-pop-item rb-rule-item"
+                aria-label={`Rule lines: ${RULE_LABELS[r]}`}
+                aria-pressed={settings.rules === r}
+                onClick={() => {
+                  if (page) setPageSettings(page.doc, { rules: r });
+                  close();
+                }}
+              >
+                {r === 'grid' ? <Grid3x3 size={16} /> : r === 'lines' ? <Rows3 size={16} /> : <span className="rb-rule-none" />}
+                {RULE_LABELS[r]}
               </button>
             ))
           }
         </ToolbarMenu>
       </Group>
       <Sep />
-      <Group label="Basic text">
-        {btn(`Bold (${keyLabel(MOD, 'B')})`, <Bold size={16} />, () => chain().toggleBold().run(), { active: s?.bold })}
-        {btn(`Italic (${keyLabel(MOD, 'I')})`, <Italic size={16} />, () => chain().toggleItalic().run(), { active: s?.italic })}
-        {btn(`Underline (${keyLabel(MOD, 'U')})`, <Underline size={16} />, () => chain().toggleUnderline().run(), { active: s?.underline })}
-        {btn(`Strikethrough (${keyLabel(MOD, SHIFT, 'S')})`, <Strikethrough size={16} />, () => chain().toggleStrike().run(), { active: s?.strike })}
-        <ColorMenu editor={editor} kind="text" />
-        <ColorMenu editor={editor} kind="highlight" />
-      </Group>
-      <Sep />
-      <Group label="Lists">
-        {btn('Bulleted list', <List size={16} />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
-        {btn('Numbered list', <ListOrdered size={16} />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
-        {btn('Checklist', <ListChecks size={16} />, () => chain().toggleTaskList().run(), { active: s?.check })}
-        {btn(`Turn into task (${keyLabel(MOD, ENTER)})`, <CircleCheck size={16} />, () => chain().convertToTask().run(), { disabled: !s?.canTask, text: 'Task' })}
-      </Group>
-      <Sep />
-      <Group label="Insert">
-        {btn(`Link (${keyLabel(MOD, 'K')})`, <Link2 size={16} />, () => openLinkEditor(editor!), { active: s?.link, disabled: !s?.canLink })}
-        {btn('Image', <ImagePlus size={16} />, () => slashHooks.pickImage?.(editor!))}
-        {btn('Table', <Table size={16} />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run())}
+      <Group label="View">
+        {viewBtn('Outline', <ListTree />, () => setOutlineHidden(!outlineHidden), { active: !outlineHidden, disabled: !page })}
       </Group>
       <span className="tb-spacer" />
       <Group label="History">
-        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 size={16} />, () => chain().undo().run(), { disabled: !s?.canUndo })}
-        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 size={16} />, () => chain().redo().run(), { disabled: !s?.canRedo })}
+        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 />, () => chain().undo().run(), { disabled: !s?.canUndo })}
+        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 />, () => chain().redo().run(), { disabled: !s?.canRedo })}
       </Group>
+      <button
+        type="button"
+        data-tb-item
+        className="bm-btn rb-collapse"
+        title="Collapse the ribbon (Ctrl+F1)"
+        aria-label="Collapse the ribbon"
+        aria-expanded
+        tabIndex={-1}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setRibbonCollapsed(true)}
+      >
+        <ChevronUp size={16} />
+      </button>
     </div>
   );
 }
