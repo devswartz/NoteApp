@@ -65,6 +65,7 @@ test.describe('dashboard', () => {
     await expect(page.locator('.cal-day.is-today')).toContainText('Plain today');
     // The in-page switches are on phones only; here they live in the ribbon.
     await expect(page.locator('.cal-head').getByRole('button', { name: 'Next month' })).toHaveCount(0);
+    await expect(page.locator('.sidebar select')).toHaveCount(0); // the panel's Assignee select is phones-only
 
     const title = page.locator('.cal-head h1');
     const month = await title.textContent();
