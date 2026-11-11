@@ -20,6 +20,9 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 - Save as template, Version history (preview and restore the whole canvas), Markdown export and Markdown import (into a new box) now work on canvas pages.
 - **OneNote import keeps box positions:** pages made in OneNote come in as canvases with each box where it was; pages without positions become one wide box. (#135)
 
+### Fixes
+- Desktop: checks for updates every time the app opens (was at most once a day).
+
 ## v0.2.1
 
 ### Fixes
