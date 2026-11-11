@@ -42,6 +42,32 @@
 .rb-icon-bar { position: relative; display: inline-flex; padding-bottom: 3px; }
 .rb-icon-bar .tb-color-bar.is-page { left: 1px; right: 1px; bottom: -2px; background: var(--page-tint, transparent); }
 .rb-icon-bar .tb-color-bar.is-page:not([data-page-color='none']) { box-shadow: inset 0 0 0 1px var(--border-strong); }
+/* Contextual groups (Table, while the selection is in a table): tinted and accented, like
+   Office's contextual tabs. While one shows, the other groups drop their words, and narrower
+   windows tighten every button, so the ribbon stays one row. */
+.ribbon .rb-context { flex: none; position: relative; margin: -6px 0 -3px; padding: 6px 6px 3px; background: var(--accent-soft); border-top: 2px solid var(--accent); border-radius: 0 0 6px 6px; }
+.ribbon .rb-context .rb-label { color: var(--accent); font-weight: 600; }
+.ribbon .rb-context .rb-btn { color: var(--text); }
+.ribbon.has-context .rb-group:not(.rb-context) .rb-btn-label { display: none; }
+.ribbon.has-context .rb-group:not(.rb-context) .rb-text { gap: 2px; }
+@media (max-width: 1599px) {
+  .ribbon.has-context .rb-btn-label { display: none; }
+  .ribbon.has-context .rb-text { gap: 2px; }
+}
+@media (max-width: 1439px) {
+  .ribbon.has-context .rb-btn,
+  .ribbon.has-context .tb-menu-btn { min-width: 32px; padding: 0 5px; }
+}
+@media (max-width: 1279px) {
+  .ribbon.has-context .rb-btn,
+  .ribbon.has-context .tb-menu-btn { min-width: 28px; padding: 0 3px; }
+}
+@media (max-width: 1023px) {
+  .ribbon.has-context .rb-btn,
+  .ribbon.has-context .tb-menu-btn { min-width: 21px; padding: 0 1px; }
+  .ribbon.has-context .tb-block { width: 64px; }
+  .ribbon.has-context .rb-context { padding: 5px 2px; }
+}
 /* Collapsed: a thin strip with the group names and "Show ribbon"; a click anywhere brings it back. */
 .ribbon.is-collapsed { min-height: 0; height: 30px; padding: 0 10px 0 16px; justify-content: space-between; align-items: center; cursor: pointer; }
 .rb-strip-groups { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -79,6 +105,7 @@
   .ribbon .rb-text { gap: 2px; }
   .ribbon .rb-sep { align-self: center; height: 22px; margin: 0 4px; }
   .ribbon .rb-collapse { align-self: center; }
+  .ribbon .rb-context { margin: -5px 0; padding: 5px 4px 5px; border-radius: 0; }
 }
 @media (max-width: 1023px) {
   .ribbon { padding-left: 6px; padding-right: 4px; gap: 0; }

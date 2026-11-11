@@ -9,7 +9,12 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { useEditorState, type Editor } from '@tiptap/react';
 import {
   Baseline,
+  BetweenHorizontalEnd,
+  BetweenHorizontalStart,
+  BetweenVerticalEnd,
+  BetweenVerticalStart,
   Bold,
+  Columns3,
   ChevronDown,
   ChevronUp,
   CircleCheck,
@@ -31,6 +36,7 @@ import {
   ListTree,
   Minus,
   PaintBucket,
+  PanelTop,
   Paperclip,
   Printer,
   Redo2,
@@ -38,6 +44,9 @@ import {
   Rows3,
   Strikethrough,
   Table,
+  TableCellsMerge,
+  TableCellsSplit,
+  Trash2,
   Underline,
   Undo2,
 } from 'lucide-react';
@@ -295,7 +304,23 @@ function ribbonState(e: Editor) {
     canTask: canConvert(e),
     canUndo: e.can().undo(),
     canRedo: e.can().redo(),
+    table: e.isActive('table') ? { header: headerRowOn(e), merge: e.can().mergeCells(), split: e.can().splitCell() } : null,
   };
+}
+
+/** Whether the first row of the table at the selection is a header row. */
+function headerRowOn(e: Editor) {
+  const { $from } = e.state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    const node = $from.node(d);
+    if (node.type.name !== 'table') continue;
+    const row = node.firstChild;
+    if (!row || !row.childCount) return false;
+    let all = true;
+    row.forEach((cell) => (all &&= cell.type.name === 'tableHeader'));
+    return all;
+  }
+  return false;
 }
 
 /** Set the block type at the selection (Normal also takes it out of a quote). */
@@ -344,6 +369,8 @@ interface BtnOpts {
   disabled?: boolean;
   /** A visible text label next to the icon (dropped on narrow windows); it is also the button's name. */
   text?: string;
+  /** The button's name when it differs from its text. */
+  label?: string;
 }
 
 /** Ctrl+F1 collapses / restores the ribbon (as in Office), in every section. */
@@ -370,11 +397,14 @@ export function RibbonFrame({
   editor = null,
   idle = false,
   section = false,
+  context = false,
   children,
 }: {
   strip: string;
   editor?: Editor | null;
   idle?: boolean;
+  /** A contextual group (Table) is showing: the other groups give up their text sooner. */
+  context?: boolean;
   /** Tasks, Calendar, Notes, Settings (not the note's ribbon). */
   section?: boolean;
   children: ReactNode;
@@ -417,7 +447,7 @@ export function RibbonFrame({
   return (
     <div
       ref={ref}
-      className={`ribbon ${idle ? 'is-idle' : ''} ${section ? 'is-section' : ''}`}
+      className={`ribbon ${idle ? 'is-idle' : ''} ${section ? 'is-section' : ''} ${context ? 'has-context' : ''}`}
       role="toolbar"
       aria-label="Ribbon"
       aria-orientation="horizontal"
@@ -579,7 +609,7 @@ export function Ribbon() {
         data-tb-item
         className={`bm-btn rb-btn ${on ? 'is-active' : ''} ${opts.text ? 'rb-text' : ''}`}
         title={idle ? IDLE_HINT : title}
-        aria-label={opts.text ?? title}
+        aria-label={opts.label ?? opts.text ?? title}
         aria-pressed={opts.active === undefined ? undefined : on}
         aria-disabled={disabled || undefined}
         tabIndex={-1}
@@ -594,10 +624,11 @@ export function Ribbon() {
   const btn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, opts);
   const viewBtn = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts = {}) => button(title, icon, run, { ...opts, always: true });
 
+  const table = editor && s?.table ? s.table : null;
   const block = s?.block ?? 'p';
   const blockLabel = BLOCKS.find((b) => b.id === block)!.label;
   return (
-    <RibbonFrame strip="Text · Lists · Insert · Page · View" editor={editor} idle={off}>
+    <RibbonFrame strip={`Text · Lists · Insert${table ? ' · Table' : ''} · Page · View`} editor={editor} idle={off} context={!!table}>
       <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
@@ -688,13 +719,31 @@ export function Ribbon() {
       </Group>
       <Sep />
       <Group label="Insert">
-        {btn('Table', <Table />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), { text: 'Table' })}
+        {!table && btn('Table', <Table />, () => chain().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(), { text: 'Table' })}
         {btn('Image', <ImagePlus />, () => slashHooks.pickImage(editor!))}
         {btn('File attachment', <Paperclip />, () => slashHooks.pickFile(editor!))}
         {btn(`Link (${keyLabel(MOD, 'K')})`, <Link2 />, () => insertLink(editor!), { active: s?.link })}
         {btn('Link to page', <FileSymlink />, () => chain().insertContent('[[').run())}
         {btn('Divider', <Minus />, () => chain().setHorizontalRule().run())}
       </Group>
+      {table && (
+        <>
+          <Sep />
+          {/* Contextual, as Office's Table tab: only while the selection is in a table. */}
+          <Group label="Table" className="rb-context">
+            {btn('Insert row above', <BetweenHorizontalStart />, () => chain().addRowBefore().run())}
+            {btn('Insert row below', <BetweenHorizontalEnd />, () => chain().addRowAfter().run(), { text: 'Row below', label: 'Insert row below' })}
+            {btn('Insert column left', <BetweenVerticalStart />, () => chain().addColumnBefore().run())}
+            {btn('Insert column right', <BetweenVerticalEnd />, () => chain().addColumnAfter().run(), { text: 'Column right', label: 'Insert column right' })}
+            {btn('Header row', <PanelTop />, () => chain().toggleHeaderRow().run(), { active: table.header })}
+            {btn('Merge cells (select cells first)', <TableCellsMerge />, () => chain().mergeCells().run(), { disabled: !table.merge, label: 'Merge cells' })}
+            {btn('Split cell', <TableCellsSplit />, () => chain().splitCell().run(), { disabled: !table.split })}
+            {btn('Delete row', <Rows3 />, () => chain().deleteRow().run())}
+            {btn('Delete column', <Columns3 />, () => chain().deleteColumn().run())}
+            {btn('Delete table', <Trash2 />, () => chain().deleteTable().run())}
+          </Group>
+        </>
+      )}
       <Sep />
       <Group label="Page">
         <ToolbarMenu
