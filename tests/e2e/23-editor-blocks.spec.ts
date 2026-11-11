@@ -2,6 +2,7 @@
 // table rows/columns, file cards and pasted links. Each test reloads to prove it persisted.
 // Owner: Editor & Notes (agent 2), coordinated with QA (docs/QA.md).
 import { test, expect, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { createPage, createUser, focusEnd, openPage, signInContext } from './helpers.ts';
 
 async function slash(page: Page, query: string) {
@@ -82,29 +83,54 @@ test.describe('editor blocks', () => {
     await expect(after.getByText('Hidden detail')).toBeVisible();
   });
 
-  test('tables: add and remove rows and columns from the table bar', async ({ page, context, request }) => {
+  test('tables: the ribbon shows a Table group (no floating bar on desktop) that adds and removes rows and columns', async ({ page, context, request }) => {
     const user = await createUser(request, 'Ta Ble');
     const { pageId } = await createPage(request, user, { page: 'Tables' });
     await signInContext(context, user);
     const editor = await openPage(page, user.wsId, pageId);
+    const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+    const group = ribbon.getByRole('group', { name: 'Table', exact: true });
     await focusEnd(page);
+    await expect(group).toHaveCount(0); // contextual: only inside a table
     await slash(page, 'table');
     const rows = editor.locator('table tr');
     const cols = editor.locator('table tr').first().locator('th, td');
     await expect(rows).toHaveCount(3);
     await expect(cols).toHaveCount(3);
-    const bar = page.locator('.table-bar');
-    await bar.locator('button[title="Add row below"]').click();
-    await bar.locator('button[title="Add column right"]').click();
+    // Typing in the header cell: nothing floats over the table; the ribbon has the controls.
+    await page.keyboard.type('Name');
+    await expect(editor.locator('th').first()).toHaveText('Name');
+    await expect(group).toBeVisible();
+    await expect(page.locator('.table-menu')).toHaveCount(0);
+    await expect(group.locator('button[title="Header row"]')).toHaveAttribute('aria-pressed', 'true');
+    await group.locator('button[title="Insert row below"]').click();
+    await group.locator('button[title="Insert column right"]').click();
     await expect(rows).toHaveCount(4);
     await expect(cols).toHaveCount(4);
     await page.keyboard.type('new cell');
-    await bar.locator('button[title="Delete column"]').click();
+    await group.locator('button[title="Delete column"]').click();
     await expect(cols).toHaveCount(3);
-    await bar.locator('button[title="Delete row"]').click();
+    await group.locator('button[title="Delete row"]').click();
     await expect(rows).toHaveCount(3);
+    // Tab still moves between cells; F6 reaches the Table group in the ribbon's arrow navigation.
+    await editor.locator('td').first().click();
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('next');
+    await expect(editor.locator('tr').nth(1).locator('td').nth(1)).toHaveText('next');
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.type('prev');
+    await expect(editor.locator('tr').nth(1).locator('td').first()).toHaveText('prev');
+    await page.keyboard.press('F6');
+    await expect(ribbon.locator('button:focus')).toBeVisible();
+    for (let i = 0; i < 40 && !(await group.locator('button:focus').count()); i++) await page.keyboard.press('ArrowRight');
+    await expect(group.locator('button:focus')).toHaveAttribute('title', 'Insert row above');
+    await page.keyboard.press('Enter');
+    await expect(rows).toHaveCount(4);
+    // No serious axe violations in the ribbon with its Table group.
+    const results = await new AxeBuilder({ page }).include('.ribbon').analyze();
+    expect(results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([]);
     await reload(page);
-    await expect(editor.locator('table tr')).toHaveCount(3);
+    await expect(editor.locator('table tr')).toHaveCount(4);
     await expect(editor.locator('table tr').first().locator('th, td')).toHaveCount(3);
   });
 

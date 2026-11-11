@@ -51,7 +51,7 @@ import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
-import { ENTER, MOD, SHIFT, keyLabel } from '../components/ui.tsx';
+import { ENTER, MOD, SHIFT, keyLabel, useIsMobile } from '../components/ui.tsx';
 import '../styles/editor.css';
 
 export type { PresenceUser, SaveState, SyncStatus };
@@ -275,12 +275,13 @@ export function useSlashFilePickers(pageId: string, workspaceId: string) {
   }, []);
 }
 
-/** The floating bits that belong to one editor: the bubble menu, table and image bars, and the block handle. */
+/** The floating bits that belong to one editor: the bubble menu, the table menu (phones), the image bar, and the block handle. */
 export function EditorChrome({ editor, handle = true }: { editor: Editor; handle?: boolean }) {
+  const isMobile = useIsMobile(); // desktop and tablet: the ribbon's Table group
   return (
     <>
       <FormattingMenu editor={editor} />
-      <TableBar editor={editor} />
+      {isMobile && <TableMenu editor={editor} />}
       <ImageBar editor={editor} />
       {handle && <BlockHandle editor={editor} />}
     </>
@@ -560,23 +561,58 @@ function focusToolbar(attempt = 0) {
   else if (attempt < 90) requestAnimationFrame(() => focusToolbar(attempt + 1)); // ~1.5 s for the bubble menu to show on a slow machine
 }
 
-function TableBar({ editor }: { editor: Editor }) {
-  const inTable = useEditorState({ editor, selector: ({ editor: e }) => e.isActive('table') });
-  if (!inTable) return null;
+/** The table that holds the selection: its outer element (the wrapper when columns are resizable). */
+function tableElement(editor: Editor): HTMLElement | null {
+  if (editor.isDestroyed) return null;
+  const { $from } = editor.state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.node(d).type.name !== 'table') continue;
+    const dom = editor.view.nodeDOM($from.before(d));
+    return dom instanceof HTMLElement ? dom : null;
+  }
+  return null;
+}
+
+/** Above the table (below it when there is no room above): never over its cells. */
+const TABLE_MENU_OPTIONS = { ...FLOATING_OPTIONS, placement: 'top-start' as const, offset: 6, shift: { padding: 8 } };
+
+/**
+ * Phones (no ribbon): the table's controls float above the table, outside it, as the
+ * formatting toolbar does. Desktop and tablet have them in the ribbon's Table group instead.
+ */
+function TableMenu({ editor }: { editor: Editor }) {
+  const appendTo = useFloatHost(editor);
   const b = (title: string, fn: () => void, icon: React.ReactNode, label = title) => (
-    <button type="button" className="btn-ghost btn-sm" title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={fn}>
+    <button type="button" className="bm-btn bm-text" title={title} aria-label={title} onMouseDown={(e) => e.preventDefault()} onClick={fn}>
       {icon} {label}
     </button>
   );
   return (
-    <div className="table-bar" contentEditable={false} role="toolbar" aria-label="Table">
-      {b('Add row below', () => editor.chain().focus().addRowAfter().run(), <ArrowDownToLine size={14} />, 'Row')}
-      {b('Add column right', () => editor.chain().focus().addColumnAfter().run(), <ArrowRightToLine size={14} />, 'Column')}
-      {b('Toggle header row', () => editor.chain().focus().toggleHeaderRow().run(), <PanelTop size={14} />, 'Header')}
-      <span className="bm-sep" />
-      {b('Delete row', () => editor.chain().focus().deleteRow().run(), <Rows3 size={14} />, 'Delete row')}
-      {b('Delete column', () => editor.chain().focus().deleteColumn().run(), <Columns3 size={14} />, 'Delete column')}
-      {b('Delete table', () => editor.chain().focus().deleteTable().run(), <Trash2 size={14} />, 'Delete table')}
-    </div>
+    <BubbleMenu
+      editor={editor}
+      pluginKey="tableMenu"
+      className="bubble-menu table-menu"
+      appendTo={appendTo}
+      options={TABLE_MENU_OPTIONS}
+      getReferencedVirtualElement={() => {
+        const el = tableElement(editor);
+        return el && { getBoundingClientRect: () => el.getBoundingClientRect(), getClientRects: () => el.getClientRects(), contextElement: el };
+      }}
+      shouldShow={({ editor: e, state }) => {
+        const inMenu = !!document.activeElement?.closest('.table-menu');
+        if (e.isDestroyed || !e.isEditable || !(e.isFocused || inMenu) || !e.isActive('table')) return false;
+        return state.selection.empty || !(state.selection instanceof TextSelection); // selected text: the formatting toolbar
+      }}
+    >
+      <div className="bubble-menu-bar" role="toolbar" aria-label="Table" onKeyDown={(e) => toolbarKeys(e, editor, 'button')}>
+        {b('Insert row below', () => editor.chain().focus().addRowAfter().run(), <ArrowDownToLine size={14} />, 'Row')}
+        {b('Insert column right', () => editor.chain().focus().addColumnAfter().run(), <ArrowRightToLine size={14} />, 'Column')}
+        {b('Header row', () => editor.chain().focus().toggleHeaderRow().run(), <PanelTop size={14} />, 'Header')}
+        <span className="bm-sep" />
+        {b('Delete row', () => editor.chain().focus().deleteRow().run(), <Rows3 size={14} />, 'Delete row')}
+        {b('Delete column', () => editor.chain().focus().deleteColumn().run(), <Columns3 size={14} />, 'Delete column')}
+        {b('Delete table', () => editor.chain().focus().deleteTable().run(), <Trash2 size={14} />, 'Delete table')}
+      </div>
+    </BubbleMenu>
   );
 }
