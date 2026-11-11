@@ -30,10 +30,12 @@ services:
     volumes:
       - data:/data
     ports:
-      # Bound to localhost only: Cloudflare Tunnel (cloudflared on this host)
-      # connects to http://127.0.0.1:${HOST_PORT}. Never expose it publicly.
+      # Only cloudflared may reach this port (see DEPLOY_CONTRACT: Network).
+      # cloudflared on this host: keep BIND_ADDR=127.0.0.1 (the default).
+      # cloudflared on another host: BIND_ADDR=0.0.0.0 (or this host's LAN IP) AND a
+      # host firewall (e.g. iptables DOCKER-USER) that admits only the cloudflared host.
       # Use a different HOST_PORT per environment (e.g. staging 3002, prod 3001).
-      - "127.0.0.1:${HOST_PORT:-3001}:3001"
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-3001}:3001"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
       interval: 30s

@@ -27,12 +27,28 @@ docker compose ps    # wait for "healthy"
 |---|---|---|
 | `NOTEAPP_ENV` | `staging` | `prod` |
 | `NOTEAPP_TAG` | `staging` | `prod` |
-| `HOST_PORT` (cloudflared → `http://127.0.0.1:<port>`) | `3002` | `3001` |
+| `HOST_PORT` (cloudflared → `http://<app host>:<port>`) | `3002` | `3001` |
+| `BIND_ADDR` | `127.0.0.1`, or `0.0.0.0` + firewall when cloudflared is on another host | same |
 | `PUBLIC_URL` | `https://notes-staging.devswartz.com` | `https://notes.devswartz.com` |
 | `SEED_DEMO` | `1` | remove |
 
 Each environment gets its own compose project (`noteapp-staging` / `noteapp-prod`)
 and so its own named volume for `/data`.
+
+## cloudflared on another host
+
+The template assumes cloudflared runs on the same host and binds the port to
+`127.0.0.1`. When the tunnel runs elsewhere (one cloudflared for several app hosts),
+set `BIND_ADDR=0.0.0.0` and restrict the published port with a host firewall that
+admits only the cloudflared host, for example in the `DOCKER-USER` chain (Docker's
+published ports bypass the `INPUT` chain):
+
+```sh
+iptables -I DOCKER-USER -p tcp -m conntrack --ctorigdstport <HOST_PORT> ! -s <cloudflared host IP> -j DROP
+```
+
+Rate limiting trusts `CF-Connecting-IP` (`TRUST_PROXY_HEADER=cf`), so the port must
+never be reachable from anywhere but the tunnel.
 
 ## Auto-update
 
