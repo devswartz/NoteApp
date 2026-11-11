@@ -146,4 +146,28 @@ test.describe('inline tasks ↔ dashboard', () => {
       'task detached, not deleted',
     );
   });
+
+  test('Backspace in a new empty task leaves a normal line under the task', async ({ page, context, request }) => {
+    const user = await createUser(request, 'Bea Backspace');
+    const { pageId } = await createPage(request, user, { page: 'Mixed notes' });
+    await signInContext(context, user);
+    await openPage(page, user.wsId, pageId);
+
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('/task');
+    await page.keyboard.press('Enter');
+    const first = page.locator('.task-ref-title:focus');
+    await first.pressSequentially('Call the printer');
+    await first.press('Enter'); // a second, empty task
+    await expect(page.locator('.task-ref-title:focus')).toHaveValue('');
+    await page.keyboard.press('Backspace'); // not a task any more: an ordinary line in its place
+    await page.keyboard.type('Then some notes');
+
+    await expect(page.locator('.task-ref')).toHaveCount(1);
+    const line = page.locator('.ProseMirror p', { hasText: 'Then some notes' });
+    await expect(line).toBeVisible();
+    // Right under the task, in the same editor.
+    expect(await line.evaluate((p) => !!p.previousElementSibling?.querySelector('.task-ref-title'))).toBe(true);
+    await eventually(() => listTasks(request, user), (ts) => ts.filter((t) => t.title === 'Call the printer').length === 1 && !ts.some((t) => t.pageId === pageId && !t.title.trim()), 'the printer task, and no empty task left behind');
+  });
 });
