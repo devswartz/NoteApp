@@ -19,7 +19,7 @@ function task(p: Partial<Task> = {}): Task {
 const T = today();
 const tree: Tree = {
   notebooks: [{ id: 'nb1', workspaceId: 'w', name: 'Work', color: '', visibility: 'shared', createdBy: ME, position: 1 }],
-  sections: [{ id: 's1', notebookId: 'nb1', name: 'S', color: '', position: 1 }],
+  sections: [{ id: 's1', notebookId: 'nb1', parentId: null, name: 'S', color: '', position: 1 }],
   pages: [{ id: 'p1', sectionId: 's1', title: 'Roadmap', icon: null, kind: 'document', position: 1, updatedAt: '', updatedBy: null }],
 };
 
