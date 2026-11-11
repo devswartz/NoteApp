@@ -232,14 +232,16 @@ export function PageView() {
   return (
     <div className={`page-layout ${panel && !isMobile ? 'with-panel' : ''}`}>
       <div
-        className="page-scroll"
+        className={`page-scroll ${settings.rules === 'none' ? '' : 'has-rules'}`}
         ref={setScroller}
         data-page-color={settings.color === 'none' ? undefined : settings.color}
         data-rules={settings.rules === 'none' ? undefined : settings.rules}
       >
         {canvas && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
         {/* Rule lines / grid: across the whole page width, from the canvas down, behind the boxes. */}
-        {settings.rules !== 'none' && rules && <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height }} />}
+        {settings.rules !== 'none' && rules && (
+          <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height, backgroundPosition: `${rules.left}px 0` }} />
+        )}
         <header className="page-topbar">
           <div className="crumbs">
             {notebook ? (
@@ -345,11 +347,12 @@ export function PageView() {
 
 /**
  * Where rule lines go, in the scroller's content coordinates: from the top of the canvas
- * surface (plus a box's border and padding, so "lines" sit under a top box's text) to the
- * bottom of the article. Re-measured as the page reflows.
+ * surface (the grid's origin: boxes sit on whole units from there, see canvas.css) to the
+ * bottom of the article; `left` puts the grid's columns on the surface's left edge.
+ * Re-measured as the page reflows.
  */
 function useRuleArea(scroller: HTMLElement | null, article: HTMLElement | null) {
-  const [area, setArea] = useState<{ top: number; height: number } | null>(null);
+  const [area, setArea] = useState<{ top: number; left: number; height: number } | null>(null);
   useEffect(() => {
     if (!scroller || !article) {
       setArea(null);
@@ -358,10 +361,13 @@ function useRuleArea(scroller: HTMLElement | null, article: HTMLElement | null) 
     const measure = () => {
       const surface = article.querySelector('.canvas-surface');
       if (!surface) return;
-      const base = scroller.getBoundingClientRect().top - scroller.scrollTop;
-      const top = Math.round(surface.getBoundingClientRect().top - base + 7);
+      const sr = scroller.getBoundingClientRect();
+      const base = sr.top - scroller.scrollTop;
+      const s = surface.getBoundingClientRect();
+      const top = s.top - base;
+      const left = s.left - sr.left;
       const height = Math.max(0, Math.round(article.getBoundingClientRect().bottom - base - top));
-      setArea((a) => (a && a.top === top && a.height === height ? a : { top, height }));
+      setArea((a) => (a && a.top === top && a.left === left && a.height === height ? a : { top, left, height }));
     };
     measure();
     const ro = new ResizeObserver(measure);
