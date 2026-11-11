@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { FILES_DIR } from './config.ts';
 import { db, newId, now } from './db.ts';
-import { HttpError, roleIn, taskVisible } from './access.ts';
+import { HttpError, roleIn, sectionAccess, taskVisible } from './access.ts';
 import { createTask } from './tasks.ts';
 import type { Priority } from '../shared/types.ts';
 
@@ -342,4 +342,57 @@ export function useTemplate(t: TemplateRow, pageId: string, userId: string) {
     throw e;
   }
   return { content, taskIds: created };
+}
+
+// ── Where a template is offered (template_sections, migration 016) ──
+// No rows: everywhere (the default). Rows: in those sections, and in their subsections when
+// include_subsections is set. People only see (and can only add) sections they have access to;
+// rows for sections someone can't see are kept untouched when they edit the list.
+
+export const MAX_TEMPLATE_SECTIONS = 50;
+export interface TemplateScope {
+  sectionId: string;
+  includeSubsections: boolean;
+}
+
+/** The template's scope rows: `visible` are those `userId` can see; `scoped` is true if there are any rows at all. */
+export function templateScope(templateId: string, userId: string): { scoped: boolean; visible: TemplateScope[] } {
+  const rows = db.prepare('SELECT section_id, include_subsections FROM template_sections WHERE template_id = ? ORDER BY section_id').all(templateId) as {
+    section_id: string;
+    include_subsections: number;
+  }[];
+  return {
+    scoped: rows.length > 0,
+    visible: rows.filter((r) => sectionAccess(r.section_id, userId)).map((r) => ({ sectionId: r.section_id, includeSubsections: !!r.include_subsections })),
+  };
+}
+
+/**
+ * Replace the sections `userId` can see in a template's scope with `input` (a list of
+ * { sectionId, includeSubsections? }); rows for sections they can't see stay as they are.
+ * Each section must be in the template's workspace and visible to the user.
+ */
+export function setTemplateScope(t: Pick<TemplateRow, 'id' | 'workspace_id'>, userId: string, input: unknown) {
+  if (!Array.isArray(input)) throw new HttpError(400, 'sections must be a list');
+  if (input.length > MAX_TEMPLATE_SECTIONS) throw new HttpError(400, `A template can be tied to up to ${MAX_TEMPLATE_SECTIONS} sections`);
+  const wanted = new Map<string, boolean>();
+  for (const x of input) {
+    const sectionId = x && typeof x === 'object' ? (x as Record<string, unknown>).sectionId : undefined;
+    if (typeof sectionId !== 'string') throw new HttpError(400, 'sections[].sectionId is required');
+    const a = sectionAccess(sectionId, userId);
+    if (!a || a.workspaceId !== t.workspace_id) throw new HttpError(400, 'One of those sections is not in this workspace');
+    wanted.set(sectionId, (x as Record<string, unknown>).includeSubsections !== false);
+  }
+  db.transaction(() => {
+    const existing = db.prepare('SELECT section_id FROM template_sections WHERE template_id = ?').all(t.id) as { section_id: string }[];
+    const drop = db.prepare('DELETE FROM template_sections WHERE template_id = ? AND section_id = ?');
+    for (const r of existing) if (sectionAccess(r.section_id, userId) && !wanted.has(r.section_id)) drop.run(t.id, r.section_id);
+    const put = db.prepare(
+      `INSERT INTO template_sections (template_id, section_id, include_subsections) VALUES (?, ?, ?)
+       ON CONFLICT (template_id, section_id) DO UPDATE SET include_subsections = excluded.include_subsections`,
+    );
+    for (const [sectionId, inc] of wanted) put.run(t.id, sectionId, inc ? 1 : 0);
+    const total = (db.prepare('SELECT COUNT(*) AS n FROM template_sections WHERE template_id = ?').get(t.id) as { n: number }).n;
+    if (total > MAX_TEMPLATE_SECTIONS) throw new HttpError(400, `A template can be tied to up to ${MAX_TEMPLATE_SECTIONS} sections`);
+  })();
 }

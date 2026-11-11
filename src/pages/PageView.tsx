@@ -13,7 +13,6 @@ import { NoteEditor, type PresenceUser, type SaveState, type SyncStatus } from '
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
-import { promptDialog } from '../components/shell/dialogs.tsx';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { Outline, usePageSetting } from '../editor/Outline.tsx';
@@ -28,6 +27,8 @@ import { setPagePanel, syncPagePanel, usePagePanel, type PagePanel } from '../st
 import { PageShareDialogHost, openPageShareDialog } from '../components/sharing/PageShareDialog.tsx';
 import { loadSharedPageTasks, patchSharedPage, useShared } from '../components/sharing/sharedPages.ts';
 import type { PageMeta } from '../../shared/types.ts';
+import { sectionPathLabel, sectionsInOrder } from '../../shared/sections.ts';
+import { TemplateDialogHost, templateDialog } from '../editor/TemplateDialog.tsx';
 import { UserPlus, Users } from 'lucide-react';
 
 /** GET /pages/:id. viaPageShare: opened through a page share (#98), so it isn't in the tree. */
@@ -54,6 +55,8 @@ export function PageView() {
   });
   const meta = treeMeta ?? (info?.viaPageShare ? info.page : undefined);
   const section = useStore((s) => s.tree.sections.find((x) => x.id === meta?.sectionId));
+  // "Section › Subsection" for the breadcrumb (a string, so the selector stays stable).
+  const sectionPath = useStore((s) => (meta?.sectionId ? sectionPathLabel(s.tree, meta.sectionId) : ''));
   const notebook = useStore((s) => s.tree.notebooks.find((x) => x.id === section?.notebookId));
   const treeLoaded = useStore((s) => s.treeLoaded);
   const updatedBy = useStore((s) => s.members.find((m) => m.id === meta?.updatedBy));
@@ -204,7 +207,7 @@ export function PageView() {
                   {notebook.name}
                 </span>
                 <ChevronRight size={14} className="muted" />
-                {section && <span className="crumb">{section.name}</span>}
+                {section && <span className="crumb">{sectionPath || section.name}</span>}
               </>
             ) : (
               info?.viaPageShare && (
@@ -298,6 +301,7 @@ export function PageView() {
       <VersionHistory pageId={pageId} editor={editor} open={historyOpen} onClose={() => setHistoryOpen(false)} othersEditing={presence.length} />
       <CommentHighlights />
       <PageShareDialogHost />
+      <TemplateDialogHost />
       {panel && <PageSidePanel pageId={pageId} tab={panel} onTab={showPanel} canComment={!!canEdit} onClose={() => showPanel(null)} mobile={isMobile} />}
     </div>
   );
@@ -466,22 +470,21 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
   const [mode, setMode] = useState<'move' | 'copy'>('move');
-  const sectionsOf = (notebookId: string) => tree.sections.filter((s) => s.notebookId === notebookId);
+  const sectionsOf = (notebookId: string) => sectionsInOrder(tree, notebookId).map((x) => x.section); // subsections after their parent
   const inPrivate = tree.notebooks.find((n) => n.id === tree.sections.find((s) => s.id === current?.sectionId)?.notebookId)?.visibility === 'private';
   /** "Save as template": a snapshot of the live editor content; the server copies the page's tasks (as new ones) and attachments. */
   const saveTemplate = async () => {
     if (!editor) return;
-    const name = await promptDialog({
+    const r = await templateDialog({
       title: 'Save page as template',
-      label: 'Template name',
-      initial: current?.title || 'Untitled',
+      name: current?.title || 'Untitled',
       confirmLabel: 'Save template',
       message: inPrivate
         ? 'This page is in a private notebook, so only you will see the template. Its tasks become new tasks each time it is used, and attachments are copied.'
         : 'Everyone in this workspace will be able to see and use this template. Its tasks become new tasks each time it is used (title, priority and subtasks only), and attachments are copied.',
     });
-    if (!name) return;
-    saveAsTemplate(editor, pageId, name, current?.icon)
+    if (!r) return;
+    saveAsTemplate(editor, pageId, r.name, current?.icon, r.sections)
       .then((t) =>
         toast(
           t.visibility === 'private'
@@ -574,9 +577,9 @@ function PageMenuItems({ pageId, wsId, editor, onHistory, fullWidth, onFullWidth
                     key={s.id}
                     icon={<span className="dot" style={{ background: s.color }} />}
                     checked={mode === 'move' && current?.sectionId === s.id}
-                    onSelect={() => run(s.id, `${n.name} › ${s.name}`)}
+                    onSelect={() => run(s.id, sectionPathLabel(tree, s.id, n.name))}
                   >
-                    {s.name}
+                    {sectionPathLabel(tree, s.id)}
                   </MenuItem>
                 ))}
               </div>
