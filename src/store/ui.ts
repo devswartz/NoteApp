@@ -1,7 +1,7 @@
 // Global UI toggles (palette, quick add, task detail, sidebar, shortcuts help)
 // and the appearance preference (light / dark / system).
 import { create } from 'zustand';
-import { set, type QuickAddDefaults } from './state.ts';
+import { set, SIDEBAR_KEY, useStore, type QuickAddDefaults } from './state.ts';
 import { platform } from '../platform/index.ts';
 
 export const ui = {
@@ -10,10 +10,16 @@ export const ui = {
   openQuickAdd: (d: QuickAddDefaults = {}) => set({ quickAdd: d }),
   closeQuickAdd: () => set({ quickAdd: null }),
   openTask: (id: string | null) => set({ taskDetailId: id }),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
-  setSidebar: (open: boolean) => set({ sidebarOpen: open }),
+  toggleSidebar: () => setSidebarOpen(!useStore.getState().sidebarOpen),
+  setSidebar: (open: boolean) => setSidebarOpen(open),
   setShortcuts: (open: boolean) => set({ shortcutsOpen: open }),
 };
+
+function setSidebarOpen(open: boolean) {
+  set({ sidebarOpen: open });
+  // Phones use the panels as a drawer that closes after each tap; only bigger screens remember the choice.
+  if (typeof window !== 'undefined' && window.innerWidth > 760) platform.kv.set(SIDEBAR_KEY, open ? '1' : '0');
+}
 
 // ───────────── Theme ─────────────
 

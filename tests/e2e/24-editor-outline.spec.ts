@@ -112,7 +112,7 @@ test('a ?task= deep link lands on a task at the bottom of a long page', async ({
   const title = page.locator('.task-ref-title:focus');
   await title.fill('Bottom task');
   await title.press('Enter');
-  const ref = editor.locator('.task-ref', { has: page.locator('.task-ref-title[value="Bottom task"]') });
+  const ref = editor.locator('.task-ref', { has: page.locator('.task-ref-title[data-value="Bottom task"]') });
   const taskId = await ref.getAttribute('data-task-id');
   expect(taskId).toBeTruthy();
   await eventually(() => listTasks(request, user), (ts) => ts.some((t) => t.title === 'Bottom task'), 'task saved');

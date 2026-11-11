@@ -5,7 +5,7 @@ import { Node, mergeAttributes, type Editor } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
 import { Selection, TextSelection } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GripVertical, Maximize2, FileX2, Flag } from 'lucide-react';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
 import { useAnyTask } from '../components/sharing/sharedPages.ts';
@@ -104,7 +104,7 @@ export const TaskRef = Node.create<TaskRefOptions>({
       stopEvent: ({ event }) => {
         const el = event.target as HTMLElement | null;
         if (!el || event.type === 'dragstart') return false;
-        return !!el.closest('input, button, a, .popover');
+        return !!el.closest('input, textarea, button, a, .popover');
       },
     });
   },
@@ -161,7 +161,8 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
     titleRef.current = v;
     setTitleState(v);
   };
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useAutoHeight(inputRef, title);
   const focused = useRef(false);
 
   useEffect(() => {
@@ -228,7 +229,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
     view.focus();
   };
 
-  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const p = pos();
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -291,9 +292,11 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           </span>
         )}
         <TaskCheckbox task={task} onToggle={() => toggleTask(id)} disabled={!editable} />
-        <input
+        <textarea
           ref={inputRef}
+          rows={1}
           className="task-ref-title"
+          data-value={title} // textareas have no value attribute; tests and styles can match the title here
           aria-label="Task title"
           value={title}
           placeholder="Task name — e.g. “Draft agenda tomorrow p2 @sam”"
@@ -466,4 +469,26 @@ function PriorityChip({ task, onChange, readOnly }: { task: Task; onChange: (p: 
       )}
     </Dropdown>
   );
+}
+
+/** Grow a one-row textarea to fit its text, so long task titles wrap instead of scrolling sideways. */
+function useAutoHeight(ref: React.RefObject<HTMLTextAreaElement | null>, value: string) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    fit();
+    // The width changes with the window and the side panels, and so does the number of lines.
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return; // our own height change, not a new width
+      width = el.clientWidth;
+      fit();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref, value]);
 }

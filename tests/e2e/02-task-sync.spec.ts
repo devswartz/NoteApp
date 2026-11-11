@@ -103,7 +103,12 @@ test.describe('inline tasks ↔ dashboard', () => {
 
     // In the note: change the title and leave the field to commit.
     const input = page.locator(`.task-ref[data-task-id="${id}"] .task-ref-title`);
-    await input.fill('Draft Q4 budget');
+    // Real keystrokes, not fill(): the editor must leave keys typed in the title alone
+    // (typing once replaced the whole task).
+    await input.click();
+    await input.press('ControlOrMeta+a');
+    await input.pressSequentially('Draft Q4 budget');
+    await expect(page.locator(`.task-ref[data-task-id="${id}"]`)).toHaveCount(1);
     await input.press('Escape');
     await eventually(() => listTasks(request, user), (ts) => ts.some((t) => t.title === 'Draft Q4 budget'), 'title saved from the note');
     await page.goto(tasksUrl(user.wsId, 'today'));

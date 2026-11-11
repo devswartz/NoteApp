@@ -6,12 +6,12 @@ import { create } from 'zustand';
 import { platform } from '../../platform/index.ts';
 
 const KEY = 'noteapp.sidebar';
-export const SIDEBAR_MIN = 200;
+export const SIDEBAR_MIN = 180;
 export const SIDEBAR_MAX = 420;
-export const SIDEBAR_DEFAULT = 264;
-export const PAGES_MIN = 180;
+export const SIDEBAR_DEFAULT = 216;
+export const PAGES_MIN = 160;
 export const PAGES_MAX = 380;
-export const PAGES_DEFAULT = 240;
+export const PAGES_DEFAULT = 200;
 const RECENT_MAX = 8;
 
 export type RailView = 'notes' | 'tasks' | 'calendar';
@@ -32,7 +32,11 @@ interface Persisted {
   pageSort: PageSort;
   /** wsId → view → last path (with query) visited in that view. */
   lastLoc: Record<string, Partial<Record<RailView, string>>>;
+  /** Bumped when the default widths change, so saved widths from older defaults reset once. */
+  layout?: number;
 }
+
+const LAYOUT = 2;
 
 function load(): Persisted {
   const base: Persisted = {
@@ -46,10 +50,15 @@ function load(): Persisted {
     lastPage: {},
     pageSort: 'manual',
     lastLoc: {},
+    layout: LAYOUT,
   };
   try {
     const v = JSON.parse(platform.kv.get(KEY) ?? 'null');
-    if (v && typeof v === 'object') return { ...base, ...v };
+    if (v && typeof v === 'object') {
+      // Older installs saved the wider v0.2.0 defaults; start them on the narrower ones.
+      if ((v.layout ?? 1) < LAYOUT) Object.assign(v, { width: SIDEBAR_DEFAULT, pagesWidth: PAGES_DEFAULT, layout: LAYOUT });
+      return { ...base, ...v };
+    }
     // Migrate the older collapsed-only key.
     const old = JSON.parse(platform.kv.get('noteapp.collapsed') ?? 'null');
     if (old && typeof old === 'object') base.collapsed = old;

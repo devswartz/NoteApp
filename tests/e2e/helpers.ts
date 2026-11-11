@@ -142,12 +142,12 @@ export async function addInlineTask(page: Page, title: string) {
   await input.press('Enter'); // commit + new empty task
   await expect(page.locator('.task-ref-title:focus')).toHaveValue('');
   await page.keyboard.press('Enter'); // empty task + Enter = leave task mode
-  return page.locator('.task-ref', { has: page.locator(`.task-ref-title[value="${title.replace(/"/g, '\\"')}"]`) });
+  return page.locator('.task-ref', { has: page.locator(`.task-ref-title[data-value="${title.replace(/"/g, '\\"')}"]`) });
 }
 
 /** A task-ref node in the note by (exact) title. */
 export function taskRef(page: Page, title: string) {
-  return page.locator('.task-ref').filter({ has: page.locator('.task-ref-title').and(page.locator(`[value="${title.replace(/"/g, '\\"')}"]`)) });
+  return page.locator('.task-ref').filter({ has: page.locator('.task-ref-title').and(page.locator(`[data-value="${title.replace(/"/g, '\\"')}"]`)) });
 }
 
 /** A dashboard row by title. */

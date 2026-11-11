@@ -2,6 +2,12 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.2.1
+
+### Fixes
+- More room for notes: the Notes panels are narrower by default, the pages list folds into the sections tree on windows under 1400px wide, and hiding the panels (rail button or Ctrl+\) is remembered. (#133)
+- Long task titles in notes wrap onto more lines instead of being cut off. (#133)
+
 ## v0.2.0
 
 The first round of tester feedback.

@@ -57,7 +57,7 @@ test('save a page with a task and an attachment as a template, make new pages fr
   await mine.locator('.template-card', { hasText: 'Quarterly kit' }).click();
   await expect(editor2).toContainText('Quarterly plan intro');
   await expect(editor2).toContainText('plan.txt');
-  const copyTitle = editor2.locator('.task-ref-title[value="Write the plan"]');
+  const copyTitle = editor2.locator('.task-ref-title[data-value="Write the plan"]');
   await expect(copyTitle).toBeVisible();
   await expect(page.locator('.template-picker')).toHaveCount(0);
 

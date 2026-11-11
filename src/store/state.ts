@@ -3,6 +3,7 @@
 // its own state should create its own small zustand store in its own files
 // rather than growing this one.
 import { create } from 'zustand';
+import { platform } from '../platform/index.ts';
 import type { Member, PendingInvite, Tag, Task, Team, Tree, User, Workspace } from '../../shared/types.ts';
 
 export interface Toast {
@@ -49,6 +50,15 @@ export interface State {
 
 export const emptyTree: Tree = { notebooks: [], sections: [], pages: [] };
 
+/** Desktop and tablet remember whether the side panels were hidden; phones always start with the drawer closed. */
+export const SIDEBAR_KEY = 'noteapp.sidebarOpen';
+function initialSidebarOpen(): boolean {
+  if (typeof window === 'undefined') return true;
+  if (window.innerWidth <= 760) return false;
+  const saved = platform.kv.get(SIDEBAR_KEY);
+  return saved === null ? window.innerWidth >= 900 : saved === '1';
+}
+
 export const useStore = create<State>(() => ({
   user: null,
   workspaces: [],
@@ -63,7 +73,7 @@ export const useStore = create<State>(() => ({
   teams: [],
   lingering: {},
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
-  sidebarOpen: typeof window === 'undefined' ? true : window.innerWidth >= 900,
+  sidebarOpen: initialSidebarOpen(),
   paletteOpen: false,
   quickAdd: null,
   taskDetailId: null,
