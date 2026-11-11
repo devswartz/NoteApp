@@ -1,6 +1,6 @@
 // Priority 2 — the core promise: a task written in a note is a real task, in sync with the dashboard both ways.
 import { expect, test } from '@playwright/test';
-import { addInlineTask, createPage, createUser, eventually, listTasks, openPage, pageUrl, signInContext, taskRef, taskRow, tasksUrl } from './helpers.ts';
+import { addInlineTask, createPage, createUser, eventually, listTasks, openPage, pageUrl, railTo, signInContext, taskRef, taskRow, tasksUrl } from './helpers.ts';
 
 test.describe('inline tasks ↔ dashboard', () => {
   test('an inline task shows up in Today and My Tasks, linked to its note', async ({ page, context, request }) => {
@@ -21,7 +21,7 @@ test.describe('inline tasks ↔ dashboard', () => {
       'task linked to its source page',
     );
 
-    await page.getByRole('link', { name: 'Today' }).click();
+    await railTo(page, 'Tasks');
     await expect(page).toHaveURL(new RegExp(tasksUrl(user.wsId, 'today')));
     const row = taskRow(page, 'Email the venue');
     await expect(row).toBeVisible();
@@ -62,6 +62,7 @@ test.describe('inline tasks ↔ dashboard', () => {
     // Note → dashboard
     await taskRef(page, 'Pack bags').getByRole('checkbox', { name: 'Complete task' }).click();
     await expect(taskRef(page, 'Pack bags')).toHaveClass(/is-done/);
+    await railTo(page, 'Tasks');
     await page.getByRole('link', { name: 'Completed' }).click();
     await expect(taskRow(page, 'Pack bags')).toBeVisible();
     await expect(taskRow(page, 'Book flights')).toBeVisible();

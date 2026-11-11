@@ -160,6 +160,19 @@ export async function eventually<T>(fn: () => Promise<T>, check: (v: T) => boole
   await expect.poll(async () => check(await fn()), { message, timeout }).toBe(true);
 }
 
+/** Switches the desktop rail to a view (Notes, Tasks or Calendar). */
+export async function railTo(page: Page, view: 'Notes' | 'Tasks' | 'Calendar') {
+  await page.getByRole('navigation', { name: 'Views' }).getByRole('button', { name: view, exact: true }).click();
+}
+
+/** Opens the Notes panel's notebook picker (my notebooks, then "Shared with me") and returns its menu. */
+export async function openNotebookPicker(page: Page) {
+  await page.locator('.nb-picker-btn').click();
+  const menu = page.locator('.nb-menu');
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 /** YYYY-MM-DD in UTC (the suite runs the browser in UTC). */
 export function isoDay(offsetDays = 0) {
   const d = new Date();
