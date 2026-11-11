@@ -1135,6 +1135,10 @@ body.is-resizing .sidebar { transition: none; }
 .task-ref-title::placeholder { color: var(--text-muted); opacity: 0.7; }
 .task-ref.is-done .task-ref-title { text-decoration: line-through; color: var(--text-muted); }
 .task-ref-meta { display: flex; align-items: center; gap: 4px; flex: none; }
+/* The row is top-aligned (long titles wrap), so centre the circle and chips on the title's
+   first line: 2px padding + half of a 24px line = 14px down. */
+.task-ref-inner > .task-check { margin-top: 5px; }
+.task-ref-inner > .task-ref-meta { margin-top: 2px; }
 .task-ref:hover .chip-empty, .task-ref:focus-within .chip-empty,
 .task-ref:hover .avatar-btn-empty, .task-ref:focus-within .avatar-btn-empty { opacity: 1; }
 .task-ref-open { width: 24px; height: 24px; opacity: 0; }
