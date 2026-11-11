@@ -6,7 +6,7 @@ import { nextRegion } from '../src/components/shell/useF6Regions.ts';
 import type { Tree } from '../shared/types.ts';
 
 const nb = (id: string, createdBy: string, position: number) => ({ id, workspaceId: 'w', name: id, color: '#000', visibility: 'shared' as const, createdBy, position });
-const sec = (id: string, notebookId: string, position: number, parentId?: string) => ({ id, notebookId, name: id, color: '#000', position, ...(parentId ? { parentId } : {}) });
+const sec = (id: string, notebookId: string, position: number, parentId?: string) => ({ id, notebookId, name: id, color: '#000', position, parentId: parentId ?? null });
 const page = (id: string, sectionId: string) => ({ id, sectionId, title: id, icon: null, kind: 'document' as const, position: 1, updatedAt: '', updatedBy: null });
 const tree: Tree = {
   notebooks: [nb('theirs', 'u2', 0), nb('mine', 'me', 1)],
