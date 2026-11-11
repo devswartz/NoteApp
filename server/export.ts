@@ -64,6 +64,19 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     db.prepare('SELECT id, section_id, title, icon, kind, position, ydoc, created_by, created_at, updated_at FROM pages ORDER BY position').all() as Row[]
   ).filter((pg) => secIds.has(pg.section_id));
   const tasks = db.prepare(`SELECT t.* FROM tasks t WHERE t.workspace_id = @workspaceId AND ${TASK_VISIBLE}`).all(p) as Row[];
+  // Tags, teams and the exporter's own and shared saved views (migration 014).
+  const tags = db.prepare('SELECT id, name, color FROM tags WHERE workspace_id = ? ORDER BY name').all(workspaceId) as Row[];
+  const exportedTasks = new Set(tasks.map((t) => t.id));
+  const taskTags = (db.prepare('SELECT tt.task_id, tt.tag_id FROM task_tags tt JOIN tags g ON g.id = tt.tag_id WHERE g.workspace_id = ?').all(workspaceId) as Row[]).filter(
+    (x) => exportedTasks.has(x.task_id),
+  );
+  const teams = (db.prepare('SELECT id, parent_id, name, color, position FROM teams WHERE workspace_id = ? ORDER BY position').all(workspaceId) as Row[]).map((t) => ({
+    ...t,
+    member_ids: (db.prepare('SELECT user_id FROM team_members WHERE team_id = ?').all(t.id) as Row[]).map((x) => x.user_id),
+  }));
+  const taskViews = (
+    db.prepare('SELECT id, owner_id, shared, name, query, position FROM task_views WHERE workspace_id = ? AND (owner_id = ? OR shared = 1) ORDER BY position').all(workspaceId, userId) as Row[]
+  ).map((v) => ({ ...v, query: JSON.parse(v.query) }));
   const pageIds = new Set(pages.map((pg) => pg.id));
   // Templates: the workspace-wide ones and the exporter's own private ones (same rule as GET /workspaces/:id/templates).
   const templates = db
@@ -110,6 +123,10 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     sections,
     pages: pages.map(({ ydoc, ...pg }) => ({ ...pg, ydoc: ydoc ? Buffer.from(ydoc).toString('base64') : null })),
     tasks,
+    tags,
+    taskTags,
+    teams,
+    taskViews,
     files,
     templates: templates.map(({ content, tasks: snaps, ...t }) => ({ ...t, content: JSON.parse(content), tasks: JSON.parse(snaps) })),
   };
@@ -172,6 +189,10 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
   const tasks = list(m.tasks, 'tasks');
   const files = list(m.files, 'files');
   const templates = list(m.templates, 'templates');
+  const tags = list(m.tags, 'tags');
+  const taskTags = list(m.taskTags, 'taskTags');
+  const teams = list(m.teams, 'teams');
+  const taskViews = list(m.taskViews, 'taskViews');
 
   const me = db.prepare('SELECT id, email FROM users WHERE id = ?').get(userId) as { id: string; email: string };
   const exportedIdsForMe = new Set(members.filter((x) => typeof x.email === 'string' && x.email.toLowerCase() === me.email.toLowerCase()).map((x) => x.id));
@@ -209,6 +230,8 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
   // Tasks first get their new ids so page documents can be rewritten.
   for (const t of tasks) fresh(t.id);
   for (const p of pages) fresh(p.id);
+  const teamIds = new Set(teams.map((t) => String(t.id)));
+  for (const t of teams) fresh(t.id);
 
   const written: string[] = [];
   try {
@@ -261,20 +284,59 @@ export async function importWorkspace(zip: Buffer, userId: string): Promise<{ wo
       }
       const pageOf = (old: unknown) => (typeof old === 'string' && importedPages.has(old) ? map.get(old)! : null);
 
+      // Teams (subteams one level deep) and tags, before the tasks that point at them.
+      const teamOf = (old: unknown) => (typeof old === 'string' && teamIds.has(old) ? map.get(old)! : null);
+      const topLevel = new Set(teams.filter((t) => !teamIds.has(String(t.parent_id))).map((t) => String(t.id)));
+      for (const t of [...teams].sort((a, b) => Number(topLevel.has(String(b.id))) - Number(topLevel.has(String(a.id))))) {
+        const parent = topLevel.has(String(t.id)) ? null : topLevel.has(String(t.parent_id)) ? teamOf(t.parent_id) : null;
+        db.prepare('INSERT INTO teams (id, workspace_id, parent_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+          map.get(String(t.id)), workspaceId, parent, text(t.name, 60) || 'Team', color(t.color), Number(t.position) || 0, ts,
+        );
+        if (Array.isArray(t.member_ids) && t.member_ids.some((u: unknown) => person(u)))
+          db.prepare('INSERT INTO team_members (team_id, user_id) VALUES (?, ?)').run(map.get(String(t.id)), userId);
+      }
+      const tagIds = new Map<string, string>();
+      const addTag = db.prepare('INSERT OR IGNORE INTO tags (id, workspace_id, name, color, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)');
+      for (const g of tags.slice(0, 500)) {
+        const name = text(g.name, 40).trim();
+        if (!name || typeof g.id !== 'string') continue;
+        const id = newId();
+        if (addTag.run(id, workspaceId, name, color(g.color), userId, ts).changes) tagIds.set(g.id, id);
+        else tagIds.set(g.id, (db.prepare('SELECT id FROM tags WHERE workspace_id = ? AND name = ?').get(workspaceId, name) as Row).id);
+      }
+
       // Tasks: rows first, then the links between them (subtasks, recurring history), so the order in the file doesn't matter.
       const taskIds = new Set(tasks.map((t) => String(t.id)));
       for (const t of tasks) {
         const done = t.status === 'done';
         db.prepare(
           `INSERT INTO tasks (id, workspace_id, title, description, status, priority, due_date, due_time, recurrence, reminder_at,
-             assignee_id, created_by, page_id, completed_at, completed_by, created_at, updated_at, private_owner_only)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             assignee_id, created_by, page_id, completed_at, completed_by, created_at, updated_at, private_owner_only, team_id, assigned_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           map.get(String(t.id)), workspaceId, text(t.title, 500), text(t.description, MAX_TEXT), done ? 'done' : 'open',
           PRIORITIES.includes(t.priority) ? t.priority : 4, dateOrNull(t.due_date), timeOrNull(t.due_time),
           recurrence(t.recurrence), t.reminder_at ? isoOr(t.reminder_at, ts) : null,
           person(t.assignee_id), userId, pageOf(t.page_id), done ? isoOr(t.completed_at, ts) : null, done ? userId : null, isoOr(t.created_at, ts), ts,
-          t.private_owner_only ? 1 : 0,
+          t.private_owner_only ? 1 : 0, teamOf(t.team_id), person(t.assignee_id) ? person(t.assigned_by) : null,
+        );
+      }
+      const tagTask = db.prepare('INSERT OR IGNORE INTO task_tags (task_id, tag_id) VALUES (?, ?)');
+      for (const x of taskTags) {
+        const task = taskIds.has(String(x.task_id)) ? map.get(String(x.task_id)) : undefined;
+        const tag = typeof x.tag_id === 'string' ? tagIds.get(x.tag_id) : undefined;
+        if (task && tag) tagTask.run(task, tag);
+      }
+      // Saved views: the importer's own and shared ones, all owned by the importer now; ids inside the filters are rewritten.
+      const remap = (v: unknown): unknown =>
+        typeof v === 'string' ? (map.get(v) ?? tagIds.get(v) ?? v) : Array.isArray(v) ? v.map(remap) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, remap(x)])) : v;
+      for (const [i, v] of taskViews.slice(0, 200).entries()) {
+        const q = v.query;
+        if (!q || typeof q !== 'object' || !q.filters || typeof q.filters !== 'object' || typeof q.sort !== 'string' || typeof q.group !== 'string') continue;
+        const query = JSON.stringify({ filters: remap(q.filters), sort: q.sort.slice(0, 20), group: q.group.slice(0, 20) });
+        if (query.length > 8192) continue;
+        db.prepare('INSERT INTO task_views (id, workspace_id, owner_id, shared, name, query, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+          newId(), workspaceId, userId, v.shared ? 1 : 0, text(v.name, 60) || 'View', query, Number(v.position) || i, ts,
         );
       }
       const link = db.prepare('UPDATE tasks SET parent_id = ?, occurrence_of = ? WHERE id = ?');
