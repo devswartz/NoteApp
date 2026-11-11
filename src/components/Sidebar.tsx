@@ -61,7 +61,7 @@ export function Sidebar() {
     if (view === 'notes' && sel.notebookId) sidebar.selectNotes(wsId, sel.notebookId, sel.sectionId ?? undefined, sel.pageId ?? undefined);
   }, [view, wsId, sel.notebookId, sel.sectionId, sel.pageId]);
 
-  const createPage = async (sectionId: string, kind: PageKind = 'document') => {
+  const createPage = async (sectionId: string, kind: PageKind = 'canvas') => {
     try {
       const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '', kind });
       sidebar.toggleNode(sectionId, false);

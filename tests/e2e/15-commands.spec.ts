@@ -34,10 +34,10 @@ test('palette runs commands; "g" shortcuts navigate; "?" lists the shortcuts', a
   await page.keyboard.press('Escape');
   await expect(help).toHaveCount(0);
 
-  // "N" creates a page and opens it.
+  // "N" creates a page (a canvas) and opens it.
   await page.keyboard.press('n');
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
-  await expect(page.locator('.ProseMirror')).toBeVisible();
+  await expect(page.getByTestId('canvas-surface')).toBeVisible();
 
   // Palette → theme switch command (preference starts at "system"; with a dark OS, the next step "light" is visible).
   await page.emulateMedia({ colorScheme: 'dark' });

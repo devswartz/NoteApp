@@ -1,6 +1,8 @@
 // Starting structures for a new notebook: sections and (empty) pages. Page
 // content comes from the Editor's page templates: an empty page shows its
 // "Start with a template" picker, so the user fills each page in one click.
+// Pages are canvases like any new page (the picker offers the canvas versions);
+// long-form pages such as specs are documents.
 // Pure data, unit-tested in tests/notebookTemplates.test.ts.
 
 export interface NotebookTemplate {
@@ -12,7 +14,8 @@ export interface NotebookTemplate {
   icon: string;
   color: string;
   /** The first section replaces the "General" section every notebook starts with. */
-  sections: { name: string; color?: string; pages: { title: string; icon?: string }[] }[];
+  /** Pages are canvases unless `kind` says otherwise (like "New page"). */
+  sections: { name: string; color?: string; pages: { title: string; icon?: string; kind?: 'canvas' | 'document' }[] }[];
 }
 
 export const NOTEBOOK_TEMPLATES: NotebookTemplate[] = [
@@ -47,7 +50,7 @@ export const NOTEBOOK_TEMPLATES: NotebookTemplate[] = [
     color: '#6366f1',
     sections: [
       { name: 'Planning', color: '#6366f1', pages: [{ title: 'Project brief', icon: '🎯' }, { title: 'Meeting notes', icon: '🤝' }] },
-      { name: 'Docs', color: '#0ea5e9', pages: [{ title: 'Specs', icon: '📐' }] },
+      { name: 'Docs', color: '#0ea5e9', pages: [{ title: 'Specs', icon: '📐', kind: 'document' }] },
       { name: 'Retros', color: '#ec4899', pages: [{ title: 'Retro', icon: '🔁' }] },
     ],
   },

@@ -164,7 +164,7 @@ export interface Section {
   position: number;
 }
 
-/** Page kind. Only 'document' exists today; 'canvas' is reserved for freeform pages. */
+/** Page kind: one flowing 'document', or a 'canvas' of text boxes placed anywhere (docs/PLAN_CANVAS.md). */
 export type PageKind = 'document' | 'canvas';
 
 export interface PageMeta {
@@ -303,6 +303,8 @@ export interface TemplateMeta {
   icon: string | null;
   /** 'private': saved from a private notebook, visible to its creator only. */
   visibility: 'workspace' | 'private';
+  /** The kind of page it makes (the kind it was saved from). A canvas template's content is canvasBox nodes. */
+  kind: PageKind;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -323,6 +325,7 @@ export interface TemplateMeta {
 export interface TemplateUse {
   title: string;
   icon: string | null;
+  kind: PageKind;
   /** TipTap JSON doc: taskRef nodes point at newly created tasks, attachments at new file copies. */
   content: unknown;
   taskIds: string[];

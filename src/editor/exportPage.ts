@@ -6,6 +6,7 @@ import { errorToast, toast, useStore } from '../store.ts';
 import { platform } from '../platform/index.ts';
 import { fileName, liftInlineImages, splitTitle } from './markdownUtils.ts';
 import { sanitizeContent } from './urls.ts';
+import { canvasMarkdownBody, withHeadlessEditor, type CanvasHandle } from './canvasDoc.ts';
 
 /**
  * Hand a generated file to the user. The platform adapter has no "save file" yet,
@@ -34,10 +35,18 @@ export function pageMarkdown(editor: Editor, title: string, icon: string | null)
   return `${heading}\n\n${body.trim()}\n`;
 }
 
-export async function exportMarkdown(editor: Editor, pageId: string) {
+/** A canvas page as Markdown: its boxes in reading order, one after the other. */
+export function canvasMarkdown(canvas: CanvasHandle, title: string, icon: string | null) {
+  const heading = `# ${icon ? `${icon} ` : ''}${title || 'Untitled'}`;
+  return `${heading}\n\n${canvasMarkdownBody(canvas.pageId, canvas.doc)}\n`;
+}
+
+/** Export the page (a document editor's content, or a canvas's boxes) as a .md file. */
+export async function exportMarkdown(source: Editor | CanvasHandle, pageId: string) {
   const meta = useStore.getState().tree.pages.find((p) => p.id === pageId);
   const title = meta?.title || 'Untitled';
-  await saveFile(fileName(title, 'md'), pageMarkdown(editor, title, meta?.icon ?? null), 'text/markdown;charset=utf-8');
+  const md = 'addBox' in source ? canvasMarkdown(source, title, meta?.icon ?? null) : pageMarkdown(source, title, meta?.icon ?? null);
+  await saveFile(fileName(title, 'md'), md, 'text/markdown;charset=utf-8');
 }
 
 /** Print the page alone (the print stylesheet hides the app around it); "Save as PDF" in the dialog. */
@@ -52,8 +61,11 @@ export function printPage(title: string) {
   window.print();
 }
 
-/** Pick .md files and append them to the page (the first file's "# Title" names an untitled page). */
-export async function importMarkdown(editor: Editor, pageId: string) {
+/**
+ * Pick .md files and append them to the page (the first file's "# Title" names an untitled page).
+ * On a canvas, each file becomes a new text box under the others.
+ */
+export async function importMarkdown(target: Editor | CanvasHandle, pageId: string) {
   const files = await platform.pickFiles({ accept: '.md,.markdown,.txt,text/markdown,text/plain', multiple: true });
   for (const [i, file] of files.entries()) {
     try {
@@ -64,6 +76,14 @@ export async function importMarkdown(editor: Editor, pageId: string) {
         patch(`/pages/${pageId}`, { title }).catch(errorToast);
       }
       const md = i === 0 && title && !meta?.title ? body : title ? `## ${title}\n\n${body}` : body;
+      if ('addBox' in target) {
+        const doc = withHeadlessEditor(pageId, (e) => (e.markdown ? liftInlineImages(sanitizeContent(e.markdown.parse(md))) : null));
+        if (!doc) return;
+        target.addBox(doc.content ?? []);
+        toast(`Imported ${file.name}`);
+        continue;
+      }
+      const editor = target;
       if (editor.isDestroyed || !editor.markdown) return;
       // Parse first, then drop javascript:/data: links and images before anything enters the document.
       const doc = liftInlineImages(sanitizeContent(editor.markdown.parse(md)));

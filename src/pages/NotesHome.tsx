@@ -15,11 +15,13 @@ import { byPos } from '../components/shell/treePosition.ts';
 import { sortPages } from '../components/shell/NotesPanel.tsx';
 import { useSidebar } from '../components/shell/sidebarState.ts';
 import { SharedWithMe } from '../components/sharing/SharedWithMe.tsx';
+import { PageKindIcon } from '../components/PageKindIcon.tsx';
 
 function useCreatePage(wsId: string) {
   const navigate = useNavigate();
-  return (sectionId: string) =>
-    post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' })
+  // New pages are canvases; "New document page" makes one flowing document.
+  return (sectionId: string, kind: 'canvas' | 'document' = 'canvas') =>
+    post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '', kind })
       .then(({ id }) => navigate(`/w/${wsId}/p/${id}`))
       .catch(errorToast);
 }
@@ -139,7 +141,7 @@ function SectionLink({ wsId, section }: { wsId: string; section: Section }) {
 function PageLink({ wsId, page, icon }: { wsId: string; page: PageMeta; icon?: React.ReactNode }) {
   return (
     <Link to={`/w/${wsId}/p/${page.id}`} className="drill-row">
-      {icon ?? (page.icon ? <span className="page-emoji">{page.icon}</span> : <FileText size={15} className="muted" />)}
+      {icon ?? (page.icon ? <span className="page-emoji">{page.icon}</span> : <PageKindIcon kind={page.kind} size={15} className="muted" />)}
       <span className="truncate grow">{page.title || 'Untitled'}</span>
       <span className="muted small">{relativeTime(page.updatedAt)}</span>
     </Link>
@@ -181,6 +183,11 @@ function SectionScreen({ wsId, section }: { wsId: string; section: Section }) {
         ))}
         {!pages.length && <p className="muted">No pages in this section yet.</p>}
       </section>
+      {canEdit && (
+        <button className="btn btn-ghost btn-sm drill-new-doc" onClick={() => createPage(section.id, 'document')}>
+          <FileText size={15} /> New document page
+        </button>
+      )}
     </Screen>
   );
 }
@@ -194,9 +201,14 @@ function EmptySection({ wsId, section }: { wsId: string; section: Section }) {
       <h1>{section.name}</h1>
       <p className="muted">This section has no pages yet.</p>
       {canEdit && (
-        <button className="btn btn-primary" onClick={() => createPage(section.id)}>
-          <FilePlus size={15} /> New page
-        </button>
+        <div className="empty-section-actions">
+          <button className="btn btn-primary" onClick={() => createPage(section.id)}>
+            <FilePlus size={15} /> New page
+          </button>
+          <button className="btn btn-secondary" onClick={() => createPage(section.id, 'document')}>
+            <FileText size={15} /> New document page
+          </button>
+        </div>
       )}
     </div>
   );
@@ -217,7 +229,7 @@ function Overview({ wsId }: { wsId: string }) {
             <div className="recent-grid">
               {recent.map((p) => (
                 <Link key={p.id} to={`/w/${wsId}/p/${p.id}`} className="recent-card">
-                  {p.icon ? <span className="page-emoji">{p.icon}</span> : <FileText size={18} className="muted" />}
+                  {p.icon ? <span className="page-emoji">{p.icon}</span> : <PageKindIcon kind={p.kind} size={18} className="muted" />}
                   <strong className="truncate">{p.title || 'Untitled'}</strong>
                   <span className="muted small">{relativeTime(p.updatedAt)}</span>
                 </Link>
@@ -244,7 +256,7 @@ function Overview({ wsId }: { wsId: string }) {
                     .sort(byPos)
                     .map((p) => (
                       <Link key={p.id} to={`/w/${wsId}/p/${p.id}`} className="notes-page-row">
-                        {p.icon ? <span className="page-emoji page-emoji-sm">{p.icon}</span> : <FileText size={15} className="muted" />}
+                        {p.icon ? <span className="page-emoji page-emoji-sm">{p.icon}</span> : <PageKindIcon kind={p.kind} size={15} className="muted" />}
                         <span className="truncate grow">{p.title || 'Untitled'}</span>
                         <span className="muted small">{relativeTime(p.updatedAt)}</span>
                       </Link>

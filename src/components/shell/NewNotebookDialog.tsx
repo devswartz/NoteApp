@@ -27,7 +27,7 @@ export async function createNotebookFromTemplate(wsId: string, name: string, t: 
       sectionId = (await post<{ id: string }>(`/notebooks/${nb.id}/sections`, { name: sec.name, color: sec.color })).id;
     }
     for (const pg of sec.pages) {
-      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: pg.title });
+      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: pg.title, kind: pg.kind ?? 'canvas' });
       if (pg.icon) await patch(`/pages/${id}`, { icon: pg.icon });
       firstPage ??= id;
     }

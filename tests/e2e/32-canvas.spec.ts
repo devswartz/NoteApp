@@ -49,10 +49,10 @@ test('canvas page: click to make boxes, type, move one; it all persists; a task 
   await page.goto(pageUrl(user.wsId, docId));
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
 
-  // "New canvas page" from the section's menu, next to "New page".
+  // "New page" from the section's menu makes a canvas ("New document page" sits next to it).
   const sidebarTree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Sections' });
   await sidebarTree.getByText('General', { exact: true }).click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'New canvas page' }).click();
+  await page.getByRole('menuitem', { name: 'New page', exact: true }).click();
   await expect(page).not.toHaveURL(new RegExp(docId));
   const canvasId = page.url().split('/p/')[1]!.split(/[?#]/)[0]!;
   await openCanvas(page, user.wsId, canvasId);

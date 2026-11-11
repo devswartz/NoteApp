@@ -63,3 +63,89 @@ export function observePageContent(doc: Y.Doc, fn: (events: Y.YEvent<Y.AbstractT
   doc.on('afterTransaction', handler);
   return () => doc.off('afterTransaction', handler);
 }
+
+/** Width given to the one box a document becomes (roughly a document's text column). */
+export const CONVERTED_BOX_W = 720;
+
+/** True when a fragment holds nothing a reader would see: no nodes, or only empty paragraphs. */
+export function fragmentIsEmpty(frag: Y.XmlFragment): boolean {
+  return frag
+    .toArray()
+    .every((n) => n instanceof Y.XmlElement && n.nodeName === 'paragraph' && n.toArray().every((c) => c instanceof Y.XmlText && c.length === 0));
+}
+
+const cloneContent = (frag: Y.XmlFragment) => frag.toArray().map((n) => (n as Y.XmlElement | Y.XmlText).clone());
+
+function newBoxMap(g: Omit<BoxGeom, 'id'>): Y.Map<unknown> {
+  const m = new Y.Map<unknown>();
+  m.set('x', g.x);
+  m.set('y', g.y);
+  m.set('w', g.w);
+  m.set('z', g.z);
+  return m;
+}
+
+/**
+ * Turn a page's content into the layout of `kind`, in one transaction (lossless: nodes are
+ * copied with their attributes and marks, so tasks, mentions and comments stay put):
+ *   canvas:   the `default` content becomes one box at the top left (nothing if it's empty);
+ *   document: every non-empty box, in reading order, is appended to `default`; boxes go away.
+ * Returns the id of the box created (canvas), if any.
+ */
+export function convertPageDoc(doc: Y.Doc, kind: 'canvas' | 'document', newBoxId: () => string, origin: unknown = null): string | null {
+  let created: string | null = null;
+  doc.transact(() => {
+    const def = doc.getXmlFragment(DEFAULT_FIELD);
+    const boxes = doc.getMap<unknown>(BOXES_KEY);
+    if (kind === 'canvas') {
+      if (fragmentIsEmpty(def)) {
+        if (def.length) def.delete(0, def.length);
+        return;
+      }
+      const id = newBoxId();
+      const z = boxGeoms(doc).reduce((m, b) => Math.max(m, b.z), 0) + 1;
+      doc.getXmlFragment(boxField(id)).insert(0, cloneContent(def));
+      boxes.set(id, newBoxMap({ x: 0, y: 0, w: CONVERTED_BOX_W, z }));
+      def.delete(0, def.length);
+      created = id;
+    } else {
+      if (fragmentIsEmpty(def) && def.length) def.delete(0, def.length);
+      for (const b of readingOrder(boxGeoms(doc))) {
+        const frag = doc.getXmlFragment(boxField(b.id));
+        if (!fragmentIsEmpty(frag)) def.insert(def.length, cloneContent(frag));
+        if (frag.length) frag.delete(0, frag.length);
+        boxes.delete(b.id);
+      }
+    }
+  }, origin);
+  return created;
+}
+
+/**
+ * Replace all of `target`'s content (default and boxes) with a copy of `source`'s, in one
+ * transaction, then lay it out as `kind` (e.g. restoring a document version on a page that
+ * is a canvas now). Box ids are kept, so a restore looks the same to everyone.
+ */
+export function replacePageContent(target: Y.Doc, source: Y.Doc, kind: 'canvas' | 'document', newBoxId: () => string, origin: unknown = null) {
+  target.transact(() => {
+    const def = target.getXmlFragment(DEFAULT_FIELD);
+    const boxes = target.getMap<unknown>(BOXES_KEY);
+    if (def.length) def.delete(0, def.length);
+    for (const b of boxGeoms(target)) {
+      const f = target.getXmlFragment(boxField(b.id));
+      if (f.length) f.delete(0, f.length);
+      boxes.delete(b.id);
+    }
+    def.insert(0, cloneContent(source.getXmlFragment(DEFAULT_FIELD)));
+    for (const b of boxGeoms(source)) {
+      const f = target.getXmlFragment(boxField(b.id));
+      if (f.length) f.delete(0, f.length);
+      f.insert(0, cloneContent(source.getXmlFragment(boxField(b.id))));
+      boxes.set(b.id, newBoxMap(b));
+    }
+    convertPageDoc(target, kind, newBoxId);
+  }, origin);
+}
+
+/** The layout a doc's content is in: canvas if it has boxes, else document. */
+export const docKind = (doc: Y.Doc): 'canvas' | 'document' => (doc.getMap(BOXES_KEY).size > 0 ? 'canvas' : 'document');
