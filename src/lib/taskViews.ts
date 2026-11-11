@@ -1,6 +1,6 @@
 // Pure functions that derive dashboard views from the task map.
 import { addDays, today } from '../../shared/dates.ts';
-import type { Task, Tree } from '../../shared/types.ts';
+import type { Task, Team, Tree } from '../../shared/types.ts';
 import { describeDue, longDate } from './format.ts';
 
 export type ViewId = 'today' | 'my' | 'upcoming' | 'team' | 'all' | 'calendar' | 'completed';
@@ -22,6 +22,8 @@ export interface Group {
   /** Due date the group represents — used when adding a task inside it. */
   dueDate?: string | null;
   assigneeId?: string | null;
+  /** Team the group represents (group by team): new tasks added inside it get this team. */
+  teamId?: string | null;
   tasks: Task[];
 }
 
@@ -43,7 +45,7 @@ export function sortTasks(list: Task[], by: SortKey = 'due'): Task[] {
 }
 
 export type SortKey = 'due' | 'priority' | 'created' | 'title';
-export type GroupKey = 'none' | 'due' | 'assignee' | 'note' | 'priority';
+export type GroupKey = 'none' | 'due' | 'assignee' | 'note' | 'priority' | 'team';
 
 /** Open tasks, plus ones completed a moment ago (so the check animation is visible). */
 export function visibleOpen(tasks: Record<string, Task>, lingering: Record<string, true>): Task[] {
@@ -80,7 +82,7 @@ export function groupBy(
   list: Task[],
   key: GroupKey,
   sort: SortKey,
-  ctx: { members: { id: string; name: string }[]; tree: Tree },
+  ctx: { members: { id: string; name: string }[]; tree: Tree; teams?: Team[] },
 ): Group[] {
   const sorted = sortTasks(list, sort);
   if (key === 'none') return [{ key: 'all', label: '', tasks: sorted }];
@@ -106,6 +108,11 @@ export function groupBy(
       case 'priority':
         add(String(t.priority), t.priority === 4 ? 'No priority' : `Priority ${t.priority}`, t);
         break;
+      case 'team': {
+        const team = ctx.teams?.find((x) => x.id === t.teamId);
+        add(team ? `t${String(teamOrder(team, ctx.teams!)).padStart(5, '0')}` : '~', team ? teamLabel(team, ctx.teams!) : 'No team', t, { teamId: team?.id ?? null });
+        break;
+      }
       case 'note': {
         const page = ctx.tree.pages.find((p) => p.id === t.pageId);
         add(page ? `p${page.title}${page.id}` : '~', page ? page.title || 'Untitled' : 'Not in a note', t);
@@ -123,27 +130,126 @@ function groupKeyRank(k: string) {
 
 export interface Filters {
   q: string;
-  assignee: 'any' | 'me' | 'unassigned' | string;
+  /** me (assigned to me, or my unassigned to-dos), unassigned, others (assigned to someone who isn't me), or a user id. */
+  assignee: 'any' | 'me' | 'unassigned' | 'others' | string;
+  /** Who set the assignee: me or a user id. */
+  assignedBy: 'any' | 'me' | string;
   priority: 'any' | '1' | '2' | '3' | '4';
   due: 'any' | 'overdue' | 'today' | 'week' | 'none';
   source: 'any' | 'notes' | 'standalone';
   notebookId: 'any' | string;
+  /** A section (and, once sections nest, its subsections). */
+  sectionId: 'any' | string;
+  /** The task's own team ('none' = no team); with includeSubteams, a parent team also matches its subteams' tasks. */
+  teamId: 'any' | 'none' | string;
+  includeSubteams: boolean;
+  /** Has any of these tags (OR). */
+  tagsAny: string[];
+  /** Has none of these tags. */
+  tagsNone: string[];
   status: 'open' | 'done' | 'any';
 }
 
-export const DEFAULT_FILTERS: Filters = { q: '', assignee: 'any', priority: 'any', due: 'any', source: 'any', notebookId: 'any', status: 'open' };
+export const DEFAULT_FILTERS: Filters = {
+  q: '',
+  assignee: 'any',
+  assignedBy: 'any',
+  priority: 'any',
+  due: 'any',
+  source: 'any',
+  notebookId: 'any',
+  sectionId: 'any',
+  teamId: 'any',
+  includeSubteams: true,
+  tagsAny: [],
+  tagsNone: [],
+  status: 'open',
+};
 
-export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree): Task[] {
+const ENUMS: Partial<Record<keyof Filters, string[]>> = {
+  priority: ['any', '1', '2', '3', '4'],
+  due: ['any', 'overdue', 'today', 'week', 'none'],
+  source: ['any', 'notes', 'standalone'],
+  status: ['open', 'done', 'any'],
+};
+
+/** Filters from untrusted JSON (saved views, old device storage): unknown fields dropped, bad values defaulted. */
+export function normalizeFilters(raw: unknown): Filters {
+  const f: Record<string, unknown> = { ...DEFAULT_FILTERS, tagsAny: [], tagsNone: [] };
+  if (!raw || typeof raw !== 'object') return f as unknown as Filters;
+  const r = raw as Record<string, unknown>;
+  for (const k of Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]) {
+    const v = r[k];
+    const def = DEFAULT_FILTERS[k];
+    if (Array.isArray(def)) {
+      if (Array.isArray(v)) f[k] = v.filter((x) => typeof x === 'string').slice(0, 50);
+    } else if (typeof def === 'boolean') {
+      if (typeof v === 'boolean') f[k] = v;
+    } else if (typeof v === 'string' && v.length <= 200 && (!ENUMS[k] || ENUMS[k]!.includes(v))) {
+      f[k] = v;
+    }
+  }
+  return f as unknown as Filters;
+}
+
+/** Same conditions? (Array order doesn't matter.) */
+export function sameFilters(a: Filters, b: Filters): boolean {
+  return (Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]).every((k) => {
+    const x = a[k];
+    const y = b[k];
+    if (Array.isArray(x) && Array.isArray(y)) return x.length === y.length && x.every((v) => y.includes(v));
+    return x === y;
+  });
+}
+
+/** The filter fields that differ from the defaults (search text and status excluded: they have their own controls). */
+export function activeFilterKeys(f: Filters): (keyof Filters)[] {
+  return (Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]).filter((k) => {
+    if (k === 'q' || k === 'status' || k === 'includeSubteams') return false;
+    const v = f[k];
+    return Array.isArray(v) ? v.length > 0 : v !== DEFAULT_FILTERS[k];
+  });
+}
+
+/** The team ids a team filter matches: the team, plus its subteams when includeSubteams is on. */
+export function teamScope(teamId: string, includeSubteams: boolean, teams: Team[]): Set<string> {
+  const ids = new Set([teamId]);
+  if (includeSubteams) for (const t of teams) if (t.parentId === teamId) ids.add(t.id);
+  return ids;
+}
+
+/** A section and everything nested under it (sections may gain a parentId with subsections). */
+function sectionScope(sectionId: string, tree: Tree): Set<string> {
+  const ids = new Set([sectionId]);
+  for (let added = true; added; ) {
+    added = false;
+    for (const s of tree.sections) {
+      const parent = (s as { parentId?: string | null }).parentId;
+      if (parent && ids.has(parent) && !ids.has(s.id)) {
+        ids.add(s.id);
+        added = true;
+      }
+    }
+  }
+  return ids;
+}
+
+export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree, teams: Team[] = []): Task[] {
   const t = today();
   const q = f.q.trim().toLowerCase();
   const sectionNotebook = new Map(tree.sections.map((s) => [s.id, s.notebookId]));
-  const pageNotebook = new Map(tree.pages.map((p) => [p.id, sectionNotebook.get(p.sectionId)]));
+  const pageSection = new Map(tree.pages.map((p) => [p.id, p.sectionId]));
+  const sections = f.sectionId !== 'any' ? sectionScope(f.sectionId, tree) : null;
+  const teamIds = f.teamId !== 'any' && f.teamId !== 'none' ? teamScope(f.teamId, f.includeSubteams, teams) : null;
+  const assignedBy = f.assignedBy === 'me' ? me : f.assignedBy;
   return list.filter((x) => {
     if (f.status !== 'any' && x.status !== f.status) return false;
     if (q && !x.title.toLowerCase().includes(q) && !x.description.toLowerCase().includes(q)) return false;
     if (f.assignee === 'me' && !isMine(x, me)) return false;
     if (f.assignee === 'unassigned' && x.assigneeId) return false;
-    if (!['any', 'me', 'unassigned'].includes(f.assignee) && x.assigneeId !== f.assignee) return false;
+    if (f.assignee === 'others' && (!x.assigneeId || x.assigneeId === me)) return false;
+    if (!['any', 'me', 'unassigned', 'others'].includes(f.assignee) && x.assigneeId !== f.assignee) return false;
+    if (assignedBy !== 'any' && x.assignedBy !== assignedBy) return false;
     if (f.priority !== 'any' && x.priority !== Number(f.priority)) return false;
     if (f.due === 'overdue' && !(x.dueDate && x.dueDate < t)) return false;
     if (f.due === 'today' && !(x.dueDate && x.dueDate <= t)) return false;
@@ -151,9 +257,33 @@ export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree): 
     if (f.due === 'none' && x.dueDate) return false;
     if (f.source === 'notes' && !x.pageId) return false;
     if (f.source === 'standalone' && x.pageId) return false;
-    if (f.notebookId !== 'any' && (!x.pageId || pageNotebook.get(x.pageId) !== f.notebookId)) return false;
+    const section = x.pageId ? pageSection.get(x.pageId) : undefined;
+    if (f.notebookId !== 'any' && (!section || sectionNotebook.get(section) !== f.notebookId)) return false;
+    if (sections && (!section || !sections.has(section))) return false;
+    if (f.teamId === 'none' && x.teamId) return false;
+    if (teamIds && (!x.teamId || !teamIds.has(x.teamId))) return false;
+    const tags = x.tagIds ?? [];
+    if (f.tagsAny.length && !f.tagsAny.some((id) => tags.includes(id))) return false;
+    if (f.tagsNone.length && f.tagsNone.some((id) => tags.includes(id))) return false;
     return true;
   });
+}
+
+/** "Staff › Worship" for a subteam, the name for a team. */
+export function teamLabel(team: Team, teams: Team[]): string {
+  const parent = team.parentId ? teams.find((x) => x.id === team.parentId) : undefined;
+  return parent ? `${parent.name} › ${team.name}` : team.name;
+}
+
+/** Teams in display order: each team followed by its subteams. */
+export function orderedTeams(teams: Team[]): Team[] {
+  const byPos = (a: Team, b: Team) => a.position - b.position || a.name.localeCompare(b.name);
+  const top = teams.filter((t) => !t.parentId || !teams.some((p) => p.id === t.parentId)).sort(byPos);
+  return top.flatMap((t) => [t, ...teams.filter((s) => s.parentId === t.id).sort(byPos)]);
+}
+
+function teamOrder(team: Team, teams: Team[]): number {
+  return orderedTeams(teams).findIndex((t) => t.id === team.id);
 }
 
 export interface MemberStats {

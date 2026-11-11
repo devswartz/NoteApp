@@ -1,6 +1,7 @@
 // Natural-language quick add, e.g.
 //   "Send invoice tomorrow p1 @sam every month"
 // → { title: 'Send invoice', dueDate: <tomorrow>, priority: 1, assignee: 'sam', recurrence: monthly }
+//   "Book the hall #waiting #budget +elders" → tags ['waiting', 'budget'], team 'elders'
 import { addDays, addMonths, parseISODate, toISODate, today } from './dates.ts';
 import type { Priority, Recurrence } from './types.ts';
 import { firstOccurrence, parseRecurrence } from './recurrence.ts';
@@ -13,8 +14,12 @@ export interface QuickAddResult {
   recurrence: Recurrence | null;
   /** Raw mention text after "@" — resolved to a user by the caller. */
   assignee: string | null;
+  /** Raw tag names after "#" (any number) — resolved, or created, by the caller. */
+  tags: string[];
+  /** Raw team text after "+" — resolved to a team by the caller. */
+  team: string | null;
   /** Spans of the input that were recognised, for highlighting. */
-  tokens: { start: number; end: number; kind: 'date' | 'time' | 'priority' | 'recurrence' | 'assignee' }[];
+  tokens: { start: number; end: number; kind: 'date' | 'time' | 'priority' | 'recurrence' | 'assignee' | 'tag' | 'team' }[];
 }
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -182,6 +187,8 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
     priority: null,
     recurrence: null,
     assignee: null,
+    tags: [],
+    team: null,
     tokens: [],
   };
   // Track consumed character ranges so rules don't overlap.
@@ -222,6 +229,26 @@ export function parseQuickAdd(input: string, now = new Date()): QuickAddResult {
       }
       Object.assign(r, snapshot);
     }
+  }
+  // #tag (several allowed; must start with a letter, so "#123" stays text) and +team (the first one).
+  const mark = (start: number, end: number, kind: 'tag' | 'team') => {
+    for (let i = start; i < end; i++) consumed[i] = true;
+    r.tokens.push({ start, end, kind });
+  };
+  for (const m of input.matchAll(/(^|\s)#(\p{L}[\p{L}\p{N}_-]*)/gu)) {
+    const start = m.index! + m[1].length;
+    const end = start + 1 + m[2].length;
+    if (consumed.slice(start, end).some(Boolean)) continue;
+    if (!r.tags.some((t) => t.toLowerCase() === m[2].toLowerCase())) r.tags.push(m[2]);
+    mark(start, end, 'tag');
+  }
+  for (const m of input.matchAll(/(^|\s)\+(\p{L}[\p{L}\p{N}_-]*)/gu)) {
+    const start = m.index! + m[1].length;
+    const end = start + 1 + m[2].length;
+    if (consumed.slice(start, end).some(Boolean)) continue;
+    r.team = m[2];
+    mark(start, end, 'team');
+    break;
   }
   if (r.recurrence) {
     // No explicit date: start on the first day the rule matches ("every monday" → next Monday).

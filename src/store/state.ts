@@ -3,7 +3,7 @@
 // its own state should create its own small zustand store in its own files
 // rather than growing this one.
 import { create } from 'zustand';
-import type { Member, PendingInvite, Task, Tree, User, Workspace } from '../../shared/types.ts';
+import type { Member, PendingInvite, Tag, Task, Team, Tree, User, Workspace } from '../../shared/types.ts';
 
 export interface Toast {
   id: number;
@@ -31,6 +31,9 @@ export interface State {
   tasksLoaded: boolean;
   members: Member[];
   invites: PendingInvite[];
+  /** The workspace's task tags and teams (migration 014). */
+  tags: Tag[];
+  teams: Team[];
   /** Tasks completed moments ago stay visible briefly so the check-off animation is seen. */
   lingering: Record<string, true>;
   online: boolean;
@@ -56,6 +59,8 @@ export const useStore = create<State>(() => ({
   tasksLoaded: false,
   members: [],
   invites: [],
+  tags: [],
+  teams: [],
   lingering: {},
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   sidebarOpen: typeof window === 'undefined' ? true : window.innerWidth >= 900,

@@ -3,6 +3,6 @@
 export { useStore, type State, type Toast, type QuickAddDefaults } from './store/state.ts';
 export { toast, dismissToast, errorToast, errorMessage } from './store/toasts.ts';
 export { bootstrap, signIn, signOut, markEmailUnverified, recheckEmailVerified } from './store/session.ts';
-export { loadWorkspaces, selectWorkspace, loadTree, loadMembers, memberById, canEditWorkspace } from './store/workspace.ts';
+export { loadWorkspaces, selectWorkspace, loadTree, loadMembers, loadTags, loadTeams, memberById, canEditWorkspace } from './store/workspace.ts';
 export { loadTasks, newTaskId, createTask, updateTask, toggleTask, deleteTask } from './store/tasks.ts';
 export { ui } from './store/ui.ts';

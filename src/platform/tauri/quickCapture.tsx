@@ -9,8 +9,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { get, getAccessToken, post, refreshSession } from '../../api.ts';
 import { parseQuickAdd } from '../../../shared/quickadd.ts';
 import { describeDue } from '../../lib/format.ts';
-import { resolveMember } from '../../components/TaskRow.tsx';
-import type { Member, Tree, Workspace } from '../../../shared/types.ts';
+import { resolveMember, resolveTags, resolveTeam } from '../../components/TaskRow.tsx';
+import type { Member, Tag, Team, Tree, Workspace } from '../../../shared/types.ts';
 import { platform } from '../index.ts';
 import { SignedOut, describeFailure } from './captureErrors.ts';
 
@@ -82,11 +82,18 @@ function QuickCapture() {
         let assigneeId: string | null = null;
         let title = parsed.title;
         if (parsed.assignee) {
-          const members = await get<Member[]>(`/workspaces/${ws}/members`);
+          const { members } = await get<{ members: Member[] }>(`/workspaces/${ws}/members`);
           const found = resolveMember(parsed.assignee, members, me);
           if (found) assigneeId = found;
           else title = `${title} @${parsed.assignee}`;
         }
+        // +team: an existing team, else the text stays in the title. #tag: existing or created.
+        let teamId: string | null = null;
+        if (parsed.team) {
+          teamId = resolveTeam(parsed.team, await get<Team[]>(`/workspaces/${ws}/teams`)) ?? null;
+          if (!teamId) title = `${title} +${parsed.team}`;
+        }
+        const tagIds = parsed.tags.length ? await resolveTags(parsed.tags, (name) => post<Tag>(`/workspaces/${ws}/tags`, { name })) : [];
         await post(`/workspaces/${ws}/tasks`, {
           id: crypto.randomUUID(),
           title: title.trim() || text.trim(),
@@ -95,6 +102,8 @@ function QuickCapture() {
           priority: parsed.priority ?? 4,
           recurrence: parsed.recurrence,
           assigneeId: assigneeId ?? me,
+          teamId,
+          tagIds,
         });
       } else {
         const tree = await get<Tree>(`/workspaces/${ws}/tree`);
@@ -113,7 +122,7 @@ function QuickCapture() {
     }
   };
 
-  const chips = mode === 'task' ? [parsed.dueDate && describeDue(parsed.dueDate), parsed.dueTime, parsed.priority && `P${parsed.priority}`, parsed.recurrence && 'repeats', parsed.assignee && `@${parsed.assignee}`].filter(Boolean) : [];
+  const chips = mode === 'task' ? [parsed.dueDate && describeDue(parsed.dueDate), parsed.dueTime, parsed.priority && `P${parsed.priority}`, parsed.recurrence && 'repeats', parsed.assignee && `@${parsed.assignee}`, parsed.team && `+${parsed.team}`, ...parsed.tags.map((t) => `#${t}`)].filter(Boolean) : [];
 
   return (
     <div

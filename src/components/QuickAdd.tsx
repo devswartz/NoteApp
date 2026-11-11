@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, Flag, Repeat, UserRound, FileText } from 'lucide-react';
+import { CalendarDays, Flag, Repeat, Tag as TagIcon, UserRound, Users, FileText } from 'lucide-react';
 import { createTask, ui, useStore } from '../store.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { describeRecurrence } from '../../shared/dates.ts';
 import { Avatar, Dropdown, Kbd, Modal } from './ui.tsx';
-import { resolveMember } from './TaskRow.tsx';
+import { resolveMember, resolveTags, resolveTeam } from './TaskRow.tsx';
+import { ensureTag, LabelDot, TagMenu, TeamMenu } from './Labels.tsx';
+import { teamLabel } from '../lib/taskViews.ts';
 import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu } from './TaskControls.tsx';
 import { describeDue, formatTime } from '../lib/format.ts';
 import type { Priority } from '../../shared/types.ts';
@@ -28,8 +30,17 @@ function QuickAddInner() {
   const [due, setDue] = useState<string | null | undefined>(defaults.dueDate ?? undefined);
   const [assignee, setAssignee] = useState<string | null | undefined>(defaults.assigneeId ?? undefined);
   const [priority, setPriority] = useState<Priority | undefined>();
+  const [team, setTeam] = useState<string | null | undefined>();
+  const [pickedTags, setPickedTags] = useState<string[]>([]);
+  const teams = useStore((s) => s.teams);
+  const tags = useStore((s) => s.tags);
   const parsed = useMemo(() => parseQuickAdd(text), [text]);
   const parsedAssignee = parsed.assignee ? resolveMember(parsed.assignee, members, me) : undefined;
+  const parsedTeam = parsed.team ? resolveTeam(parsed.team, teams) : undefined;
+  const teamId = team !== undefined ? team : (parsedTeam ?? null);
+  const teamObj = teams.find((t) => t.id === teamId);
+  // Tags typed as #name: existing ones are shown as chips; new ones are created when the task is added.
+  const typedTags = parsed.tags.map((n) => tags.find((t) => t.name.toLowerCase() === n.toLowerCase()) ?? { id: '', name: n, color: 'var(--text-muted)' });
 
   const final = {
     dueDate: due !== undefined ? due : parsed.dueDate,
@@ -38,10 +49,14 @@ function QuickAddInner() {
   };
   const assigneeMember = members.find((m) => m.id === final.assigneeId);
 
-  const submit = (keepOpen: boolean) => {
-    const title = parsedAssignee || !parsed.assignee ? parsed.title : parsed.title + ' @' + parsed.assignee;
+  const submit = async (keepOpen: boolean) => {
+    let title = parsedAssignee || !parsed.assignee ? parsed.title : parsed.title + ' @' + parsed.assignee;
+    if (parsed.team && !parsedTeam) title += ' +' + parsed.team;
     if (!title.trim()) return;
+    const typed = parsed.tags.length ? await resolveTags(parsed.tags, ensureTag) : [];
     void createTask({
+      teamId,
+      tagIds: [...new Set([...pickedTags, ...typed])],
       title: title.trim(),
       description: desc,
       dueDate: final.dueDate,
@@ -54,6 +69,7 @@ function QuickAddInner() {
     if (keepOpen) {
       setText('');
       setDesc('');
+      setPickedTags([]);
     } else ui.closeQuickAdd();
   };
 
@@ -63,6 +79,7 @@ function QuickAddInner() {
     let i = 0;
     for (const tk of parsed.tokens) {
       if (tk.kind === 'assignee' && !parsedAssignee) continue;
+      if (tk.kind === 'team' && !parsedTeam) continue;
       out.push(text.slice(i, tk.start));
       out.push(
         <mark key={tk.start} className={`qa-token qa-${tk.kind}`}>
@@ -73,14 +90,14 @@ function QuickAddInner() {
     }
     out.push(text.slice(i));
     return out;
-  }, [parsed, text, parsedAssignee]);
+  }, [parsed, text, parsedAssignee, parsedTeam]);
 
   return (
     <Modal open onClose={ui.closeQuickAdd} className="quick-add" label="Quick add task">
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit(false);
+          void submit(false);
         }}
       >
         <div className="qa-input-wrap">
@@ -99,7 +116,7 @@ function QuickAddInner() {
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                submit(true);
+                void submit(true);
               }
             }}
           />
@@ -113,7 +130,21 @@ function QuickAddInner() {
             <PriorityMenu value={final.priority as Priority} onChange={setPriority} />
           </Dropdown>
           <Dropdown buttonClass="chip chip-btn" trigger={assigneeMember ? <><Avatar user={assigneeMember} size={14} />{assigneeMember.id === me ? 'Me' : assigneeMember.name}</> : <><UserRound size={13} />Unassigned</>}>
-            <AssigneeMenu value={final.assigneeId} onChange={setAssignee} />
+            <AssigneeMenu value={final.assigneeId} teamId={teamId} onChange={setAssignee} />
+          </Dropdown>
+          <Dropdown buttonClass={`chip chip-btn ${teamObj ? 'chip-active' : ''}`} trigger={teamObj ? <><LabelDot color={teamObj.color} />{teamLabel(teamObj, teams)}</> : <><Users size={13} />Team</>}>
+            <TeamMenu value={teamId} onChange={setTeam} />
+          </Dropdown>
+          <Dropdown
+            buttonClass={`chip chip-btn ${pickedTags.length || typedTags.length ? 'chip-active' : ''}`}
+            trigger={
+              <>
+                <TagIcon size={13} />
+                {[...typedTags.map((t) => t.name), ...pickedTags.map((id) => tags.find((t) => t.id === id)?.name).filter(Boolean)].join(', ') || 'Tags'}
+              </>
+            }
+          >
+            <TagMenu value={pickedTags} onChange={setPickedTags} />
           </Dropdown>
           {parsed.recurrence && (
             <span className="chip chip-active">
