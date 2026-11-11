@@ -26,11 +26,11 @@
    With rule lines on (.has-rules) everything snaps to one grid unit, --rule: the lines (and
    the grid's squares) are --rule apart, starting at the surface's origin; boxes sit on whole
    units (CanvasEditor snaps their y), and their content is set on the same unit (below), so
-   text sits on the lines like ruled paper. Each line is the last pixel of its unit: a box's
-   text starts 7px into a unit (border + padding), and a 16px line's baseline then lands
-   just above the line.
+   each line of text sits centred between two lines. A box's text starts --rule-inset (its
+   border + padding) into a unit, so the pattern is shifted down by that much: each line is
+   then the last pixel before a line of text begins, i.e. on the edges of the text's lines.
    Tables and the box being typed in are opaque, so lines never run through them. */
-.page-scroll { --rule: 28px; }
+.page-scroll { --rule: 28px; --rule-inset: 7px; }
 .page-rules { position: absolute; left: 0; right: 0; pointer-events: none; }
 .page-scroll[data-rules='lines'] .page-rules {
   background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--rule) - 1px), var(--page-rule) calc(var(--rule) - 1px), var(--page-rule) var(--rule));

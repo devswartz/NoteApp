@@ -148,12 +148,13 @@ test('turn a line into a task from the ribbon and from the hover ✓', async ({ 
   const bar = page.getByRole('toolbar', { name: 'Ribbon' });
 
   await typeLine(page, 'Book the venue');
-  // To Do makes a plain checkbox item; its arrow makes that a tracked task.
-  await bar.getByRole('button', { name: 'To Do', exact: true }).click();
-  await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'Book the venue' })).toBeVisible();
-  await bar.getByRole('button', { name: 'To Do options' }).click();
-  await bar.getByRole('button', { name: /Make it a task/ }).click();
+  // Task makes the line a tracked task; its arrow offers a plain checkbox instead.
+  await bar.getByRole('button', { name: 'Task', exact: true }).click();
   await expect(taskRef(page, 'Book the venue')).toBeVisible();
+  await typeLine(page, 'Pack a lunch');
+  await bar.getByRole('button', { name: 'More list options' }).click();
+  await bar.getByRole('button', { name: /Plain checkbox/ }).click();
+  await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'Pack a lunch' })).toBeVisible();
 
   await typeLine(page, 'Send the invites');
   const line = editor.locator('p', { hasText: 'Send the invites' });

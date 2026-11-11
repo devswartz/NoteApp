@@ -125,13 +125,13 @@ test('Notes overview: New page in the ribbon creates a page and opens it', async
   await expect(ribbon.getByRole('group', { name: 'Lists', exact: true })).toBeVisible();
 });
 
-test('OneNote shortcuts: Ctrl+1 checklist, Ctrl+. bullets, Ctrl+Alt+1/2/3 headings; tooltips show them', async ({ page, context, request }) => {
+test('OneNote shortcuts: Ctrl+1 task, Ctrl+. bullets, Ctrl+Alt+1/2/3 headings; tooltips show them', async ({ page, context, request }) => {
   const user = await createUser(request, 'Ona Keys');
   const { pageId } = await createPage(request, user);
   await signInContext(context, user);
   const editor = await openPage(page, user.wsId, pageId);
   const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
-  await expect(ribbon.getByRole('button', { name: 'To Do', exact: true })).toHaveAttribute('title', /\+1\)/);
+  await expect(ribbon.getByRole('button', { name: 'Task', exact: true })).toHaveAttribute('title', /\+1 /);
   // View keeps only Outline (Panels and Comments live on the rail and the page's top bar).
   await expect(ribbon.getByRole('group', { name: 'View', exact: true }).getByRole('button')).toHaveCount(1);
   await expect(ribbon.getByRole('group', { name: 'View', exact: true }).getByRole('button')).toHaveAttribute('aria-label', 'Outline');
@@ -139,10 +139,13 @@ test('OneNote shortcuts: Ctrl+1 checklist, Ctrl+. bullets, Ctrl+Alt+1/2/3 headin
 
   await focusEnd(page);
   await page.keyboard.press('Enter');
+  await page.keyboard.type('Ring the plumber');
+  await page.keyboard.press('ControlOrMeta+1');
+  await expect(page.locator('.task-ref-title[data-value="Ring the plumber"]')).toBeVisible();
+
+  await focusEnd(page);
+  await page.keyboard.press('Enter');
   await page.keyboard.type('To do');
-  await page.keyboard.press('ControlOrMeta+1');
-  await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'To do' })).toBeVisible();
-  await page.keyboard.press('ControlOrMeta+1');
   await page.keyboard.press('ControlOrMeta+.');
   await expect(editor.locator('ul:not([data-type]) li', { hasText: 'To do' })).toBeVisible();
   await page.keyboard.press('ControlOrMeta+.');

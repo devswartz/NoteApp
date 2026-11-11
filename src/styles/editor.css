@@ -204,7 +204,9 @@
 }
 
 /* ───────── Link editor ───────── */
-.link-editor { display: flex; align-items: center; gap: 2px; padding: 4px; width: 340px; max-width: calc(100vw - 16px); }
+.link-editor { display: flex; flex-direction: column; gap: 4px; padding: 6px; width: 360px; max-width: calc(100vw - 16px); }
+.link-field { display: flex; align-items: center; gap: 4px; }
+.link-label { flex: 0 0 56px; font-size: 12px; opacity: 0.7; }
 .link-input { flex: 1; min-width: 0; }
 
 /* ───────── Tables ───────── */
