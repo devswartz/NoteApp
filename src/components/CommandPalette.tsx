@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CircleCheck, FileText, Plus, Search } from 'lucide-react';
+import { CircleCheck, Plus, Search } from 'lucide-react';
+import { PageKindIcon } from './PageKindIcon.tsx';
 import { formatKeys, isEnabled, useCommandList } from '../hooks/useShortcuts.ts';
 import { ui, useStore, toggleTask } from '../store.ts';
 import { get } from '../api.ts';
@@ -62,7 +63,7 @@ function PaletteInner() {
     };
     const pageItem = (p: { id: string; title: string }, sub: React.ReactNode): Item => ({
       key: `p${p.id}`,
-      icon: <FileText size={16} />,
+      icon: <PageKindIcon kind={tree.pages.find((x) => x.id === p.id)?.kind} size={16} />,
       label: p.title || 'Untitled',
       sub,
       run: go(`/w/${wsId}/p/${p.id}`),

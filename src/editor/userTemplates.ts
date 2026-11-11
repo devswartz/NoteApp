@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { del, get, patch, post } from '../api.ts';
 import { useStore } from '../store.ts';
 import type { TemplateMeta } from '../../shared/types.ts';
+import { canvasTemplateJSON, pageSchema, type CanvasHandle } from './canvasDoc.ts';
 
 interface UserTemplatesState {
   wsId: string | null;
@@ -27,9 +28,14 @@ export async function loadUserTemplates(wsId = useStore.getState().wsId) {
   }
 }
 
-/** Snapshot the live editor content as a template. The server copies tasks and attachments. */
-export async function saveAsTemplate(editor: Editor, pageId: string, name: string, icon?: string | null, sections?: TemplateMeta['sections']) {
-  const t = await post<TemplateMeta>(`/pages/${pageId}/templates`, { name, icon: icon || undefined, content: editor.getJSON(), sections });
+/**
+ * Snapshot the live content as a template: the document editor's, or a canvas's boxes (kept as a
+ * canvas template, so using it makes a canvas). The server copies tasks and attachments.
+ */
+export async function saveAsTemplate(source: Editor | CanvasHandle, pageId: string, name: string, icon?: string | null, sections?: TemplateMeta['sections']) {
+  const canvas = 'addBox' in source;
+  const content = canvas ? canvasTemplateJSON(source.doc, pageSchema(pageId)) : source.getJSON();
+  const t = await post<TemplateMeta>(`/pages/${pageId}/templates`, { name, icon: icon || undefined, content, kind: canvas ? 'canvas' : 'document', sections });
   void loadUserTemplates();
   return t;
 }

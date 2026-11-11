@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { create } from 'zustand';
 import { FileText, Plus } from 'lucide-react';
+import { PageKindIcon } from '../components/PageKindIcon.tsx';
 import { post } from '../api.ts';
 import { errorToast, useStore } from '../store.ts';
 import { pageItems, type PageItem } from './pageItems.ts';
@@ -126,13 +127,13 @@ async function pickPage(editor: Editor, range: Range, item: PageItem, currentPag
   editor.chain().focus().deleteRange(range).run();
   const at = editor.state.selection.from;
   try {
-    const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: item.title });
+    const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: item.title, kind: 'canvas' });
     const now = new Date().toISOString();
     // Show it right away; the tree event refreshes the real row.
     useStore.setState((s) =>
       s.tree.pages.some((p) => p.id === id)
         ? s
-        : { tree: { ...s.tree, pages: [...s.tree.pages, { id, sectionId, title: item.title, icon: null, kind: 'document', position: Infinity, updatedAt: now, updatedBy: null }] } },
+        : { tree: { ...s.tree, pages: [...s.tree.pages, { id, sectionId, title: item.title, icon: null, kind: 'canvas', position: Infinity, updatedAt: now, updatedBy: null }] } },
     );
     if (!editor.isDestroyed) editor.chain().focus().setTextSelection(Math.min(at, editor.state.doc.content.size)).insertPageLink(id).run();
   } catch (e) {
@@ -170,7 +171,7 @@ export function PageLinkMenuView() {
           onClick={() => pick?.(item)}
         >
           <span className="page-link-item-icon">
-            {item.kind === 'create' ? <Plus size={15} /> : item.page.icon ? item.page.icon : <FileText size={15} />}
+            {item.kind === 'create' ? <Plus size={15} /> : item.page.icon ? item.page.icon : <PageKindIcon kind={item.page.kind} size={15} />}
           </span>
           <span className="page-link-item-text">
             <span className="slash-title truncate">{item.kind === 'create' ? `Create “${item.title}”` : item.page.title || 'Untitled'}</span>

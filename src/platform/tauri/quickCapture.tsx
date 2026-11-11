@@ -109,7 +109,7 @@ function QuickCapture() {
         const tree = await get<Tree>(`/workspaces/${ws}/tree`);
         const section = tree.sections[0];
         if (!section) throw new Error('Create a notebook in the app first.');
-        const { id } = await post<{ id: string }>(`/sections/${section.id}/pages`, { title: text.trim() });
+        const { id } = await post<{ id: string }>(`/sections/${section.id}/pages`, { title: text.trim(), kind: 'canvas' });
         await emitTo('main', 'open-path', `/w/${ws}/p/${id}`);
       }
       setText('');

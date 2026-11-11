@@ -228,6 +228,7 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/pages/:id/versions', path: (f) => `/pages/${f.page}/versions`, body: () => ({}), expect: shared(inPrivate(WRITE), 403) },
   { method: 'GET', route: '/pages/:id/backlinks', path: (f) => `/pages/${f.page}/backlinks`, expect: shared(inPrivate(READ), 200) },
   { method: 'PATCH', route: '/pages/:id', path: (f) => `/pages/${f.page}`, body: () => ({ title: 'Renamed' }), expect: shared(inPrivate(WRITE), 403) },
+  { method: 'POST', route: '/pages/:id/convert', path: (f) => `/pages/${f.page}/convert`, body: () => ({ kind: 'canvas' }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'POST', route: '/pages/:id/move', path: (f) => `/pages/${f.page}/move`, body: () => ({ index: 0 }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'POST', route: '/pages/:id/copy', path: (f) => `/pages/${f.page}/copy`, body: () => ({}), expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: shared(inPrivate(WRITE), 403) },

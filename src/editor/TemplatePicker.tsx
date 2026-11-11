@@ -2,7 +2,10 @@
 // The workspace's templates tied to this page's section (or a parent section) come first, under
 // "Templates for this section"; then the built-ins and the templates offered everywhere. Templates
 // tied only to other sections aren't shown. Each user template has rename, "Available in…" and delete.
+// On a canvas page the built-ins come as boxes; a user template keeps its kind, so using a canvas
+// template on an empty document page (or the other way round) converts the page first.
 import { useEffect, useState } from 'react';
+import * as Y from 'yjs';
 import type { Editor, JSONContent } from '@tiptap/core';
 import { FolderTree, Pencil, Trash2 } from 'lucide-react';
 import { patch, post } from '../api.ts';
@@ -13,6 +16,12 @@ import { deleteTemplate, loadUserTemplates, renameTemplate, setTemplateSections,
 import { templateDialog } from './TemplateDialog.tsx';
 import { templateOffer } from '../../shared/sections.ts';
 import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
+import { BOXES_KEY } from '../../shared/pageDoc.ts';
+import { editorDoc, pageSchema, templateBoxes, writeBoxes, writeDocument, type CanvasHandle } from './canvasDoc.ts';
+import { convertPage } from './pageKind.ts';
+
+/** Where a template goes: the page's document editor, or its canvas. */
+export type TemplateTarget = { editor: Editor; canvas?: null } | { editor?: null; canvas: CanvasHandle };
 
 /** A stable empty list: a selector returning a fresh [] each time makes the store re-render forever. */
 const NONE: TemplateMeta[] = [];
@@ -38,21 +47,54 @@ export function applyTemplate(editor: Editor, pageId: string, t: PageTemplate, n
   fillMeta(pageId, t.title(now), t.icon);
 }
 
+/** Fill an empty canvas from a built-in template's canvas version. */
+export function applyCanvasTemplate(canvas: CanvasHandle, t: PageTemplate, now = new Date()) {
+  writeBoxes(canvas.doc, pageSchema(canvas.pageId), t.boxes(now));
+  fillMeta(canvas.pageId, t.title(now), t.icon);
+}
+
 /**
  * Fill a page from one of the workspace's own templates. The server creates brand-new tasks and
  * attachment copies for this page and hands back the content pointing at them; we insert it through
  * the editor exactly like a built-in template (so it syncs like any other edit).
  */
-export async function applyUserTemplate(editor: Editor, pageId: string, t: TemplateMeta) {
+export async function applyUserTemplate(target: TemplateTarget, pageId: string, t: TemplateMeta) {
   const r = await post<TemplateUse>(`/templates/${t.id}/use`, { pageId });
-  editor.chain().setContent(r.content as JSONContent).focus('start').run();
+  const content = r.content as JSONContent;
+  const schema = pageSchema(pageId);
+  if (r.kind === 'canvas') {
+    const doc = target.canvas ? target.canvas.doc : editorDoc(target.editor!);
+    if (!doc) return;
+    writeBoxes(doc, schema, templateBoxes(content));
+    if (!target.canvas) await convertPage(pageId, 'canvas');
+  } else if (target.editor) {
+    target.editor.chain().setContent(content).focus('start').run();
+  } else {
+    writeDocument(target.canvas!.doc, schema, content);
+    await convertPage(pageId, 'document');
+  }
   fillMeta(pageId, r.title, r.icon ?? t.icon);
 }
 
-/** True while the document has nothing in it but empty paragraphs. */
-function useIsEmpty(editor: Editor) {
-  const [empty, setEmpty] = useState(() => editor.isEmpty);
+/** True while the canvas has no boxes. */
+function useCanvasEmpty(doc: Y.Doc | null) {
+  const [empty, setEmpty] = useState(() => !doc || doc.getMap(BOXES_KEY).size === 0);
   useEffect(() => {
+    if (!doc) return;
+    const map = doc.getMap(BOXES_KEY);
+    const on = () => setEmpty(map.size === 0);
+    on();
+    map.observe(on);
+    return () => map.unobserve(on);
+  }, [doc]);
+  return empty;
+}
+
+/** True while the document has nothing in it but empty paragraphs. */
+function useIsEmpty(editor: Editor | null | undefined) {
+  const [empty, setEmpty] = useState(() => !!editor?.isEmpty);
+  useEffect(() => {
+    if (!editor) return;
     const on = () => setEmpty(editor.isEmpty);
     on();
     editor.on('update', on);
@@ -65,14 +107,17 @@ function useIsEmpty(editor: Editor) {
   return empty;
 }
 
-export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: string }) {
-  const empty = useIsEmpty(editor);
+export function TemplatePicker({ pageId, ...target }: TemplateTarget & { pageId: string }) {
+  const { editor, canvas } = target;
+  const docEmpty = useIsEmpty(editor);
+  const canvasEmpty = useCanvasEmpty(canvas?.doc ?? null);
+  const empty = canvas ? canvasEmpty : docEmpty;
   const wsId = useStore((s) => s.wsId);
   const mine = useUserTemplates((s) => (s.wsId === wsId ? s.items : NONE));
   const tree = useStore((s) => s.tree);
   const sectionId = tree.pages.find((p) => p.id === pageId)?.sectionId;
   const [busy, setBusy] = useState<string | null>(null);
-  const show = empty && editor.isEditable;
+  const show = empty && (canvas ? true : !!editor?.isEditable);
   useEffect(() => {
     if (show) void loadUserTemplates(wsId);
   }, [show, wsId]);
@@ -81,7 +126,7 @@ export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: str
   const use = (t: TemplateMeta) => {
     if (busy) return;
     setBusy(t.id);
-    applyUserTemplate(editor, pageId, t)
+    applyUserTemplate(target, pageId, t)
       .catch(errorToast)
       .finally(() => setBusy(null));
   };
@@ -118,6 +163,7 @@ export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: str
             onClick={() => use(t)}
           >
             <span className="template-icon">{t.icon || '📋'}</span>
+            {t.kind === 'canvas' && <span className="sr-only"> (canvas)</span>}
             <span className="template-name">{t.name}</span>
           </button>
           {t.canManage && (
@@ -150,7 +196,13 @@ export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: str
       )}
       <div className="template-picker-row">
         {TEMPLATES.map((t) => (
-          <button key={t.id} type="button" className="template-card" title={t.description} onClick={() => applyTemplate(editor, pageId, t)}>
+          <button
+            key={t.id}
+            type="button"
+            className="template-card"
+            title={t.description}
+            onClick={() => (canvas ? applyCanvasTemplate(canvas, t) : editor && applyTemplate(editor, pageId, t))}
+          >
             <span className="template-icon">{t.icon}</span>
             <span className="template-name">{t.name}</span>
           </button>

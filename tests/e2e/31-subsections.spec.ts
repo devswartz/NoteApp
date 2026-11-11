@@ -30,7 +30,7 @@ test('subsection, a page in it, and a template offered in that section', async (
 
   // ── A page in the subsection ──
   await sidebarTree.getByText('Sprints', { exact: true }).click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'New page' }).click();
+  await page.getByRole('menuitem', { name: 'New document page' }).click();
   let inSprints!: { id: string };
   await eventually(tree, (t) => !!(inSprints = t.pages.find((p) => p.sectionId === sprints.id)!), 'page created in the subsection');
 

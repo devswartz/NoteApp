@@ -111,9 +111,27 @@ function uploadUrls(node: J, found: Set<string>, depth = 0) {
   for (const c of node.content ?? []) uploadUrls(c, found, depth + 1);
 }
 
-function validDoc(content: unknown): J {
+export type TemplateKind = 'document' | 'canvas';
+/** A canvas template's doc holds only these, one per text box, with the box's geometry in attrs. */
+export const CANVAS_BOX_NODE = 'canvasBox';
+const MAX_CANVAS_BOXES = 200;
+
+function validDoc(content: unknown, kind: TemplateKind = 'document'): J {
   if (!content || typeof content !== 'object' || Array.isArray(content) || (content as J).type !== 'doc' || !Array.isArray((content as J).content))
     throw new HttpError(400, 'content must be a document');
+  if (kind === 'canvas') {
+    const boxes = (content as J).content!;
+    if (boxes.length > MAX_CANVAS_BOXES) throw new HttpError(413, `A template can have up to ${MAX_CANVAS_BOXES} text boxes`);
+    for (const b of boxes) {
+      const a = b?.attrs;
+      const ok =
+        b?.type === CANVAS_BOX_NODE &&
+        Array.isArray(b.content) &&
+        !!a &&
+        ['x', 'y', 'w', 'z'].every((k) => typeof a[k] === 'number' && Number.isFinite(a[k] as number));
+      if (!ok) throw new HttpError(400, 'A canvas template is a list of text boxes with x, y, w and z');
+    }
+  }
   if (Buffer.byteLength(JSON.stringify(content)) > MAX_TEMPLATE_CONTENT_BYTES)
     throw new HttpError(413, `That page is too large for a template (limit ${MAX_TEMPLATE_CONTENT_BYTES / 1000} KB of content)`);
   return content as J;
@@ -172,6 +190,7 @@ export interface TemplateRow {
   visibility: 'workspace' | 'private';
   content: string;
   tasks: string;
+  kind: TemplateKind;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -217,9 +236,12 @@ export function createTemplate(opts: {
   icon: string | null;
   visibility: 'workspace' | 'private';
   content: unknown;
+  /** The kind of page it was saved from; using it makes a page of that kind. */
+  kind?: TemplateKind;
   canSeeFile: (f: FileRow) => boolean;
 }) {
-  const doc = validDoc(opts.content);
+  const kind: TemplateKind = opts.kind === 'canvas' ? 'canvas' : 'document';
+  const doc = validDoc(opts.content, kind);
   const count = (db.prepare('SELECT COUNT(*) AS n FROM templates WHERE workspace_id = ?').get(opts.workspaceId) as { n: number }).n;
   if (count >= MAX_TEMPLATES_PER_WORKSPACE) throw new HttpError(409, `A workspace can have up to ${MAX_TEMPLATES_PER_WORKSPACE} templates`);
 
@@ -280,9 +302,9 @@ export function createTemplate(opts: {
       const ts = now();
       // The template row first: files.template_id references it.
       db.prepare(
-        `INSERT INTO templates (id, workspace_id, name, icon, visibility, content, tasks, created_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, '{}', '[]', ?, ?, ?)`,
-      ).run(templateId, opts.workspaceId, opts.name, opts.icon, visibility, opts.userId, ts, ts);
+        `INSERT INTO templates (id, workspace_id, name, icon, visibility, content, tasks, kind, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, '{}', '[]', ?, ?, ?, ?)`,
+      ).run(templateId, opts.workspaceId, opts.name, opts.icon, visibility, kind, opts.userId, ts, ts);
       for (const [url, row] of resolved) {
         const c = copyFile(row, { workspaceId: opts.workspaceId, pageId: null, templateId, userId: opts.userId });
         written.push(c.path);

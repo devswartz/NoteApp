@@ -314,6 +314,36 @@ export function closeUserCollab(userId: string) {
   }
 }
 
+/**
+ * Change a page's content on the server (e.g. converting it to a canvas) and save it now.
+ * If the page is open, the change is made in its live room, so every client gets it as a
+ * normal update (and an offline client merges it later); otherwise on the stored doc.
+ */
+export function editPageDoc(pageId: string, fn: (doc: Y.Doc) => void) {
+  const room = rooms.get(pageId);
+  if (room) {
+    room.doc.transact(() => fn(room.doc));
+    if (room.saveTimer) clearTimeout(room.saveTimer);
+    persist(room);
+    return;
+  }
+  const doc = new Y.Doc();
+  try {
+    const row = db.prepare('SELECT ydoc, title FROM pages WHERE id = ?').get(pageId) as { ydoc: Buffer | null; title: string } | undefined;
+    if (!row) return;
+    if (row.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
+    fn(doc);
+    const { text } = extractPage(doc);
+    db.transaction(() => {
+      db.prepare('UPDATE pages SET ydoc = ?, text = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(doc)), text, pageId);
+      db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pageId);
+      db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pageId, row.title, text);
+    })();
+  } finally {
+    doc.destroy();
+  }
+}
+
 /** Seed an empty page with initial content (used for onboarding pages). */
 export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void) {
   const doc = new Y.Doc();

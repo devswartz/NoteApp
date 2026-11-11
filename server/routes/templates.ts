@@ -1,7 +1,8 @@
 // User page templates (workspace-scoped). Owner: Editor & Notes.
 //
 //   GET    /workspaces/:id/templates       → TemplateMeta[]   (the ones this user may see; no content)
-//   POST   /pages/:id/templates            { name, icon?, content, sections? } → TemplateMeta   "Save page as template"
+//   POST   /pages/:id/templates            { name, icon?, content, kind?, sections? } → TemplateMeta   "Save page as template"
+//     kind 'canvas': content is a doc of canvasBox nodes (attrs x, y, w, z; content = the box's blocks)
 //   PATCH  /templates/:id                  { name?, icon?, sections? }   rename / change where it's offered
 //     sections: [{ sectionId, includeSubsections? (default true) }]; empty = offered everywhere
 //   DELETE /templates/:id                                     (also removes the template's attachment copies)
@@ -50,6 +51,7 @@ function meta(r: TemplateRow, userId: string): TemplateMeta {
     name: r.name,
     icon: r.icon,
     visibility: r.visibility,
+    kind: r.kind === 'canvas' ? 'canvas' : 'document',
     createdBy: r.created_by,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -115,6 +117,7 @@ templateRoutes.post(
       icon: icon(body.icon),
       visibility,
       content: body.content,
+      kind: body.kind === 'canvas' ? 'canvas' : 'document',
       canSeeFile: (f) => fileVisible(f, req.user.id),
     });
     if (body.sections !== undefined) {
@@ -169,6 +172,6 @@ templateRoutes.post(
     if (a.workspaceId !== t.workspace_id) throw new HttpError(400, 'That template belongs to a different workspace');
     requireRole(t.workspace_id, req.user.id, 'member');
     const out = useTemplate(t, pageId, req.user.id);
-    return { title: t.name, icon: t.icon, content: out.content, taskIds: out.taskIds };
+    return { title: t.name, icon: t.icon, kind: t.kind === 'canvas' ? 'canvas' : 'document', content: out.content, taskIds: out.taskIds };
   }),
 );

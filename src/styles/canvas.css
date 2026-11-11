@@ -64,11 +64,26 @@
 }
 body.canvas-dragging, body.canvas-dragging * { user-select: none; }
 
-/* Phones: boxes one under the other in reading order, edited normally. */
+/* Phones: boxes one under the other in reading order, full width, edited normally (no
+   dragging); a hairline separates them, and "Add a text box" sits at the end. */
 .canvas-wrap.is-stacked .canvas-viewport { overflow: visible; margin: 0; padding: 0; }
-.canvas-wrap.is-stacked .canvas-surface { min-height: 0; cursor: auto; }
-.canvas-wrap.is-stacked .canvas-box { position: relative; padding: 0; margin-bottom: 16px; border: 0; }
-.canvas-wrap.is-stacked .canvas-hint { position: static; }
+.canvas-wrap.is-stacked .canvas-surface { min-height: 0; cursor: auto; display: flex; flex-direction: column; }
+.canvas-wrap.is-stacked .canvas-box {
+  position: relative;
+  width: auto;
+  padding: 12px 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.canvas-wrap.is-stacked .canvas-box + .canvas-box { border-top: 1px solid var(--border); }
+.canvas-wrap.is-stacked .canvas-box:focus { box-shadow: inset 3px 0 0 var(--accent); padding-left: 10px; }
+.canvas-wrap.is-stacked .canvas-hint { position: static; padding: 12px 0; }
+.canvas-wrap.is-stacked .canvas-add-box { margin-top: 4px; border-top: 1px solid var(--border); padding-top: 14px; width: 100%; }
+
+/* Version history: a canvas version's boxes in reading order. */
+.history-box + .history-box { border-top: 1px solid var(--border); margin-top: 12px; padding-top: 12px; }
 
 @media print {
   .canvas-viewport { overflow: visible; }

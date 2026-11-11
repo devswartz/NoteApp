@@ -8,10 +8,12 @@
 // edge to set its width; an empty box goes away when you leave it.
 // Keyboard: Escape leaves a box (selects it), Enter edits it again, Tab / Shift+Tab move
 // between boxes in reading order, arrows nudge a selected box (Shift: 1 px), Delete removes it.
+// Undo: Ctrl+Z outside a box undoes creating, moving, resizing and deleting boxes (yours only);
+// inside a box it undoes text as usual.
 // Phones (≤760px) get the boxes stacked in reading order, edited normally (no placing).
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { EditorContent, type Editor } from '@tiptap/react';
-import { Extension } from '@tiptap/core';
+import { Extension, type JSONContent } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { Plus } from 'lucide-react';
@@ -23,6 +25,7 @@ import { useCommentBinding } from './collabComments.ts';
 import { insertTaskAtEnd } from './TaskRef.tsx';
 import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, surfaceSize, UNMEASURED_H } from './canvasGeom.ts';
 import { toast } from '../store.ts';
+import { GEOM_ORIGIN, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { useIsMobile } from '../components/ui.tsx';
 import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
@@ -41,12 +44,16 @@ interface Props {
   onAwareness?: (awareness: Awareness | null) => void;
   /** Mount every box at once (e.g. to scroll to a task deep link). */
   mountAll?: boolean;
+  /** Whole-canvas actions for the page chrome (templates, import, version history). */
+  onCanvas?: (h: CanvasHandle | null) => void;
 }
 
 type Pending = { id: string; then: 'focus' | 'task' };
 
-/** Transaction origin for box removals, so "Undo" can bring a deleted box back. */
-const REMOVE_ORIGIN = { canvas: 'remove' };
+/** Removing an empty box you just left: not an undo step (and its creation stops being one). */
+const DROP_ORIGIN = { canvas: 'drop-empty' };
+/** Bringing a focused box to the front: not an undo step. */
+const FOCUS_ORIGIN = { canvas: 'focus' };
 /** Focus moved here keeps the box "in use" (toolbar menus, link editor, dialogs…). */
 const KEEPS_BOX = '.editor-toolbar, .popover, .bubble-menu, .table-bar, .slash-menu, .link-editor, [role="menu"], [role="dialog"], [role="listbox"]';
 
@@ -84,16 +91,36 @@ function useBoxes(doc: Y.Doc): BoxGeom[] {
   return boxes;
 }
 
-/** Write fields of one box's geometry (no-op if the box is gone). */
-function setGeom(doc: Y.Doc, id: string, fields: Partial<Omit<BoxGeom, 'id'>>) {
+/** Write fields of one box's geometry (no-op if the box is gone). Undoable unless another origin is given. */
+function setGeom(doc: Y.Doc, id: string, fields: Partial<Omit<BoxGeom, 'id'>>, origin: unknown = GEOM_ORIGIN) {
   const m = doc.getMap<unknown>(BOXES_KEY).get(id);
   if (!(m instanceof Y.Map)) return;
   doc.transact(() => {
     for (const [k, v] of Object.entries(fields)) if (m.get(k) !== v) m.set(k, v);
-  });
+  }, origin);
 }
 
-export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness, mountAll }: Props) {
+const CAPTURE_MS = 500;
+
+/**
+ * Undo for box geometry: one Y.UndoManager over the boxes map (and each box's content, so
+ * undoing a delete brings the text back), tracking only this client's GEOM_ORIGIN changes.
+ * Text typed in a box has its own undo inside the box.
+ */
+function useGeometryUndo(doc: Y.Doc) {
+  const um = useMemo(() => new Y.UndoManager(doc.getMap<unknown>(BOXES_KEY), { trackedOrigins: new Set([GEOM_ORIGIN]), captureTimeout: CAPTURE_MS }), [doc]);
+  useEffect(() => {
+    const map = doc.getMap<unknown>(BOXES_KEY);
+    const scope = () => map.forEach((_v, id) => um.addToScope(doc.getXmlFragment(boxField(id))));
+    scope();
+    map.observe(scope);
+    // The manager goes with the doc (it listens for the doc's destroy); not here, so a remounted effect keeps it.
+    return () => map.unobserve(scope);
+  }, [doc, um]);
+  return um;
+}
+
+export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness, mountAll, onCanvas }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const { doc } = session;
   useEffect(() => {
@@ -121,6 +148,9 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   boxesRef.current = boxes;
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  const undo = useGeometryUndo(doc);
+  const heightsRef = useRef(heights);
+  heightsRef.current = heights;
 
   useCommentBinding(active);
 
@@ -203,6 +233,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   const createBox = (g: Omit<BoxGeom, 'id'>, then: Pending['then']) => {
     const id = newBoxId();
+    undo.stopCapturing(); // its own undo step
     doc.transact(() => {
       const m = new Y.Map<unknown>();
       m.set('x', g.x);
@@ -210,38 +241,83 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       m.set('w', g.w);
       m.set('z', g.z);
       doc.getMap<unknown>(BOXES_KEY).set(id, m);
-    });
+    }, GEOM_ORIGIN);
+    undo.undoStack.at(-1)?.meta.set('created', id);
+    undo.stopCapturing();
     pending.current = { id, then };
     mount(id);
     return id;
   };
 
-  /** Remove a box and its content. With `undoable`, a toast offers to bring it back. */
+  // The page chrome's whole-canvas actions (templates, Markdown import, version history).
+  useEffect(() => {
+    if (!onCanvas) return;
+    onCanvas({
+      pageId,
+      doc,
+      addBox: (blocks: JSONContent[]) => {
+        const g = boxBelow(boxesRef.current, heightsRef.current);
+        undo.stopCapturing();
+        const [id] = writeBoxes(doc, pageSchema(pageId), [{ ...g, content: blocks }]);
+        undo.stopCapturing();
+        mount(id!);
+        return id!;
+      },
+    });
+    return () => onCanvas(null);
+  }, [doc, pageId, onCanvas, undo, mount]);
+
+  // Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) outside a box: undo / redo box changes.
+  useEffect(() => {
+    if (!canEdit) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      const redo = (k === 'z' && e.shiftKey) || (k === 'y' && !e.shiftKey);
+      if (k !== 'z' && !redo) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.ProseMirror, input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
+      e.preventDefault();
+      if (redo) undo.redo();
+      else undo.undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canEdit, undo]);
+
+  /**
+   * Remove a box and its content. `undoable`: an undo step (Ctrl+Z), and a toast offers to
+   * bring it back. Otherwise (an empty box you left) its creation stops being an undo step too.
+   */
   const removeBox = useCallback(
     (id: string, undoable: boolean) => {
       const map = doc.getMap<unknown>(BOXES_KEY);
       if (!map.has(id)) return;
       const frag = doc.getXmlFragment(boxField(id));
-      const um = undoable ? new Y.UndoManager([map, frag], { trackedOrigins: new Set([REMOVE_ORIGIN]) }) : null;
-      doc.transact(() => {
-        map.delete(id);
-        if (frag.length) frag.delete(0, frag.length);
-      }, REMOVE_ORIGIN);
-      if (um) {
-        const done = setTimeout(() => um.destroy(), 30_000);
-        toast('Text box deleted', {
-          action: {
-            label: 'Undo',
-            run: () => {
-              clearTimeout(done);
-              um.undo();
-              um.destroy();
-            },
-          },
-        });
+      if (undoable) undo.stopCapturing();
+      doc.transact(
+        () => {
+          map.delete(id);
+          if (frag.length) frag.delete(0, frag.length);
+        },
+        undoable ? GEOM_ORIGIN : DROP_ORIGIN,
+      );
+      if (!undoable) {
+        const i = undo.undoStack.findIndex((s) => s.meta.get('created') === id);
+        if (i >= 0) undo.undoStack.splice(i, 1);
+        return;
       }
+      const item = undo.undoStack.at(-1);
+      undo.stopCapturing();
+      toast('Text box deleted', {
+        action: {
+          label: 'Undo',
+          // Only while the delete is still the latest step (otherwise Ctrl+Z walks back to it).
+          run: () => undo.undoStack.at(-1) === item && undo.undo(),
+        },
+      });
     },
-    [doc],
+    [doc, undo],
   );
 
   /** Remove `id` if it holds nothing (an empty box disappears when you leave it). */
@@ -279,7 +355,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     }
     if (canEdit && !isMobile) {
       const z = frontZ(boxesRef.current, id);
-      if (z !== null) setGeom(doc, id, { z });
+      if (z !== null) setGeom(doc, id, { z }, FOCUS_ORIGIN);
     }
   };
 
@@ -336,8 +412,11 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     const handle = e.currentTarget;
     handle.setPointerCapture?.(e.pointerId);
     const start = { px: e.clientX, py: e.clientY, x: b.x, y: b.y, w: b.w };
+    // The whole drag is one undo step, however long it takes.
+    undo.stopCapturing();
+    undo.captureTimeout = Number.MAX_SAFE_INTEGER;
     const z = frontZ(boxesRef.current, id);
-    if (z !== null) setGeom(doc, id, { z });
+    if (z !== null) setGeom(doc, id, { z }, FOCUS_ORIGIN);
     let frame = 0;
     let next: Partial<BoxGeom> | null = null;
     const flush = () => {
@@ -354,6 +433,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     const up = () => {
       if (frame) cancelAnimationFrame(frame);
       flush();
+      undo.captureTimeout = CAPTURE_MS;
+      undo.stopCapturing();
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
@@ -428,7 +509,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         </div>
       </div>
       {canEdit && stacked && (
-        <button className="add-task-end" onClick={addBoxBelow}>
+        <button className="add-task-end canvas-add-box" onClick={addBoxBelow}>
           <Plus size={15} /> Add a text box
         </button>
       )}

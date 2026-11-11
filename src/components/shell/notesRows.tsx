@@ -2,6 +2,7 @@
 // subsections), page rows, and the notebook options menu. Moved from Sidebar.tsx
 // with every capability kept: context menus, inline rename, duplicate, move,
 // share, private notebooks, colours, delete, drag and drop and task counts.
+import { PageKindIcon } from '../PageKindIcon.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
@@ -11,7 +12,6 @@ import {
   CircleCheck,
   Copy,
   FilePlus,
-  FileText,
   FolderInput,
   FolderPlus,
   LayoutDashboard,
@@ -187,11 +187,11 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
   };
   const menu = useContextMenu(() => (
     <div className="menu" role="menu">
-      <MenuItem icon={<FilePlus size={15} />} onSelect={() => p.createPage(section.id)}>
+      <MenuItem icon={<LayoutDashboard size={15} />} onSelect={() => p.createPage(section.id)}>
         New page
       </MenuItem>
-      <MenuItem icon={<LayoutDashboard size={15} />} onSelect={() => p.createPage(section.id, 'canvas')}>
-        New canvas page
+      <MenuItem icon={<FilePlus size={15} />} onSelect={() => p.createPage(section.id, 'document')}>
+        New document page
       </MenuItem>
       {canNest && (
         <MenuItem icon={<FolderPlus size={15} />} onSelect={createSubsection}>
@@ -392,7 +392,7 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
               } else if (drag.kind === 'page' || drag.kind === 'favorite') void movePage(drag.id, page.sectionId, page.id, where);
             }))}
       >
-        {page.icon ? <span className="page-emoji">{page.icon}</span> : <FileText size={14} className="muted" />}
+        {page.icon ? <span className="page-emoji">{page.icon}</span> : <PageKindIcon kind={page.kind} size={14} className="muted" />}
         {p.editing === rowId ? (
           <RenameInput
             value={page.title}

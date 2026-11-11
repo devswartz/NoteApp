@@ -2,6 +2,18 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## Unreleased
+
+### New
+- **Canvas pages:** click anywhere on a page and type. Each text box is a full editor (headings, lists, tasks, tables, images); drag its top edge to move it and its right edge to set its width. Boxes can sit side by side or overlap, and collaborators see them appear and move live. Search, tasks, mentions, links and exports see every box. (#134, #137)
+- **"New page" makes a canvas.** "New document page" is right beside it when you want one flowing document, and canvas pages have their own icon in the page lists and search.
+- **Convert a page** between a document and a canvas from the page menu: a document becomes one text box you can then split up, and a canvas becomes a document with its boxes in reading order. Nothing is lost, and the version from before is kept in Version history.
+- **Templates on canvases:** the built-in templates (meeting notes, project, daily journal) come laid out as boxes on a canvas. Saving a canvas as a template keeps it a canvas, and using it makes a canvas page.
+- **Undo on canvases:** Ctrl+Z outside a text box undoes creating, moving, resizing or deleting a box.
+- **Canvas pages on phones** show the boxes one under the other in reading order, full width, with "Add a text box" at the end.
+- Save as template, Version history (preview and restore the whole canvas), Markdown export and Markdown import (into a new box) now work on canvas pages.
+- **OneNote import keeps box positions:** pages made in OneNote come in as canvases with each box where it was. (#135)
+
 ## v0.2.1
 
 ### Fixes

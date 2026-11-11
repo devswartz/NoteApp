@@ -3,7 +3,9 @@ import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
 import { accessChanged, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
-import { flushAll } from '../collab.ts';
+import crypto from 'node:crypto';
+import { editPageDoc, flushAll } from '../collab.ts';
+import { convertPageDoc } from '../../shared/pageDoc.ts';
 import { rowToTask } from '../tasks.ts';
 import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
 import type { Access } from '../access.ts';
@@ -95,6 +97,31 @@ pageRoutes.post(
     flushAll(); // capture edits still pending in the open collab room
     const reason = req.body?.reason === 'restore' ? 'restore' : 'manual';
     return { id: snapshot(id, reason) ?? listVersions(id)[0]?.id ?? null };
+  }),
+);
+
+/**
+ * POST /pages/:id/convert { kind: 'canvas' | 'document' } → { kind }
+ * Document → canvas: the whole content becomes one box at the top left. Canvas → document:
+ * the boxes are joined in reading order. One Yjs transaction on the live room if the page is
+ * open (clients switch views on the tree event), else on the stored doc. The state before is
+ * kept as a version, so a conversion can be undone from Version history.
+ */
+pageRoutes.post(
+  '/pages/:id/convert',
+  h((req) => {
+    const id = param(req, 'id');
+    const a = mustAccess(pageAccess(id, req.user.id), true);
+    const kind = req.body?.kind;
+    if (kind !== 'canvas' && kind !== 'document') throw new HttpError(400, "kind must be 'canvas' or 'document'");
+    const cur = (db.prepare('SELECT kind FROM pages WHERE id = ?').get(id) as { kind: string }).kind;
+    if (cur === kind) return { kind };
+    flushAll();
+    snapshot(id, 'manual');
+    db.prepare('UPDATE pages SET kind = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(kind, now(), req.user.id, id);
+    editPageDoc(id, (doc) => convertPageDoc(doc, kind, () => crypto.randomBytes(8).toString('hex')));
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { kind };
   }),
 );
 

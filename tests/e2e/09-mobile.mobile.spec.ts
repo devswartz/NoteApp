@@ -94,11 +94,11 @@ test('mobile: create a page from search, add a task with /task, see it on Today,
   const tabbar = page.getByRole('navigation', { name: 'Primary' });
   await expect(tabbar).toBeVisible();
 
-  // "New page" from the palette (the phone has no hover-revealed sidebar buttons).
+  // "New document page" from the palette (the phone has no hover-revealed sidebar buttons).
   await page.getByRole('button', { name: 'Search' }).first().tap();
   const palette = page.getByRole('dialog', { name: 'Search' });
-  await palette.getByPlaceholder(/Search pages and tasks/).fill('new page');
-  await expect(palette.locator('.palette-label', { hasText: 'New page' }).first()).toBeVisible();
+  await palette.getByPlaceholder(/Search pages and tasks/).fill('new document page');
+  await expect(palette.locator('.palette-label', { hasText: 'New document page' }).first()).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const pageId = page.url().split('/p/')[1]!;

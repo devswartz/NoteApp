@@ -1,6 +1,9 @@
 // Page version history: a list of snapshots, a read-only preview, and Restore.
 // Restoring replaces the live document through the editor (one collaborative edit,
 // so everyone sees it and it can be undone), after snapshotting the current state.
+// Canvas pages: the preview shows the boxes in reading order, and Restore puts back the whole
+// doc (boxes and their places) in one transaction. A version from before the page was converted
+// is shown, and restored, in the page's current kind.
 import { useEffect, useMemo, useState } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -11,6 +14,9 @@ import { errorToast, toast, useStore } from '../store.ts';
 import { Modal } from '../components/ui.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { documentExtensions } from './NoteEditor.tsx';
+import { boxField, boxGeoms, convertPageDoc, readingOrder, replacePageContent } from '../../shared/pageDoc.ts';
+import { newBoxId } from './canvasGeom.ts';
+import type { CanvasHandle } from './canvasDoc.ts';
 
 interface VersionMeta {
   id: string;
@@ -34,12 +40,19 @@ const fmt = (iso: string) =>
 export function VersionHistory({
   pageId,
   editor,
+  canvas = null,
+  canvasEditable = false,
   open,
   onClose,
   othersEditing = 0,
 }: {
   pageId: string;
+  /** The live document editor (document pages). */
   editor: Editor | null;
+  /** The live canvas (canvas pages). */
+  canvas?: CanvasHandle | null;
+  /** May restore on a canvas page. */
+  canvasEditable?: boolean;
   open: boolean;
   onClose: () => void;
   /** People other than me on the page right now (presence). */
@@ -89,18 +102,35 @@ export function VersionHistory({
           })}
         </aside>
         <section className="history-preview">
-          {selected ? <Preview key={selected} pageId={pageId} versionId={selected} live={editor} onRestored={onClose} othersEditing={othersEditing} /> : <div className="history-placeholder muted">Select a version</div>}
+          {selected ? <Preview key={selected} pageId={pageId} versionId={selected} live={editor} canvas={canvas} canvasEditable={canvasEditable} onRestored={onClose} othersEditing={othersEditing} /> : <div className="history-placeholder muted">Select a version</div>}
         </section>
       </div>
     </Modal>
   );
 }
 
-function Preview({ pageId, versionId, live, onRestored, othersEditing }: { pageId: string; versionId: string; live: Editor | null; onRestored: () => void; othersEditing: number }) {
+function Preview({
+  pageId,
+  versionId,
+  live,
+  canvas,
+  canvasEditable,
+  onRestored,
+  othersEditing,
+}: {
+  pageId: string;
+  versionId: string;
+  live: Editor | null;
+  canvas: CanvasHandle | null;
+  canvasEditable: boolean;
+  onRestored: () => void;
+  othersEditing: number;
+}) {
   const doc = useMemo(() => new Y.Doc(), []);
   const [loaded, setLoaded] = useState<VersionMeta | null>(null);
   const [busy, setBusy] = useState(false);
-  const canEdit = !!live?.isEditable;
+  const canEdit = canvas ? canvasEditable : !!live?.isEditable;
+  const boxIds = loaded && canvas ? readingOrder(boxGeoms(doc)).map((b) => b.id) : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +138,8 @@ function Preview({ pageId, versionId, live, onRestored, othersEditing }: { pageI
       .then((v) => {
         if (cancelled) return;
         Y.applyUpdate(doc, decode(v.ydoc));
+        // Shown (and restored) as the page is now, even if it was converted since.
+        convertPageDoc(doc, canvas ? 'canvas' : 'document', newBoxId);
         setLoaded(v);
       })
       .catch(errorToast);
@@ -128,7 +160,7 @@ function Preview({ pageId, versionId, live, onRestored, othersEditing }: { pageI
   );
 
   const restore = async () => {
-    if (!live || !preview || live.isDestroyed) return;
+    if (!canvas && (!live || !preview || live.isDestroyed)) return;
     if (othersEditing > 0) {
       const who = othersEditing === 1 ? '1 other person is' : `${othersEditing} other people are`;
       const ok = confirm(
@@ -141,7 +173,8 @@ function Preview({ pageId, versionId, live, onRestored, othersEditing }: { pageI
     try {
       // Keep the current state as a version too, so the restore can be undone from here.
       await post(`/pages/${pageId}/versions`, { reason: 'restore' });
-      live.chain().setContent(preview.getJSON()).focus('start').run();
+      if (canvas) replacePageContent(canvas.doc, doc, 'canvas', newBoxId);
+      else live!.chain().setContent(preview!.getJSON()).focus('start').run();
       toast(`Restored the version from ${fmt(loaded!.at)}`);
       onRestored();
     } catch (e) {
@@ -162,8 +195,33 @@ function Preview({ pageId, versionId, live, onRestored, othersEditing }: { pageI
         )}
       </div>
       <div className="history-doc">
-        <EditorContent editor={preview} />
+        {canvas ? (
+          boxIds.length ? (
+            boxIds.map((id) => <PreviewBox key={id} pageId={pageId} doc={doc} id={id} />)
+          ) : (
+            loaded && <p className="muted">This version is empty.</p>
+          )
+        ) : (
+          <EditorContent editor={preview} />
+        )}
       </div>
     </>
+  );
+}
+
+/** One box of a canvas version, read-only. */
+function PreviewBox({ pageId, doc, id }: { pageId: string; doc: Y.Doc; id: string }) {
+  const ed = useEditor(
+    {
+      editable: false,
+      extensions: [...documentExtensions(pageId), Collaboration.configure({ document: doc, field: boxField(id) })],
+      editorProps: { attributes: { class: 'prose' } },
+    },
+    [doc, id],
+  );
+  return (
+    <div className="history-box" data-box-id={id}>
+      <EditorContent editor={ed} />
+    </div>
   );
 }
