@@ -368,8 +368,8 @@
 .page-toc-rail { position: absolute; top: 0; bottom: 0; right: 0; width: 220px; pointer-events: none; }
 .page-toc {
   position: sticky;
-  top: 72px;
-  max-height: calc(100vh - 120px);
+  top: calc(72px + var(--ribbon-h, 0px));
+  max-height: calc(100vh - 120px - var(--ribbon-h, 0px));
   overflow-y: auto;
   margin-right: 16px;
   padding: 4px 0;
@@ -432,8 +432,8 @@
 @media print {
   .ProseMirror > * { content-visibility: visible !important; } /* beats the (0,4,0) long-page rule above */
 }
-/* Headings land below the sticky page header when jumped to. */
-.ProseMirror :is(h1, h2, h3) { scroll-margin-top: 64px; }
+/* Headings land below the sticky page header and the ribbon when jumped to. */
+.ProseMirror :is(h1, h2, h3) { scroll-margin-top: calc(64px + var(--ribbon-h, 0px)); }
 
 /* ───────────── Page panel: toolbar badges, tabs, phone sheet (#99) ───────────── */
 .panel-toggle { position: relative; }

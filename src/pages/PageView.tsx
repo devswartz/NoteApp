@@ -17,6 +17,7 @@ import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
 import { Outline, usePageSetting } from '../editor/Outline.tsx';
+import { Ribbon } from '../editor/Toolbar.tsx';
 import { insertTaskAtEnd } from '../editor/TaskRef.tsx';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -292,6 +293,8 @@ export function PageView() {
             )}
           </div>
         </header>
+        {/* Desktop and tablet: the ribbon, fixed under the top bar; phones use the floating toolbar. */}
+        {!isMobile && <Ribbon />}
 
         {followed && (
           <div className="follow-banner" role="status" style={{ ['--ring' as string]: followed.color }}>

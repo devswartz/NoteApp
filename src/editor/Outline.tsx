@@ -79,8 +79,10 @@ export const Outline = memo(function Outline({ editor, scroller }: { editor: Edi
 
   useEffect(() => {
     if (!scroller || items.length < 3) return;
+    // Below the sticky top bar and the ribbon (--ribbon-h, 0 on phones).
+    const ribbon = parseFloat(getComputedStyle(scroller).getPropertyValue('--ribbon-h')) || 0;
     const onScroll = () => {
-      const top = scroller.getBoundingClientRect().top + 96;
+      const top = scroller.getBoundingClientRect().top + 96 + ribbon;
       let current = 0;
       items.forEach((h, i) => {
         const el = editor.view.nodeDOM(h.pos);

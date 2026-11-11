@@ -1,8 +1,9 @@
 // F6 / Shift+F6 move focus between the app's regions: rail → panel → pages
-// panel → main (the editor when a page is open) → rail.
+// panel → ribbon (when a page is open on desktop/tablet) → main (the editor) → rail.
 import { useEffect } from 'react';
 
-const REGIONS = ['.rail', '.sidebar .sb-panel', '.sidebar .pages-panel', '.main'];
+// The ribbon sits inside main, so it is listed first: focus in it counts as the ribbon.
+const REGIONS = ['.rail', '.sidebar .sb-panel', '.sidebar .pages-panel', '.ribbon', '.main'];
 
 /** Pure order rule (unit-tested): the next region index from `current` (-1 = none). */
 export function nextRegion(count: number, current: number, back: boolean): number {
@@ -14,6 +15,11 @@ export function nextRegion(count: number, current: number, back: boolean): numbe
 const visible = (el: HTMLElement) => el.offsetParent !== null || getComputedStyle(el).position === 'fixed';
 
 function focusIn(region: HTMLElement) {
+  // A toolbar (the ribbon): its one tabbable item (roving tabindex).
+  if (region.getAttribute('role') === 'toolbar') {
+    (region.querySelector<HTMLElement>('[tabindex="0"]') ?? region.querySelector<HTMLElement>('button') ?? region).focus();
+    return;
+  }
   // In main, prefer the editor; else the selected row, else the first focusable control.
   const target =
     region.querySelector<HTMLElement>('.ProseMirror[contenteditable="true"]') ??

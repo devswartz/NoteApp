@@ -1,35 +1,38 @@
-/* ==== Editor toolbar (Track 4): fixed toolbar, colour menus, hover "turn into task" ==== */
+/* ==== Editor ribbon, colour menus, hover "turn into task" ==== */
 
-/* Fixed toolbar: sticks just under the page top bar (48px) while the page scrolls. */
-.editor-toolbar {
+/* The ribbon (OneNote's Home tab): full width of the note column, held just under the
+   page top bar (48px) so it never scrolls away. Its height is --ribbon-h, which the
+   heading scroll offsets and the outline use too. */
+.page-scroll { --ribbon-h: 42px; }
+.ribbon {
   position: sticky;
   top: 48px;
-  z-index: 3;
+  z-index: 3; /* under the top bar (4), so its menus open over the ribbon */
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 2px;
-  row-gap: 2px;
-  margin: 4px -8px 20px;
-  padding: 4px;
+  min-height: var(--ribbon-h);
+  padding: 4px 16px 4px 20px;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow-xs);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
-.editor-toolbar .bm-sep { margin: 0 4px; }
-.editor-toolbar .bm-btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
-.editor-toolbar .bm-btn[aria-disabled='true']:hover { background: none; color: var(--text-2); }
+.rb-group { display: flex; align-items: center; gap: 2px; }
+.ribbon .rb-sep { margin: 0 6px; }
+.ribbon .bm-btn[aria-disabled='true'] { opacity: 0.4; cursor: default; }
+.ribbon .bm-btn[aria-disabled='true']:hover { background: none; color: var(--text-2); }
 .tb-spacer { flex: 1; }
-/* The floating toolbar over a selection near the top must sit above the fixed one. */
+/* The floating toolbar over a selection near the top must sit above the ribbon. */
 .bubble-menu { z-index: 5; }
-/* Phones: the floating toolbar wraps onto a second row instead of running off the screen. */
+/* Phones: no ribbon; the floating toolbar wraps onto a second row instead of running off the screen. */
 @media (max-width: 760px) {
+  .page-scroll { --ribbon-h: 0px; }
+  .ribbon { display: none; }
   .bubble-menu { max-width: calc(100vw - 16px); }
   .bubble-menu-bar { flex-wrap: wrap; row-gap: 2px; }
 }
-@media (max-width: 760px) { .editor-toolbar { display: none; } }
-@media print { .editor-toolbar { display: none !important; } }
+@media print { .ribbon { display: none !important; } }
 
 /* Menus (block type, colours) open below their button, inside the toolbar's DOM. */
 .tb-menu { position: relative; display: inline-flex; }
