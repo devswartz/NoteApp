@@ -40,9 +40,15 @@ and so its own named volume for `/data`.
 sudo cp <repo>/deploy/systemd/noteapp-update@.* /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now noteapp-update@staging.timer
-# prod: enable the timer too (it only changes when a vX.Y.Z tag moves :prod),
-# or update by hand:  sudo systemctl start noteapp-update@prod.service
+sudo systemctl enable --now noteapp-update@prod.timer
 ```
+
+**Both timers are required.** Prod only changes when a `vX.Y.Z` tag moves `:prod`, and the
+desktop and mobile apps update themselves on release, so a prod server left behind gives
+users an app that calls features their server doesn't have. CI's `verify deploy` job waits
+up to 20 minutes after each publish for the server to report the new build
+(`/api/health` → `version`) and fails the run if it doesn't. If it fails, check
+`systemctl list-timers 'noteapp-update@*'` and `journalctl -u noteapp-update@prod`.
 
 `docker compose up -d` only recreates the container when the pulled image is
 new, so an idle timer run does nothing.
