@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, MoveHorizontal } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
 import { api, get, patch, del, post, ApiError } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
@@ -16,7 +16,7 @@ import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
-import { Outline, usePageSetting } from '../editor/Outline.tsx';
+import { Outline } from '../editor/Outline.tsx';
 import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
 import { TaskRow } from '../components/TaskRow.tsx';
@@ -79,7 +79,6 @@ export function PageView() {
   const editor = ready && ready.pageId === pageId && !ready.e.isDestroyed ? ready.e : null;
   const [canvasHandle, setCanvasHandle] = useState<CanvasHandle | null>(null);
   const canvas = canvasHandle?.pageId === pageId ? canvasHandle : null;
-  const [fullWidth, setFullWidth] = usePageSetting(editor, 'fullWidth', false);
   const isMobile = useIsMobile();
   // Tasks / comments panel (#99): never opens by itself. Desktop restores the
   // last choice on this device; phones always open a page as just the note.
@@ -232,7 +231,7 @@ export function PageView() {
         data-page-color={settings.color === 'none' ? undefined : settings.color}
         data-rules={settings.rules === 'none' ? undefined : settings.rules}
       >
-        {canvas && !fullWidth && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
+        {canvas && !isMobile && !outlineHidden && <Outline canvas={canvas} scroller={scroller} />}
         {/* Rule lines / grid: across the whole page width, from the canvas down, behind the boxes. */}
         {settings.rules !== 'none' && rules && <div className="page-rules" aria-hidden style={{ top: rules.top, height: rules.height }} />}
         <header className="page-topbar">
@@ -290,8 +289,6 @@ export function PageView() {
                 wsId={wsId}
                 editor={editor}
                 onHistory={() => setHistoryOpen(true)}
-                fullWidth={fullWidth}
-                onFullWidth={setFullWidth}
                 canvas={canvas}
                 canManage={info ? info.canManage : !!treeMeta}
                 canShare={!!info?.canShare}
@@ -306,7 +303,7 @@ export function PageView() {
             Following {followed.name} · scroll, click or Esc to stop
           </div>
         )}
-        <article className={`page-article is-canvas ${fullWidth ? 'is-full' : ''}`} ref={setArticle}>
+        <article className="page-article is-canvas" ref={setArticle}>
           <PageIcon pageId={pageId} icon={meta.icon} canEdit={canEdit} />
           <TitleInput key={`title-${pageId}`} pageId={pageId} initial={meta.title} canEdit={canEdit} onEnter={() => editor?.commands.focus('start')} />
           <div className="page-sub muted small">
@@ -318,7 +315,6 @@ export function PageView() {
             {...editorProps}
             mountAll={!!focusTask}
             onCanvas={setCanvasHandle}
-            fullWidth={fullWidth}
             autoFocus={!!meta.title}
           />
           {canEdit && synced && canvas && <TemplatePicker key={`c-${pageId}`} canvas={canvas} pageId={pageId} />}
@@ -520,8 +516,6 @@ type PageMenuProps = {
   wsId: string;
   editor: Editor | null;
   onHistory: () => void;
-  fullWidth: boolean;
-  onFullWidth: (v: boolean) => void;
   /** Notebook-level edit: duplicate, template, move, copy, delete. Not for page-share-only access (#98). */
   canManage: boolean;
   canShare: boolean;
@@ -531,7 +525,7 @@ type PageMenuProps = {
   canvas: CanvasHandle | null;
 };
 
-function PageMenuItems({ pageId, wsId, onHistory, fullWidth, onFullWidth, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
+function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
@@ -609,9 +603,6 @@ function PageMenuItems({ pageId, wsId, onHistory, fullWidth, onFullWidth, canMan
           )}
           <MenuItem icon={<History size={15} />} onSelect={onHistory}>
             Version history
-          </MenuItem>
-          <MenuItem icon={<MoveHorizontal size={15} />} checked={fullWidth} onSelect={() => onFullWidth(!fullWidth)}>
-            Full width
           </MenuItem>
           <MenuSeparator />
           <MenuItem icon={<FileDown size={15} />} onSelect={() => source && void exportMarkdown(source, pageId).catch(errorToast)}>

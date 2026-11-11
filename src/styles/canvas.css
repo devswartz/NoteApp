@@ -1,16 +1,11 @@
 /* Canvas pages (src/editor/CanvasEditor.tsx): text boxes placed anywhere on a surface
    that grows right and down; the viewport scrolls sideways, the page scrolls down.
-   The page keeps the old document column (title, and the surface's left edge, where they
-   were), so a page's main box at the readable width reads like a document did. The surface
-   reaches past the column to the right edge of the page, for boxes placed beside it.
-   Its 48px of left padding holds the main box's block handle; the extra 11px lines the text
+   OneNote-style, the page is left-aligned and full width (.page-article in styles.css): the
+   surface starts 40px from the left of the note area and its visible part ends 40px from the
+   right, which is how wide the main ("wide") boxes are drawn.
+   Its 40px of left padding holds the main box's block handle; the extra 11px lines the text
    of a box at x = 0 up with the title (a box's own padding and border). */
-.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px 0 -59px; padding: 14px 8px 0 48px; }
-@media (min-width: 761px) {
-  .page-article.is-canvas:not(.is-full) .canvas-viewport {
-    margin-right: calc(-1 * (max(0px, (100cqw - 760px) / 2) + 32px));
-  }
-}
+.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px 0 -51px; padding: 14px 8px 0 40px; }
 /* isolation: box z-indexes (which grow as boxes come to the front) stay under the ribbon. */
 .canvas-surface { position: relative; isolation: isolate; min-height: 320px; }
 .canvas-surface.can-edit { cursor: text; }

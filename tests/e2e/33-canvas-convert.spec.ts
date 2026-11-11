@@ -1,5 +1,5 @@
 // Canvas-only pages (docs/PLAN_CANVAS.md): a blank page's first box is ready for typing and stored
-// only once typed in, at the readable width; the outline and ?task= links reach into every box;
+// only once typed in, across the page's width; the outline and ?task= links reach into every box;
 // box moves undo with Ctrl+Z; canvas templates and version history.
 import { expect, test, type Page } from '@playwright/test';
 import { api, createPage, createUser, eventually, listTasks, openPage, pageUrl, signInContext } from './helpers.ts';
@@ -21,7 +21,7 @@ type TreePage = { id: string; kind: string; sectionId: string };
 const treePages = async (request: Parameters<typeof api>[0], token: string, wsId: string) =>
   (await api<{ pages: TreePage[] }>(request, 'GET', `/workspaces/${wsId}/tree`, token)).pages;
 
-test('a blank page: type at once into its first box, which is stored only then, at the readable width', async ({ page, context, request }) => {
+test('a blank page: type at once into its first box, which is stored only then, across the page', async ({ page, context, request }) => {
   const user = await createUser(request, 'Bea Blank');
   const { pageId } = await createPage(request, user, { notebook: 'Blank', page: 'Fresh' });
   await signInContext(context, user);
@@ -41,9 +41,11 @@ test('a blank page: type at once into its first box, which is stored only then, 
   await expect(box).toHaveCount(1);
   await expect(box).toContainText('Hello canvas');
   await expect(page.locator('.template-picker')).toHaveCount(0);
-  // As wide as the old document column, its text lined up with the title.
+  // Across the note area (OneNote-style), its text lined up with the title.
   const b = (await box.boundingBox())!;
-  expect(Math.abs(b.width - 686)).toBeLessThanOrEqual(1);
+  const area = (await page.locator('.page-scroll').boundingBox())!;
+  expect(b.x - area.x).toBeLessThan(60);
+  expect(area.x + area.width - (b.x + b.width)).toBeLessThan(60);
   const title = (await page.locator('.page-title').boundingBox())!;
   const text = (await box.locator('.ProseMirror p').first().boundingBox())!;
   expect(Math.abs(text.x - title.x)).toBeLessThanOrEqual(3);
@@ -68,7 +70,8 @@ test('a blank page: type at once into its first box, which is stored only then, 
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Page options' }).click();
   await expect(page.getByRole('menuitem', { name: /Convert/ })).toHaveCount(0);
-  await expect(page.getByRole('menuitem', { name: /Full width/ })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Version history' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: /Full width/ })).toHaveCount(0); // always full width
 });
 
 test.describe('across boxes', () => {
