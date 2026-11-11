@@ -12,7 +12,7 @@ The interface between the app and the homelab is fixed in the repo at `docs/DEPL
 - Hosting: a dedicated **Proxmox LXC** running **Docker Compose**.
 - Two environments on that box: **staging** (`notes-staging.devswartz.com`, follows the `:staging` image) and **production** (`notes.devswartz.com`, follows the `:prod` image). Each gets its own `/data` volume and its own secrets.
 - Ingress: **Cloudflare Tunnel** to the container port. WebSockets must work. **Cloudflare Access must be off** for these two hostnames.
-- Deploys are **pull-based**: CI pushes images to GHCR, and the homelab pulls them itself. No inbound access to my network, and no homelab secrets stored in GitHub. Auto-update staging (e.g. a systemd timer every 5 minutes running `docker compose pull && docker compose up -d`, or Watchtower limited to these containers). Production updates when the `:prod` tag changes, on the same mechanism or a manual command, whichever you think is safer. Document your choice.
+- Deploys are **pull-based**: CI pushes images to GHCR, and the homelab pulls them itself. No inbound access to my network, and no homelab secrets stored in GitHub. Auto-update staging (e.g. a systemd timer every 5 minutes running `docker compose pull && docker compose up -d`, or Watchtower limited to these containers). Production updates when the `:prod` tag changes, on the **same timer** (not by hand): the apps update themselves on release, so prod must follow. CI checks this after each release (the `verify deploy` job).
 - Email: **AWS SES**, through its SMTP interface.
 
 ## Tasks

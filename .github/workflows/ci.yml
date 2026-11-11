@@ -148,3 +148,27 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/publish.yml
+
+  # After an image is published, the homelab's update timer (deploy/systemd) should pull it
+  # within about 5 minutes. Fail loudly if the server doesn't report the new build, so a
+  # release can't quietly leave prod (or staging) behind the apps.
+  verify-deploy:
+    name: verify deploy
+    needs: publish
+    if: github.event_name == 'push' && needs.publish.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Wait for the server to run this build
+        env:
+          URL: ${{ startsWith(github.ref, 'refs/tags/v') && 'https://notes.devswartz.com' || 'https://notes-staging.devswartz.com' }}
+        run: |
+          want="${GITHUB_SHA::7}"
+          for i in $(seq 1 80); do
+            got=$(curl -fsS -m 10 "$URL/api/health" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p' || true)
+            if [ "${got::7}" = "$want" ]; then echo "$URL runs $want"; exit 0; fi
+            echo "[$i] $URL runs '${got:-unreachable}', waiting for $want"
+            sleep 15
+          done
+          echo "::error::$URL still runs '${got:-unreachable}' 20 minutes after $want was published. Check the noteapp-update timer on the homelab (deploy/README.md)."
+          exit 1
