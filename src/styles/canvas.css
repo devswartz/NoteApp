@@ -12,7 +12,9 @@
 
 .canvas-box {
   position: absolute;
-  background: var(--bg);
+  /* See-through, like OneNote: boxes underneath show through. Only the box being
+     typed in is opaque, so what you're editing stays readable over others. */
+  background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
   padding: 6px 10px 6px;
@@ -22,6 +24,7 @@
 .canvas-wrap:not(.is-stacked) .canvas-box:hover { border-color: var(--border); }
 .canvas-box.is-active,
 .canvas-box:focus-within { border-color: var(--border-strong); }
+.canvas-box:focus-within { background: var(--bg); }
 /* Selected (Escape in a box): the whole box is focused, not its text. */
 .canvas-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-active); }
 .canvas-box .ProseMirror { min-height: 1.7em; }
