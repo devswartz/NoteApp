@@ -86,6 +86,20 @@ export function nudge(b: Pick<BoxGeom, 'x' | 'y'>, key: string, fine: boolean): 
   return v ? clampPos(b.x + v[0], b.y + v[1]) : null;
 }
 
+/** One rule-line unit (px): the line spacing of a page with rule lines on (the CSS --rule). */
+export const RULE_UNIT = 28;
+
+/** A y position on the rule-line grid: the nearest whole unit, never negative. */
+export function snapY(y: number, unit = RULE_UNIT): number {
+  return Math.max(0, Math.round(y / unit) * unit);
+}
+
+/** Arrow-key nudge on a ruled page: up/down a whole line (on the grid), sideways as usual. */
+export function nudgeOnGrid(b: Pick<BoxGeom, 'x' | 'y'>, key: string, fine: boolean, unit = RULE_UNIT): { x: number; y: number } | null {
+  if (key === 'ArrowUp' || key === 'ArrowDown') return clampPos(b.x, snapY(snapY(b.y, unit) + (key === 'ArrowUp' ? -unit : unit), unit));
+  return nudge(b, key, fine);
+}
+
 /**
  * The width a wide box (the page's main box) is drawn at: everything right of it, to the
  * right edge of the visible surface (OneNote-style full width), never under BOX_MIN_W.

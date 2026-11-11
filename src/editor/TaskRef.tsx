@@ -471,6 +471,9 @@ function PriorityChip({ task, onChange, readOnly }: { task: Task; onChange: (p: 
   );
 }
 
+/** Sent on window when a page's text metrics change without a resize (rule lines on/off). */
+export const RELAYOUT_EVENT = 'noteapp:relayout';
+
 /** Grow a one-row textarea to fit its text, so long task titles wrap instead of scrolling sideways. */
 function useAutoHeight(ref: React.RefObject<HTMLTextAreaElement | null>, value: string) {
   useLayoutEffect(() => {
@@ -489,6 +492,11 @@ function useAutoHeight(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
       fit();
     });
     ro.observe(el);
-    return () => ro.disconnect();
+    // Rule lines turned on or off: the line height changes, not the width.
+    window.addEventListener(RELAYOUT_EVENT, fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener(RELAYOUT_EVENT, fit);
+    };
   }, [ref, value]);
 }
