@@ -1,6 +1,6 @@
 // Invite links (#11) and sharing a private notebook with specific people (#14).
 import { expect, test, type Browser } from '@playwright/test';
-import { PASSWORD, api, createPage, createTeam, createUser, focusEnd, openPage, signInContext, uniqueEmail, type TestUser } from './helpers.ts';
+import { PASSWORD, api, createPage, createTeam, createUser, focusEnd, openNotebookPicker, openPage, railTo, signInContext, uniqueEmail, type TestUser } from './helpers.ts';
 
 async function signedIn(browser: Browser, user: TestUser) {
   const context = await browser.newContext();
@@ -79,16 +79,17 @@ test.describe('sharing a private notebook with people', () => {
 
     const b = await signedIn(browser, bob);
     const c = await signedIn(browser, carol);
-    await b.page.goto(`/w/${teamId}/tasks/today`);
-    await c.page.goto(`/w/${teamId}/tasks/today`);
+    await b.page.goto(`/w/${teamId}/notes`);
+    await c.page.goto(`/w/${teamId}/notes`);
     const bSidebar = b.page.getByRole('navigation', { name: 'Sidebar' });
-    const cSidebar = c.page.getByRole('navigation', { name: 'Sidebar' });
-    await expect(bSidebar.getByText('Notebooks')).toBeVisible();
-    await expect(bSidebar.getByText('Board Prep')).toHaveCount(0);
+    // The notebook picker lists what each of them can see; it stays open and updates live.
+    const bPicker = await openNotebookPicker(b.page);
+    const cPicker = await openNotebookPicker(c.page);
+    await expect(bPicker.getByText('Board Prep')).toHaveCount(0);
 
     await api(request, 'PUT', `/notebooks/${notebookId}/shares`, alice.token, { userIds: [bob.id] });
-    await expect(bSidebar.getByText('Board Prep')).toBeVisible({ timeout: 10_000 });
-    await expect(cSidebar.getByText('Board Prep')).toHaveCount(0);
+    await expect(bPicker.getByText('Board Prep')).toBeVisible({ timeout: 10_000 });
+    await expect(cPicker.getByText('Board Prep')).toHaveCount(0);
     expect(JSON.stringify(await api(request, 'GET', `/workspaces/${teamId}/tree`, carol.token))).not.toContain(notebookId);
 
     // Bob (a member) can edit it.
@@ -113,6 +114,8 @@ test.describe('sharing a private notebook with people', () => {
     await createPage(request, alice, { notebook: 'Dialog Notebook', visibility: 'private' });
     await signInContext(context, alice);
     await page.goto(`/w/${alice.wsId}/tasks/today`);
+    await railTo(page, 'Notes');
+    await (await openNotebookPicker(page)).getByRole('menuitem', { name: /Dialog Notebook/ }).click();
     const nbRow = page.locator('.sb-row', { hasText: 'Dialog Notebook' });
     // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
     await nbRow.locator('.sb-label').click({ button: 'right' });

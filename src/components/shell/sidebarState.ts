@@ -1,5 +1,7 @@
-// Sidebar preferences that live on this device: width, collapsed tree nodes,
-// favourite (pinned) pages and recently opened pages, per workspace.
+// Sidebar preferences that live on this device: panel widths, collapsed tree
+// nodes, favourite (pinned) pages, recently opened pages, the Notes selection
+// (notebook / section, and the last page opened in each section), the page sort
+// and the last place visited in each rail view, per workspace.
 import { create } from 'zustand';
 import { platform } from '../../platform/index.ts';
 
@@ -7,17 +9,44 @@ const KEY = 'noteapp.sidebar';
 export const SIDEBAR_MIN = 200;
 export const SIDEBAR_MAX = 420;
 export const SIDEBAR_DEFAULT = 264;
+export const PAGES_MIN = 180;
+export const PAGES_MAX = 380;
+export const PAGES_DEFAULT = 240;
 const RECENT_MAX = 8;
+
+export type RailView = 'notes' | 'tasks' | 'calendar';
+export type PageSort = 'manual' | 'title' | 'updated';
 
 interface Persisted {
   width: number;
   collapsed: Record<string, boolean>;
   favorites: Record<string, string[]>; // wsId → page ids
   recent: Record<string, string[]>; // wsId → page ids, newest first
+  /** Width of the Notes view's second panel (the pages of the selected section). */
+  pagesWidth: number;
+  /** wsId → the notebook and section last selected in the Notes panel. */
+  notesSel: Record<string, { nb?: string; sec?: string }>;
+  /** notebook id → last selected section; section id → last opened page. */
+  lastSection: Record<string, string>;
+  lastPage: Record<string, string>;
+  pageSort: PageSort;
+  /** wsId → view → last path (with query) visited in that view. */
+  lastLoc: Record<string, Partial<Record<RailView, string>>>;
 }
 
 function load(): Persisted {
-  const base: Persisted = { width: SIDEBAR_DEFAULT, collapsed: {}, favorites: {}, recent: {} };
+  const base: Persisted = {
+    width: SIDEBAR_DEFAULT,
+    collapsed: {},
+    favorites: {},
+    recent: {},
+    pagesWidth: PAGES_DEFAULT,
+    notesSel: {},
+    lastSection: {},
+    lastPage: {},
+    pageSort: 'manual',
+    lastLoc: {},
+  };
   try {
     const v = JSON.parse(platform.kv.get(KEY) ?? 'null');
     if (v && typeof v === 'object') return { ...base, ...v };
@@ -33,19 +62,43 @@ function load(): Persisted {
 export const useSidebar = create<Persisted>(load);
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
-useSidebar.subscribe((s) => {
+const save = () => {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    const { width, collapsed, favorites, recent } = s;
-    platform.kv.set(KEY, JSON.stringify({ width, collapsed, favorites, recent }));
-  }, 150);
+  saveTimer = undefined;
+  platform.kv.set(KEY, JSON.stringify(useSidebar.getState()));
+};
+// Leaving or reloading within the debounce must not lose the last change (recent pages, selection).
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => saveTimer !== undefined && save());
+useSidebar.subscribe(() => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 150);
 });
 
-const clamp = (w: number) => Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)));
+const clamp = (w: number, min = SIDEBAR_MIN, max = SIDEBAR_MAX) => Math.round(Math.min(max, Math.max(min, w)));
 
 export const sidebar = {
   setWidth: (w: number) => useSidebar.setState({ width: clamp(w) }),
   resetWidth: () => useSidebar.setState({ width: SIDEBAR_DEFAULT }),
+  setPagesWidth: (w: number) => useSidebar.setState({ pagesWidth: clamp(w, PAGES_MIN, PAGES_MAX) }),
+  resetPagesWidth: () => useSidebar.setState({ pagesWidth: PAGES_DEFAULT }),
+  setPageSort: (pageSort: PageSort) => useSidebar.setState({ pageSort }),
+  /** Remember the Notes selection (and, per notebook / section, the last child chosen). */
+  selectNotes: (wsId: string, nb: string | undefined, sec: string | undefined, page?: string) =>
+    useSidebar.setState((s) => {
+      const cur = s.notesSel[wsId];
+      const same = cur?.nb === nb && cur?.sec === sec && (!nb || !sec || s.lastSection[nb] === sec) && (!sec || !page || s.lastPage[sec] === page);
+      if (same) return s;
+      return {
+        notesSel: { ...s.notesSel, [wsId]: { nb, sec } },
+        lastSection: nb && sec ? { ...s.lastSection, [nb]: sec } : s.lastSection,
+        lastPage: sec && page ? { ...s.lastPage, [sec]: page } : s.lastPage,
+      };
+    }),
+  rememberLocation: (wsId: string, view: RailView, path: string) =>
+    useSidebar.setState((s) => {
+      if (s.lastLoc[wsId]?.[view] === path) return s;
+      return { lastLoc: { ...s.lastLoc, [wsId]: { ...s.lastLoc[wsId], [view]: path } } };
+    }),
   toggleNode: (id: string, value?: boolean) =>
     useSidebar.setState((s) => ({ collapsed: { ...s.collapsed, [id]: value ?? !s.collapsed[id] } })),
   isFavorite: (wsId: string, pageId: string) => (useSidebar.getState().favorites[wsId] ?? []).includes(pageId),

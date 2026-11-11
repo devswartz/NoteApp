@@ -1,6 +1,6 @@
 // Priority 1: sign up / sign in, and create workspace → notebook → section → page through the UI.
 import { expect, test } from '@playwright/test';
-import { PASSWORD, createUser, signInContext, uniqueEmail } from './helpers.ts';
+import { PASSWORD, createUser, openNotebookPicker, railTo, signInContext, uniqueEmail } from './helpers.ts';
 
 test('sign up, sign out and sign back in', async ({ page }) => {
   const email = uniqueEmail('signup');
@@ -62,7 +62,9 @@ test('create a workspace, notebook, section and page from the UI', async ({ page
   await expect(page.locator('.ws-switch')).toContainText('Rocket Team');
 
   // A new notebook comes with a "General" section and opens a fresh page.
-  await page.getByRole('button', { name: 'New notebook', exact: true }).click();
+  await railTo(page, 'Notes');
+  await openNotebookPicker(page);
+  await page.getByRole('menuitem', { name: 'New notebook' }).click();
   await answer('New notebook', 'Launch Plans');
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar.getByText('Launch Plans')).toBeVisible();

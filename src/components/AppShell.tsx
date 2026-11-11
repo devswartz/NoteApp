@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
-import { PanelLeftOpen } from 'lucide-react';
 import { errorToast, selectWorkspace, toast, ui, useStore } from '../store.ts';
 import { useShortcutListener } from '../hooks/useShortcuts.ts';
 import { useShellCommands } from './shell/commands.tsx';
@@ -10,12 +9,14 @@ import { FeedbackHost } from './shell/FeedbackDialog.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { MobileTabBar, MobileTopBar, useDrawerSwipe } from './shell/MobileChrome.tsx';
 import { Sidebar } from './Sidebar.tsx';
-import { NotificationBell } from './sharing/NotificationBell.tsx';
+import { Rail } from './shell/Rail.tsx';
+import { viewOf } from './shell/navState.ts';
+import { useF6Regions } from './shell/useF6Regions.ts';
 import { TaskDetail } from './TaskDetail.tsx';
 import { QuickAdd } from './QuickAdd.tsx';
 import { CommandPalette } from './CommandPalette.tsx';
 import { OfflineBanner, ShortcutsHelp } from './Overlays.tsx';
-import { IconButton, MOD, useIsMobile } from './ui.tsx';
+import { useIsMobile } from './ui.tsx';
 import { platform } from '../platform/index.ts';
 
 /** True while a modal-like overlay is open; plain shortcuts pause then. */
@@ -42,6 +43,7 @@ export function AppShell() {
   useShortcutListener(overlayOpen);
   useReminders();
   useDrawerSwipe(isMobile);
+  useF6Regions();
 
   if (!valid) return <Navigate to="/" replace />;
   // Fade between screens (tasks, notes, settings), not between pages of the same kind.
@@ -51,16 +53,10 @@ export function AppShell() {
     <div className={`app ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'} ${isMobile ? 'is-mobile' : ''}`}>
       <OfflineBanner />
       {isMobile && sidebarOpen && <div className="drawer-backdrop" onClick={() => ui.setSidebar(false)} />}
+      {!isMobile && <Rail wsId={wsId} view={viewOf(location.pathname)} />}
       <Sidebar />
-      <main className="main">
-        {isMobile ? <MobileTopBar /> : !sidebarOpen && (
-          <div className="sidebar-reveal">
-            <IconButton label="Show sidebar" shortcut={`${MOD}\\`} onClick={ui.toggleSidebar}>
-              <PanelLeftOpen size={18} />
-            </IconButton>
-            <NotificationBell />
-          </div>
-        )}
+      <main className="main" tabIndex={-1}>
+        {isMobile && <MobileTopBar />}
         <div className="route" key={routeKey}>
           <Outlet />
         </div>

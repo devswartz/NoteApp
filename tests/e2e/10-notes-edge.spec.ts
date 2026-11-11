@@ -1,7 +1,7 @@
 // Edge cases around notes: move/delete pages and notebooks (tasks survive), ⌘↵ convert to task,
 // live tree updates for another member, and the theme preference.
 import { expect, test } from '@playwright/test';
-import { api, createPage, createTeam, createUser, eventually, focusEnd, isoDay, listTasks, openPage, signInContext, taskRow, tasksUrl } from './helpers.ts';
+import { api, createPage, createTeam, createUser, eventually, focusEnd, isoDay, listTasks, openNotebookPicker, openPage, railTo, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
 test('⌘/Ctrl+Enter turns the current line into a task', async ({ page, context, request }) => {
   const user = await createUser(request, 'Cora Convert');
@@ -55,6 +55,8 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   await expect(page).toHaveURL(/\/notes$/);
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === null, 'task detached on page delete');
 
+  // Select the other notebook in the Notes panel's picker, then open its menu.
+  await (await openNotebookPicker(page)).getByRole('menuitem', { name: /Second Notebook/ }).click();
   const nbRow = page.locator('.sb-row', { hasText: 'Second Notebook' });
   // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
   await nbRow.locator('.sb-label').click({ button: 'right' });
@@ -78,9 +80,10 @@ test('renaming a page updates another member’s sidebar live', async ({ browser
   const bc = await browser.newContext();
   await signInContext(bc, bob);
   const b = await bc.newPage();
-  await b.goto(tasksUrl(teamId, 'today'));
+  await b.goto(`/w/${teamId}/notes`);
+  await (await openNotebookPicker(b)).getByRole('menuitem', { name: /Shared Notebook/ }).click();
   const bSidebar = b.getByRole('navigation', { name: 'Sidebar' });
-  await expect(bSidebar.getByText('Old title')).toBeVisible();
+  await expect(bSidebar.getByRole('tree', { name: 'Pages' }).getByText('Old title')).toBeVisible();
 
   const ac = await browser.newContext();
   await signInContext(ac, alice);
@@ -119,13 +122,16 @@ test('a page title typed just before navigating away is still saved', async ({ p
   await signInContext(context, user);
   await openPage(page, user.wsId, pageId);
   await page.locator('.page-title').fill('Renamed right before leaving');
-  await page.getByRole('link', { name: 'Today' }).click();
+  await railTo(page, 'Tasks');
   await expect(page).toHaveURL(/\/tasks\/today$/);
   await eventually(
     () => api<{ page: { title: string } }>(request, 'GET', `/pages/${pageId}`, user.token),
     (r) => r.page.title === 'Renamed right before leaving',
     'rename saved despite navigating away',
   );
+  // Back in Notes (the rail reopens the last page), the panel shows the new title.
+  await railTo(page, 'Notes');
+  await expect(page).toHaveURL(new RegExp(`/p/${pageId}$`));
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Renamed right before leaving')).toBeVisible();
 });
 
@@ -236,7 +242,8 @@ test('at full speed, deleting a just-created empty task never leaves a phantom i
   const server = await listTasks(request, user);
   expect(server.filter((t) => t.pageId === pageId).map((t) => t.title).sort()).toEqual(['Fast 0', 'Fast 1', 'Fast 2', 'Fast 3']);
   // Same session, no reload: the dashboard shows exactly the server's open tasks (no "Untitled" phantom).
-  await page.getByRole('link', { name: /All Tasks/ }).first().click().catch(() => page.goto(tasksUrl(user.wsId, 'all')));
+  await railTo(page, 'Tasks');
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('link', { name: /All Tasks/ }).click();
   await expect(page.locator('.task-row')).toHaveCount(server.filter((t) => t.status === 'open').length);
   await expect(page.locator('.task-row', { hasText: 'Untitled task' })).toHaveCount(0);
 });

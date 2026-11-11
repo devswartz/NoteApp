@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { createPage, createTask, createUser, isoDay, listTasks, openPage, signInContext, taskRow } from './helpers.ts';
 
-test('mobile: tab bar navigation, quick add, complete a task, open a note from the menu', async ({ page, context, request }) => {
+test('mobile: tab bar navigation, quick add, complete a task, open a note step by step', async ({ page, context, request }) => {
   const user = await createUser(request, 'Milo Mobile');
   const { pageId } = await createPage(request, user, { notebook: 'Pocket Notebook', page: 'Grocery list' });
   await createTask(request, user, user.wsId, { title: 'Buy oat milk', dueDate: isoDay(0) });
@@ -32,20 +32,35 @@ test('mobile: tab bar navigation, quick add, complete a task, open a note from t
   await taskRow(page, 'Buy oat milk').getByRole('checkbox', { name: 'Complete task' }).tap();
   await expect(taskRow(page, 'Buy oat milk')).toHaveCount(0, { timeout: 10_000 });
 
-  // Tabs.
-  await tabbar.getByRole('link', { name: 'My Tasks' }).tap();
-  await expect(page).toHaveURL(/\/tasks\/my$/);
-  await expect(taskRow(page, 'Call mum')).toBeVisible();
-  await tabbar.getByRole('link', { name: 'Notes' }).tap();
-  await expect(page).toHaveURL(/\/notes$/);
-
-  // The menu opens the sidebar as a drawer; open the note from it.
+  // The menu opens the Tasks panel as a drawer: switch to My Tasks.
   await page.getByRole('button', { name: 'Open menu' }).tap();
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
   await expect(sidebar).toBeInViewport();
-  await sidebar.getByText('Grocery list').tap();
+  await sidebar.getByRole('link', { name: /My Tasks/ }).tap();
+  await expect(page).toHaveURL(/\/tasks\/my$/);
+  await expect(sidebar).not.toBeInViewport();
+  await expect(taskRow(page, 'Call mum')).toBeVisible();
+
+  // Notes: notebook → section → page, with Back at each step.
+  await tabbar.getByRole('link', { name: 'Notes' }).tap();
+  await expect(page).toHaveURL(/\/notes$/);
+  await page.getByRole('link', { name: /Pocket Notebook/ }).tap();
+  await expect(page.getByRole('heading', { name: 'Pocket Notebook' })).toBeVisible();
+  await page.getByRole('link', { name: /General/ }).tap();
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
+  await page.getByRole('link', { name: /Grocery list/ }).tap();
   await expect(page).toHaveURL(new RegExp(`/p/${pageId}`));
   await expect(page.locator('.ProseMirror')).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).tap();
+  await expect(page.getByRole('heading', { name: 'General' })).toBeVisible();
+  await page.getByRole('link', { name: 'Back' }).tap();
+  await expect(page.getByRole('heading', { name: 'Pocket Notebook' })).toBeVisible();
+  await page.getByRole('link', { name: 'Back' }).tap();
+  await expect(page.getByRole('heading', { name: 'Notes' })).toBeVisible();
+
+  // The Tasks tab reopens the last task view.
+  await tabbar.getByRole('link', { name: 'Tasks' }).tap();
+  await expect(page).toHaveURL(/\/tasks\/my$/);
 });
 
 test('mobile: editing a note with the on-screen layout', async ({ page, context, request }) => {
@@ -100,7 +115,8 @@ test('mobile: create a page from search, add a task with /task, see it on Today,
   await page.keyboard.press('Enter'); // empty task + Enter leaves task mode
   await expect.poll(async () => (await listTasks(request, user)).some((t) => t.title === 'Buy lemons' && t.pageId === pageId)).toBe(true);
 
-  await tabbar.getByRole('link', { name: 'Today' }).tap();
+  await tabbar.getByRole('link', { name: 'Tasks' }).tap();
+  await expect(page).toHaveURL(/\/tasks\/today$/);
   const row = taskRow(page, 'Buy lemons');
   await expect(row).toBeVisible();
   await expect(row.getByTitle('Open in note')).toContainText('Groceries');

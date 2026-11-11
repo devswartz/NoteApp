@@ -1,7 +1,7 @@
 // Sharing one page (#98): the owner shares a page from a private notebook with one teammate,
 // who opens it from "Shared with me" and co-edits it live; revoking takes it away live.
 import { expect, test, type Browser } from '@playwright/test';
-import { api, createPage, createTeam, createUser, focusEnd, openPage, signInContext, tasksUrl, type TestUser } from './helpers.ts';
+import { api, createPage, createTeam, createUser, focusEnd, openNotebookPicker, openPage, signInContext, type TestUser } from './helpers.ts';
 
 async function userPage(browser: Browser, user: TestUser) {
   const context = await browser.newContext();
@@ -18,11 +18,13 @@ test('share a private page with one teammate, co-edit it, then revoke', async ({
   const a = await userPage(browser, alice);
   const b = await userPage(browser, bob);
 
-  // Before sharing, Bob sees neither the notebook nor the page.
-  await b.page.goto(tasksUrl(teamId, 'today'));
+  // Before sharing, Bob sees neither the notebook nor the page (in the Notes panel's notebook picker).
+  await b.page.goto(`/w/${teamId}/notes`);
   await expect(b.page.locator('.sidebar, nav').first()).toBeVisible();
+  await openNotebookPicker(b.page);
   await expect(b.page.getByText('Alice private')).toHaveCount(0);
   await expect(b.page.getByTestId('shared-with-me')).toHaveCount(0);
+  await b.page.keyboard.press('Escape');
 
   // Alice: Share → pick Bob → Can edit.
   await openPage(a.page, teamId, pageId);
@@ -37,6 +39,7 @@ test('share a private page with one teammate, co-edit it, then revoke', async ({
   await dialog.getByRole('button', { name: 'Done' }).click();
 
   // Bob: it appears live under "Shared with me"; the notebook stays hidden.
+  await openNotebookPicker(b.page);
   const shared = b.page.getByTestId('shared-with-me');
   await expect(shared.getByRole('link', { name: /Secret plan/ })).toBeVisible();
   await expect(b.page.getByText('Alice private')).toHaveCount(0);
@@ -60,6 +63,7 @@ test('share a private page with one teammate, co-edit it, then revoke', async ({
   await a.page.locator('.page-share-dialog').getByRole('button', { name: 'Stop sharing with Bob Sharee' }).click();
   await expect(a.page.locator('.page-share-dialog').getByTestId('page-share-row')).toHaveCount(0);
   await expect(b.page.getByRole('heading', { name: 'Page not found' })).toBeVisible({ timeout: 10_000 });
+  await openNotebookPicker(b.page);
   await expect(b.page.getByTestId('shared-with-me')).toHaveCount(0);
 
   await a.context.close();
@@ -81,7 +85,9 @@ test('someone outside the workspace opens the shared link: that page only, view-
   await expect(o.page.locator('.ProseMirror')).toBeVisible();
   await expect(o.page.locator('.chip', { hasText: 'View only' })).toBeVisible();
   await expect(o.page.locator('.crumbs')).toContainText('Shared with me');
+  await openNotebookPicker(o.page);
   await expect(o.page.getByTestId('shared-with-me').getByRole('link', { name: /Public-ish note/ })).toContainText('Closed Team');
+  await o.page.keyboard.press('Escape');
   // The page's tasks render from the shared page, though Olga isn't in that workspace.
   const tasksToggle = o.page.locator('button.panel-toggle[title="Tasks on this page"]');
   await expect(tasksToggle).toContainText('1'); // the open-task badge counts it too

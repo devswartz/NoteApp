@@ -25,6 +25,14 @@ export function monthGrid(d: string): string[] {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
+/** The date the calendar shows (?d=, default today); the Calendar panel's mini month sets it. */
+export const calendarDate = (params: URLSearchParams) => {
+  const d = params.get('d');
+  return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : today();
+};
+/** Assignee filter (?who=): 'mine' (default), 'all', 'none' (unassigned) or a user id. */
+export const calendarWho = (params: URLSearchParams) => params.get('who') || 'mine';
+
 export function CalendarView() {
   const open = useOpen();
   const tasks = useStore((s) => s.tasks);
@@ -32,13 +40,15 @@ export function CalendarView() {
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const [params, setParams] = useSearchParams();
   const mode: Mode = params.get('mode') === 'week' ? 'week' : 'month';
-  const [scope, setScope] = useState<'mine' | 'all'>('mine');
+  const scope = calendarWho(params);
   const [showDone, setShowDone] = useState(false);
-  const [cursor, setCursor] = useState(today);
+  const cursor = calendarDate(params);
+  const setCursor = (d: string, toMode?: Mode) =>
+    setParams((p) => (d === today() ? p.delete('d') : p.set('d', d), toMode === 'week' && p.set('mode', 'week'), p), { replace: true });
   const [dropDay, setDropDay] = useState<string | null>(null);
   const t = today();
 
-  const inScope = (x: Task) => scope === 'all' || isMine(x, me);
+  const inScope = (x: Task) => (scope === 'all' ? true : scope === 'mine' ? isMine(x, me) : scope === 'none' ? !x.assigneeId : x.assigneeId === scope);
   const byDay = useMemo(() => {
     const list = (showDone ? Object.values(tasks) : open).filter((x) => x.dueDate && inScope(x));
     const map = new Map<string, Task[]>();
@@ -122,7 +132,6 @@ export function CalendarView() {
           <label className="check-label">
             <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Completed
           </label>
-          <Segmented value={scope} onChange={setScope} options={[['mine', 'Mine'], ['all', 'Everyone']]} />
           <Segmented
             value={mode}
             onChange={(m) => setParams((p) => (m === 'week' ? p.set('mode', 'week') : p.delete('mode'), p), { replace: true })}
@@ -155,8 +164,7 @@ export function CalendarView() {
                   onClick={(e) => {
                     if (!isTouch()) return;
                     if (mode === 'month') {
-                      setCursor(d);
-                      setParams((p) => (p.set('mode', 'week'), p), { replace: true });
+                      setCursor(d, 'week');
                     } else if (canEdit && e.target === e.currentTarget) ui.openQuickAdd({ dueDate: d });
                   }}
                   data-date={d}
@@ -175,8 +183,7 @@ export function CalendarView() {
                       <button
                         className="cal-more muted small"
                         onClick={() => {
-                          setCursor(d);
-                          setParams((p) => (p.set('mode', 'week'), p), { replace: true });
+                          setCursor(d, 'week');
                         }}
                       >
                         +{items.length - limit} more

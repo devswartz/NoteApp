@@ -1,6 +1,6 @@
 // Priority 4: permissions — viewers can't edit; private notebooks are hidden from other members.
 import { expect, test } from '@playwright/test';
-import { api, createPage, createTask, createTeam, createUser, openPage, signInContext, taskRow, tasksUrl } from './helpers.ts';
+import { api, createPage, createTask, createTeam, createUser, openNotebookPicker, openPage, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
 test('a viewer can read but not edit pages or tasks', async ({ page, context, request }) => {
   const owner = await createUser(request, 'Owen Owner');
@@ -74,10 +74,12 @@ test('a private notebook is hidden from other members', async ({ browser, reques
   await signInContext(bc, bob);
   const b = await bc.newPage();
   await b.goto(`/w/${teamId}/tasks/all`);
-  const bSidebar = b.getByRole('navigation', { name: 'Sidebar' });
-  await expect(bSidebar.getByText('Team Wiki')).toBeVisible();
-  await expect(bSidebar.getByText('Alice Diary')).toHaveCount(0);
   await expect(taskRow(b, 'Private chore')).toHaveCount(0);
+  // The Notes panel's notebook picker lists what Bob can see.
+  await b.goto(`/w/${teamId}/notes`);
+  let picker = await openNotebookPicker(b);
+  await expect(picker.getByText('Team Wiki')).toBeVisible();
+  await expect(picker.getByText('Alice Diary')).toHaveCount(0);
 
   // Direct link to the private page doesn't open it.
   await b.goto(`/w/${teamId}/p/${priv.pageId}`);
@@ -85,13 +87,14 @@ test('a private notebook is hidden from other members', async ({ browser, reques
   await expect(b.getByText('Dear diary')).toHaveCount(0);
 
   // Alice shares it → it appears for Bob live.
-  await b.goto(`/w/${teamId}/tasks/all`);
-  await expect(bSidebar.getByText('Team Wiki')).toBeVisible();
+  await b.goto(`/w/${teamId}/notes`);
+  picker = await openNotebookPicker(b);
+  await expect(picker.getByText('Team Wiki')).toBeVisible();
   const nbRow = a.locator('.sb-row', { hasText: 'Alice Diary' });
   // Right-click opens the same menu as the hover-revealed ⋯ button, without depending on hover.
   await nbRow.locator('.sb-label').click({ button: 'right' });
   await a.getByRole('menuitem', { name: 'Share with workspace' }).click();
-  await expect(bSidebar.getByText('Alice Diary')).toBeVisible();
+  await expect(picker.getByText('Alice Diary')).toBeVisible();
   await ac.close();
   await bc.close();
 });

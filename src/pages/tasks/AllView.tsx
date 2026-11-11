@@ -43,6 +43,15 @@ export function AllView() {
     applied.current = target.id;
     apply(target);
   }, [target]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ?new=1 (the Tasks panel's "New view") starts from a clean slate to build a view.
+  const newParam = params.get('new');
+  useEffect(() => {
+    if (!newParam) return;
+    applied.current = null;
+    setFilters(DEFAULT_FILTERS);
+    setSort('due');
+    setGroup('none');
+  }, [newParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filtering thousands of tasks shouldn't block typing in the search box.
   const deferred = useDeferredValue(filters);
