@@ -9,7 +9,12 @@
   "/me/onenote/notebooks/0-NB1!1/sections?$select=id,displayName&$skiptoken=2": { "json": { "value": [{ "id": "0-LOCKED!11", "displayName": "Secret" }] } },
   "/me/onenote/notebooks/0-NB1!1/sectionGroups?$select=id,displayName": { "json": { "value": [{ "id": "0-GRP1!20", "displayName": "Projects" }] } },
   "/me/onenote/sectionGroups/0-GRP1!20/sections?$select=id,displayName": { "json": { "value": [{ "id": "0-SEC2!21", "displayName": "Alpha" }] } },
-  "/me/onenote/sectionGroups/0-GRP1!20/sectionGroups?$select=id,displayName": { "json": { "value": [] } },
+  "/me/onenote/sectionGroups/0-GRP1!20/sectionGroups?$select=id,displayName": { "json": { "value": [{ "id": "0-GRP2!30", "displayName": "Archive" }] } },
+  "/me/onenote/sectionGroups/0-GRP2!30/sections?$select=id,displayName": { "json": { "value": [] } },
+  "/me/onenote/sectionGroups/0-GRP2!30/sectionGroups?$select=id,displayName": { "json": { "value": [{ "id": "0-GRP3!40", "displayName": "Old" }] } },
+  "/me/onenote/sectionGroups/0-GRP3!40/sections?$select=id,displayName": { "json": { "value": [{ "id": "0-SEC3!41", "displayName": "2019" }] } },
+  "/me/onenote/sectionGroups/0-GRP3!40/sectionGroups?$select=id,displayName": { "json": { "value": [] } },
+  "/me/onenote/sections/0-SEC3!41/pages?$select=id,title,order&pagelevel=true&$top=100": { "json": { "value": [] } },
   "/me/onenote/sections/0-SEC1!10/pages?$select=id,title,order&pagelevel=true&$top=100": {
     "json": { "value": [{ "id": "0-PG2!101", "title": "Follow-ups", "order": 1, "level": 1 }, { "id": "0-PG1!100", "title": "Weekly sync", "order": 0, "level": 0 }] }
   },

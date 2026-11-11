@@ -23,6 +23,7 @@ function useCreatePage(wsId: string) {
       .then(({ id }) => navigate(`/w/${wsId}/p/${id}`))
       .catch(errorToast);
 }
+import { sectionPathLabel, sectionsInOrder } from '../../shared/sections.ts';
 
 export function NotesHome() {
   const { wsId } = useParams() as { wsId: string };
@@ -231,14 +232,12 @@ function Overview({ wsId }: { wsId: string }) {
               {nb.name}
               {nb.visibility === 'private' && <Lock size={12} />}
             </h3>
-            {tree.sections
-              .filter((s) => s.notebookId === nb.id)
-              .sort(byPos)
-              .map((s) => (
+            {sectionsInOrder(tree, nb.id)
+              .map(({ section: s }) => (
                 <div key={s.id} className="notes-section">
                   <div className="notes-section-title">
                     <span className="sec-tab" style={{ background: s.color }} />
-                    {s.name}
+                    {sectionPathLabel(tree, s.id)}
                   </div>
                   {tree.pages
                     .filter((p) => p.sectionId === s.id)

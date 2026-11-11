@@ -1,14 +1,17 @@
 // "Start with a template" on an empty page, plus applyTemplate() for other entry points.
-// Built-in templates are listed first; the workspace's own templates (saved from the page menu) follow,
-// each with rename and delete.
+// The workspace's templates tied to this page's section (or a parent section) come first, under
+// "Templates for this section"; then the built-ins and the templates offered everywhere. Templates
+// tied only to other sections aren't shown. Each user template has rename, "Available in…" and delete.
 import { useEffect, useState } from 'react';
 import type { Editor, JSONContent } from '@tiptap/core';
-import { Pencil, Trash2 } from 'lucide-react';
+import { FolderTree, Pencil, Trash2 } from 'lucide-react';
 import { patch, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { confirmDialog, promptDialog } from '../components/shell/dialogs.tsx';
 import { TEMPLATES, type PageTemplate } from './templates.ts';
-import { deleteTemplate, loadUserTemplates, renameTemplate, useUserTemplates } from './userTemplates.ts';
+import { deleteTemplate, loadUserTemplates, renameTemplate, setTemplateSections, useUserTemplates } from './userTemplates.ts';
+import { templateDialog } from './TemplateDialog.tsx';
+import { templateOffer } from '../../shared/sections.ts';
 import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
 
 /** A stable empty list: a selector returning a fresh [] each time makes the store re-render forever. */
@@ -66,6 +69,8 @@ export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: str
   const empty = useIsEmpty(editor);
   const wsId = useStore((s) => s.wsId);
   const mine = useUserTemplates((s) => (s.wsId === wsId ? s.items : NONE));
+  const tree = useStore((s) => s.tree);
+  const sectionId = tree.pages.find((p) => p.id === pageId)?.sectionId;
   const [busy, setBusy] = useState<string | null>(null);
   const show = empty && editor.isEditable;
   useEffect(() => {
@@ -93,10 +98,56 @@ export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: str
     });
     if (ok) deleteTemplate(t.id).then(() => toast('Template deleted')).catch(errorToast);
   };
+  const scope = async (t: TemplateMeta) => {
+    const r = await templateDialog({ title: `Where “${t.name}” is offered`, sections: t.sections, confirmLabel: 'Save' });
+    if (r) setTemplateSections(t.id, r.sections).then(() => toast('Template updated')).catch(errorToast);
+  };
+  // Templates tied to this section come first; ones tied to other sections only aren't offered here.
+  const forSection = mine.filter((t) => templateOffer(t, sectionId, tree) === 'section');
+  const others = mine.filter((t) => templateOffer(t, sectionId, tree) === 'everywhere');
+
+  const userRow = (list: TemplateMeta[], testId: string) => (
+    <div className="template-picker-row" data-testid={testId}>
+      {list.map((t) => (
+        <div key={t.id} className="template-card-wrap" data-template-id={t.id}>
+          <button
+            type="button"
+            className="template-card template-card-user"
+            disabled={busy !== null}
+            title={t.visibility === 'private' ? 'Only you can see this template' : 'Shared with the workspace'}
+            onClick={() => use(t)}
+          >
+            <span className="template-icon">{t.icon || '📋'}</span>
+            <span className="template-name">{t.name}</span>
+          </button>
+          {t.canManage && (
+            <>
+              <button type="button" className="template-act" aria-label={`Rename template ${t.name}`} title="Rename" onClick={() => void rename(t)}>
+                <Pencil size={13} />
+              </button>
+              <button type="button" className="template-act" aria-label={`Choose sections for template ${t.name}`} title="Available in…" onClick={() => void scope(t)}>
+                <FolderTree size={13} />
+              </button>
+              <button type="button" className="template-act" aria-label={`Delete template ${t.name}`} title="Delete" onClick={() => void remove(t)}>
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="template-picker" aria-label="Start with a template">
       <span className="template-picker-label">Start with a template, or just type</span>
+      {forSection.length > 0 && (
+        <>
+          <span className="template-picker-label template-picker-label-2">Templates for this section</span>
+          {userRow(forSection, 'section-templates')}
+          <span className="template-picker-label template-picker-label-2">Other templates</span>
+        </>
+      )}
       <div className="template-picker-row">
         {TEMPLATES.map((t) => (
           <button key={t.id} type="button" className="template-card" title={t.description} onClick={() => applyTemplate(editor, pageId, t)}>
@@ -105,35 +156,10 @@ export function TemplatePicker({ editor, pageId }: { editor: Editor; pageId: str
           </button>
         ))}
       </div>
-      {mine.length > 0 && (
+      {others.length > 0 && (
         <>
-          <span className="template-picker-label template-picker-label-2">Your templates</span>
-          <div className="template-picker-row" data-testid="user-templates">
-            {mine.map((t) => (
-              <div key={t.id} className="template-card-wrap" data-template-id={t.id}>
-                <button
-                  type="button"
-                  className="template-card template-card-user"
-                  disabled={busy !== null}
-                  title={t.visibility === 'private' ? 'Only you can see this template' : 'Shared with the workspace'}
-                  onClick={() => use(t)}
-                >
-                  <span className="template-icon">{t.icon || '📋'}</span>
-                  <span className="template-name">{t.name}</span>
-                </button>
-                {t.canManage && (
-                  <>
-                    <button type="button" className="template-act" aria-label={`Rename template ${t.name}`} title="Rename" onClick={() => void rename(t)}>
-                      <Pencil size={13} />
-                    </button>
-                    <button type="button" className="template-act" aria-label={`Delete template ${t.name}`} title="Delete" onClick={() => void remove(t)}>
-                      <Trash2 size={13} />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
+          {forSection.length === 0 && <span className="template-picker-label template-picker-label-2">Your templates</span>}
+          {userRow(others, 'user-templates')}
         </>
       )}
     </div>

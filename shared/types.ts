@@ -157,6 +157,8 @@ export interface Notebook {
 export interface Section {
   id: string;
   notebookId: string;
+  /** The section this one is nested in (same notebook), or null at the top level. At most 3 levels. */
+  parentId: string | null;
   name: string;
   color: string;
   position: number;
@@ -287,6 +289,8 @@ export interface SearchResult {
     snippet: string;
     notebookName: string;
     sectionName: string;
+    /** Full location, e.g. "Notebook › Section › Subsection". */
+    path: string;
   }[];
   tasks: (Task & { snippet?: string })[];
 }
@@ -306,6 +310,13 @@ export interface TemplateMeta {
   fileCount: number;
   /** The signed-in user may rename/delete it (creator, or an owner/admin for workspace-visible ones). */
   canManage: boolean;
+  /**
+   * Tied to sections (template_sections): false = offered everywhere. When true it's offered only in
+   * `sections` (and their subsections when includeSubsections). `sections` lists only the ones the
+   * signed-in user can see, so it may be empty while `scoped` is true. See templateOffer in shared/sections.ts.
+   */
+  scoped: boolean;
+  sections: { sectionId: string; includeSubsections: boolean }[];
 }
 
 /** What POST /templates/:id/use returns: content ready to insert through the editor, with brand-new tasks and file copies. */

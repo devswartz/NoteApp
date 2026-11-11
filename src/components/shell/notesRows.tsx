@@ -13,6 +13,7 @@ import {
   FilePlus,
   FileText,
   FolderInput,
+  FolderPlus,
   Globe,
   Link2,
   Lock,
@@ -33,6 +34,7 @@ import { byPos, dragProps, dropClass, dropProps, movePage, moveSection, useDnd }
 import { confirmDialog, promptDialog } from './dialogs.tsx';
 import { openShareDialog } from '../sharing/ShareDialog.tsx';
 import { childSections, sectionTarget } from './navState.ts';
+import { MAX_SECTION_DEPTH, sectionDepth } from '../../../shared/sections.ts';
 
 export type MoveItem = { kind: 'page' | 'section'; id: string } | null;
 
@@ -177,11 +179,21 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
   const selected = selectedId === section.id;
   const hasChildren = subs.length > 0 || (folded && (pages.length > 0 || p.canEdit));
   const isCollapsed = hasChildren && !!p.collapsed[section.id];
+  const canNest = sectionDepth(tree, section.id) < MAX_SECTION_DEPTH;
+  const createSubsection = async () => {
+    const name = await promptDialog({ title: `New subsection in ${section.name}`, label: 'Name', confirmLabel: 'Create' });
+    if (name) post(`/notebooks/${section.notebookId}/sections`, { name, parentId: section.id }).then(() => sidebar.toggleNode(section.id, false)).catch(errorToast);
+  };
   const menu = useContextMenu(() => (
     <div className="menu" role="menu">
       <MenuItem icon={<FilePlus size={15} />} onSelect={() => p.createPage(section.id)}>
         New page
       </MenuItem>
+      {canNest && (
+        <MenuItem icon={<FolderPlus size={15} />} onSelect={createSubsection}>
+          New subsection
+        </MenuItem>
+      )}
       <MenuItem icon={<Pencil size={15} />} onSelect={() => p.setEditing(section.id)}>
         Rename
       </MenuItem>
@@ -229,7 +241,10 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
         {...(p.canEdit
           ? dropProps('section', section.id, (where) => {
               const drag = useDnd.getState().drag;
-              if (drag?.kind === 'section') void moveSection(drag.id, section.notebookId, section.id, where);
+              if (drag?.kind === 'section')
+                void (where === 'inside'
+                  ? moveSection(drag.id, section.notebookId, section.id, null, 'inside')
+                  : moveSection(drag.id, section.notebookId, section.parentId ?? null, section.id, where));
               if (drag?.kind === 'page' || drag?.kind === 'favorite') void movePage(drag.id, section.id, null, 'inside');
             })
           : {})}

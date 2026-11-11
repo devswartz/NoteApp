@@ -35,7 +35,7 @@ test('[[ page suggestions: prefix first, current page excluded, "Create" when no
   const pg = (id: string, title: string, updatedAt = '2026-01-01') => ({ id, sectionId: 's', title, icon: null, kind: 'document' as const, position: 1, updatedAt, updatedBy: null });
   const tree = {
     notebooks: [{ id: 'n', workspaceId: 'w', name: 'Work', color: '', visibility: 'shared' as const, createdBy: 'u', position: 1 }],
-    sections: [{ id: 's', notebookId: 'n', name: 'Notes', color: '', position: 1 }],
+    sections: [{ id: 's', notebookId: 'n', parentId: null, name: 'Notes', color: '', position: 1 }],
     pages: [pg('1', 'Project plan'), pg('2', 'Plan B'), pg('3', 'Roadmap'), pg('4', 'Current')],
   };
   const items = pageItems('plan', '4', tree);

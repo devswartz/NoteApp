@@ -1,5 +1,6 @@
 // Suggestions for the [[ page-link picker. Pure (no store or API), so it's unit-tested.
 import type { PageMeta, Tree } from '../../shared/types.ts';
+import { sectionPathLabel } from '../../shared/sections.ts';
 
 export type PageItem = { kind: 'page'; page: PageMeta; crumb: string } | { kind: 'create'; title: string };
 
@@ -9,7 +10,7 @@ export function pageItems(query: string, currentPageId: string, tree: Tree): Pag
   const crumb = (p: PageMeta) => {
     const s = tree.sections.find((x) => x.id === p.sectionId);
     const n = tree.notebooks.find((x) => x.id === s?.notebookId);
-    return `${n?.name ?? ''} › ${s?.name ?? ''}`;
+    return sectionPathLabel(tree, p.sectionId, n?.name ?? '');
   };
   const scored = tree.pages
     .filter((p) => p.id !== currentPageId)

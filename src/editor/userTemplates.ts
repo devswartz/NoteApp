@@ -28,10 +28,16 @@ export async function loadUserTemplates(wsId = useStore.getState().wsId) {
 }
 
 /** Snapshot the live editor content as a template. The server copies tasks and attachments. */
-export async function saveAsTemplate(editor: Editor, pageId: string, name: string, icon?: string | null) {
-  const t = await post<TemplateMeta>(`/pages/${pageId}/templates`, { name, icon: icon || undefined, content: editor.getJSON() });
+export async function saveAsTemplate(editor: Editor, pageId: string, name: string, icon?: string | null, sections?: TemplateMeta['sections']) {
+  const t = await post<TemplateMeta>(`/pages/${pageId}/templates`, { name, icon: icon || undefined, content: editor.getJSON(), sections });
   void loadUserTemplates();
   return t;
+}
+
+/** Change the sections a template is offered in ([] = everywhere). */
+export async function setTemplateSections(id: string, sections: TemplateMeta['sections']) {
+  const t = await patch<TemplateMeta>(`/templates/${id}`, { sections });
+  useUserTemplates.setState((s) => ({ items: s.items.map((x) => (x.id === id ? t : x)) }));
 }
 
 export async function renameTemplate(id: string, name: string) {
