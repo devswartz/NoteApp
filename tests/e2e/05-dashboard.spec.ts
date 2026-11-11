@@ -1,6 +1,6 @@
 // Priority 5: dashboard views (Today/Upcoming/Calendar/Completed/All), filters, quick add parsing.
 import { expect, test } from '@playwright/test';
-import { addFilter, createTask, createUser, isoDay, listTasks, signInContext, taskRow, tasksUrl, eventually } from './helpers.ts';
+import { addFilter, api, createTask, createUser, isoDay, listTasks, removeFilter, ribbon, signInContext, taskRow, tasksUrl, eventually } from './helpers.ts';
 
 test.describe('dashboard', () => {
   test('Today shows overdue + today; Upcoming shows the future; Completed shows done tasks', async ({ page, context, request }) => {
@@ -54,6 +54,45 @@ test.describe('dashboard', () => {
     await expect(page.locator('.cal-day.is-today')).toContainText('Added from calendar');
   });
 
+  test('Calendar: the ribbon navigates, switches Week / Month and filters', async ({ page, context, request }) => {
+    const user = await createUser(request, 'Rib Calendar');
+    const tag = await api<{ id: string }>(request, 'POST', `/workspaces/${user.wsId}/tags`, user.token, { name: 'Errand' });
+    await createTask(request, user, user.wsId, { title: 'Tagged today', dueDate: isoDay(0), tagIds: [tag.id] });
+    await createTask(request, user, user.wsId, { title: 'Plain today', dueDate: isoDay(0) });
+    await signInContext(context, user);
+    await page.goto(tasksUrl(user.wsId, 'calendar'));
+    const bar = ribbon(page);
+    await expect(page.locator('.cal-day.is-today')).toContainText('Plain today');
+    // The in-page switches are on phones only; here they live in the ribbon.
+    await expect(page.locator('.cal-head').getByRole('button', { name: 'Next month' })).toHaveCount(0);
+
+    const title = page.locator('.cal-head h1');
+    const month = await title.textContent();
+    await bar.getByRole('button', { name: 'Next month' }).click();
+    await expect(title).not.toHaveText(month!);
+    await expect(page).toHaveURL(/[?&]d=/);
+    await bar.getByRole('button', { name: 'Go to today' }).click();
+    await expect(title).toHaveText(month!);
+
+    await bar.getByRole('button', { name: 'Week', exact: true }).click();
+    await expect(page.locator('.calendar')).toHaveClass(/cal-week/);
+    await expect(bar.getByRole('button', { name: 'Week', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await bar.getByRole('button', { name: 'Previous week' }).click();
+    await bar.getByRole('button', { name: 'Next week' }).click();
+    await expect(page.locator('.cal-day.is-today')).toContainText('Tagged today');
+
+    await bar.getByRole('button', { name: /^Tags filter/ }).click();
+    await page.getByRole('menuitem', { name: 'Errand' }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.cal-day.is-today')).toContainText('Tagged today');
+    await expect(page.locator('.cal-day.is-today')).not.toContainText('Plain today');
+    await expect(bar.getByRole('button', { name: /^Tags filter/ })).toHaveClass(/is-active/);
+
+    await bar.getByRole('button', { name: 'Everyone' }).click();
+    await expect(page).toHaveURL(/who=all/);
+    await expect(bar.getByRole('button', { name: 'Everyone' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   test('All Tasks: text filter, priority filter, source filter', async ({ page, context, request }) => {
     const user = await createUser(request, 'Fil Ter');
     await createTask(request, user, user.wsId, { title: 'Alpha urgent', priority: 1 });
@@ -71,15 +110,16 @@ test.describe('dashboard', () => {
     await addFilter(page, 'Priority', 'Priority 1');
     await expect(taskRow(page, 'Alpha urgent')).toBeVisible();
     await expect(taskRow(page, 'Gamma medium')).toHaveCount(0);
-    await expect(page.locator('.filter-chip[data-filter="priority"]')).toContainText('Priority 1');
-    await page.getByRole('button', { name: 'Remove Priority filter' }).click();
+    // The active filter shows in words next to the count, and on its ribbon button.
+    await expect(page.locator('.filter-summary-part[data-filter="priority"]')).toContainText('Priority 1');
+    await expect(ribbon(page).getByRole('button', { name: 'Priority filter' })).toHaveClass(/is-active/);
+    await removeFilter(page, 'Priority');
     await expect(taskRow(page, 'Gamma medium')).toBeVisible();
 
     // (A new personal workspace is seeded with an onboarding note that has tasks in it.)
     await addFilter(page, 'Source', 'In notes');
     await expect(taskRow(page, 'Alpha urgent')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Source filter', exact: true }).click();
-    await page.getByRole('menuitem', { name: 'Standalone' }).click();
+    await addFilter(page, 'Source', 'Standalone');
     await expect(taskRow(page, 'Alpha urgent')).toBeVisible();
   });
 

@@ -73,16 +73,56 @@ test('collapse shrinks the ribbon to a strip, remembered across a reload; a clic
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toBeVisible();
 });
 
-test('on the Tasks view the ribbon is a quiet strip, not a row of dead buttons', async ({ page, context, request }) => {
+test('the ribbon is contextual: Tasks, Calendar, Notes and Settings each get their own groups', async ({ page, context, request }) => {
   const user = await createUser(request, 'Tad Tasks');
   await signInContext(context, user);
+  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+  const groups = async (names: string[]) => {
+    for (const name of names) await expect(ribbon.getByRole('group', { name, exact: true })).toBeVisible();
+  };
   await page.goto(tasksUrl(user.wsId, 'today'));
-  const strip = page.locator('.ribbon.is-off');
-  await expect(strip).toBeVisible();
-  await expect(strip).toContainText('Open a note to use the ribbon');
-  expect((await strip.boundingBox())!.height).toBeLessThan(40);
-  await expect(page.getByRole('toolbar', { name: 'Ribbon' })).toHaveCount(0);
-  await expect(page.locator('.ribbon button')).toHaveCount(0);
+  await groups(['New', 'Show', 'Organise', 'Filter', 'Views']);
+  await expect(ribbon.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.goto(tasksUrl(user.wsId, 'calendar'));
+  await groups(['New', 'Navigate', 'View', 'Filter']);
+  await page.goto(`/w/${user.wsId}/settings`);
+  await groups(['Navigate']);
+  await ribbon.getByRole('button', { name: 'Back to notes' }).click();
+  await expect(page).not.toHaveURL(/settings/);
+});
+
+test('collapsed stays collapsed across sections', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Cara Collapse');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await page.goto(tasksUrl(user.wsId, 'all'));
+  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+  await ribbon.getByRole('button', { name: 'Collapse the ribbon' }).click();
+  await expect(ribbon).toContainText('New · Show · Organise · Filter · Views');
+  await page.goto(tasksUrl(user.wsId, 'calendar'));
+  await expect(ribbon.getByRole('button', { name: 'Show the ribbon' })).toBeVisible();
+  await expect(ribbon.getByRole('button', { name: 'Next month' })).toHaveCount(0);
+  await openPage(page, user.wsId, pageId);
+  await expect(ribbon.getByRole('button', { name: 'Show the ribbon' })).toBeVisible();
+  await expect(ribbon.getByRole('button', { name: /^Bold/ })).toHaveCount(0);
+  await ribbon.getByRole('button', { name: 'Show the ribbon' }).click();
+  await page.goto(`/w/${user.wsId}/notes`);
+  await expect(ribbon.getByRole('button', { name: 'New page' })).toBeVisible();
+});
+
+test('Notes overview: New page in the ribbon creates a page and opens it', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Nell Notes');
+  await signInContext(context, user);
+  await page.goto(`/w/${user.wsId}/notes`);
+  const ribbon = page.getByRole('toolbar', { name: 'Ribbon' });
+  for (const name of ['New', 'Import']) await expect(ribbon.getByRole('group', { name, exact: true })).toBeVisible();
+  await ribbon.getByRole('button', { name: 'Import' }).click();
+  await expect(page.getByRole('menuitem', { name: 'From OneNote…' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Markdown files…' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await ribbon.getByRole('button', { name: 'New page' }).click();
+  await expect(page).toHaveURL(/\/p\/[^/]+$/);
+  await expect(ribbon.getByRole('group', { name: 'Lists', exact: true })).toBeVisible();
 });
 
 test('OneNote shortcuts: Ctrl+1 checklist, Ctrl+. bullets, Ctrl+Alt+1/2/3 headings; tooltips show them', async ({ page, context, request }) => {

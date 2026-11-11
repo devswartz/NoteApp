@@ -15,7 +15,7 @@ import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
-import { exportMarkdown, importMarkdown, printPage } from '../editor/exportPage.ts';
+import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, takePendingImport } from '../editor/exportPage.ts';
 import { Outline, usePageSetting } from '../editor/Outline.tsx';
 import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../components/ui.tsx';
@@ -194,6 +194,12 @@ export function PageView() {
     if (!canvas || canEdit === null) return;
     setRibbonPage({ pageId, doc: canvas.doc, canEdit });
     return () => setRibbonPage(null);
+  }, [canvas, canEdit, pageId]);
+  // Markdown picked from the Notes ribbon's Import before this page existed.
+  useEffect(() => {
+    if (!canvas || !canEdit) return;
+    const files = takePendingImport(pageId);
+    if (files) void importMarkdownFiles(canvas, pageId, files);
   }, [canvas, canEdit, pageId]);
   const settings = usePageSettings(canvas?.doc);
   const outlineHidden = useRibbon((r) => r.outlineHidden);

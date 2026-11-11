@@ -7,8 +7,8 @@ import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator } from '../../comp
 import { DEFAULT_FILTERS, activeFilterKeys, orderedTeams, teamLabel, type Filters } from '../../lib/taskViews.ts';
 import { LabelDot } from '../../components/Labels.tsx';
 
-type Kind = 'teamId' | 'assignee' | 'assignedBy' | 'tagsAny' | 'tagsNone' | 'due' | 'priority' | 'source' | 'notebookId' | 'sectionId';
-const KINDS: { key: Kind; label: string }[] = [
+export type Kind = 'teamId' | 'assignee' | 'assignedBy' | 'tagsAny' | 'tagsNone' | 'due' | 'priority' | 'source' | 'notebookId' | 'sectionId';
+export const KINDS: { key: Kind; label: string }[] = [
   { key: 'teamId', label: 'Team' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'assignedBy', label: 'Assigned by' },
@@ -78,7 +78,7 @@ function useOptions(kind: Kind): Option[] {
 const isMulti = (k: Kind) => k === 'tagsAny' || k === 'tagsNone';
 
 /** The options for one filter kind; single-choice kinds close on pick, tag kinds toggle. */
-function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Filters; onChange: (f: Filters) => void }) {
+export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Filters; onChange: (f: Filters) => void }) {
   const options = useOptions(kind);
   const teams = useStore((s) => s.teams);
   const value = filters[kind];
@@ -116,7 +116,7 @@ function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Filters; o
   );
 }
 
-function useValueLabel(kind: Kind, filters: Filters): string {
+export function useValueLabel(kind: Kind, filters: Filters): string {
   const options = useOptions(kind);
   const v = filters[kind];
   const name = (x: string) => options.find((o) => o.value === x)?.label ?? 'Unknown';
@@ -158,9 +158,9 @@ function AddFilter({ filters, onChange, active }: { filters: Filters; onChange: 
   );
 }
 
-function AddFilterMenu({ filters, onChange, active, close }: { filters: Filters; onChange: (f: Filters) => void; active: Kind[]; close: () => void }) {
+export function AddFilterMenu({ filters, onChange, active, close, kinds = KINDS }: { filters: Filters; onChange: (f: Filters) => void; active: Kind[]; close: () => void; kinds?: typeof KINDS }) {
   const [kind, setKind] = useState<Kind | null>(null);
-  const available = KINDS.filter((k) => !active.includes(k.key) || k.key === kind);
+  const available = kinds.filter((k) => !active.includes(k.key) || k.key === kind);
   return (
         <div className="menu filter-menu">
           {kind ? (
@@ -210,5 +210,42 @@ export function FilterChips({ filters, onChange }: { filters: Filters; onChange:
         </button>
       )}
     </div>
+  );
+}
+
+/** The filters without one kind (the team filter's "include subteams" resets with it). */
+export const withoutFilter = (filters: Filters, kind: Kind): Filters => ({
+  ...filters,
+  [kind]: DEFAULT_FILTERS[kind],
+  ...(kind === 'teamId' ? { includeSubteams: true } : {}),
+});
+
+/** All the filter conditions cleared (the search text and status stay). */
+export const clearedFilters = (filters: Filters): Filters => ({ ...DEFAULT_FILTERS, q: filters.q, status: filters.status });
+
+/** The active filter kinds, in the bar's order. */
+export const activeKinds = (filters: Filters): Kind[] => activeFilterKeys(filters).filter((k): k is Kind => KINDS.some((x) => x.key === k));
+
+function SummaryPart({ kind, filters }: { kind: Kind; filters: Filters }) {
+  const value = useValueLabel(kind, filters);
+  return (
+    <span className="filter-summary-part" data-filter={kind}>
+      {KINDS.find((k) => k.key === kind)!.label}: {value}
+    </span>
+  );
+}
+
+/** Desktop: the active filters in words next to the result count (the ribbon sets them). */
+export function FilterSummary({ filters, viewName }: { filters: Filters; viewName?: string }) {
+  const active = activeKinds(filters);
+  if (!active.length && !viewName && filters.status === 'open') return null;
+  return (
+    <span className="filter-summary" aria-label="Active filters">
+      {viewName && <span className="filter-summary-part">View: {viewName}</span>}
+      {filters.status !== 'open' && <span className="filter-summary-part">{filters.status === 'done' ? 'Completed only' : 'Including completed'}</span>}
+      {active.map((k) => (
+        <SummaryPart key={k} kind={k} filters={filters} />
+      ))}
+    </span>
   );
 }

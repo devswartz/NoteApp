@@ -1,6 +1,6 @@
 // Dashboard keyboard workflow and bulk actions (Tasks PR #16).
 import { expect, test } from '@playwright/test';
-import { createTask, createUser, eventually, isoDay, listTasks, signInContext, taskRow, tasksUrl } from './helpers.ts';
+import { createTask, createUser, eventually, isoDay, listTasks, ribbon, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
 test.describe('bulk task actions', () => {
   test('Ctrl/⌘-click and Shift-click select rows; bulk complete and set priority', async ({ page, context, request }) => {
@@ -8,7 +8,8 @@ test.describe('bulk task actions', () => {
     for (const t of ['Bulk A', 'Bulk B', 'Bulk C', 'Bulk D']) await createTask(request, user, user.wsId, { title: t, dueDate: isoDay(1) });
     await signInContext(context, user);
     await page.goto(tasksUrl(user.wsId, 'all'));
-    await page.getByLabel('Sort').selectOption('title');
+    await ribbon(page).getByRole('button', { name: 'Sort' }).click();
+    await page.getByRole('menuitem', { name: 'Name' }).click();
     await expect(taskRow(page, 'Bulk D')).toBeVisible();
 
     await taskRow(page, 'Bulk A').locator('.task-title').click({ modifiers: ['ControlOrMeta'] });

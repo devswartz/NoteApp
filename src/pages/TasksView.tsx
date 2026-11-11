@@ -1,5 +1,7 @@
 // Task dashboard: one route (/w/:wsId/tasks/:view), one component per view in ./tasks/.
+import { useLayoutEffect } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
+import { taskView } from './tasks/taskViewState.ts';
 import { VIEWS, type ViewId } from '../lib/taskViews.ts';
 import { MyView, TeamView, TodayView, UpcomingView } from './tasks/ListViews.tsx';
 import { AllView } from './tasks/AllView.tsx';
@@ -10,8 +12,10 @@ import { BulkBar } from './tasks/BulkBar.tsx';
 import { useTaskListCommands } from './tasks/commands.tsx';
 
 export function TasksView() {
-  const { view } = useParams() as { view: ViewId };
+  const { view, wsId } = useParams() as { view: ViewId; wsId: string };
   useTaskListCommands();
+  // Before the views' own effects (a ?view= link applies a saved view): another workspace starts fresh.
+  useLayoutEffect(() => taskView.forWorkspace(wsId), [wsId]);
   if (!VIEWS.some((v) => v.id === view)) return <Navigate to="../today" replace />;
   const label = VIEWS.find((v) => v.id === view)!.label;
   return (

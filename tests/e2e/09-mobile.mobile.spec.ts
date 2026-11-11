@@ -1,6 +1,6 @@
 // Priority 9: phone-size smoke test (iPhone 13 viewport, touch) — navigation, tasks, quick add, opening a note.
 import { expect, test } from '@playwright/test';
-import { createPage, createTask, createUser, isoDay, listTasks, openPage, signInContext, taskRow } from './helpers.ts';
+import { addFilter, createPage, createTask, createUser, isoDay, listTasks, openPage, signInContext, taskRow } from './helpers.ts';
 
 test('mobile: tab bar navigation, quick add, complete a task, open a note step by step', async ({ page, context, request }) => {
   const user = await createUser(request, 'Milo Mobile');
@@ -127,4 +127,21 @@ test('mobile: create a page from search, add a task with /task, see it on Today,
   await page.goto(`/w/${user.wsId}/p/${pageId}`);
   await expect(page.locator('.ProseMirror')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+});
+
+test('mobile: no ribbon; All Tasks and Calendar keep their in-page filters and switches', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Phil Phone');
+  await createTask(request, user, user.wsId, { title: 'Urgent phone task', priority: 1 });
+  await createTask(request, user, user.wsId, { title: 'Calm phone task', priority: 4 });
+  await signInContext(context, user);
+  await page.goto(`/w/${user.wsId}/tasks/all`);
+  await expect(page.getByRole('toolbar', { name: 'Ribbon' })).toHaveCount(0);
+  await addFilter(page, 'Priority', 'Priority 1');
+  await expect(page.locator('.filter-chip[data-filter="priority"]')).toContainText('Priority 1');
+  await expect(taskRow(page, 'Urgent phone task')).toBeVisible();
+  await expect(taskRow(page, 'Calm phone task')).toHaveCount(0);
+  await expect(page.getByLabel('Sort')).toBeVisible();
+  await page.goto(`/w/${user.wsId}/tasks/calendar`);
+  await expect(page.locator('.cal-head').getByRole('tab', { name: 'Week' })).toBeVisible();
+  await expect(page.locator('.cal-head').getByRole('button', { name: 'Next month' })).toBeVisible();
 });

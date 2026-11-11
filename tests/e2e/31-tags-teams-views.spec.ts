@@ -1,15 +1,25 @@
 // Tags, teams, "assigned by" and server-side saved views (track 1): the tester's four example views,
 // quick add with #tag and +team, and the Settings → Teams list.
 import { expect, test, type Page } from '@playwright/test';
-import { addFilter, api, createTask, createTeam, createUser, eventually, signInContext, taskRow, tasksUrl } from './helpers.ts';
+import { addFilter, api, createTask, createTeam, createUser, eventually, removeFilter, ribbon, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
+/** Desktop: the ribbon's Views group (Save view; Saved views names the current one). */
 async function saveView(page: Page, name: string) {
-  await page.getByRole('button', { name: 'Save view' }).click();
+  await ribbon(page).getByRole('button', { name: 'Save view' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Name').fill(name);
   await dialog.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+  await expectCurrentView(page, name);
 }
+
+const expectCurrentView = (page: Page, name: string) => expect(ribbon(page).getByRole('button', { name: `Saved views: ${name}` })).toBeVisible();
+
+async function openSavedView(page: Page, name: string) {
+  await ribbon(page).getByRole('button', { name: /^Saved views/ }).click();
+  await page.getByRole('menuitem', { name }).click();
+}
+
+const clearFilters = (page: Page) => ribbon(page).getByRole('button', { name: 'Clear filters' }).click();
 
 async function expectRows(page: Page, shown: string[], hidden: string[]) {
   for (const t of shown) await expect(taskRow(page, t)).toBeVisible();
@@ -47,11 +57,11 @@ test('the four example views can be built, saved on the server and reopened', as
   await expectRows(page, ['Elders unassigned', 'Shepherd visit', 'Scott elders task'], ['Scott staff task', 'Elders finished', 'Owner own task']);
   await saveView(page, 'Unfinished Elders');
   // Without subteams, the Shepherds task drops out.
-  await page.getByRole('button', { name: 'Team filter', exact: true }).click();
+  await ribbon(page).getByRole('button', { name: 'Team filter', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Include subteams' }).click();
   await page.keyboard.press('Escape');
   await expectRows(page, ['Scott elders task'], ['Shepherd visit']);
-  await page.getByRole('button', { name: 'Remove Team filter' }).click();
+  await removeFilter(page, 'Team');
 
   // 2. All tasks assigned to Scott across teams.
   await addFilter(page, 'Assignee', 'Scott Elder');
@@ -62,7 +72,7 @@ test('the four example views can be built, saved on the server and reopened', as
   await addFilter(page, 'Team', 'Elders');
   await expectRows(page, ['Shepherd visit', 'Scott elders task'], ['Scott staff task', 'Scott self-assigned']);
   await saveView(page, 'Scott in Elders');
-  await page.getByRole('button', { name: 'Clear all' }).click();
+  await clearFilters(page);
 
   // 4. Tasks I assigned to others: assigned by = me, assignee is not me.
   await addFilter(page, 'Assigned by', 'Me');
@@ -76,16 +86,51 @@ test('the four example views can be built, saved on the server and reopened', as
   expect(await api<unknown[]>(request, 'GET', `/workspaces/${ws}/task-views`, scott.token)).toEqual([]);
 
   // A saved view reopens from its chip and from its link (what the Tasks panel uses).
-  await page.getByRole('tab', { name: 'Unfinished Elders' }).click();
+  await openSavedView(page, 'Unfinished Elders');
   await expectRows(page, ['Elders unassigned', 'Shepherd visit'], ['Scott staff task']);
   await page.goto(`${tasksUrl(ws, 'all')}?view=${views.find((v) => v.name === 'Scott in Elders')!.id}`);
-  await expect(page.getByRole('tab', { name: 'Scott in Elders' })).toHaveAttribute('aria-selected', 'true');
+  await expectCurrentView(page, 'Scott in Elders');
   await expectRows(page, ['Shepherd visit', 'Scott elders task'], ['Scott staff task']);
 
   // Without the Waiting tag.
-  await page.getByRole('button', { name: 'Clear all' }).click();
+  await clearFilters(page);
   await addFilter(page, 'Without tags', 'Waiting');
   await expectRows(page, ['Shepherd visit'], ['Elders unassigned']);
+});
+
+test('Tasks ribbon: a tag filter from the ribbon, saved as a view; in-page duplicates are gone on desktop', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Rita Ribbon');
+  const tag = await api<{ id: string }>(request, 'POST', `/workspaces/${user.wsId}/tags`, user.token, { name: 'Urgent' });
+  await createTask(request, user, user.wsId, { title: 'Tagged one', tagIds: [tag.id] });
+  await createTask(request, user, user.wsId, { title: 'Plain one' });
+  await signInContext(context, user);
+  await page.goto(tasksUrl(user.wsId, 'today'));
+  const bar = ribbon(page);
+  // Off All Tasks the filters are disabled and say why.
+  await expect(bar.getByRole('button', { name: 'Tags filter' })).toHaveAttribute('aria-disabled', 'true');
+  await expect(bar.getByRole('button', { name: 'Tags filter' })).toHaveAttribute('title', /All Tasks/);
+  await expect(bar.getByRole('button', { name: 'Group by' })).toHaveAttribute('aria-disabled', 'true');
+  await bar.getByRole('button', { name: 'All Tasks' }).click();
+  await expect(page).toHaveURL(/\/tasks\/all$/);
+  await expect(bar.getByRole('button', { name: 'All Tasks' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Add filter' })).toHaveCount(0);
+  await expect(page.locator('.saved-views, .select-label')).toHaveCount(0);
+
+  await addFilter(page, 'Tags', 'Urgent');
+  await expectRows(page, ['Tagged one'], ['Plain one']);
+  await expect(bar.getByRole('button', { name: 'Tags filter' })).toHaveClass(/is-active/);
+  await expect(bar.getByRole('button', { name: 'Tags filter' }).locator('.rb-count')).toHaveText('1');
+  await saveView(page, 'Urgent things');
+  await expect(bar.getByRole('button', { name: 'Save view' })).toHaveAttribute('aria-disabled', 'true');
+  await eventually(
+    () => api<{ name: string }[]>(request, 'GET', `/workspaces/${user.wsId}/task-views`, user.token),
+    (vs) => vs.some((v) => v.name === 'Urgent things'),
+    'the view is saved on the server',
+  );
+  await clearFilters(page);
+  await expectRows(page, ['Tagged one', 'Plain one'], []);
+  await openSavedView(page, 'Urgent things');
+  await expectRows(page, ['Tagged one'], ['Plain one']);
 });
 
 test('quick add understands #tag and +team; task details show team, tags and assigned by', async ({ page, context, request }) => {
