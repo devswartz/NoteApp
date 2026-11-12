@@ -110,6 +110,8 @@
 .canvas-box.is-holding { background: var(--bg); }
 /* Selected (Escape in a box): the whole box is focused, not its text. */
 .canvas-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-active); }
+/* Picked with Ctrl/Cmd+click (for "Print selection"): tinted, with an accent frame. */
+.canvas-box.is-picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background: var(--accent-soft); }
 .canvas-box .ProseMirror { min-height: 1.7em; }
 /* The main (wide) box keeps a document's minimum height: room to click below short text. */
 .canvas-box.is-wide:not(.is-ready) .ProseMirror { min-height: 200px; }

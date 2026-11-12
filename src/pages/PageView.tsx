@@ -15,7 +15,8 @@ import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
-import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, takePendingImport } from '../editor/exportPage.ts';
+import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, printSelectionOnly, takePendingImport } from '../editor/exportPage.ts';
+import { usePrintSelection } from '../editor/boxSelection.ts';
 import { Outline } from '../editor/Outline.tsx';
 import { installPrintHandlers, printPageColour, setPrintPageColour } from '../print/print.ts';
 import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
@@ -547,6 +548,7 @@ type PageMenuProps = {
 
 function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
+  const printable = usePrintSelection(pageId);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
   const [mode, setMode] = useState<'move' | 'copy'>('move');
@@ -631,6 +633,11 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
           <MenuItem icon={<Printer size={15} />} hint={keyLabel(MOD, 'P')} onSelect={() => printPage()}>
             Print / save as PDF
           </MenuItem>
+          {printable && (
+            <MenuItem icon={<Printer size={15} />} onSelect={() => printSelectionOnly()}>
+              Print selection
+            </MenuItem>
+          )}
           <PrintColourItem />
           {canEdit && (
             <MenuItem icon={<FileUp size={15} />} onSelect={() => source && void importMarkdown(source, pageId)}>
