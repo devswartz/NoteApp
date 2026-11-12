@@ -10,7 +10,7 @@
   width: 32px; height: 32px; border-radius: 50%; font-size: 12px; font-weight: 600;
   background: var(--bg-hover); color: var(--text-2);
 }
-.rp-day.on { background: var(--accent); color: #fff; }
+.rp-day.on { background: var(--accent-solid); color: var(--text-on-accent); }
 .rp-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rp-summary { padding: 8px; border-radius: 8px; background: var(--bg-subtle); font-size: 13px; }
 .rp-actions { justify-content: flex-end; }

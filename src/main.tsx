@@ -4,6 +4,7 @@ import { initPlatform, installExternalLinkHandler } from './platform/index.ts';
 import { ErrorBoundary, installGlobalErrorHandlers } from './components/ErrorBoundary.tsx';
 import { installErrorReporting } from './lib/errorReporting.ts';
 import './styles.css';
+import './styles/accents.css'; // after styles.css: replaces its default (blue) accent
 
 installErrorReporting(); // before anything else can fail; reports go to POST /api/client-errors
 

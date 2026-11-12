@@ -902,7 +902,7 @@ function installSystemUi(native: NativePlugins, haptics: MobileExtras['haptics']
 
   // Status bar text colour follows the resolved theme (<html data-theme>).
   const applyTheme = () => {
-    const dark = root.dataset.theme === 'dark';
+    const dark = root.dataset.theme === 'dark' || root.dataset.theme === 'hybrid'; // hybrid: the bars sit on dark chrome
     void native.SystemBars.setStyle({ style: (dark ? 'DARK' : 'LIGHT') as SystemBarsStyle }).catch(() => {});
   };
   applyTheme();

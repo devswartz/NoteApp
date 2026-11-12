@@ -1,8 +1,11 @@
 /* ==== Editor text and highlight colours (Track 4) ====
    Notes store a palette NAME (data-color="red", see shared/colors.ts); these tokens map
    each name to a value per theme. tests/contrast.test.ts checks every value:
-   text colours reach 4.5:1 on the page surfaces, and body text reaches 4.5:1 on every highlight. */
-:root {
+   text colours reach 4.5:1 on the page surfaces, and body text reaches 4.5:1 on every highlight.
+   Hybrid's note page uses the light values (selectors as for the light tokens in src/styles.css). */
+:root,
+.scheme-light,
+:where(:root[data-theme='hybrid']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
   --tc-gray: #6b6b74;
   --tc-red: #c42b2b;
   --tc-orange: #b4500c;
@@ -21,7 +24,9 @@
   --hl-purple: #ebe2fc;
   --hl-pink: #fbdeec;
 }
-:root[data-theme='dark'] {
+:root[data-theme='dark'],
+:root[data-theme='hybrid'],
+.scheme-dark {
   --tc-gray: #a3a3ad;
   --tc-red: #f47c7c;
   --tc-orange: #f5a05a;

@@ -3,9 +3,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+// The light and dark token blocks each list several selectors; this is the last line of each.
+const LIGHT = ":where(:root[data-theme='hybrid']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid)";
+const DARK = '.scheme-dark';
 const block = (selector: string) => {
-  const start = css.indexOf(`${selector} {`);
+  const start = css.indexOf(`${selector} {
+`);
   assert.ok(start >= 0, `missing ${selector}`);
   return css.slice(start, css.indexOf('\n}', start));
 };
@@ -28,12 +32,14 @@ const over = (fg: [number, number, number, number], bg: string) =>
   '#' + rgb(bg).map((d, i) => Math.round(fg[i] * fg[3] + d * (1 - fg[3])).toString(16).padStart(2, '0')).join('');
 
 for (const [theme, sel, overlays] of [
-  ['light', ':root', [[15, 15, 30, 0.05], [79, 70, 229, 0.09]]],
-  ['dark', ":root[data-theme='dark']", [[255, 255, 255, 0.06], [129, 140, 248, 0.16]]],
+  ['light', LIGHT, [[15, 15, 30, 0.05], [79, 70, 229, 0.09]]],
+  ['dark', DARK, [[255, 255, 255, 0.06], [139, 149, 249, 0.15]]],
 ] as const) {
   test(`${theme}: text tokens reach 4.5:1 on every surface`, () => {
     const b = block(sel);
     const surfaces = ['bg', 'bg-subtle', 'bg-sidebar', 'bg-elevated'].map((n) => token(b, n));
+    // Hybrid's note page: the light tokens on a slightly off-white page.
+    if (theme === 'light') surfaces.push(...['bg', 'bg-subtle'].map((n) => token(block(":where(:root[data-theme='hybrid']) :is(.page-scroll, .history-doc)"), n)));
     const all = [...surfaces, ...surfaces.flatMap((s) => overlays.map((o) => over(o as unknown as [number, number, number, number], s)))];
     for (const name of ['text', 'text-2', 'text-muted']) {
       const c = token(b, name);
@@ -47,8 +53,8 @@ for (const [theme, sel, overlays] of [
 // Page colours (ribbon › Page colour; names in shared/pageDoc.ts): the page's text, and the
 // hover/active rows on it, stay readable on every tint.
 for (const [theme, sel, overlays] of [
-  ['light', ':root', [[15, 15, 30, 0.05], [79, 70, 229, 0.09]]],
-  ['dark', ":root[data-theme='dark']", [[255, 255, 255, 0.06], [129, 140, 248, 0.16]]],
+  ['light', LIGHT, [[15, 15, 30, 0.05], [79, 70, 229, 0.09]]],
+  ['dark', DARK, [[255, 255, 255, 0.06], [139, 149, 249, 0.15]]],
 ] as const) {
   test(`${theme}: text tokens reach 4.5:1 on every page colour`, async () => {
     const { PAGE_COLORS } = await import('../shared/pageDoc.ts');
@@ -65,15 +71,16 @@ for (const [theme, sel, overlays] of [
 
 // Editor text and highlight colours (src/styles/colors.css; names in shared/colors.ts).
 const { COLOR_NAMES } = await import('../shared/colors.ts');
-const colorsCss = readFileSync(new URL('../src/styles/colors.css', import.meta.url), 'utf8');
+const colorsCss = readFileSync(new URL('../src/styles/colors.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 const colorBlock = (selector: string) => {
-  const start = colorsCss.indexOf(`${selector} {`);
+  const start = colorsCss.indexOf(`${selector} {
+`);
   assert.ok(start >= 0, `colors.css: missing ${selector}`);
   return colorsCss.slice(start, colorsCss.indexOf('\n}', start));
 };
 for (const [theme, sel] of [
-  ['light', ':root'],
-  ['dark', ":root[data-theme='dark']"],
+  ['light', LIGHT],
+  ['dark', DARK],
 ] as const) {
   test(`${theme}: editor text colours reach 4.5:1 on the page; text reaches 4.5:1 on every highlight`, () => {
     const b = block(sel);

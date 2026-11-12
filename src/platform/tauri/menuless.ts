@@ -57,7 +57,9 @@ export async function startWindowThemeSync() {
   const { useTheme } = await import('../../store/ui.ts');
   let last = '';
   const push = () => {
-    const theme = useTheme.getState().pref;
+    // Hybrid's title bar sits on the dark chrome; the Rust side knows light / dark / system.
+    const pref = useTheme.getState().pref;
+    const theme = pref === 'hybrid' ? 'dark' : pref;
     const background = appBackground();
     const key = `${theme} ${background}`;
     if (key === last) return;

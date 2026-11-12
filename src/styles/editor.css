@@ -438,7 +438,7 @@
 .panel-toggle { position: relative; }
 .panel-badge {
   position: absolute; top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px;
-  border-radius: 8px; background: var(--accent); color: #fff;
+  border-radius: 8px; background: var(--accent-solid); color: var(--text-on-accent);
   font-size: 10px; font-weight: 600; line-height: 16px; text-align: center; pointer-events: none;
 }
 .panel-tabs button { display: inline-flex; align-items: center; gap: 5px; }
