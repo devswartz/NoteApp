@@ -1,4 +1,5 @@
 // Types shared between the server and the web client.
+import type { FileKey } from './fileLinks.ts';
 
 export type Role = 'owner' | 'admin' | 'member' | 'viewer';
 export type Visibility = 'shared' | 'private';
@@ -68,6 +69,8 @@ export interface AuthSession {
   expiresIn: number;
   /** Opaque, single-use token for POST /auth/refresh. Store it securely. */
   refreshToken: string;
+  /** Signs upload links (shared/fileLinks.ts). Optional so older servers still work. */
+  fileKey?: FileKey;
   user: User;
 }
 

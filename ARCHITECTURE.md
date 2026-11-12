@@ -66,7 +66,7 @@ server/
     tasks.ts       /workspaces/:id/tasks, /tasks/:id
     teams.ts       tags (/workspaces/:id/tags, /tags/:id), teams (/workspaces/:id/teams, /teams/:id[/members]), saved task views (/workspaces/:id/task-views, /task-views/:id)
     search.ts      /workspaces/:id/search
-    files.ts       /uploads (stored in $DATA_DIR/files)
+    files.ts       /uploads (stored in $DATA_DIR/files; signed links, see "Known rough edges")
     health.ts      /health
   http.ts          Route helpers: h() handler wrapper, str() validation, param(), errorHandler
   db.ts            SQLite connection + migration runner
@@ -264,7 +264,7 @@ Shells: `initPlatform()` picks the implementation from `detectPlatform()` throug
 
 ## Offline
 
-- **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view (names are immutable). `/api/*` and `/collab/*` are never cached.
+- **App shell:** `dist/sw.js` is generated at build time from `src/sw/sw.template.js` by the `serviceWorker` plugin in `vite.config.ts`. It precaches `index.html` and every built asset, under a version derived from the build's file list. Navigations are network-first with the cached shell as fallback, and assets are served cache-first. `/uploads/*` is cached on first view, keyed by the plain path without its signature (names are immutable). `/api/*` and `/collab/*` are never cached.
 - **Updates:** a new service worker waits rather than taking over a running page. `platform.appUpdates` reports it, and `components/AppUpdates.tsx` shows a sticky "A new version is available — Reload" toast. Reload tells the worker to take over and reloads the page. Registrations check for a new deploy every 30 min and whenever the app becomes visible. The shells will plug their own updater into the same hook.
 - **Notes:** each page's Yjs doc is cached in IndexedDB (`y-indexeddb`, `noteapp-page-<id>`), so pages you've opened before load and stay editable offline. Edit rights are remembered per user and page (`noteapp.canEdit.<userId>.<pageId>`). Changes merge when the collab socket reconnects.
 - **Everything else, read-only:** `src/store/cache.ts` → `cached(key, path)` caches workspaces, tree, tasks and members in IndexedDB (`src/lib/offlineCache.ts`) under per-user keys (`u:<userId>:…`), and falls back to that copy only when the server can't be reached. Task edits need a connection in v1.
@@ -351,5 +351,5 @@ All under `/api`, JSON, bearer token except where noted:
 | Deploy (§4) | One-port production server (API, `/api/events` + `/collab/*` WebSockets, web app), `DATA_DIR`, `/api/health`, graceful SIGTERM, `SEED_DEMO` | | Docker/CI (Infra agent) |
 
 Known rough edges and accepted v1 tradeoffs:
-- **`/uploads/*` is served without auth.** Files get unguessable 128-bit random names and are only linked from notes. Anyone holding a file's URL can fetch it, even after losing access to the note. This keeps images working in `<img>` tags, which can't send bearer tokens. Revisit with signed, expiring URLs if that matters.
+- **`/uploads/*` needs a signed link.** `<img>` tags and download links can't send bearer tokens, and the native shells (tauri://, capacitor://) can't rely on cookies for the API's origin, so the permission is in the URL: `?u=<user>&e=<expiry>&s=<sig>` (`shared/fileLinks.ts`). Every session carries a `fileKey` (HMAC of the server secret, user and expiry; 6–12 h, on fixed 6 h boundaries so URLs and the browser cache stay stable), and the client signs each file synchronously when rendering (`fileUrl()` in `src/api.ts`). The server recomputes the signature, then checks that the user may still see the file (`canReadFile` in `server/routes/files.ts`: its page, page share, template or workspace, or any page or page version they can open that contains it). Documents keep storing the plain `/uploads/<id><ext>`; pasted signed links are stripped back to it. An unsigned link opened in a tab is redirected to `/open-file/<name>`, where the web app signs it for whoever is signed in. Answers of "yes" are cached for a minute and dropped on `accessChanged()`.
 - The main JS bundle is about 1 MB (no code splitting yet).

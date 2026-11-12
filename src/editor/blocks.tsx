@@ -8,14 +8,14 @@ import ImageExt from '@tiptap/extension-image';
 import { createLowlight, common } from 'lowlight';
 import { useState } from 'react';
 import { Check, Copy, Download, File, FileArchive, FileAudio, FileImage, FileSpreadsheet, FileText, FileVideo } from 'lucide-react';
-import { fileUrl } from '../api.ts';
+import { fileUrl, plainFileUrl } from '../api.ts';
 import { Dropdown } from '../components/ui.tsx';
 import { safeFileUrl, safeImageUrl } from './urls.ts';
 
-/** Absolute URL for exports (uploads are stored API-relative). */
+/** Absolute, unsigned URL for exports (uploads are stored API-relative; signed links would expire). */
 export const absoluteUrl = (u: string) => {
   try {
-    return new URL(fileUrl(u), location.href).href;
+    return new URL(plainFileUrl(u), location.href).href;
   } catch {
     return u;
   }
@@ -223,6 +223,10 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
   // Validated again here: the attribute may have arrived from a collaborator's (or an older) document.
   const safe = safeFileUrl(a.url);
   const href = safe ? fileUrl(safe) : undefined;
+  // Re-sign when used: the link may have been rendered hours ago and its signature run out.
+  const resign = (e: { currentTarget: HTMLAnchorElement }) => {
+    if (safe) e.currentTarget.href = fileUrl(safe);
+  };
   return (
     <NodeViewWrapper className={`file-card ${selected ? 'is-selected' : ''}`} data-type="file" data-drag-handle>
       <div className="file-card-inner" contentEditable={false}>
@@ -230,7 +234,7 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
           {fileIcon(a.mime, a.name)}
         </span>
         {href ? (
-          <a className="file-card-name" href={href} target="_blank" rel="noopener noreferrer" title={`Open ${a.name}`}>
+          <a className="file-card-name" href={href} onMouseDown={resign} onFocus={resign} target="_blank" rel="noopener noreferrer" title={`Open ${a.name}`}>
             {a.name}
           </a>
         ) : (
@@ -240,7 +244,7 @@ function FileCardView({ node, selected }: ReactNodeViewProps) {
         )}
         <span className="file-card-size">{formatSize(a.size)}</span>
         {href && (
-          <a className="icon-btn btn-ghost file-card-dl" href={href} download={a.name} target="_blank" rel="noopener noreferrer" title="Download" aria-label={`Download ${a.name}`}>
+          <a className="icon-btn btn-ghost file-card-dl" href={href} onMouseDown={resign} onFocus={resign} download={a.name} target="_blank" rel="noopener noreferrer" title="Download" aria-label={`Download ${a.name}`}>
             <Download size={15} />
           </a>
         )}

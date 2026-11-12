@@ -148,7 +148,7 @@ test.describe('editor blocks', () => {
     const card = editor.locator('.file-card');
     await expect(card).toContainText('agenda.pdf');
     const href = await card.locator('.file-card-name').getAttribute('href');
-    expect(href).toMatch(/\/uploads\/[0-9a-f]{32}\.pdf$/);
+    expect(href).toMatch(/\/uploads\/[0-9a-f]{32}\.pdf\?u=[\w-]+&e=\d+&s=[0-9a-f]{32}$/); // signed for this user
     const res = await page.request.get(href!);
     expect(res.status()).toBe(200);
     expect(res.headers()['content-disposition']).toMatch(/^attachment/);

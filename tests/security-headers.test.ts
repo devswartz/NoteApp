@@ -53,7 +53,8 @@ test('uploads keep their own sandbox CSP', async () => {
     body: 'hi',
   });
   const { url } = await up.json();
-  const r = await fetch(app.origin + url);
+  const r = await app.fetchFile(url, u);
+  assert.equal(r.status, 200);
   assert.match(r.headers.get('content-security-policy') ?? '', /^sandbox/);
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
 });

@@ -1,5 +1,6 @@
 // URL checks for content that comes from documents (pure, unit-tested). Shared: the editor
 // uses them when rendering, the server when importing a workspace export.
+import { unsignedUploadPath } from './fileLinks.ts';
 
 /**
  * File-card links come from documents anyone in the workspace can edit (or paste HTML into),
@@ -8,7 +9,8 @@
  */
 export function safeFileUrl(url: unknown): string {
   if (typeof url !== 'string') return '';
-  const u = url.trim();
+  // A signed upload link (copied from a rendered page) is stored as the plain path, so it never expires.
+  const u = unsignedUploadPath(url) ?? url.trim();
   if (/^\/(uploads|files)\/[\w.-]+$/.test(u)) return u;
   if (/^https?:\/\/[^\s]+$/i.test(u)) return u;
   return '';
@@ -32,7 +34,7 @@ export function safeLinkUrl(url: unknown): string {
 /** Image sources: our uploads, or plain http(s). */
 export function safeImageUrl(url: unknown): string {
   if (typeof url !== 'string') return '';
-  const u = url.trim();
+  const u = unsignedUploadPath(url) ?? url.trim();
   const probe = u.replace(/[\u0000- \u007f-\u009f]/g, '').replace(/\\/g, '/').toLowerCase();
   if (/^\/(uploads|files)\/[\w.-]+$/.test(u)) return u;
   if (/^https?:\/\//.test(probe) && !/\s/.test(u)) return u;

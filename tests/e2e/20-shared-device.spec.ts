@@ -17,7 +17,7 @@ test('a different user signing in wipes the previous user’s local copies, even
     .poll(() => page.evaluate(async (id) => (await indexedDB.databases()).some((d) => d.name === `noteapp-page-${id}`), pageId))
     .toBe(true);
   await page.evaluate(async () => {
-    const c = await caches.open('uploads-v1');
+    const c = await caches.open('uploads-v2');
     await c.put('/uploads/alice-photo.png', new Response('alice'));
   });
 
