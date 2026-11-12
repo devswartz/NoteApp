@@ -217,7 +217,7 @@ export interface Converted {
 export const RES_PREFIX = 'onenote-res:';
 export const TODO_PREFIX = 'onenote-todo:';
 
-const MARK_ORDER = ['link', 'bold', 'italic', 'strike', 'underline'];
+const MARK_ORDER = ['link', 'bold', 'italic', 'strike', 'underline', 'textStyle', 'highlight'];
 const INLINE_MARK: Record<string, string> = { b: 'bold', strong: 'bold', i: 'italic', em: 'italic', cite: 'italic', u: 'underline', ins: 'underline', s: 'strike', strike: 'strike', del: 'strike' };
 const BLOCK_CONTAINERS = new Set(['#root', 'html', 'body', 'div', 'section', 'article', 'main', 'header', 'footer', 'nav', 'aside', 'figure', 'center', 'dl', 'dd', 'dt', 'tbody', 'thead', 'tfoot', 'caption', 'details', 'summary', 'fieldset']);
 const MAX_TITLE = 500;
@@ -238,6 +238,69 @@ function styleMarks(style: string | undefined): string[] {
   if (/font-style:italic/.test(s)) out.push('italic');
   if (/text-decoration[^;]*underline/.test(s)) out.push('underline');
   if (/text-decoration[^;]*line-through/.test(s)) out.push('strike');
+  return out;
+}
+
+// ───────── CSS colours → the editor's palette (shared/colors.ts) ─────────
+
+const NAMED_COLORS: Record<string, string> = {
+  black: '#000000', white: '#ffffff', red: '#ff0000', maroon: '#800000', orange: '#ffa500', yellow: '#ffff00', olive: '#808000', lime: '#00ff00', green: '#008000',
+  aqua: '#00ffff', cyan: '#00ffff', teal: '#008080', blue: '#0000ff', navy: '#000080', fuchsia: '#ff00ff', magenta: '#ff00ff', purple: '#800080', pink: '#ffc0cb',
+  gray: '#808080', grey: '#808080', silver: '#c0c0c0', brown: '#a52a2a', gold: '#ffd700', darkred: '#8b0000', darkblue: '#00008b', darkgreen: '#006400',
+};
+
+/** "#1F4E79", "#fc0", "rgb(31, 78, 121)" or a colour name → [r, g, b], or null (inherit, transparent, windowtext, junk). */
+function parseColor(v: string): [number, number, number] | null {
+  const t = v.trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(t);
+  if (hex) {
+    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1];
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+  const rgb = /^rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})/.exec(t);
+  if (rgb) return [Math.min(255, +rgb[1]), Math.min(255, +rgb[2]), Math.min(255, +rgb[3])];
+  const named = NAMED_COLORS[t];
+  return named ? parseColor(named) : null;
+}
+
+/**
+ * The palette colour nearest an arbitrary one, or null when it is "no colour": black or near-black text, white or
+ * near-white paper. Greys keep gray. Hue picks the name (OneNote's dark blues and teals are blue).
+ */
+export function paletteColor(value: string, kind: 'text' | 'highlight'): string | null {
+  const rgb = parseColor(value);
+  if (!rgb) return null;
+  const [r, g, b] = rgb.map((x) => x / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (kind === 'text' ? l < 0.16 : l > 0.94) return null; // black text / white background are the defaults
+  if (kind === 'text' && l > 0.94) return null;
+  if (sat < 0.18) return 'gray';
+  let h = d === 0 ? 0 : max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 360) % 360;
+  if (h < 15 || h >= 345) return 'red';
+  if (h < 42) return 'orange';
+  if (h < 70) return 'yellow';
+  if (h < 170) return 'green';
+  if (h < 262) return 'blue';
+  if (h < 300) return 'purple';
+  return 'pink';
+}
+
+/** Text colour and highlight marks from an element's inline style (and legacy attributes). */
+function colorMarks(n: HNode): Mark[] {
+  const st = styleProps(n.attrs.style);
+  const out: Mark[] = [];
+  const fg = st.get('color') ?? (n.tag === 'font' ? n.attrs.color : undefined);
+  const text = fg ? paletteColor(fg, 'text') : null;
+  if (text) out.push({ type: 'textStyle', attrs: { color: text } });
+  const bg = st.get('background-color') ?? st.get('background');
+  const hl = bg ? paletteColor(bg.split(/\s+/).find((x) => parseColor(x)) ?? bg, 'highlight') : null;
+  if (hl) out.push({ type: 'highlight', attrs: { color: hl } });
+  else if (n.tag === 'mark') out.push({ type: 'highlight', attrs: { color: 'yellow' } });
   return out;
 }
 
@@ -337,13 +400,17 @@ class Converter {
         emitted = true;
       }
     };
+    // The block's own style (a heading's colour, a paragraph set in italics) applies to all its text.
+    let base: Mark[] = [];
+    for (const st of styleMarks(n.attrs.style)) if (!(wrapper.type === 'heading' && st === 'bold')) base = addMark(base, { type: st });
+    for (const m of colorMarks(n)) base = addMark(base, m);
     for (const c of n.children) {
       if (this.isBlock(c)) {
         flush(false);
         out.push(...this.block(c));
         emitted = true;
       } else
-        this.inline(c, [], inline, (b) => {
+        this.inline(c, base, inline, (b) => {
           flush(false);
           out.push(b);
           emitted = true;
@@ -369,6 +436,7 @@ class Converter {
     let next = marks;
     if (INLINE_MARK[n.tag]) next = addMark(next, { type: INLINE_MARK[n.tag] });
     for (const s of styleMarks(n.attrs.style)) next = addMark(next, { type: s });
+    for (const m of colorMarks(n)) next = addMark(next, m);
     if (n.tag === 'a' && n.attrs.href) next = addMark(next, { type: 'link', attrs: { href: n.attrs.href, target: '_blank', rel: 'noopener noreferrer nofollow' } });
     if (todoTag(n)) {
       // A to-do tag on an inline element (rare): treat it like a to-do block.
@@ -453,26 +521,65 @@ class Converter {
       }
     };
     collect(n);
+    // <colgroup><col style="width:…"> (or <col width>): one width per column, spans counted. A cell's own width wins.
+    const colWidths: (number | undefined)[] = [];
+    for (const g of n.children.filter((c) => c.tag === 'colgroup' || c.tag === 'col')) {
+      for (const col of g.tag === 'col' ? [g] : g.children.filter((c) => c.tag === 'col')) {
+        const w = cssPx(styleProps(col.attrs.style).get('width')) ?? cssPx(col.attrs.width);
+        for (let i = 0; i < Math.max(1, Math.min(50, Number(col.attrs.span) || 1)); i++) colWidths.push(w);
+      }
+    }
     const out: PMNode[] = [];
     for (const r of rows) {
       const cells = r.children.filter((c) => c.tag === 'td' || c.tag === 'th');
       if (!cells.length) continue;
+      let col = 0;
       out.push({
         type: 'tableRow',
         content: cells.map((c) => {
+          const at = col;
+          col += Math.max(1, Math.min(50, Number(c.attrs.colspan) || 1));
           const inner = this.blocks(c.children);
           // Empty paragraphs at the end of a cell only make its row taller.
           while (inner.length > 1 && inner[inner.length - 1].type === 'paragraph' && !inner[inner.length - 1].content?.length) inner.pop();
           const span = (v: string | undefined) => Math.max(1, Math.min(50, Number(v) || 1));
           // OneNote gives each cell its width: keep it, so the table is as wide as it was (a lone cell only).
-          const width = cssPx(styleProps(c.attrs.style).get('width')) ?? cssPx(c.attrs.width);
+          const width = cssPx(styleProps(c.attrs.style).get('width')) ?? cssPx(c.attrs.width) ?? colWidths[at];
           const colwidth = span(c.attrs.colspan) === 1 && width !== undefined ? [clamp(width, MIN_CELL_W, MAX_CELL_W)] : null;
           return { type: c.tag === 'th' ? 'tableHeader' : 'tableCell', attrs: { colspan: span(c.attrs.colspan), rowspan: span(c.attrs.rowspan), colwidth }, content: inner.length ? inner : [{ type: 'paragraph' }] };
         }),
       });
     }
+    fitColumns(out);
     return out.length ? [{ type: 'table', content: out }] : [];
   }
+}
+
+/**
+ * OneNote sizes a table's columns to their content, and its HTML does not always say how wide they came out. With no
+ * width given anywhere in the table, give each column one that fits its longest line (about 7px a character plus
+ * padding, 40 to 360px), shrunk together to the default outline width if the table would be wider; otherwise the
+ * editor splits the width equally, and a short ID column ends up as wide as the description beside it.
+ */
+function fitColumns(out: PMNode[]) {
+  const cellsOf = out.map((r) => r.content ?? []);
+  if (!cellsOf.length || cellsOf.some((cs) => cs.some((c) => c.attrs?.colwidth || Number(c.attrs?.colspan) !== 1 || Number(c.attrs?.rowspan) !== 1))) return;
+  const cols = Math.max(...cellsOf.map((cs) => cs.length));
+  if (cols < 2 || cols > 12 || cellsOf.some((cs) => cs.length !== cols)) return;
+  const longest = (cell: PMNode) => Math.max(0, ...(cell.content ?? []).flatMap((block) => jsonText(block).split(NL).map((line) => line.length)));
+  const fit = Array.from({ length: cols }, (_, i) => clamp(Math.max(...cellsOf.map((cs) => longest(cs[i]))) * 7 + 18, 40, 360));
+  const total = fit.reduce((a, b) => a + b, 0);
+  const scale = total > DEFAULT_W ? DEFAULT_W / total : 1;
+  cellsOf.forEach((cs) => cs.forEach((c, i) => ((c.attrs as Record<string, unknown>).colwidth = [Math.max(MIN_CELL_W, Math.round(fit[i] * scale))])));
+}
+
+const NL = String.fromCharCode(10);
+
+/** The text of a block's content, for measuring. */
+function jsonText(n: PMNode): string {
+  if (n.type === 'text') return n.text ?? '';
+  if (n.type === 'hardBreak') return NL;
+  return (n.content ?? []).map(jsonText).join('');
 }
 
 /** Trim leading/trailing spaces of an inline run and merge adjacent text with the same marks. */
@@ -543,9 +650,10 @@ const MAX_CELL_W = 1200;
 
 /** A CSS length in px (or pt, or unitless) → px; anything else (%, em, calc(), junk) → undefined. */
 function cssPx(v: string | undefined): number | undefined {
-  const m = /^\s*(-?\d{1,12}(?:\.\d{1,6})?)\s*(px|pt)?\s*$/i.exec(v ?? '');
+  const m = /^\s*(-?\d{1,12}(?:\.\d{1,6})?)\s*(px|pt|in|cm|mm|pc)?\s*$/i.exec(v ?? '');
   if (!m) return undefined;
-  const n = Number(m[1]) * (m[2]?.toLowerCase() === 'pt' ? 4 / 3 : 1);
+  const PX: Record<string, number> = { pt: 4 / 3, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, pc: 16 };
+  const n = Number(m[1]) * (PX[m[2]?.toLowerCase() ?? ''] ?? 1);
   return Number.isFinite(n) ? n : undefined;
 }
 

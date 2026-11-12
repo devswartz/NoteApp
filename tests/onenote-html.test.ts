@@ -8,10 +8,11 @@ import { TableKit } from '@tiptap/extension-table';
 import ImageExt from '@tiptap/extension-image';
 import { convertOneNotePage, parseHtml, textOf } from '../server/onenoteHtml.ts';
 import { sanitizeContent } from '../shared/urls.ts';
+import { colorExtensions } from '../src/editor/colors.ts';
 
 // The editor's schema (src/editor/NoteEditor.tsx → documentExtensions), with its React-only nodes as atom stand-ins.
 const atom = (name: string, attrs: string[]) => Node.create({ name, group: 'block', atom: true, addAttributes: () => Object.fromEntries(attrs.map((a) => [a, { default: null }])) });
-const schema = getSchema([StarterKit.configure({ heading: { levels: [1, 2, 3] } }), TableKit, ImageExt, atom('taskRef', ['taskId']), atom('fileAttachment', ['url', 'name', 'size', 'mime'])]);
+const schema = getSchema([StarterKit.configure({ heading: { levels: [1, 2, 3] } }), TableKit, ImageExt, ...colorExtensions, atom('taskRef', ['taskId']), atom('fileAttachment', ['url', 'name', 'size', 'mime'])]);
 const valid = (html: string) => {
   const c = convertOneNotePage(html);
   schema.nodeFromJSON(c.doc).check();
@@ -205,4 +206,57 @@ test('pathological 1 MB pages convert in linear time (no quadratic parsing, nest
   // Deeper than MAX_DEPTH: flattened, the text survives.
   const deep = convertOneNotePage(`<body>${'<div>'.repeat(5000)}<p>bottom</p>${'</div>'.repeat(5000)}</body>`);
   assert.match(JSON.stringify(deep.doc), /bottom/);
+});
+
+// Synthetic page with the structure of a formatting-test page (headings, coloured runs, a table with column widths).
+const FORMATTING_PAGE = `<html><head><title>Formatting</title></head><body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">
+<div data-id="_default" style="position:absolute;left:48px;top:115px;width:624px">
+<h1 style="font-size:16pt;color:#1F4E79;margin-top:0pt;margin-bottom:0pt">Big heading</h1>
+<h2 style="font-size:13pt;color:rgb(47, 84, 150)">Smaller heading</h2>
+<p><b>Bold</b>, <span style="color:#C00000">red words</span>, <span style="background-color:#FFFF00">marked</span>, <span style="color:#000000">black</span>, <span style="color:#7F7F7F;background:#00ff00 none">grey on green</span>, <font color="#7030A0">purple</font>, <mark>plain mark</mark>.</p>
+<table border="1"><colgroup><col style="width:0.5in"/><col width="300"/><col span="2" style="width:48pt"/></colgroup>
+<tr><td><p>ID</p></td><td><p>Description</p></td><td><p>Status</p></td><td><p>Value</p></td></tr>
+<tr><td style="width:40px"><p>01</p></td><td>Sample</td><td>Ready</td><td>7</td></tr></table>
+</div></body></html>`;
+
+const marksOf = (doc: unknown, text: string) => {
+  const found: { text?: string; marks?: { type: string; attrs?: Record<string, unknown> }[] }[] = [];
+  JSON.stringify(doc, (k, v) => (v && typeof v === 'object' && v.type === 'text' ? (found.push(v), v) : v));
+  return found.find((n) => n.text === text)?.marks ?? [];
+};
+
+test('text colour and highlight map to the editor palette; black text and white paper are the defaults', () => {
+  const c = valid(FORMATTING_PAGE);
+  const doc = c.boxes[0].doc;
+  assert.deepEqual(marksOf(doc, 'Big heading'), [{ type: 'textStyle', attrs: { color: 'blue' } }], 'heading colour kept');
+  assert.deepEqual(marksOf(doc, 'Smaller heading'), [{ type: 'textStyle', attrs: { color: 'blue' } }]);
+  assert.deepEqual(marksOf(doc, 'red words'), [{ type: 'textStyle', attrs: { color: 'red' } }]);
+  assert.deepEqual(marksOf(doc, 'marked'), [{ type: 'highlight', attrs: { color: 'yellow' } }]);
+  assert.deepEqual(marksOf(doc, 'black'), [], 'black is just text');
+  assert.deepEqual(marksOf(doc, 'grey on green'), [{ type: 'textStyle', attrs: { color: 'gray' } }, { type: 'highlight', attrs: { color: 'green' } }]);
+  assert.deepEqual(marksOf(doc, 'purple'), [{ type: 'textStyle', attrs: { color: 'purple' } }], '<font color>');
+  assert.deepEqual(marksOf(doc, 'plain mark'), [{ type: 'highlight', attrs: { color: 'yellow' } }]);
+  assert.deepEqual(marksOf(doc, 'Bold'), [{ type: 'bold' }]);
+});
+
+test('column widths come from <colgroup>/<col> (inches and points too); a cell\'s own width wins', () => {
+  const c = valid(FORMATTING_PAGE);
+  const table = c.boxes[0].doc.content.find((n) => n.type === 'table')!;
+  const widths = (row: number) => table.content![row].content!.map((cell) => cell.attrs?.colwidth);
+  assert.deepEqual(widths(0), [[48], [300], [64], [64]], '0.5in = 48px, 48pt = 64px, span="2" covers two columns');
+  assert.deepEqual(widths(1), [[40], [300], [64], [64]]);
+});
+
+test('a table with no widths anywhere gets columns sized to their content, not equal ones', () => {
+  const rows = ['<tr><td>ID</td><td>Description</td><td>Status</td><td>Value</td></tr>', '<tr><td>01</td><td>Sample entry 1: validation of text wrapping and spacing</td><td>Ready</td><td>7</td></tr>'].join('');
+  const c = valid(`<body><div style="position:absolute;left:48px;top:115px;width:624px"><table>${rows}</table></div></body>`);
+  const table = c.boxes[0].doc.content.find((n) => n.type === 'table')!;
+  const w = table.content![0].content!.map((cell) => (cell.attrs?.colwidth as number[])[0]);
+  assert.ok(w[0] < w[1] && w[2] < w[1] && w[3] < w[1], `the description column is the widest: ${w}`);
+  assert.ok(w[0] <= 48, `a two-character ID column is narrow: ${w[0]}`);
+  assert.ok(w.reduce((a, b) => a + b, 0) <= 624, 'no wider than the outline');
+  assert.deepEqual(table.content![1].content!.map((cell) => (cell.attrs?.colwidth as number[])[0]), w, 'every row uses the same widths');
+  // Merged cells, a given width, or a ragged table: left to the editor.
+  const merged = valid(`<body><table><tr><td colspan="2">a</td></tr><tr><td>b</td><td>c</td></tr></table></body>`).doc.content[0];
+  assert.equal(JSON.stringify(merged).includes('"colwidth":['), false);
 });
