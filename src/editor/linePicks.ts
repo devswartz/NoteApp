@@ -127,7 +127,8 @@ export const linePicks = {
       r.editor.view.dispatch(r.editor.state.tr.setSelection(TextSelection.create(r.editor.state.doc, r.editor.state.selection.to)).setMeta('addToHistory', false));
     }
     // The browser's own highlight, too: once the box has given up focus it would stay drawn.
-    if (collapse) window.getSelection()?.removeAllRanges();
+    // Not while an editor still has focus: that would remove its caret too (Escape closing the slash menu, then Backspace).
+    if (collapse && !forPage(pageId).some((e) => e.editor.view.hasFocus())) window.getSelection()?.removeAllRanges();
   },
   /** What a point on the page is on: a picked range, the live selection, or neither (a right-click uses it). */
   hit(pageId: string, target: Element | null, x: number, y: number): 'pick' | 'selection' | null {
