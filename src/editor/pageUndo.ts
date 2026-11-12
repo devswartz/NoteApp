@@ -140,6 +140,17 @@ export function pageUndoOf(editor: Editor | null | undefined): PageUndo | null {
   return (doc && byDoc.get(doc)) ?? null;
 }
 
+/**
+ * End the text undo step an editor is building, so the next change is a step of its own. Yjs folds
+ * every change made within half a second of the last into one step, which is right for typing but
+ * wrong for a deliberate action (applying a link, say) that follows it quickly: Ctrl+Z would take
+ * both back, which can empty a box that was only just typed.
+ */
+export function closeUndoGroup(editor: Editor | null | undefined) {
+  if (!editor || editor.isDestroyed) return;
+  (yUndoPluginKey.getState(editor.state) as { undoManager?: Y.UndoManager } | undefined)?.undoManager?.stopCapturing();
+}
+
 /** A box editor's text history, undone through the editor (so its selection comes back). */
 export function editorUndoSource(editor: Editor): UndoSource {
   return {
