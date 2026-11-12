@@ -2,7 +2,7 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
-## v0.5.0
+## v0.4.1
 
 A Hybrid theme and accent colours, section default templates, task view filters, and privacy work ahead of the App Store.
 
