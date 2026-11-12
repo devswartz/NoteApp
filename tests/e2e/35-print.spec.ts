@@ -181,6 +181,7 @@ test('Print selection prints only the selected text, under the page title, list 
   await page.keyboard.press('Home');
   await page.keyboard.press('Shift+ArrowDown');
   await page.keyboard.press('Shift+End');
+  await expect(ribbon(page).getByRole('button', { name: 'Print selection', exact: true })).toBeVisible(); // the editor has taken in the selection
 
   // Ctrl+P asks: the selection, or the whole page.
   await page.keyboard.press('ControlOrMeta+p');
@@ -218,16 +219,18 @@ test('Ctrl+click picks boxes; Print selection prints them in reading order; Esca
     box(0, 600, 400, [p(text('Bottom box text'))]),
   ]);
   const boxOf = (t: string) => page.locator('.canvas-box', { hasText: t });
+  // Ctrl/Cmd+click on the box's frame (its padding) picks the whole box; on a line of text it would pick the line.
+  const FRAME = { modifiers: ['ControlOrMeta' as const], position: { x: 4, y: 12 } };
 
   // Picked bottom first, then top: printed top to bottom all the same.
-  await boxOf('Bottom box text').click({ modifiers: ['ControlOrMeta'] });
-  await boxOf('Top box text').click({ modifiers: ['ControlOrMeta'] });
+  await boxOf('Bottom box text').click(FRAME);
+  await boxOf('Top box text').click(FRAME);
   await expect(page.locator('.canvas-box.is-picked')).toHaveCount(2);
   await expect(boxOf('Top box text')).toHaveAttribute('aria-label', 'Text box, selected');
   // Ctrl+click again takes one out; once more puts it back.
-  await boxOf('Top box text').click({ modifiers: ['ControlOrMeta'] });
+  await boxOf('Top box text').click(FRAME);
   await expect(page.locator('.canvas-box.is-picked')).toHaveCount(1);
-  await boxOf('Top box text').click({ modifiers: ['ControlOrMeta'] });
+  await boxOf('Top box text').click(FRAME);
   await expect(page.locator('.canvas-box.is-picked')).toHaveCount(2);
 
   await ribbon(page).getByRole('button', { name: 'Print selection', exact: true }).click();
@@ -244,7 +247,7 @@ test('Ctrl+click picks boxes; Print selection prints them in reading order; Esca
   await expect(ribbon(page).getByRole('button', { name: 'Print selection', exact: true })).toHaveCount(0);
 
   // A plain click clears the picks too.
-  await boxOf('Middle box text').click({ modifiers: ['ControlOrMeta'] });
+  await boxOf('Middle box text').click(FRAME);
   await expect(page.locator('.canvas-box.is-picked')).toHaveCount(1);
   await boxOf('Top box text').click();
   await expect(page.locator('.canvas-box.is-picked')).toHaveCount(0);

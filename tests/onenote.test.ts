@@ -243,12 +243,12 @@ test('import: hierarchy, to-dos → tasks, image + attachment → files, malicio
   /** Every fragment (all canvas boxes) in reading order. */
   const docOf = (p: Record<string, unknown>) => pageFragments(ydocOf(p)).map((f) => f.toString()).join('');
 
-  // Positioned OneNote outlines → a canvas page, one box per outline, where it was on the page.
+  // Positioned OneNote outlines → a canvas page, one box per outline, laid out as on the page (moved to the canvas's corner).
   const weekly = pages(sections[0].id)[0];
   assert.equal(weekly.kind, 'canvas');
   const wd = ydocOf(weekly);
   const geoms = boxGeoms(wd).sort((a, b) => a.z - b.z);
-  assert.deepEqual(geoms.map(({ x, y, w, z }) => ({ x, y, w, z })), [{ x: 48, y: 115, w: 624, z: 0 }, { x: 700, y: 115, w: 300, z: 1 }]);
+  assert.deepEqual(geoms.map(({ x, y, w, z }) => ({ x, y, w, z })), [{ x: 0, y: 0, w: 624, z: 0 }, { x: 652, y: 0, w: 300, z: 1 }]);
   assert.equal(wd.getXmlFragment('default').length, 0, 'a canvas leaves `default` empty');
   assert.match(wd.getXmlFragment(boxField(geoms[0].id)).toString(), /Agenda/);
   assert.match(wd.getXmlFragment(boxField(geoms[1].id)).toString(), /<image /);

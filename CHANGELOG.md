@@ -2,6 +2,20 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.3
+
+### Pages
+- **Pick separate lines:** Ctrl/Cmd+click a line, paragraph, heading, list item or task to add it to the selection, like Word, within a box or across boxes. Ctrl/Cmd+click and drag sweeps lines. Esc or a plain click clears them. To pick a whole box, Ctrl/Cmd+click its frame.
+- **Copy and paste boxes:** click a box's top edge to select it, then Ctrl/Cmd+C, X and V. Right-click a box's edge for Cut, Copy, Duplicate and Delete, or empty canvas for Paste and New text box here. Plain text pasted onto the canvas becomes a new box. Desktop only.
+
+### Printing
+- **Print selection** prints exactly the picked lines and boxes, in order.
+- **Right-click → Print selection** on picked lines, picked boxes or a selection longer than one word.
+- **Titles:** a selection prints under the page's own title, including pages shared from another workspace. Untitled pages print with no title.
+
+### OneNote import
+- **Imported pages keep OneNote's layout:** no extra gap under the title and no shift to the right. Tables keep their column widths, and empty cells are one line tall. Re-import a page to get the new layout.
+
 ## v0.4.2
 
 ### Fixes

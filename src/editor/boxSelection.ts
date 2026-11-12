@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { useEditorState, type Editor } from '@tiptap/react';
 import { getActiveEditor, useActiveEditor } from './activeEditor.ts';
 import { toggleId } from '../print/selectionContent.ts';
+import { useLinePicks } from './linePicks.ts';
 
 interface BoxSelection {
   pageId: string | null;
@@ -20,6 +21,10 @@ export const boxSelection = {
   toggle(pageId: string, id: string) {
     const s = useBoxSelection.getState();
     useBoxSelection.setState({ pageId, ids: toggleId(s.pageId === pageId ? s.ids : [], id) });
+  },
+  /** Select exactly these boxes. */
+  set(pageId: string, ids: string[]) {
+    useBoxSelection.setState({ pageId, ids });
   },
   clear() {
     if (useBoxSelection.getState().ids.length) useBoxSelection.setState({ ids: [] });
@@ -41,11 +46,12 @@ export function selectionEditor(pageId: string): Editor | null {
 }
 
 /** Live: is there a selection to print on `pageId` (picked boxes, or selected text)? */
-export function usePrintSelection(pageId: string | undefined): 'boxes' | 'text' | null {
+export function usePrintSelection(pageId: string | undefined): 'boxes' | 'lines' | 'text' | null {
   const picked = useBoxSelection((s) => (pageId && s.pageId === pageId ? s.ids.length : 0));
+  const lines = useLinePicks((s) => (pageId && s.pageId === pageId ? Object.keys(s.byBox).length : 0));
   const boxEditor = useBoxSelection((s) => (pageId && s.pageId === pageId ? s.editor : null));
   const active = useActiveEditor();
   const editor = boxEditor && !boxEditor.isDestroyed ? boxEditor : active;
   const text = useEditorState({ editor, selector: (c) => !!c.editor && !c.editor.isDestroyed && !c.editor.state.selection.empty }) ?? false;
-  return picked ? 'boxes' : text ? 'text' : null;
+  return picked ? 'boxes' : lines ? 'lines' : text ? 'text' : null;
 }

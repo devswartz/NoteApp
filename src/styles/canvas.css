@@ -111,6 +111,8 @@
 /* Selected (Escape in a box): the whole box is focused, not its text. */
 .canvas-box:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--bg-active); }
 /* Picked with Ctrl/Cmd+click (for "Print selection"): tinted, with an accent frame. */
+/* A line picked with Ctrl/Cmd+click (linePicks.ts): the selection highlight, across the line. */
+.canvas-box .ProseMirror .is-line-picked { background: var(--accent-soft); box-shadow: 0 0 0 3px var(--accent-soft); border-radius: 3px; }
 .canvas-box.is-picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background: var(--accent-soft); }
 .canvas-box .ProseMirror { min-height: 1.7em; }
 /* The main (wide) box keeps a document's minimum height: room to click below short text. */
