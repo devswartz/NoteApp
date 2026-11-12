@@ -146,6 +146,7 @@ jobs:
     timeout-minutes: 45
     env:
       HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+      HAS_DIST: ${{ secrets.IOS_DIST_P12 != '' && secrets.IOS_DIST_P12_PASSWORD != '' && secrets.IOS_PROFILE_APP != '' && secrets.IOS_PROFILE_SHARE != '' && secrets.IOS_PROFILE_WIDGET != '' }}
       UPLOAD: ${{ github.event_name == 'push' || inputs.testflight }}
     steps:
       - uses: actions/checkout@v4
@@ -181,48 +182,68 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 80
 
-      # Signing, without minting development certificates. The archive is signed with the account's cloud-managed
-      # Apple Distribution certificate (the App Store Connect API key + -allowProvisioningUpdates), never an "Apple
-      # Development" one: every fresh runner that signed the archive with automatic development signing created a new
-      # development certificate until the account hit Apple's limit. An unsigned archive was tried and does not work
-      # (CODE_SIGNING_ALLOWED=NO skips entitlement processing, so the app lost its App Group entitlement). If Xcode
-      # refuses to archive automatically with a Distribution identity, the fallback archives unsigned and writes each
-      # bundle's entitlements into the archive by hand (archived-expanded-entitlements.xcent, which is what export signs
-      # with). Either way the export is re-signed with cloud-managed distribution signing and verified before upload.
-      # See docs/IOS-SIGNING.md.
-      - name: Archive (Apple Distribution) and export
-        if: env.HAS_ASC == 'true' && env.UPLOAD == 'true'
+      # Signing with a stored Apple Distribution certificate and App Store profiles (secrets IOS_DIST_P12,
+      # IOS_DIST_P12_PASSWORD, IOS_PROFILE_APP / _SHARE / _WIDGET, made once by scripts/ios-signing-setup.mjs; see
+      # docs/IOS-SIGNING.md). Everything lives in a temporary keychain on this runner, so nothing is minted per run: automatic
+      # signing created a new Apple Development certificate on every fresh runner until the account hit its limit, and cloud
+      # signing with an API key could not archive with a Distribution identity or keep the App Group entitlements.
+      - name: Archive (manual signing, Apple Distribution) and export
+        if: env.HAS_ASC == 'true' && env.UPLOAD == 'true' && env.HAS_DIST == 'true'
         working-directory: apps/mobile/ios/App
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_DIST_P12: ${{ secrets.IOS_DIST_P12 }}
+          IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
+          IOS_PROFILE_APP: ${{ secrets.IOS_PROFILE_APP }}
+          IOS_PROFILE_SHARE: ${{ secrets.IOS_PROFILE_SHARE }}
+          IOS_PROFILE_WIDGET: ${{ secrets.IOS_PROFILE_WIDGET }}
         run: |
-          KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
-          printf '%s' "$ASC_KEY_P8" > "$KEY"
-          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          COMMON=(-project App.xcodeproj -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER")
+          set -euo pipefail
+          # A temporary keychain with the distribution certificate.
+          KC="$RUNNER_TEMP/build.keychain-db"
+          KCPASS="$(uuidgen)"
+          echo "KEYCHAIN=$KC" >> "$GITHUB_ENV"
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          printf '%s' "$IOS_DIST_P12" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security import "$RUNNER_TEMP/dist.p12" -k "$KC" -P "$IOS_DIST_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPASS" "$KC" > /dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/dist.p12"
+          security find-identity -v -p codesigning "$KC"
 
-          echo "::group::Archive, signed with Apple Distribution (cloud-managed)"
-          if xcodebuild "${COMMON[@]}" "${AUTH[@]}" CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution" archive 2>&1 | tail -n 60; then
-            echo "archive signed with the distribution identity"
-          else
-            echo "::endgroup::"
-            echo "::warning::Automatic archive with an Apple Distribution identity failed; archiving unsigned and adding the entitlements by hand"
-            rm -rf "$RUNNER_TEMP/App.xcarchive"
-            xcodebuild "${COMMON[@]}" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" archive | tail -n 40
-            APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
-            put() { cp "$1" "$2/archived-expanded-entitlements.xcent"; }
-            put App/App.entitlements "$APP"
-            for ext in ShareExtension TodayWidget; do
-              for appex in "$APP"/PlugIns/*.appex; do
-                [ "$(basename "$appex" .appex)" = "$ext" ] && put "$ext/$ext.entitlements" "$appex"
-              done
-            done
-          fi
-          echo "::endgroup::"
+          # The App Store profiles: installed by UUID; their names go to the build settings and the export options.
+          PROFILES="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES"
+          install_profile() { # $1 = base64 profile, $2 = variable prefix; sets $2_NAME and $2_BUNDLE
+            local f="$RUNNER_TEMP/$2.mobileprovision" plist="$RUNNER_TEMP/$2.plist"
+            printf '%s' "$1" | base64 --decode > "$f"
+            security cms -D -i "$f" > "$plist"
+            local uuid; uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$plist")
+            cp "$f" "$PROFILES/$uuid.mobileprovision"
+            printf -v "$2_NAME" '%s' "$(/usr/libexec/PlistBuddy -c 'Print :Name' "$plist")"
+            printf -v "$2_BUNDLE" '%s' "$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$plist" | sed "s/^[A-Z0-9]*\.//")"
+            echo "profile $uuid: $(/usr/libexec/PlistBuddy -c 'Print :Name' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$plist"))"
+          }
+          install_profile "$IOS_PROFILE_APP" APP
+          install_profile "$IOS_PROFILE_SHARE" SHARE
+          install_profile "$IOS_PROFILE_WIDGET" WIDGET
 
+          # Archive: manual signing with the Distribution identity and a profile per target. The three targets are told apart
+          # by PRODUCT_NAME (App, ShareExtension, TodayWidget), so one command-line setting picks each target's own profile.
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KC" \
+            PROFILE_App="$APP_NAME" PROFILE_ShareExtension="$SHARE_NAME" PROFILE_TodayWidget="$WIDGET_NAME" \
+            'PROVISIONING_PROFILE_SPECIFIER=$(PROFILE_$(PRODUCT_NAME))' \
+            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 60
+
+          # Export: manual signing, each bundle id mapped to its profile. First a local .ipa to check, then the upload.
           for dest in export upload; do
             cat > "$RUNNER_TEMP/ExportOptions-$dest.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -231,15 +252,19 @@ jobs:
             <key>method</key><string>app-store-connect</string>
             <key>destination</key><string>$dest</string>
             <key>teamID</key><string>${APPLE_TEAM_ID}</string>
-            <key>signingStyle</key><string>automatic</string>
+            <key>signingStyle</key><string>manual</string>
             <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key><dict>
+              <key>${APP_BUNDLE}</key><string>${APP_NAME}</string>
+              <key>${SHARE_BUNDLE}</key><string>${SHARE_NAME}</string>
+              <key>${WIDGET_BUNDLE}</key><string>${WIDGET_NAME}</string>
+            </dict>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           PLIST
           done
-          # First a local .ipa, so the signature can be checked before anything is uploaded.
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-export.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}" | tail -n 40
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-export.plist" -exportPath "$RUNNER_TEMP/export" | tail -n 40
           rm -rf "$RUNNER_TEMP/ipa" && mkdir "$RUNNER_TEMP/ipa" && unzip -q "$RUNNER_TEMP"/export/*.ipa -d "$RUNNER_TEMP/ipa"
           for bundle in "$RUNNER_TEMP"/ipa/Payload/*.app "$RUNNER_TEMP"/ipa/Payload/*.app/PlugIns/*.appex; do
             echo "== $bundle"
@@ -255,9 +280,26 @@ jobs:
           if ! codesign -d --entitlements - "$RUNNER_TEMP"/ipa/Payload/*.app 2>/dev/null | grep -q "aps-environment"; then
             echo "::error::the app lost its push (aps-environment) entitlement"; exit 1
           fi
+          # Upload (the API key authenticates the upload; it signs nothing).
+          KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY_P8" > "$KEY"
           xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-upload.plist" -exportPath "$RUNNER_TEMP/upload" "${AUTH[@]}" | tail -n 40
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-upload.plist" -exportPath "$RUNNER_TEMP/upload" \
+            -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -n 40
           rm -f "$KEY"
+
+      # The runner is thrown away, but take the certificate and profiles off it anyway.
+      - name: Remove the signing keychain and profiles
+        if: always() && env.KEYCHAIN != ''
+        run: |
+          security delete-keychain "$KEYCHAIN" || true
+          rm -rf "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+      - name: TestFlight signing secrets missing
+        if: env.HAS_ASC == 'true' && env.UPLOAD == 'true' && env.HAS_DIST != 'true'
+        run: |
+          echo "::error::IOS_DIST_P12, IOS_DIST_P12_PASSWORD and the IOS_PROFILE_* secrets are not set: run scripts/ios-signing-setup.mjs (docs/IOS-SIGNING.md)."
+          exit 1
 
       - name: TestFlight skipped
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
