@@ -88,12 +88,13 @@ test('a list that carried on from an earlier one keeps its numbers too', () => {
   assert.equal(cut[0]!.attrs!.start, 4);
 });
 
-test('a nested numbered list cut inside keeps both levels’ numbers', () => {
+test('a nested numbered list cut inside keeps its numbers; the unpicked parent item prints no empty line', () => {
   const doc = n.doc.create(null, [ol({ start: 5 }, li('Five'), li('Six', ol({ start: 1 }, li('Six-a'), li('Six-b'), li('Six-c'))))]);
   const blocks = selectionBlocks(textSel(doc, at(doc, 'Six-b'), at(doc, 'Six-c', 5)));
-  assert.equal(blocks[0]!.attrs!.start, 6); // the outer list, cut at its 2nd item
-  const inner = blocks[0]!.content![0]!.content!.find((c) => c.type === 'orderedList')!;
-  assert.equal(inner.attrs!.start, 2);
+  // The cut starts inside "Six", whose own line is not part of it: the inner list is lifted into its place.
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0]!.type, 'orderedList');
+  assert.equal(blocks[0]!.attrs!.start, 2);
   assert.deepEqual(texts(blocks), ['Six-b', 'Six-c']);
 });
 
