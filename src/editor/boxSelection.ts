@@ -21,6 +21,10 @@ export const boxSelection = {
     const s = useBoxSelection.getState();
     useBoxSelection.setState({ pageId, ids: toggleId(s.pageId === pageId ? s.ids : [], id) });
   },
+  /** Select exactly these boxes. */
+  set(pageId: string, ids: string[]) {
+    useBoxSelection.setState({ pageId, ids });
+  },
   clear() {
     if (useBoxSelection.getState().ids.length) useBoxSelection.setState({ ids: [] });
   },
