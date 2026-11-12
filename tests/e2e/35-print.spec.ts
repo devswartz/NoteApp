@@ -94,6 +94,16 @@ test('Ctrl+P prints the open page laid out for paper', async ({ page, context, r
 
   await expect(root.locator('.print-title')).toHaveText('Weekly planning');
   await expect(root.locator('.print-sub')).toContainText('Project Atlas › General');
+  // Density: body text 11pt (14.67px); table cells 10pt (13.33px) with ~3.5px padding, so a one-line row is about 26px.
+  const density = await root.evaluate((el) => {
+    const body = getComputedStyle(el.querySelector('.print-box-content p')!).fontSize;
+    const td = el.querySelector('.print-box-content td')!;
+    return { body, cell: getComputedStyle(td).fontSize, row: Math.round(td.parentElement!.getBoundingClientRect().height) };
+  });
+  expect(density.body).toBe('14.6667px');
+  expect(density.cell).toBe('13.3333px');
+  expect(density.row).toBeGreaterThanOrEqual(24);
+  expect(density.row).toBeLessThanOrEqual(29);
   // Reading order: the main box, then the two side-by-side boxes as one row of columns, left to right.
   const rows = root.locator('.print-row');
   await expect(rows).toHaveCount(2);
