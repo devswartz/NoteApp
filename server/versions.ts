@@ -95,7 +95,7 @@ export function sweep(at = Date.now()) {
   const since = new Date(at - 2 * SWEEP_MS - MIN_GAP_MS).toISOString();
   const pages = db
     .prepare(
-      `SELECT p.id FROM pages p WHERE p.updated_at > ? AND p.updated_at > COALESCE(
+      `SELECT p.id FROM pages p WHERE p.deleted_at IS NULL AND p.updated_at > ? AND p.updated_at > COALESCE(
          (SELECT MAX(v.page_updated_at) FROM page_versions v WHERE v.page_id = p.id), '')`,
     )
     .all(since) as { id: string }[];

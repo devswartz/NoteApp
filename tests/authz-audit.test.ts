@@ -203,6 +203,12 @@ const ROWS: Row[] = [
   { method: 'GET', route: '/me/export', path: () => '/me/export', plain: true, expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'POST', route: '/workspaces/import', raw: true, path: () => '/workspaces/import', expect: { stranger: 400, viewer: 400, member: 400 } },
   { method: 'GET', route: '/workspaces/:id/tree', path: (f) => `/workspaces/${f.ws}/tree`, expect: READ },
+  // Trash (server/trash.ts): the list is everyone's to ask for (viewers get an empty one); restoring and deleting forever
+  // act on a Trash entry, and a live page isn't one (the real permissions are in tests/trash.test.ts); emptying is for admins.
+  { method: 'GET', route: '/workspaces/:id/trash', path: (f) => `/workspaces/${f.ws}/trash`, expect: READ },
+  { method: 'POST', route: '/trash/:kind/:id/restore', path: (f) => `/trash/page/${f.page}/restore`, expect: { viewer: 404, member: 404 } },
+  { method: 'DELETE', route: '/trash/:kind/:id', path: (f) => `/trash/page/${f.page}`, expect: { viewer: 404, member: 404 } },
+  { method: 'DELETE', route: '/workspaces/:id/trash', path: (f) => `/workspaces/${f.ws}/trash`, expect: ADMIN },
   { method: 'GET', route: '/workspaces/:id/search', path: (f) => `/workspaces/${f.ws}/search?q=page`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/tasks', path: (f) => `/workspaces/${f.ws}/tasks`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/tasks/completed', path: (f) => `/workspaces/${f.ws}/tasks/completed`, expect: READ },

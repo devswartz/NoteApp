@@ -55,7 +55,7 @@ type Table = 'notebooks' | 'sections' | 'pages';
  * the item itself. Positions are REAL, so inserting between two items averages them.
  */
 export function positionAt(table: Table, col: string, parentId: string, index: number, selfId?: string): number {
-  const sibs = (db.prepare(`SELECT id, position FROM ${table} WHERE ${col} = ? ORDER BY position`).all(parentId) as {
+  const sibs = (db.prepare(`SELECT id, position FROM ${table} WHERE ${col} = ? AND deleted_at IS NULL ORDER BY position`).all(parentId) as {
     id: string;
     position: number;
   }[]).filter((s) => s.id !== selfId);
@@ -197,8 +197,8 @@ export const sectionPathNames = (sectionId: string) => sectionChain(sectionId).m
 type Sib = { id: string; position: number };
 const sectionSiblings = (notebookId: string, parentId: string | null): Sib[] =>
   (parentId
-    ? db.prepare('SELECT id, position FROM sections WHERE parent_id = ? ORDER BY position').all(parentId)
-    : db.prepare('SELECT id, position FROM sections WHERE notebook_id = ? AND parent_id IS NULL ORDER BY position').all(notebookId)) as Sib[];
+    ? db.prepare('SELECT id, position FROM sections WHERE parent_id = ? AND deleted_at IS NULL ORDER BY position').all(parentId)
+    : db.prepare('SELECT id, position FROM sections WHERE notebook_id = ? AND parent_id IS NULL AND deleted_at IS NULL ORDER BY position').all(notebookId)) as Sib[];
 
 /** Position at the end of a section's siblings (the top level of a notebook, or inside a parent section). */
 export const nextSectionPos = (notebookId: string, parentId: string | null) => (sectionSiblings(notebookId, parentId).at(-1)?.position ?? 0) + 1;
@@ -219,7 +219,7 @@ export function sectionPositionAt(notebookId: string, parentId: string | null, i
  */
 export function checkSectionParent(sectionId: string | null, notebookId: string, parentId: string | null) {
   if (!parentId) return;
-  const parent = db.prepare('SELECT notebook_id FROM sections WHERE id = ?').get(parentId) as { notebook_id: string } | undefined;
+  const parent = db.prepare('SELECT notebook_id FROM sections WHERE id = ? AND deleted_at IS NULL').get(parentId) as { notebook_id: string } | undefined;
   if (!parent) throw new HttpError(404, 'That section no longer exists');
   if (parent.notebook_id !== notebookId) throw new HttpError(400, 'A subsection must be in the same notebook as its parent');
   if (sectionId && sectionSubtree(sectionId).includes(parentId))

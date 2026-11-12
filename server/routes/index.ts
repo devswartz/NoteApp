@@ -10,6 +10,7 @@ import { clientErrorRoutes } from './clientErrors.ts';
 import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
+import { trashRoutes } from './trash.ts';
 import { taskRoutes } from './tasks.ts';
 import { teamRoutes } from './teams.ts';
 import { searchRoutes } from './search.ts';
@@ -54,6 +55,7 @@ api.use(exportRoutes); // before workspaceRoutes: /workspaces/import must not hi
 api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);
+api.use(trashRoutes);
 api.use(taskRoutes);
 api.use(teamRoutes); // tags, teams, saved task views
 api.use(searchRoutes);

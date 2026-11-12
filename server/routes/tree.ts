@@ -4,10 +4,10 @@ import { db, newId, now, pickColor } from '../db.ts';
 import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { dropForeignPageShares } from '../workspaces.ts';
+import { trashNotebook, trashSection } from '../trash.ts';
 import {
   checkSectionParent,
   copyPage,
-  detachPagesTasks,
   nextPos,
   nextSectionPos,
   positionAt,
@@ -37,7 +37,7 @@ treeRoutes.get(
       .prepare(
         `SELECT s.id, s.notebook_id AS notebookId, s.parent_id AS parentId, s.name, s.color, s.position,
            s.default_template_id AS defaultTemplateId, s.no_default_template AS noDefaultTemplate FROM sections s
-         JOIN notebooks n ON n.id = s.notebook_id WHERE n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE} ORDER BY s.position`,
+         JOIN notebooks n ON n.id = s.notebook_id WHERE n.workspace_id = @workspaceId AND s.deleted_at IS NULL AND ${NOTEBOOK_VISIBLE} ORDER BY s.position`,
       )
       .all(p)
       .map((s) => ({ ...(s as Section), noDefaultTemplate: !!(s as { noDefaultTemplate: unknown }).noDefaultTemplate }));
@@ -46,7 +46,7 @@ treeRoutes.get(
         `SELECT pg.id, pg.section_id AS sectionId, pg.title, pg.icon, pg.kind, pg.position, pg.updated_at AS updatedAt,
            pg.updated_by AS updatedBy
          FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
-         WHERE n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE} ORDER BY pg.position`,
+         WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NULL AND s.deleted_at IS NULL AND ${NOTEBOOK_VISIBLE} ORDER BY pg.position`,
       )
       .all(p) as PageMeta[];
     return { notebooks, sections, pages };
@@ -105,10 +105,9 @@ treeRoutes.delete(
     const a = mustAccess(notebookAccess(id, req.user.id), true);
     if (!a.isNotebookOwner && !['owner', 'admin'].includes(a.role))
       throw new HttpError(403, 'Only the creator or a workspace admin can delete a notebook');
-    const pages = db.prepare('SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id WHERE s.notebook_id = ?').all(id) as { id: string }[];
-    detachPagesTasks(pages.map((p) => p.id), () => db.prepare('DELETE FROM notebooks WHERE id = ?').run(id));
-    publish({ type: 'tree', workspaceId: a.workspaceId });
-    return { ok: true };
+    // To the Trash, not gone: it can be restored for 60 days (server/trash.ts).
+    const t = trashNotebook(id, a.workspaceId, req.user.id);
+    return { ok: true, ...t };
   }),
 );
 
@@ -154,14 +153,9 @@ treeRoutes.delete(
   h((req) => {
     const id = param(req, 'id');
     const a = mustAccess(sectionAccess(id, req.user.id), true);
-    // Its subsections go with it (ON DELETE CASCADE), so their pages' tasks are detached too.
-    const subtree = sectionSubtree(id);
-    const pages = db
-      .prepare(`SELECT id FROM pages WHERE section_id IN (${subtree.map(() => '?').join(', ')})`)
-      .all(...subtree) as { id: string }[];
-    detachPagesTasks(pages.map((p) => p.id), () => db.prepare('DELETE FROM sections WHERE id = ?').run(id));
-    publish({ type: 'tree', workspaceId: a.workspaceId });
-    return { ok: true };
+    // Its subsections and pages go with it, to the Trash (server/trash.ts).
+    const t = trashSection(id, a.workspaceId, req.user.id);
+    return { ok: true, ...t };
   }),
 );
 
@@ -220,7 +214,7 @@ treeRoutes.post(
     let notebookId = typeof b.notebookId === 'string' ? b.notebookId : a.notebookId;
     if (typeof b.parentId === 'string' && b.parentId) {
       parentId = b.parentId;
-      const p = db.prepare('SELECT notebook_id FROM sections WHERE id = ?').get(parentId) as { notebook_id: string } | undefined;
+      const p = db.prepare('SELECT notebook_id FROM sections WHERE id = ? AND deleted_at IS NULL').get(parentId) as { notebook_id: string } | undefined;
       if (!p) throw new HttpError(404, 'That section no longer exists');
       notebookId = p.notebook_id;
     } else if (b.parentId === null) parentId = null;
@@ -253,9 +247,9 @@ treeRoutes.post(
       db.prepare('INSERT INTO sections (id, notebook_id, parent_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
         newSection, notebookId, parent, sectionName, color, position, now(),
       );
-      const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? ORDER BY position').all(from) as { id: string; position: number }[];
+      const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? AND deleted_at IS NULL ORDER BY position').all(from) as { id: string; position: number }[];
       for (const p of pages) copyPage(p.id, newSection, req.user.id, { position: p.position });
-      const subs = db.prepare('SELECT id, name, color, position FROM sections WHERE parent_id = ? ORDER BY position').all(from) as {
+      const subs = db.prepare('SELECT id, name, color, position FROM sections WHERE parent_id = ? AND deleted_at IS NULL ORDER BY position').all(from) as {
         id: string;
         name: string;
         color: string;

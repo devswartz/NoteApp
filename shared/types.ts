@@ -487,3 +487,23 @@ export interface PushSubscriptionInput {
   endpoint: string;
   keys: { p256dh: string; auth: string };
 }
+
+/** One entry of a workspace's Trash (GET /workspaces/:id/trash): a page, section or notebook that was deleted. */
+export interface TrashItem {
+  kind: 'page' | 'section' | 'notebook';
+  id: string;
+  /** The page's title, or the section's or notebook's name. */
+  name: string;
+  icon: string | null;
+  deletedAt: string;
+  deletedBy: string | null;
+  deletedByName: string | null;
+  /** When the daily job removes it for good (60 days after deletedAt). */
+  expiresAt: string;
+  daysLeft: number;
+  /** Where it was: "Notebook › Section" (empty for a notebook). */
+  path: string;
+  /** How many pages and (sub)sections went with it. */
+  pages: number;
+  sections: number;
+}

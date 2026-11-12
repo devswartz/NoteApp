@@ -156,7 +156,7 @@ export function findPageInvite(token: string): PageInvite | null {
       `SELECT i.page_id, i.email, i.can_edit, i.expires_at, i.invited_by, p.title, n.workspace_id, w.name AS workspace_name, u.name AS inviter_name
        FROM page_invites i JOIN pages p ON p.id = i.page_id JOIN sections s ON s.id = p.section_id
        JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id JOIN users u ON u.id = i.invited_by
-       WHERE i.token_hash = ?`,
+       WHERE i.token_hash = ? AND p.deleted_at IS NULL`,
     )
     .get(hashInviteToken(token)) as
     | { page_id: string; email: string; can_edit: number; expires_at: string | null; invited_by: string; title: string; workspace_id: string; workspace_name: string; inviter_name: string }
