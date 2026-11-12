@@ -16,7 +16,7 @@ You can also send feedback from inside the app: press **?** (or search the comma
 
 **How do I get my data out?** Go to Settings → Profile → **Export my data** to download your pages, tasks and files.
 
-**I deleted a page by mistake. Can I get it back?** Yes, for 60 days. Open **Trash** from the menu under your name (or search for "Trash" in the command palette) and press **Restore**. Right after deleting, the **Undo** button in the message at the bottom does the same. Sections and notebooks go to the Trash too, with everything in them. After 60 days, or after **Delete forever**, they are gone.
+**I deleted a page by mistake. Can I get it back?** Yes, for 60 days. Open **Trash** from the menu under your name (or search for "Trash" in the command palette) and press **Restore**. Right after deleting, the **Undo** button in the message at the bottom does the same. Sections and notebooks go to the Trash too, with everything in them. Tasks on a deleted page stay in your task list (their page shows as "in Trash"); when the page is deleted for good they stay as standalone tasks. After 60 days, or after **Delete forever**, they are gone.
 
 **How do I delete my account?** Go to Settings → Profile → **Delete account**. Your account and personal data are removed straight away. Backups age out within about three months, as explained in the [Privacy Policy](/privacy).
 

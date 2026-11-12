@@ -20,7 +20,9 @@ export function TaskDetail() {
   const id = useStore((s) => s.taskDetailId);
   const task = useStore((s) => (id ? s.tasks[id] : undefined));
   const wsId = useStore((s) => s.wsId);
-  const page = useStore((s) => (task?.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
+  const livePage = useStore((s) => (task?.pageId ? s.tree.pages.find((p) => p.id === task.pageId) : undefined));
+  const trashedPage = useStore((s) => (task?.pageId && !livePage ? s.tree.trashedPages?.find((p) => p.id === task.pageId) : undefined));
+  const page = livePage ?? (trashedPage ? { ...trashedPage, title: `${trashedPage.title || 'Untitled'} · in Trash` } : undefined);
   const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
   const members = useStore((s) => s.members);
   const teams = useStore((s) => s.teams);

@@ -166,7 +166,7 @@ export function NotebookMenu({ nb, canEdit, isMine, isAdmin, onRename }: { nb: N
             onSelect={async () => {
               const ok = await confirmDialog({
                 title: `Delete “${nb.name}”?`,
-                message: 'It moves to the Trash with all its sections and pages, and stays there for 60 days. You can restore it from the Trash.',
+                message: 'It moves to the Trash with all its sections and pages, and stays there for 60 days. Its tasks stay in your task list. You can restore it from the Trash.',
                 confirmLabel: 'Move to Trash',
                 danger: true,
               });

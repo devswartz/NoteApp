@@ -125,7 +125,7 @@ test('deleting a section deletes its subsections and pages; their tasks become s
   assert.ok(!t.pages.some((p) => p.id === page));
   assert.ok(t.sections.some((s) => s.id === u.d));
   const tasksNow = async () => (await app.call('GET', `/workspaces/${u.wsId}/tasks`, u.token)).data as { id: string; pageId: string | null }[];
-  assert.ok(!(await tasksNow()).some((x) => x.id === task.id), 'hidden while in the Trash');
+  assert.equal((await tasksNow()).find((x) => x.id === task.id)?.pageId, page, 'the task stays in the list, on its page, while in the Trash');
   // Deleted for good: the tasks are standalone.
   assert.equal((await app.call('DELETE', `/trash/section/${u.a}`, u.token)).status, 200);
   assert.equal((await tasksNow()).find((x) => x.id === task.id)!.pageId, null);
