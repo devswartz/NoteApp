@@ -2,6 +2,12 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.8
+
+### Fixes
+- **Deleting a page keeps its tasks in your task list.** While the page is in Trash, the tasks show "Page title · in Trash" and open the read-only page with Restore. After 60 days, or Delete forever, they become standalone tasks. The messages say so consistently.
+- **The drag handle no longer covers text** when you move from a sub-point up to a parent, a paragraph or a heading.
+
 ## v0.4.7
 
 ### Fixes

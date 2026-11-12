@@ -7,10 +7,12 @@ const LABEL: Record<TrashKind, string> = { page: 'Page', section: 'Section', not
 
 export async function moveToTrash(kind: TrashKind, id: string, name: string, after?: () => void): Promise<void> {
   try {
-    const r = await del<{ tasksHidden?: number }>(`/${kind}s/${id}`);
+    const r = await del<{ tasks?: number }>(`/${kind}s/${id}`);
     after?.();
-    const n = r.tasksHidden ?? 0;
-    toast(`${LABEL[kind]} “${name || 'Untitled'}” moved to Trash${n ? `. ${n} task${n === 1 ? '' : 's'} on it ${n === 1 ? 'is' : 'are'} hidden until it's restored` : ''}`, {
+    const n = r.tasks ?? 0;
+    void name;
+    void LABEL;
+    toast(`Moved to Trash.${n ? ` Its ${n} task${n === 1 ? '' : 's'} stay${n === 1 ? 's' : ''} in your task list.` : ''}`, {
       action: { label: 'Undo', run: () => void restoreFromTrash(kind, id) },
     });
   } catch (e) {

@@ -29,10 +29,10 @@
 .page-menu-seg button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; padding: 4px 6px; border-radius: 5px; color: var(--text-2); }
 .page-menu-seg button.is-active { background: var(--bg-elevated); color: var(--text); box-shadow: var(--shadow-sm); }
 
-/* ───────── Block handle (drag + insert) ───────── */
-.block-handle { display: flex; align-items: center; gap: 0; padding-right: 4px; transition: opacity 0.12s; }
-.block-handle-btn {
-  width: 22px;
+/* ───────── Block handle: a slim grip (drag to move, click for a menu) ───────── */
+.block-handle { display: flex; align-items: center; transition: opacity 0.12s; }
+.block-handle-grip {
+  width: 20px;
   height: 24px;
   display: inline-flex;
   align-items: center;
@@ -40,9 +40,9 @@
   border-radius: 5px;
   color: var(--text-muted);
   opacity: 0.6;
+  cursor: grab;
 }
-.block-handle-btn:hover { background: var(--bg-hover); opacity: 1; color: var(--text-2); }
-.block-handle-grip { cursor: grab; }
+.block-handle-grip:hover { background: var(--bg-hover); opacity: 1; color: var(--text-2); }
 .block-handle-grip:active { cursor: grabbing; }
 .ProseMirror .ProseMirror-selectednode:not(img):not(.task-ref) { outline: 2px solid var(--accent-soft); border-radius: 4px; }
 .ProseMirror-dropcursor, .prosemirror-dropcursor-block { background: var(--accent) !important; }

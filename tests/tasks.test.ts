@@ -234,8 +234,8 @@ test('deleting a page keeps its tasks as standalone tasks', async () => {
   const { pageId } = await makePage(u, u.wsId);
   const t = (await create(u, u.wsId, { title: 'Survivor', pageId })).data;
   assert.equal((await app.call('DELETE', `/pages/${pageId}`, u.token)).status, 200);
-  // In the Trash its tasks are hidden, still on the page (they come back with a restore)...
-  assert.ok(!(await list(u, u.wsId)).data.some((x) => x.id === t.id), 'hidden while the page is in Trash');
+  // In the Trash its tasks stay in the task list, still on the page...
+  assert.equal((await list(u, u.wsId)).data.find((x) => x.id === t.id)?.pageId, pageId, 'listed while the page is in Trash');
   // ...and when it is deleted for good they are standalone tasks, as deleting a page always made them.
   assert.equal((await app.call('DELETE', `/trash/page/${pageId}`, u.token)).status, 200);
   const after = (await list(u, u.wsId)).data.find((x) => x.id === t.id);

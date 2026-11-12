@@ -116,24 +116,24 @@ test('dragging a point moves its sub-points with it', async ({ page, context, re
   expect(await shape(page.locator('.canvas-box').first())).toContain('    Deep 1b-i');
 });
 
-test('on a list line: + adds a new line of that list below it; the tick turns just that line into a task', async ({ page, context, request }) => {
+test('on a list line: the grip menu adds a new line of that list below it, and turns just that line into a task', async ({ page, context, request }) => {
   const user = await createUser(request, 'Lena Line');
   await signInContext(context, user);
   await openOutline(page, request, user);
   const main = page.locator('.canvas-box').first();
   await main.locator('.ProseMirror').click();
 
-  // "+" below "Sub 1a": a new point at the same level, ready to type in.
+  // "Add line below" Sub 1a: a new point at the same level, ready to type in.
   await hover(page, para(main, 'Sub 1a'));
-  await page.getByRole('button', { name: 'Insert a block below' }).first().click();
-  await page.keyboard.press('Escape'); // the slash menu it opens
-  await page.keyboard.press('Backspace'); // the "/"
+  await page.getByRole('button', { name: 'Block options' }).first().click();
+  await page.getByRole('menuitem', { name: 'Add line below' }).click();
   await page.keyboard.type('Sub 1a and a half');
   expect(await shape(main)).toEqual(['Point one', '  Sub 1a', '  Sub 1a and a half', '  Sub 1b', '    Deep 1b-i', 'Point two', 'Point three', '  Sub 3a']);
 
-  // The tick on "Sub 1b" converts that line only: the point nested under it stays.
+  // "Turn into task" on "Sub 1b" converts that line only: the point nested under it stays.
   await hover(page, para(main, 'Sub 1b'));
-  await page.getByRole('button', { name: 'Turn this line into a task' }).first().click();
+  await page.getByRole('button', { name: 'Block options' }).first().click();
+  await page.getByRole('menuitem', { name: 'Turn into task' }).click();
   await expect(main.locator('.task-ref')).toHaveCount(1);
   await expect(main.locator('li', { hasText: 'Deep 1b-i' }).first()).toBeVisible();
 });

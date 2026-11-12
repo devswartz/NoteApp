@@ -13,19 +13,20 @@ test('delete a page, undo from the toast, then delete again and restore it from 
   await page.getByRole('button', { name: 'Page options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete page' }).click();
   const toast = page.locator('.toast');
-  await expect(toast).toContainText('moved to Trash');
-  await expect(toast).toContainText('1 task on it is hidden until it');
+  await expect(toast).toContainText('Moved to Trash.');
+  await expect(toast).toContainText('Its 1 task stays in your task list.');
   await toast.getByRole('button', { name: 'Undo' }).click();
   await expect(page.locator('.toast').last()).toContainText('Restored');
   await expect(sidebar.getByText('Fragile page')).toBeVisible();
   await openPage(page, user.wsId, pageId);
 
-  // Delete again; it is in the Trash screen, and its task is hidden meanwhile.
+  // Delete again; it is in the Trash screen, and its task stays in the task list, its page shown as "in Trash".
   await page.getByRole('button', { name: 'Page options', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Delete page' }).click();
   await expect(sidebar.getByText('Fragile page')).toHaveCount(0);
   await page.goto(tasksUrl(user.wsId, 'my'));
-  await expect(taskRow(page, 'Rides along')).toHaveCount(0);
+  await expect(taskRow(page, 'Rides along')).toBeVisible();
+  await expect(taskRow(page, 'Rides along').getByRole('link', { name: /Fragile page · in Trash/ })).toBeVisible();
 
   await page.goto(`/w/${user.wsId}/trash`);
   const row = page.getByTestId('trash-row').filter({ hasText: 'Fragile page' });

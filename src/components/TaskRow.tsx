@@ -36,8 +36,10 @@ export const TaskRow = memo(function TaskRow({
   const treePage = useStore((s) => (task.pageId ? pageIndex(s.tree.pages).get(task.pageId) : undefined));
   // A page shared with me one by one (#98): not in the tree, but its tasks show under it.
   const sharedPage = useShared((s) => (task.pageId ? s.pages.find((p) => p.id === task.pageId) : undefined));
-  const page = treePage ?? sharedPage;
-  const pageHref = treePage ? `/w/${wsId}/p/${treePage.id}` : sharedPage ? sharedPagePath(sharedPage.workspaceId, sharedPage.id) : '';
+  // A page in the Trash: its tasks stay, and say so; the chip opens the page read-only with its Restore button.
+  const trashedPage = useStore((s) => (task.pageId && !treePage ? s.tree.trashedPages?.find((p) => p.id === task.pageId) : undefined));
+  const page = treePage ?? sharedPage ?? (trashedPage ? { ...trashedPage, title: `${trashedPage.title || 'Untitled'} · in Trash` } : undefined);
+  const pageHref = treePage ? `/w/${wsId}/p/${treePage.id}` : sharedPage ? sharedPagePath(sharedPage.workspaceId, sharedPage.id) : trashedPage ? `/w/${wsId}/p/${trashedPage.id}` : '';
   // A member (not a viewer) of the task's own workspace, or anyone who may edit the page it lives
   // on through a page share (#98 follow-up).
   const memberCanEdit = useStore((s) => {
