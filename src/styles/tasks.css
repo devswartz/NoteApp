@@ -266,3 +266,12 @@ button.cal-more:hover { color: var(--accent); }
 }
 .view-filter-line .filter-summary-part:first-child::before { content: none; }
 .view-filter-line { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 12px; }
+
+/* Nested options (subteams, subsections) and notebook captions. */
+.fp-head { padding: 10px 10px 4px; font-size: var(--text-2xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.fp-head:first-child { padding-top: 2px; }
+.menu-item.fp-nested { position: relative; padding-left: calc(10px + var(--d, 0) * 20px); }
+/* A thin guide line at each level, so a subteam reads as belonging to the team above it. */
+.menu-item.fp-nested::before { content: ''; position: absolute; top: 0; bottom: 0; left: 17px; width: calc(var(--d, 0) * 20px); pointer-events: none; background: repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 20px); }
+.fp-box.is-covered { background: color-mix(in srgb, var(--accent) 28%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+.fp-box.is-covered.is-not { background: color-mix(in srgb, var(--danger) 22%, transparent); border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
