@@ -2,7 +2,7 @@
 // them, the right-click menu, and a selection from an untitled page printing without a title.
 // Set E2E_SHOTS=<dir> to also save screenshots.
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { api, createPage, createUser, openPage, ribbon, signInContext, type TestUser } from './helpers.ts';
+import { api, createPage, createTeam, createUser, openPage, pageUrl, ribbon, signInContext, type TestUser } from './helpers.ts';
 
 type J = Record<string, unknown>;
 const text = (t: string, marks?: J[]): J => ({ type: 'text', text: t, ...(marks ? { marks } : {}) });
@@ -26,11 +26,11 @@ const shot = async (page: Page, name: string) => {
 };
 
 /** A canvas page with these boxes (made through a template). `pageTitle` '' makes an untitled page. */
-async function canvasPage(request: APIRequestContext, page: Page, user: TestUser, pageTitle: string, boxes: J[]) {
-  const { pageId: scratch, sectionId } = await createPage(request, user, { notebook: 'Picks', page: 'Scratch' });
+async function canvasPage(request: APIRequestContext, page: Page, user: TestUser, pageTitle: string, boxes: J[], wsId = user.wsId) {
+  const { pageId: scratch, sectionId } = await createPage(request, user, { wsId, notebook: 'Picks', page: 'Scratch' });
   await api(request, 'POST', `/pages/${scratch}/templates`, user.token, { name: 'Picks template', kind: 'canvas', content: { type: 'doc', content: boxes } });
   const { id: pageId } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: pageTitle });
-  await openPage(page, user.wsId, pageId);
+  await openPage(page, wsId, pageId);
   await page.getByTestId('user-templates').locator('.template-card', { hasText: 'Picks template' }).click();
   await expect(page.locator('.canvas-box:not(.is-ready)')).toHaveCount(boxes.length);
   // Applying a template names an untitled page after it: an untitled page is one whose title is cleared.
@@ -179,4 +179,52 @@ test('a selection from an untitled page prints without a title; a titled one kee
   await expect(root.locator('.print-box')).toHaveText([/^\s*Echo\s*$/]);
   await expect(root.locator('.print-title')).toHaveCount(0);
   await expect(root).not.toContainText('Untitled');
+});
+
+test('a named page prints its title with a selection, including a page shared from another workspace; untitled prints none', async ({ browser, page, context, request }) => {
+  // Named, own workspace: by picked lines, and by selected text.
+  const user = await createUser(request, 'Nina Named');
+  await signInContext(context, user);
+  await stubPrint(page);
+  await canvasPage(request, page, user, 'Quarterly plan', twoBoxes);
+  await line(page, 'Echo').click({ modifiers: CTRL });
+  await printButton(page).click();
+  await expect.poll(() => printed(page)).toBe(1);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('#print-root .print-title')).toHaveText('Quarterly plan');
+  await page.emulateMedia({ media: 'screen' });
+  await page.keyboard.press('Escape');
+  await line(page, 'Alpha').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+End');
+  await expect(printButton(page)).toBeVisible();
+  await printButton(page).click();
+  await expect.poll(() => printed(page)).toBe(2);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('#print-root .print-title')).toHaveText('Quarterly plan');
+
+  // A page shared from another workspace isn't in the viewer's page list: its title must still print.
+  const alice = await createUser(request, 'Alice Owner');
+  const olga = await createUser(request, 'Olga Outsider');
+  const teamId = await createTeam(request, alice, [], 'Closed Team');
+  const a = await browser.newContext();
+  await signInContext(a, alice);
+  const ap = await a.newPage();
+  const sharedId = await canvasPage(request, ap, alice, 'Shared named note', twoBoxes, teamId);
+  await api(request, 'POST', `/pages/${sharedId}/shares`, alice.token, { email: olga.email, canEdit: false });
+  const o = await browser.newContext();
+  await signInContext(o, olga);
+  const op = await o.newPage();
+  await stubPrint(op);
+  await op.goto(pageUrl(olga.wsId, sharedId));
+  await expect(op.locator('.canvas-box:not(.is-ready)')).toHaveCount(2);
+  await op.locator('.canvas-box p', { hasText: /^Echo$/ }).click({ modifiers: CTRL });
+  await op.locator('.canvas-box p', { hasText: /^Echo$/ }).click({ button: 'right' });
+  await op.getByRole('menuitem', { name: 'Print selection' }).click();
+  await expect.poll(() => printed(op)).toBe(1);
+  await op.emulateMedia({ media: 'print' });
+  await expect(op.locator('#print-root .print-title')).toHaveText('Shared named note');
+  await expect(op.locator('#print-root')).not.toContainText('Untitled');
+  await a.close();
+  await o.close();
 });

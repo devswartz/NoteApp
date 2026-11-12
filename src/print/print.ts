@@ -15,6 +15,7 @@ import type { Task } from '../../shared/types.ts';
 import { useRibbon } from '../editor/ribbonState.ts';
 import { useBoxSelection, selectionEditor } from '../editor/boxSelection.ts';
 import { linePicks } from '../editor/linePicks.ts';
+import { useShared } from '../components/sharing/sharedPages.ts';
 import { selectionBlocks } from './selectionContent.ts';
 import { chooseDialog } from '../components/shell/dialogs.tsx';
 import { clearPrintRoot, imagesReady, mountPrintRoot, renderPrintPage, type PrintContext, type PrintPageInput } from './printDoc.ts';
@@ -59,6 +60,18 @@ function snapshotDoc(doc: Y.Doc): Y.Doc {
   return copy;
 }
 
+/**
+ * The open page's title: from the workspace's page list, else from the pages shared with me (a page from another
+ * workspace isn't in the list), else what is in the title field right now. Never empty for a page that has a name.
+ */
+export function openPageTitle(pageId: string): string {
+  const own = useStore.getState().tree.pages.find((p) => p.id === pageId)?.title;
+  if (own) return own;
+  const shared = useShared.getState().pages.find((p) => p.id === pageId)?.title;
+  if (shared) return shared;
+  return document.querySelector<HTMLTextAreaElement>('textarea.page-title')?.value.trim() ?? '';
+}
+
 /** A job is being prepared or its dialog is open. */
 let busy = false;
 /**
@@ -94,9 +107,9 @@ export async function printCurrentPage(): Promise<boolean> {
   if (busy) return true;
   busy = true;
   try {
-    const meta = useStore.getState().tree.pages.find((p) => p.id === page.pageId);
+    const title = openPageTitle(page.pageId);
     const doc = snapshotDoc(page.doc);
-    await run([{ pageId: page.pageId, doc, heights: measuredHeights(page.doc) }], meta?.title ?? '', context());
+    await run([{ pageId: page.pageId, doc, title, heights: measuredHeights(page.doc) }], title, context());
   } catch (e) {
     errorToast(e);
   } finally {
@@ -137,9 +150,9 @@ export async function printSelection(sel = pageSelection()): Promise<boolean> {
   if (busy) return true;
   busy = true;
   try {
-    const meta = useStore.getState().tree.pages.find((p) => p.id === page.pageId);
+    const title = openPageTitle(page.pageId);
     const doc = snapshotDoc(page.doc);
-    await run([{ pageId: page.pageId, doc, heights: measuredHeights(page.doc), ...sel }], meta?.title ?? '', context());
+    await run([{ pageId: page.pageId, doc, title, heights: measuredHeights(page.doc), ...sel }], title, context());
   } catch (e) {
     errorToast(e);
   } finally {
@@ -273,7 +286,7 @@ export function installPrintHandlers() {
       clearPrintRoot();
       return;
     }
-    mountPrintRoot([renderPrintPage({ pageId: page.pageId, doc: snapshotDoc(page.doc), heights: measuredHeights(page.doc) }, context())]);
+    mountPrintRoot([renderPrintPage({ pageId: page.pageId, doc: snapshotDoc(page.doc), title: openPageTitle(page.pageId), heights: measuredHeights(page.doc) }, context())]);
   };
   // The job has gone to the printer: the next print starts afresh. (While the app's own
   // job is still in print(), the root stays: some browsers lay out again after afterprint.)
