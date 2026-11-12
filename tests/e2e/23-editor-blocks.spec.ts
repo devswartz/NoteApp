@@ -3,7 +3,7 @@
 // Owner: Editor & Notes (agent 2), coordinated with QA (docs/QA.md).
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { createPage, createUser, focusEnd, openPage, signInContext } from './helpers.ts';
+import { createPage, createUser, focusEnd, openPage, settleCaret, signInContext } from './helpers.ts';
 
 async function slash(page: Page, query: string) {
   await page.keyboard.type('/' + query);
@@ -115,6 +115,7 @@ test.describe('editor blocks', () => {
     // Tab still moves between cells; F6 reaches the Table group in the ribbon's arrow navigation.
     const last = editor.locator('tr').last().locator('td');
     await last.first().click();
+    await settleCaret(page); // a key pressed before the editor has taken in the click acts on the old caret
     await page.keyboard.press('Tab');
     await page.keyboard.type('next');
     await expect(last.nth(1)).toHaveText('next');

@@ -8,6 +8,7 @@ import type { Editor } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import { ExternalLink, Link2Off } from 'lucide-react';
 import { platform } from '../platform/index.ts';
+import { closeUndoGroup } from './pageUndo.ts';
 
 interface LinkState {
   editor: Editor | null;
@@ -72,7 +73,10 @@ export function applyLink(editor: Editor, range: { from: number; to: number }, t
     tr.setSelection(TextSelection.create(tr.doc, end));
     tr.removeStoredMark(linkType);
   }
+  // Its own undo step: typing just before it (within Yjs's half-second grouping) would otherwise undo with it.
+  closeUndoGroup(editor);
   editor.view.dispatch(tr.scrollIntoView());
+  closeUndoGroup(editor);
   editor.commands.focus();
 }
 

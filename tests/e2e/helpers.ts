@@ -127,11 +127,21 @@ export async function openPage(page: Page, wsId: string, pageId: string) {
   return editor;
 }
 
+/**
+ * Lets the editor take in a caret move. The browser reports a selection change a frame after it happens,
+ * and ProseMirror only learns of it then: a key pressed in that gap acts on the old selection (Enter after
+ * a click and Ctrl+End deleted the text that had been selected before). Two animation frames cover it.
+ */
+export async function settleCaret(page: Page) {
+  await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+}
+
 /** Puts the caret at the end of the first text box. */
 export async function focusEnd(page: Page) {
   const editor = firstEditor(page);
   await editor.click();
   await page.keyboard.press('ControlOrMeta+End');
+  await settleCaret(page);
   return editor;
 }
 
