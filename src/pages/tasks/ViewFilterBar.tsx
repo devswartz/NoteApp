@@ -11,7 +11,7 @@ export function ViewFilterBar() {
   if (isMobile) return <FilterChips filters={filters} onChange={taskView.setFilters} />;
   if (!activeKinds(filters).length) return null;
   return (
-    <div className="muted small result-count">
+    <div className="muted small result-count view-filter-line">
       {/* Search text and status belong to All Tasks, so they aren't part of what's shown here. */}
       <FilterSummary filters={{ ...filters, q: '', status: 'open' }} />
       <button type="button" className="btn-ghost btn-sm" onClick={() => taskView.setFilters(clearedFilters(filters))}>

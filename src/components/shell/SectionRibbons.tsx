@@ -46,7 +46,7 @@ import { useNotesSelection, viewTarget } from './navState.ts';
 import { orderedTeams, teamLabel, type GroupKey, type ViewId } from '../../lib/taskViews.ts';
 import { today } from '../../../shared/dates.ts';
 import { taskView, useTaskView, type MyGroup } from '../../pages/tasks/taskViewState.ts';
-import { AddFilterMenu, KINDS, KindMenu, activeKinds, clearedFilters, withoutFilter, type Kind } from '../../pages/tasks/FilterChips.tsx';
+import { AddFilterMenu, KINDS, KindMenu, activeKinds, clearedFilters, valueCount, withoutFilter, type Kind } from '../../pages/tasks/FilterChips.tsx';
 import { GROUP_OPTIONS, SORT_OPTIONS, SavedViewActions, saveCurrentView, useIsWsAdmin } from '../../pages/tasks/AllView.tsx';
 import { sameView, useSavedViews, type SavedView } from '../../pages/tasks/savedViews.ts';
 import {
@@ -193,11 +193,11 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
             </MenuItem>
           </RibbonMenu>
         ) : (
-          filterMenu('assignee', 'Assignee', <User />, filters.assignee !== 'any' ? 1 : 0, view === 'my' ? 'My Tasks only shows tasks assigned to you' : undefined)
+          filterMenu('assignee', 'Assignee', <User />, valueCount('assignee', filters), view === 'my' ? 'My Tasks only shows tasks assigned to you' : undefined)
         )}
-        {filterMenu('tagsAny', 'Tags', <Tag />, filters.tagsAny.length)}
-        {filterMenu('teamId', 'Team', <UsersRound />, filters.teamId !== 'any' ? 1 : 0)}
-        {filterMenu('priority', 'Priority', <Flag />, filters.priority !== 'any' ? 1 : 0)}
+        {filterMenu('tagsAny', 'Tags', <Tag />, valueCount('tagsAny', filters))}
+        {filterMenu('teamId', 'Team', <UsersRound />, valueCount('teamId', filters))}
+        {filterMenu('priority', 'Priority', <Flag />, valueCount('priority', filters))}
         <RibbonMenu label="More filters" icon={<SlidersHorizontal />} count={moreCount} bare>
           {(close) => <AddFilterMenu filters={filters} onChange={taskView.setFilters} active={[]} close={close} kinds={more} />}
         </RibbonMenu>

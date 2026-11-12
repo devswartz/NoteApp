@@ -129,20 +129,35 @@ function groupKeyRank(k: string) {
   return k.startsWith('!') ? 0 : k.startsWith('~') ? 2 : 1;
 }
 
+/**
+ * One filter condition with several values. A task matches when it matches any of the values
+ * (or, with `not`, none of them). No values: the condition is off.
+ */
+export interface Pick {
+  values: string[];
+  not: boolean;
+}
+
+/** The conditions that take a Pick. */
+export type PickKey = 'assignee' | 'assignedBy' | 'priority' | 'source' | 'notebookId' | 'sectionId' | 'teamId';
+export const PICK_KEYS: PickKey[] = ['assignee', 'assignedBy', 'priority', 'source', 'notebookId', 'sectionId', 'teamId'];
+
 export interface Filters {
   q: string;
-  /** me (assigned to me, or my unassigned to-dos), unassigned, others (assigned to someone who isn't me), or a user id. */
-  assignee: 'any' | 'me' | 'unassigned' | 'others' | string;
+  /** Values: me (assigned to me, or my unassigned to-dos), unassigned, others (assigned to someone who isn't me), or a user id. */
+  assignee: Pick;
   /** Who set the assignee: me or a user id. */
-  assignedBy: 'any' | 'me' | string;
-  priority: 'any' | '1' | '2' | '3' | '4';
+  assignedBy: Pick;
+  /** 1 to 4 (4 is "no priority"). */
+  priority: Pick;
   due: 'any' | 'overdue' | 'today' | 'week' | 'none';
-  source: 'any' | 'notes' | 'standalone';
-  notebookId: 'any' | string;
+  /** notes or standalone. */
+  source: Pick;
+  notebookId: Pick;
   /** A section (and, once sections nest, its subsections). */
-  sectionId: 'any' | string;
+  sectionId: Pick;
   /** The task's own team ('none' = no team); with includeSubteams, a parent team also matches its subteams' tasks. */
-  teamId: 'any' | 'none' | string;
+  teamId: Pick;
   includeSubteams: boolean;
   /** Has any of these tags (OR). */
   tagsAny: string[];
@@ -151,65 +166,85 @@ export interface Filters {
   status: 'open' | 'done' | 'any';
 }
 
+export const NO_PICK: Pick = { values: [], not: false };
+
 export const DEFAULT_FILTERS: Filters = {
   q: '',
-  assignee: 'any',
-  assignedBy: 'any',
-  priority: 'any',
+  assignee: NO_PICK,
+  assignedBy: NO_PICK,
+  priority: NO_PICK,
   due: 'any',
-  source: 'any',
-  notebookId: 'any',
-  sectionId: 'any',
-  teamId: 'any',
+  source: NO_PICK,
+  notebookId: NO_PICK,
+  sectionId: NO_PICK,
+  teamId: NO_PICK,
   includeSubteams: true,
   tagsAny: [],
   tagsNone: [],
   status: 'open',
 };
 
-const ENUMS: Partial<Record<keyof Filters, string[]>> = {
-  priority: ['any', '1', '2', '3', '4'],
+const ENUMS = {
   due: ['any', 'overdue', 'today', 'week', 'none'],
-  source: ['any', 'notes', 'standalone'],
   status: ['open', 'done', 'any'],
 };
 
+const PICK_VALUES: Partial<Record<PickKey, string[]>> = {
+  priority: ['1', '2', '3', '4'],
+  source: ['notes', 'standalone'],
+};
+
+const strings = (v: unknown, max = 50): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.length <= 200).slice(0, max) : []);
+
+/** A Pick from JSON: {values, not}, or what older versions stored, one value ('any' = off). */
+function normalizePick(raw: unknown, key: PickKey): Pick {
+  let values: string[] = [];
+  let not = false;
+  if (typeof raw === 'string') values = raw === 'any' || raw.length > 200 ? [] : [raw];
+  else if (raw && typeof raw === 'object') {
+    values = strings((raw as Record<string, unknown>).values);
+    not = (raw as Record<string, unknown>).not === true;
+  }
+  const allowed = PICK_VALUES[key];
+  if (allowed) values = values.filter((v) => allowed.includes(v));
+  values = [...new Set(values)];
+  return values.length ? { values, not } : NO_PICK;
+}
+
 /** Filters from untrusted JSON (saved views, old device storage): unknown fields dropped, bad values defaulted. */
 export function normalizeFilters(raw: unknown): Filters {
-  const f: Record<string, unknown> = { ...DEFAULT_FILTERS, tagsAny: [], tagsNone: [] };
-  if (!raw || typeof raw !== 'object') return f as unknown as Filters;
+  const f: Filters = { ...DEFAULT_FILTERS, tagsAny: [], tagsNone: [] };
+  if (!raw || typeof raw !== 'object') return f;
   const r = raw as Record<string, unknown>;
-  for (const k of Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]) {
-    const v = r[k];
-    const def = DEFAULT_FILTERS[k];
-    if (Array.isArray(def)) {
-      if (Array.isArray(v)) f[k] = v.filter((x) => typeof x === 'string').slice(0, 50);
-    } else if (typeof def === 'boolean') {
-      if (typeof v === 'boolean') f[k] = v;
-    } else if (typeof v === 'string' && v.length <= 200 && (!ENUMS[k] || ENUMS[k]!.includes(v))) {
-      f[k] = v;
-    }
-  }
-  return f as unknown as Filters;
+  for (const k of PICK_KEYS) f[k] = normalizePick(r[k], k);
+  f.tagsAny = strings(r.tagsAny);
+  f.tagsNone = strings(r.tagsNone);
+  if (typeof r.includeSubteams === 'boolean') f.includeSubteams = r.includeSubteams;
+  if (typeof r.q === 'string' && r.q.length <= 200) f.q = r.q;
+  if (typeof r.due === 'string' && ENUMS.due.includes(r.due)) f.due = r.due as Filters['due'];
+  if (typeof r.status === 'string' && ENUMS.status.includes(r.status)) f.status = r.status as Filters['status'];
+  return f;
 }
 
-/** Same conditions? (Array order doesn't matter.) */
+const samePick = (a: Pick, b: Pick) => a.not === b.not && a.values.length === b.values.length && a.values.every((v) => b.values.includes(v));
+
+/** Same conditions? (Value order doesn't matter.) */
 export function sameFilters(a: Filters, b: Filters): boolean {
-  return (Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]).every((k) => {
-    const x = a[k];
-    const y = b[k];
-    if (Array.isArray(x) && Array.isArray(y)) return x.length === y.length && x.every((v) => y.includes(v));
-    return x === y;
-  });
+  return (
+    PICK_KEYS.every((k) => samePick(a[k], b[k])) &&
+    (['q', 'due', 'status', 'includeSubteams'] as const).every((k) => a[k] === b[k]) &&
+    (['tagsAny', 'tagsNone'] as const).every((k) => a[k].length === b[k].length && a[k].every((v) => b[k].includes(v)))
+  );
 }
 
-/** The filter fields that differ from the defaults (search text and status excluded: they have their own controls). */
+/** The filter fields that are on (search text, status and subteams are excluded: they have their own controls). */
 export function activeFilterKeys(f: Filters): (keyof Filters)[] {
-  return (Object.keys(DEFAULT_FILTERS) as (keyof Filters)[]).filter((k) => {
-    if (k === 'q' || k === 'status' || k === 'includeSubteams') return false;
-    const v = f[k];
-    return Array.isArray(v) ? v.length > 0 : v !== DEFAULT_FILTERS[k];
-  });
+  const keys: (keyof Filters)[] = [];
+  for (const k of PICK_KEYS) if (f[k].values.length) keys.push(k);
+  if (f.due !== 'any') keys.push('due');
+  if (f.tagsAny.length) keys.push('tagsAny');
+  if (f.tagsNone.length) keys.push('tagsNone');
+  return keys;
 }
 
 /** The team ids a team filter matches: the team, plus its subteams when includeSubteams is on. */
@@ -224,29 +259,31 @@ export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree, t
   const q = f.q.trim().toLowerCase();
   const sectionNotebook = new Map(tree.sections.map((s) => [s.id, s.notebookId]));
   const pageSection = new Map(tree.pages.map((p) => [p.id, p.sectionId]));
-  const sections = f.sectionId !== 'any' ? sectionDescendants(tree, f.sectionId) : null;
-  const teamIds = f.teamId !== 'any' && f.teamId !== 'none' ? teamScope(f.teamId, f.includeSubteams, teams) : null;
-  const assignedBy = f.assignedBy === 'me' ? me : f.assignedBy;
+  // Any of the values matches (or, with "not", none does); no values: no condition.
+  const matches = (p: Pick, test: (v: string) => boolean) => !p.values.length || p.values.some(test) !== p.not;
+  const sectionSets = new Map(f.sectionId.values.map((id) => [id, sectionDescendants(tree, id)]));
+  const teamSets = new Map(f.teamId.values.filter((v) => v !== 'none').map((id) => [id, teamScope(id, f.includeSubteams, teams)]));
+  const assignedBy = { ...f.assignedBy, values: f.assignedBy.values.map((v) => (v === 'me' ? me : v)) };
   return list.filter((x) => {
     if (f.status !== 'any' && x.status !== f.status) return false;
     if (q && !x.title.toLowerCase().includes(q) && !x.description.toLowerCase().includes(q)) return false;
-    if (f.assignee === 'me' && !isMine(x, me)) return false;
-    if (f.assignee === 'unassigned' && x.assigneeId) return false;
-    if (f.assignee === 'others' && (!x.assigneeId || x.assigneeId === me)) return false;
-    if (!['any', 'me', 'unassigned', 'others'].includes(f.assignee) && x.assigneeId !== f.assignee) return false;
-    if (assignedBy !== 'any' && x.assignedBy !== assignedBy) return false;
-    if (f.priority !== 'any' && x.priority !== Number(f.priority)) return false;
+    if (
+      !matches(f.assignee, (v) =>
+        v === 'me' ? isMine(x, me) : v === 'unassigned' ? !x.assigneeId : v === 'others' ? !!x.assigneeId && x.assigneeId !== me : x.assigneeId === v,
+      )
+    )
+      return false;
+    if (!matches(assignedBy, (v) => x.assignedBy === v)) return false;
+    if (!matches(f.priority, (v) => x.priority === Number(v))) return false;
     if (f.due === 'overdue' && !(x.dueDate && x.dueDate < t)) return false;
     if (f.due === 'today' && !(x.dueDate && x.dueDate <= t)) return false;
     if (f.due === 'week' && !(x.dueDate && x.dueDate <= addDays(t, 7))) return false;
     if (f.due === 'none' && x.dueDate) return false;
-    if (f.source === 'notes' && !x.pageId) return false;
-    if (f.source === 'standalone' && x.pageId) return false;
+    if (!matches(f.source, (v) => (v === 'notes' ? !!x.pageId : !x.pageId))) return false;
     const section = x.pageId ? pageSection.get(x.pageId) : undefined;
-    if (f.notebookId !== 'any' && (!section || sectionNotebook.get(section) !== f.notebookId)) return false;
-    if (sections && (!section || !sections.has(section))) return false;
-    if (f.teamId === 'none' && x.teamId) return false;
-    if (teamIds && (!x.teamId || !teamIds.has(x.teamId))) return false;
+    if (!matches(f.notebookId, (v) => !!section && sectionNotebook.get(section) === v)) return false;
+    if (!matches(f.sectionId, (v) => !!section && !!sectionSets.get(v)?.has(section))) return false;
+    if (!matches(f.teamId, (v) => (v === 'none' ? !x.teamId : !!x.teamId && !!teamSets.get(v)?.has(x.teamId)))) return false;
     const tags = x.tagIds ?? [];
     if (f.tagsAny.length && !f.tagsAny.some((id) => tags.includes(id))) return false;
     if (f.tagsNone.length && f.tagsNone.some((id) => tags.includes(id))) return false;

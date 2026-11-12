@@ -58,7 +58,7 @@ test('the four example views can be built, saved on the server and reopened', as
   await saveView(page, 'Unfinished Elders');
   // Without subteams, the Shepherds task drops out.
   await ribbon(page).getByRole('button', { name: 'Team filter', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Include subteams' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Include subteams' }).click();
   await page.keyboard.press('Escape');
   await expectRows(page, ['Scott elders task'], ['Shepherd visit']);
   await removeFilter(page, 'Team');
@@ -106,9 +106,8 @@ test('Tasks ribbon: a tag filter from the ribbon, saved as a view; in-page dupli
   await signInContext(context, user);
   await page.goto(tasksUrl(user.wsId, 'today'));
   const bar = ribbon(page);
-  // Off All Tasks the filters are disabled and say why.
-  await expect(bar.getByRole('button', { name: 'Tags filter' })).toHaveAttribute('aria-disabled', 'true');
-  await expect(bar.getByRole('button', { name: 'Tags filter' })).toHaveAttribute('title', /All Tasks/);
+  // Grouping is fixed on Today; the filters work there too.
+  await expect(bar.getByRole('button', { name: 'Tags filter' })).not.toHaveAttribute('aria-disabled', 'true');
   await expect(bar.getByRole('button', { name: 'Group by' })).toHaveAttribute('aria-disabled', 'true');
   await bar.getByRole('button', { name: 'All Tasks' }).click();
   await expect(page).toHaveURL(/\/tasks\/all$/);
