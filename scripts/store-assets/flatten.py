@@ -9,6 +9,10 @@ store = os.path.join(os.path.dirname(__file__), '..', '..', 'docs', 'store')
 expect = {
     'github-social-preview.png': (1280, 640),
     'og-image.png': (1200, 630),
+    'header/header-5244x2950.png': (5244, 2950),
+    'header/header-3840x1646.png': (3840, 1646),
+    'header/search-3840x2560.png': (3840, 2560),
+    'header/search-1920x1280.png': (1920, 1280),
 }
 bad = 0
 for f in sorted(glob.glob(os.path.join(store, '**', '*.png'), recursive=True)):
