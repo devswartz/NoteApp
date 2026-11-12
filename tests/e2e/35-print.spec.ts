@@ -1,7 +1,7 @@
 // Printing (src/print/): Ctrl/Cmd+P and the ribbon print the open page laid out for paper:
 // app chrome hidden, canvas boxes in reading order as a flow (side-by-side boxes as columns),
 // tasks as compact checkboxes, no page colour by default. "Print section" prints every page of
-// a section and its subsections in tree order. window.print is stubbed: the checks run on the
+// a section and its subsections in tree order; "Print selection" prints selected text or Ctrl+clicked boxes. window.print is stubbed: the checks run on the
 // print media layout. With PRINT_SAMPLES=1 the sample note is saved as A4 and Letter PDFs in
 // docs/screens/.
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
@@ -152,4 +152,100 @@ test('Print section prints its pages and subsections in tree order, each on a ne
   await expect(root.locator('.print-page').nth(2).locator('.print-sub')).toContainText('Handbook › General › Appendix');
   const breaks = await root.locator('.print-page').evaluateAll((els) => els.map((e) => getComputedStyle(e).breakBefore));
   expect(breaks).toEqual(['auto', 'page', 'page']);
+});
+
+/** A canvas page with these boxes (made through a template, as the sample note is). */
+async function canvasPage(request: APIRequestContext, page: Page, user: TestUser, title: string, boxes: J[]) {
+  const { pageId: scratch, sectionId } = await createPage(request, user, { notebook: 'Selections', page: 'Scratch' });
+  await api(request, 'POST', `/pages/${scratch}/templates`, user.token, { name: `${title} template`, kind: 'canvas', content: { type: 'doc', content: boxes } });
+  const { id: pageId } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title });
+  await openPage(page, user.wsId, pageId);
+  await page.getByTestId('user-templates').locator('.template-card', { hasText: `${title} template` }).click();
+  await expect(page.locator('.canvas-box:not(.is-ready)')).toHaveCount(boxes.length);
+  return pageId;
+}
+
+const ol = (...items: string[]): J => ({ type: 'orderedList', attrs: { start: 1 }, content: items.map((i) => ({ type: 'listItem', content: [p(text(i))] })) });
+
+test('Print selection prints only the selected text, under the page title, list numbers kept', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Selma Select');
+  await signInContext(context, user);
+  await stubPrint(page);
+  await canvasPage(request, page, user, 'Trip notes', [
+    box(0, 0, 600, [p(text('Alpha intro')), p(text('Bravo bold', [{ type: 'bold' }])), ol('First step', 'Second step', 'Third step'), p(text('Zulu outro'))], true),
+  ]);
+
+  // Select from the start of "Second step" to the end of "Third step".
+  const box1 = page.locator('.canvas-box').first();
+  await box1.locator('li', { hasText: 'Second step' }).locator('p').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.keyboard.press('Shift+End');
+
+  // Ctrl+P asks: the selection, or the whole page.
+  await page.keyboard.press('ControlOrMeta+p');
+  await page.getByRole('dialog', { name: 'Print' }).getByRole('button', { name: 'Print selection' }).click();
+  await expect.poll(() => printed(page)).toBe(1);
+
+  await page.emulateMedia({ media: 'print' });
+  const root = page.locator('#print-root');
+  await expect(root.locator('.print-title')).toHaveText('Trip notes');
+  await expect(root.locator('.print-box li')).toHaveText(['Second step', 'Third step']);
+  await expect(root.locator('.print-box ol')).toHaveAttribute('start', '2');
+  await expect(root).not.toContainText('First step');
+  await expect(root).not.toContainText('Alpha intro');
+  await expect(root).not.toContainText('Zulu outro');
+
+  // The ribbon offers it directly too; "Whole page" in the Ctrl+P question prints everything.
+  await page.emulateMedia({ media: 'screen' });
+  await ribbon(page).getByRole('button', { name: 'Print selection', exact: true }).click();
+  await expect.poll(() => printed(page)).toBe(2);
+  await page.keyboard.press('ControlOrMeta+p');
+  await page.getByRole('dialog', { name: 'Print' }).getByRole('button', { name: 'Whole page' }).click();
+  await expect.poll(() => printed(page)).toBe(3);
+  await page.emulateMedia({ media: 'print' });
+  await expect(root).toContainText('Alpha intro');
+  await expect(root).toContainText('Zulu outro');
+});
+
+test('Ctrl+click picks boxes; Print selection prints them in reading order; Escape clears', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Bo Boxes');
+  await signInContext(context, user);
+  await stubPrint(page);
+  await canvasPage(request, page, user, 'Board', [
+    box(0, 0, 400, [p(text('Top box text'))]),
+    box(0, 300, 400, [p(text('Middle box text'))]),
+    box(0, 600, 400, [p(text('Bottom box text'))]),
+  ]);
+  const boxOf = (t: string) => page.locator('.canvas-box', { hasText: t });
+
+  // Picked bottom first, then top: printed top to bottom all the same.
+  await boxOf('Bottom box text').click({ modifiers: ['ControlOrMeta'] });
+  await boxOf('Top box text').click({ modifiers: ['ControlOrMeta'] });
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(2);
+  await expect(boxOf('Top box text')).toHaveAttribute('aria-label', 'Text box, selected');
+  // Ctrl+click again takes one out; once more puts it back.
+  await boxOf('Top box text').click({ modifiers: ['ControlOrMeta'] });
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(1);
+  await boxOf('Top box text').click({ modifiers: ['ControlOrMeta'] });
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(2);
+
+  await ribbon(page).getByRole('button', { name: 'Print selection', exact: true }).click();
+  await expect.poll(() => printed(page)).toBe(1);
+  await page.emulateMedia({ media: 'print' });
+  const root = page.locator('#print-root');
+  await expect(root.locator('.print-title')).toHaveText('Board');
+  await expect(root.locator('.print-box')).toHaveText([/Top box text/, /Bottom box text/]);
+  await expect(root).not.toContainText('Middle box text');
+
+  await page.emulateMedia({ media: 'screen' });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(0);
+  await expect(ribbon(page).getByRole('button', { name: 'Print selection', exact: true })).toHaveCount(0);
+
+  // A plain click clears the picks too.
+  await boxOf('Middle box text').click({ modifiers: ['ControlOrMeta'] });
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(1);
+  await boxOf('Top box text').click();
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(0);
 });

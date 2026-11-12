@@ -59,7 +59,8 @@ import { useActiveEditor } from './activeEditor.ts';
 import { pageUndoOf, type PageUndo } from './pageUndo.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
-import { printPage } from './exportPage.ts';
+import { printPage, printSelectionOnly } from './exportPage.ts';
+import { usePrintSelection } from './boxSelection.ts';
 import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, type ColorName } from './colors.ts';
 import { setOutlineHidden, setRibbonCollapsed, syncRibbonPrefs, usePageSettings, useRibbon } from './ribbonState.ts';
 import { PAGE_COLORS, RULE_LINES, setPageSettings, type PageColor, type RuleLines } from '../../shared/pageDoc.ts';
@@ -619,6 +620,7 @@ export function Ribbon() {
   const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
   const page = useRibbon((r) => r.page);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
+  const printable = usePrintSelection(page?.pageId);
   const settings = usePageSettings(page?.doc);
   const off = !editor || !s;
   const pageOff = !page || !page.canEdit;
@@ -836,6 +838,7 @@ export function Ribbon() {
           }
         </ToolbarMenu>
         {viewBtn(`Print (${keyLabel(MOD, 'P')})`, <Printer />, () => printPage(), { text: 'Print', disabled: !page })}
+        {printable && viewBtn(printable === 'boxes' ? 'Print the selected boxes' : 'Print the selected text', <Printer />, () => printSelectionOnly(), { text: 'Print selection' })}
       </Group>
       <Sep />
       <Group label="View">

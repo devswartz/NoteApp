@@ -50,9 +50,17 @@ export async function exportMarkdown(source: Editor | CanvasHandle, pageId: stri
   await saveFile(fileName(title, 'md'), md, 'text/markdown;charset=utf-8');
 }
 
-/** Print the open page alone, laid out for paper (src/print/); "Save as PDF" in the dialog. */
+/**
+ * Print the open page laid out for paper (src/print/); "Save as PDF" in the dialog. With text
+ * or boxes selected, it first asks: the selection, or the whole page.
+ */
 export function printPage() {
-  void import('../print/print.ts').then((m) => m.printCurrentPage());
+  void import('../print/print.ts').then((m) => m.printWithChoice());
+}
+
+/** Print only the selected text or the picked boxes, with the page's title on top. */
+export function printSelectionOnly() {
+  void import('../print/print.ts').then((m) => m.printSelection());
 }
 
 /**

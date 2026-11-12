@@ -13,6 +13,9 @@
 // edge to set its width; an empty box goes away when you leave it.
 // Keyboard: Escape leaves a box (selects it), Enter edits it again, Tab / Shift+Tab move
 // between boxes in reading order, arrows nudge a selected box (Shift: 1 px), Delete removes it.
+// Picking boxes (OneNote-style, for "Print selection"): Ctrl/Cmd+click a box (anywhere but on a
+// link, which still opens) adds it to or takes it out of the picked set; Space does the same on a
+// focused box. Escape or a plain click clears it (boxSelection.ts).
 // Undo: Ctrl+Z / Ctrl+Y (and the ribbon's Undo / Redo) take back the page's most recent change,
 // wherever focus is: creating, moving, resizing or deleting a box, or text typed in any box
 // (yours only; pageUndo.ts).
@@ -38,6 +41,7 @@ import { pageUndoFor, pageUndoOf, editorUndoSource } from './pageUndo.ts';
 import { GEOM_ORIGIN, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
 import { useIsMobile } from '../components/ui.tsx';
+import { boxSelection, useBoxSelection } from './boxSelection.ts';
 import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
 
@@ -107,6 +111,10 @@ const PageUndoKeys = Extension.create({
   },
 });
 const BOX_EXTENSIONS = [LeaveBoxOnEscape, RuleGrid, PageUndoKeys];
+const NO_IDS: string[] = [];
+/** Ctrl/Cmd+click (no other modifier): picks a box, unless it's on a link (which opens). */
+const isPickClick = (e: { button: number; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; target: EventTarget | null }) =>
+  e.button === 0 && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !(e.target as HTMLElement | null)?.closest?.('a[href]');
 
 /** Live geometry of every box. */
 function useBoxes(doc: Y.Doc): BoxGeom[] {
@@ -233,6 +241,17 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   heightsRef.current = heights;
 
   useCommentBinding(active);
+  // Picked boxes and the box whose text selection "Print selection" prints.
+  const picked = useBoxSelection((s) => (s.pageId === pageId ? s.ids : NO_IDS));
+  useEffect(() => boxSelection.setEditor(pageId, active), [pageId, active]);
+  useEffect(() => () => boxSelection.leave(pageId), [pageId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) boxSelection.clear();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   // The ribbon acts on the last-focused box (none until one is focused).
   useEffect(() => {
     if (!active || active.isDestroyed || !canEdit) return;
@@ -518,6 +537,11 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     }
     if (inEditor) return;
     // The box itself is selected.
+    if (e.key === ' ' && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      boxSelection.toggle(pageId, id);
+      return;
+    }
     if (e.key === 'Enter' && plain) {
       e.preventDefault();
       focusBox(id, 'end');
@@ -538,7 +562,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   /** Drag the top edge (move) or the right edge (width). Writes are batched per frame. */
   const startDrag = (id: string, mode: 'move' | 'width', e: ReactPointerEvent<HTMLElement>) => {
-    if (!canEdit || e.button !== 0) return;
+    if (!canEdit || e.button !== 0 || e.ctrlKey || e.metaKey) return; // Ctrl/Cmd+click picks the box
     const b = boxesRef.current.find((x) => x.id === id);
     if (!b) return;
     e.preventDefault();
@@ -628,6 +652,10 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
           className={`canvas-surface ${canEdit ? 'can-edit' : ''}`}
           style={stacked ? undefined : { width: size.w, height: size.h }}
           onMouseDown={onSurfaceDown}
+          onMouseDownCapture={(e) => {
+            // A plain click anywhere on the canvas drops the picked boxes (Shift+click extends text as usual).
+            if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) boxSelection.clear();
+          }}
           data-testid="canvas-surface"
         >
           {list.map((b) => (
@@ -643,6 +671,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               mounted={mounted.has(b.id) || ready}
               ready={ready}
               isActive={activeId === b.id}
+              picked={picked.includes(b.id)}
+              onPick={(id) => boxSelection.toggle(pageId, id)}
               holding={activeId === b.id && menuFocus}
               height={heights[b.id]}
               registerEl={registerEl}
@@ -684,6 +714,9 @@ interface BoxProps {
   /** A blank page's first box, not stored yet. */
   ready: boolean;
   isActive: boolean;
+  /** Picked with Ctrl/Cmd+click (printed by "Print selection"). */
+  picked: boolean;
+  onPick: (id: string) => void;
   /** Focus is in this box's floating toolbar. */
   holding: boolean;
   height: number | undefined;
@@ -698,7 +731,7 @@ interface BoxProps {
   onPadDown: (id: string) => void;
 }
 
-function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, mounted, ready, isActive, holding, height, registerEl, onEditor, onHeight, onFocusBox, onBlurBox, onKeyBox, onDrag, onPadDown }: BoxProps) {
+function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, mounted, ready, isActive, picked, onPick, holding, height, registerEl, onEditor, onHeight, onFocusBox, onBlurBox, onKeyBox, onDrag, onPadDown }: BoxProps) {
   const { id } = box;
   const ref = useRef<HTMLDivElement | null>(null);
   const setRef = useCallback(
@@ -719,12 +752,23 @@ function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, 
   return (
     <div
       ref={setRef}
-      className={`canvas-box ${isActive ? 'is-active' : ''} ${box.wide ? 'is-wide' : ''} ${ready ? 'is-ready' : ''} ${holding ? 'is-holding' : ''}`}
+      className={`canvas-box ${isActive ? 'is-active' : ''} ${box.wide ? 'is-wide' : ''} ${ready ? 'is-ready' : ''} ${holding ? 'is-holding' : ''} ${picked ? 'is-picked' : ''}`}
       data-box-id={id}
       style={place ? { left: box.x, top: box.y, width: box.w, zIndex: box.z } : undefined}
       tabIndex={-1}
       role="group"
-      aria-label="Text box"
+      aria-label={picked ? 'Text box, selected' : 'Text box'}
+      data-picked={picked || undefined}
+      onMouseDownCapture={(e) => {
+        if (ready || !isPickClick(e)) return;
+        // Before the editor sees it: picking leaves the caret and the text selection alone.
+        e.preventDefault();
+        e.stopPropagation();
+        onPick(id);
+      }}
+      onClickCapture={(e) => {
+        if (!ready && isPickClick(e)) (e.preventDefault(), e.stopPropagation());
+      }}
       onFocus={() => onFocusBox(id)}
       onBlur={(e) => onBlurBox(id, e.currentTarget)}
       onKeyDown={(e) => onKeyBox(id, e)}
