@@ -13,8 +13,9 @@
 // edge to set its width; an empty box goes away when you leave it.
 // Keyboard: Escape leaves a box (selects it), Enter edits it again, Tab / Shift+Tab move
 // between boxes in reading order, arrows nudge a selected box (Shift: 1 px), Delete removes it.
-// Undo: Ctrl+Z outside a box undoes creating, moving, resizing and deleting boxes (yours only);
-// inside a box it undoes text as usual.
+// Undo: Ctrl+Z / Ctrl+Y (and the ribbon's Undo / Redo) take back the page's most recent change,
+// wherever focus is: creating, moving, resizing or deleting a box, or text typed in any box
+// (yours only; pageUndo.ts).
 // Phones (≤760px) get the boxes stacked in reading order, edited normally (no placing); a page
 // with one box is just one full-width editor.
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
@@ -33,6 +34,7 @@ import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBox
 import { RuleGrid } from './ruleGrid.ts';
 import { usePageSettings } from './ribbonState.ts';
 import { toast } from '../store.ts';
+import { pageUndoFor, pageUndoOf, editorUndoSource } from './pageUndo.ts';
 import { GEOM_ORIGIN, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
 import { useIsMobile } from '../components/ui.tsx';
@@ -92,7 +94,19 @@ const LeaveBoxOnEscape = Extension.create({
     };
   },
 });
-const BOX_EXTENSIONS = [LeaveBoxOnEscape, RuleGrid];
+/** Ctrl+Z / Ctrl+Y in a box: the page's undo (a box move is undone from inside a box too). */
+const PageUndoKeys = Extension.create({
+  name: 'pageUndoKeys',
+  priority: 10_000, // ahead of Collaboration's own undo keys
+  addKeyboardShortcuts() {
+    const run = (redo: boolean) => () => {
+      const p = pageUndoOf(this.editor);
+      return p ? (redo ? p.redo() : p.undo()) : false;
+    };
+    return { 'Mod-z': run(false), 'Mod-y': run(true), 'Shift-Mod-z': run(true) };
+  },
+});
+const BOX_EXTENSIONS = [LeaveBoxOnEscape, RuleGrid, PageUndoKeys];
 
 /** Live geometry of every box. */
 function useBoxes(doc: Y.Doc): BoxGeom[] {
@@ -204,6 +218,17 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const undo = useGeometryUndo(doc);
+  // The page's undo: box geometry and every box's text, most recent first.
+  const pageUndo = useMemo(() => pageUndoFor(doc), [doc]);
+  useEffect(() => pageUndo.add({ manager: () => undo }), [pageUndo, undo]);
+  const editorUndo = useRef(new Map<string, () => void>());
+  useEffect(() => {
+    const m = editorUndo.current;
+    return () => {
+      m.forEach((off) => off());
+      m.clear();
+    };
+  }, []);
   const heightsRef = useRef(heights);
   heightsRef.current = heights;
 
@@ -303,6 +328,9 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   const onEditor = useCallback(
     (id: string, editor: Editor | null) => {
+      editorUndo.current.get(id)?.();
+      editorUndo.current.delete(id);
+      if (editor) editorUndo.current.set(id, pageUndo.add(editorUndoSource(editor)));
       if (!editor) {
         const gone = editors.current.get(id);
         editors.current.delete(id);
@@ -328,7 +356,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         }, 0);
       }
     },
-    [onReady], // eslint-disable-line react-hooks/exhaustive-deps
+    [onReady, pageUndo], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const createBox = (geom: Omit<BoxGeom, 'id'>, then: Pending['then']) => {
@@ -372,7 +400,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     return () => onCanvas(null);
   }, [doc, pageId, onCanvas, undo, mount]);
 
-  // Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) outside a box: undo / redo box changes.
+  // Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) outside a box's text: the page's undo / redo (in a box's text, PageUndoKeys).
   useEffect(() => {
     if (!canEdit) return;
     const onKey = (e: KeyboardEvent) => {
@@ -383,12 +411,12 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       const t = e.target as HTMLElement | null;
       if (t?.closest?.('.ProseMirror, input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
       e.preventDefault();
-      if (redo) undo.redo();
-      else undo.undo();
+      if (redo) pageUndo.redo();
+      else pageUndo.undo();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canEdit, undo]);
+  }, [canEdit, pageUndo]);
 
   /**
    * Remove a box and its content. `undoable`: an undo step (Ctrl+Z), and a toast offers to
@@ -410,6 +438,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       if (!undoable) {
         const i = undo.undoStack.findIndex((s) => s.meta.get('created') === id);
         if (i >= 0) undo.undoStack.splice(i, 1);
+        pageUndo.changed();
         return;
       }
       const item = undo.undoStack.at(-1);
@@ -422,7 +451,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         },
       });
     },
-    [doc, undo],
+    [doc, undo, pageUndo],
   );
 
   /** Remove `id` if it holds nothing (an empty box disappears when you leave it). */

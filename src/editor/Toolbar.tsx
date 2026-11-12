@@ -5,7 +5,7 @@
 // text (NoteEditor.tsx).
 // WAI-ARIA toolbar pattern: one tab stop (roving tabindex), ←/→/Home/End move between
 // controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
 import {
   Baseline,
@@ -52,6 +52,7 @@ import {
 } from 'lucide-react';
 import { canConvert } from './TaskRef.tsx';
 import { useActiveEditor } from './activeEditor.ts';
+import { pageUndoOf, type PageUndo } from './pageUndo.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
 import { printPage } from './exportPage.ts';
@@ -306,6 +307,28 @@ function ribbonState(e: Editor) {
     canRedo: e.can().redo(),
     table: e.isActive('table') ? { header: headerRowOn(e), merge: e.can().mergeCells(), split: e.can().splitCell() } : null,
   };
+}
+
+const noSubscribe = () => () => {};
+const noVersion = () => 0;
+
+/**
+ * Undo / Redo: on a canvas page, the page's most recent change (a box moved or typed in,
+ * wherever focus is; pageUndo.ts); otherwise the editor's own history.
+ */
+function useHistory(editor: Editor | null, s: { canUndo: boolean; canRedo: boolean } | null) {
+  const page: PageUndo | null = pageUndoOf(editor);
+  useSyncExternalStore(page?.subscribe ?? noSubscribe, page?.getVersion ?? noVersion);
+  if (!page) {
+    return {
+      canUndo: !!s?.canUndo,
+      canRedo: !!s?.canRedo,
+      undo: () => void editor?.chain().focus().undo().run(),
+      redo: () => void editor?.chain().focus().redo().run(),
+    };
+  }
+  // Presses keep focus where it is (mousedown is prevented): in the text, or on a selected box.
+  return { canUndo: page.canUndo(), canRedo: page.canRedo(), undo: () => void page.undo(), redo: () => void page.redo() };
 }
 
 /** Whether the first row of the table at the selection is a header row. */
@@ -594,6 +617,7 @@ export function Ribbon() {
   const off = !editor || !s;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
+  const history = useHistory(editor, s);
   const button = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts & { always?: boolean } = {}) => {
     const idle = !opts.always && off;
     const disabled = idle || !!opts.disabled;
@@ -811,8 +835,8 @@ export function Ribbon() {
       </Group>
       <span className="tb-spacer" />
       <Group label="History">
-        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 />, () => chain().undo().run(), { disabled: !s?.canUndo })}
-        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 />, () => chain().redo().run(), { disabled: !s?.canRedo })}
+        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 />, history.undo, { disabled: !history.canUndo })}
+        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 />, history.redo, { disabled: !history.canRedo })}
       </Group>
     </RibbonFrame>
   );
