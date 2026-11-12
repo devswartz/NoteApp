@@ -7,9 +7,15 @@
 //   GET  /api/files/:id → UploadedFile (metadata; members of the file's workspace only)
 //   POST /api/uploads   legacy, same body and headers, no workspace
 //
+//   GET  /api/files/key → FileKey (a fresh key for signing upload links; also in every AuthSession)
+//
 // Bytes are stored at $DATA_DIR/files/<id><ext> and served by serveUploads() at
-// /uploads/<id><ext>. Ids are 128 random bits: an <img> can't send a bearer token,
-// so the URL itself is the capability.
+// /uploads/<id><ext>, but only with a valid signature from someone who may see the file
+// (shared/fileLinks.ts explains the signed links and why they are links, not cookies):
+//   no signature             → 401 (a browser opening an old unsigned link is sent to the app,
+//                              which signs it for whoever is signed in: /open-file/<name>)
+//   bad or expired signature → 403
+//   signer can't see it      → 403 (canReadFile: page, page share, template or workspace)
 //
 // XSS defence, two layers:
 //   1. Allow-list: only extensions in SAFE_TYPES keep their extension; anything else is
@@ -24,7 +30,9 @@ import path from 'node:path';
 import { HttpError, h, param } from '../http.ts';
 import { DATA_DIR, FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
-import { pageAccess, requireRole, roleIn } from '../access.ts';
+import { PAGE_VISIBLE, onAccessChange, pageAccess, requireRole, roleIn } from '../access.ts';
+import { fileKeyFor, fileKeySecret, getUser } from '../auth.ts';
+import { FILE_KEY_MAX_S, signFileName } from '../../shared/fileLinks.ts';
 import { visibleTemplate } from '../templates.ts';
 import type { UploadedFile } from '../../shared/types.ts';
 
@@ -160,6 +168,77 @@ export function fileVisible(row: FileMeta, userId: string): boolean {
   return row.created_by === userId;
 }
 
+// ── Who may read a file's bytes ──
+
+const readCache = new Map<string, { ok: boolean; at: number }>(); // `${fileId}:${userId}` → allowed
+const READ_CACHE_MS = 60_000;
+const READ_CACHE_MAX = 20_000;
+onAccessChange(() => readCache.clear()); // a role, membership, share or move changed: ask again
+
+/**
+ * May `userId` read file `fileId` (the bytes at /uploads)? Yes when they may see its metadata
+ * (fileVisible: the page it was uploaded to, its template or its workspace), or when it appears in
+ * a page they can open, or in that page's version history. The second rule keeps images working
+ * after content was copied or moved to another page, for page-share grantees who are not workspace
+ * members, and for old files with no page recorded. A "yes" is cached for a minute and dropped
+ * whenever access is taken away anywhere.
+ */
+export function canReadFile(fileId: string, userId: string): boolean {
+  const key = `${fileId}:${userId}`;
+  const hit = readCache.get(key);
+  if (hit && Date.now() - hit.at < READ_CACHE_MS) return hit.ok;
+  const row = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as FileMeta | undefined;
+  const ok = (!!row && fileVisible(row, userId)) || referencedInVisiblePage(fileId, userId);
+  // Only "yes" is cached: a new share or membership doesn't announce itself (accessChanged is for losing access).
+  if (ok) {
+    if (readCache.size >= READ_CACHE_MAX) readCache.clear();
+    readCache.set(key, { ok, at: Date.now() });
+  }
+  return ok;
+}
+
+/** True if a page `userId` can open (or one of its saved versions) contains the file id. */
+function referencedInVisiblePage(fileId: string, userId: string): boolean {
+  const needle = Buffer.from(fileId); // Yjs stores attribute strings as plain UTF-8 inside the update
+  return !!db
+    .prepare(
+      `SELECT 1 FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
+       WHERE ${PAGE_VISIBLE}
+         AND (instr(pg.ydoc, @needle) > 0 OR EXISTS (SELECT 1 FROM page_versions v WHERE v.page_id = pg.id AND instr(v.ydoc, @needle) > 0))
+       LIMIT 1`,
+    )
+    .get({ userId, needle });
+}
+
+/** Tests only. */
+export function clearFileReadCache() {
+  readCache.clear();
+}
+
+/**
+ * Checks a signed upload link's query (u, e, s) for stored file `name`. Returns the signer's user
+ * id, or a status: 401 without a signature, 403 for a bad or expired one or an unverified account.
+ */
+export function verifyFileSignature(name: string, q: Record<string, unknown>, nowS = Math.floor(Date.now() / 1000)): { userId: string } | { status: 401 | 403 } {
+  const { u, e, s } = q;
+  if (typeof u !== 'string' || typeof e !== 'string' || typeof s !== 'string' || !u || !e || !s) return { status: 401 };
+  const exp = Number(e);
+  // Expired, or further out than any key we issue (a forged expiry).
+  if (!/^\d{1,12}$/.test(e) || exp <= nowS || exp > nowS + FILE_KEY_MAX_S + 60) return { status: 403 };
+  if (!/^[0-9a-f]{32}$/.test(s) || u.length > 100) return { status: 403 };
+  const want = Buffer.from(signFileName(fileKeySecret(u, exp), name));
+  if (!crypto.timingSafeEqual(want, Buffer.from(s))) return { status: 403 };
+  const user = getUser(u);
+  if (!user || !user.emailVerified) return { status: 403 };
+  return { userId: u };
+}
+
+/** A fresh key for signing upload links (the client also gets one with every session refresh). */
+fileRoutes.get(
+  '/files/key',
+  h((req) => fileKeyFor(req.user.id)),
+);
+
 fileRoutes.get(
   '/files/:id',
   h((req) => {
@@ -182,19 +261,45 @@ fileRoutes.use((err: { type?: string }, _req: Request, _res: express.Response, n
   next(err);
 });
 
-/** Serves /uploads/<id><ext> with headers that stop uploaded content from running on our origin. */
+/** Is this request a browser opening the link itself (a tab, not an <img> or fetch)? */
+const isNavigation = (req: Request) => {
+  const dest = req.get('sec-fetch-dest');
+  return dest ? dest === 'document' : /text\/html/.test(req.get('accept') ?? '');
+};
+
+const DENIED = 'This link has expired, or you do not have access to this file';
+
+/**
+ * Serves /uploads/<id><ext> to someone who may see it (signed link: see the top of this file), with
+ * headers that stop uploaded content from running on our origin.
+ */
 export function serveUploads(req: Request, res: Response, next: NextFunction) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const m = /^\/([0-9a-f]{32})(\.[a-z0-9]{1,10})?$/.exec(req.path);
-  const file = m ? path.join(UPLOAD_DIR, m[1] + (m[2] ?? '')) : '';
-  if (!m || !fs.existsSync(file)) return res.status(404).type('text/plain').send('Not found');
+  if (!m) return res.status(404).type('text/plain').send('Not found');
   const ext = m[2] ?? '';
+  const stored = m[1] + ext;
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Cache-Control', 'no-store');
+  const signed = verifyFileSignature(stored, req.query as Record<string, unknown>);
+  if ('status' in signed) {
+    // An old unsigned link opened in a browser tab: the web app signs it for whoever is signed in there.
+    if (signed.status === 401 && isNavigation(req)) return res.redirect(302, `/open-file/${stored}`);
+    return res
+      .status(signed.status)
+      .type('text/plain')
+      .send(signed.status === 401 ? 'Sign in to open this file' : DENIED);
+  }
+  if (!canReadFile(m[1], signed.userId)) return res.status(403).type('text/plain').send(DENIED);
+  const file = path.join(UPLOAD_DIR, stored);
+  if (!fs.existsSync(file)) return res.status(404).type('text/plain').send('Not found');
   const row = db.prepare('SELECT name FROM files WHERE id = ?').get(m[1]) as { name: string } | undefined;
   const name = row?.name ?? `file${ext}`;
-  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'");
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); // images are embedded by the native shells
-  res.setHeader('Cache-Control', 'public, max-age=2592000, immutable');
+  // Private (never in a shared cache), and only while the link itself is valid.
+  const left = Math.max(0, Number(req.query.e) - Math.floor(Date.now() / 1000));
+  res.setHeader('Cache-Control', `private, max-age=${Math.min(left, 6 * 3600)}`);
   res.setHeader('Content-Type', SAFE_TYPES[ext] ?? 'application/octet-stream');
   const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   const disposition = Object.hasOwn(INLINE_TYPES, ext) ? 'inline' : 'attachment';

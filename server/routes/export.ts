@@ -1,10 +1,11 @@
-// Workspace export (zip) and import. Owner: Foundation.
+// Workspace export (zip) and import, and "Export my data" for everyone. Owner: Foundation.
 import express, { Router, type RequestHandler } from 'express';
 import { requireRole } from '../access.ts';
 import { publish } from '../events.ts';
 import { exportWorkspace, importWorkspace } from '../export.ts';
 import { HttpError, h, param } from '../http.ts';
-import { takeExport, takeImport } from '../ratelimit.ts';
+import { takeDataExport, takeExport, takeImport } from '../ratelimit.ts';
+import { exportUserData } from '../userExport.ts';
 
 /** Largest import body. Matches Cloudflare's free-plan upload limit, so a bigger file never gets through the tunnel anyway. */
 export const MAX_IMPORT_BYTES = 100 * 1024 * 1024;
@@ -40,12 +41,27 @@ exportRoutes.get(
     const wait = takeExport(req.user.id);
     if (wait) return tooMany(res, wait, 'You have exported several times recently.');
     const { zip, filename } = exportWorkspace(wsId, req.user.id);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w .()-]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.end(zip);
+    sendZip(res, zip, filename);
   }),
 );
+
+/** GET /me/export → application/zip: the caller's own data (any signed-in user; server/userExport.ts). */
+exportRoutes.get(
+  '/me/export',
+  h((req, res) => {
+    const wait = takeDataExport(req.user.id);
+    if (wait) return tooMany(res, wait, 'You have exported your data several times recently.');
+    const { zip, filename } = exportUserData(req.user.id);
+    sendZip(res, zip, filename);
+  }),
+);
+
+function sendZip(res: express.Response, zip: Buffer, filename: string) {
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/[^\w .()-]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(zip);
+}
 
 /** POST /workspaces/import (body: the export zip) → { workspaceId, name }. Creates a new workspace. */
 exportRoutes.post(

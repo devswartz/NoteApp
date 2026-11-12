@@ -22,7 +22,7 @@ import { NOTEBOOK_VISIBLE, TASK_VISIBLE, HttpError } from './access.ts';
 import { extractPage, newBoxId } from './collab.ts';
 import { convertPageDoc, pageFragments } from '../shared/pageDoc.ts';
 import { FILES_DIR, VERSION } from './config.ts';
-import { toMarkdown } from './markdown.ts';
+import { toMarkdown, type TaskLookup } from './markdown.ts';
 import { SAFE_TYPES } from './routes/files.ts';
 import { readZip, writeZip, type ZipEntry } from './zip.ts';
 import { sanitizeYDoc } from './sanitizeDoc.ts';
@@ -46,7 +46,15 @@ export const EXPORT_VERSION = 1;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
 
-const safeName = (s: string) => (s || 'Untitled').replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').trim().slice(0, 80) || 'Untitled';
+/** A name usable as a file or folder name in a zip on any OS. */
+export const safeName = (s: string) => (s || 'Untitled').replace(/[\\/:*?"<>|\x00-\x1f]/g, '-').trim().slice(0, 80) || 'Untitled';
+
+/** A page's stored Yjs state as Markdown (task references resolve through `tasks`; unknown ones are left out). */
+export function pageMarkdown(title: string, ydoc: Buffer | Uint8Array | null, tasks: TaskLookup): string {
+  const doc = new Y.Doc();
+  if (ydoc) Y.applyUpdate(doc, new Uint8Array(ydoc));
+  return toMarkdown(title, pageFragments(doc), tasks);
+}
 
 export function exportWorkspace(workspaceId: string, userId: string): { zip: Buffer; filename: string } {
   const p = { workspaceId, userId };
@@ -106,9 +114,7 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     const dir = sectionAncestry(sectionLinks, sec.id)
       .map((s) => safeName(s.name))
       .join('/');
-    const doc = new Y.Doc();
-    if (pg.ydoc) Y.applyUpdate(doc, new Uint8Array(pg.ydoc));
-    const md = toMarkdown(pg.title, pageFragments(doc), (id) => {
+    const md = pageMarkdown(pg.title, pg.ydoc, (id) => {
       const t = taskById.get(id);
       return t && { title: t.title, done: t.status === 'done', due: t.due_date };
     });

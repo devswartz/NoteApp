@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { User } from '../../shared/types.ts';
+import { signUploadPath, type FileKey } from '../../shared/fileLinks.ts';
 
 export interface TestResponse<T> {
   status: number;
@@ -27,6 +28,8 @@ export interface TestUser {
   user: User;
   /** The user's personal workspace, created at sign-up. */
   wsId: string;
+  /** Key for signing upload links (shared/fileLinks.ts). */
+  fileKey: FileKey;
 }
 
 export async function startTestApp() {
@@ -59,7 +62,12 @@ export async function startTestApp() {
     const r = await call('POST', '/auth/register', undefined, { name, email, password: 'password123' });
     if (r.status !== 200) throw new Error(`sign-up failed: ${r.status} ${JSON.stringify(r.data)}`);
     const ws = await call('GET', '/workspaces', r.data.accessToken);
-    return { token: r.data.accessToken, refreshToken: r.data.refreshToken, user: r.data.user, wsId: ws.data[0].id };
+    return { token: r.data.accessToken, refreshToken: r.data.refreshToken, user: r.data.user, wsId: ws.data[0].id, fileKey: r.data.fileKey };
+  }
+
+  /** Fetch an upload ("/uploads/<id><ext>") as `who`, with a signed link (or unsigned, without `who`). */
+  function fetchFile(url: string, who?: { fileKey: FileKey }, init?: RequestInit) {
+    return fetch(origin + (who ? signUploadPath(url, who.fileKey) : url), init);
   }
 
   async function close() {
@@ -68,7 +76,7 @@ export async function startTestApp() {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 
-  return { origin, wsOrigin: origin.replace(/^http/, 'ws'), call, signUp, close };
+  return { origin, wsOrigin: origin.replace(/^http/, 'ws'), call, signUp, fetchFile, close };
 }
 
 export type TestApp = Awaited<ReturnType<typeof startTestApp>>;

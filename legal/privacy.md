@@ -44,9 +44,10 @@ Last updated: 12 November 2026
 - **Edits are kept:** changes made by anyone on a page, including people outside the workspace, are kept in that page's version history.
 - **Removing a share:** when a page stops being shared with someone, they lose access to it and are unassigned from its tasks.
 - **Workspace export:** workspace owners and admins can download a copy of a whole workspace, which includes content written by its members.
+- **Export my data:** the copy you can download of your own data (see below) contains only what you can see in the app. It can include pages and comments written by others in your workspaces and on pages shared with you.
 - **Us:** the people who run the server can technically access the database and uploaded files, because they host them. We will only look at your content when needed to keep the service running, to deal with abuse, or if the law requires it.
 
-Uploaded files and images are stored with long random addresses. Anyone who has a file's exact address can open it, so only paste file links where you would share the file itself.
+**Uploaded files and images** open only for people who can open the page or workspace they belong to, including people a page is shared with. The app shows them through links that are signed for you and stop working after at most 12 hours. If you copy such a link, it opens only that one file, only until it expires, and only while you still have access. An older or copied file address opened in a browser asks you to sign in first, and then checks that you may see the file.
 
 ## What we do with it
 
@@ -87,7 +88,7 @@ We do not use cookies for sign-in or tracking. The only cookie we set is a short
 
 We do not share your data with anyone except the services we need to run the app:
 
-- **Cloudflare**, which sits in front of our server and carries all traffic to and from it, and so sees your IP address and the requests you make.
+- **Cloudflare**, which sits in front of our server and carries all traffic to and from it as a proxy, and so sees your IP address and the requests you make. Cloudflare handles that traffic under its own [privacy policy](https://www.cloudflare.com/privacypolicy/).
 - **Amazon Web Services (Amazon SES)**, which delivers our email.
 - **Apple, Google and your browser's push service**, only to deliver push notifications.
 - **Microsoft**, only if you choose to import from OneNote. You sign in with Microsoft directly and allow read access to your OneNote notebooks. We use that access only for the import; it is held in memory for at most an hour, never stored, and discarded when the import finishes.
@@ -104,22 +105,34 @@ Nothing else.
 - Sign-in sessions last up to 30 days unless used, and are removed when they expire or you sign out.
 - Accounts whose email address is never confirmed are deleted automatically after 7 days.
 - Email confirmation and other one-time links expire and are then deleted. Records of which reminders were sent are deleted after 30 days.
-- Server logs (error reports, feedback records, request IDs) are kept for a limited time and then deleted.
-- Backups of the database and files may keep deleted data for a short while longer before they are replaced.
+- Server logs (including error reports, which carry your account ID, feedback records and request IDs) are kept only briefly, normally less than a day, and never copied elsewhere.
+- **Backups:** the database and uploaded files are backed up every day. We keep about 14 recent daily copies and 8 weekly copies. The whole server is also backed up every night, keeping up to 7 daily, 4 weekly and 3 monthly copies. Backups stay on our own hardware in the same place as the server, never with an outside storage provider, and are used only to restore the service after a failure. This means deleted data, including deleted accounts, can remain in backups for up to about 3 months before it ages out.
 
 ## Deleting your data
 
 You can delete your account yourself in **Settings → Delete account**. This deletes your profile, your private notebooks and their files, your private tasks, your sign-in sessions, push addresses, reminder settings, calendar feed and the page shares you hold. Workspaces you own are handed to another owner or admin, or deleted if there is none. Things you created in shared places, such as pages, comments and tasks in a workspace, stay there and are shown as written by a deleted user; tasks assigned to you become unassigned.
 
+Deleted data can remain in backups for up to about 3 months (see "How long we keep it").
+
 You can also email us at {{CONTACT_EMAIL}} to ask for a copy of your data, to have it corrected, or to have it deleted.
 
 ## Getting a copy of your data
 
-Workspace owners and admins can export a workspace as a zip file from the app. Anyone can ask us for a copy of their data at {{CONTACT_EMAIL}}.
+Anyone signed in can download their own data from **Settings → Profile → Export my data**. You get a zip file with:
+
+- your account profile and the workspaces you belong to,
+- every page you can open, in each workspace, as Markdown files, with the files you uploaded,
+- the tasks you created or that are assigned to you,
+- the comments you wrote,
+- your notification settings (without the private push addresses and tokens).
+
+It contains only what you can see in the app today: nothing from other people's private notebooks or from workspaces you are not in. Pages shared with you on their own come without the names of their workspace or notebook. To protect the server, you can export a few times a day.
+
+Workspace owners and admins can also export a whole workspace as a zip file. You can always ask us for a copy of your data at {{CONTACT_EMAIL}}.
 
 ## Security
 
-Passwords are hashed, connections use HTTPS, sign-in attempts are rate limited and session tokens are stored only in hashed form. No system is perfectly secure, so please use a strong, unique password.
+Passwords are hashed, connections use HTTPS, sign-in attempts are rate limited, session tokens are stored only in hashed form and uploaded files are only served through signed, expiring links to people who may see them. No system is perfectly secure, so please use a strong, unique password.
 
 ## Children
 

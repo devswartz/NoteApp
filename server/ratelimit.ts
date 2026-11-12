@@ -115,6 +115,9 @@ export const LIMITS = {
   importUser: { capacity: 3, perMinute: 3 / 60 }, // three an hour per user
   importGlobal: { capacity: 10, perMinute: 10 / 60 }, // ten an hour, whole server
   exportUser: { capacity: 6, perMinute: 6 / 60 }, // six an hour per user
+  // "Export my data" (any signed-in user; see takeDataExport): three a day per user, thirty an hour server-wide.
+  dataExportUser: { capacity: 3, perMinute: 3 / (24 * 60) },
+  dataExportGlobal: { capacity: 30, perMinute: 30 / 60 },
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -171,6 +174,12 @@ export function takeImport(userId: string, kind: keyof typeof importsRunning = '
 export function takeExport(userId: string): number {
   if (process.env.RATE_LIMIT === 'off') return 0;
   return limiters.exportUser.take(userId);
+}
+
+/** Rate limit for GET /me/export (a zip of one person's data, built in memory). 0 if allowed, else seconds to wait. */
+export function takeDataExport(userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  return limiters.dataExportUser.take(userId) || limiters.dataExportGlobal.take('all');
 }
 
 /** Most password checks (bcrypt) running at once, server-wide; more are refused rather than queued. */

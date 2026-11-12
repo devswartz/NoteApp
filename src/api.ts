@@ -9,6 +9,7 @@
 //   tab and serialized across tabs, each reading the latest stored token.
 import type { AuthSession } from '../shared/types.ts';
 import { EMAIL_UNVERIFIED } from '../shared/config.ts';
+import { signUploadPath, type FileKey } from '../shared/fileLinks.ts';
 import { detectPlatform, platform } from './platform/index.ts';
 import { storedServerUrl } from './platform/serverUrl.ts';
 
@@ -25,8 +26,35 @@ const API_BASE = (shellApiUrl ?? import.meta.env.VITE_API_URL ?? '').replace(/\/
 /** Absolute or same-origin URL for an API path ("/me" → ".../api/me"). */
 export const apiUrl = (path: string) => `${API_BASE}/api${path}`;
 
-/** URL for a file the API returned ("/uploads/…"), on the API's origin. */
-export const fileUrl = (url: string) => (url.startsWith('/uploads/') ? API_BASE + url : url);
+/**
+ * URL to show or open a file the API returned ("/uploads/…"): on the API's origin, signed for the
+ * signed-in user (shared/fileLinks.ts), since an <img> or download link can't send the token.
+ * Anything else is returned unchanged.
+ */
+export const fileUrl = (url: string) => (url.startsWith('/uploads/') ? API_BASE + signUploadPath(url, currentFileKey()) : url);
+
+/** The same file's plain, unsigned URL, for exports and copies that outlive the session (opening one signs it again: /open-file). */
+export const plainFileUrl = (url: string) => (url.startsWith('/uploads/') ? API_BASE + url : url);
+
+// ───────────── Upload link key ─────────────
+// Comes with every session (login, refresh), so it rolls over with the access token; the server
+// re-checks access on every file request, so a key only ever opens what its user can see.
+let fileKey: FileKey | null = null;
+let fileKeyFetch: Promise<void> | null = null;
+
+/** The key to sign upload links with, while it still has a little life left (else null: links render unsigned). */
+function currentFileKey(): FileKey | null {
+  if (!fileKey) return null;
+  const left = fileKey.e - Date.now() / 1000;
+  if (left < 15 * 60) {
+    // Nearly expired (a device that slept through refreshes): fetch a new one for next time.
+    fileKeyFetch ??= api<FileKey>('/files/key')
+      .then((k) => void (fileKey = k))
+      .catch(() => {})
+      .finally(() => (fileKeyFetch = null));
+  }
+  return left > 60 ? fileKey : null;
+}
 
 /** ws(s):// URL on the API's origin for a WebSocket path ("/api/events", "/collab"). */
 export function wsUrl(path: string): string {
@@ -64,6 +92,7 @@ export function getAccessToken(): string | null {
 export async function startSession(s: AuthSession) {
   await tokenStore.set(s.refreshToken);
   access = { token: s.accessToken, expiresAt: Date.now() + s.expiresIn * 1000 };
+  if (s.fileKey) fileKey = s.fileKey;
   if (refreshTimer) clearTimeout(refreshTimer);
   // Refresh a minute before expiry so sockets and requests always have a valid token.
   refreshTimer = setTimeout(() => void refreshSession(), Math.max(5_000, (s.expiresIn - 60) * 1000));
@@ -73,6 +102,7 @@ export async function startSession(s: AuthSession) {
 export async function endSession() {
   const refreshToken = await tokenStore.get();
   access = null;
+  fileKey = null;
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = null;
   await tokenStore.set(null);

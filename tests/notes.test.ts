@@ -142,7 +142,7 @@ test('files: upload, metadata, and serving from /uploads', async () => {
   assert.equal(r.data.name, 'Screen shot.PNG');
   assert.equal(r.data.mime, 'image/png');
   assert.equal(r.data.size, png.length);
-  const served = await fetch(`${app.origin}${r.data.url}`);
+  const served = await app.fetchFile(r.data.url, u);
   assert.equal(served.status, 200);
   assert.equal(served.headers.get('content-type'), 'image/png');
   assert.match(served.headers.get('content-disposition')!, /^inline/);
@@ -160,7 +160,7 @@ test('files: only allow-listed extensions are kept; active content downloads as 
     assert.equal(r.status, 200, name);
     assert.equal(r.data.url, `/uploads/${r.data.id}`, `${name} keeps no extension`);
     assert.equal(r.data.mime, 'application/octet-stream', `${name}: client-declared type is ignored`);
-    const served = await fetch(`${app.origin}${r.data.url}`);
+    const served = await app.fetchFile(r.data.url, u);
     assert.equal(served.headers.get('content-type'), 'application/octet-stream', name);
     assert.equal(served.headers.get('x-content-type-options'), 'nosniff', name);
     assert.match(served.headers.get('content-security-policy') ?? '', /^sandbox/, name);
@@ -171,19 +171,19 @@ test('files: only allow-listed extensions are kept; active content downloads as 
 test('files: images are inline, documents are attachments; both sandboxed', async () => {
   const u = await setup('Headers');
   const img = await uploadTo(u, 'png', 'photo.jpg');
-  const imgRes = await fetch(`${app.origin}${img.data.url}`);
+  const imgRes = await app.fetchFile(img.data.url, u);
   assert.equal(imgRes.headers.get('content-type'), 'image/jpeg');
   assert.match(imgRes.headers.get('content-disposition')!, /^inline; filename="photo.jpg"/);
   assert.equal(imgRes.headers.get('x-content-type-options'), 'nosniff');
   assert.match(imgRes.headers.get('content-security-policy')!, /^sandbox/);
   const pdf = await uploadTo(u, '%PDF-1.4', 'Réport "Q3".pdf');
-  const pdfRes = await fetch(`${app.origin}${pdf.data.url}`);
+  const pdfRes = await app.fetchFile(pdf.data.url, u);
   assert.equal(pdfRes.headers.get('content-type'), 'application/pdf');
   const cd = pdfRes.headers.get('content-disposition')!;
   assert.match(cd, /^attachment; filename="R_port _Q3_.pdf"/);
   assert.match(cd, /filename\*=UTF-8''R%C3%A9port%20%22Q3%22.pdf/);
   assert.equal((await fetch(`${app.origin}/uploads/../noteapp.db`)).status, 404);
-  assert.equal((await fetch(`${app.origin}/uploads/${'0'.repeat(32)}.png`)).status, 404);
+  assert.equal((await app.fetchFile(`/uploads/${'0'.repeat(32)}.png`, u)).status, 403, 'nobody may read a file that does not exist');
 });
 
 test('files: metadata is hidden from non-members; oversize uploads get 413', async () => {
@@ -375,7 +375,8 @@ test('files of a deleted page (or section, or notebook) are visible only to thei
   assert.equal((await app.call('DELETE', `/pages/${p1}`, owner.token)).status, 200);
   assert.equal((await meta(member, f1.id)).status, 404, 'not to other members after the page is deleted');
   assert.equal((await meta(owner, f1.id)).status, 200, 'still to the uploader');
-  assert.equal((await fetch(`${app.origin}${f1.url}`)).status, 200, 'bytes still served (copies may embed them)');
+  assert.equal((await app.fetchFile(f1.url, owner)).status, 200, 'bytes still served to the uploader');
+  assert.equal((await app.fetchFile(f1.url, member)).status, 403, 'but not to other members');
 
   // Section and notebook deletes go through the same path.
   const p2 = await newPage(owner, owner.s2, 'In section');
