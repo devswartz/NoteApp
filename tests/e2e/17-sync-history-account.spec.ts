@@ -21,6 +21,7 @@ test('events missed while disconnected are caught up on reconnect, without a rel
   const teamId = await createTeam(request, alice, [{ user: bob, role: 'member' }]);
 
   const ctx = await browser.newContext();
+  await ctx.addInitScript(() => ((window as unknown as { __offlineNoticeDelayMs: number }).__offlineNoticeDelayMs = 2500)); // the notice normally waits 30s
   await signInContext(ctx, bob);
   const page = await ctx.newPage();
   // Proxy the live-events socket so we can drop it and refuse reconnects while "offline".

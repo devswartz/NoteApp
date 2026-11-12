@@ -2,6 +2,16 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.2
+
+### Fixes
+- **Ctrl+Z after adding a link** no longer takes back the typing before it as well. Adding a link is its own undo step.
+- **Quieter offline notice:** short connection blips no longer flash a warning. After 30 seconds offline, a small pill appears at the bottom, which you can close until the next reconnect.
+
+### Tasks
+- **Filter menus show the hierarchy:** subteams under their team, with member counts, and sections nested under their notebook. Searching shows full names.
+- Each filter can hold several values, with Is / Is not, Select all, Clear and search (added in v0.4.1).
+
 ## v0.4.1
 
 A Hybrid theme and accent colours, section default templates, task view filters, and privacy work ahead of the App Store.
