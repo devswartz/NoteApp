@@ -17,6 +17,7 @@ import {
 import { createPortal } from 'react-dom';
 import { Check, Loader2, X } from 'lucide-react';
 import { initials } from '../lib/format.ts';
+import { isPrinting, onPrintDone } from '../lib/printing.ts';
 import { menuTarget, trapTarget } from './focusNav.ts';
 
 // ───────────── Popover ─────────────
@@ -411,9 +412,15 @@ export function useMediaQuery(q: string): boolean {
   const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches);
   useEffect(() => {
     const mq = window.matchMedia(q);
-    const fn = () => setM(mq.matches);
+    const fn = () => {
+      if (!isPrinting()) setM(mq.matches);
+    };
     mq.addEventListener('change', fn);
-    return () => mq.removeEventListener('change', fn);
+    const done = onPrintDone(fn);
+    return () => {
+      mq.removeEventListener('change', fn);
+      done();
+    };
   }, [q]);
   return m;
 }

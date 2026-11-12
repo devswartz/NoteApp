@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { set, SIDEBAR_KEY, useStore, type QuickAddDefaults } from './state.ts';
 import { platform } from '../platform/index.ts';
+import { isPrinting } from '../lib/printing.ts';
 
 export const ui = {
   openPalette: () => set({ paletteOpen: true }),
@@ -18,7 +19,7 @@ export const ui = {
 function setSidebarOpen(open: boolean) {
   set({ sidebarOpen: open });
   // Phones use the panels as a drawer that closes after each tap; only bigger screens remember the choice.
-  if (typeof window !== 'undefined' && window.innerWidth > 760) platform.kv.set(SIDEBAR_KEY, open ? '1' : '0');
+  if (typeof window !== 'undefined' && window.innerWidth > 760 && !isPrinting()) platform.kv.set(SIDEBAR_KEY, open ? '1' : '0');
 }
 
 // ───────────── Theme ─────────────
