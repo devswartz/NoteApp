@@ -181,10 +181,13 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 80
 
-      # Archive + upload with Xcode's cloud-managed signing: the App Store
-      # Connect API key lets xcodebuild create/download the certificate and the
-      # profiles for the app and its extensions. No .p12 or .mobileprovision secrets.
-      - name: Archive and upload to TestFlight
+      # Signing, without minting certificates. The archive is built UNSIGNED (CODE_SIGNING_ALLOWED=NO, no
+      # -allowProvisioningUpdates): signing the archive automatically asks Xcode for an "Apple Development"
+      # certificate, and every fresh runner then created a new one until the account hit Apple's limit. The
+      # signing happens at export instead, with the App Store Connect API key (cloud-managed signing): Xcode
+      # uses the account's cloud-managed Apple Distribution certificate and App Store profiles for App,
+      # ShareExtension and TodayWidget, and creates no local development certificate. See docs/IOS-SIGNING.md.
+      - name: Archive (unsigned) and export (cloud-signed, Apple Distribution)
         if: env.HAS_ASC == 'true' && env.UPLOAD == 'true'
         working-directory: apps/mobile/ios/App
         env:
@@ -196,23 +199,38 @@ jobs:
           KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
           printf '%s' "$ASC_KEY_P8" > "$KEY"
           AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            "${AUTH[@]}" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
-            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 80
-          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive"             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="$APPLE_TEAM_ID"             MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 40
+          for dest in export upload; do
+            cat > "$RUNNER_TEMP/ExportOptions-$dest.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>$dest</string>
             <key>teamID</key><string>${APPLE_TEAM_ID}</string>
             <key>signingStyle</key><string>automatic</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
           EOF
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"
+          done
+          # First a local .ipa, so the signature can be checked before anything is uploaded.
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive"             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-export.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}" | tail -n 40
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir "$RUNNER_TEMP/ipa" && unzip -q "$RUNNER_TEMP"/export/*.ipa -d "$RUNNER_TEMP/ipa"
+          for bundle in "$RUNNER_TEMP"/ipa/Payload/*.app "$RUNNER_TEMP"/ipa/Payload/*.app/PlugIns/*.appex; do
+            echo "== $bundle"
+            codesign -dvv "$bundle" 2>&1 | grep -E "Authority=|TeamIdentifier=" || true
+            if ! codesign -dvv "$bundle" 2>&1 | grep -q "Authority=Apple Distribution"; then
+              echo "::error::$(basename "$bundle") is not signed with an Apple Distribution certificate"; exit 1
+            fi
+            if ! codesign -d --entitlements - "$bundle" 2>/dev/null | grep -q "application-groups"; then
+              echo "::error::$(basename "$bundle") lost its App Group entitlement"; exit 1
+            fi
+          done
+          if ! codesign -d --entitlements - "$RUNNER_TEMP"/ipa/Payload/*.app 2>/dev/null | grep -q "aps-environment"; then
+            echo "::error::the app lost its push (aps-environment) entitlement"; exit 1
+          fi
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive"             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-upload.plist" -exportPath "$RUNNER_TEMP/upload" "${AUTH[@]}" | tail -n 40
           rm -f "$KEY"
 
       - name: TestFlight skipped
