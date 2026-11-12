@@ -37,3 +37,38 @@ test('task references in pasted boxes can be swapped for new tasks', () => {
   assert.equal((out[2].content![0].attrs as { taskId: string }).taskId, 't2', 'a task that could not be cloned keeps its reference');
   assert.equal((blocks[1].attrs as { taskId: string }).taskId, 't1', 'the copied content is not changed');
 });
+
+// ───── lists on the clipboard: text with markers, and text that becomes lists ─────
+import { blocksText } from '../src/editor/boxClipboard.ts';
+
+const para = (t: string) => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
+const item = (t: string, ...nested: object[]) => ({ type: 'listItem', content: [para(t), ...nested] });
+
+test('blocks as text keep list markers, numbering and nesting', () => {
+  const blocks = [
+    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Title' }] },
+    { type: 'bulletList', content: [item('one', { type: 'bulletList', content: [item('inner')] }), item('two')] },
+    { type: 'orderedList', attrs: { start: 3 }, content: [item('three'), item('four')] },
+    { type: 'taskRef', attrs: { taskId: 't1' } },
+  ];
+  assert.equal(blocksText(blocks, (id) => `[ ] task ${id}`), ['Title', '- one', '  - inner', '- two', '3. three', '4. four', '[ ] task t1'].join('\n'));
+});
+
+test('pasted plain text: "- ", "* ", "• " and "1. " lines become lists; indentation nests; other lines stay paragraphs', () => {
+  const blocks = textBlocks(['Intro', '- one', '  - nested', '  - nested two', '- two', '', '1. first', '2) second', '   - under second', 'after'].join('\n'));
+  const names = blocks.map((b) => b.type);
+  assert.deepEqual(names, ['paragraph', 'bulletList', 'paragraph', 'orderedList', 'paragraph']);
+  const bullets = blocks[1]!.content!;
+  assert.equal(bullets.length, 2);
+  assert.equal(bullets[0]!.content![1]!.type, 'bulletList', 'the indented lines nest under "one"');
+  assert.equal(bullets[0]!.content![1]!.content!.length, 2);
+  assert.equal(blocks[3]!.attrs!.start, 1);
+  assert.equal(blocks[3]!.content![1]!.content![1]!.type, 'bulletList');
+  // Round trip: the text of those blocks reads back as the same lists.
+  assert.deepEqual(textBlocks(blocksText(blocks)).map((b) => b.type), ['paragraph', 'bulletList', 'paragraph', 'orderedList', 'paragraph']);
+});
+
+test('pasted text: a numbered list keeps its first number, and plain lines with a dash inside are not lists', () => {
+  assert.equal(textBlocks('4. four\n5. five')[0]!.attrs!.start, 4);
+  assert.deepEqual(textBlocks('well - not a list\n-also not\n2024 was long').map((b) => b.type), ['paragraph', 'paragraph', 'paragraph']);
+});

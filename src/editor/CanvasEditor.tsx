@@ -34,6 +34,7 @@ import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { useCommentBinding } from './collabComments.ts';
 import { cloneTask, insertTaskAtEnd, RELAYOUT_EVENT } from './TaskRef.tsx';
 import { clipText, mapTaskRefs, placeBoxes, textBlocks, useBoxClipboard, type Clip, type ClipBox } from './boxClipboard.ts';
+import { htmlToBlocks, taskLine, writeBlocks } from './clipboardOut.ts';
 import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, nudgeOnGrid, snapY, surfaceSize, UNMEASURED_H, wideWidth } from './canvasGeom.ts';
 import { RuleGrid } from './ruleGrid.ts';
 import { usePageSettings } from './ribbonState.ts';
@@ -538,14 +539,18 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       ...(b.wide ? { wide: true } : {}),
       content: boxJSON(doc, b.id, schema).content ?? [],
     }));
-    return boxes.length ? { boxes, text: clipText(boxes), cut } : null;
+    return boxes.length ? { boxes, text: clipText(boxes, taskLine), cut } : null;
   };
   const copyBoxes = (ids: string[], cut: boolean) => {
     const clip = makeClip(ids, cut && canEdit);
     if (!clip) return;
     useBoxClipboard.setState({ clip });
-    void navigator.clipboard
-      ?.writeText(clip.text)
+    // HTML and text: pasting the boxes into another box, page or app keeps their lists and formatting.
+    void writeBlocks(
+      clip.boxes.flatMap((b) => b.content),
+      pageSchema(pageId),
+      clip.text,
+    )
       .then(() => useBoxClipboard.setState((s) => (s.clip === clip ? { clip: { ...clip, synced: true } } : s)))
       .catch(() => {});
     if (!clip.cut) return;
@@ -574,12 +579,14 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     // A cut moves once; pasting it again makes copies.
     if (clip.cut) useBoxClipboard.setState({ clip: { ...clip, cut: false } });
   };
-  /** Plain text pasted onto the canvas: a new box with it. */
-  const pasteText = (text: string, at?: { x: number; y: number }) => {
+  /** Text or HTML pasted onto the canvas: a new box with it (lists and formatting kept; pasted tasks are new tasks). */
+  const pasteText = (text: string, at?: { x: number; y: number }, html = '') => {
     if (!canEdit || isMobile) return;
+    const rich = htmlToBlocks(html, pageSchema(pageId));
+    const content = rich ? mapTaskRefs(rich, (t) => cloneTask(pageId, t)) : textBlocks(text);
     const g = at ? onGrid(boxAtClick(boxesRef.current, at.x, at.y)) : onGrid(below());
     undo.stopCapturing();
-    const [id] = writeBoxes(doc, pageSchema(pageId), [{ x: g.x, y: g.y, w: g.w, z: 0, content: textBlocks(text) }]);
+    const [id] = writeBoxes(doc, pageSchema(pageId), [{ x: g.x, y: g.y, w: g.w, z: 0, content }]);
     undo.stopCapturing();
     mount(id!);
     boxSelection.set(pageId, [id!]);
@@ -614,12 +621,13 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       if ((e.target as HTMLElement | null)?.closest?.('.ProseMirror, input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
       const clip = useBoxClipboard.getState().clip;
       const text = e.clipboardData?.getData('text/plain') ?? '';
+      const html = e.clipboardData?.getData('text/html') ?? '';
       if (clip && (text === clip.text || (!text && !clip.synced))) {
         e.preventDefault();
         clipActions.current.pasteBoxes(clip);
-      } else if (text.trim()) {
+      } else if (text.trim() || html) {
         e.preventDefault();
-        clipActions.current.pasteText(text);
+        clipActions.current.pasteText(text, undefined, html);
       }
     };
     window.addEventListener('keydown', onKey, true);
