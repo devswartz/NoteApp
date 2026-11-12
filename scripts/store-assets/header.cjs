@@ -2,7 +2,8 @@
 //   node scripts/store-assets/header.cjs 5244 2950 docs/store/header/header-5244x2950.png
 //   node scripts/store-assets/header.cjs <width> <height> <out.png>
 // Uses existing captures in docs/screens. Layout is designed on a 3840x1646 canvas and
-// scaled to fit; the content stays inside a 10% safe area and clear of the bottom-left.
+// scaled to fit. Everything essential sits in the centre ~35% of the width (iPhone crops the header
+// to a narrow centre slice) and inside a 10% safe area; only decorative devices go toward the edges.
 // Run scripts/store-assets/flatten.py afterwards to guarantee RGB with no alpha.
 const path = require('path');
 const fs = require('fs');
@@ -14,6 +15,8 @@ const ROOT = path.join(__dirname, '..', '..');
 const url = (p) => 'file:///' + p.replace(/\\/g, '/');
 const desk = url(path.join(ROOT, 'docs', 'screens', 'readme-light.png'));
 const phone = url(path.join(ROOT, 'docs', 'screens', 'readme-mobile-tasks.png'));
+const deskL = url(path.join(ROOT, 'docs', 'screens', 'readme-tasks.png'));
+const deskR = url(path.join(ROOT, 'docs', 'screens', 'readme-calendar.png'));
 const icon = url(path.join(ROOT, 'public', 'icon.svg'));
 const FONT = "'Segoe UI Variable Display','Segoe UI','Helvetica Neue',Arial,sans-serif";
 
@@ -31,26 +34,29 @@ background:linear-gradient(120deg,#e4e8ff 0%,#f1eaff 50%,#ffe6f2 100%)">
 <div style="position:absolute;left:${-W * .08}px;top:${H * .45}px;width:${H * 1.1}px;height:${H * 1.1}px;border-radius:50%;background:radial-gradient(circle,rgba(67,56,202,.18),transparent 65%)"></div>
 <div style="position:absolute;left:${ox}px;top:${oy}px;width:${VW}px;height:${VH}px;transform:scale(${s});transform-origin:0 0">
   ${search ? `
-  <div style="position:absolute;left:384px;top:760px;width:1500px;color:#1e1b4b">
-    <img src="${icon}" style="width:260px;height:260px;border-radius:60px;box-shadow:0 30px 70px rgba(67,56,202,.35)">
-    <div style="margin-top:70px;font-size:330px;font-weight:800;letter-spacing:-0.035em;line-height:1">Notivelo</div>
-    <div style="margin-top:80px;font-size:160px;line-height:1.1;font-weight:600;letter-spacing:-0.02em;color:#4338ca">Notes and tasks,<br>beautifully<br>together</div>
+  <div style="position:absolute;left:0;width:${VW}px;top:290px;text-align:center;color:#1e1b4b">
+    <img src="${icon}" style="width:210px;height:210px;border-radius:50px;box-shadow:0 30px 70px rgba(67,56,202,.35)">
+    <div style="margin-top:50px;font-size:300px;font-weight:800;letter-spacing:-0.035em;line-height:1">Notivelo</div>
+    <div style="margin-top:50px;font-size:140px;line-height:1.12;font-weight:600;letter-spacing:-0.02em;color:#4338ca">Notes and tasks,<br>beautifully together</div>
   </div>
-  <div style="position:absolute;left:2380px;top:330px;${bezel(900, 100, 26)}">
-    <div style="overflow:hidden;border-radius:100px"><img src="${phone}" style="display:block;width:900px"></div>
+  <div style="position:absolute;left:${(VW - 440 - 28) / 2}px;top:1330px;${bezel(440, 56, 14)}">
+    <div style="overflow:hidden;border-radius:56px"><img src="${phone}" style="display:block;width:440px"></div>
   </div>` : `
-  <div style="position:absolute;left:384px;top:430px;width:1360px;color:#1e1b4b">
-    <div style="display:flex;align-items:center;gap:56px">
-      <img src="${icon}" style="width:200px;height:200px;border-radius:46px;box-shadow:0 24px 60px rgba(67,56,202,.35)">
+  <div style="position:absolute;left:0;width:${VW}px;top:170px;text-align:center;color:#1e1b4b">
+    <div style="display:inline-flex;align-items:center;gap:44px">
+      <img src="${icon}" style="width:170px;height:170px;border-radius:40px;box-shadow:0 24px 60px rgba(67,56,202,.35)">
       <div style="font-size:230px;font-weight:800;letter-spacing:-0.035em;line-height:1">Notivelo</div>
     </div>
-    <div style="margin-top:90px;font-size:124px;line-height:1.12;font-weight:600;letter-spacing:-0.02em;color:#4338ca">Notes and tasks,<br>beautifully together</div>
+    <div style="margin-top:50px;font-size:124px;line-height:1.12;font-weight:600;letter-spacing:-0.02em;color:#4338ca">Notes and tasks,<br>beautifully together</div>
   </div>
-  <div style="position:absolute;left:1800px;top:300px;${bezel(1400, 22, 18)}">
-    <div style="overflow:hidden;border-radius:22px"><img src="${desk}" style="display:block;width:1400px"></div>
+  <!-- decorative, toward the edges only (iPhone crops the header to the centre) -->
+  <div style="position:absolute;left:150px;top:830px;${bezel(900, 18, 12)};opacity:.55"><div style="overflow:hidden;border-radius:18px"><img src="${deskL}" style="display:block;width:900px"></div></div>
+  <div style="position:absolute;left:2790px;top:830px;${bezel(900, 18, 12)};opacity:.55"><div style="overflow:hidden;border-radius:18px"><img src="${deskR}" style="display:block;width:900px"></div></div>
+  <div style="position:absolute;left:${(VW - 1020 - 36) / 2}px;top:790px;${bezel(1020, 18, 18)}">
+    <div style="overflow:hidden;border-radius:18px"><img src="${desk}" style="display:block;width:1020px"></div>
   </div>
-  <div style="position:absolute;left:2900px;top:390px;${bezel(430, 54, 14)}">
-    <div style="overflow:hidden;border-radius:54px"><img src="${phone}" style="display:block;width:430px"></div>
+  <div style="position:absolute;left:2190px;top:880px;${bezel(250, 34, 10)}">
+    <div style="overflow:hidden;border-radius:34px"><img src="${phone}" style="display:block;width:250px"></div>
   </div>`}
 </div></body></html>`;
 
