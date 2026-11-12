@@ -221,7 +221,8 @@ export function usePageEditor(session: CollabSession, { pageId, workspaceId, use
         ...extensions,
       ],
       editorProps: {
-        attributes: { class: 'prose', spellcheck: 'true', 'aria-label': label, 'aria-multiline': 'true' },
+        // autocorrect/autocapitalize: WebKit (iOS app, Safari) - explicit so a parent can't turn them off.
+        attributes: { class: 'prose', spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', 'aria-label': label, 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => {
           // Alt+F10 moves focus into a toolbar (WAI-ARIA toolbar pattern): the floating one
           // over selected text, otherwise the fixed one at the top.
