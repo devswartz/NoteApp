@@ -12,7 +12,9 @@
 .visibility-choice { display: grid; gap: 8px; margin-top: 8px; }
 .visibility-choice label { display: flex; gap: 10px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
 .visibility-choice label.is-active { border-color: var(--accent); }
-.share-dialog { width: min(480px, calc(100vw - 32px)); }
+.share-dialog { width: min(480px, calc(100vw - 32px)); padding: var(--space-5); }
+/* Phones show modals as bottom sheets: keep the gap above the home indicator. */
+@media (max-width: 760px) { .share-dialog { width: 100%; padding-bottom: calc(var(--space-5) + var(--safe-bottom, 0px)); } }
 .share-dialog h2 { margin: 0 0 4px; font-size: 17px; }
 
 /* Presence stack (src/editor/collabPresence.tsx) */
