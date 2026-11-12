@@ -153,8 +153,15 @@ test('someone outside the workspace with an edit share co-edits that page and it
   await expect(taskRef(a.page, 'Host task').getByRole('checkbox')).toHaveAttribute('aria-checked', 'false');
   await addInlineTask(e.page, 'Eddie task');
   await expect(taskRef(a.page, 'Eddie task')).toBeVisible();
-  const tasks = await api<{ id: string; title: string; workspaceId: string }[]>(request, 'GET', `/pages/${pageId}/tasks`, alice.token);
-  expect(tasks.map((t) => t.title).sort()).toEqual(['Eddie task', 'Host task']);
+  // Polled: addInlineTask's trailing empty task (Enter after the title) exists on the server for a
+  // moment, until leaving task mode deletes it.
+  let tasks: { id: string; title: string; workspaceId: string }[] = [];
+  await expect
+    .poll(async () => {
+      tasks = await api<typeof tasks>(request, 'GET', `/pages/${pageId}/tasks`, alice.token);
+      return tasks.map((t) => t.title).sort();
+    })
+    .toEqual(['Eddie task', 'Host task']);
   expect(tasks.every((t) => t.workspaceId === teamId)).toBe(true);
 
   // Assigning: Eddie → Alice (he only sees the page's people), Alice → Eddie.
