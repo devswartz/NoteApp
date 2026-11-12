@@ -75,7 +75,7 @@ Nothing below is needed to build or run debug builds. CI skips the steps whose s
 | `ANDROID_KEYSTORE_BASE64` | `base64 -i upload.jks` of the upload keystore | Signed release bundle (`.aab`) for Play internal testing |
 | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | The keystore's passwords and alias | same |
 
-**iOS signing uses Xcode cloud signing**: the API key lets `xcodebuild -allowProvisioningUpdates` create the distribution certificate and the provisioning profiles for the app (and any extensions) itself, so there's no `.p12` or `.mobileprovision` to export. Create the key in App Store Connect → Users and Access → Integrations → App Store Connect API with the **Admin** role (cloud-managed certificates need it).
+**iOS signing uses Xcode cloud signing** (unsigned archive, signed at export; see [IOS-SIGNING.md](IOS-SIGNING.md)): the API key lets `xcodebuild -allowProvisioningUpdates` create the distribution certificate and the provisioning profiles for the app (and any extensions) itself, so there's no `.p12` or `.mobileprovision` to export. Create the key in App Store Connect → Users and Access → Integrations → App Store Connect API with the **Admin** role (cloud-managed certificates need it).
 
 One-time Apple setup:
 1. developer.apple.com → Identifiers: register `com.devswartz.notivelo` with **Push Notifications**, **Associated Domains** and **App Groups** (`group.com.devswartz.notivelo`) enabled, and `com.devswartz.notivelo.ShareExtension` (and `.TodayWidget`) with **App Groups**. Cloud signing in CI usually registers these on its own; doing it by hand avoids surprises.
