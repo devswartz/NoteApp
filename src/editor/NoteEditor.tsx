@@ -40,6 +40,7 @@ import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
 import { BlockExit } from './blockExit.ts';
+import { SmartLists } from './smartLists.ts';
 import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
@@ -124,6 +125,7 @@ export function documentExtensions(pageId: string): Extensions {
     MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
     OneNoteKeys,
+    SmartLists, // Word-style outlines: list attributes (paren markers, continued numbering), "a. " / "1) " rules, Tab nests, Enter on an empty item outdents
   ];
 }
 

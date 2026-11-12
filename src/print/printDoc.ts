@@ -13,6 +13,7 @@ import type { Member, Task, Tree } from '../../shared/types.ts';
 import { canvasBoxes } from '../editor/canvasDoc.ts';
 import { documentExtensions } from '../editor/NoteEditor.tsx';
 import { sanitizeContent } from '../editor/urls.ts';
+import { resolveListStarts } from '../../shared/listMarker.ts';
 import { estimateBoxHeight, printRows, type PrintBox } from './printLayout.ts';
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap';
 import '../styles/print.css';
@@ -83,7 +84,7 @@ export function taskLine(task: Task | undefined, members: PrintContext['members'
 function contentDOM(json: JSONContent, ctx: PrintContext): HTMLElement {
   const s = printSchema();
   const wrap = el('div', 'print-box-content ProseMirror prose');
-  const node = PMNode.fromJSON(s, sanitizeContent(json));
+  const node = PMNode.fromJSON(s, resolveListStarts(sanitizeContent(json)));
   wrap.append(DOMSerializer.fromSchema(s).serializeFragment(node.content, { document }));
   // Task references hold only an id: draw the live task.
   wrap.querySelectorAll<HTMLElement>('div[data-type="task-ref"]').forEach((ref) => {

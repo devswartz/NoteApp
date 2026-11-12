@@ -28,6 +28,8 @@ import {
   Grid3x3,
   Highlighter,
   ImagePlus,
+  IndentDecrease,
+  IndentIncrease,
   Italic,
   Link2,
   List,
@@ -51,6 +53,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { canConvert } from './TaskRef.tsx';
+import { listItemAt } from './smartLists.ts';
 import { useActiveEditor } from './activeEditor.ts';
 import { pageUndoOf, type PageUndo } from './pageUndo.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
@@ -301,6 +304,7 @@ function ribbonState(e: Editor) {
     bullet: e.isActive('bulletList'),
     ordered: e.isActive('orderedList'),
     check: e.isActive('taskList'),
+    inList: !!listItemAt(e),
     link: e.isActive('link'),
     canTask: canConvert(e),
     canUndo: e.can().undo(),
@@ -700,6 +704,8 @@ export function Ribbon() {
       <Group label="Lists">
         {btn(`Bulleted list (${keyLabel(MOD, '.')})`, <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
         {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
+        {btn('Decrease indent (Shift+Tab)', <IndentDecrease />, () => chain().outdentListItem().run(), { disabled: !s?.inList })}
+        {btn('Increase indent (Tab)', <IndentIncrease />, () => chain().indentListItem().run(), { disabled: !s?.inList })}
         <span className="rb-split">
           {btn(
             `Task: make this line a tracked task, or start a new one (${keyLabel(MOD, '1')} or ${keyLabel(MOD, ENTER)})`,

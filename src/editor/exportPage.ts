@@ -6,6 +6,7 @@ import { errorToast, toast, useStore } from '../store.ts';
 import { platform } from '../platform/index.ts';
 import { fileName, liftInlineImages, splitTitle } from './markdownUtils.ts';
 import { sanitizeContent } from './urls.ts';
+import { resolveListStarts } from '../../shared/listMarker.ts';
 import { canvasMarkdownBody, withHeadlessEditor, type CanvasHandle } from './canvasDoc.ts';
 
 /**
@@ -30,7 +31,7 @@ export async function saveFile(name: string, text: string, type: string) {
 export function pageMarkdown(editor: Editor, title: string, icon: string | null) {
   const heading = `# ${icon ? `${icon} ` : ''}${title || 'Untitled'}`;
   // Serialise a sanitised copy: an unsafe link or image never reaches the exported file.
-  const json = sanitizeContent(editor.getJSON());
+  const json = resolveListStarts(sanitizeContent(editor.getJSON()));
   const body = editor.markdown ? editor.markdown.serialize(json) : editor.getMarkdown();
   return `${heading}\n\n${body.trim()}\n`;
 }
