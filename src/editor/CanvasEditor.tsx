@@ -13,8 +13,8 @@
 // edge to set its width; an empty box goes away when you leave it.
 // Keyboard: Escape leaves a box (selects it), Enter edits it again, Tab / Shift+Tab move
 // between boxes in reading order, arrows nudge a selected box (Shift: 1 px), Delete removes it.
-// Picking boxes (OneNote-style, for "Print selection"): Ctrl/Cmd+click a box (anywhere but on a
-// link, which still opens) adds it to or takes it out of the picked set; Space does the same on a
+// Picking (OneNote-style, for "Print selection"): Ctrl/Cmd+click a line of text picks that line (linePicks.ts);
+// Ctrl/Cmd+click a box's frame (its padding, edges and blank area) picks the whole box; a link still opens; Space does the same on a
 // focused box. Escape or a plain click clears it (boxSelection.ts).
 // Undo: Ctrl+Z / Ctrl+Y (and the ribbon's Undo / Redo) take back the page's most recent change,
 // wherever focus is: creating, moving, resizing or deleting a box, or text typed in any box
@@ -37,6 +37,8 @@ import { clipText, mapTaskRefs, placeBoxes, textBlocks, useBoxClipboard, type Cl
 import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, nudgeOnGrid, snapY, surfaceSize, UNMEASURED_H, wideWidth } from './canvasGeom.ts';
 import { RuleGrid } from './ruleGrid.ts';
 import { usePageSettings } from './ribbonState.ts';
+import { LinePicks, linePicks } from './linePicks.ts';
+import { PrintSelectionMenu } from './PrintSelectionMenu.tsx';
 import { toast } from '../store.ts';
 import { pageUndoFor, pageUndoOf, editorUndoSource } from './pageUndo.ts';
 import { GEOM_ORIGIN, boxJSON, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
@@ -117,11 +119,17 @@ const PageUndoKeys = Extension.create({
     return { 'Mod-z': run(false), 'Mod-y': run(true), 'Shift-Mod-z': run(true) };
   },
 });
-const BOX_EXTENSIONS = [LeaveBoxOnEscape, RuleGrid, PageUndoKeys];
+const BOX_EXTENSIONS = [LeaveBoxOnEscape, RuleGrid, PageUndoKeys, LinePicks];
 const NO_IDS: string[] = [];
 /** Ctrl/Cmd+click (no other modifier): picks a box, unless it's on a link (which opens). */
 const isPickClick = (e: { button: number; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; target: EventTarget | null }) =>
   e.button === 0 && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !(e.target as HTMLElement | null)?.closest?.('a[href]');
+
+/** Is this press on a line of a box's text (not on its frame or its blank padding)? There Ctrl/Cmd+click picks the line. */
+const onLine = (target: EventTarget | null) => {
+  const el = target as HTMLElement | null;
+  return !!el?.closest?.('.ProseMirror') && !el.classList.contains('ProseMirror');
+};
 
 /** Live geometry of every box. */
 function useBoxes(doc: Y.Doc): BoxGeom[] {
@@ -254,11 +262,14 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   useEffect(() => () => boxSelection.leave(pageId), [pageId]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) boxSelection.clear();
+      if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) {
+        boxSelection.clear();
+        linePicks.clear(pageId);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [pageId]);
   // The ribbon acts on the last-focused box (none until one is focused).
   useEffect(() => {
     if (!active || active.isDestroyed || !canEdit) return;
@@ -857,7 +868,10 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
           onContextMenu={onSurfaceMenu}
           onMouseDownCapture={(e) => {
             // A plain click anywhere on the canvas drops the picked boxes (Shift+click extends text as usual).
-            if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) boxSelection.clear();
+            if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) {
+              boxSelection.clear();
+              linePicks.clear(pageId);
+            }
           }}
           data-testid="canvas-surface"
         >
@@ -907,6 +921,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
           <Plus size={15} /> Add a task to this page
         </button>
       )}
+      {!isMobile && <PrintSelectionMenu pageId={pageId} />}
       <EditorMenus />
       {boxMenu.menu}
       {surfaceMenu.menu}
@@ -974,14 +989,14 @@ function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, 
       aria-label={picked ? 'Text box, selected' : 'Text box'}
       data-picked={picked || undefined}
       onMouseDownCapture={(e) => {
-        if (ready || !isPickClick(e)) return;
+        if (ready || !isPickClick(e) || onLine(e.target)) return;
         // Before the editor sees it: picking leaves the caret and the text selection alone.
         e.preventDefault();
         e.stopPropagation();
         onPick(id);
       }}
       onClickCapture={(e) => {
-        if (!ready && isPickClick(e)) (e.preventDefault(), e.stopPropagation());
+        if (!ready && isPickClick(e) && !onLine(e.target)) (e.preventDefault(), e.stopPropagation());
       }}
       onFocus={() => onFocusBox(id)}
       onBlur={(e) => onBlurBox(id, e.currentTarget)}

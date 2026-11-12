@@ -24,12 +24,16 @@ export const PAPER_WIDTH_PX = 670;
 export interface PrintPageInput {
   pageId: string;
   doc: Y.Doc;
+  /** The page's title when the workspace's page list doesn't have it (a page shared from another workspace). */
+  title?: string;
   /** Measured canvas heights of the boxes (the open page); others are estimated. */
   heights?: Record<string, number>;
   /** Print selection: only these boxes (laid out as on the page, in reading order). */
   boxIds?: string[];
   /** Print selection: just this content (a text selection's blocks) under the page's header. */
   blocks?: JSONContent[];
+  /** Print selection: these boxes print only these blocks (their picked lines) instead of their whole content. */
+  boxBlocks?: Record<string, JSONContent[]>;
 }
 
 export interface PrintContext {
@@ -119,11 +123,16 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
   page.dataset.pageId = input.pageId;
   if (ctx.pageColour && settings.color !== 'none') page.dataset.pageColor = settings.color;
 
-  const head = el('header', 'print-head');
-  head.append(el('h1', 'print-title', `${meta?.icon ? `${meta.icon} ` : ''}${meta?.title || 'Untitled'}`));
-  const sub = [meta ? pagePath(ctx.tree, meta.sectionId) : '', meta?.updatedAt ? DATE.format(new Date(meta.updatedAt)) : ''].filter(Boolean);
-  if (sub.length) head.append(el('div', 'print-sub', sub.join(' · ')));
-  page.append(head);
+  // A selection gets just a small title above it, and nothing at all when the page has none.
+  const pageTitle = meta?.title || input.title || '';
+  const selection = !!(input.blocks || input.boxIds || input.boxBlocks);
+  if (!selection || pageTitle) {
+    const head = el('header', selection ? 'print-head is-small' : 'print-head');
+    head.append(el('h1', selection ? 'print-title is-small' : 'print-title', `${meta?.icon ? `${meta.icon} ` : ''}${pageTitle || 'Untitled'}`));
+    const sub = [meta ? pagePath(ctx.tree, meta.sectionId) : '', meta?.updatedAt ? DATE.format(new Date(meta.updatedAt)) : ''].filter(Boolean);
+    if (sub.length && !selection) head.append(el('div', 'print-sub', sub.join(' · ')));
+    page.append(head);
+  }
 
   const s = printSchema();
   let boxes: (PrintBox & { json: JSONContent })[] = input.blocks ? [] : canvasBoxes(input.doc, s).map((b) => ({
@@ -145,6 +154,11 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
   if (input.boxIds) {
     const keep = new Set(input.boxIds);
     boxes = boxes.filter((b) => keep.has(b.id));
+  }
+  // A box with picked lines prints just those lines, where the box is.
+  if (input.boxBlocks) {
+    const lines = input.boxBlocks;
+    boxes = boxes.filter((b) => !input.boxIds || input.boxIds.includes(b.id) || lines[b.id]).map((b) => (lines[b.id] ? { ...b, json: { type: 'doc', content: lines[b.id] } } : b));
   }
   const byId = new Map(boxes.map((b) => [b.id, b]));
   const body = el('div', 'print-body');
