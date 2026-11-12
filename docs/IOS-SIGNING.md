@@ -7,18 +7,24 @@ profiles for 'com.devswartz.notivelo' / '.ShareExtension'".
 
 ## What CI does now (`.github/workflows/mobile.yml`, job `ios`)
 
-1. **Archive unsigned** (`CODE_SIGNING_ALLOWED=NO`, no `-allowProvisioningUpdates`). Nothing is signed, so no development
-   certificate is requested. (The project's Release configuration still says `CODE_SIGN_IDENTITY = "iPhone Developer"`;
-   the override on the command line wins, and the project file is untouched so local Xcode builds behave as before.)
-2. **Export with cloud-managed signing**: `xcodebuild -exportArchive` with the App Store Connect API key and
-   `method = app-store-connect`, `signingStyle = automatic`, `signingCertificate = Apple Distribution`. Xcode uses the
-   account's cloud-managed **Apple Distribution** certificate and creates the App Store provisioning profiles for the
-   three targets: **App** (`com.devswartz.notivelo`), **ShareExtension** (`.ShareExtension`) and **TodayWidget**
-   (`.TodayWidget`). Cloud-managed distribution certificates live in Apple's cloud, not on the runner, and do not count
-   toward the development-certificate limit.
-3. **Verify the signature before uploading.** A first export writes a local `.ipa`; the job fails unless the app and each
-   extension are signed by an `Apple Distribution` authority and kept their App Group entitlement (and the app its push
-   `aps-environment`). Only then is a second export run with `destination = upload`, which sends it to TestFlight.
+1. **Archive signed with Apple Distribution**, not development: `CODE_SIGN_STYLE=Automatic CODE_SIGN_IDENTITY="Apple Distribution"`
+   with the App Store Connect API key and `-allowProvisioningUpdates`, so Xcode uses the account's cloud-managed
+   Distribution certificate and App Store profiles for the three targets: **App** (`com.devswartz.notivelo`),
+   **ShareExtension** (`.ShareExtension`) and **TodayWidget** (`.TodayWidget`). It never asks for an Apple Development
+   certificate, so nothing is minted per run.
+   (An unsigned archive, `CODE_SIGNING_ALLOWED=NO`, was tried first and failed in v0.4.6: it skips entitlement processing,
+   so the exported app had no App Group entitlement.) If Xcode refuses an automatic archive with a Distribution identity
+   ("conflicting provisioning settings"), the job falls back to an unsigned archive and copies each target's
+   `.entitlements` file into the archive as `archived-expanded-entitlements.xcent`, which is what export signs with.
+2. **Export with cloud-managed signing**: `xcodebuild -exportArchive`, `method = app-store-connect`,
+   `signingStyle = automatic`, `signingCertificate = Apple Distribution`, same API key.
+3. **Verify the signature before uploading.** A first export writes a local `.ipa`; the job prints each bundle's authority and
+   entitlements and fails unless the app and each extension are signed by an `Apple Distribution` authority and kept their
+   App Group entitlement (and the app its push `aps-environment`). Only then is a second export run with
+   `destination = upload`, which sends it to TestFlight.
+
+You can run the Mobile workflow by hand from a branch (Actions → Mobile → Run workflow, choose the branch, tick
+"Upload the iOS build to TestFlight") to test signing without a tag.
 
 No new secrets are needed: the existing `ASC_KEY_P8`, `ASC_KEY_ID`, `ASC_ISSUER_ID` and `APPLE_TEAM_ID` are enough. The
 API key must have the **Admin** role (cloud-managed distribution signing needs it; see docs/MOBILE.md).
