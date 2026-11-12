@@ -263,10 +263,11 @@ test('tasks on a trashed page or notebook stay visible to workspace members (not
   const task = (await app.call('POST', `/workspaces/${t.ws}/tasks`, t.owner.token, { title: 'Stays listed', pageId: p })).data;
   const outsider = await app.signUp('Trash Chip Outsider');
   await app.call('POST', `/pages/${p}/shares`, t.owner.token, { email: outsider.user.email, canEdit: false });
-  assert.ok((await tasks(outsider, t.ws)).some((x) => x.id === task.id), 'a page-share holder sees the task while the page is live');
+  const shared = async () => app.call('GET', `/pages/${p}/tasks`, outsider.token);
+  assert.ok(((await shared()).data as { id: string }[]).some((x) => x.id === task.id), 'a page-share holder sees the task while the page is live');
   await app.call('DELETE', `/pages/${p}`, t.owner.token);
   assert.ok((await tasks(t.member, t.ws)).some((x) => x.id === task.id), 'a member who is not the assignee still sees it');
-  assert.ok(!(await tasks(outsider, t.ws).catch(() => [])).some((x) => x.id === task.id), 'the page share ends with the page going to Trash');
+  assert.ok([403, 404].includes((await shared()).status), 'the page share ends with the page going to Trash: its tasks are no longer theirs to see');
   assert.deepEqual((await tree(t.member, t.ws)).trashedPages?.filter((x) => x.id === p), [{ id: p, title: 'Chip page' }], 'the tree names the trashed page (for the "in Trash" chip)');
   assert.deepEqual((await tree(t.viewer, t.ws)).trashedPages, [], 'viewers get no trashed pages');
   // A trashed notebook keeps its tasks listed for the other members too.
