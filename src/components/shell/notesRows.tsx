@@ -29,13 +29,14 @@ import {
   Trash2,
   UserPlus,
 } from 'lucide-react';
-import { del, patch, post } from '../../api.ts';
+import { patch, post } from '../../api.ts';
 import { errorToast, toast, useStore } from '../../store.ts';
 import { IconButton, MenuItem, MenuSeparator, useContextMenu } from '../ui.tsx';
 import type { Notebook, PageMeta, Section } from '../../../shared/types.ts';
 import { sidebar, useSidebar } from './sidebarState.ts';
 import { byPos, dragProps, dropClass, dropProps, movePage, moveSection, useDnd } from './treeDnd.ts';
 import { confirmDialog, promptDialog } from './dialogs.tsx';
+import { moveToTrash } from '../../lib/trash.ts';
 import { openShareDialog } from '../sharing/ShareDialog.tsx';
 import { childSections, sectionTarget } from './navState.ts';
 import { MAX_SECTION_DEPTH, sectionDepth } from '../../../shared/sections.ts';
@@ -165,11 +166,11 @@ export function NotebookMenu({ nb, canEdit, isMine, isAdmin, onRename }: { nb: N
             onSelect={async () => {
               const ok = await confirmDialog({
                 title: `Delete “${nb.name}”?`,
-                message: 'All its sections and pages will be deleted. Tasks in those pages are kept as standalone tasks.',
-                confirmLabel: 'Delete notebook',
+                message: 'It moves to the Trash with all its sections and pages, and stays there for 60 days. You can restore it from the Trash.',
+                confirmLabel: 'Move to Trash',
                 danger: true,
               });
-              if (ok) del(`/notebooks/${nb.id}`).catch(errorToast);
+              if (ok) void moveToTrash('notebook', nb.id, nb.name);
             }}
           >
             Delete notebook
@@ -248,13 +249,7 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
         icon={<Trash2 size={15} />}
         danger
         onSelect={async () => {
-          const ok = await confirmDialog({
-            title: `Delete “${section.name}”?`,
-            message: `Its ${pages.length} page${pages.length === 1 ? '' : 's'} will be deleted. Tasks are kept as standalone tasks.`,
-            confirmLabel: 'Delete section',
-            danger: true,
-          });
-          if (ok) del(`/sections/${section.id}`).catch(errorToast);
+          void moveToTrash('section', section.id, section.name);
         }}
       >
         Delete section
@@ -391,13 +386,7 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
             icon={<Trash2 size={15} />}
             danger
             onSelect={async () => {
-              const ok = await confirmDialog({
-                title: `Delete “${page.title || 'Untitled'}”?`,
-                message: 'Tasks in this page are kept as standalone tasks.',
-                confirmLabel: 'Delete page',
-                danger: true,
-              });
-              if (ok) del(`/pages/${page.id}`).catch(errorToast);
+              void moveToTrash('page', page.id, page.title);
             }}
           >
             Delete page

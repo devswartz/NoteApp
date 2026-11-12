@@ -16,6 +16,8 @@ You can also send feedback from inside the app: press **?** (or search the comma
 
 **How do I get my data out?** Go to Settings → Profile → **Export my data** to download your pages, tasks and files.
 
+**I deleted a page by mistake. Can I get it back?** Yes, for 60 days. Open **Trash** from the menu under your name (or search for "Trash" in the command palette) and press **Restore**. Right after deleting, the **Undo** button in the message at the bottom does the same. Sections and notebooks go to the Trash too, with everything in them. After 60 days, or after **Delete forever**, they are gone.
+
 **How do I delete my account?** Go to Settings → Profile → **Delete account**. Your account and personal data are removed straight away. Backups age out within about three months, as explained in the [Privacy Policy](/privacy).
 
 **The desktop app didn't update.** It checks for updates every time it opens. You can also download the latest version from [github.com/devswartz/NoteApp/releases/latest](https://github.com/devswartz/NoteApp/releases/latest).

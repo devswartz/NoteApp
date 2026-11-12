@@ -5,6 +5,7 @@ import { PageView } from './pages/PageView.tsx';
 import { TasksView } from './pages/TasksView.tsx';
 import { Settings } from './pages/Settings.tsx';
 import { NotesHome } from './pages/NotesHome.tsx';
+import { TrashView } from './pages/TrashView.tsx';
 import { ActivityFeed } from './components/sharing/ActivityFeed.tsx';
 
 export interface AppRoute {
@@ -18,5 +19,6 @@ export const workspaceRoutes: AppRoute[] = [
   { path: 'notes', element: <NotesHome /> }, // Editor & Notes
   { path: 'tasks/:view', element: <TasksView /> }, // Tasks & Dashboard
   { path: 'settings', element: <Settings /> }, // UI shell / Collaboration
+  { path: 'trash', element: <TrashView /> }, // Editor & Notes
   { path: 'activity', element: <ActivityFeed /> }, // Collaboration
 ];

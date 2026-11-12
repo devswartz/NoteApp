@@ -489,8 +489,10 @@ export interface PushSubscriptionInput {
 }
 
 /** One entry of a workspace's Trash (GET /workspaces/:id/trash): a page, section or notebook that was deleted. */
+export type TrashKind = 'page' | 'section' | 'notebook';
+
 export interface TrashItem {
-  kind: 'page' | 'section' | 'notebook';
+  kind: TrashKind;
   id: string;
   /** The page's title, or the section's or notebook's name. */
   name: string;

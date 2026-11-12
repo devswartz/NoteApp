@@ -2,7 +2,7 @@
 // notifications, the workspace switcher and the user menu at the bottom.
 // Each view button reopens the last place visited in that view (navState.ts).
 import { useNavigate } from 'react-router-dom';
-import { Activity, BookOpen, CalendarDays, ChevronDown, Contrast, Keyboard, ListChecks, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun } from 'lucide-react';
+import { Activity, BookOpen, CalendarDays, ChevronDown, Contrast, Keyboard, ListChecks, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trash2 } from 'lucide-react';
 import { post } from '../../api.ts';
 import { errorToast, loadWorkspaces, signOut, ui, useStore } from '../../store.ts';
 import { setThemePref, useTheme, type ThemePref } from '../../store/ui.ts';
@@ -187,6 +187,9 @@ export function UserMenu({ wsId, full }: { wsId: string; full?: boolean }) {
         </MenuItem>
         <MenuItem icon={<Activity size={15} />} onSelect={() => navigate(`/w/${wsId}/activity`)}>
           Activity
+        </MenuItem>
+        <MenuItem icon={<Trash2 size={15} />} onSelect={() => navigate(`/w/${wsId}/trash`)}>
+          Trash
         </MenuItem>
         <MenuItem icon={<Keyboard size={15} />} hint="?" onSelect={() => ui.setShortcuts(true)}>
           Keyboard shortcuts

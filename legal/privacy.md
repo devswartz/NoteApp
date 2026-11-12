@@ -100,7 +100,7 @@ Nothing else.
 ## How long we keep it
 
 - Your account and content are kept until you delete them or delete your account.
-- Deleting a page, notebook or task removes it straight away; there is no recycle bin.
+- Deleting a page, section or notebook moves it to the Trash, where it stays for 60 days and can be restored by the people who could see it; after that it is removed automatically. "Delete forever" in the Trash, and deleting a task, remove it straight away. Deleting your account removes your private notebooks at once, including anything in their Trash.
 - Page version history keeps every version from the last 24 hours, then one an hour for a week, then one a day, up to 200 versions per page. It is deleted with the page.
 - Sign-in sessions last up to 30 days unless used, and are removed when they expire or you sign out.
 - Accounts whose email address is never confirmed are deleted automatically after 7 days.
@@ -112,7 +112,7 @@ Nothing else.
 
 You can delete your account yourself in **Settings → Profile → Delete account**. This deletes your profile, your private notebooks and their files, your private tasks, your sign-in sessions, push addresses, reminder settings, calendar feed and the page shares you hold. Workspaces you own are handed to another owner or admin, or deleted if there is none. Things you created in shared places, such as pages, comments and tasks in a workspace, stay there and are shown as written by a deleted user; tasks assigned to you become unassigned.
 
-Deleted data can remain in backups for up to about 3 months (see "How long we keep it").
+Deleted data, including what was in the Trash, can remain in backups for up to about 3 months (see "How long we keep it").
 
 You can also email us at {{CONTACT_EMAIL}} to ask for a copy of your data, to have it corrected, or to have it deleted.
 

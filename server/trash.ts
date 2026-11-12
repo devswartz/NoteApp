@@ -8,14 +8,14 @@ import { publish } from './events.ts';
 import { closeRoom } from './collab.ts';
 import { detachPagesTasks, sectionSubtree } from './tree.ts';
 import { rowToTask } from './tasks.ts';
-import type { TrashItem } from '../shared/types.ts';
+import type { TrashItem, TrashKind } from '../shared/types.ts';
 
 /** How long trashed items are kept before the daily job removes them for good. */
 export const TRASH_DAYS = 60;
 const DAY_MS = 86_400_000;
 
 type TaskRow = Parameters<typeof rowToTask>[0];
-export type TrashKind = 'page' | 'section' | 'notebook';
+export type { TrashKind };
 const TABLE = { page: 'pages', section: 'sections', notebook: 'notebooks' } as const;
 
 const placeholders = (n: number) => Array.from({ length: n }, () => '?').join(', ');

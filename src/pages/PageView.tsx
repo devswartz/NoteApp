@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouch
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
-import { api, get, patch, del, post, ApiError } from '../api.ts';
+import { api, get, patch, post, ApiError } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
+import { moveToTrash } from '../lib/trash.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
 import { useFollow } from '../editor/collabFollow.ts';
 import type { Awareness } from 'y-protocols/awareness';
@@ -45,6 +46,8 @@ interface PageInfo {
   canManage: boolean;
   canShare: boolean;
   viaPageShare: boolean;
+  /** In the Trash: opened read-only by someone who can restore it. */
+  trashed?: boolean;
   member: boolean;
   /** Just made from a template that this (creating) client still has to fill in (defaultTemplates.ts). */
   pendingTemplate?: boolean;
@@ -57,11 +60,12 @@ export function PageView() {
   // undefined while loading, null when it failed (offline, or no access).
   const [info, setInfo] = useState<PageInfo | null | undefined>(undefined);
   const [gone, setGone] = useState(false);
+  const [reload, setReload] = useState(0); // bumped after a restore so the page is fetched again, editable
   const shareKey = useShared((s) => {
     const sp = s.pages.find((x) => x.id === pageId);
     return sp ? `${sp.canEdit}` : '-';
   });
-  const meta = treeMeta ?? (info?.viaPageShare ? info.page : undefined);
+  const meta = treeMeta ?? (info?.viaPageShare || info?.trashed ? info.page : undefined);
   const section = useStore((s) => s.tree.sections.find((x) => x.id === meta?.sectionId));
   // "Section › Subsection" for the breadcrumb (a string, so the selector stays stable).
   const sectionPath = useStore((s) => (meta?.sectionId ? sectionPathLabel(s.tree, meta.sectionId) : ''));
@@ -154,7 +158,7 @@ export function PageView() {
     return () => {
       cancelled = true;
     };
-  }, [pageId, wsId, role, shareKey]);
+  }, [pageId, wsId, role, shareKey, reload]);
 
   // Deep link to a task inside the note (?task=id): scroll to it and flash.
   const focusTask = params.get('task');
@@ -324,6 +328,24 @@ export function PageView() {
             )}
           </div>
         </header>
+        {info?.trashed && (
+          <div className="trash-banner" role="status">
+            <Trash2 size={15} /> This page is in the Trash. It is read-only until you restore it.
+            <button
+              className="btn btn-secondary"
+              onClick={() =>
+                post<{ movedTo: string }>(`/trash/page/${pageId}/restore`)
+                  .then((r) => {
+                    if (r.movedTo) toast(`Restored to ${r.movedTo}`);
+                    setReload((n) => n + 1);
+                  })
+                  .catch(errorToast)
+              }
+            >
+              Restore
+            </button>
+          </div>
+        )}
         {followed && (
           <div className="follow-banner" role="status" style={{ ['--ring' as string]: followed.color }}>
             Following {followed.name} · scroll, click or Esc to stop
@@ -690,15 +712,7 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
             <MenuItem
               icon={<Trash2 size={15} />}
               danger
-              onSelect={() => {
-                if (!confirm('Delete this page? Tasks on it will be kept as standalone tasks.')) return;
-                del(`/pages/${pageId}`)
-                  .then(() => {
-                    toast('Page deleted');
-                    navigate(`/w/${wsId}/notes`);
-                  })
-                  .catch(errorToast);
-              }}
+              onSelect={() => void moveToTrash('page', pageId, current?.title ?? '', () => navigate(`/w/${wsId}/notes`))}
             >
               Delete page
             </MenuItem>
