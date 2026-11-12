@@ -331,6 +331,8 @@ const TASKABLE = new Set(['paragraph', 'heading', 'listItem', 'bulletList', 'ord
 const LIST_ITEMS = new Set(['listItem', 'taskItem']);
 /** A list line's bullet or number sits in front of its own box: the handle keeps this far (px) clear of it. */
 const LIST_MARKER_GAP = 38;
+/** Any other block: the handle ends this far (px) before its text. */
+const BLOCK_GAP = 8;
 
 /**
  * Notion-style handle left of each block: drag to move, click to select, "+" to insert below. In a list the handle
@@ -354,15 +356,22 @@ function BlockHandle({ editor }: { editor: Editor }) {
       getReferencedVirtualElement={() => {
         const c = current.current;
         const node = c ? editor.state.doc.nodeAt(c.pos) : null;
-        const dom = c && node && LIST_ITEMS.has(node.type.name) ? (editor.view.nodeDOM(c.pos) as HTMLElement | null) : null;
-        if (!dom) return null; // everything else: next to the block itself
-        return { getBoundingClientRect: () => DOMRect.fromRect({ x: dom.getBoundingClientRect().x - LIST_MARKER_GAP, y: dom.getBoundingClientRect().y, width: dom.getBoundingClientRect().width, height: dom.getBoundingClientRect().height }) };
+        const dom = c && node ? (editor.view.nodeDOM(c.pos) as HTMLElement | null) : null;
+        if (!c || !node || !dom) return null;
+        // The handle's place always comes from the CURRENT target's own left edge, recomputed at every retarget (up to a parent or a
+        // heading too): a list line keeps clear of its bullet or number, any other block gets a small gutter. (Left to the library,
+        // a block's handle touched the first letter of its text.)
+        const gap = LIST_ITEMS.has(node.type.name) ? LIST_MARKER_GAP : BLOCK_GAP;
+        return { getBoundingClientRect: () => { const r = dom.getBoundingClientRect(); return DOMRect.fromRect({ x: r.x - gap, y: r.y, width: r.width, height: r.height }); } };
       }}
       onNodeChange={({ node, pos }) => {
         current.current = node ? { pos, size: node.nodeSize } : null;
         setTaskable(!!node && TASKABLE.has(node.type.name) && node.textContent.trim() !== '');
       }}
     >
+      {/* The ✓ slot is always there (hidden when the line can't be a task), so the handle's width never changes between targets: a width that
+          changes after the handle was placed would push it over the text. */}
+      {!taskable && <span className="block-handle-btn block-handle-task" aria-hidden="true" style={{ visibility: 'hidden' }} />}
       {taskable && (
         <button
           type="button"
