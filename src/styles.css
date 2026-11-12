@@ -1546,7 +1546,13 @@ body.is-resizing .sidebar { transition: none; }
 @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
 .toast-action { font-weight: 600; color: var(--accent-inverse); padding: 2px 6px; }
 .toast-x { opacity: 0.6; display: inline-flex; padding: 4px; }
-.offline-banner { position: fixed; top: 0; left: 0; right: 0; z-index: var(--z-banner); background: var(--warn); color: #fff; text-align: center; font-size: var(--text-sm); padding: calc(4px + var(--safe-top)) 12px 4px; }
+.offline-banner { position: fixed; bottom: calc(12px + var(--safe-bottom)); left: 50%; transform: translateX(-50%); z-index: var(--z-banner); display: inline-flex; align-items: center; gap: 8px; max-width: calc(100vw - 24px); padding: 5px 6px 5px 12px; border: 1px solid var(--border); border-radius: var(--radius-full); background: var(--bg-elevated); color: var(--text-muted); font-size: var(--text-xs); box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); animation: offline-in var(--dur) var(--ease-out); }
+.offline-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+.offline-x { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; color: var(--text-muted); }
+.offline-x:hover { background: var(--bg-hover); color: var(--text); }
+@keyframes offline-in { from { opacity: 0; transform: translate(-50%, 6px); } }
+@media (prefers-reduced-motion: reduce) { .offline-banner { animation: none; } }
+@media (max-width: 760px) { .offline-banner { bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px); } }
 
 /* ───────────────────────── Mobile ───────────────────────── */
 .mobile-top, .tabbar, .drawer-backdrop { display: none; }

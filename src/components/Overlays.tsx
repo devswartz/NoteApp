@@ -1,7 +1,7 @@
 // App-wide overlays: toasts, keyboard shortcut help, offline banner.
 import { X } from 'lucide-react';
 import { dismissToast, ui, useStore } from '../store.ts';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Kbd, Modal } from './ui.tsx';
 import { openFeedback } from './shell/FeedbackDialog.tsx';
 import { formatKeys, isEnabled, useCommandList, type Command } from '../hooks/useShortcuts.ts';
@@ -116,8 +116,36 @@ export function ShortcutsHelp() {
 
 const rank = (g: string) => (GROUP_ORDER.includes(g) ? GROUP_ORDER.indexOf(g) : GROUP_ORDER.length);
 
+/**
+ * How long the connection must stay down before the offline notice appears. Blips (a server restart, a
+ * dropped socket, a network switch) reconnect well inside it, and someone working offline on purpose
+ * isn't nagged straight away. The e2e tests shorten it with window.__offlineNoticeDelayMs.
+ */
+const OFFLINE_NOTICE_DELAY_MS = 30_000;
+const noticeDelay = () => (typeof window !== 'undefined' ? (window as { __offlineNoticeDelayMs?: number }).__offlineNoticeDelayMs : undefined) ?? OFFLINE_NOTICE_DELAY_MS;
+
+/** A small, quiet notice once the connection has been down a while; closing it keeps it away until the next reconnect. */
 export function OfflineBanner() {
   const online = useStore((s) => s.online);
-  if (online) return null;
-  return <div className="offline-banner">You’re offline. Notes you’ve opened stay editable and will sync when you reconnect.</div>;
+  const [late, setLate] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    if (online) {
+      setLate(false);
+      setDismissed(false);
+      return;
+    }
+    const t = window.setTimeout(() => setLate(true), noticeDelay());
+    return () => window.clearTimeout(t);
+  }, [online]);
+  if (online || !late || dismissed) return null;
+  return (
+    <div className="offline-banner" role="status">
+      <span className="offline-dot" aria-hidden="true" />
+      <span>Offline. Changes sync when you reconnect.</span>
+      <button type="button" className="offline-x" aria-label="Dismiss" onClick={() => setDismissed(true)}>
+        <X size={12} />
+      </button>
+    </div>
+  );
 }
