@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.9
+
+### Fixes
+- **Dragging keeps a list's numbering.** A numbered item dragged out of its list stays numbered, with its sub-items. Dropped next to a numbered list, it joins it and the numbering continues; dropped between paragraphs, it starts a new numbered list. Dropped inside a bullet list, it becomes a bullet there.
+
 ## v0.4.8
 
 ### Fixes
