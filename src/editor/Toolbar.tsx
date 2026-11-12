@@ -838,7 +838,7 @@ export function Ribbon() {
           }
         </ToolbarMenu>
         {viewBtn(`Print (${keyLabel(MOD, 'P')})`, <Printer />, () => printPage(), { text: 'Print', disabled: !page })}
-        {printable && viewBtn(printable === 'boxes' ? 'Print the selected boxes' : 'Print the selected text', <Printer />, () => printSelectionOnly(), { text: 'Print selection' })}
+        {printable && viewBtn(printable === 'boxes' ? 'Print the selected boxes' : printable === 'lines' ? 'Print the selected lines' : 'Print the selected text', <Printer />, () => printSelectionOnly(), { text: 'Print selection' })}
       </Group>
       <Sep />
       <Group label="View">

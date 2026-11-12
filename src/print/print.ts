@@ -14,6 +14,7 @@ import { boxGeoms, isContentField } from '../../shared/pageDoc.ts';
 import type { Task } from '../../shared/types.ts';
 import { useRibbon } from '../editor/ribbonState.ts';
 import { useBoxSelection, selectionEditor } from '../editor/boxSelection.ts';
+import { linePicks } from '../editor/linePicks.ts';
 import { selectionBlocks } from './selectionContent.ts';
 import { chooseDialog } from '../components/shell/dialogs.tsx';
 import { clearPrintRoot, imagesReady, mountPrintRoot, renderPrintPage, type PrintContext, type PrintPageInput } from './printDoc.ts';
@@ -108,11 +109,17 @@ export async function printCurrentPage(): Promise<boolean> {
  * What "Print selection" prints on the open page: the picked boxes (Ctrl/Cmd+click), else the
  * selected text of the box (or document) being edited. Null when nothing is selected.
  */
-export function pageSelection(): Pick<PrintPageInput, 'boxIds' | 'blocks'> | null {
+export function pageSelection(): Pick<PrintPageInput, 'boxIds' | 'blocks' | 'boxBlocks'> | null {
   const page = openPage();
   if (!page) return null;
   const picked = useBoxSelection.getState();
-  if (picked.pageId === page.pageId && picked.ids.length) return { boxIds: [...picked.ids] };
+  const boxes = picked.pageId === page.pageId ? picked.ids : [];
+  const lines = linePicks.blocks(page.pageId);
+  // Picked boxes and picked lines print together, in reading order; a box picked whole prints whole.
+  if (boxes.length || Object.keys(lines).length) {
+    const onlyLines = Object.fromEntries(Object.entries(lines).filter(([id]) => !boxes.includes(id)));
+    return { boxIds: [...new Set([...boxes, ...Object.keys(onlyLines)])], ...(Object.keys(onlyLines).length ? { boxBlocks: onlyLines } : {}) };
+  }
   const ed = selectionEditor(page.pageId);
   if (!ed) return null;
   const blocks = selectionBlocks(ed.state.selection);
@@ -150,7 +157,7 @@ export async function printWithChoice(): Promise<boolean> {
   if (!sel) return printCurrentPage();
   const pick = await chooseDialog({
     title: 'Print',
-    message: sel.boxIds ? `Print the ${sel.boxIds.length === 1 ? 'selected box' : `${sel.boxIds.length} selected boxes`} or the whole page?` : 'Print the selected text or the whole page?',
+    message: sel.boxBlocks ? 'Print the selected lines or the whole page?' : sel.boxIds ? `Print the ${sel.boxIds.length === 1 ? 'selected box' : `${sel.boxIds.length} selected boxes`} or the whole page?` : 'Print the selected text or the whole page?',
     confirmLabel: 'Print selection',
     cancelLabel: 'Whole page',
   });
