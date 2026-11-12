@@ -12,6 +12,7 @@ import { History, RotateCcw } from 'lucide-react';
 import { get, post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { Modal } from '../components/ui.tsx';
+import { confirmDialog } from '../components/shell/dialogs.tsx';
 import { relativeTime } from '../lib/format.ts';
 import { documentExtensions } from './NoteEditor.tsx';
 import { boxField, boxGeoms, convertPageDoc, readingOrder, replacePageContent } from '../../shared/pageDoc.ts';
@@ -163,10 +164,12 @@ function Preview({
     if (!canvas && (!live || !preview || live.isDestroyed)) return;
     if (othersEditing > 0) {
       const who = othersEditing === 1 ? '1 other person is' : `${othersEditing} other people are`;
-      const ok = confirm(
-        `${who} editing this page. Restoring will replace their current changes too. ` +
-          `Nothing is lost: the current page is saved as a “before restore” version first. Restore anyway?`,
-      );
+      const ok = await confirmDialog({
+        title: 'Restore this version?',
+        message: `${who} editing this page. Restoring will replace their current changes too. Nothing is lost: the current page is saved as a “before restore” version first.`,
+        confirmLabel: 'Restore anyway',
+        danger: true,
+      });
       if (!ok) return;
     }
     setBusy(true);

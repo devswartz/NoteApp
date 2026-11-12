@@ -8,6 +8,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { Check, MessageSquare, MoreHorizontal, RotateCcw, Trash2 } from 'lucide-react';
 import { useStore } from '../store.ts';
 import { Avatar } from '../components/ui.tsx';
+import { confirmDialog } from '../components/shell/dialogs.tsx';
 import {
   cancelComment,
   deleteComment,
@@ -139,9 +140,9 @@ function ThreadCard({ t, active, canComment }: { t: CommentThread; active: boole
             className="btn-ghost icon-btn"
             title="Delete thread"
             aria-label="Delete thread"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
-              if (confirm('Delete this whole thread?')) void deleteThread(t.id);
+              if (await confirmDialog({ title: 'Delete this whole thread?', message: 'The comment and all its replies are removed.', confirmLabel: 'Delete thread', danger: true })) void deleteThread(t.id);
             }}
           >
             <Trash2 size={15} />
