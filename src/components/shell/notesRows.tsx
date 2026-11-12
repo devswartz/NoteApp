@@ -152,6 +152,9 @@ export function NotebookMenu({ nb, canEdit, isMine, isAdmin, onRename }: { nb: N
           {nb.visibility === 'private' ? 'Share with workspace' : 'Make private'}
         </MenuItem>
       )}
+      <MenuItem icon={<Printer size={15} />} onSelect={() => void import('../../print/print.ts').then((m) => m.printWithContentsChoice({ kind: 'notebook', id: nb.id }))}>
+        Print…
+      </MenuItem>
       {canEdit && <ColorRow value={nb.color} onPick={(color) => patch(`/notebooks/${nb.id}`, { color }).catch(errorToast)} />}
       {(isMine || isAdmin) && (
         <>
@@ -236,8 +239,8 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
       <MenuItem icon={<FolderInput size={15} />} onSelect={() => p.setMoving({ kind: 'section', id: section.id })}>
         Move to…
       </MenuItem>
-      <MenuItem icon={<Printer size={15} />} onSelect={() => void import('../../print/print.ts').then((m) => m.printSection(section.id))}>
-        Print section
+      <MenuItem icon={<Printer size={15} />} onSelect={() => void import('../../print/print.ts').then((m) => m.printWithContentsChoice({ kind: 'section', id: section.id }))}>
+        Print…
       </MenuItem>
       <ColorRow value={section.color} onPick={(color) => patch(`/sections/${section.id}`, { color }).catch(errorToast)} />
       <MenuSeparator />

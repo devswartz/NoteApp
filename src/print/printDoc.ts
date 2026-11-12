@@ -15,6 +15,7 @@ import { documentExtensions } from '../editor/NoteEditor.tsx';
 import { sanitizeContent } from '../editor/urls.ts';
 import { resolveListStarts } from '../../shared/listMarker.ts';
 import { estimateBoxHeight, printRows, type PrintBox } from './printLayout.ts';
+import { contentsSummary, type ContentsNode } from './contents.ts';
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap';
 import '../styles/print.css';
 
@@ -175,6 +176,35 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
   }
   if (!boxes.length) body.append(el('p', 'print-muted', 'This page is empty.'));
   page.append(body);
+  return page;
+}
+
+/**
+ * A contents list (src/print/contents.ts) as one printable sheet: the name on top with a count line, then the
+ * sections and pages nested by indent. Titles only.
+ */
+export function renderContents(root: ContentsNode): HTMLElement {
+  const page = el('article', 'print-page print-contents');
+  const head = el('header', 'print-head');
+  head.append(el('h1', 'print-title', root.title || 'Untitled'));
+  const summary = contentsSummary(root);
+  if (summary) head.append(el('div', 'print-sub', summary));
+  page.append(head);
+  const list = (nodes: ContentsNode[]): HTMLElement => {
+    const ul = el('ul', 'toc-list');
+    for (const n of nodes) {
+      const li = el('li', n.kind === 'page' ? 'toc-page' : 'toc-section');
+      const row = el('div', 'toc-row');
+      if (n.kind === 'page' && n.icon) row.append(el('span', 'toc-icon', n.icon));
+      row.append(el('span', n.kind === 'page' && !n.title ? 'toc-title print-muted' : 'toc-title', n.title || 'Untitled'));
+      li.append(row);
+      if (n.children.length) li.append(list(n.children));
+      ul.append(li);
+    }
+    return ul;
+  };
+  if (root.children.length) page.append(list(root.children));
+  else page.append(el('p', 'print-muted', 'Nothing in here yet.'));
   return page;
 }
 
