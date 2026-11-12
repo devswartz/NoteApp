@@ -438,8 +438,10 @@
 @media print {
   .ProseMirror > * { content-visibility: visible !important; } /* beats the (0,4,0) long-page rule above */
 }
-/* Headings land below the sticky page header and the ribbon when jumped to. */
-.ProseMirror :is(h1, h2, h3) { scroll-margin-top: calc(64px + var(--ribbon-h, 0px)); }
+/* Headings land just below the sticky page header when jumped to: .page-scroll's scroll-padding-top
+   already clears the header, so this only adds a little air (adding the header again put them 120px down,
+   below the outline's "in view" line). */
+.ProseMirror :is(h1, h2, h3) { scroll-margin-top: calc(8px + var(--ribbon-h, 0px)); }
 
 /* ───────────── Page panel: toolbar badges, tabs, phone sheet (#99) ───────────── */
 .panel-toggle { position: relative; }
