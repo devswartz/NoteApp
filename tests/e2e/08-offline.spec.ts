@@ -7,6 +7,7 @@ test('edits made offline sync when the connection comes back', async ({ browser,
   const { pageId } = await createPage(request, user, { page: 'Field notes' });
 
   const ctx = await browser.newContext();
+  await ctx.addInitScript(() => ((window as unknown as { __offlineNoticeDelayMs: number }).__offlineNoticeDelayMs = 2500)); // the notice normally waits 30s
   await signInContext(ctx, user);
   const page = await ctx.newPage();
   // Chromium's offline emulation leaves open WebSockets alone, so proxy the collab socket and cut it ourselves:
@@ -33,6 +34,8 @@ test('edits made offline sync when the connection comes back', async ({ browser,
   await ctx.setOffline(true);
   for (const ws of sockets) await ws.close({ code: 4000, reason: 'e2e offline' });
   sockets.clear();
+  // A short drop shows nothing; the quiet notice only appears once the connection has stayed down.
+  await expect(page.locator('.offline-banner')).toHaveCount(0);
   await expect(page.locator('.offline-banner')).toBeVisible();
   await expect(page.locator('.sync-offline, .sync-connecting')).toBeVisible();
 
@@ -59,6 +62,7 @@ test('a page opened before going offline still opens after a reload while offlin
   const user = await createUser(request, 'Olive Cache');
   const { pageId } = await createPage(request, user, { page: 'Cached page' });
   const ctx = await browser.newContext();
+  await ctx.addInitScript(() => ((window as unknown as { __offlineNoticeDelayMs: number }).__offlineNoticeDelayMs = 2500)); // the notice normally waits 30s
   await signInContext(ctx, user);
   const page = await ctx.newPage();
   const editor = await openPage(page, user.wsId, pageId);
