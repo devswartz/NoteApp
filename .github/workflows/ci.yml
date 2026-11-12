@@ -1,5 +1,11 @@
 name: CI
 
+# What runs when:
+#   pull_request   check ∥ docker ∥ e2e (2 shards in parallel) -> "e2e" summary. Nothing is published.
+#   push to main   check ∥ docker -> publish :staging -> verify deploy. No e2e: the pull request that produced
+#                  the merge just ran it, so it would only repeat it.
+#   push of a tag  docker -> publish :prod -> verify deploy. No check and no e2e: a release tag points at a commit
+#                  main has already tested (and its docker build still has to pass before anything is published).
 on:
   pull_request:
   push:
@@ -10,19 +16,20 @@ permissions:
   contents: read
 
 # A new push to a PR cancels that PR's run in progress. Pushes to main and
-# tags never cancel each other (each one may publish an image).
+# tags never cancel each other (each one may publish an image). A tag and the main
+# commit it points at share a group, so the tag run waits for main's (now short) run.
 concurrency:
   group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Require this job ("check") in branch protection for `main`.
+  # Skipped on tags: main already ran it for the same commit.
   check:
     name: check
+    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    outputs:
-      has_e2e: ${{ steps.e2e.outputs.present }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,13 +46,9 @@ jobs:
 
       - run: npm run build
 
-      - name: Detect E2E suite
-        id: e2e
-        run: |
-          if [ -d tests/e2e ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
-
   # Builds the production image (no push) so Dockerfile breakage shows up on
   # the PR, not after merge. Layers are cached in the GitHub Actions cache.
+  # Runs on every event, tags included: publish waits for it.
   docker:
     name: docker
     runs-on: ubuntu-latest
@@ -67,17 +70,20 @@ jobs:
           cache-to: type=gha,mode=max,scope=noteapp-ci
 
   # ---------------------------------------------------------------------------
-  # E2E SLOT — Playwright suite owned by the QA agent (tests/e2e/).
-  # Skipped automatically until tests/e2e/ exists. Expects @playwright/test in
-  # devDependencies and a playwright.config.ts (its `webServer` should start
-  # the app, e.g. `npm run build && npm start`).
+  # E2E — the Playwright suite (tests/e2e/), pull requests only, in two shards that run in
+  # parallel with `check` (it builds the app itself: playwright.config.ts' webServer runs
+  # `npm run build && npm start`, so it doesn't wait for `check`). The "e2e" job below is the
+  # one status to require: it passes only if both shards did.
   # ---------------------------------------------------------------------------
-  e2e:
-    name: e2e
-    needs: check
-    if: needs.check.outputs.has_e2e == 'true'
+  e2e-shards:
+    name: e2e shard ${{ matrix.shard }}
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false # let the other shard finish: a failure in one shouldn't hide the other's
+      matrix:
+        shard: ['1/2', '2/2']
     steps:
       - uses: actions/checkout@v4
 
@@ -124,26 +130,43 @@ jobs:
           done
           exit 1
 
-      - run: npx playwright test
+      - run: npx playwright test --shard=${{ matrix.shard }}
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          # Artifact names can't contain "/": one report per shard.
+          name: playwright-report-shard-${{ strategy.job-index }}
           path: playwright-report/
           retention-days: 7
 
-  # Publishes to GHCR only after every check above passed (e2e may be skipped
-  # while the suite doesn't exist). main -> :staging + :sha-<short>;
+  # The single "e2e" status (what branch protection can require): green only if every shard passed.
+  e2e:
+    name: e2e
+    needs: e2e-shards
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: All shards passed
+        run: |
+          if [ "${{ needs.e2e-shards.result }}" != "success" ]; then
+            echo "::error::e2e shards: ${{ needs.e2e-shards.result }}"
+            exit 1
+          fi
+
+  # Publishes to GHCR only after the checks passed. main -> :staging + :sha-<short>;
   # tag vX.Y.Z -> :vX.Y.Z + :prod. See .github/workflows/publish.yml.
+  # On a tag `check` is skipped on purpose (main tested that commit), so skipped counts as passed there only;
+  # on main it must have succeeded. There is no e2e on pushes.
   publish:
     name: publish
-    needs: [check, docker, e2e]
+    needs: [check, docker]
     if: >-
       github.event_name == 'push' && !cancelled() &&
-      needs.check.result == 'success' && needs.docker.result == 'success' &&
-      (needs.e2e.result == 'success' || needs.e2e.result == 'skipped')
+      needs.docker.result == 'success' &&
+      (needs.check.result == 'success' || (startsWith(github.ref, 'refs/tags/v') && needs.check.result == 'skipped'))
     permissions:
       contents: read
       packages: write
