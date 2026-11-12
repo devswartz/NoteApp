@@ -867,7 +867,7 @@ function PageTasks({ pageId }: { pageId: string }) {
         ))}
         {!tasks.length && (
           <p className="muted small panel-empty">
-            No tasks yet. Type <code>/task</code> in the note, or select text and press <code>{keyLabel(MOD, ENTER)}</code> to turn it into a task.
+            No tasks yet. Type <code>/task</code> in the page, or select text and press <code>{keyLabel(MOD, ENTER)}</code> to turn it into a task.
           </p>
         )}
         {done.length > 0 && (

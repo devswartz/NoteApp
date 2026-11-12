@@ -87,7 +87,7 @@ function useOptions(kind: Kind): Option[] {
       ];
     case 'source':
       return [
-        { value: 'notes', label: 'In notes' },
+        { value: 'notes', label: 'On pages' },
         { value: 'standalone', label: 'Standalone' },
       ];
     case 'notebookId':

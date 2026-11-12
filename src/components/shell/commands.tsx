@@ -102,7 +102,19 @@ export function useShellCommands(wsId: string) {
         when: () => !!useRibbon.getState().page,
         run: () => void import('../../print/print.ts').then((m) => m.printWithChoice()),
       },
-      { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note canvas', icon: <FilePlus size={16} />, when: canEditWorkspace, run: () => newPage() },
+      {
+        id: 'view.print',
+        title: 'Print this view…',
+        group: 'General',
+        keys: 'mod+p',
+        keywords: 'pdf save paper tasks calendar',
+        icon: <Printer size={16} />,
+        allowInInput: true,
+        // Anywhere but an open page (which has its own, above): the view as laid out for paper.
+        when: () => !useRibbon.getState().page,
+        run: () => void import('../../print/print.ts').then((m) => m.printView()),
+      },
+      { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'page note canvas', icon: <FilePlus size={16} />, when: canEditWorkspace, run: () => newPage() },
       nav('today', 'Today', 't', 'tasks/today', <Sun size={16} />),
       nav('my', 'My Tasks', 'm', 'tasks/my', <Inbox size={16} />),
       nav('upcoming', 'Upcoming', 'u', 'tasks/upcoming', <CalendarRange size={16} />),
@@ -133,7 +145,7 @@ export function useShellCommands(wsId: string) {
           ['editor.undo', 'Undo', 'mod+z'],
           ['editor.redo', 'Redo', 'mod+shift+z'],
         ] as const
-      ).map(([id, title, keys]) => ({ id, title, keys, group: 'In a note', palette: false })),
+      ).map(([id, title, keys]) => ({ id, title, keys, group: 'In a page', palette: false })),
     [],
   );
 }

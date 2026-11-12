@@ -215,7 +215,57 @@ export async function bulkUpdate(ids: string[], p: TaskPatch, label: string) {
   });
 }
 
-export async function bulkDelete(ids: string[]) {
+/** Tasks deleted from the task panel or the bulk bar in this tab: their placeholder in a page goes after the Undo window. */
+export const deletedHere = new Set<string>();
+/** How long the Undo toast stays (toasts.ts), plus a moment: a page's placeholder for the task is removed after it. */
+export const UNDO_WINDOW_MS = 7000;
+
+/** Delete tasks (and their subtasks) with an Undo toast; Undo brings them back with the same ids, so a page's task line is live again. */
+export async function deleteTasksWithUndo(ids: string[]) {
+  const all = st().tasks;
+  const snap = new Map<string, Task>();
+  for (const id of ids) {
+    const t = all[id];
+    if (!t) continue;
+    snap.set(id, t);
+    for (const c of Object.values(all)) if (c.parentId === id) snap.set(c.id, c);
+  }
+  if (!snap.size) return;
+  ids.forEach((id) => deletedHere.add(id));
   await Promise.all(ids.map((id) => deleteTask(id)));
-  toast(`Deleted ${ids.length} task${ids.length === 1 ? '' : 's'}`);
+  const onPage = [...snap.values()].some((t) => t.pageId && !t.parentId);
+  const n = ids.length;
+  toast(`${n === 1 ? 'Task' : `${n} tasks`} deleted${onPage ? ' (and removed from the page)' : ''}`, {
+    action: {
+      label: 'Undo',
+      run: () => void restoreTasks([...snap.values()]).then(() => ids.forEach((id) => deletedHere.delete(id))),
+    },
+  });
+}
+
+/** Put deleted tasks back with their old ids (parents first), including done ones. */
+async function restoreTasks(tasks: Task[]) {
+  for (const t of [...tasks].sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId))) {
+    const back = await createTask({
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      priority: t.priority,
+      dueDate: t.dueDate,
+      dueTime: t.dueTime,
+      recurrence: t.recurrence,
+      reminderAt: t.reminderAt,
+      assigneeId: t.assigneeId,
+      pageId: t.pageId,
+      parentId: t.parentId,
+      teamId: t.teamId,
+      tagIds: t.tagIds,
+    });
+    if (back && t.status === 'done') await toggleTask(t.id);
+  }
+  toast('Restored');
+}
+
+export async function bulkDelete(ids: string[]) {
+  await deleteTasksWithUndo(ids);
 }

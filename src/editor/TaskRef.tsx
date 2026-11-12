@@ -7,6 +7,7 @@ import { Selection, TextSelection } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GripVertical, Maximize2, FileX2, Flag } from 'lucide-react';
+import { deletedHere, UNDO_WINDOW_MS } from '../store/tasks.ts';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
 import { useAnyTask } from '../components/sharing/sharedPages.ts';
 import { AssigneeChip, DueChip, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from '../components/TaskControls.tsx';
@@ -202,6 +203,19 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
     return () => clearTimeout(t);
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A task deleted here (task panel, bulk bar) leaves its line in the page; it goes once the Undo window has passed.
+  const removeLine = () => {
+    const p = (typeof getPos === 'function' ? getPos() : undefined);
+    if (p !== undefined && editor.isEditable) editor.chain().deleteRange({ from: p, to: p + node.nodeSize }).run();
+  };
+  useEffect(() => {
+    if (task || !loaded || !editor.isEditable || !deletedHere.has(id)) return;
+    const t = setTimeout(() => {
+      if (!useStore.getState().tasks[id] && deletedHere.has(id)) removeLine();
+    }, UNDO_WINDOW_MS);
+    return () => clearTimeout(t);
+  }, [task, loaded, id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!task) {
     return (
       <NodeViewWrapper className={`task-ref is-missing ${selected ? 'is-selected' : ''}`} data-task-id={id}>
@@ -211,6 +225,11 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           </span>
           <FileX2 size={15} className="muted" />
           <span className="muted small">{loaded ? 'This task was deleted or is not visible to you.' : 'Loading task…'}</span>
+          {loaded && editor.isEditable && (
+            <button type="button" className="btn-ghost btn-sm" onClick={removeLine}>
+              Remove from page
+            </button>
+          )}
         </div>
       </NodeViewWrapper>
     );

@@ -49,7 +49,7 @@ export function TasksView() {
 function ViewSubtitle({ view }: { view: ViewId }) {
   const text: Partial<Record<ViewId, string>> = {
     today: 'Due today and overdue, assigned to you.',
-    my: 'Everything assigned to you — from every note.',
+    my: 'Everything assigned to you — from every page.',
     upcoming: 'What’s coming up over the next two weeks.',
     team: 'Who’s working on what across the workspace.',
     all: 'Every task in the workspace. Filter, sort and group.',

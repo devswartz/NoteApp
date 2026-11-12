@@ -172,7 +172,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   {
     title: 'Callout',
-    description: 'Highlighted note with an icon',
+    description: 'Highlighted block with an icon',
     keywords: 'callout info note tip warning admonition box',
     icon: <MessageSquareQuote size={18} />,
     run: (e, r) => e.chain().focus().deleteRange(r).setCallout().run(),

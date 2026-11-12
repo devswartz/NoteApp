@@ -59,7 +59,7 @@ export function DeleteAccountCard() {
           notifications and devices, and any invitations you sent or received.
         </div>
         <div>
-          <strong>Stays:</strong> what you shared with others in workspaces that continue: notes, tasks, comments and files. They show “Deleted user”
+          <strong>Stays:</strong> what you shared with others in workspaces that continue: pages, tasks, comments and files. They show “Deleted user”
           as the author, and tasks assigned to you become unassigned.
         </div>
         {preview && (
