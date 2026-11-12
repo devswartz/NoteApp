@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as Y from 'yjs';
-import { listMarker } from '../shared/listMarker.ts';
+import { listMarker, listStarts, resolveListStarts } from '../shared/listMarker.ts';
 import { toMarkdown } from '../server/markdown.ts';
 import { docToMarkdown } from '../src/editor/collabExport.ts';
 import { letterListInputRegex, parenListInputRegex } from '../src/editor/smartLists.ts';
@@ -29,6 +29,31 @@ test('listMarker: numbers, letters past z, roman numerals', () => {
   assert.equal(listMarker('A', 2), 'B');
   assert.equal(listMarker('i', 4), 'iv');
   assert.equal(listMarker('I', 14), 'XIV');
+});
+
+test('continued lists: numbering carries on across a split, a new list restarts', () => {
+  const ol = (items: number, attrs: Record<string, unknown> = {}) => ({ type: 'orderedList', attrs, content: Array.from({ length: items }, () => ({ type: 'listItem' })) });
+  const doc: { type: string; attrs?: Record<string, unknown>; content: { type: string; attrs?: Record<string, unknown> }[] } = { type: 'doc', content: [ol(2), { type: 'paragraph' },ol(2, { continued: true }), ol(1, { continued: true }), ol(1), ol(1, { start: 7 })] };
+  const starts = resolveListStarts(doc).content.map((c) => (c.type === 'orderedList' ? c.attrs?.start ?? 1 : null));
+  assert.deepEqual(starts, [1, null, 3, 5, 1, 7]);
+  assert.deepEqual(listStarts([{ ordered: true, start: 4, continued: false, items: 2 }, { ordered: false, start: 1, continued: false, items: 0 }, { ordered: true, start: 1, continued: true, items: 1 }]), [4, undefined, 6]);
+});
+
+test('exports: a split list keeps counting and "1)" lists keep their parenthesis', () => {
+  const doc = new Y.Doc();
+  const frag = doc.getXmlFragment('default');
+  frag.insert(0, [
+    el('orderedList', {}, [item('One'), item('Two')]),
+    el('paragraph', {}, [new Y.XmlText('Note')]),
+    el('orderedList', { continued: 'true' }, [item('Three')]),
+    el('orderedList', { paren: 'true' }, [item('Paren')]),
+  ]);
+  const server = toMarkdown('Split', frag, () => undefined);
+  assert.match(server, /3\. Three/);
+  assert.match(server, /1\) Paren/);
+  const local = docToMarkdown(frag);
+  assert.match(local, /3\. Three/);
+  assert.match(local, /1\) Paren/);
 });
 
 test('exports: nested outline keeps its levels, start numbers and typed markers', () => {

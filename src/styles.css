@@ -1023,6 +1023,14 @@ body.is-resizing .sidebar { transition: none; }
 @counter-style outline-decimal-paren { system: extends decimal; suffix: ') '; }
 @counter-style outline-alpha-paren { system: extends lower-alpha; suffix: ') '; }
 @counter-style outline-roman-paren { system: extends lower-roman; suffix: ') '; }
+@counter-style outline-upper-alpha-paren { system: extends upper-alpha; suffix: ') '; }
+@counter-style outline-upper-roman-paren { system: extends upper-roman; suffix: ') '; }
+/* Typed as "1) " / "a) " / "I) ": that list's markers end in ")" (data-marker is case-sensitive, unlike type; doubled to outrank the depth rules). */
+.ProseMirror ol[data-marker][data-marker='paren-1'] { list-style-type: outline-decimal-paren; }
+.ProseMirror ol[data-marker][data-marker='paren-a'] { list-style-type: outline-alpha-paren; }
+.ProseMirror ol[data-marker][data-marker='paren-A'] { list-style-type: outline-upper-alpha-paren; }
+.ProseMirror ol[data-marker][data-marker='paren-i'] { list-style-type: outline-roman-paren; }
+.ProseMirror ol[data-marker][data-marker='paren-I'] { list-style-type: outline-upper-roman-paren; }
 .ProseMirror ol:not([type]),
 .ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: decimal; }
 .ProseMirror :is(ol, ul) ol:not([type]),

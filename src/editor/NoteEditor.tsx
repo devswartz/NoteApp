@@ -125,6 +125,7 @@ export function documentExtensions(pageId: string): Extensions {
     MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
     OneNoteKeys,
+    SmartLists, // Word-style outlines: list attributes (paren markers, continued numbering), "a. " / "1) " rules, Tab nests, Enter on an empty item outdents
   ];
 }
 
@@ -213,7 +214,6 @@ export function usePageEditor(session: CollabSession, { pageId, workspaceId, use
         ...documentExtensions(pageId),
         BlockMove, // Alt+Shift+↑/↓ moves blocks
         BlockExit, // Backspace/Enter on an empty last line leaves a toggle, callout or quote
-        SmartLists, // Word-style outlines: "a. " / "1) " start lists, Tab nests, Enter on an empty item outdents
         UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
         ...(long ? [LongPage] : []), // long pages: render-skipping CSS away from the cursor
