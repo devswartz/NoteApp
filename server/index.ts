@@ -8,6 +8,7 @@ import { runDataMigrations } from './dataMigrations.ts';
 import { pruneRefreshTokens } from './auth.ts';
 import { pruneEmailVerifications, pruneUnverifiedAccounts } from './verification.ts';
 import { startReminderScheduler } from './reminders/scheduler.ts';
+import { purgeExpired, TRASH_DAYS } from './trash.ts';
 import { APP_NAME } from '../shared/config.ts';
 
 if (IS_PROD && !PUBLIC_URL) console.warn('PUBLIC_URL is not set: links in emails (password reset, invites) will be broken');
@@ -15,10 +16,16 @@ if (IS_PROD && !PUBLIC_URL) console.warn('PUBLIC_URL is not set: links in emails
 runDataMigrations();
 if (SEED_DEMO) seedDemoIfEmpty();
 // Housekeeping: expired refresh tokens, expired email-confirmation tokens, and accounts never confirmed within
-// UNVERIFIED_ACCOUNT_DAYS (idempotent and capped, so it simply runs on every 6-hourly pass).
+// UNVERIFIED_ACCOUNT_DAYS, and Trash items older than TRASH_DAYS (all idempotent, so they simply run on every 6-hourly pass).
 const housekeeping = () => {
   pruneRefreshTokens();
   pruneEmailVerifications();
+  try {
+    const n = purgeExpired();
+    if (n) console.log(`[trash] removed ${n} item${n === 1 ? '' : 's'} older than ${TRASH_DAYS} days`);
+  } catch (e) {
+    console.error('trash purge crashed', e);
+  }
   try {
     pruneUnverifiedAccounts();
   } catch (e) {

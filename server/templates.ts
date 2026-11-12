@@ -434,7 +434,7 @@ function notebookSections(sectionId: string): SectionRow[] {
     db
       .prepare(
         `SELECT s.id, s.parent_id AS parentId, s.default_template_id AS defaultTemplateId, s.no_default_template AS none
-         FROM sections s WHERE s.notebook_id = (SELECT notebook_id FROM sections WHERE id = ?)`,
+         FROM sections s WHERE s.deleted_at IS NULL AND s.notebook_id = (SELECT notebook_id FROM sections WHERE id = ?)`,
       )
       .all(sectionId) as { id: string; parentId: string | null; defaultTemplateId: string | null; none: number }[]
   ).map((r) => ({ id: r.id, parentId: r.parentId, defaultTemplateId: r.defaultTemplateId, noDefaultTemplate: !!r.none }));

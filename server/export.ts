@@ -66,12 +66,12 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
     .prepare(`SELECT n.id, n.name, n.color, n.visibility, n.created_by, n.position FROM notebooks n WHERE n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE} ORDER BY n.position`)
     .all(p) as Row[];
   const nbIds = new Set(notebooks.map((n) => n.id));
-  const sections = (db.prepare('SELECT id, notebook_id, parent_id, name, color, position FROM sections ORDER BY position').all() as Row[]).filter((s) =>
+  const sections = (db.prepare('SELECT id, notebook_id, parent_id, name, color, position FROM sections WHERE deleted_at IS NULL ORDER BY position').all() as Row[]).filter((s) =>
     nbIds.has(s.notebook_id),
   );
   const secIds = new Set(sections.map((s) => s.id));
   const pages = (
-    db.prepare('SELECT id, section_id, title, icon, kind, position, ydoc, created_by, created_at, updated_at FROM pages ORDER BY position').all() as Row[]
+    db.prepare('SELECT id, section_id, title, icon, kind, position, ydoc, created_by, created_at, updated_at FROM pages WHERE deleted_at IS NULL ORDER BY position').all() as Row[]
   ).filter((pg) => secIds.has(pg.section_id));
   const tasks = db.prepare(`SELECT t.* FROM tasks t WHERE t.workspace_id = @workspaceId AND ${TASK_VISIBLE}`).all(p) as Row[];
   // Tags, teams and the exporter's own and shared saved views (migration 014).

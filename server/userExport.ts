@@ -54,7 +54,7 @@ export function exportUserData(userId: string): { zip: Buffer; filename: string 
   const sectionsOf = (notebookId: string) => {
     let list = sectionsByNotebook.get(notebookId);
     if (!list) {
-      list = (db.prepare('SELECT id, parent_id, name FROM sections WHERE notebook_id = ?').all(notebookId) as Row[]).map((s) => ({
+      list = (db.prepare('SELECT id, parent_id, name FROM sections WHERE notebook_id = ? AND deleted_at IS NULL').all(notebookId) as Row[]).map((s) => ({
         id: s.id,
         parentId: s.parent_id,
         name: s.name,
@@ -148,7 +148,7 @@ export function exportUserData(userId: string): { zip: Buffer; filename: string 
       .prepare(
         `SELECT c.id, c.body, c.created_at, c.edited_at, th.id AS thread_id, th.quote, th.page_id, th.resolved_at, pg.title AS page_title
          FROM comments c JOIN comment_threads th ON th.id = c.thread_id JOIN pages pg ON pg.id = th.page_id
-         WHERE c.author_id = ? ORDER BY c.created_at`,
+         WHERE c.author_id = ? AND pg.deleted_at IS NULL ORDER BY c.created_at`,
       )
       .all(userId) as Row[]
   ).filter((c) => !!pageAccess(c.page_id, userId));

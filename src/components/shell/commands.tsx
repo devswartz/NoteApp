@@ -3,6 +3,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
+  Trash2,
   CalendarDays,
   CalendarRange,
   CheckCircle2,
@@ -111,6 +112,7 @@ export function useShellCommands(wsId: string) {
       nav('completed', 'Completed', 'd', 'tasks/completed', <CheckCircle2 size={16} />),
       nav('notes', 'Notes', 'n', 'notes', <NotebookText size={16} />),
       nav('activity', 'Activity', 'v', 'activity', <Activity size={16} />),
+      nav('trash', 'Trash', 'r', 'trash', <Trash2 size={16} />),
       nav('settings', 'Settings', 's', 'settings', <Settings size={16} />),
     ];
   }, [wsId, navigate]);

@@ -48,8 +48,10 @@ export function requireRole(workspaceId: string, userId: string, min: Role): Rol
  * Shared notebooks are visible to all members; private ones only to their creator and the
  * people it was shared with (notebook_shares).
  */
-export const NOTEBOOK_VISIBLE = `(n.visibility = 'shared' OR n.created_by = @userId
+export const NOTEBOOK_VISIBLE_ANY = `(n.visibility = 'shared' OR n.created_by = @userId
   OR EXISTS (SELECT 1 FROM notebook_shares nsh WHERE nsh.notebook_id = n.id AND nsh.user_id = @userId))`;
+/** The same, for notebooks that are not in Trash (everything outside the Trash view itself). */
+export const NOTEBOOK_VISIBLE = `(n.deleted_at IS NULL AND ${NOTEBOOK_VISIBLE_ANY})`;
 
 /** True if `userId` was given access to private notebook `notebookId`. */
 export function isSharedWith(notebookId: string, userId: string): boolean {
@@ -63,11 +65,11 @@ interface NotebookCtx {
   createdBy: string;
 }
 
-function notebookCtx(notebookId: string): NotebookCtx | null {
+function notebookCtx(notebookId: string, withTrashed = false): NotebookCtx | null {
   return (
     (db
       .prepare(
-        'SELECT workspace_id AS workspaceId, id AS notebookId, visibility, created_by AS createdBy FROM notebooks WHERE id = ?',
+        `SELECT workspace_id AS workspaceId, id AS notebookId, visibility, created_by AS createdBy FROM notebooks WHERE id = ?${withTrashed ? '' : ' AND deleted_at IS NULL'}`,
       )
       .get(notebookId) as NotebookCtx) ?? null
   );
@@ -91,6 +93,8 @@ export interface Access {
   canManage: boolean;
   /** Access comes only from a page share, not from the page's notebook. */
   viaPageShare: boolean;
+  /** The page is in Trash: readable by the people who could restore it, and nothing else (no editing, moving or sharing). */
+  trashed?: boolean;
 }
 
 function accessFor(ctx: NotebookCtx | null, userId: string): Access | null {
@@ -111,12 +115,18 @@ function accessFor(ctx: NotebookCtx | null, userId: string): Access | null {
   };
 }
 
+/** Access to a notebook that is not in Trash (a trashed notebook is gone as far as everything else is concerned). */
 export function notebookAccess(notebookId: string, userId: string) {
   return accessFor(notebookCtx(notebookId), userId);
 }
 
+/** Access to a notebook whether or not it is in Trash: what the Trash view itself uses. */
+export function notebookAccessAny(notebookId: string, userId: string) {
+  return accessFor(notebookCtx(notebookId, true), userId);
+}
+
 export function sectionAccess(sectionId: string, userId: string) {
-  const row = db.prepare('SELECT notebook_id FROM sections WHERE id = ?').get(sectionId) as
+  const row = db.prepare('SELECT notebook_id FROM sections WHERE id = ? AND deleted_at IS NULL').get(sectionId) as
     | { notebook_id: string }
     | undefined;
   return row ? notebookAccess(row.notebook_id, userId) : null;
@@ -143,9 +153,14 @@ export function pageShare(pageId: string, userId: string): { canEdit: boolean } 
  */
 export function pageAccess(pageId: string, userId: string): Access | null {
   const row = db
-    .prepare('SELECT s.notebook_id, n.workspace_id FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ?')
-    .get(pageId) as { notebook_id: string; workspace_id: string } | undefined;
+    .prepare('SELECT s.notebook_id, n.workspace_id, p.deleted_at FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ?')
+    .get(pageId) as { notebook_id: string; workspace_id: string; deleted_at: string | null } | undefined;
   if (!row) return null;
+  if (row.deleted_at) {
+    // In Trash: only the people who could restore it (members who can see its notebook) may look, and only look.
+    const a = notebookAccessAny(row.notebook_id, userId);
+    return a && a.canEdit ? { ...a, canEdit: false, canManage: false, trashed: true } : null;
+  }
   const nb = notebookAccess(row.notebook_id, userId);
   const share = pageShare(pageId, userId);
   if (nb) return nb;
@@ -225,9 +240,9 @@ export const pageSharedSql = (pageIdExpr: string) =>
  * SQL predicate: page `pg` (in notebook `n`) is visible to @userId — through its notebook
  * (workspace membership included) or through a page share.
  */
-export const PAGE_VISIBLE = `((${NOTEBOOK_VISIBLE}
+export const PAGE_VISIBLE = `(pg.deleted_at IS NULL AND ((${NOTEBOOK_VISIBLE}
     AND EXISTS (SELECT 1 FROM workspace_members pvm WHERE pvm.workspace_id = n.workspace_id AND pvm.user_id = @userId))
-  OR ${pageSharedSql('pg.id')})`;
+  OR ${pageSharedSql('pg.id')}))`;
 
 export function mustAccess<T extends Access | null>(a: T, edit = false): NonNullable<T> {
   if (!a) throw new HttpError(404, 'Not found');
@@ -243,7 +258,7 @@ export function mustAccess<T extends Access | null>(a: T, edit = false): NonNull
  * 013) also sees the tasks that live on that page, member or not, except
  * private_owner_only ones.
  */
-export const TASK_VISIBLE = `(
+export const TASK_VISIBLE = `(t.trash_id IS NULL AND (
   (EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = @userId)
   AND (
     (t.page_id IS NULL AND t.private_owner_only = 0)
@@ -255,7 +270,7 @@ export const TASK_VISIBLE = `(
     )
   ))
   OR (t.page_id IS NOT NULL AND t.private_owner_only = 0 AND ${pageSharedSql('t.page_id')})
-)`;
+))`;
 
 export function taskVisible(taskId: string, userId: string): boolean {
   return !!db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @taskId AND ${TASK_VISIBLE}`).get({ taskId, userId });
