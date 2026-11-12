@@ -97,6 +97,8 @@ test('a box at the very left of the page: the handle stays inside the page area,
     // Whatever is at the handle's centre is the handle (not the sidebar's pages panel).
     const top = await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!)?.closest('.block-handle') ? 'handle' : document.elementFromPoint(x!, y!)?.className), [h.x + h.width / 2, h.y + h.height / 2]);
     expect(top, `${t}: the handle can be clicked`).toBe('handle');
+    // ...and it covers none of the box's text (there is a gutter for it: no overlay).
+    expect(h.x + h.width, `${t}: the handle ends left of the text`).toBeLessThanOrEqual((await textLeft(box, t)) - 2);
   }
 });
 

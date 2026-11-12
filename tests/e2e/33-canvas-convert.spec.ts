@@ -44,7 +44,7 @@ test('a blank page: type at once into its first box, which is stored only then, 
   // Across the note area (OneNote-style), its text lined up with the title.
   const b = (await box.boundingBox())!;
   const area = (await page.locator('.page-scroll').boundingBox())!;
-  expect(b.x - area.x).toBeLessThan(60);
+  expect(b.x - area.x).toBeLessThan(130); // (the left gutter holds the block handle, --handle-gutter in styles.css)
   expect(area.x + area.width - (b.x + b.width)).toBeLessThan(60);
   const title = (await page.locator('.page-title').boundingBox())!;
   const text = (await box.locator('.ProseMirror p').first().boundingBox())!;
