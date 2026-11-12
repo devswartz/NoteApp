@@ -2,6 +2,7 @@
 // selection, Ctrl+C on Ctrl-picked lines, right-click Copy) paste with their list structure into another box, another page,
 // the empty canvas (a new box), and the clipboard carries real HTML (and "- " / "1. " text) for other apps.
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { stubClipboard } from './clipboard.ts';
 import { api, createPage, createUser, openPage, signInContext, type TestUser } from './helpers.ts';
 
 type J = Record<string, unknown>;
@@ -97,13 +98,15 @@ async function pasteIntoTarget(page: Page) {
 const clipboardParts = (page: Page) =>
   page.evaluate(async () => {
     const [item] = await navigator.clipboard.read();
+    if (!item) return { types: [] as string[], html: null, plain: null }; // nothing copied yet
     const read = async (type: string) => (item.types.includes(type) ? await (await item.getType(type)).text() : null);
     const plain = await read('text/plain');
     return { types: item.types, html: await read('text/html'), plain: plain && plain.replace(/\r\n?/g, '\n') }; // Windows adds CR
   });
 
-test.beforeEach(async ({ context }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+// Each page has its own clipboard (clipboard.ts): the system one is shared with every other test on the machine.
+test.beforeEach(async ({ page }) => {
+  await stubClipboard(page);
 });
 
 test('a selected box (click its top edge, Ctrl+C) pastes into another box with its bullets, nesting and numbering', async ({ page, context, request }) => {

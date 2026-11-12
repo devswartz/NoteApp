@@ -3,6 +3,7 @@
 // Set E2E_SHOTS=<dir> to also save screenshots.
 import { expect, test, type Page } from '@playwright/test';
 import { api, createPage, createUser, pageUrl, signInContext } from './helpers.ts';
+import { stubClipboard } from './clipboard.ts';
 
 const shot = async (page: Page, name: string) => {
   if (process.env.E2E_SHOTS) await page.waitForTimeout(350); // let menus and transitions settle
@@ -38,6 +39,11 @@ async function clickEdge(page: Page, box: ReturnType<Page['locator']>, button: '
   if (!h) throw new Error('no move handle');
   await page.mouse.click(h.x + h.width / 2, h.y + h.height / 2, { button });
 }
+
+// Each page has its own clipboard (clipboard.ts): the system one is shared with every other test running.
+test.beforeEach(async ({ page }) => {
+  await stubClipboard(page);
+});
 
 test('click a box edge to select it, copy and paste it; right-click for options; cut and paste at the click; undo', async ({ page, context, request }) => {
   const user = await createUser(request, 'Clip Boarder');
