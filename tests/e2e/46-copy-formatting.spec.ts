@@ -41,7 +41,7 @@ const outline = (box: Locator) =>
             out.push(`${'  '.repeat(depth)}${child.tagName === 'UL' ? '-' : `${Number((child as HTMLOListElement).start || 1) + i}.`} ${lead}`);
             walk(item, depth + 1);
           });
-        } else if (child.tagName === 'P' && depth === 0) out.push(child.textContent ?? '');
+        } else if (child.tagName === 'P' && depth === 0 && child.textContent) out.push(child.textContent); // (a trailing empty paragraph is the editor's own)
       }
     };
     walk(root, 0);
@@ -98,7 +98,8 @@ const clipboardParts = (page: Page) =>
   page.evaluate(async () => {
     const [item] = await navigator.clipboard.read();
     const read = async (type: string) => (item.types.includes(type) ? await (await item.getType(type)).text() : null);
-    return { types: item.types, html: await read('text/html'), plain: await read('text/plain') };
+    const plain = await read('text/plain');
+    return { types: item.types, html: await read('text/html'), plain: plain && plain.replace(/\r\n?/g, '\n') }; // Windows adds CR
   });
 
 test.beforeEach(async ({ context }) => {
@@ -152,7 +153,10 @@ test('Ctrl-picked lines copy as lists, in reading order, without empty items (Ct
   await pasteIntoTarget(page);
   expect((await outline(target(page))).filter((l) => l !== 'Target:' && l !== '')).toEqual(['- one', '- inner b', '2. second']);
 
-  // The right-click menu's Copy gives the same.
+  // The right-click menu's Copy gives the same (picks are dropped by pasting: pick again).
+  await triple(page, 'one');
+  await triple(page, 'inner b', true);
+  await triple(page, 'second', true);
   await page.evaluate(() => navigator.clipboard.writeText('overwritten'));
   await page.locator('.canvas-box .is-range-picked').first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Copy' }).click();
@@ -171,8 +175,9 @@ test('copied lists paste into a box on another page', async ({ page, context, re
   await expect.poll(async () => (await clipboardParts(page)).html ?? '').toContain('<li>');
   await page.goto(`/w/${user.wsId}/p/${other.id}`);
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
-  await page.getByTestId('canvas-surface').click({ position: { x: 40, y: 200 } });
-  await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();
+  await page.getByTestId('canvas-surface').click({ position: { x: 40, y: 240 } });
+  await expect(page.locator('.canvas-box:not(.is-ready)')).toHaveCount(1);
+  await expect(page.locator('.canvas-box .ProseMirror:focus')).toHaveText('');
   await page.keyboard.press('ControlOrMeta+v');
   expect((await outline(page.locator('.canvas-box').first())).filter(Boolean)).toEqual(['- two', '3. third']);
 });
@@ -186,7 +191,8 @@ test('pasting onto the empty canvas makes a new box with the lists: from HTML, a
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
   await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
   // A box to select by its edge, so the paste goes to the canvas and not into a text.
-  await page.getByTestId('canvas-surface').click({ position: { x: 40, y: 600 } });
+  await page.getByTestId('canvas-surface').click({ position: { x: 40, y: 240 } });
+  await expect(page.locator('.canvas-box .ProseMirror:focus')).toHaveText('');
   await page.keyboard.type('anchor');
   await selectBoxByEdge(page, page.locator('.canvas-box').first());
 

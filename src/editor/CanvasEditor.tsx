@@ -622,7 +622,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       const clip = useBoxClipboard.getState().clip;
       const text = e.clipboardData?.getData('text/plain') ?? '';
       const html = e.clipboardData?.getData('text/html') ?? '';
-      if (clip && (text === clip.text || (!text && !clip.synced))) {
+      // (Windows turns the text's line breaks into CRLF on the clipboard.)
+      if (clip && (text.replace(/\r\n?/g, '\n') === clip.text || (!text && !clip.synced))) {
         e.preventDefault();
         clipActions.current.pasteBoxes(clip);
       } else if (text.trim() || html) {
