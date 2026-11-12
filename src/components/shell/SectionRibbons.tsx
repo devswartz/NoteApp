@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Eye,
   FilePlus,
+  LayoutTemplate,
   FilterX,
   Flag,
   FolderPlus,
@@ -41,6 +42,8 @@ import { MenuItem, MenuLabel, MenuSeparator } from '../ui.tsx';
 import { LabelDot } from '../Labels.tsx';
 import { useOneNoteEnabled } from '../OneNoteImport.tsx';
 import { promptDialog } from './dialogs.tsx';
+import { NewFromTemplateItems } from './SectionTemplates.tsx';
+import { createPageIn } from '../../editor/defaultTemplates.ts';
 import { openNewNotebook } from './NewNotebookDialog.tsx';
 import { useNotesSelection, viewTarget } from './navState.ts';
 import { orderedTeams, teamLabel, type GroupKey, type ViewId } from '../../lib/taskViews.ts';
@@ -345,10 +348,11 @@ function NotesRibbon({ wsId }: { wsId: string }) {
   const sectionId = tree.sections.some((s) => s.id === sel.sectionId) ? sel.sectionId : (tree.sections[0]?.id ?? null);
   const notebook = tree.notebooks.find((n) => n.id === sel.notebookId) ?? tree.notebooks.find((n) => n.id === tree.sections.find((s) => s.id === sectionId)?.notebookId);
   const noSection = !sectionId && 'Create a notebook first';
-  const createPage = async () => {
+  // `template`: 'default' for New page (the section's default template), a template id, or null for blank (imports).
+  const createPage = async (template: 'default' | string | null = null) => {
     if (!sectionId) return null;
     try {
-      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
+      const { id } = await createPageIn(sectionId, template);
       return id;
     } catch (e) {
       errorToast(e);
@@ -377,8 +381,23 @@ function NotesRibbon({ wsId }: { wsId: string }) {
           title="New page (N)"
           icon={<FilePlus />}
           disabled={!canEdit ? VIEWER : noSection}
-          onClick={() => void createPage().then((id) => id && navigate(`/w/${wsId}/p/${id}`))}
+          onClick={() => void createPage('default').then((id) => id && navigate(`/w/${wsId}/p/${id}`))}
         />
+        <RibbonMenu label="New page from template" text="From template" icon={<LayoutTemplate />} disabled={!canEdit ? VIEWER : noSection} bare>
+          {(close) => (
+            <div className="menu" role="menu" aria-label="New page from template">
+              {sectionId && (
+                <NewFromTemplateItems
+                  sectionId={sectionId}
+                  pick={(t) => {
+                    close();
+                    void createPage(t).then((id) => id && navigate(`/w/${wsId}/p/${id}`));
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </RibbonMenu>
         <RibbonButton label="New section" text="New section" icon={<FolderPlus />} disabled={!canEdit ? VIEWER : !notebook && 'Create a notebook first'} onClick={() => void newSection()} />
         <RibbonButton label="New notebook" text="New notebook" icon={<BookPlus />} disabled={!canEdit && VIEWER} onClick={openNewNotebook} />
       </Group>

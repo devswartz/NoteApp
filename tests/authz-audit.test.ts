@@ -296,6 +296,9 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/templates/:id', path: (f) => `/templates/${f.template}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'DELETE', route: '/templates/:id', path: (f) => `/templates/${f.template}`, expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'POST', route: '/templates/:id/use', path: (f) => `/templates/${f.template}/use`, body: (f) => ({ pageId: f.page }), expect: shared(inPrivate(WRITE), 404) },
+  // Section default template: editors of the notebook only. Claiming a page's pending template: editors with notebook access, never a page share.
+  { method: 'PUT', route: '/sections/:id/default-template', path: (f) => `/sections/${f.sec}/default-template`, body: () => ({ templateId: null }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/pages/:id/pending-template', path: (f) => `/pages/${f.page}/pending-template`, expect: shared(inPrivate(WRITE), 403) },
   // Sharing one page (#98). Managing shares needs edit access to the page's notebook (creator only for a private
   // one); `target` holds a share on both fixture pages. /shared-pages is the caller's own list.
   { method: 'GET', route: '/pages/:id/shares', path: (f) => `/pages/${f.page}/shares`, expect: shared(inPrivate(WRITE), 403) },

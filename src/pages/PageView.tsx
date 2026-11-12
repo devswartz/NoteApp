@@ -14,6 +14,7 @@ import { CanvasEditor } from '../editor/CanvasEditor.tsx';
 import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
+import { fillPendingTemplate } from '../editor/defaultTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
 import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, printSelectionOnly, takePendingImport } from '../editor/exportPage.ts';
 import { usePrintSelection } from '../editor/boxSelection.ts';
@@ -45,6 +46,8 @@ interface PageInfo {
   canShare: boolean;
   viaPageShare: boolean;
   member: boolean;
+  /** Just made from a template that this (creating) client still has to fill in (defaultTemplates.ts). */
+  pendingTemplate?: boolean;
 }
 
 export function PageView() {
@@ -207,6 +210,13 @@ export function PageView() {
     const files = takePendingImport(pageId);
     if (files) void importMarkdownFiles(canvas, pageId, files);
   }, [canvas, canEdit, pageId]);
+  // A page made from the section's default template (or New page from template): fill it once.
+  // The template picker waits until that's done (it would flash up on the still-empty page).
+  const [filled, setFilled] = useState<string | null>(null);
+  const pendingTemplate = !!info?.pendingTemplate && info.page.id === pageId && filled !== pageId;
+  useEffect(() => {
+    if (pendingTemplate && canvas && canEdit && synced) void fillPendingTemplate(canvas, pageId).finally(() => setFilled(pageId));
+  }, [pendingTemplate, canvas, canEdit, synced, pageId]);
   const settings = usePageSettings(canvas?.doc);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
   const rules = useRuleArea(settings.rules !== 'none' ? scroller : null, article);
@@ -332,8 +342,8 @@ export function PageView() {
             mountAll={!!focusTask}
             onCanvas={setCanvasHandle}
             autoFocus={!!meta.title}
+            blankSlot={canEdit && synced && canvas && !pendingTemplate ? <TemplatePicker key={`c-${pageId}`} canvas={canvas} pageId={pageId} /> : null}
           />
-          {canEdit && synced && canvas && <TemplatePicker key={`c-${pageId}`} canvas={canvas} pageId={pageId} />}
           <Backlinks pageId={pageId} wsId={wsId} />
         </article>
       </div>
@@ -452,10 +462,14 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   const sharedTitle = useShared((s) => s.pages.find((p) => p.id === pageId)?.title);
   const remote = treeTitle ?? sharedTitle ?? initial; // a shared page isn't in the tree (#98)
   const focused = useRef(false);
+  // Typed here and not saved yet. A new page's title is focused, so without this a title set from
+  // a template (or cleared by "Start blank") wouldn't show while the field has the caret.
+  const typed = useRef(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (!focused.current) setTitle(remote);
-  }, [remote]);
+    if (!focused.current || !typed.current) setTitle(remote);
+    if (remote === title) typed.current = false;
+  }, [remote]); // eslint-disable-line react-hooks/exhaustive-deps
   // Title saves are debounced while typing, but a pending save is never dropped: it's flushed
   // when the page changes or unmounts (navigating away) and when the tab is hidden or closed
   // (keepalive, so the request outlives the page). BUG-3.
@@ -511,7 +525,10 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
       readOnly={!canEdit}
       onFocus={() => (focused.current = true)}
       onBlur={() => (focused.current = false)}
-      onChange={(e) => setTitle(e.target.value.replace(/\n/g, ''))}
+      onChange={(e) => {
+        typed.current = true;
+        setTitle(e.target.value.replace(/\n/g, ''));
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === 'ArrowDown') {
           e.preventDefault();

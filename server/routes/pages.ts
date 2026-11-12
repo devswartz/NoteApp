@@ -1,7 +1,8 @@
 // Page metadata (content is edited over the collab WebSocket). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
-import { accessChanged, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
+import { accessChanged, atLeast, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
+import { sectionDefaultTemplate, templateOfferedIn, visibleTemplate, type TemplateRow } from '../templates.ts';
 import { publish } from '../events.ts';
 import { editPageDoc, flushAll, newBoxId, pageDocState } from '../collab.ts';
 import { convertPageDoc } from '../../shared/pageDoc.ts';
@@ -14,6 +15,14 @@ import { dropForeignSharesOnPage } from '../workspaces.ts';
 import { getVersion, listVersions, snapshot, startVersionSweep } from '../versions.ts';
 
 export const pageRoutes = Router();
+
+function pendingTemplateFor(v: unknown, sectionId: string, workspaceId: string, userId: string, member: boolean): TemplateRow | null {
+  if (!member || typeof v !== 'string' || !v) return null;
+  if (v === 'default') return sectionDefaultTemplate(sectionId, workspaceId);
+  const t = visibleTemplate(v, userId);
+  if (!t || t.workspace_id !== workspaceId || !templateOfferedIn(t.id, sectionId)) throw new HttpError(400, 'That template isn’t offered in this section');
+  return t;
+}
 startVersionSweep();
 
 pageRoutes.post(
@@ -26,12 +35,17 @@ pageRoutes.post(
     const title = typeof req.body.title === 'string' ? req.body.title.slice(0, 300) : '';
     // Every page is a canvas of text boxes (docs/PLAN_CANVAS.md); a `kind` in the body is ignored.
     const kind = 'canvas';
+    // template: 'default' (the app's New page) starts from the section's default template, a
+    // template id ("New page from template") from that one. Anything else (imports, quick add,
+    // the share extension, the API) makes a blank page. The page only remembers the template;
+    // its creator's client fills it once (POST /pages/:id/pending-template).
+    const pending = pendingTemplateFor(req.body?.template, sectionId, a.workspaceId, req.user.id, a.member && atLeast(a.role, 'member'));
     db.prepare(
-      `INSERT INTO pages (id, section_id, title, kind, position, created_by, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, sectionId, title, kind, nextPos('pages', 'section_id', sectionId), req.user.id, ts, ts, req.user.id);
+      `INSERT INTO pages (id, section_id, title, kind, position, created_by, created_at, updated_at, updated_by, pending_template_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, sectionId, title, kind, nextPos('pages', 'section_id', sectionId), req.user.id, ts, ts, req.user.id, pending?.id ?? null);
     db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(id, title, '');
     publish({ type: 'tree', workspaceId: a.workspaceId });
-    return { id };
+    return { id, pendingTemplate: pending ? { id: pending.id, name: pending.name } : null };
   }),
 );
 
@@ -49,7 +63,18 @@ pageRoutes.get(
       .get(id);
     // viaPageShare: opened through a page share (#98), so the client shows it under "Shared with me";
     // canManage: may move, copy or delete it; canShare: may share it (#98).
-    return { page, workspaceId: a.workspaceId, canEdit: a.canEdit, canManage: a.canManage, canShare: canSharePage(a), viaPageShare: a.viaPageShare, member: a.member };
+    // pendingTemplate: this page was just made from a template that its creator's client still has to fill in.
+    const pending = db.prepare('SELECT 1 FROM pages WHERE id = ? AND created_by = ? AND pending_template_id IS NOT NULL').get(id, req.user.id);
+    return {
+      page,
+      workspaceId: a.workspaceId,
+      canEdit: a.canEdit,
+      canManage: a.canManage,
+      canShare: canSharePage(a),
+      viaPageShare: a.viaPageShare,
+      member: a.member,
+      pendingTemplate: !!pending && a.canEdit && a.member && !a.viaPageShare,
+    };
   }),
 );
 

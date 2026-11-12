@@ -107,7 +107,7 @@ test('collapsed stays collapsed across sections', async ({ page, context, reques
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toHaveCount(0);
   await ribbon.getByRole('button', { name: 'Show the ribbon' }).click();
   await page.goto(`/w/${user.wsId}/notes`);
-  await expect(ribbon.getByRole('button', { name: 'New page' })).toBeVisible();
+  await expect(ribbon.getByRole('button', { name: 'New page', exact: true })).toBeVisible();
 });
 
 test('Notes overview: New page in the ribbon creates a page and opens it', async ({ page, context, request }) => {
@@ -120,7 +120,7 @@ test('Notes overview: New page in the ribbon creates a page and opens it', async
   await expect(page.getByRole('menuitem', { name: 'From OneNote…' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Markdown files…' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await ribbon.getByRole('button', { name: 'New page' }).click();
+  await ribbon.getByRole('button', { name: 'New page', exact: true }).click();
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   await expect(ribbon.getByRole('group', { name: 'Lists', exact: true })).toBeVisible();
 });

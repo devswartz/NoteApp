@@ -35,10 +35,12 @@ treeRoutes.get(
       .all(p) as Notebook[];
     const sections = db
       .prepare(
-        `SELECT s.id, s.notebook_id AS notebookId, s.parent_id AS parentId, s.name, s.color, s.position FROM sections s
+        `SELECT s.id, s.notebook_id AS notebookId, s.parent_id AS parentId, s.name, s.color, s.position,
+           s.default_template_id AS defaultTemplateId, s.no_default_template AS noDefaultTemplate FROM sections s
          JOIN notebooks n ON n.id = s.notebook_id WHERE n.workspace_id = @workspaceId AND ${NOTEBOOK_VISIBLE} ORDER BY s.position`,
       )
-      .all(p) as Section[];
+      .all(p)
+      .map((s) => ({ ...(s as Section), noDefaultTemplate: !!(s as { noDefaultTemplate: unknown }).noDefaultTemplate }));
     const pages = db
       .prepare(
         `SELECT pg.id, pg.section_id AS sectionId, pg.title, pg.icon, pg.kind, pg.position, pg.updated_at AS updatedAt,

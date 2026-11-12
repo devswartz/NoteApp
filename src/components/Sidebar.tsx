@@ -10,7 +10,7 @@
 // nodes, favourites, the Notes selection) is in shell/sidebarState.ts.
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { post } from '../api.ts';
+import { createPageIn } from '../editor/defaultTemplates.ts';
 import { errorToast, ui, useStore } from '../store.ts';
 import { useIsMobile, useMediaQuery } from './ui.tsx';
 import { sidebar, useSidebar, PAGES_MAX, PAGES_MIN, SIDEBAR_MAX, SIDEBAR_MIN, type RailView } from './shell/sidebarState.ts';
@@ -30,7 +30,6 @@ export const FOLD_QUERY = '(max-width: 1199px)';
 
 export function Sidebar() {
   const { wsId } = useParams() as { wsId: string };
-  const user = useStore((s) => s.user!);
   const role = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role);
   const canEdit = role !== undefined && role !== 'viewer';
   const isAdmin = role === 'owner' || role === 'admin';
@@ -63,16 +62,11 @@ export function Sidebar() {
     if (view === 'notes' && sel.notebookId) sidebar.selectNotes(wsId, sel.notebookId, sel.sectionId ?? undefined, sel.pageId ?? undefined);
   }, [view, wsId, sel.notebookId, sel.sectionId, sel.pageId]);
 
-  const createPage = async (sectionId: string) => {
+  // `template`: the section's default (New page), a chosen one (New page from template), or null for blank.
+  const createPage = async (sectionId: string, template: 'default' | string | null = 'default') => {
     try {
-      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
+      const { id } = await createPageIn(sectionId, template);
       sidebar.toggleNode(sectionId, false);
-      useStore.setState((s) => ({
-        tree: {
-          ...s.tree,
-          pages: [...s.tree.pages, { id, sectionId, title: '', icon: null, kind: 'canvas', position: 1e9, updatedAt: new Date().toISOString(), updatedBy: user.id }],
-        },
-      }));
       navigate(`/w/${wsId}/p/${id}`);
     } catch (e) {
       errorToast(e);

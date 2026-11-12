@@ -8,12 +8,15 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleCheck,
   Copy,
+  FileCog,
   FolderInput,
   FolderPlus,
   LayoutDashboard,
+  LayoutTemplate,
   Globe,
   Link2,
   Lock,
@@ -36,6 +39,13 @@ import { confirmDialog, promptDialog } from './dialogs.tsx';
 import { openShareDialog } from '../sharing/ShareDialog.tsx';
 import { childSections, sectionTarget } from './navState.ts';
 import { MAX_SECTION_DEPTH, sectionDepth } from '../../../shared/sections.ts';
+import { DefaultTemplateItems, NewFromTemplateItems, SectionDefaultBadge } from './SectionTemplates.tsx';
+
+/** A menu with sub-views ("New page from template ▸"): state lives here, so it resets each time the menu opens. */
+function MenuViews({ children }: { children: (view: string, setView: (v: string) => void) => React.ReactNode }) {
+  const [view, setView] = useState('main');
+  return <>{children(view, setView)}</>;
+}
 
 export type MoveItem = { kind: 'page' | 'section'; id: string } | null;
 
@@ -45,7 +55,8 @@ export interface NodeProps {
   editing: string | null;
   setEditing: (id: string | null) => void;
   canEdit: boolean;
-  createPage: (sectionId: string) => void;
+  /** `template`: 'default' (the usual: the section's default template, if any), a template id, or null for a blank page. */
+  createPage: (sectionId: string, template?: 'default' | string | null) => void;
   setMoving: (m: MoveItem) => void;
 }
 
@@ -186,9 +197,30 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
     if (name) post(`/notebooks/${section.notebookId}/sections`, { name, parentId: section.id }).then(() => sidebar.toggleNode(section.id, false)).catch(errorToast);
   };
   const menu = useContextMenu(() => (
+    <MenuViews>
+      {(view, setView) =>
+        view === 'from-template' ? (
+          <div className="menu" role="menu" aria-label="New page from template">
+            <MenuItem icon={<ChevronLeft size={15} />} onSelect={() => setView('main')} keepOpen>
+              New page from template
+            </MenuItem>
+            <MenuSeparator />
+            <NewFromTemplateItems sectionId={section.id} pick={(t) => p.createPage(section.id, t)} />
+          </div>
+        ) : view === 'default' ? (
+          <div className="menu" role="menu" aria-label="Default template">
+            <DefaultTemplateItems sectionId={section.id} onBack={() => setView('main')} />
+          </div>
+        ) : (
     <div className="menu" role="menu">
       <MenuItem icon={<LayoutDashboard size={15} />} onSelect={() => p.createPage(section.id)}>
         New page
+      </MenuItem>
+      <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => setView('from-template')} keepOpen hint={<ChevronRight size={13} />}>
+        New page from template
+      </MenuItem>
+      <MenuItem icon={<FileCog size={15} />} onSelect={() => setView('default')} keepOpen>
+        Default template…
       </MenuItem>
       {canNest && (
         <MenuItem icon={<FolderPlus size={15} />} onSelect={createSubsection}>
@@ -225,6 +257,9 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
         Delete section
       </MenuItem>
     </div>
+        )
+      }
+    </MenuViews>
   ));
   const open = () => navigate(sectionTarget(p.wsId, section.id));
   return (
@@ -276,6 +311,7 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
         ) : (
           <span className="truncate sb-label">{section.name}</span>
         )}
+        <SectionDefaultBadge sectionId={section.id} />
         {!folded && pages.length > 0 && <span className="sb-count subtle" aria-label={`${pages.length} pages`}>{pages.length}</span>}
         {p.canEdit && (
           <div className="sb-row-actions" onClick={(e) => e.stopPropagation()}>
@@ -294,8 +330,9 @@ export function SectionNode({ section, selectedId, folded, depth = 0, ...p }: No
           ))}
           {folded && pages.map((pg) => <PageRow key={pg.id} page={pg} indent={depth + 1} {...p} />)}
           {folded && !pages.length && p.canEdit && (
-            <button className="sb-row page-row muted" style={{ paddingLeft: 6 + (depth + 1) * 14 + 20 }} onClick={() => p.createPage(section.id)}>
-              <Plus size={14} /> New page
+            <button className="sb-row page-row sb-new-page muted" style={{ paddingLeft: 6 + (depth + 1) * 14 + 20 }} onClick={() => p.createPage(section.id)}>
+              <Plus size={14} aria-hidden className="sb-new-page-icon" />
+              <span className="truncate">New page</span>
             </button>
           )}
         </div>
