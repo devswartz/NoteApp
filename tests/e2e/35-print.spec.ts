@@ -142,7 +142,8 @@ test('Print section prints its pages and subsections in tree order, each on a ne
 
   const tree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Sections' });
   await tree.getByText('General', { exact: true }).click({ button: 'right' });
-  await page.getByRole('menuitem', { name: 'Print section' }).click();
+  await page.getByRole('menuitem', { name: 'Print…' }).click();
+  await page.getByRole('dialog', { name: 'Print section' }).getByRole('button', { name: 'All pages' }).click();
   await expect.poll(() => printed(page)).toBe(1);
 
   await page.emulateMedia({ media: 'print' });

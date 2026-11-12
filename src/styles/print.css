@@ -58,6 +58,16 @@
   .print-title.is-small { font-size: 11pt; line-height: 1.3; font-weight: 600; color: var(--text-muted); letter-spacing: 0; }
   .print-muted { color: var(--text-muted); }
 
+  /* A contents list: sections in bold, pages plain, each level indented under a thin guide line. */
+  .toc-list { list-style: none; margin: 0; padding: 0; }
+  .toc-list .toc-list { margin: 0.5mm 0 1.5mm 2.5mm; padding-left: 5mm; border-left: 0.5pt solid var(--border); }
+  .toc-row { display: flex; align-items: baseline; gap: 2mm; padding: 0.8mm 0; line-height: 1.45; break-inside: avoid; }
+  .toc-section > .toc-row { font-weight: 650; font-size: 11.5pt; margin-top: 2mm; break-after: avoid; }
+  .toc-page > .toc-row { font-size: 10.5pt; }
+  .toc-page > .toc-row .toc-title::before { content: ''; display: inline-block; width: 1.3mm; height: 1.3mm; margin-right: 2mm; border-radius: 50%; background: var(--text-muted); vertical-align: 0.2mm; }
+  .toc-page > .toc-row .toc-icon + .toc-title::before { display: none; }
+  .toc-icon { font-size: 10pt; }
+
   /* Rows of boxes: side-by-side boxes as columns, everything else full width. */
   .print-row + .print-row { margin-top: 4mm; }
   .print-row.is-columns { display: flex; gap: 24px; align-items: flex-start; }

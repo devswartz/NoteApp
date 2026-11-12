@@ -18,7 +18,8 @@ import { linePicks } from '../editor/linePicks.ts';
 import { useShared } from '../components/sharing/sharedPages.ts';
 import { selectionBlocks } from './selectionContent.ts';
 import { chooseDialog } from '../components/shell/dialogs.tsx';
-import { clearPrintRoot, imagesReady, mountPrintRoot, renderPrintPage, type PrintContext, type PrintPageInput } from './printDoc.ts';
+import { clearPrintRoot, imagesReady, mountPrintRoot, renderContents, renderPrintPage, type PrintContext, type PrintPageInput } from './printDoc.ts';
+import { contentsOf, type ContentsTarget } from './contents.ts';
 
 const PAGE_COLOUR_KEY = 'noteapp.printPageColour';
 
@@ -81,9 +82,9 @@ let busy = false;
  */
 let prepared = false;
 
-async function run(pages: PrintPageInput[], title: string, ctx: PrintContext) {
+async function run(pages: (PrintPageInput | HTMLElement)[], title: string, ctx: PrintContext) {
   installPrintHandlers();
-  const root = mountPrintRoot(pages.map((p) => renderPrintPage(p, ctx)));
+  const root = mountPrintRoot(pages.map((p) => (p instanceof HTMLElement ? p : renderPrintPage(p, ctx))));
   prepared = true;
   await imagesReady(root);
   const prev = document.title;
@@ -211,13 +212,32 @@ const PARALLEL = 4;
  * a collab session for each; a progress toast counts them on large sections.
  */
 export async function printSection(sectionId: string) {
-  if (busy) return;
+  const section = useStore.getState().tree.sections.find((s) => s.id === sectionId);
+  if (section) await printPages(sectionPageIds(sectionId), section.name, 'This section has no pages to print');
+}
+
+/** The pages of a whole notebook, in tree order: each section's own pages, then its subsections'. */
+export function notebookPageIds(notebookId: string): string[] {
   const { tree } = useStore.getState();
-  const section = tree.sections.find((s) => s.id === sectionId);
-  const ids = sectionPageIds(sectionId);
-  if (!section) return;
+  return sectionsInOrder(tree, notebookId).flatMap(({ section }) =>
+    tree.pages
+      .filter((p) => p.sectionId === section.id)
+      .sort((a, b) => a.position - b.position)
+      .map((p) => p.id),
+  );
+}
+
+/** Print every page of a notebook (all its sections), each starting on a new sheet. */
+export async function printNotebook(notebookId: string) {
+  const nb = useStore.getState().tree.notebooks.find((n) => n.id === notebookId);
+  if (nb) await printPages(notebookPageIds(notebookId), nb.name, 'This notebook has no pages to print');
+}
+
+/** Print these pages in order (`name` titles the print job). */
+async function printPages(ids: string[], name: string, empty: string) {
+  if (busy) return;
   if (!ids.length) {
-    toast('This section has no pages to print');
+    toast(empty);
     return;
   }
   busy = true;
@@ -243,7 +263,7 @@ export async function printSection(sectionId: string) {
     }
     await run(
       ids.map((id) => ({ pageId: id, doc: docs.get(id)! })),
-      section.name,
+      name,
       context(extraTasks),
     );
   } catch (e) {
@@ -251,6 +271,46 @@ export async function printSection(sectionId: string) {
   } finally {
     busy = false;
   }
+}
+
+/**
+ * Print the contents of a section or notebook: its subsections and pages as an indented list, titles only,
+ * on one sheet. Nothing is fetched: the hierarchy is in the app already.
+ */
+export async function printContents(target: ContentsTarget): Promise<void> {
+  if (busy) return;
+  const node = contentsOf(useStore.getState().tree, target);
+  if (!node) return;
+  if (!node.children.length) {
+    toast(`This ${node.kind} has nothing to list yet`);
+    return;
+  }
+  busy = true;
+  try {
+    await run([renderContents(node)], `${node.title} contents`, context());
+  } catch (e) {
+    errorToast(e);
+  } finally {
+    busy = false;
+  }
+}
+
+/**
+ * "Print…" on a section or notebook's menu: ask whether to print every page or just a contents list.
+ * Dismissing the question prints nothing.
+ */
+export async function printWithContentsChoice(target: ContentsTarget): Promise<void> {
+  const { tree } = useStore.getState();
+  const name = target.kind === 'section' ? tree.sections.find((s) => s.id === target.id)?.name : tree.notebooks.find((n) => n.id === target.id)?.name;
+  const pick = await chooseDialog({
+    title: `Print ${target.kind}`,
+    message: `Print every page of “${name ?? target.kind}”, or just a contents list of its ${target.kind === 'notebook' ? 'sections' : 'subsections'} and pages?`,
+    confirmLabel: 'All pages',
+    cancelLabel: 'Contents only',
+  });
+  if (pick === null) return;
+  if (!pick) return printContents(target);
+  return target.kind === 'section' ? printSection(target.id) : printNotebook(target.id);
 }
 
 /** Does the doc reference a task the store doesn't have? */
