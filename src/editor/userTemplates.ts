@@ -28,6 +28,16 @@ export async function loadUserTemplates(wsId = useStore.getState().wsId) {
   }
 }
 
+/** Load the workspace's templates if they aren't loaded yet (section menus, the default-template icon). */
+export function ensureUserTemplates(wsId = useStore.getState().wsId) {
+  const s = useUserTemplates.getState();
+  if (wsId && (s.wsId !== wsId || !s.loaded) && requested !== wsId) {
+    requested = wsId;
+    void loadUserTemplates(wsId);
+  }
+}
+let requested: string | null = null;
+
 /**
  * Snapshot the live content as a template: the document editor's, or a canvas's boxes (kept as a
  * canvas template, so using it makes a canvas). The server copies tasks and attachments.

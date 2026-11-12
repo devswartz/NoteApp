@@ -101,3 +101,22 @@ export function sectionPathLabel(tree: Sections<Pick<Section, 'id' | 'parentId' 
   const names = sectionAncestry(tree, sectionId).map((s) => s.name);
   return (notebookName !== undefined ? [notebookName, ...names] : names).join(' › ');
 }
+
+/**
+ * The default template new pages in `sectionId` start from: the section's own, else the nearest
+ * ancestor's, stopping at a section that chose "None". Null when there is none.
+ * `from` says which section it comes from (the section itself or an ancestor).
+ */
+export function effectiveDefaultTemplate(
+  tree: Sections<S & Pick<Section, 'defaultTemplateId' | 'noDefaultTemplate'>>,
+  sectionId: string | null | undefined,
+): { templateId: string; from: string } | null {
+  if (!sectionId) return null;
+  const chain = sectionAncestry(tree, sectionId);
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const s = chain[i];
+    if (s.defaultTemplateId) return { templateId: s.defaultTemplateId, from: s.id };
+    if (s.noDefaultTemplate) return null;
+  }
+  return null;
+}

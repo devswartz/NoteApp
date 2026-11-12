@@ -2,6 +2,50 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.1
+
+A Hybrid theme and accent colours, section default templates, task view filters, and privacy work ahead of the App Store.
+
+### Appearance
+- **Hybrid theme:** dark ribbon, panels and menus around a light, paper-like page. Choose Light, Dark, Hybrid or System in Settings › Appearance or the user menu.
+- **Accent colour:** eight colours in Settings › Appearance, with live previews of each theme. Saved per device.
+
+### Templates
+- **Default template per section:** the section's ⋯ menu › Default template… New pages in that section start from it, for everyone in the workspace. Subsections inherit it. A toast offers "Start blank", and Ctrl+Z undoes it too.
+- **New page from template** in the ribbon's New page button and the section menu.
+- **{date} and {time}** in a template fill in when it's used.
+- **New pages are tidier:** "Start with a template" sits right under the first box, with no scrolling. The page header no longer clips, and long "New page" rows in nested sections stay on one line.
+
+### Tasks
+- **Saved views show their name** as the heading.
+- **Ribbon filters work in every view** (Today, My Tasks, Upcoming, Team, Completed), with a line saying what's on and a Clear button.
+
+### Privacy and security
+- **Uploaded files need sign-in.** Files open only for people who can see the page they belong to, through short-lived links. Old links keep working for them.
+- **Export my data** for everyone in Settings › Profile.
+- **Updated Privacy Policy** and a new **Support page** at /support.
+- The iPhone app includes Apple's privacy manifest.
+
+## v0.4.0
+
+Tester feedback: undo for moved boxes, Word-style numbered outlines, editing and tasks for people outside your workspace, Mac spellcheck, and printing just a selection.
+
+### Editing
+- **Undo moves boxes back.** Ctrl+Z, Ctrl+Y and the ribbon's Undo/Redo undo the most recent change on the page, whether you moved or resized a box or typed, wherever the cursor is.
+- **Word-style numbered outlines.** Type `1.`, `a.`, `i.` or `1)` to start a numbered list. Tab and Shift+Tab indent and outdent, numbering goes 1 → a → i by level and renumbers itself, and Enter on an empty item steps out a level. Bullets go • ◦ ▪. The ribbon's Lists group has Increase/Decrease indent.
+- **Spellcheck on Mac.** The Mac app now underlines misspellings; autocorrect follows your Mac's Keyboard settings.
+
+### Sharing
+- **People outside your workspace can edit.** Share a page with anyone by email and choose "Can edit"; they don't need to join your workspace and still see only that page. Existing outside shares stay view-only until you change them in Share.
+- **Tasks on shared pages.** Anyone who can edit a shared page can add, tick and edit its tasks. Assign the page's tasks to the people it's shared with, and they can assign back; assigned tasks show in their My tasks.
+- The Share windows have proper padding.
+
+### Printing
+- **Print selection.** Highlight text, or Ctrl/Cmd+click boxes, then Print (Ctrl/Cmd+P) offers "Print selection" with the page title on top.
+
+### Layout
+- **Two panels on more screens.** Sections and pages sit in separate panels from 1200 points wide (was 1400), so a maximised window at 150% Windows scaling gets both. Settings › Appearance has a switch to keep pages under their sections instead.
+
 ## v0.3.0
 
 The OneNote release: every page is a canvas, with a OneNote-style ribbon, printing, and a roomier layout.

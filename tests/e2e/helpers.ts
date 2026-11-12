@@ -185,8 +185,8 @@ export async function addFilter(page: Page, kind: string, value: string) {
   }
   const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Match the item's label exactly (people items also contain their avatar's initials).
-  await page.getByRole('menuitem').filter({ has: page.locator('.menu-label', { hasText: new RegExp(`^${esc}$`) }) }).click();
-  await page.keyboard.press('Escape'); // multi-select kinds (tags) stay open
+  await page.locator('.popover [role="menuitem"], .popover [role="menuitemcheckbox"]').filter({ has: page.locator('.menu-label', { hasText: new RegExp(`^${esc}$`) }) }).click();
+  await page.keyboard.press('Escape'); // most kinds take several values and stay open
 }
 
 /** Desktop: remove one filter from its ribbon menu. */

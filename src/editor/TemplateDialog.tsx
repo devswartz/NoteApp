@@ -69,6 +69,11 @@ export function TemplateDialogHost() {
         }}
       >
         {askName && <Input label="Template name" value={name} onChange={(e) => setName(e.target.value)} autoFocus onFocus={(e) => e.currentTarget.select()} />}
+        {askName && (
+          <p className="muted small tpl-hint" data-testid="template-placeholder-hint">
+            Write <code>{'{date}'}</code> or <code>{'{time}'}</code> in the name or the page’s text to fill in the date or time when the template is used.
+          </p>
+        )}
         <fieldset className="tpl-scope">
           <legend className="field-label">Available in</legend>
           <p className="muted small">{picked.size ? `Offered first in ${picked.size === 1 ? 'this section' : `these ${picked.size} sections`}, and not elsewhere.` : 'Every section. Tick sections to offer it only there.'}</p>

@@ -22,7 +22,8 @@ async function newBox(page: Page, x: number, y: number, text: string) {
   const before = await stored.count();
   await page.getByTestId('canvas-surface').click({ position: { x, y } });
   await expect(stored).toHaveCount(before + 1);
-  await expect(page.locator('.canvas-box .ProseMirror:focus')).toBeVisible();
+  // The new (empty) box has the caret, not the one typed in before (mousedown keeps focus until it mounts).
+  await expect(page.locator('.canvas-box .ProseMirror:focus')).toHaveText('');
   await page.keyboard.type(text);
   return page.locator('.canvas-box', { hasText: text });
 }
@@ -59,7 +60,7 @@ test('canvas page: click to make boxes, type, move one; it all persists; a task 
   await openCanvas(page, user.wsId, canvasId);
   await page.locator('.page-title').fill('Whiteboard');
 
-  const first = await newBox(page, 40, 120, 'Left box'); // below the blank page's ready first box
+  const first = await newBox(page, 40, 240, 'Left box'); // below the blank page's ready first box and its template picker
   const second = await newBox(page, 520, 40, 'Right box');
   await expect(page.locator('.canvas-box')).toHaveCount(2);
   const start = await pos(first);
@@ -113,7 +114,7 @@ test('canvas page: an empty box goes away; Escape selects a box and Delete remov
   await signInContext(context, user);
   await openCanvas(page, user.wsId, id);
 
-  await newBox(page, 40, 120, 'Keep me');
+  await newBox(page, 40, 240, 'Keep me'); // below the blank page's template picker
   // A box left empty disappears when you click elsewhere.
   await page.getByTestId('canvas-surface').click({ position: { x: 600, y: 60 } });
   await expect(page.locator('.canvas-box')).toHaveCount(2);
@@ -122,7 +123,7 @@ test('canvas page: an empty box goes away; Escape selects a box and Delete remov
   await page.locator('.canvas-box', { hasText: 'Keep me' }).locator('.ProseMirror').click();
   await expect(page.locator('.canvas-box')).toHaveCount(1);
 
-  const next = await newBox(page, 40, 320, 'Below it');
+  const next = await newBox(page, 40, 360, 'Below it');
 
   // Escape selects the box; arrows nudge it; Tab / Shift+Tab go through boxes in reading order; Delete removes it.
   const box = page.locator('.canvas-box', { hasText: 'Keep me' });
@@ -150,7 +151,7 @@ test('canvas page: undo / redo take back the latest change, a box move or typing
   const undoBtn = ribbon(page).getByRole('button', { name: /^Undo/ });
   const redoBtn = ribbon(page).getByRole('button', { name: /^Redo/ });
 
-  const box = await newBox(page, 40, 160, 'Undo me');
+  const box = await newBox(page, 40, 240, 'Undo me');
   const text = box.locator('.ProseMirror');
   const start = await pos(box);
   await page.waitForTimeout(600); // the typing is its own undo step

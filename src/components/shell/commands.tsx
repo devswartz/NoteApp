@@ -22,7 +22,7 @@ import {
   Sun,
   Users,
 } from 'lucide-react';
-import { post } from '../../api.ts';
+import { createPageIn } from '../../editor/defaultTemplates.ts';
 import { canEditWorkspace, errorToast, toast, ui, useStore } from '../../store.ts';
 import { cycleTheme } from '../../store/ui.ts';
 import { useCommands, type Command } from '../../hooks/useShortcuts.ts';
@@ -53,7 +53,7 @@ export function useShellCommands(wsId: string) {
       const sectionId = current?.sectionId ?? s.tree.sections[0]?.id;
       if (!sectionId) return toast('Create a notebook first');
       try {
-        const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
+        const { id } = await createPageIn(sectionId); // from the section's default template, if it has one
         navigate(`/w/${wsId}/p/${id}`);
       } catch (err) {
         errorToast(err);
@@ -74,7 +74,7 @@ export function useShellCommands(wsId: string) {
       { id: 'app.shortcuts', title: 'Keyboard shortcuts', group: 'General', keys: '?', icon: <Keyboard size={16} />, run: () => ui.setShortcuts(true) },
       { id: 'app.feedback', title: 'Send feedback', group: 'General', keywords: 'bug idea suggestion report problem help contact', icon: <MessageSquare size={16} />, run: openFeedback },
       { id: 'app.sidebar', title: 'Toggle sidebar', group: 'General', keys: 'mod+\\', icon: <PanelLeft size={16} />, run: ui.toggleSidebar },
-      { id: 'app.theme', title: 'Switch theme (light / dark / system)', group: 'General', keywords: 'dark mode appearance', icon: <SunMoon size={16} />, run: cycleTheme },
+      { id: 'app.theme', title: 'Switch theme (light / dark / hybrid / system)', group: 'General', keywords: 'dark mode appearance', icon: <SunMoon size={16} />, run: cycleTheme },
       {
         id: 'tasks.new',
         title: 'New task',

@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Eye,
   FilePlus,
+  LayoutTemplate,
   FilterX,
   Flag,
   FolderPlus,
@@ -41,12 +42,14 @@ import { MenuItem, MenuLabel, MenuSeparator } from '../ui.tsx';
 import { LabelDot } from '../Labels.tsx';
 import { useOneNoteEnabled } from '../OneNoteImport.tsx';
 import { promptDialog } from './dialogs.tsx';
+import { NewFromTemplateItems } from './SectionTemplates.tsx';
+import { createPageIn } from '../../editor/defaultTemplates.ts';
 import { openNewNotebook } from './NewNotebookDialog.tsx';
 import { useNotesSelection, viewTarget } from './navState.ts';
 import { orderedTeams, teamLabel, type GroupKey, type ViewId } from '../../lib/taskViews.ts';
 import { today } from '../../../shared/dates.ts';
 import { taskView, useTaskView, type MyGroup } from '../../pages/tasks/taskViewState.ts';
-import { AddFilterMenu, KINDS, KindMenu, activeKinds, clearedFilters, withoutFilter, type Kind } from '../../pages/tasks/FilterChips.tsx';
+import { AddFilterMenu, KINDS, KindMenu, activeKinds, clearedFilters, valueCount, withoutFilter, type Kind } from '../../pages/tasks/FilterChips.tsx';
 import { GROUP_OPTIONS, SORT_OPTIONS, SavedViewActions, saveCurrentView, useIsWsAdmin } from '../../pages/tasks/AllView.tsx';
 import { sameView, useSavedViews, type SavedView } from '../../pages/tasks/savedViews.ts';
 import {
@@ -100,8 +103,6 @@ function organiseOff(view: ViewId): { group?: string; sort?: string; done?: stri
   return { group: g, sort: `${g}; sort in All Tasks`, done: view === 'completed' ? 'Completed shows only finished tasks' : 'This view shows open tasks; finished ones are in Completed' };
 }
 
-const FILTERS_ALL = 'Filters apply to All Tasks';
-
 function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -126,8 +127,8 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
     navigate(`/w/${wsId}/tasks/all?view=${encodeURIComponent(v.id)}`);
   };
 
-  const filterMenu = (kind: Kind, label: string, icon: ReactNode, count: number) => (
-    <RibbonMenu label={`${label} filter`} text={label} compact icon={icon} count={onAll ? count : 0} disabled={!onAll && FILTERS_ALL}>
+  const filterMenu = (kind: Kind, label: string, icon: ReactNode, count: number, off?: string) => (
+    <RibbonMenu label={`${label} filter`} text={label} compact icon={icon} count={count} disabled={off}>
       <KindMenu kind={kind} filters={filters} onChange={taskView.setFilters} />
       {count > 0 && (
         <>
@@ -195,18 +196,18 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
             </MenuItem>
           </RibbonMenu>
         ) : (
-          filterMenu('assignee', 'Assignee', <User />, filters.assignee !== 'any' ? 1 : 0)
+          filterMenu('assignee', 'Assignee', <User />, valueCount('assignee', filters), view === 'my' ? 'My Tasks only shows tasks assigned to you' : undefined)
         )}
-        {filterMenu('tagsAny', 'Tags', <Tag />, filters.tagsAny.length)}
-        {filterMenu('teamId', 'Team', <UsersRound />, filters.teamId !== 'any' ? 1 : 0)}
-        {filterMenu('priority', 'Priority', <Flag />, filters.priority !== 'any' ? 1 : 0)}
-        <RibbonMenu label="More filters" icon={<SlidersHorizontal />} count={onAll ? moreCount : 0} disabled={!onAll && FILTERS_ALL} bare>
+        {filterMenu('tagsAny', 'Tags', <Tag />, valueCount('tagsAny', filters))}
+        {filterMenu('teamId', 'Team', <UsersRound />, valueCount('teamId', filters))}
+        {filterMenu('priority', 'Priority', <Flag />, valueCount('priority', filters))}
+        <RibbonMenu label="More filters" icon={<SlidersHorizontal />} count={moreCount} bare>
           {(close) => <AddFilterMenu filters={filters} onChange={taskView.setFilters} active={[]} close={close} kinds={more} />}
         </RibbonMenu>
         <RibbonButton
           label="Clear filters"
           icon={<FilterX />}
-          disabled={!onAll ? FILTERS_ALL : !active.length && 'No filters to clear'}
+          disabled={!active.length && 'No filters to clear'}
           onClick={() => taskView.setFilters(clearedFilters(filters))}
         />
       </Group>
@@ -345,10 +346,11 @@ function NotesRibbon({ wsId }: { wsId: string }) {
   const sectionId = tree.sections.some((s) => s.id === sel.sectionId) ? sel.sectionId : (tree.sections[0]?.id ?? null);
   const notebook = tree.notebooks.find((n) => n.id === sel.notebookId) ?? tree.notebooks.find((n) => n.id === tree.sections.find((s) => s.id === sectionId)?.notebookId);
   const noSection = !sectionId && 'Create a notebook first';
-  const createPage = async () => {
+  // `template`: 'default' for New page (the section's default template), a template id, or null for blank (imports).
+  const createPage = async (template: 'default' | string | null = null) => {
     if (!sectionId) return null;
     try {
-      const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
+      const { id } = await createPageIn(sectionId, template);
       return id;
     } catch (e) {
       errorToast(e);
@@ -377,8 +379,23 @@ function NotesRibbon({ wsId }: { wsId: string }) {
           title="New page (N)"
           icon={<FilePlus />}
           disabled={!canEdit ? VIEWER : noSection}
-          onClick={() => void createPage().then((id) => id && navigate(`/w/${wsId}/p/${id}`))}
+          onClick={() => void createPage('default').then((id) => id && navigate(`/w/${wsId}/p/${id}`))}
         />
+        <RibbonMenu label="New page from template" text="From template" icon={<LayoutTemplate />} disabled={!canEdit ? VIEWER : noSection} bare>
+          {(close) => (
+            <div className="menu" role="menu" aria-label="New page from template">
+              {sectionId && (
+                <NewFromTemplateItems
+                  sectionId={sectionId}
+                  pick={(t) => {
+                    close();
+                    void createPage(t).then((id) => id && navigate(`/w/${wsId}/p/${id}`));
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </RibbonMenu>
         <RibbonButton label="New section" text="New section" icon={<FolderPlus />} disabled={!canEdit ? VIEWER : !notebook && 'Create a notebook first'} onClick={() => void newSection()} />
         <RibbonButton label="New notebook" text="New notebook" icon={<BookPlus />} disabled={!canEdit && VIEWER} onClick={openNewNotebook} />
       </Group>

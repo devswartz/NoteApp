@@ -199,6 +199,8 @@ const ROWS: Row[] = [
   { method: 'DELETE', route: '/workspaces/:id/invites/:email', path: (f) => `/workspaces/${f.ws}/invites/${encodeURIComponent(f.email)}`, expect: ADMIN },
   // Export is owner/admin only; import makes a new workspace for whoever uploads (garbage here, so 400 once signed in).
   { method: 'GET', route: '/workspaces/:id/export', path: (f) => `/workspaces/${f.ws}/export`, expect: ADMIN },
+  // Export my data: anyone signed in, their own data only (scoping: tests/user-export.test.ts).
+  { method: 'GET', route: '/me/export', path: () => '/me/export', plain: true, expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'POST', route: '/workspaces/import', raw: true, path: () => '/workspaces/import', expect: { stranger: 400, viewer: 400, member: 400 } },
   { method: 'GET', route: '/workspaces/:id/tree', path: (f) => `/workspaces/${f.ws}/tree`, expect: READ },
   { method: 'GET', route: '/workspaces/:id/search', path: (f) => `/workspaces/${f.ws}/search?q=page`, expect: READ },
@@ -286,12 +288,17 @@ const ROWS: Row[] = [
   { method: 'PATCH', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, body: () => ({ body: 'Edit' }), expect: shared(inPrivate(ADMIN), 403) }, // author only
   { method: 'DELETE', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, expect: shared(inPrivate(ADMIN), 403) }, // author or admin
   { method: 'GET', route: '/files/:id', path: (f) => `/files/${f.file}`, expect: shared(inPrivate(READ), 200) }, // AUTHZ-1, fixed in #52
+  // Your own upload-link key: any signed-in user (the bytes are checked per file: tests/file-access.test.ts).
+  { method: 'GET', route: '/files/key', path: () => '/files/key', expect: { stranger: 200, viewer: 200, member: 200 } },
   // User templates: workspace members list them; a template saved from a private page is visible to its creator (the owner) only.
   { method: 'GET', route: '/workspaces/:id/templates', path: (f) => `/workspaces/${f.ws}/templates`, expect: READ },
   { method: 'POST', route: '/pages/:id/templates', path: (f) => `/pages/${f.page}/templates`, body: () => ({ name: 'T', content: { type: 'doc', content: [] } }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'PATCH', route: '/templates/:id', path: (f) => `/templates/${f.template}`, body: () => ({ name: 'Renamed' }), expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'DELETE', route: '/templates/:id', path: (f) => `/templates/${f.template}`, expect: inPrivate(ADMIN) }, // creator or admin only
   { method: 'POST', route: '/templates/:id/use', path: (f) => `/templates/${f.template}/use`, body: (f) => ({ pageId: f.page }), expect: shared(inPrivate(WRITE), 404) },
+  // Section default template: editors of the notebook only. Claiming a page's pending template: editors with notebook access, never a page share.
+  { method: 'PUT', route: '/sections/:id/default-template', path: (f) => `/sections/${f.sec}/default-template`, body: () => ({ templateId: null }), expect: inPrivate(WRITE) },
+  { method: 'POST', route: '/pages/:id/pending-template', path: (f) => `/pages/${f.page}/pending-template`, expect: shared(inPrivate(WRITE), 403) },
   // Sharing one page (#98). Managing shares needs edit access to the page's notebook (creator only for a private
   // one); `target` holds a share on both fixture pages. /shared-pages is the caller's own list.
   { method: 'GET', route: '/pages/:id/shares', path: (f) => `/pages/${f.page}/shares`, expect: shared(inPrivate(WRITE), 403) },
@@ -353,7 +360,10 @@ async function runWith(r: Row, f: Fx, token: string | undefined): Promise<{ stat
     });
     return { status: res.status, code: (await res.json().catch(() => null))?.code };
   }
-  if (r.plain) return { status: (await fetch(`${app.origin}/api${r.path(f)}`, { method: r.method, headers: token ? { authorization: `Bearer ${token}` } : {} })).status };
+  if (r.plain) {
+    const res = await fetch(`${app.origin}/api${r.path(f)}`, { method: r.method, headers: token ? { authorization: `Bearer ${token}` } : {} });
+    return { status: res.status, code: res.headers.get('content-type')?.includes('json') ? (await res.json())?.code : (await res.arrayBuffer(), undefined) };
+  }
   const res = await app.call(r.method, r.path(f), token, r.body?.(f));
   return { status: res.status, code: res.data?.code };
 }
@@ -413,7 +423,7 @@ async function signUpUnverified(): Promise<TestUser> {
     const r = await app.call('POST', '/auth/register', undefined, { name: 'AzUnverified', email: `az-unverified-${++seq}@example.com`, password: 'password123' });
     assert.equal(r.status, 200);
     assert.equal(r.data.user.emailVerified, false, 'the persona must be unverified');
-    return { token: r.data.accessToken, refreshToken: r.data.refreshToken, user: r.data.user, wsId: '' };
+    return { token: r.data.accessToken, refreshToken: r.data.refreshToken, user: r.data.user, wsId: '', fileKey: r.data.fileKey };
   } finally {
     delete process.env.SMTP_HOST;
     setMailTransport(undefined);
@@ -464,11 +474,14 @@ test('authz: sockets refuse an unverified user (4403), including for a page they
     assert.equal(r.code, 4403, path);
     r.ws.terminate();
   }
+  // Uploads too: a correctly signed link from an unverified member is refused.
+  const { ext } = db.prepare('SELECT ext FROM files WHERE id = ?').get(shared.file) as { ext: string };
+  assert.equal((await app.fetchFile(`/uploads/${shared.file}${ext}`, unv)).status, 403, 'uploads');
 });
 
 test('authz: nothing is mounted outside the audited /api router except uploads and /.well-known', async () => {
   // Express layers on the app itself. A new top-level mount fails here, so it has to be looked at: unverified
-  // users must not reach it. /uploads/* is a capability URL (unguessable id, no token, served sandboxed) and
+  // users must not reach it. /uploads/* checks its own signed links (tests/file-access.test.ts) and
   // /.well-known/* is public app-link metadata with no user data.
   const { createServer } = await import('../server/app.ts');
   const { app: express, server } = createServer({ serveWeb: false });

@@ -6,6 +6,10 @@ import { parseQuickAdd } from '../shared/quickadd.ts';
 import { DEFAULT_FILTERS, applyFilters, groupBy, isMine, sortTasks, todayGroups, upcomingGroups } from '../src/lib/taskViews.ts';
 import type { Task, Tree } from '../shared/types.ts';
 
+/** A filter condition: any of these values, or (not: true) none of them. */
+const pk = (v: string, ...more: string[]) => ({ values: [v, ...more], not: false });
+const notPk = (v: string, ...more: string[]) => ({ values: [v, ...more], not: true });
+
 const ME = 'me';
 let seq = 0;
 function task(p: Partial<Task> = {}): Task {
@@ -74,14 +78,14 @@ test('All-view filters: text, assignee, priority, due, notebook, status', () => 
   const all = [inNote, standalone, done];
   const f = (p: Partial<typeof DEFAULT_FILTERS>) => applyFilters(all, { ...DEFAULT_FILTERS, ...p }, ME, tree).map((x) => x.id);
   assert.deepEqual(f({ q: 'roadmap' }), [inNote.id]);
-  assert.deepEqual(f({ assignee: 'sam' }), [standalone.id]);
-  assert.deepEqual(f({ priority: '1' }), [inNote.id]);
+  assert.deepEqual(f({ assignee: pk('sam') }), [standalone.id]);
+  assert.deepEqual(f({ priority: pk('1') }), [inNote.id]);
   assert.deepEqual(f({ due: 'overdue' }), [inNote.id]);
   assert.deepEqual(f({ due: 'week' }), [inNote.id, standalone.id]);
-  assert.deepEqual(f({ notebookId: 'nb1' }), [inNote.id]);
-  assert.deepEqual(f({ source: 'standalone' }), [standalone.id]);
+  assert.deepEqual(f({ notebookId: pk('nb1') }), [inNote.id]);
+  assert.deepEqual(f({ source: pk('standalone') }), [standalone.id]);
   assert.deepEqual(f({ status: 'done' }), [done.id]);
-  assert.deepEqual(f({ status: 'any', source: 'standalone' }), [standalone.id, done.id]);
+  assert.deepEqual(f({ status: 'any', source: pk('standalone') }), [standalone.id, done.id]);
 });
 
 const NOW = new Date(2026, 10, 5, 9, 0); // Thu 5 Nov 2026
@@ -135,11 +139,23 @@ test('saved views: stored JSON is parsed defensively', async () => {
   assert.equal(v.name, 'Mine, urgent');
   assert.equal(v.sort, 'due', 'unknown sort falls back');
   assert.equal(v.group, 'priority');
-  assert.equal(v.filters.assignee, 'me');
+  assert.deepEqual(v.filters.assignee, { values: ['me'], not: false }, 'a single value saved by an older version becomes a list');
   assert.equal(v.filters.status, 'open', 'missing filters get defaults');
   assert.ok(!('bogus' in v.filters));
-  assert.ok(sameView(v, { ...DEFAULT_FILTERS, assignee: 'me', priority: '1' }, 'due', 'priority'));
+  assert.ok(sameView(v, { ...DEFAULT_FILTERS, assignee: pk('me'), priority: pk('1') }, 'due', 'priority'));
   assert.ok(!sameView(v, DEFAULT_FILTERS, 'due', 'priority'));
+});
+
+test('saved views: the heading names the view the link opened, or an exact non-empty match', async () => {
+  const { openedView } = await import('../src/pages/tasks/savedViewsCore.ts');
+  const mk = (id: string, name: string, filters = DEFAULT_FILTERS) => ({ id, name, filters, sort: 'due' as const, group: 'none' as const, shared: false, ownerId: 'u', position: 0 });
+  const urgent = mk('a', 'Urgent', { ...DEFAULT_FILTERS, priority: pk('1') });
+  const empty = mk('b', 'Everything');
+  const views = [urgent, empty];
+  assert.equal(openedView(views, 'a', DEFAULT_FILTERS, 'due', 'none')?.name, 'Urgent', 'the link wins, even once its filters were edited');
+  assert.equal(openedView(views, null, urgent.filters, 'due', 'none')?.name, 'Urgent', 'an exact match names it');
+  assert.equal(openedView(views, null, DEFAULT_FILTERS, 'due', 'none'), undefined, 'plain All Tasks is not mistaken for a view with no filters');
+  assert.equal(openedView(views, 'gone', DEFAULT_FILTERS, 'due', 'none'), undefined, 'a deleted view falls back to All Tasks');
 });
 
 test('filters: tags (any / none), teams with and without subteams, assigned by, section', async () => {
@@ -158,21 +174,47 @@ test('filters: tags (any / none), teams with and without subteams, assigned by, 
   const run = (f: Partial<typeof DEFAULT_FILTERS>) => applyFilters(all, { ...DEFAULT_FILTERS, ...f }, ME, tree, teams).map((x) => x.title).sort();
   assert.deepEqual(run({ tagsAny: ['waiting', 'budget'] }), ['a', 'b']);
   assert.deepEqual(run({ tagsNone: ['waiting'] }), ['b', 'c', 'd', 'e']);
-  assert.deepEqual(run({ teamId: 'elders' }), ['a', 'b', 'e'], 'subteams included by default');
-  assert.deepEqual(run({ teamId: 'elders', includeSubteams: false }), ['a', 'e']);
-  assert.deepEqual(run({ teamId: 'none' }), ['d']);
+  assert.deepEqual(run({ teamId: pk('elders') }), ['a', 'b', 'e'], 'subteams included by default');
+  assert.deepEqual(run({ teamId: pk('elders'), includeSubteams: false }), ['a', 'e']);
+  assert.deepEqual(run({ teamId: pk('none') }), ['d']);
   // The tester's four views.
-  assert.deepEqual(run({ teamId: 'elders', status: 'open' }), ['a', 'b', 'e'], 'all unfinished Elders tasks');
-  assert.deepEqual(run({ assignee: 'scott' }), ['a', 'b', 'c'], 'everything assigned to Scott, across teams');
-  assert.deepEqual(run({ teamId: 'elders', assignee: 'scott' }), ['a', 'b'], 'Scott’s Elders tasks (not his Staff one)');
-  assert.deepEqual(run({ assignedBy: 'me', assignee: 'others' }), ['a', 'c'], 'tasks I assigned to others');
-  assert.deepEqual(run({ sectionId: 's1' }), ['c']);
+  assert.deepEqual(run({ teamId: pk('elders'), status: 'open' }), ['a', 'b', 'e'], 'all unfinished Elders tasks');
+  assert.deepEqual(run({ assignee: pk('scott') }), ['a', 'b', 'c'], 'everything assigned to Scott, across teams');
+  assert.deepEqual(run({ teamId: pk('elders'), assignee: pk('scott') }), ['a', 'b'], 'Scott’s Elders tasks (not his Staff one)');
+  assert.deepEqual(run({ assignedBy: pk('me'), assignee: pk('others') }), ['a', 'c'], 'tasks I assigned to others');
+  assert.deepEqual(run({ sectionId: pk('s1') }), ['c']);
   // Saved filters are normalised: arrays and booleans kept, junk dropped.
   const n = normalizeFilters({ tagsAny: ['x', 3], includeSubteams: false, priority: 'p9', teamId: 'elders', bogus: 1 });
   assert.deepEqual(n.tagsAny, ['x']);
   assert.equal(n.includeSubteams, false);
-  assert.equal(n.priority, 'any');
+  assert.deepEqual(n.priority, { values: [], not: false });
+  assert.deepEqual(n.teamId, { values: ['elders'], not: false }, 'one value from an older version becomes a list');
   assert.deepEqual(activeFilterKeys(n).sort(), ['tagsAny', 'teamId']);
+});
+
+test('filters: several values per condition, and "is not"', async () => {
+  const { normalizeFilters, sameFilters, activeFilterKeys } = await import('../src/lib/taskViews.ts');
+  const mk = (title: string, assigneeId: string | null, priority: 1 | 2 | 3 | 4 = 4) => task({ title, assigneeId, priority });
+  const bob = mk('bob', 'bob', 1);
+  const amy = mk('amy', 'amy', 2);
+  const tom = mk('tom', 'tom', 3);
+  const mike = mk('mike', 'mike', 1);
+  const nobody = mk('nobody', null);
+  const all = [bob, amy, tom, mike, nobody];
+  const run = (f: Partial<typeof DEFAULT_FILTERS>) => applyFilters(all, { ...DEFAULT_FILTERS, ...f }, ME, tree).map((x) => x.title).sort();
+  assert.deepEqual(run({ assignee: pk('bob', 'amy', 'tom') }), ['amy', 'bob', 'tom'], 'any of several, so Mike stays out');
+  assert.deepEqual(run({ assignee: notPk('mike') }), ['amy', 'bob', 'nobody', 'tom'], 'everyone but Mike, and unassigned tasks stay');
+  assert.deepEqual(run({ assignee: notPk('unassigned', 'mike') }), ['amy', 'bob', 'tom']);
+  assert.deepEqual(run({ assignee: notPk('mike'), priority: pk('1', '2') }), ['amy', 'bob'], 'conditions combine with AND');
+  assert.deepEqual(run({ priority: notPk('1') }), ['amy', 'nobody', 'tom']);
+  assert.deepEqual(run({ assignee: { values: [], not: true } }).length, 5, 'no values: the condition is off');
+  // Stored and round-tripped.
+  const f = { ...DEFAULT_FILTERS, assignee: notPk('mike', 'tom'), priority: pk('1') };
+  const back = normalizeFilters(JSON.parse(JSON.stringify(f)));
+  assert.ok(sameFilters(back, f));
+  assert.ok(!sameFilters(back, { ...f, assignee: pk('mike', 'tom') }), 'is and is not differ');
+  assert.ok(sameFilters(normalizeFilters({ assignee: { values: ['b', 'a'], not: false } }), { ...DEFAULT_FILTERS, assignee: pk('a', 'b') }), 'order does not matter');
+  assert.deepEqual(activeFilterKeys(f), ['assignee', 'priority']);
 });
 
 test('quick add: #tags and +team', () => {

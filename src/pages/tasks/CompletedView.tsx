@@ -6,13 +6,17 @@ import { RowList } from '../../components/TaskRow.tsx';
 import { addDays, toISODate, today } from '../../../shared/dates.ts';
 import type { Task } from '../../../shared/types.ts';
 import { longDate } from '../../lib/format.ts';
-import { Loading } from './common.tsx';
+import { Loading, useViewFilter } from './common.tsx';
+import { useTaskView } from './taskViewState.ts';
+import { activeFilterKeys } from '../../lib/taskViews.ts';
 
 export function CompletedView() {
   const wsId = useStore((s) => s.wsId);
   const live = useStore((s) => s.tasks);
   const [items, setItems] = useState<Task[] | null>(null);
   const [more, setMore] = useState(true);
+  const filter = useViewFilter();
+  const filtering = useTaskView((s) => activeFilterKeys(s.filters).length > 0);
   useEffect(() => {
     setItems(null);
     get<Task[]>(`/workspaces/${wsId}/tasks/completed`).then((r) => {
@@ -25,8 +29,8 @@ export function CompletedView() {
     if (!items) return null;
     const map = new Map(items.map((t) => [t.id, live[t.id] ?? t]));
     for (const t of Object.values(live)) if (t.status === 'done') map.set(t.id, t);
-    return [...map.values()].filter((t) => t.status === 'done').sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
-  }, [items, live]);
+    return filter([...map.values()].filter((t) => t.status === 'done')).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''));
+  }, [items, live, filter]);
   if (!merged) return <Loading />;
   const groups = new Map<string, Task[]>();
   for (const t of merged) {
@@ -41,8 +45,8 @@ export function CompletedView() {
           <RowList tasks={list} />
         </section>
       ))}
-      {!merged.length && <div className="empty">Nothing completed yet.</div>}
-      {more && merged.length > 0 && (
+      {!merged.length && <div className="empty">{filtering ? 'No completed tasks match these filters.' : 'Nothing completed yet.'}</div>}
+      {more && items!.length > 0 && (
         <button
           className="btn btn-secondary"
           onClick={() => {

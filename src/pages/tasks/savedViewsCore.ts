@@ -44,3 +44,14 @@ export function parseSavedViews(raw: string | null): SavedView[] {
 export function sameView(v: SavedView, filters: Filters, sort: SortKey, group: GroupKey) {
   return v.sort === sort && v.group === group && sameFilters(v.filters, filters);
 }
+
+/**
+ * The saved view All Tasks is showing, for its heading: the one the link (?view=) names, even after
+ * its filters were edited; otherwise one the current filters match exactly (not a view that is just
+ * "no filters", which plain All Tasks would otherwise be mistaken for).
+ */
+export function openedView(views: SavedView[], viewParam: string | null, filters: Filters, sort: SortKey, group: GroupKey): SavedView | undefined {
+  const named = viewParam ? views.find((v) => v.id === viewParam) : undefined;
+  if (named) return named;
+  return views.find((v) => sameView(v, filters, sort, group) && !sameView(v, normalizeFilters(null), 'due', 'none'));
+}

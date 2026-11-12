@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { bootstrap, markEmailUnverified, signOut, useStore } from './store.ts';
-import { setEmailUnverifiedHandler, setUnauthorizedHandler } from './api.ts';
+import { fileUrl, setEmailUnverifiedHandler, setUnauthorizedHandler } from './api.ts';
 import { CheckEmail } from './pages/CheckEmail.tsx';
 import { VerifyEmail } from './pages/VerifyEmail.tsx';
 import { AppShell } from './components/AppShell.tsx';
@@ -40,6 +40,7 @@ export function App() {
           <Route path="/reset" element={<ResetPassword />} />
           <Route path="/privacy" element={<LegalPage doc="privacy" />} />
           <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="/support" element={<LegalPage doc="support" />} />
           <Route path="*" element={<CheckEmail />} />
         </Routes>
         <Toasts />
@@ -54,12 +55,14 @@ export function App() {
         <Route path="/invite/:token" element={<InvitePage />} />
         <Route path="/privacy" element={<LegalPage doc="privacy" />} />
         <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="/support" element={<LegalPage doc="support" />} />
         <Route path="/reset" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         {user ? (
           <>
             <Route path="/" element={<Home />} />
             <Route path="/shared/:pageId" element={<SharedPageRedirect />} />
+            <Route path="/open-file/:name" element={<OpenFile />} />
             <Route path="/w/:wsId" element={<AppShell />}>
               <Route index element={<WorkspaceIndex />} />
               {workspaceRoutes.map((r) => (
@@ -89,6 +92,19 @@ function Home() {
   const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];
   if (!ws) return <div className="empty-page">You don’t belong to any workspace yet.</div>;
   return <Navigate to={`/w/${ws.id}`} replace />;
+}
+
+/**
+ * An old, unsigned upload link opened in a browser tab (the server sends it here): sign it for
+ * whoever is signed in and go there. The server still checks they may see the file.
+ */
+function OpenFile() {
+  const { name = '' } = useParams();
+  const ok = /^[0-9a-f]{32}(\.[a-z0-9]{1,10})?$/.test(name);
+  useEffect(() => {
+    if (ok) location.replace(fileUrl(`/uploads/${name}`));
+  }, [ok, name]);
+  return ok ? <div className="splash" /> : <Navigate to="/" replace />;
 }
 
 /** Desktop opens the last page you were on; mobile opens Today. */

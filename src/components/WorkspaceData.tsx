@@ -1,4 +1,5 @@
-// Export this workspace as a zip (owners/admins) or import one as a new workspace.
+// Export this workspace as a zip (owners/admins) or import one as a new workspace; and
+// "Export my data" for anyone.
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download, Upload } from 'lucide-react';
@@ -52,6 +53,35 @@ export function WorkspaceData({ wsId, canExport }: { wsId: string; canExport: bo
       )}
       <Button icon={<Upload size={15} />} loading={busy === 'import'} disabled={!!busy} onClick={() => void doImport()}>
         Import from export…
+      </Button>
+    </div>
+  );
+}
+
+/** "Export my data" (Settings → Profile): a zip of everything the signed-in person can see (server/userExport.ts). */
+export function ExportMyData() {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const { blob, filename } = await download('/me/export');
+      await platform.saveFile(filename ?? 'my-data.zip', blob);
+    } catch (e) {
+      errorToast(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="setting-row">
+      <div className="grow">
+        <div className="setting-title">Export my data</div>
+        <div className="muted small">
+          A .zip with your profile, every page you can open (as Markdown), files you uploaded, your tasks, your comments and your notification settings.
+        </div>
+      </div>
+      <Button icon={<Download size={15} />} loading={busy} disabled={busy} onClick={() => void run()}>
+        Export my data
       </Button>
     </div>
   );

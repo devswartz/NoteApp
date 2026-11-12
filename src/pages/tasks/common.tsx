@@ -2,7 +2,9 @@
 import { useMemo } from 'react';
 import { useStore } from '../../store.ts';
 import { useShared } from '../../components/sharing/sharedPages.ts';
-import { visibleOpen } from '../../lib/taskViews.ts';
+import { activeFilterKeys, applyFilters, visibleOpen } from '../../lib/taskViews.ts';
+import type { Task } from '../../../shared/types.ts';
+import { useTaskView } from './taskViewState.ts';
 
 /**
  * Open tasks for the dashboard views: this workspace's, plus tasks assigned to me on pages shared
@@ -19,6 +21,23 @@ export function useOpen() {
     const tasks = mine.length ? { ...Object.fromEntries(mine.map((t) => [t.id, t])), ...own } : own;
     return visibleOpen(tasks, lingering);
   }, [own, shared, me, wsId, lingering]);
+}
+
+/**
+ * The filters the ribbon (or, on phones, the filter bar) has set, applied on top of a view's own list.
+ * Search text and status are All Tasks' own (each view decides which tasks it shows), so they're ignored here.
+ * Returns the list untouched when no filter is on.
+ */
+export function useViewFilter(): <T extends Task>(list: T[]) => T[] {
+  const filters = useTaskView((s) => s.filters);
+  const me = useStore((s) => s.user!.id);
+  const tree = useStore((s) => s.tree);
+  const teams = useStore((s) => s.teams);
+  return useMemo(() => {
+    if (!activeFilterKeys(filters).length) return (list) => list;
+    const f = { ...filters, q: '', status: 'any' as const };
+    return (list) => applyFilters(list, f, me, tree, teams) as typeof list;
+  }, [filters, me, tree, teams]);
 }
 
 export function Loading() {

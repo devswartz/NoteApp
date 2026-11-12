@@ -156,14 +156,27 @@ test('turn a line into a task from the ribbon and from the hover ✓', async ({ 
   await bar.getByRole('button', { name: /Plain checkbox/ }).click();
   await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'Pack a lunch' })).toBeVisible();
 
-  await typeLine(page, 'Send the invites');
-  const line = editor.locator('p', { hasText: 'Send the invites' });
+  // Leave the checkbox list (Enter on its new empty item), so the hover ✓ acts on a plain line,
+  // not on the whole list (which converts every item, "Pack a lunch" included). The caret goes to
+  // the end of "Pack a lunch" directly: Ctrl+End from the empty line above the list lands at the
+  // start of that item in Chromium on Linux (after its checkbox), and Enter there adds items above it.
+  await editor.locator('ul[data-type="taskList"] li p', { hasText: 'Pack a lunch' }).click();
+  await page.keyboard.press('End');
+  await expect.poll(() => page.evaluate(() => [getSelection()?.anchorNode?.textContent, getSelection()?.anchorOffset])).toEqual(['Pack a lunch', 12]);
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(editor.locator('ul[data-type="taskList"] li')).toHaveCount(1);
+  await page.keyboard.type('Send the invites');
+  const line = editor.locator(':scope > p', { hasText: 'Send the invites' });
+  await expect(line).toBeVisible();
   await line.hover();
   const check = page.getByRole('button', { name: 'Turn this line into a task' });
   await expect(check).toBeVisible();
   await check.click();
   await expect(taskRef(page, 'Send the invites')).toBeVisible();
   await expect(editor.locator('p', { hasText: 'Send the invites' })).toHaveCount(0);
+  // Only that line: the checkbox list above is untouched.
+  await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'Pack a lunch' })).toBeVisible();
 });
 
 test('the floating toolbar has text colour and highlight too', async ({ page, context, request }) => {

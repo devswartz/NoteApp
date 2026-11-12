@@ -20,6 +20,7 @@ import { db, newId, now } from './db.ts';
 import { DATA_DIR, IS_PROD } from './config.ts';
 import type { AuthSession, User } from '../shared/types.ts';
 import { EMAIL_UNVERIFIED } from '../shared/config.ts';
+import { fileKeyExpiry, type FileKey } from '../shared/fileLinks.ts';
 
 // ACCESS_TOKEN_TTL_S is a testing knob (e.g. short tokens to exercise refresh); not part of the deploy contract.
 // Invalid, zero or negative values mean the default; production clamps it to 1–60 minutes.
@@ -75,7 +76,21 @@ function insertRefreshToken(userId: string, familyId: string, userAgent: string 
 }
 
 function session(userId: string, refreshToken: string): Omit<AuthSession, 'user'> {
-  return { accessToken: signAccessToken(userId), refreshToken, expiresIn: ACCESS_TTL_S };
+  return { accessToken: signAccessToken(userId), refreshToken, expiresIn: ACCESS_TTL_S, fileKey: fileKeyFor(userId) };
+}
+
+/**
+ * The key a user signs upload links with until `e` (shared/fileLinks.ts). Derived from the server
+ * secret, the user and the expiry, so nothing is stored and the server can recompute it from a link.
+ */
+export function fileKeySecret(userId: string, e: number): string {
+  return crypto.createHmac('sha256', SECRET).update(`files:${userId}:${e}`).digest('hex');
+}
+
+/** A FileKey for the current bucket (handed out with every session and by GET /api/files/key). */
+export function fileKeyFor(userId: string, nowS = Math.floor(Date.now() / 1000)): FileKey {
+  const e = fileKeyExpiry(nowS);
+  return { u: userId, e, k: fileKeySecret(userId, e) };
 }
 
 /** Start a new sign-in (new token family). */
