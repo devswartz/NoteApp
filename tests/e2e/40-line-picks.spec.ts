@@ -3,6 +3,7 @@
 // +triple-click adds another range. "Print selection" prints exactly those ranges, the right-click menu, Copy, and a
 // selection from an untitled page printing without a title. Set E2E_SHOTS=<dir> to also save screenshots.
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { stubClipboard } from './clipboard.ts';
 import { api, createPage, createTeam, createUser, openPage, pageUrl, ribbon, signInContext, type TestUser } from './helpers.ts';
 
 type J = Record<string, unknown>;
@@ -121,10 +122,14 @@ async function printNow(page: Page) {
   await page.emulateMedia({ media: 'print' });
 }
 
+// Each page has its own clipboard (clipboard.ts): the system one is shared with every other test running.
+test.beforeEach(async ({ page }) => {
+  await stubClipboard(page);
+});
+
 test('double-click a word, then Ctrl+double-click another: only those two words print; the first stays highlighted', async ({ page, context, request }) => {
   const user = await createUser(request, 'Wes Words');
   await signInContext(context, user);
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await stubPrint(page);
   await canvasPage(request, page, user, 'Field notes', twoBoxes);
 
@@ -138,7 +143,7 @@ test('double-click a word, then Ctrl+double-click another: only those two words 
 
   // Ctrl/Cmd+C copies every picked piece.
   await page.keyboard.press(`${MOD}+c`);
-  expect(squish(await page.evaluate(() => navigator.clipboard.readText()))).toBe('quick lazy');
+  await expect.poll(async () => squish(await page.evaluate(() => navigator.clipboard.readText()))).toBe('quick lazy'); // (the copy completes a moment after the key)
 
   await printNow(page);
   const root = page.locator('#print-root');
@@ -305,7 +310,23 @@ test('a named page prints its title with a selection, including a page shared fr
   await dblclick(page, para(page, 'judge'), 'vow', true);
   await printNow(page);
   await expect(page.locator('#print-root .print-title')).toHaveText('Quarterly plan');
-  await expect(page.locator('#print-root .print-title')).toHaveClass(/is-small/);
+  // The title is the whole-page title: same size, weight, spacing and rule (only the notebook/date line is left out).
+  const titleStyle = () =>
+    page.locator('#print-root .print-head').evaluate((head) => {
+      const t = getComputedStyle(head.querySelector('.print-title')!);
+      const h = getComputedStyle(head);
+      return { size: t.fontSize, weight: t.fontWeight, line: t.lineHeight, spacing: t.letterSpacing, color: t.color, margin: h.marginBottom, pad: h.paddingBottom, rule: h.borderBottomWidth };
+    });
+  const selectionTitle = await titleStyle();
+  await expect(page.locator('#print-root .print-sub')).toHaveCount(0);
+  await page.emulateMedia({ media: 'screen' });
+  await page.locator('.canvas-box').first().locator('.ProseMirror').click(); // drops the picks
+  await page.keyboard.press('ControlOrMeta+p');
+  await expect.poll(() => printed(page)).toBe(2);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('#print-root .print-sub')).toHaveCount(1); // the whole page has its notebook and date line
+  expect(await titleStyle()).toEqual(selectionTitle);
+  await page.emulateMedia({ media: 'screen' });
 
   // A page shared from another workspace isn't in the viewer's page list: its title must still print.
   const alice = await createUser(request, 'Alice Owner');

@@ -105,6 +105,22 @@ export const linePicks = {
     }
     return out;
   },
+  /** Every picked range as blocks, the boxes in the order they are on screen (what Copy puts on the clipboard). */
+  orderedBlocks(pageId: string): JSONContent[] {
+    if (!linePicks.count(pageId)) return [];
+    return forPage(pageId)
+      .map((r) => ({ r, ranges: rangesOf(r), at: r.editor.view.dom.getBoundingClientRect() }))
+      .filter((x) => x.ranges.length)
+      .sort((a, b) => Math.round(a.at.top / 20) - Math.round(b.at.top / 20) || a.at.left - b.at.left)
+      .flatMap((x) => pickBlocks(x.r.editor.state.doc, x.ranges));
+  },
+  /** Whole boxes as blocks (by id), in the order given. */
+  boxBlocks(pageId: string, ids: readonly string[]): JSONContent[] {
+    return ids.flatMap((id) => {
+      const r = forPage(pageId).find((x) => x.boxId === id);
+      return r ? ((r.editor.getJSON().content ?? []) as JSONContent[]) : [];
+    });
+  },
   /** The same as plain text, boxes in the order they are on screen. */
   text(pageId: string): string {
     const top = (r: Registered) => {

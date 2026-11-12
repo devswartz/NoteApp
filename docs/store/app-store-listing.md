@@ -85,6 +85,14 @@ Version 0.4.4
 - Drag outline items by the handle beside a line. The line moves with everything nested under it, and you can drop it at any level.
 ```
 
+## Header and search results
+
+Product page artwork in `docs/store/header/`: `header-5244x2950.png` and `header-3840x1646.png` (Header slot), and `search-3840x2560.png` and `search-1920x1280.png` (Search Results, 3:2). They use the captures in `docs/screens/` and keep everything essential in the centre 35% of the width (iPhone crops to that) and inside a 10% safe area; only decorative devices go toward the edges. Any other size, one line (squarer than 1.6:1 gets the bolder search layout), then `python scripts/store-assets/flatten.py` for RGB:
+
+```
+node scripts/store-assets/header.cjs <width> <height> docs/store/header/<name>.png
+```
+
 ## App Privacy and review
 
 - The App Privacy answers are in `docs/app-store-privacy.md`.

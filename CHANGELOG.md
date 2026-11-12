@@ -2,6 +2,23 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.6
+
+### Copy, paste and printing
+- **Copy keeps formatting:** copying a box, Ctrl-picks or right-click → Copy keeps bullets, numbering, nesting, tasks, headings, bold and links when pasted into another box or page, or into apps like Word. Pasting a list onto empty canvas makes a new box that keeps the list.
+- **Printing is more compact:** body text prints at 11pt, and table cells are tighter, so rows are about half as tall.
+- **Print selection:** items you didn't pick no longer print as empty bullets. Numbered lists keep their numbers. The title matches a whole-page print.
+
+### OneNote import
+- Text colours and highlights come across.
+- Table columns keep their widths, or fit their content when OneNote gives none.
+- Bold, italic and underline set on a whole paragraph or heading come across.
+
+### Behind the scenes
+- iPhone builds sign with Apple's distribution certificate, so CI no longer creates development certificates.
+- Releases check that production picked up the new version.
+- App Store and GitHub artwork.
+
 ## v0.4.5
 
 ### Trash

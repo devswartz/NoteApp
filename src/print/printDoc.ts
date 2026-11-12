@@ -124,12 +124,13 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
   page.dataset.pageId = input.pageId;
   if (ctx.pageColour && settings.color !== 'none') page.dataset.pageColor = settings.color;
 
-  // A selection gets just a small title above it, and nothing at all when the page has none.
+  // A selection gets the page's title block (same classes, so the two cannot drift apart) without the notebook and
+  // date line, and nothing at all when the page has none.
   const pageTitle = meta?.title || input.title || '';
   const selection = !!(input.blocks || input.boxIds || input.boxBlocks);
   if (!selection || pageTitle) {
-    const head = el('header', selection ? 'print-head is-small' : 'print-head');
-    head.append(el('h1', selection ? 'print-title is-small' : 'print-title', `${meta?.icon ? `${meta.icon} ` : ''}${pageTitle || 'Untitled'}`));
+    const head = el('header', 'print-head');
+    head.append(el('h1', 'print-title', `${meta?.icon ? `${meta.icon} ` : ''}${pageTitle || 'Untitled'}`));
     const sub = [meta ? pagePath(ctx.tree, meta.sectionId) : '', meta?.updatedAt ? DATE.format(new Date(meta.updatedAt)) : ''].filter(Boolean);
     if (sub.length && !selection) head.append(el('div', 'print-sub', sub.join(' · ')));
     page.append(head);

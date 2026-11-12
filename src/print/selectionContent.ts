@@ -64,5 +64,50 @@ export function selectionBlocks(sel: Selection): JSONContent[] {
   }
   const json: JSONContent[] = [];
   frag.forEach((n) => json.push(n.toJSON() as JSONContent));
-  return json;
+  return pruneEmptyItems(json);
+}
+
+const isList = (n: JSONContent) => n.type === 'bulletList' || n.type === 'orderedList';
+/** A paragraph with nothing visible in it (no text, only line breaks and spaces). */
+const blank = (n: JSONContent): boolean => n.type === 'hardBreak' || (n.type === 'text' ? !/\S/.test(n.text ?? '') : n.type === 'paragraph' && (n.content ?? []).every(blank));
+
+/**
+ * A cut of a list keeps the shape around what was picked: the siblings that were not picked come out as empty
+ * items, and a picked child of an unpicked parent brings the parent's bullet with it, empty. None of that should
+ * print. Items with nothing in them are dropped; an item whose own line is empty but which holds picked sub-items
+ * hands those up a level (a bullet needs a line of its own, so the sub-items take its place, in order); trailing
+ * empty paragraphs go. Numbers survive: a list that is split continues counting from where it was.
+ */
+export function pruneEmptyItems(blocks: JSONContent[]): JSONContent[] {
+  const out: JSONContent[] = [];
+  for (const b of blocks) {
+    if (!isList(b)) {
+      out.push(b);
+      continue;
+    }
+    let items: JSONContent[] = [];
+    let start = Number(b.attrs?.start) || 1;
+    let count = 0; // items of the original list passed so far
+    const flush = () => {
+      if (items.length) out.push({ ...b, attrs: b.type === 'orderedList' ? { ...b.attrs, start, continued: false } : b.attrs, content: items });
+      items = [];
+    };
+    for (const item of b.content ?? []) {
+      count++;
+      const kids = [...(item.content ?? [])];
+      while (kids.length && kids[kids.length - 1].type === 'paragraph' && blank(kids[kids.length - 1])) kids.pop();
+      const lead = kids[0];
+      const lines = lead?.type === 'paragraph' && !blank(lead);
+      const rest = pruneEmptyItems(kids.slice(lead?.type === 'paragraph' ? 1 : 0)); // an empty lead line is not kept
+      if (lines) {
+        items.push({ ...item, content: [lead, ...rest] });
+        continue;
+      }
+      flush(); // an item left out ends the run: what follows keeps its own numbers
+      start = (Number(b.attrs?.start) || 1) + count;
+      out.push(...rest); // the empty parent line disappears; the sub-items it held take its place
+    }
+    flush();
+  }
+  return out;
 }

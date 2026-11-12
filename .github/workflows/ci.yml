@@ -178,7 +178,9 @@ jobs:
   verify-deploy:
     name: verify deploy
     needs: publish
-    if: github.event_name == 'push' && needs.publish.result == 'success'
+    # always(): on a tag `check` is skipped, and a skipped job anywhere upstream makes the implicit success() false,
+    # which skipped this job too (v0.4.5). The explicit result test below is the real condition.
+    if: ${{ always() && github.event_name == 'push' && needs.publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
