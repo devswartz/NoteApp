@@ -3,23 +3,26 @@ import { useMemo, useState } from 'react';
 import { useStore } from '../../store.ts';
 import { RowList, TaskGroups } from '../../components/TaskRow.tsx';
 import { Avatar, useIsMobile } from '../../components/ui.tsx';
-import { groupBy, isMine, memberStats, productivity, sortTasks, todayGroups, upcomingGroups } from '../../lib/taskViews.ts';
+import { activeFilterKeys, groupBy, isMine, memberStats, productivity, sortTasks, todayGroups, upcomingGroups } from '../../lib/taskViews.ts';
 import { taskView, useTaskView } from './taskViewState.ts';
 import { addDays, parseISODate, today } from '../../../shared/dates.ts';
-import { Loading, Segmented, useOpen } from './common.tsx';
+import { Loading, Segmented, useOpen, useViewFilter } from './common.tsx';
 
 export function TodayView() {
   const open = useOpen();
   const me = useStore((s) => s.user!.id);
   const loaded = useStore((s) => s.tasksLoaded);
-  const groups = useMemo(() => todayGroups(open, me), [open, me]);
+  const filter = useViewFilter();
+  const filtering = useTaskView((s) => activeFilterKeys(s.filters).length > 0);
+  const groups = useMemo(() => todayGroups(filter(open), me), [open, me, filter]);
   if (!loaded) return <Loading />;
   const empty = groups.every((g) => !g.tasks.length);
   return (
     <>
       <ProductivityStrip />
       <TaskGroups groups={groups} emptyText="" />
-      {empty && (
+      {empty && filtering && <div className="empty">No tasks due today match these filters.</div>}
+      {empty && !filtering && (
         <div className="empty-state">
           <div className="empty-emoji">☀️</div>
           <strong>You’re all caught up</strong>
@@ -39,9 +42,10 @@ export function MyView() {
   // Grouping is in the ribbon on desktop and tablet (./taskViewState.ts); phones get the switch here.
   const group = useTaskView((s) => s.myGroup);
   const isMobile = useIsMobile();
+  const filter = useViewFilter();
   const groups = useMemo(
-    () => groupBy(open.filter((t) => isMine(t, me)), group, 'due', { members, tree }),
-    [open, me, group, members, tree],
+    () => groupBy(filter(open.filter((t) => isMine(t, me))), group, 'due', { members, tree }),
+    [open, me, group, members, tree, filter],
   );
   if (!loaded) return <Loading />;
   return (
@@ -70,7 +74,8 @@ export function UpcomingView() {
   const scope = useTaskView((s) => s.upcomingScope);
   const isMobile = useIsMobile();
   const loaded = useStore((s) => s.tasksLoaded);
-  const groups = useMemo(() => upcomingGroups(scope === 'mine' ? open.filter((t) => isMine(t, me)) : open), [open, me, scope]);
+  const filter = useViewFilter();
+  const groups = useMemo(() => upcomingGroups(filter(scope === 'mine' ? open.filter((t) => isMine(t, me)) : open)), [open, me, scope, filter]);
   if (!loaded) return <Loading />;
   return (
     <>
@@ -106,7 +111,8 @@ function ByTeam() {
   const tree = useStore((s) => s.tree);
   const teams = useStore((s) => s.teams);
   const loaded = useStore((s) => s.tasksLoaded);
-  const groups = useMemo(() => groupBy(open, 'team', 'due', { members, tree, teams }), [open, members, tree, teams]);
+  const filter = useViewFilter();
+  const groups = useMemo(() => groupBy(filter(open), 'team', 'due', { members, tree, teams }), [open, members, tree, teams, filter]);
   if (!loaded) return <Loading />;
   return <TaskGroups groups={groups.length ? groups : [{ key: 'none', label: '', tasks: [] }]} emptyText="No open tasks." />;
 }
@@ -115,6 +121,7 @@ function ByPerson() {
   const tasks = useStore((s) => s.tasks);
   const members = useStore((s) => s.members);
   const open = useOpen();
+  const filter = useViewFilter();
   const loaded = useStore((s) => s.tasksLoaded);
   const [focus, setFocus] = useState<string | null | 'all'>('all');
   const all = useMemo(() => Object.values(tasks), [tasks]);
@@ -161,7 +168,7 @@ function ByPerson() {
         })}
       </div>
       {shown.map((p) => {
-        const list = sortTasks(open.filter((t) => t.assigneeId === p.id));
+        const list = sortTasks(filter(open.filter((t) => t.assigneeId === p.id)));
         if (focus === 'all' && !list.length) return null;
         return (
           <section key={p.id ?? 'none'} className="task-group">
