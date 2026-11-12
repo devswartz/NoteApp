@@ -36,7 +36,7 @@
     color: var(--text);
     background: #fff;
     font-family: var(--font, -apple-system, 'Segoe UI', Roboto, sans-serif);
-    font-size: 10.5pt;
+    font-size: 11pt;
     line-height: 1.5;
   }
 
@@ -75,7 +75,7 @@
   .print-row.is-columns > .print-box { break-inside: auto; }
 
   /* Editor content, statically rendered (no editor): the .ProseMirror rules apply; these adjust for paper. */
-  .print-box-content.ProseMirror { min-height: 0; font-size: 10.5pt; line-height: 1.5; outline: none; overflow-wrap: anywhere; }
+  .print-box-content.ProseMirror { min-height: 0; font-size: 11pt; line-height: 1.5; outline: none; overflow-wrap: anywhere; }
   .print-box-content > :first-child { margin-top: 0; }
   .print-box-content :is(h1, h2, h3) { break-after: avoid; break-inside: avoid; }
   .print-box-content :is(p, li) { orphans: 2; widows: 2; }
@@ -83,8 +83,9 @@
   .print-box-content pre { white-space: pre-wrap; overflow: visible; font-size: 8.5pt; background: #f6f6f7; border: 0.6pt solid var(--border); padding: 2.5mm 3mm; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .print-box-content pre code { white-space: inherit; }
   .print-box-content img { max-width: 100% !important; height: auto !important; break-inside: avoid; }
-  .print-box-content table { width: 100%; table-layout: auto; font-size: 9.5pt; }
-  .print-box-content :is(td, th) { border: 0.6pt solid #c8c8cd; padding: 1.2mm 2mm; min-width: 0; }
+  .print-box-content table { width: 100%; table-layout: auto; font-size: 10pt; }
+  .print-box-content.ProseMirror :is(td, th) { border: 0.6pt solid #c8c8cd; padding: 0.9mm 1.4mm; min-width: 0; line-height: 1.35; } /* ~3.5px: rows about 26px tall */
+  .print-box-content.ProseMirror :is(td, th) > :is(p, ul, ol) { margin-block: 0; }
   .print-box-content th { background: #f3f3f5; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .print-box-content thead { display: table-header-group; }
   .print-box-content col { width: auto !important; }
