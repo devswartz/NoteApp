@@ -53,7 +53,8 @@ export function fillMeta(pageId: string, title: string, icon: string | null): { 
   if (!meta?.icon && icon) changes.icon = icon;
   if (Object.keys(changes).length) {
     useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, ...changes } : p)) } }));
-    patch(`/pages/${pageId}`, changes).catch(errorToast);
+    // The server refuses it if the page already has a title/icon (a page not in our tree, e.g. a shared one, must not be filled in blindly).
+    patch(`/pages/${pageId}`, { ...changes, ...(changes.title !== undefined ? { titleWas: meta?.title ?? '' } : {}), ...(changes.icon !== undefined ? { iconWas: meta?.icon ?? null } : {}) }).catch(errorToast);
   }
   return { title: changes.title ?? null, icon: changes.icon ?? null };
 }
