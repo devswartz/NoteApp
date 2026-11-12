@@ -7,6 +7,8 @@
 //     sections: [{ sectionId, includeSubsections? (default true) }]; empty = offered everywhere
 //   DELETE /templates/:id                                     (also removes the template's attachment copies)
 //   POST   /templates/:id/use              { pageId } → TemplateUse   creates NEW tasks + file copies for that page
+//   PUT    /sections/:id/default-template  { templateId | 'none' | null }   the section's default template
+//   POST   /pages/:id/pending-template     { discard? } → PendingTemplateUse | null   fill a new page once
 //
 // Who may do what:
 //   - See / use: every member of the workspace (viewers can list; using needs edit rights on the target page).
@@ -17,12 +19,13 @@
 // Content is the editor's JSON (sent by the client from the live editor), see server/templates.ts.
 import { Router } from 'express';
 import { db } from '../db.ts';
-import { atLeast, mustAccess, pageAccess, requireRole, roleIn } from '../access.ts';
+import { atLeast, mustAccess, pageAccess, requireRole, roleIn, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import {
   MAX_TEMPLATE_NAME,
   createTemplate,
+  defaultableTemplate,
   removeFiles,
   setTemplateScope,
   templateFilePaths,
@@ -32,7 +35,7 @@ import {
   type TemplateRow,
 } from '../templates.ts';
 import { fileVisible } from './files.ts';
-import type { TemplateMeta } from '../../shared/types.ts';
+import type { PendingTemplateUse, TemplateMeta } from '../../shared/types.ts';
 
 export const templateRoutes = Router();
 
@@ -158,6 +161,63 @@ templateRoutes.delete(
     removeFiles(paths);
     changed(r);
     return { ok: true };
+  }),
+);
+
+/**
+ * PUT /sections/:id/default-template { templateId: string | 'none' | null } → { ok }
+ * The template new pages in this section start from. null = inherit the parent section's
+ * default; 'none' = no default here, even if a parent has one. Editors of the notebook only
+ * (not viewers, not page-share grantees). The template must be shared with the workspace and
+ * offered in the section.
+ */
+templateRoutes.put(
+  '/sections/:id/default-template',
+  h((req) => {
+    const sectionId = param(req, 'id');
+    const a = mustAccess(sectionAccess(sectionId, req.user.id), true);
+    if (!a.member || !atLeast(a.role, 'member')) throw new HttpError(403, 'Only editors can choose a section’s default template');
+    const v = req.body?.templateId;
+    if (v === null || v === undefined || v === 'none') {
+      db.prepare('UPDATE sections SET default_template_id = NULL, no_default_template = ? WHERE id = ?').run(v === 'none' ? 1 : 0, sectionId);
+    } else {
+      const id = str(v, 'templateId', 100);
+      if (!defaultableTemplate(id, sectionId, a.workspaceId))
+        throw new HttpError(400, 'That template can’t be this section’s default: it must be shared with the workspace and offered in this section');
+      db.prepare('UPDATE sections SET default_template_id = ?, no_default_template = 0 WHERE id = ?').run(id, sectionId);
+    }
+    publish({ type: 'tree', workspaceId: a.workspaceId });
+    return { ok: true };
+  }),
+);
+
+/**
+ * POST /pages/:id/pending-template { discard? } → PendingTemplateUse | null
+ * A page made with New page in a section with a default template (or with "New page from
+ * template") carries pages.pending_template_id. Its creator's client claims it here once the page
+ * is open: the claim clears it atomically, so it is applied once even with several clients open,
+ * and creates the template's tasks and attachment copies for the page. null when there is
+ * nothing to claim (already claimed, or the template was deleted). `discard` just clears it.
+ */
+templateRoutes.post(
+  '/pages/:id/pending-template',
+  h((req) => {
+    const pageId = param(req, 'id');
+    const a = mustAccess(pageAccess(pageId, req.user.id), true);
+    if (!a.member || a.viaPageShare) throw new HttpError(403, 'Only people with access to its notebook can do that');
+    // One transaction: the claim (compare-and-clear) and the tasks/files it creates stand or fall together.
+    return db.transaction((): PendingTemplateUse | null => {
+      const row = db.prepare('SELECT pending_template_id AS t, created_by AS by FROM pages WHERE id = ?').get(pageId) as { t: string | null; by: string };
+      if (!row.t) return null;
+      if (row.by !== req.user.id) throw new HttpError(403, 'Only the page’s creator fills it from its template');
+      const claimed = db.prepare('UPDATE pages SET pending_template_id = NULL WHERE id = ? AND pending_template_id = ?').run(pageId, row.t);
+      if (claimed.changes !== 1 || req.body?.discard === true) return null;
+      const t = db.prepare('SELECT * FROM templates WHERE id = ?').get(row.t) as TemplateRow | undefined;
+      if (!t || t.workspace_id !== a.workspaceId || (t.visibility === 'private' && t.created_by !== req.user.id)) return null;
+      requireRole(t.workspace_id, req.user.id, 'member');
+      const out = useTemplate(t, pageId, req.user.id);
+      return { templateId: t.id, name: t.name, title: t.name, icon: t.icon, kind: t.kind === 'canvas' ? 'canvas' : 'document', content: out.content, taskIds: out.taskIds };
+    })();
   }),
 );
 

@@ -946,13 +946,19 @@ body.is-resizing .sidebar { transition: none; }
 .sec-tab { width: 4px; height: 14px; border-radius: 2px; flex: none; }
 .sec-children { margin-left: 18px; border-left: 1px solid var(--border); padding-left: 4px; }
 .page-row { height: 28px; }
+/* "+ New page" in an empty (sub)section: one line, cut with an ellipsis like the other rows. */
+.sb-new-page { overflow: hidden; white-space: nowrap; }
+.sb-new-page-icon { flex: none; }
+.sb-new-page > .truncate { flex: 1; min-width: 0; text-align: left; }
+/* A section whose new pages start from a template (its own default or a parent's). */
+.sec-default-tpl { flex: none; display: inline-flex; align-items: center; color: var(--text-muted); }
 .sb-rename { flex: 1; height: 24px; }
 .sb-empty { padding: 4px 10px; }
 .sb-foot { padding: 8px; border-top: 1px solid var(--border); }
 
 /* ───────────────────────── Page / editor ───────────────────────── */
 .page-layout { display: flex; height: 100%; min-height: 0; flex: 1; }
-.page-scroll { flex: 1; min-width: 0; overflow-y: auto; }
+.page-scroll { flex: 1; min-width: 0; overflow-y: auto; scroll-padding-top: 56px; } /* focus scrolling stops below the sticky top bar */
 .page-topbar {
   position: sticky;
   top: 0;

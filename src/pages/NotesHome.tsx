@@ -5,7 +5,7 @@
 //   edited pages and every notebook at a glance.
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, FilePlus, FileText, Lock, Plus, Star } from 'lucide-react';
-import { post } from '../api.ts';
+import { createPageIn } from '../editor/defaultTemplates.ts';
 import { errorToast, useStore } from '../store.ts';
 import { relativeTime } from '../lib/format.ts';
 import { useIsMobile } from '../components/ui.tsx';
@@ -20,7 +20,7 @@ import { PageKindIcon } from '../components/PageKindIcon.tsx';
 function useCreatePage(wsId: string) {
   const navigate = useNavigate();
   return (sectionId: string) =>
-    post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' })
+    createPageIn(sectionId) // from the section's default template, if it has one
       .then(({ id }) => navigate(`/w/${wsId}/p/${id}`))
       .catch(errorToast);
 }

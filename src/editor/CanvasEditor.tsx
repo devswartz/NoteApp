@@ -21,7 +21,7 @@
 // (yours only; pageUndo.ts).
 // Phones (≤760px) get the boxes stacked in reading order, edited normally (no placing); a page
 // with one box is just one full-width editor.
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { EditorContent, type Editor } from '@tiptap/react';
 import { Extension, type JSONContent } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
@@ -63,7 +63,13 @@ interface Props {
   onCanvas?: (h: CanvasHandle | null) => void;
   /** Put the caret in a blank page's first box when it opens (unless something else has focus). */
   autoFocus?: boolean;
+  /** Shown right under a blank page's first box (the template picker), above "Add a task". */
+  blankSlot?: ReactNode;
 }
+
+/** Room under a blank page's first box for the template picker, and how far its surface stops above the window's bottom. */
+const BLANK_SLOT_H = 220;
+const BLANK_TRIM = 90;
 
 type Pending = { id: string; then: 'focus' | 'task' | { heading: number } };
 
@@ -181,7 +187,7 @@ function useGeometryUndo(doc: Y.Doc) {
   return um;
 }
 
-export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness, mountAll, onCanvas, autoFocus = false }: Props) {
+export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onPresence, onSave, onServerSynced, onReady, onAwareness, mountAll, onCanvas, autoFocus = false, blankSlot }: Props) {
   const session = useCollab(pageId, user, { onStatus, onPresence, onSave });
   const { doc } = session;
   useEffect(() => {
@@ -639,13 +645,17 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       }),
     [ready, boxes, viewport.w, ruled],
   );
-  const size = surfaceSize(drawn, heights, viewport.w, viewport.h);
+  // A blank page: the template picker sits on the surface right under the first box, and the
+  // surface stops short of the window's bottom so "Add a task" is in view and nothing scrolls.
+  // Empty canvas around the picker still takes a click to start a box there.
+  const firstH = heights[FIRST_BOX_ID] ?? UNMEASURED_H;
+  const size = surfaceSize(drawn, heights, viewport.w, ready ? Math.max(firstH + BLANK_SLOT_H, viewport.h - BLANK_TRIM) : viewport.h);
   const stacked = isMobile;
   const list = stacked ? readingOrder(drawn) : drawn;
   const single = stacked && list.length === 1;
 
   return (
-    <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''} ${single ? 'is-single' : ''}`}>
+    <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''} ${single ? 'is-single' : ''} ${ready ? 'is-blank' : ''}`}>
       <div className="canvas-viewport">
         <div
           ref={surfaceRef}
@@ -685,8 +695,14 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               onPadDown={onPadDown}
             />
           ))}
+          {ready && blankSlot && !stacked && (
+            <div className="canvas-blank-slot" style={{ top: firstH + 4 }}>
+              {blankSlot}
+            </div>
+          )}
         </div>
       </div>
+      {ready && stacked && blankSlot}
       {canEdit && stacked && (
         <button className="add-task-end canvas-add-box" onClick={addBoxBelow}>
           <Plus size={15} /> Add a text box

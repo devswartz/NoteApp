@@ -6,9 +6,9 @@
 // and a template saved from a document page (before pages were all canvases) becomes one wide box.
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
-import type { Editor, JSONContent } from '@tiptap/core';
+import type { Editor } from '@tiptap/core';
 import { FolderTree, Pencil, Trash2 } from 'lucide-react';
-import { patch, post } from '../api.ts';
+import { post } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { confirmDialog, promptDialog } from '../components/shell/dialogs.tsx';
 import { TEMPLATES, type PageTemplate } from './templates.ts';
@@ -17,24 +17,14 @@ import { templateDialog } from './TemplateDialog.tsx';
 import { templateOffer } from '../../shared/sections.ts';
 import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
 import { BOXES_KEY } from '../../shared/pageDoc.ts';
-import { applyTemplateSettings, documentAsBox, editorDoc, pageSchema, templateBoxes, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
+import { editorDoc, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
+import { fillMeta, insertTemplateUse } from './defaultTemplates.ts';
 
 /** Where a template goes: the page's document editor, or its canvas. */
 export type TemplateTarget = { editor: Editor; canvas?: null } | { editor?: null; canvas: CanvasHandle };
 
 /** A stable empty list: a selector returning a fresh [] each time makes the store re-render forever. */
 const NONE: TemplateMeta[] = [];
-
-/** Sets the page's title and icon from a template if the page doesn't have them yet. */
-function fillMeta(pageId: string, title: string, icon: string | null) {
-  const meta = useStore.getState().tree.pages.find((p) => p.id === pageId);
-  const changes: { title?: string; icon?: string } = {};
-  if (!meta?.title && title) changes.title = title;
-  if (!meta?.icon && icon) changes.icon = icon;
-  if (!Object.keys(changes).length) return;
-  useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, ...changes } : p)) } }));
-  patch(`/pages/${pageId}`, changes).catch(errorToast);
-}
 
 /**
  * Fill a page from a template: replaces the (empty) document, and sets the title and icon
@@ -59,13 +49,9 @@ export function applyCanvasTemplate(canvas: CanvasHandle, t: PageTemplate, now =
  */
 export async function applyUserTemplate(target: TemplateTarget, pageId: string, t: TemplateMeta) {
   const r = await post<TemplateUse>(`/templates/${t.id}/use`, { pageId });
-  const content = r.content as JSONContent;
-  const schema = pageSchema(pageId);
   const doc = target.canvas ? target.canvas.doc : editorDoc(target.editor!);
   if (!doc) return;
-  writeBoxes(doc, schema, r.kind === 'canvas' ? templateBoxes(content) : [documentAsBox(content)]);
-  applyTemplateSettings(doc, content);
-  fillMeta(pageId, r.title, r.icon ?? t.icon);
+  insertTemplateUse(doc, pageId, r, t.icon); // {date} and {time} are filled in here
 }
 
 /** True while the canvas has no boxes. */

@@ -16,7 +16,8 @@ import { FILES_DIR } from './config.ts';
 import { db, newId, now } from './db.ts';
 import { HttpError, roleIn, sectionAccess, taskVisible } from './access.ts';
 import { createTask } from './tasks.ts';
-import type { Priority } from '../shared/types.ts';
+import type { Priority, Section } from '../shared/types.ts';
+import { effectiveDefaultTemplate, templateOffer } from '../shared/sections.ts';
 
 // ── Limits ──
 export const MAX_TEMPLATES_PER_WORKSPACE = 100;
@@ -417,4 +418,47 @@ export function setTemplateScope(t: Pick<TemplateRow, 'id' | 'workspace_id'>, us
     const total = (db.prepare('SELECT COUNT(*) AS n FROM template_sections WHERE template_id = ?').get(t.id) as { n: number }).n;
     if (total > MAX_TEMPLATE_SECTIONS) throw new HttpError(400, `A template can be tied to up to ${MAX_TEMPLATE_SECTIONS} sections`);
   })();
+}
+
+// ── Section default templates (migration 018) ──
+// A section may name a default template (sections.default_template_id); subsections inherit the
+// nearest ancestor's unless they set their own or chose "None" (no_default_template). Only
+// workspace-visible templates offered in the section can be a default, since the default applies
+// to everyone who makes a page there.
+
+type SectionRow = Pick<Section, 'id' | 'parentId' | 'defaultTemplateId' | 'noDefaultTemplate'>;
+
+/** The sections of `sectionId`'s notebook, as the shared helpers want them. */
+function notebookSections(sectionId: string): SectionRow[] {
+  return (
+    db
+      .prepare(
+        `SELECT s.id, s.parent_id AS parentId, s.default_template_id AS defaultTemplateId, s.no_default_template AS none
+         FROM sections s WHERE s.notebook_id = (SELECT notebook_id FROM sections WHERE id = ?)`,
+      )
+      .all(sectionId) as { id: string; parentId: string | null; defaultTemplateId: string | null; none: number }[]
+  ).map((r) => ({ id: r.id, parentId: r.parentId, defaultTemplateId: r.defaultTemplateId, noDefaultTemplate: !!r.none }));
+}
+
+/** Whether a template is offered in `sectionId` (tied to it or an ancestor, or offered everywhere). */
+export function templateOfferedIn(templateId: string, sectionId: string): boolean {
+  const rows = db.prepare('SELECT section_id, include_subsections FROM template_sections WHERE template_id = ?').all(templateId) as {
+    section_id: string;
+    include_subsections: number;
+  }[];
+  const scope = { scoped: rows.length > 0, sections: rows.map((r) => ({ sectionId: r.section_id, includeSubsections: !!r.include_subsections })) };
+  return templateOffer(scope, sectionId, notebookSections(sectionId)) !== null;
+}
+
+/** A template that may be a section's default: in the workspace, shared with it, and offered in the section. */
+export function defaultableTemplate(templateId: string, sectionId: string, workspaceId: string): TemplateRow | null {
+  const t = db.prepare('SELECT * FROM templates WHERE id = ?').get(templateId) as TemplateRow | undefined;
+  if (!t || t.workspace_id !== workspaceId || t.visibility !== 'workspace') return null;
+  return templateOfferedIn(t.id, sectionId) ? t : null;
+}
+
+/** The template new pages in `sectionId` start from (own or inherited), if it is still usable there. */
+export function sectionDefaultTemplate(sectionId: string, workspaceId: string): TemplateRow | null {
+  const d = effectiveDefaultTemplate(notebookSections(sectionId), sectionId);
+  return d ? defaultableTemplate(d.templateId, sectionId, workspaceId) : null;
 }

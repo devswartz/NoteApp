@@ -162,6 +162,14 @@ export interface Section {
   name: string;
   color: string;
   position: number;
+  /**
+   * The section's own default template (a user template's id), or null to inherit the nearest
+   * ancestor's. New pages made with New page start from the effective one (shared/sections.ts
+   * effectiveDefaultTemplate).
+   */
+  defaultTemplateId?: string | null;
+  /** "None" chosen for this section: don't inherit a parent's default. */
+  noDefaultTemplate?: boolean;
 }
 
 /** Page kind: one flowing 'document', or a 'canvas' of text boxes placed anywhere (docs/PLAN_CANVAS.md). */
@@ -329,6 +337,12 @@ export interface TemplateUse {
   /** TipTap JSON doc: taskRef nodes point at newly created tasks, attachments at new file copies. */
   content: unknown;
   taskIds: string[];
+}
+
+/** POST /pages/:id/pending-template: the template a just-created page was made from, claimed once. */
+export interface PendingTemplateUse extends TemplateUse {
+  templateId: string;
+  name: string;
 }
 
 /** An uploaded image or attachment (POST /workspaces/:id/files). */

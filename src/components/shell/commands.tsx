@@ -22,7 +22,7 @@ import {
   Sun,
   Users,
 } from 'lucide-react';
-import { post } from '../../api.ts';
+import { createPageIn } from '../../editor/defaultTemplates.ts';
 import { canEditWorkspace, errorToast, toast, ui, useStore } from '../../store.ts';
 import { cycleTheme } from '../../store/ui.ts';
 import { useCommands, type Command } from '../../hooks/useShortcuts.ts';
@@ -53,7 +53,7 @@ export function useShellCommands(wsId: string) {
       const sectionId = current?.sectionId ?? s.tree.sections[0]?.id;
       if (!sectionId) return toast('Create a notebook first');
       try {
-        const { id } = await post<{ id: string }>(`/sections/${sectionId}/pages`, { title: '' });
+        const { id } = await createPageIn(sectionId); // from the section's default template, if it has one
         navigate(`/w/${wsId}/p/${id}`);
       } catch (err) {
         errorToast(err);
