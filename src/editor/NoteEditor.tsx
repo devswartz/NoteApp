@@ -6,6 +6,7 @@ import { BubbleMenu } from '@tiptap/react/menus';
 import { beginComment, useCommentBinding } from './collabComments.ts';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import { installHandleReach } from './handleReach.ts';
+import { listDropTransaction } from './listDrop.ts';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
@@ -250,6 +251,15 @@ export function usePageEditor(session: CollabSession, { pageId, workspaceId, use
           return true;
         },
         handleDrop: (view, event, _slice, moved) => {
+          // A dragged list item keeps its list's type and attributes (listDrop.ts).
+          if (moved) {
+            const at = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+            const tr = at === undefined ? null : listDropTransaction(view.state, at);
+            if (tr) {
+              view.dispatch(tr);
+              return true;
+            }
+          }
           const files = [...((event as DragEvent).dataTransfer?.files ?? [])];
           if (moved || !files.length) return false;
           const pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos ?? view.state.selection.from;
