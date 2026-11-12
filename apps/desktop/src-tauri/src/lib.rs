@@ -8,6 +8,8 @@ mod config;
 mod menu;
 mod quick;
 mod secure;
+#[cfg(target_os = "macos")]
+mod spelling;
 mod theme;
 mod tray;
 
@@ -138,6 +140,9 @@ fn updater_configured<R: Runtime>(app: &AppHandle<R>) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any webview exists: WebKit reads its spell-check switches once per process.
+    #[cfg(target_os = "macos")]
+    spelling::register_defaults();
     tauri::Builder::default()
         // Must be first: a second launch (or a deep link on Windows) focuses this instance instead.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| show_main(app)))
