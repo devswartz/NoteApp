@@ -20,6 +20,9 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		7E1A90C1B2D3E4F5A6B7C8D4 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E1A90C1B2D3E4F5A6B7C8D1 /* PrivacyInfo.xcprivacy */; };
+		7E1A90C1B2D3E4F5A6B7C8D5 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E1A90C1B2D3E4F5A6B7C8D2 /* PrivacyInfo.xcprivacy */; };
+		7E1A90C1B2D3E4F5A6B7C8D6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7E1A90C1B2D3E4F5A6B7C8D3 /* PrivacyInfo.xcprivacy */; };
 		5B172EAF31280955237A49EF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CBC8D3E5BD0624D17CE41D36 /* Foundation.framework */; };
 		82DABFD34F6CA6680A3A9149 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 487A9A3D74BCBF6907EFB970 /* SwiftUI.framework */; };
 		84F5BA3494802AD868D56CC2 /* TodayWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1D6D4BECF1968F5F9F9625D /* TodayWidget.swift */; };
@@ -82,6 +85,9 @@
 		592CEF9C8042702E418C22E8 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		657D740C4D7B5348C87FBF71 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		6B30D1F68DB297D9016B2589 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		7E1A90C1B2D3E4F5A6B7C8D1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7E1A90C1B2D3E4F5A6B7C8D2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7E1A90C1B2D3E4F5A6B7C8D3 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		85308B7C3861C4154C079023 /* TodayWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TodayWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
@@ -139,6 +145,7 @@
 				657D740C4D7B5348C87FBF71 /* ShareViewController.swift */,
 				6B30D1F68DB297D9016B2589 /* Info.plist */,
 				F879B50E59359B8B1056F230 /* ShareExtension.entitlements */,
+				7E1A90C1B2D3E4F5A6B7C8D2 /* PrivacyInfo.xcprivacy */,
 			);
 			name = ShareExtension;
 			path = ShareExtension;
@@ -182,6 +189,7 @@
 				592CEF9C8042702E418C22E8 /* App.entitlements */,
 				CF3F71292E0419AD647260E8 /* MainViewController.swift */,
 				EE70B37FEB546404AD4A4722 /* NoteAppNativePlugin.swift */,
+				7E1A90C1B2D3E4F5A6B7C8D1 /* PrivacyInfo.xcprivacy */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -201,6 +209,7 @@
 				E1D6D4BECF1968F5F9F9625D /* TodayWidget.swift */,
 				56C8ABF83E07D9A926BBBB16 /* Info.plist */,
 				27D7023ADAE30D96EF464668 /* TodayWidget.entitlements */,
+				7E1A90C1B2D3E4F5A6B7C8D3 /* PrivacyInfo.xcprivacy */,
 			);
 			name = TodayWidget;
 			path = TodayWidget;
@@ -327,6 +336,7 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				7E1A90C1B2D3E4F5A6B7C8D4 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -334,6 +344,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E1A90C1B2D3E4F5A6B7C8D5 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,6 +352,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E1A90C1B2D3E4F5A6B7C8D6 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

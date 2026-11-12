@@ -23,6 +23,7 @@ For every type below: **Linked to the user: Yes. Used for tracking: No.**
 | Contact Info → **Name** | Display name on the account, shown to workspace members and people on shared pages | App Functionality | `users.name`, `server/routes/auth.ts` (`PATCH /me`) |
 | Contact Info → **Email Address** | Sign-in, confirmation, password reset, invitations, reminder and digest emails (sent via Amazon SES) | App Functionality | `users.email`, `server/mail.ts`, `server/reminders/email.ts` |
 | User Content → **Photos or Videos** | Images the user uploads into pages (picked with the system picker; no photo library permission is requested) | App Functionality | `server/routes/files.ts` (`SAFE_TYPES`) |
+| User Content → **Audio Data** | Audio files the user attaches to pages, stored on the server like other uploads. The app does not record from the microphone; declared because the uploaded files are kept | App Functionality | `server/routes/files.ts` |
 | User Content → **Other User Content** | Notes/pages and their version history, tasks, comments, tags, templates, other uploaded files, OneNote and workspace imports, text shared in through the Share Extension | App Functionality | `server/migrations/*.sql`, `server/versions.ts`, `server/onenote.ts`, `server/export.ts` |
 | User Content → **Customer Support** | The "Send feedback" message, emailed to the admins with name, email, user ID, app version, platform and user agent | App Functionality | `server/routes/feedback.ts` |
 | Identifiers → **User ID** | Internal account ID; also attached to error reports and feedback | App Functionality | `users.id`, `server/routes/clientErrors.ts` |
@@ -39,7 +40,7 @@ Notes on the choices:
 
 - Health & Fitness, Financial Info, Location (precise or coarse), Sensitive Info, Contacts, Browsing History, Purchases.
 - Contact Info → Phone Number, Physical Address, Other User Contact Info.
-- User Content → Emails or Text Messages, Audio Data, Gameplay Content.
+- User Content → Emails or Text Messages, Gameplay Content.
 - Search History: search terms answer the request and are not stored or logged (`server/requests.ts` strips query strings from the access log).
 - Usage Data (Product Interaction, Advertising Data, Other Usage Data): no analytics SDK. The workspace activity feed records who changed what, but as user-visible content of the workspace, not usage analytics.
 - Identifiers → Device ID: no IDFA, IDFV or similar is read.
@@ -48,5 +49,7 @@ Notes on the choices:
 
 ## Before submitting
 
-- The iOS project has no `PrivacyInfo.xcprivacy` privacy manifest. The app and its extensions use `UserDefaults` (App Group, a "required reason" API), and Capacitor plugins may bring their own manifests; add one for the app target (and the extensions) declaring `NSPrivacyAccessedAPICategoryUserDefaults` (reason `1C8F.1` for App Group access), `NSPrivacyTracking` false and the collected types above, or App Store Connect will warn on upload.
+- Privacy manifests are in place: `apps/mobile/ios/App/App/PrivacyInfo.xcprivacy`, `ShareExtension/PrivacyInfo.xcprivacy` and `TodayWidget/PrivacyInfo.xcprivacy`, each in its target's Copy Bundle Resources. Each sets `NSPrivacyTracking` false, no tracking domains, and the eight collected types above (linked, not tracking, App Functionality). Required-reason APIs: `NSPrivacyAccessedAPICategoryUserDefaults` with `1C8F.1` (App Group, `Shared/SharedStore.swift`, compiled into all three targets); the app target also lists `CA92.1` because the statically linked `@capawesome/capacitor-badge` plugin uses `UserDefaults.standard`. No file timestamp, boot time, disk space or active keyboard APIs are called from the app's own code.
+- Third-party manifests: Capacitor 8.6.0 (`Capacitor`, `Cordova`) ships its own. None of the plugin packages do (`@aparajita/capacitor-biometric-auth`, `@aparajita/capacitor-secure-storage`, `@capacitor/app`, `browser`, `haptics`, `keyboard`, `local-notifications`, `push-notifications`, `splash-screen`, `@capawesome/capacitor-badge`). They are linked statically into the app through SPM, so the app manifest covers them; only the badge plugin was found to call a required-reason API. Re-check after plugin upgrades.
+- Not yet verified on a Mac: the manifests were written and checked on Windows (plist and project file parse). Confirm the next tagged CI build succeeds and that App Store Connect shows no ITMS-91053 missing-reason warning, or use Xcode → Product → Archive → Generate Privacy Report.
 - Confirm the privacy policy URL loads in production and the contact inbox in it is read.
