@@ -727,8 +727,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
           <Plus size={15} /> Add a task to this page
         </button>
       )}
-      <EditorMenus />
       {!isMobile && <PrintSelectionMenu pageId={pageId} />}
+      <EditorMenus />
     </div>
   );
 }
