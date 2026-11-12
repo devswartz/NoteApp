@@ -115,7 +115,7 @@ export function TaskDetail() {
               buttonClass="prop-btn"
               trigger={assignee ? <><Avatar user={assignee} size={18} /> {assignee.name}</> : <span className="muted">Unassigned</span>}
             >
-              <AssigneeMenu value={task.assigneeId} teamId={task.teamId} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
+              <AssigneeMenu value={task.assigneeId} teamId={task.teamId} task={task} onChange={(assigneeId) => void updateTask(task.id, { assigneeId })} />
             </Dropdown>
             {task.assigneeId && task.assignedBy && task.assignedBy !== task.assigneeId && (
               <div className="muted small assigned-by">Assigned by {assigner?.name ?? 'a former member'}</div>

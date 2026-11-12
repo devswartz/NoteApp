@@ -1,7 +1,7 @@
 // Share one page (#98): pick people with "Can view" or "Can edit". They see only
 // this page, under "Shared with me". Members share with members; owners and admins
 // may also share with people outside the workspace (by email), to view or edit this one
-// page (tasks on it stay read-only for them). A member who is a viewer stays view-only
+// page (with edit, the tasks living on it too). A member who is a viewer stays view-only
 // whatever the share says (rights = min(share, role)). Open with openPageShareDialog(pageId, title);
 // <PageShareDialogHost /> is mounted once in PageView. Owner: Collaboration & Access.
 import { useEffect, useMemo, useState } from 'react';

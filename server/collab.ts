@@ -110,30 +110,54 @@ onAccessChange(revalidateCollab);
 setInterval(revalidateCollab, REVALIDATE_MS).unref();
 
 /**
- * Tasks stay with workspace members (#98 follow-up). Someone outside the workspace may edit a
- * page shared with them, but not the tasks on it: removing a task's reference from the doc would
- * take the task off the page when it's saved (syncPageTasks), so after each update from such a
- * socket, references it removed to tasks living on this page are put back (at the end of the
- * page's first box). References they add only attach tasks whoever added them may move
- * (canMoveTask: members only), so they can't pull tasks in either. `before` is the page's task
- * references before the update.
+ * Task references removed by someone outside the workspace, per page, waiting to be checked
+ * (see guardPageTasks). Saves don't take these tasks off the page meanwhile.
+ */
+const guarded = new Map<string, Set<string>>();
+/** How long a removed reference waits for the task's own delete to land before it is put back. */
+export const TASK_GUARD_MS = 1500;
+
+/**
+ * Someone outside the workspace may edit a page shared with them, and the tasks on it, but may
+ * not move tasks off the page into the workspace (#98 follow-up). Removing a task's reference
+ * from the doc would do that when the page is saved (syncPageTasks detaches it). So references
+ * such a socket removes to tasks living on this page are held: if the task is deleted (the
+ * editor deletes it over REST as it removes the reference) nothing more happens; if it still
+ * exists after TASK_GUARD_MS and is still missing from the doc, its reference is put back at
+ * the end of the page's first box. References they add only attach tasks whoever added them
+ * may move (canMoveTask: members only), so they can't pull tasks in either. `before` is the
+ * page's task references before the update.
  */
 function guardPageTasks(room: Room, before: Set<string>) {
   const after = extractPage(room.doc).taskIds;
   const removed = [...before].filter((id) => !after.has(id));
   if (!removed.length) return;
   const onPage = db.prepare('SELECT 1 FROM tasks WHERE id = ? AND page_id = ? AND parent_id IS NULL AND occurrence_of IS NULL');
-  const restore = removed.filter((id) => onPage.get(id, room.pageId));
-  if (!restore.length) return;
-  room.doc.transact(() => {
-    mainFragment(room.doc).push(
-      restore.map((id) => {
-        const el = new Y.XmlElement('taskRef');
-        el.setAttribute('taskId', id);
-        return el;
-      }),
-    );
-  }, 'task-guard');
+  const hold = removed.filter((id) => onPage.get(id, room.pageId));
+  if (!hold.length) return;
+  const pageId = room.pageId;
+  let set = guarded.get(pageId);
+  if (!set) guarded.set(pageId, (set = new Set()));
+  for (const id of hold) set.add(id);
+  setTimeout(() => {
+    const s = guarded.get(pageId);
+    for (const id of hold) s?.delete(id);
+    if (s && !s.size) guarded.delete(pageId);
+    const restore = hold.filter((id) => onPage.get(id, pageId));
+    if (!restore.length) return;
+    editPageDoc(pageId, (doc) => {
+      const present = extractPage(doc).taskIds;
+      const missing = restore.filter((id) => !present.has(id));
+      if (!missing.length) return;
+      mainFragment(doc).push(
+        missing.map((id) => {
+          const el = new Y.XmlElement('taskRef');
+          el.setAttribute('taskId', id);
+          return el;
+        }),
+      );
+    });
+  }, TASK_GUARD_MS).unref();
 }
 
 /** Text, task references and mentions of a whole page: every fragment (all canvas boxes) in reading order. */
@@ -202,8 +226,13 @@ function persist(room: Room) {
   // Only tasks that whoever inserted the reference may see and edit move onto this page (#98 review).
   const authors = room.taskAuthors;
   room.taskAuthors = new Map();
-  syncPageTasks(room.pageId, room.workspaceId, taskIds, (id) =>
-    [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
+  const held = guarded.get(room.pageId);
+  syncPageTasks(
+    room.pageId,
+    room.workspaceId,
+    taskIds,
+    (id) => [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
+    (id) => !held?.has(id), // removed by an outside editor: kept on the page until guardPageTasks decides
   );
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;

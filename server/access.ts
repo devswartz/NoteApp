@@ -134,11 +134,12 @@ export function pageShare(pageId: string, userId: string): { canEdit: boolean } 
  * sub-pages. Effective rights: for a workspace member, the lesser of the share and the
  * workspace role (an edit share lets a member or above edit; a viewer stays view-only). For
  * someone outside the workspace, the share itself: an edit share lets them edit that page's
- * content (text, title, icon, comments, uploads into it), and nothing else. Workspace-level
- * things stay member-only whatever the share says: tasks (creating, editing or ticking them,
- * and moving them on or off a page, see canMoveTask and the collab task guard), templates,
- * the tree, search and members. A share never adds to notebook-level access. Every route and
- * socket that serves page content goes through here.
+ * content (text, title, icon, comments, uploads into it) and the tasks that live on it
+ * (create, tick, edit, delete, assign to people with access to the page; see server/tasks.ts).
+ * Workspace-level things stay member-only whatever the share says: tasks elsewhere, moving
+ * tasks on or off a page (canMoveTask and the collab task guard), templates, the tree, search
+ * and the member list. A share never adds to notebook-level access. Every route and socket
+ * that serves page content goes through here.
  */
 export function pageAccess(pageId: string, userId: string): Access | null {
   const row = db
@@ -161,6 +162,42 @@ export function pageAccess(pageId: string, userId: string): Access | null {
     canManage: false,
     viaPageShare: true,
   };
+}
+
+/** Someone who can open a page (GET /pages/:id/people): the assignee picker for its tasks. */
+export interface PagePerson {
+  id: string;
+  name: string;
+  color: string;
+  /** A workspace member (else they have the page through a page share only). */
+  member: boolean;
+  /** May edit the page (and so its tasks). */
+  canEdit: boolean;
+}
+
+/**
+ * Everyone who can open `pageId`: workspace members who can see its notebook, and the people it
+ * is shared with (page_shares). This is all a page share holder learns about who is in the
+ * workspace (#98 follow-up), so it carries names and colours only, no emails or roles.
+ */
+export function pagePeople(pageId: string): PagePerson[] {
+  const row = db
+    .prepare('SELECT n.workspace_id AS ws FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ?')
+    .get(pageId) as { ws: string } | undefined;
+  if (!row) return [];
+  const candidates = db
+    .prepare(
+      `SELECT u.id, u.name, u.color FROM users u WHERE u.id IN (
+         SELECT user_id FROM workspace_members WHERE workspace_id = ? UNION SELECT user_id FROM page_shares WHERE page_id = ?)
+       ORDER BY u.name`,
+    )
+    .all(row.ws, pageId) as { id: string; name: string; color: string }[];
+  const out: PagePerson[] = [];
+  for (const c of candidates) {
+    const a = pageAccess(pageId, c.id);
+    if (a) out.push({ ...c, member: a.member, canEdit: a.canEdit });
+  }
+  return out;
 }
 
 /** Throws unless the caller may move, copy, delete or share the page (notebook-level edit access). */

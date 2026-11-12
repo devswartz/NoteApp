@@ -156,7 +156,10 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   // Tasks are edited by members (not viewers) of the task's workspace: someone editing the page
   // through a page share from outside the workspace sees its tasks read-only (#98).
   const taskRole = useStore((s) => (task ? s.workspaces.find((w) => w.id === task.workspaceId)?.role : undefined));
-  const editable = editor.isEditable && !!taskRole && taskRole !== 'viewer';
+  // A task living on this very page is the page's content: whoever may edit the page may edit it,
+  // through a page share from outside the workspace too (#98 follow-up). Tasks living elsewhere
+  // and only referenced here need membership of their workspace.
+  const editable = editor.isEditable && ((!!taskRole && taskRole !== 'viewer') || (!!task?.pageId && task.pageId === pageIdOf(editor)));
   const [title, setTitleState] = useState(task?.title ?? '');
   // The latest title, readable synchronously: Escape/arrows commit and then blur the input
   // in the same tick, and the blur's commit must see the cleaned-up title, not the raw text

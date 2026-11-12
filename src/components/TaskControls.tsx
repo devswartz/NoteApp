@@ -1,7 +1,8 @@
 // Reusable task property pickers: due date, assignee, priority, recurrence.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays, Flag, Repeat, Sun, Sunrise, CalendarClock, Ban, UserRound } from 'lucide-react';
 import { useStore } from '../store.ts';
+import { loadPagePeople, useShared } from './sharing/sharedPages.ts';
 import { addDays, parseISODate, today, toISODate, describeRecurrence } from '../../shared/dates.ts';
 import type { Priority, Recurrence, Task } from '../../shared/types.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator, useClosePopover } from './ui.tsx';
@@ -69,9 +70,41 @@ function shortDay(d: string) {
   return new Intl.DateTimeFormat(undefined, { weekday: 'short' }).format(parseISODate(d));
 }
 
-/** Pick an assignee. With `teamId`, that team's members come first; anyone in the workspace can still be picked. */
-export function AssigneeMenu({ value, onChange, teamId }: { value: string | null; onChange: (id: string | null) => void; teamId?: string | null }) {
+type Person = { id: string; name: string; color: string; email: string; role?: string };
+
+/**
+ * Who a task can be assigned to (#98 follow-up). A task in the current workspace: its members, plus,
+ * for a task on a page shared one by one, the people it is shared with. A task on a page shared
+ * from another workspace: the people who can open that page (GET /pages/:id/people), nobody else.
+ */
+function useAssignable(task?: { pageId: string | null; workspaceId: string }, load = false): Person[] {
   const members = useStore((s) => s.members);
+  const wsId = useStore((s) => s.wsId);
+  const pageId = task?.pageId ?? null;
+  const people = useShared((s) => (pageId ? s.people[pageId] : undefined));
+  useEffect(() => {
+    if (load && pageId) void loadPagePeople(pageId, true);
+  }, [load, pageId]);
+  if (task && task.workspaceId !== wsId)
+    return (people ?? []).filter((p) => p.canEdit || !p.member).map((p) => ({ ...p, email: '' }));
+  const grantees = (people ?? []).filter((p) => !p.member).map((p) => ({ ...p, email: '', role: 'member' }));
+  return [...members, ...grantees];
+}
+
+/** Pick an assignee. With `teamId`, that team's members come first; anyone in the workspace can still be picked. */
+export function AssigneeMenu({
+  value,
+  onChange,
+  teamId,
+  task,
+}: {
+  value: string | null;
+  onChange: (id: string | null) => void;
+  teamId?: string | null;
+  /** The task being assigned: on a shared page, the people it is shared with can be picked too. */
+  task?: { pageId: string | null; workspaceId: string };
+}) {
+  const members = useAssignable(task, true);
   const me = useStore((s) => s.user?.id);
   const team = useStore((s) => (teamId ? s.teams.find((t) => t.id === teamId) : undefined));
   const [q, setQ] = useState('');
@@ -197,14 +230,20 @@ export function DueChip({ task, onChange, readOnly }: { task: Task; onChange: (d
 }
 
 export function AssigneeChip({ task, onChange, readOnly }: { task: Task; onChange: (id: string | null) => void; readOnly?: boolean }) {
-  const member = useStore((s) => s.members.find((m) => m.id === task.assigneeId));
+  const people = useAssignable(task);
+  const member = people.find((m) => m.id === task.assigneeId);
+  // Assigned to someone outside the workspace (a page share): learn their name from the page.
+  const unknown = !!task.assigneeId && !member && !!task.pageId;
+  useEffect(() => {
+    if (unknown) void loadPagePeople(task.pageId!);
+  }, [unknown, task.pageId]);
   // The accessible name starts with the visible initials ("label in name", WCAG 2.5.3).
   const label = member ? `${initials(member.name)} – assigned to ${member.name}` : 'Unassigned';
   const avatar = <Avatar user={member} size={20} title={label} />;
   if (readOnly) return member ? avatar : null;
   return (
     <Dropdown trigger={avatar} buttonClass={`avatar-btn ${member ? '' : 'avatar-btn-empty'}`} title={member ? label : 'Assign'} placement="bottom-end">
-      <AssigneeMenu value={task.assigneeId} onChange={onChange} />
+      <AssigneeMenu value={task.assigneeId} onChange={onChange} task={task} />
     </Dropdown>
   );
 }

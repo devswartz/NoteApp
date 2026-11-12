@@ -1,7 +1,7 @@
 // Sharing one page (#98): the owner shares a page from a private notebook with one teammate,
 // who opens it from "Shared with me" and co-edits it live; revoking takes it away live.
-// People outside the workspace get exactly what the share says, for that page only; its
-// tasks stay read-only for them.
+// People outside the workspace get exactly what the share says, for that page only: with
+// edit, its tasks too, which can be assigned between them and the workspace.
 import { expect, test, type Browser } from '@playwright/test';
 import { addInlineTask, api, createPage, createTeam, createUser, focusEnd, openNotebookPicker, openPage, signInContext, taskRef, type TestUser } from './helpers.ts';
 
@@ -104,7 +104,7 @@ test('someone outside the workspace with a view share opens the link: that page 
   await o.context.close();
 });
 
-test('someone outside the workspace with an edit share co-edits that page, but its tasks stay read-only', async ({ browser, request }) => {
+test('someone outside the workspace with an edit share co-edits that page and its tasks, and tasks are assigned both ways', async ({ browser, request }) => {
   const alice = await createUser(request, 'Alice Host');
   const eddie = await createUser(request, 'Eddie Outside');
   const teamId = await createTeam(request, alice, [], 'Host Team');
@@ -112,7 +112,7 @@ test('someone outside the workspace with an edit share co-edits that page, but i
 
   const a = await userPage(browser, alice);
   await openPage(a.page, teamId, pageId);
-  await addInlineTask(a.page, 'Host-only task');
+  await addInlineTask(a.page, 'Host task');
 
   // Alice shares it by email, to edit, from the dialog: no "can only view" note, and the access is editable.
   await a.page.getByRole('button', { name: 'Share', exact: true }).click();
@@ -144,18 +144,37 @@ test('someone outside the workspace with an edit share co-edits that page, but i
   await e.page.keyboard.type('Eddie was here');
   await expect(a.page.locator('.ProseMirror').first()).toContainText('Eddie was here');
 
-  // The task is shown but read-only: no ticking, renaming or new tasks.
-  const ref = taskRef(e.page, 'Host-only task');
-  await expect(ref).toBeVisible();
-  await expect(ref.getByRole('checkbox')).toBeDisabled();
-  await expect(ref.locator('.task-ref-title')).toHaveAttribute('readonly', '');
-  await focusEnd(e.page);
-  await e.page.keyboard.press('Enter');
-  await e.page.keyboard.type('/task');
-  await expect(e.page.locator('.slash-menu .slash-title').filter({ hasText: /^Task$/ })).toHaveCount(0);
-  await e.page.keyboard.press('Escape');
-  const tasks = await api<{ id: string; title: string; status: string }[]>(request, 'GET', `/pages/${pageId}/tasks`, alice.token);
-  expect(tasks.map((t) => [t.title, t.status])).toEqual([['Host-only task', 'open']]);
+  // The page's tasks are his to tick and add (#98 follow-up).
+  const hostTask = taskRef(e.page, 'Host task');
+  await expect(hostTask.getByRole('checkbox')).toBeEnabled();
+  await hostTask.getByRole('checkbox').click();
+  await expect(taskRef(a.page, 'Host task').getByRole('checkbox')).toHaveAttribute('aria-checked', 'true');
+  await hostTask.getByRole('checkbox').click(); // and reopen it
+  await expect(taskRef(a.page, 'Host task').getByRole('checkbox')).toHaveAttribute('aria-checked', 'false');
+  await addInlineTask(e.page, 'Eddie task');
+  await expect(taskRef(a.page, 'Eddie task')).toBeVisible();
+  const tasks = await api<{ id: string; title: string; workspaceId: string }[]>(request, 'GET', `/pages/${pageId}/tasks`, alice.token);
+  expect(tasks.map((t) => t.title).sort()).toEqual(['Eddie task', 'Host task']);
+  expect(tasks.every((t) => t.workspaceId === teamId)).toBe(true);
+
+  // Assigning: Eddie → Alice (he only sees the page's people), Alice → Eddie.
+  await taskRef(e.page, 'Eddie task').locator('.avatar-btn').click();
+  await expect(e.page.getByRole('menuitem', { name: /Alice Host/ })).toBeVisible();
+  await e.page.getByRole('menuitem', { name: /Alice Host/ }).click();
+  await expect(taskRef(a.page, 'Eddie task').locator('.avatar-btn')).toHaveAttribute('title', /assigned to Alice Host/);
+  await taskRef(a.page, 'Host task').locator('.avatar-btn').click();
+  await a.page.getByRole('menuitem', { name: /Eddie Outside/ }).click();
+  await expect(taskRef(e.page, 'Host task').locator('.avatar-btn')).toHaveAttribute('title', /assigned to Eddie Outside/);
+
+  // It's in Eddie's own "My tasks", under the page it came from.
+  await e.page.goto(`/w/${eddie.wsId}/tasks/my`);
+  const mine = e.page.locator('.task-row', { hasText: 'Host task' });
+  await expect(mine).toBeVisible({ timeout: 10_000 });
+  await expect(mine.locator('.chip-link')).toContainText('Joint draft');
+  await expect(e.page.locator('.task-row', { hasText: 'Eddie task' })).toHaveCount(0);
+  await mine.locator('.chip-link').click();
+  await expect(e.page).toHaveURL(new RegExp(`/p/${pageId}`));
+  await expect(e.page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
 
   // Still nothing else from that workspace: no Share, no move or delete, not in her workspace list.
   await expect(e.page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);

@@ -10,6 +10,32 @@ import { TaskWrites } from './taskWrites.ts';
 /** Orders each task's create / update / delete requests (see taskWrites.ts, BUG-6). */
 const writes = new TaskWrites<Task, TaskPatch>();
 
+/**
+ * Tasks on pages shared from workspaces I'm not working in (#98) live in their own store
+ * (components/sharing/sharedPages.ts), which plugs itself in here so the same task actions
+ * (create, tick, edit, delete) work on them: they go to the task's own workspace.
+ */
+export interface ForeignTasks {
+  get(id: string): Task | undefined;
+  put(t: Task): void;
+  remove(id: string): void;
+  /** The workspace of a shared page that isn't the current workspace, if `pageId` is one. */
+  workspaceOfPage(pageId: string): string | undefined;
+}
+let foreign: ForeignTasks | null = null;
+export function setForeignTasks(f: ForeignTasks) {
+  foreign = f;
+}
+/** A task from the workspace store, or else from a shared page's (with `own` saying which). */
+function lookup(id: string): { t: Task | undefined; own: boolean } {
+  const t = st().tasks[id];
+  return t ? { t, own: true } : { t: foreign?.get(id), own: false };
+}
+function store(t: Task, own: boolean) {
+  if (own) set((s) => ({ tasks: { ...s.tasks, [t.id]: t } }));
+  else foreign?.put(t);
+}
+
 /** The local copy of a task from the server, with edits that are still on their way laid over it. */
 function withUnsaved(t: Task): Task {
   const o = writes.overlay(t.id);
@@ -48,8 +74,12 @@ export function newTaskId(): string {
 }
 
 export async function createTask(input: TaskPatch & { title: string; id?: string }): Promise<Task | null> {
-  const { wsId, user } = st();
-  if (!wsId || !user) return null;
+  const { wsId: current, user } = st();
+  if (!current || !user) return null;
+  // On a page shared from another workspace, the task belongs to that workspace (#98).
+  const other = input.pageId ? foreign?.workspaceOfPage(input.pageId) : undefined;
+  const wsId = other ?? current;
+  const own = !other;
   const id = input.id ?? newTaskId();
   const ts = new Date().toISOString();
   const optimistic: Task = {
@@ -75,15 +105,17 @@ export async function createTask(input: TaskPatch & { title: string; id?: string
     createdAt: ts,
     updatedAt: '', // so the server's copy always wins
   };
-  set((s) => ({ tasks: { ...s.tasks, [id]: optimistic } }));
+  store(optimistic, own);
   try {
     const t = await writes.create(id, () => post<Task>(`/workspaces/${wsId}/tasks`, { ...input, id }));
     if (writes.isDeleted(id)) return null; // deleted while the create was in flight; the DELETE follows
-    upsertTask(t);
+    if (own) upsertTask(t);
+    else foreign?.put(t);
     return t;
   } catch (e) {
     if (writes.isDeleted(id)) return null;
-    removeTaskLocal(id);
+    if (own) removeTaskLocal(id);
+    else foreign?.remove(id);
     errorToast(e);
     return null;
   }
@@ -91,7 +123,7 @@ export async function createTask(input: TaskPatch & { title: string; id?: string
 
 /** Optimistic update with rollback. */
 export async function updateTask(id: string, p: TaskPatch, opts: { silent?: boolean } = {}) {
-  const prev = st().tasks[id];
+  const { t: prev, own } = lookup(id);
   if (!prev) return;
   const optimistic: Task = { ...prev, ...p };
   if (p.assigneeId !== undefined && p.assigneeId !== prev.assigneeId) optimistic.assignedBy = p.assigneeId ? (st().user?.id ?? null) : null;
@@ -99,25 +131,25 @@ export async function updateTask(id: string, p: TaskPatch, opts: { silent?: bool
     optimistic.completedAt = new Date().toISOString();
     optimistic.completedBy = st().user?.id ?? null;
   }
-  set((s) => ({ tasks: { ...s.tasks, [id]: optimistic } }));
+  store(optimistic, own);
   try {
     // Waits behind the task's create (and earlier writes); patches queued meanwhile go as one PATCH.
     const t = await writes.update(id, p, (merged) => patch<Task>(`/tasks/${id}`, merged));
     if (!t || writes.isDeleted(id)) return; // dropped: the task was deleted or never created
-    set((s) => ({ tasks: { ...s.tasks, [id]: withUnsaved(t) } }));
+    store(withUnsaved(t), own);
     if (!opts.silent && p.status === 'done' && prev.recurrence && t.status === 'open') {
       toast(`Recurring task — next due ${describeDue(t.dueDate).toLowerCase()}`);
     }
     return t;
   } catch (e) {
-    if (writes.isDeleted(id) || !st().tasks[id]) return;
-    set((s) => ({ tasks: { ...s.tasks, [id]: prev } }));
+    if (writes.isDeleted(id) || !lookup(id).t) return;
+    store(prev, own);
     errorToast(e);
   }
 }
 
 export function toggleTask(id: string) {
-  const t = st().tasks[id];
+  const { t } = lookup(id);
   if (!t) return;
   if (t.status === 'open') {
     set((s) => ({ lingering: { ...s.lingering, [id]: true } }));
@@ -136,7 +168,18 @@ export function toggleTask(id: string) {
 }
 
 export async function deleteTask(id: string) {
-  const prev = st().tasks[id];
+  const { t: prev, own } = lookup(id);
+  if (!own) {
+    foreign?.remove(id);
+    try {
+      await writes.remove(id, () => del(`/tasks/${id}`));
+    } catch (e) {
+      writes.undelete(id);
+      if (prev) foreign?.put(prev);
+      errorToast(e);
+    }
+    return;
+  }
   const children = Object.values(st().tasks).filter((t) => t.parentId === id);
   removeTaskLocal(id);
   for (const c of children) removeTaskLocal(c.id); // the server deletes subtasks with their parent

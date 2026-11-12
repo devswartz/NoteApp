@@ -3,9 +3,9 @@
 import type { Editor } from '@tiptap/core';
 
 /**
- * Pages on which this user can't create tasks: opened through a page share from outside the
- * page's workspace (#98). They may edit the page's text, but tasks belong to workspace members.
- * PageView sets this from GET /pages/:id; the server refuses such tasks anyway.
+ * Pages on which this user can't create tasks: those they can't edit. Whoever may edit a page may
+ * add tasks to it, through a page share from outside its workspace too (#98 follow-up); the task
+ * goes to the page's workspace. PageView sets this from GET /pages/:id; the server checks anyway.
  */
 const noTaskPages = new Set<string>();
 

@@ -11,7 +11,7 @@ import { commentsChanged } from '../editor/collabComments.ts';
 import { loadUserTemplates } from '../editor/userTemplates.ts';
 import { receiveNotification } from '../components/sharing/inbox.ts';
 import { activityChanged } from '../components/sharing/ActivityFeed.tsx';
-import { isSharedPage, loadSharedPages, sharedTaskEvent } from '../components/sharing/sharedPages.ts';
+import { isSharedPage, loadSharedPages, sharedTaskDeleted, sharedTaskEvent } from '../components/sharing/sharedPages.ts';
 import { toast } from './toasts.ts';
 
 let socket: WebSocket | null = null;
@@ -126,6 +126,7 @@ function handle(ev: ServerEvent) {
       break;
     case 'task-deleted':
       if (ev.workspaceId === wsId) removeTaskLocal(ev.id);
+      else sharedTaskDeleted(ev.id); // on a page shared with me from another workspace
       break;
     case 'tree':
       if (ev.workspaceId === wsId) debounce('tree', () => void loadTree(), 400);

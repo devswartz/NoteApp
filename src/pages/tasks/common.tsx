@@ -1,12 +1,24 @@
 // Shared bits for the task dashboard views.
 import { useMemo } from 'react';
 import { useStore } from '../../store.ts';
+import { useShared } from '../../components/sharing/sharedPages.ts';
 import { visibleOpen } from '../../lib/taskViews.ts';
 
+/**
+ * Open tasks for the dashboard views: this workspace's, plus tasks assigned to me on pages shared
+ * with me from workspaces I'm not working in (#98 follow-up), which show under their page.
+ */
 export function useOpen() {
-  const tasks = useStore((s) => s.tasks);
+  const own = useStore((s) => s.tasks);
+  const shared = useShared((s) => s.tasks);
+  const me = useStore((s) => s.user?.id);
+  const wsId = useStore((s) => s.wsId);
   const lingering = useStore((s) => s.lingering);
-  return useMemo(() => visibleOpen(tasks, lingering), [tasks, lingering]);
+  return useMemo(() => {
+    const mine = Object.values(shared).filter((t) => t.assigneeId === me && t.workspaceId !== wsId && !own[t.id]);
+    const tasks = mine.length ? { ...Object.fromEntries(mine.map((t) => [t.id, t])), ...own } : own;
+    return visibleOpen(tasks, lingering);
+  }, [own, shared, me, wsId, lingering]);
 }
 
 export function Loading() {
