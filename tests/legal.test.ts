@@ -21,7 +21,7 @@ test('privacy.md and terms.md render with headings and no leftover placeholders 
     assert.match(html, /href="mailto:support@devswartz\.com"/);
     assert.doesNotMatch(html, /\{\{|TODO|lawyer|<!--/);
   }
-  assert.match(render(fs.readFileSync('legal/privacy.md', 'utf8')), /Settings → Delete account/);
+  assert.match(render(fs.readFileSync('legal/privacy.md', 'utf8')), /Settings → Profile → Delete account/);
 });
 
 test('support.md renders with a contact email and links to the policies', () => {

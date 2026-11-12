@@ -110,7 +110,7 @@ Nothing else.
 
 ## Deleting your data
 
-You can delete your account yourself in **Settings → Delete account**. This deletes your profile, your private notebooks and their files, your private tasks, your sign-in sessions, push addresses, reminder settings, calendar feed and the page shares you hold. Workspaces you own are handed to another owner or admin, or deleted if there is none. Things you created in shared places, such as pages, comments and tasks in a workspace, stay there and are shown as written by a deleted user; tasks assigned to you become unassigned.
+You can delete your account yourself in **Settings → Profile → Delete account**. This deletes your profile, your private notebooks and their files, your private tasks, your sign-in sessions, push addresses, reminder settings, calendar feed and the page shares you hold. Workspaces you own are handed to another owner or admin, or deleted if there is none. Things you created in shared places, such as pages, comments and tasks in a workspace, stay there and are shown as written by a deleted user; tasks assigned to you become unassigned.
 
 Deleted data can remain in backups for up to about 3 months (see "How long we keep it").
 
