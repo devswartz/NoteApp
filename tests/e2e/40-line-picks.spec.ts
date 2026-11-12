@@ -305,7 +305,23 @@ test('a named page prints its title with a selection, including a page shared fr
   await dblclick(page, para(page, 'judge'), 'vow', true);
   await printNow(page);
   await expect(page.locator('#print-root .print-title')).toHaveText('Quarterly plan');
-  await expect(page.locator('#print-root .print-title')).toHaveClass(/is-small/);
+  // The title is the whole-page title: same size, weight, spacing and rule (only the notebook/date line is left out).
+  const titleStyle = () =>
+    page.locator('#print-root .print-head').evaluate((head) => {
+      const t = getComputedStyle(head.querySelector('.print-title')!);
+      const h = getComputedStyle(head);
+      return { size: t.fontSize, weight: t.fontWeight, line: t.lineHeight, spacing: t.letterSpacing, color: t.color, margin: h.marginBottom, pad: h.paddingBottom, rule: h.borderBottomWidth };
+    });
+  const selectionTitle = await titleStyle();
+  await expect(page.locator('#print-root .print-sub')).toHaveCount(0);
+  await page.emulateMedia({ media: 'screen' });
+  await page.locator('.canvas-box').first().locator('.ProseMirror').click(); // drops the picks
+  await page.keyboard.press('ControlOrMeta+p');
+  await expect.poll(() => printed(page)).toBe(2);
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('#print-root .print-sub')).toHaveCount(1); // the whole page has its notebook and date line
+  expect(await titleStyle()).toEqual(selectionTitle);
+  await page.emulateMedia({ media: 'screen' });
 
   // A page shared from another workspace isn't in the viewer's page list: its title must still print.
   const alice = await createUser(request, 'Alice Owner');
