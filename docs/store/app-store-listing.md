@@ -9,7 +9,7 @@ Pricing is free for now. Paid plans may come later, so nothing here promises "fr
 | Field | Value | Count / limit |
 |---|---|---|
 | Name | Notivelo | 8 / 30 |
-| Subtitle | Notes and tasks, OneNote style | 30 / 30 |
+| Subtitle | Notes and tasks, together | 25 / 30 |
 | Primary category | Productivity | |
 | Secondary category | Business | |
 | Support URL | https://notes.devswartz.com/support | |
@@ -27,18 +27,18 @@ Can be changed any time without a new version.
 Write anywhere on the page, turn any line into a task, and share a page with anyone. Notebooks, a calendar, templates and printing, in Light, Dark or Hybrid.
 ```
 
-## Keywords (92 / 100)
+## Keywords (99 / 100)
 
 Comma-separated, no spaces after commas. The name, subtitle and category words are already indexed, so they are not repeated.
 
 ```
-notes,tasks,todo,notebook,onenote,planner,calendar,checklist,outline,journal,meeting,project
+notes,tasks,todo,notebook,planner,calendar,checklist,outline,journal,meeting,project,organizer,team
 ```
 
-## Description (2246 / 4000)
+## Description (2257 / 4000)
 
 ```
-Notivelo is notes and tasks together, laid out the way OneNote taught you to think: notebooks, sections and pages, with a free-form canvas you can write on anywhere.
+Notivelo is notes and tasks together, organised the way you think: notebooks, sections and pages, with a free-form canvas you can write on anywhere.
 
 WRITE ANYWHERE ON THE PAGE
 Tap anywhere to start a text box. Move boxes, add tables, images and files, and build Word-style numbered outlines (1, a, i) that renumber themselves. Pages keep a version history, so you can look back and restore.
@@ -62,8 +62,8 @@ Choose Light, Dark, Hybrid (a dark toolbar around a paper-like page) or follow t
 PRINTING
 Print a page, just the lines you pick, a whole section or notebook, or a single contents sheet. Save as PDF from the same screen.
 
-COMING FROM ONENOTE
-Import your pages and keep their layout, box positions and tables.
+BRING YOUR NOTES WITH YOU
+Import notebooks from Microsoft OneNote and keep their layout, box positions and tables.
 
 WORKS WHEN YOU DON'T
 Notes stay editable offline and sync when you reconnect. Lock the app with Face ID, and drop a task or note in from the share sheet or the Today widget.
@@ -101,4 +101,31 @@ Not made yet. If you want one later: 15 to 30 seconds, portrait, captured on a r
 4. (19 to 25 s) New page, tap the Meeting notes template and watch it fill in.
 5. (25 to 30 s) Settings, Appearance: flip Light, Hybrid, Dark, ending on the Hybrid theme.
 
-Use the demo workspace (names like Sam and Priya, "Cafe Website" project) and the same text as the screenshots so the store page is consistent. Do not show real notes or contacts.
+Use the demo workspace (names like Jordan and Priya, a "Cafe Website" project) and the same text as the screenshots so the store page is consistent. Do not show real notes or contacts.
+
+## Review account
+
+App Review needs a working sign-in and something to look at. Create the account in the app (or on the web) the normal way, verify its email, then fill it with friendly demo content with the seed script. It uses only the public API, never creates accounts, never prints the password, and is safe to run twice (existing items are skipped by title).
+
+```
+BASE_URL=https://notes.devswartz.com REVIEW_EMAIL=reviewer@example.com REVIEW_PASSWORD='the review password' SHARE_WITH_EMAIL=second-account@example.com npx tsx scripts/seed-review-account.ts
+```
+
+On PowerShell set the variables first (`$env:BASE_URL = "..."`, and so on), then run `npx tsx scripts/seed-review-account.ts`. `SHARE_WITH_EMAIL` is optional: if it is set, the Project brief page is shared with that address (can edit), so the reviewer can see sharing in action. Use a second account you control, or leave it out.
+
+It adds a "Projects" notebook (Planning, Design and Launch prep sections), a Kickoff meeting page laid out like the Meeting notes template, a Project brief with a table and numbered outline, a Site structure outline page, a Launch checklist, tags, and tasks with due dates. Sign in as the review account afterwards and look before submitting.
+
+Suggested App Review notes (paste into App Store Connect, "Notes", and fill in the sign-in fields):
+
+```
+Notivelo is a notes and tasks app: notebooks, sections and pages on a free-form canvas, with tasks that live inside notes. It needs an account; sign-in details are above. The account already has a "Projects" notebook with sample pages and tasks.
+
+To try sharing: open Notes, then Projects > Planning > Project brief, tap Share at the top of the page, and choose a person and Can edit or Can view. That page is already shared with a second sample account.
+
+To try tasks: open the Tasks tab for Today and Upcoming, or tap a task in the Kickoff meeting page.
+
+Account deletion: Settings > Profile > Delete account. It permanently deletes the account and its data.
+
+Privacy policy: https://notes.devswartz.com/privacy
+Support: https://notes.devswartz.com/support
+```

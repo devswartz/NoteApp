@@ -63,11 +63,18 @@ const demo = one<{ id: string }>("SELECT id FROM users WHERE email = 'demo@examp
 const sam = one<{ id: string }>("SELECT id FROM users WHERE email = 'sam@example.com'").id;
 const team = one<{ id: string }>("SELECT id FROM workspaces WHERE name = 'Demo Team'").id;
 
+// Friendly made-up names for screenshots (initials and avatars follow the name).
+db.prepare('UPDATE users SET name = ? WHERE id = ?').run('Alex Rivera', demo);
+db.prepare('UPDATE users SET name = ? WHERE id = ?').run('Jordan Lee', sam);
+db.prepare("UPDATE workspaces SET name = 'Studio Team' WHERE id = ?").run(team);
+db.prepare("UPDATE workspaces SET name = ? WHERE name = ?").run("Alex's Space", "Demo's Space");
+db.prepare("UPDATE workspaces SET name = ? WHERE name = ?").run("Jordan's Space", "Sam's Space");
+
 // An outside person to share a page with (verified, with a workspace of her own).
 const priya = newId();
 const ts = now();
 db.prepare('INSERT INTO users (id, email, name, password_hash, color, created_at, email_verified_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-  priya, 'priya@example.com', 'Priya Nair', bcrypt.hashSync('unused-demo-pass', 10), pickColor(), ts, ts,
+  priya, 'priya@example.com', 'Priya Shah', bcrypt.hashSync('unused-demo-pass', 10), pickColor(), ts, ts,
 );
 createWorkspace(priya, "Priya's Space", true);
 
@@ -125,7 +132,7 @@ db.transaction(() => {
     [0, 0, 280, [
       p(bold('Date: '), fmt(t)),
       h(3, 'Attendees'),
-      bullets(['Demo User'], ['Sam Teammate'], ['Priya Nair (guest)']),
+      bullets(['Alex Rivera'], ['Jordan Lee'], ['Priya Shah (guest)']),
       h(3, 'Agenda'),
       outline([['Why we’re relaunching'], ['Scope and timeline'], ['Who does what']]),
     ]],
@@ -159,9 +166,9 @@ db.transaction(() => {
       h(2, 'Milestones'),
       table([
         ['Step', 'Owner', 'Due'],
-        ['Design', 'Sam', 'Week 2'],
-        ['Copy', 'Demo', 'Week 3'],
-        ['Build', 'Sam', 'Week 5'],
+        ['Design', 'Jordan', 'Week 2'],
+        ['Copy', 'Alex', 'Week 3'],
+        ['Build', 'Jordan', 'Week 5'],
         ['Launch', 'Everyone', 'Week 6'],
       ]),
     ]],
@@ -184,10 +191,10 @@ db.transaction(() => {
       h(2, 'Pages and owners'),
       table([
         ['Page', 'Owner', 'Status'],
-        ['Home', 'Sam', 'Mock-up'],
-        ['Services', 'Demo', 'Drafting'],
-        ['About', 'Demo', 'Not started'],
-        ['Contact', 'Sam', 'In review'],
+        ['Home', 'Jordan', 'Mock-up'],
+        ['Services', 'Alex', 'Drafting'],
+        ['About', 'Alex', 'Not started'],
+        ['Contact', 'Jordan', 'In review'],
       ]),
     ]],
   ]);

@@ -85,7 +85,7 @@ function social(W, H) {
         <img src="${url(path.join(ROOT, 'public', 'icon.svg'))}" style="width:${s(84)}px;height:${s(84)}px;border-radius:${s(20)}px">
         <div style="font-size:${s(84)}px;font-weight:800;letter-spacing:-0.03em">Notivelo</div>
       </div>
-      <div style="margin-top:${s(36)}px;font-size:${s(48)}px;line-height:1.15;font-weight:600">Notes and tasks, the OneNote way</div>
+      <div style="margin-top:${s(36)}px;font-size:${s(48)}px;line-height:1.15;font-weight:600">Notes and tasks, beautifully together</div>
       <div style="margin-top:${s(30)}px;font-size:${s(26)}px;opacity:.85">Web · Windows · Mac · iPhone · Android</div>
     </div>
     <div style="position:absolute;left:${s(640)}px;top:${s(90)}px;width:${s(1000)}px;border-radius:${s(22)}px;overflow:hidden;box-shadow:0 ${s(24)}px ${s(70)}px rgba(0,0,0,.4);border:${s(3)}px solid rgba(255,255,255,.25)">

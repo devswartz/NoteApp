@@ -43,9 +43,11 @@ env:
 
 jobs:
   android:
-    name: android (debug APK)
+    name: android (debug APK; signed release APK on tags)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write # attach Notivelo.apk to the tag's release
     env:
       HAS_FIREBASE: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON != '' }}
       HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
@@ -91,24 +93,52 @@ jobs:
           path: apps/mobile/android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
-      - name: Signed release bundle (Play internal testing)
+      # Signed release build: the .aab for Play internal testing and a .apk for direct download.
+      # Without the keystore secrets (docs/ANDROID-SIGNING.md) this is skipped with a warning.
+      - name: Signed release bundle and APK
         if: env.HAS_KEYSTORE == 'true' && github.event_name != 'pull_request'
         working-directory: apps/mobile/android
         run: |
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
-          ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks" ./gradlew --no-daemon bundleRelease
+          ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks" ./gradlew --no-daemon assembleRelease bundleRelease
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp app/build/outputs/apk/release/*.apk "$RUNNER_TEMP/apk/Notivelo.apk"
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+      - name: Release APK skipped
+        if: env.HAS_KEYSTORE != 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: echo "::warning::The Android signing secrets are not set; skipped the signed release APK (see docs/ANDROID-SIGNING.md)."
+
       - uses: actions/upload-artifact@v4
         if: env.HAS_KEYSTORE == 'true' && github.event_name != 'pull_request'
         with:
           name: noteapp-android-release-${{ env.VERSION_NAME }}-${{ github.run_number }}
-          path: apps/mobile/android/app/build/outputs/bundle/release/*.aab
+          path: |
+            apps/mobile/android/app/build/outputs/bundle/release/*.aab
+            ${{ runner.temp }}/apk/Notivelo.apk
           retention-days: 30
+
+      # Attach the APK to the tag's GitHub release. The Desktop workflow makes a draft release for
+      # the same tag at about the same time, so create it here if it isn't there yet and retry:
+      # whichever workflow gets there first wins, and both just upload their files.
+      - name: Attach Notivelo.apk to the release
+        if: env.HAS_KEYSTORE == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          for i in 1 2 3 4 5; do
+            gh release view "$TAG" >/dev/null 2>&1               || gh release create "$TAG" --draft --title "$TAG" --notes "Build of $TAG. Publish this draft to ship it." --target "$GITHUB_SHA" >/dev/null 2>&1               || true
+            if gh release upload "$TAG" "$RUNNER_TEMP/apk/Notivelo.apk" --clobber; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::Could not attach Notivelo.apk to release $TAG"
+          exit 1
 
   ios:
     name: ios (simulator build; TestFlight when configured)

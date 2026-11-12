@@ -12,7 +12,7 @@ async function api(path, token) {
 async function ids() {
   const r = await fetch(BASE + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'demo@example.com', password: PASSWORD }) });
   const s = await r.json();
-  const ws = (await api('/workspaces', s.accessToken)).find((w) => w.name === 'Demo Team');
+  const ws = (await api('/workspaces', s.accessToken)).find((w) => w.name === 'Studio Team');
   const tree = await api(`/workspaces/${ws.id}/tree`, s.accessToken);
   const page = (title) => tree.pages.find((p) => p.title.startsWith(title))?.id;
   const section = (name) => tree.sections.find((x) => x.name === name)?.id;
