@@ -9,11 +9,11 @@ const li = (t: string, ...kids: J[]): J => ({ type: 'listItem', content: [p(t), 
 const ul = (...items: J[]): J => ({ type: 'bulletList', content: items });
 const heading = (t: string): J => ({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: t }] });
 
-async function open(page: Page, request: Parameters<typeof createPage>[0], user: Awaited<ReturnType<typeof createUser>>, width: number) {
+async function open(page: Page, request: Parameters<typeof createPage>[0], user: Awaited<ReturnType<typeof createUser>>, width: number, x = 140) {
   const { pageId: scratch, sectionId } = await createPage(request, user, { notebook: 'Up', page: 'Scratch' });
   const content = {
     type: 'doc',
-    content: [{ type: 'canvasBox', attrs: { x: 0, y: 0, w: width, z: 1, wide: width > 500 }, content: [heading('Agenda'), p('Plain paragraph'), ul(li('Alpha', ul(li('Beta', ul(li('Gamma')))))), { type: 'paragraph' }, p('Closing')] }],
+    content: [{ type: 'canvasBox', attrs: { x, y: 0, w: width, z: 1, wide: width > 500 }, content: [heading('Agenda'), p('Plain paragraph'), ul(li('Alpha', ul(li('Beta', ul(li('Gamma')))))), { type: 'paragraph' }, p('Closing')] }],
   };
   await api(request, 'POST', `/pages/${scratch}/templates`, user.token, { name: 'Up template', kind: 'canvas', content });
   const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: 'Up' });
@@ -78,6 +78,25 @@ test('from an empty line (no ✓ on its handle) up to a line that has one, the h
     const h = (await page.locator('.block-handle').first().boundingBox())!;
     const left = await textLeft(box, t);
     expect(h.x + h.width, `${t}: handle ends left of the text`).toBeLessThanOrEqual(left - 2);
+  }
+});
+
+test('a box at the very left of the page: the handle stays inside the page area, above the sidebar, and can be clicked', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Up left');
+  await signInContext(context, user);
+  await open(page, request, user, 640, 0);
+  const box = page.locator('.canvas-box').first();
+  await box.locator('.ProseMirror').click();
+  const area = (await page.locator('.page-scroll').first().boundingBox())!;
+  for (const t of ['Gamma', 'Alpha', 'Agenda']) {
+    const b = (await box.locator('h1, h2, h3, p').filter({ hasText: new RegExp(`^${t}$`) }).first().boundingBox())!;
+    await page.mouse.move(b.x + 20, mid(b), { steps: 8 });
+    await page.waitForTimeout(450);
+    const h = (await page.locator('.block-handle').first().boundingBox())!;
+    expect(h.x, `${t}: the handle is not under the sidebar`).toBeGreaterThanOrEqual(area.x);
+    // Whatever is at the handle's centre is the handle (not the sidebar's pages panel).
+    const top = await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!)?.closest('.block-handle') ? 'handle' : document.elementFromPoint(x!, y!)?.className), [h.x + h.width / 2, h.y + h.height / 2]);
+    expect(top, `${t}: the handle can be clicked`).toBe('handle');
   }
 });
 

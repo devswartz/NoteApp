@@ -333,6 +333,9 @@ const LIST_ITEMS = new Set(['listItem', 'taskItem']);
 const LIST_MARKER_GAP = 38;
 /** Any other block: the handle ends this far (px) before its text. */
 const BLOCK_GAP = 8;
+/** The handle's width when it can't be measured yet, and how far inside the page area its left edge stays. */
+const HANDLE_WIDTH = 72;
+const AREA_PAD = 4;
 
 /**
  * Notion-style handle left of each block: drag to move, click to select, "+" to insert below. In a list the handle
@@ -362,7 +365,18 @@ function BlockHandle({ editor }: { editor: Editor }) {
         // heading too): a list line keeps clear of its bullet or number, any other block gets a small gutter. (Left to the library,
         // a block's handle touched the first letter of its text.)
         const gap = LIST_ITEMS.has(node.type.name) ? LIST_MARKER_GAP : BLOCK_GAP;
-        return { getBoundingClientRect: () => { const r = dom.getBoundingClientRect(); return DOMRect.fromRect({ x: r.x - gap, y: r.y, width: r.width, height: r.height }); } };
+        return {
+          getBoundingClientRect: () => {
+            const r = dom.getBoundingClientRect();
+            // The handle is placed by its right edge, so its left edge is the reference minus its width: never let that go left of the page's
+            // scroll area (it would sit under the sidebar, unclickable). With no room (a box at the very left), it overlays the box's own
+            // padding and first characters instead, and stays clickable.
+            const area = editor.view.dom.closest('.page-scroll, .canvas-surface')?.getBoundingClientRect();
+            const width = document.querySelector<HTMLElement>('.block-handle')?.offsetWidth || HANDLE_WIDTH;
+            const x = area ? Math.max(r.x - gap, area.left + AREA_PAD + width) : r.x - gap;
+            return DOMRect.fromRect({ x, y: r.y, width: r.width, height: r.height });
+          },
+        };
       }}
       onNodeChange={({ node, pos }) => {
         current.current = node ? { pos, size: node.nodeSize } : null;
