@@ -40,6 +40,7 @@ export function App() {
           <Route path="/reset" element={<ResetPassword />} />
           <Route path="/privacy" element={<LegalPage doc="privacy" />} />
           <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="/support" element={<LegalPage doc="support" />} />
           <Route path="*" element={<CheckEmail />} />
         </Routes>
         <Toasts />
@@ -54,6 +55,7 @@ export function App() {
         <Route path="/invite/:token" element={<InvitePage />} />
         <Route path="/privacy" element={<LegalPage doc="privacy" />} />
         <Route path="/terms" element={<LegalPage doc="terms" />} />
+          <Route path="/support" element={<LegalPage doc="support" />} />
         <Route path="/reset" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         {user ? (

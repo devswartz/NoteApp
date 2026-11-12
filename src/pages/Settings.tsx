@@ -329,7 +329,7 @@ function AboutSection() {
         <dd>{detectPlatform()}</dd>
         <dt>Legal</dt>
         <dd className="about-links">
-          <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link>
+          <Link to="/privacy">Privacy</Link> · <Link to="/terms">Terms</Link> · <Link to="/support">Support</Link>
         </dd>
       </dl>
     </Card>

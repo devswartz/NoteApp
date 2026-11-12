@@ -24,6 +24,14 @@ test('privacy.md and terms.md render with headings and no leftover placeholders 
   assert.match(render(fs.readFileSync('legal/privacy.md', 'utf8')), /Settings → Delete account/);
 });
 
+test('support.md renders with a contact email and links to the policies', () => {
+  const html = render(fs.readFileSync('legal/support.md', 'utf8'));
+  assert.match(html, /<h1>Support<\/h1>/);
+  assert.match(html, /href="mailto:support@devswartz\.com"/);
+  assert.match(html, /href="\/privacy"/);
+  assert.doesNotMatch(html, /\{\{|<!--/);
+});
+
 test('headings, lists, links, bold and italic render', () => {
   const html = render('# T\n\nHello **bold** and *it* and `c`.\n\n- a\n- b\n\n1. x\n2. y\n\n[Terms](/terms) [Web](https://example.com)');
   assert.match(html, /<h1>T<\/h1>/);
