@@ -13,7 +13,7 @@ import { Extension, type Editor, type JSONContent } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { create } from 'zustand';
-import { addRange, mapRanges, pickBlocks, pickText, rangeOf, touches, type RangePick } from './linePicksCore.ts';
+import { addRange, diffMapping, mapRanges, pickBlocks, pickText, rangeOf, replacesWholeDoc, touches, type RangePick } from './linePicksCore.ts';
 
 interface PickState {
   picks: RangePick[];
@@ -42,9 +42,21 @@ const picksOf = (r: Registered): RangePick[] => (alive(r) ? (key.getState(r.edit
 const forPage = (pageId: string) => [...registry].filter((r) => r.pageId === pageId && alive(r));
 const setPicks = (r: Registered, picks: RangePick[]) => r.editor.view.dispatch(r.editor.state.tr.setMeta(key, { set: picks }).setMeta('addToHistory', false));
 
-/** The live selection of an editor as a pick, or null when it is just a caret. */
+/**
+ * The live selection of an editor as a pick, or null when it is just a caret. The browser's own selection is the
+ * truth for a gesture just made (the editor learns of it a moment later), so that is read first.
+ */
 function liveRange(r: Registered): RangePick | null {
   if (!alive(r)) return null;
+  const { view } = r.editor;
+  const dom = typeof window === 'undefined' ? null : window.getSelection();
+  if (dom && !dom.isCollapsed && dom.anchorNode && dom.focusNode && view.dom.contains(dom.anchorNode) && view.dom.contains(dom.focusNode)) {
+    try {
+      return rangeOf(view.state.doc, view.posAtDOM(dom.anchorNode, dom.anchorOffset), view.posAtDOM(dom.focusNode, dom.focusOffset));
+    } catch {
+      // a position the editor can't place: fall back to its own state
+    }
+  }
   const { selection, doc } = r.editor.state;
   return selection.empty ? null : rangeOf(doc, selection.from, selection.to);
 }
@@ -114,6 +126,8 @@ export const linePicks = {
     if (collapse && r && r.pageId === pageId && !r.editor.state.selection.empty) {
       r.editor.view.dispatch(r.editor.state.tr.setSelection(TextSelection.create(r.editor.state.doc, r.editor.state.selection.to)).setMeta('addToHistory', false));
     }
+    // The browser's own highlight, too: once the box has given up focus it would stay drawn.
+    if (collapse) window.getSelection()?.removeAllRanges();
   },
   /** What a point on the page is on: a picked range, the live selection, or neither (a right-click uses it). */
   hit(pageId: string, target: Element | null, x: number, y: number): 'pick' | 'selection' | null {
@@ -142,7 +156,8 @@ export const LinePicks = Extension.create({
             const meta = tr.getMeta(key) as { set?: RangePick[] } | undefined;
             if (meta?.set) return { picks: meta.set };
             if (!tr.docChanged || !value.picks.length) return value;
-            return { picks: mapRanges(value.picks, tr.mapping, tr.doc) };
+            // A box re-rendered whole from the shared document keeps its picks: see diffMapping.
+            return { picks: mapRanges(value.picks, replacesWholeDoc(tr) ? diffMapping(tr.before, tr.doc) : tr.mapping, tr.doc) };
           },
         },
         props: {
@@ -166,6 +181,9 @@ export const LinePicks = Extension.create({
           // Capture phase on the editor's root, ahead of ProseMirror's own press handling (which, with Ctrl held, would
           // select a whole node instead of placing the caret).
           const onDown = (e: MouseEvent) => {
+            // A right-click once something is picked: the browser moves the caret to it, so the selection made last
+            // becomes a pick first (it would otherwise be forgotten, and only the older picks would print).
+            if (me && e.button === 2 && linePicks.count(me.pageId) > 0) commitLive(me.pageId);
             if (!me || e.button !== 0 || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
             const t = e.target as HTMLElement | null;
             // A link still opens; a box's own padding is its frame (it picks the whole box); an inline task or other

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Schema, type Node as PMNode } from '@tiptap/pm/model';
 import { EditorState } from '@tiptap/pm/state';
-import { addRange, mapRanges, pickBlocks, pickText, rangeOf, touches } from '../src/editor/linePicksCore.ts';
+import { addRange, diffMapping, mapRanges, pickBlocks, pickText, rangeOf, replacesWholeDoc, touches } from '../src/editor/linePicksCore.ts';
 
 const schema = new Schema({
   nodes: {
@@ -113,4 +113,29 @@ test('a range across lines prints each cut at both ends; text is one range per l
   assert.deepEqual(pickBlocks(doc, [{ from, to }]).map((x) => x.content?.[0]?.text), ['brown fox', 'jumps']);
   const [lf, lt] = at(doc, 'Last');
   assert.equal(pickText(doc, [{ from: lf, to: lt }, { from, to }]), 'brown fox\njumps\nLast');
+});
+
+test('a box re-rendered whole from the shared document keeps its picks (one step replacing everything)', () => {
+  const state = EditorState.create({ doc, schema });
+  const [from, to] = at(doc, 'quick');
+  const pick = [{ from, to }];
+  const text = (d: PMNode, r: { from: number; to: number }) => d.textBetween(r.from, r.to);
+
+  // The same content put back as one replacement: through the step itself every range would be "deleted".
+  let tr = state.tr.replaceWith(0, doc.content.size, doc.content);
+  assert.ok(replacesWholeDoc(tr));
+  assert.deepEqual(mapRanges(pick, tr.mapping, tr.doc), [], 'mapping through the step alone loses the pick');
+  assert.deepEqual(mapRanges(pick, diffMapping(tr.before, tr.doc), tr.doc), pick, 'the diff keeps it where it is');
+
+  // The same, with someone's edit in it: a word typed before the pick shifts it; text typed inside grows it.
+  const edited = n.doc.create(null, [p('Well, The quick brown fox'), ...[1, 2, 3].map((i) => doc.child(i))]);
+  tr = state.tr.replaceWith(0, doc.content.size, edited.content);
+  const moved = mapRanges(pick, diffMapping(tr.before, tr.doc), tr.doc);
+  assert.equal(text(tr.doc, moved[0]), 'quick');
+  const inside = n.doc.create(null, [p('The quiXXck brown fox'), ...[1, 2, 3].map((i) => doc.child(i))]);
+  tr = state.tr.replaceWith(0, doc.content.size, inside.content);
+  assert.equal(text(tr.doc, mapRanges(pick, diffMapping(tr.before, tr.doc), tr.doc)[0]), 'quiXXck');
+
+  // An ordinary edit is not a whole-document replacement.
+  assert.equal(replacesWholeDoc(state.tr.insertText('x', 3)), false);
 });

@@ -5,7 +5,7 @@
 import type { JSONContent } from '@tiptap/core';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Selection, TextSelection } from '@tiptap/pm/state';
-import type { Mapping } from '@tiptap/pm/transform';
+import { Mapping, ReplaceStep, StepMap, type Transform } from '@tiptap/pm/transform';
 import { selectionBlocks } from '../print/selectionContent.ts';
 
 /** A picked range of a box's document (positions as the editor counts them). */
@@ -68,6 +68,30 @@ export function mapRanges(picks: readonly RangePick[], mapping: Mapping, doc: PM
     if (to > from && to <= doc.content.size) mapped.push({ from, to });
   }
   return mapped.reduce<RangePick[]>((acc, r) => addRange(acc, r), []);
+}
+
+/**
+ * Where positions went across a change known only as the document before and after it: everything unchanged at the
+ * start and the end stays put, what is between moved as one replacement. (The editor re-renders a whole box from the
+ * shared document now and then, as one step replacing everything: mapping through that step alone would say all the
+ * text was deleted and drop every pick, even though the text is the same.)
+ */
+export function diffMapping(before: PMNode, after: PMNode): Mapping {
+  const start = before.content.findDiffStart(after.content);
+  if (start == null) return new Mapping([]); // nothing changed
+  const end = before.content.findDiffEnd(after.content)!;
+  let { a: endA, b: endB } = end;
+  const overlap = start - Math.min(endA, endB);
+  if (overlap > 0) {
+    endA += overlap;
+    endB += overlap;
+  }
+  return new Mapping([new StepMap([start, endA - start, endB - start])]);
+}
+
+/** Did this change replace the whole document in one step (the editor re-rendering it from the shared document)? */
+export function replacesWholeDoc(tr: Transform): boolean {
+  return tr.steps.some((step, i) => step instanceof ReplaceStep && step.from === 0 && step.to === tr.docs[i].content.size);
 }
 
 const valid = (doc: PMNode, p: RangePick) => p.from >= 0 && p.to <= doc.content.size && p.from < p.to;
