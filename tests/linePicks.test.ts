@@ -1,100 +1,116 @@
-// Picked lines (src/editor/linePicksCore.ts): which line a position is on, sweeping, moving with edits, and what prints.
+// Picked text (src/editor/linePicksCore.ts): exact ranges, merging, moving with edits, and what prints.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Schema, type Node as PMNode } from '@tiptap/pm/model';
-import { EditorState, TextSelection } from '@tiptap/pm/state';
-import { addLines, lineAt, linesBetween, mapPicks, pickBlocks, pickText, removeLines, toggleLine } from '../src/editor/linePicksCore.ts';
+import { EditorState } from '@tiptap/pm/state';
+import { addRange, mapRanges, pickBlocks, pickText, rangeOf, touches } from '../src/editor/linePicksCore.ts';
 
 const schema = new Schema({
   nodes: {
     doc: { content: 'block+' },
     paragraph: { group: 'block', content: 'inline*' },
-    heading: { group: 'block', content: 'inline*', attrs: { level: { default: 2 } } },
     text: { group: 'inline' },
     orderedList: { group: 'block', content: 'listItem+', attrs: { start: { default: 1 }, continued: { default: false } } },
     listItem: { content: 'paragraph block*' },
-    taskRef: { group: 'block', atom: true, attrs: { taskId: { default: '' } } },
   },
+  marks: { bold: {} },
 });
 const n = schema.nodes;
-const p = (t: string) => n.paragraph.create(null, t ? schema.text(t) : null);
+const p = (t: string, bold = false) => n.paragraph.create(null, t ? schema.text(t, bold ? [schema.marks.bold.create()] : []) : null);
 const li = (t: string) => n.listItem.create(null, [p(t)]);
 
-/** Alpha, Bravo, "1. One 2. Two 3. Three", a task, Zulu. */
-const doc = n.doc.create(null, [p('Alpha'), p('Bravo'), n.orderedList.create({ start: 1 }, [li('One'), li('Two'), li('Three')]), n.taskRef.create({ taskId: 't1' }), p('Zulu')]);
+// "The quick brown fox" / "jumps over" / "1. First step 2. Second step 3. Third step" / "Last line"
+const doc = n.doc.create(null, [p('The quick brown fox'), p('jumps over'), n.orderedList.create({ start: 1 }, [li('First step'), li('Second step'), li('Third step')]), p('Last line')]);
 
-/** A position inside the text `t` (offset chars in). */
-function inside(d: PMNode, t: string, offset = 1): number {
-  let found = -1;
+/** The position of `word` (first occurrence) in the doc: [from, to]. */
+function at(d: PMNode, word: string): [number, number] {
+  let out: [number, number] | null = null;
   d.descendants((node, pos) => {
-    if (found < 0 && node.isTextblock && node.textContent === t) found = pos + 1 + offset;
-    return found < 0;
+    if (out || !node.isText) return;
+    const i = node.text!.indexOf(word);
+    if (i >= 0) out = [pos + i, pos + i + word.length];
   });
-  assert.ok(found >= 0, `no "${t}"`);
-  return found;
+  assert.ok(out, `no "${word}"`);
+  return out!;
 }
 
-test('a position is on the textblock around it; an atom block is its own line', () => {
-  const bravo = lineAt(doc, inside(doc, 'Bravo'))!;
-  assert.equal(doc.textBetween(bravo.from, bravo.to), 'Bravo');
-  assert.equal(bravo.node, false);
-  const two = lineAt(doc, inside(doc, 'Two'))!;
-  assert.equal(doc.textBetween(two.from, two.to), 'Two', 'the list item text, not the whole list');
-  const task = doc.child(3);
-  let taskPos = 0;
-  doc.forEach((c, o, i) => {
-    if (i === 3) taskPos = o;
-  });
-  assert.equal(task.type.name, 'taskRef');
-  assert.deepEqual(lineAt(doc, taskPos), { from: taskPos, to: taskPos + 1, node: true });
+test('a range is exactly what was selected, whichever way it was dragged', () => {
+  const [from, to] = at(doc, 'quick brown');
+  assert.deepEqual(rangeOf(doc, from, to), { from, to });
+  assert.deepEqual(rangeOf(doc, to, from), { from, to }, 'right to left');
+  assert.equal(rangeOf(doc, from, from), null, 'a caret picks nothing');
 });
 
-test('toggling adds a line, then takes it out; several lines stay', () => {
-  const a = lineAt(doc, inside(doc, 'Alpha'))!;
-  const z = lineAt(doc, inside(doc, 'Zulu'))!;
-  const both = toggleLine(toggleLine([], a), z);
-  assert.equal(both.length, 2);
-  assert.deepEqual(toggleLine(both, a), [z]);
+test('a triple-click, which selects up to the start of the next paragraph, picks just the line', () => {
+  const [lineStart] = at(doc, 'The quick');
+  const [nextStart] = at(doc, 'jumps over');
+  const r = rangeOf(doc, lineStart, nextStart)!;
+  assert.equal(doc.textBetween(r.from, r.to), 'The quick brown fox');
+  // A drag that starts at the very end of a line starts on the next one.
+  const [, endOfFirst] = at(doc, 'brown fox');
+  const [, endOfSecond] = at(doc, 'jumps');
+  const s = rangeOf(doc, endOfFirst, endOfSecond)!;
+  assert.equal(doc.textBetween(s.from, s.to), 'jumps');
 });
 
-test('sweeping from one line to another picks every line between', () => {
-  const swept = linesBetween(doc, inside(doc, 'Bravo'), inside(doc, 'Three'));
-  assert.deepEqual(swept.map((l) => doc.textBetween(l.from, l.to, ' ', ' ')), ['Bravo', 'One', 'Two', 'Three']);
-  assert.equal(linesBetween(doc, inside(doc, 'Three'), inside(doc, 'Bravo')).length, 4, 'either direction');
-  const picks = addLines([], swept);
-  assert.equal(removeLines(picks, swept.slice(1, 3)).length, 2);
+test('whitespace alone picks nothing', () => {
+  const d = n.doc.create(null, [p('a   b'), p('')]);
+  assert.equal(rangeOf(d, 2, 5), null, 'the spaces between two words');
 });
 
-test('picks print as blocks in document order, with list numbers kept', () => {
-  const picks = [lineAt(doc, inside(doc, 'Zulu'))!, lineAt(doc, inside(doc, 'Two'))!, lineAt(doc, inside(doc, 'Alpha'))!];
-  const blocks = pickBlocks(doc, picks);
-  assert.deepEqual(blocks.map((b) => b.type), ['paragraph', 'orderedList', 'paragraph']);
-  assert.equal(blocks[1].attrs?.start, 2, 'the picked "Two" is still item 2');
-  assert.equal(pickText(doc, picks), 'Alpha\nTwo\nZulu');
+test('overlapping or touching ranges become one; separate ones stay, in order', () => {
+  assert.deepEqual(addRange([{ from: 10, to: 20 }], { from: 15, to: 30 }), [{ from: 10, to: 30 }]);
+  assert.deepEqual(addRange([{ from: 10, to: 20 }], { from: 20, to: 25 }), [{ from: 10, to: 25 }], 'touching');
+  assert.deepEqual(addRange([{ from: 10, to: 20 }, { from: 40, to: 50 }], { from: 25, to: 30 }), [{ from: 10, to: 20 }, { from: 25, to: 30 }, { from: 40, to: 50 }]);
+  assert.deepEqual(addRange([{ from: 10, to: 20 }, { from: 30, to: 40 }], { from: 15, to: 35 }), [{ from: 10, to: 40 }], 'one range bridging two');
+  assert.ok(touches([{ from: 10, to: 20 }], 20) && !touches([{ from: 10, to: 20 }], 21));
 });
 
-test('a picked task line prints as the task', () => {
-  let taskPos = 0;
-  doc.forEach((c, o) => c.type.name === 'taskRef' && (taskPos = o));
-  assert.deepEqual(pickBlocks(doc, [lineAt(doc, taskPos)!]).map((b) => [b.type, b.attrs?.taskId]), [['taskRef', 't1']]);
+test('picks move with the text through edits: before shifts, inside grows, at the edges stays out, deleted drops', () => {
+  const [from, to] = at(doc, 'quick');
+  const pick = [{ from, to }];
+  const state = EditorState.create({ doc, schema });
+  const text = (d: PMNode, r: { from: number; to: number }) => d.textBetween(r.from, r.to);
+
+  // Typing before it shifts it; typing inside makes it longer; typing at either edge stays outside.
+  let tr = state.tr.insertText('Well, ', at(doc, 'The')[0]);
+  assert.equal(text(tr.doc, mapRanges(pick, tr.mapping, tr.doc)[0]), 'quick');
+  tr = state.tr.insertText('XX', from + 2);
+  assert.equal(text(tr.doc, mapRanges(pick, tr.mapping, tr.doc)[0]), 'quXXick');
+  tr = state.tr.insertText('<<', from);
+  assert.equal(text(tr.doc, mapRanges(pick, tr.mapping, tr.doc)[0]), 'quick');
+  tr = state.tr.insertText('>>', to);
+  assert.equal(text(tr.doc, mapRanges(pick, tr.mapping, tr.doc)[0]), 'quick');
+  // Deleting part of it shrinks it; deleting all of it drops it.
+  tr = state.tr.delete(from, from + 2);
+  assert.equal(text(tr.doc, mapRanges(pick, tr.mapping, tr.doc)[0]), 'ick');
+  tr = state.tr.delete(from - 1, to + 1);
+  assert.deepEqual(mapRanges(pick, tr.mapping, tr.doc), []);
 });
 
-test('picks move with edits and drop when their line is deleted', () => {
-  const bravo = lineAt(doc, inside(doc, 'Bravo'))!;
-  const zulu = lineAt(doc, inside(doc, 'Zulu'))!;
-  let state = EditorState.create({ doc, schema });
-  // Typing in Alpha shifts everything after it.
-  let tr = state.tr.insertText('!!', inside(doc, 'Alpha'));
-  const moved = mapPicks([bravo, zulu], tr.mapping, tr.doc);
-  assert.deepEqual(moved.map((l) => tr.doc.textBetween(l.from, l.to)), ['Bravo', 'Zulu']);
-  // Deleting Bravo's line drops its pick.
-  state = state.apply(tr);
-  const b = lineAt(state.doc, inside(state.doc, 'Bravo'))!;
-  tr = state.tr.delete(b.from, b.to);
-  const left = mapPicks([moved[0], moved[1]], tr.mapping, tr.doc);
-  assert.deepEqual(left.map((l) => tr.doc.textBetween(l.from, l.to)), ['Zulu']);
-  // An empty line prints nothing.
-  const empty = n.doc.create(null, [p(''), p('x')]);
-  assert.deepEqual(pickBlocks(empty, [lineAt(empty, 1)!]), []);
-  assert.ok(TextSelection);
+test('picked pieces print as they are: partial lines stay partial, formatting kept, in document order', () => {
+  const d = n.doc.create(null, [p('plain and '), n.paragraph.create(null, [schema.text('bold', [schema.marks.bold.create()]), schema.text(' tail')])]);
+  const [a, b] = at(d, 'and');
+  const [c] = at(d, 'bold');
+  const e = at(d, ' tail')[1];
+  const blocks = pickBlocks(d, [{ from: c, to: e }, { from: a, to: b }]);
+  assert.deepEqual(blocks.map((x) => x.type), ['paragraph', 'paragraph']);
+  assert.deepEqual(blocks[0].content, [{ type: 'text', text: 'and' }]);
+  assert.deepEqual(blocks[1].content, [{ type: 'text', text: 'bold', marks: [{ type: 'bold' }] }, { type: 'text', text: ' tail' }], 'in order, bold kept');
+});
+
+test('a piece picked inside a numbered item keeps its number', () => {
+  const [from, to] = at(doc, 'Second');
+  const blocks = pickBlocks(doc, [{ from, to }]);
+  assert.equal(blocks[0].type, 'orderedList');
+  assert.equal(blocks[0].attrs?.start, 2, 'the picked "Second" is still item 2');
+  assert.equal(pickText(doc, [{ from, to }]), 'Second');
+});
+
+test('a range across lines prints each cut at both ends; text is one range per line', () => {
+  const [from] = at(doc, 'brown');
+  const [, to] = at(doc, 'jumps');
+  assert.deepEqual(pickBlocks(doc, [{ from, to }]).map((x) => x.content?.[0]?.text), ['brown fox', 'jumps']);
+  const [lf, lt] = at(doc, 'Last');
+  assert.equal(pickText(doc, [{ from: lf, to: lt }, { from, to }]), 'brown fox\njumps\nLast');
 });

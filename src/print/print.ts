@@ -128,7 +128,7 @@ export function pageSelection(): Pick<PrintPageInput, 'boxIds' | 'blocks' | 'box
   const picked = useBoxSelection.getState();
   const boxes = picked.pageId === page.pageId ? picked.ids : [];
   const lines = linePicks.blocks(page.pageId);
-  // Picked boxes and picked lines print together, in reading order; a box picked whole prints whole.
+  // Picked boxes and picked text print together, in reading order; a box picked whole prints whole.
   if (boxes.length || Object.keys(lines).length) {
     const onlyLines = Object.fromEntries(Object.entries(lines).filter(([id]) => !boxes.includes(id)));
     return { boxIds: [...new Set([...boxes, ...Object.keys(onlyLines)])], ...(Object.keys(onlyLines).length ? { boxBlocks: onlyLines } : {}) };

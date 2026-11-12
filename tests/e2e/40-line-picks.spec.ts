@@ -1,7 +1,8 @@
-// Picking separate lines (Ctrl/Cmd+click, Ctrl/Cmd+drag) inside and across boxes, "Print selection" printing exactly
-// them, the right-click menu, and a selection from an untitled page printing without a title.
-// Set E2E_SHOTS=<dir> to also save screenshots.
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+// Word-style multi-selection (Ctrl/Cmd held for the next selection keeps the earlier ones), inside and across boxes:
+// the first selection is the browser's own (drag, double-click a word, triple-click a line); Ctrl+drag / +double-click /
+// +triple-click adds another range. "Print selection" prints exactly those ranges, the right-click menu, Copy, and a
+// selection from an untitled page printing without a title. Set E2E_SHOTS=<dir> to also save screenshots.
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { api, createPage, createTeam, createUser, openPage, pageUrl, ribbon, signInContext, type TestUser } from './helpers.ts';
 
 type J = Record<string, unknown>;
@@ -42,127 +43,233 @@ async function canvasPage(request: APIRequestContext, page: Page, user: TestUser
   return pageId;
 }
 
-const CTRL = ['ControlOrMeta' as const];
-const line = (page: Page, t: string) => page.locator('.canvas-box p', { hasText: new RegExp(`^${t}$`) });
-const picked = (page: Page) => page.locator('.canvas-box .is-line-picked');
-const printButton = (page: Page) => ribbon(page).getByRole('button', { name: 'Print selection', exact: true });
-
+const link = (href: string, label: string): J => text(label, [{ type: 'link', attrs: { href } }]);
 const twoBoxes = [
-  box(0, 0, 500, [p(text('Alpha')), p(text('Bravo')), p(text('Charlie')), p(text('Delta'))]),
-  box(0, 400, 500, [p(text('Echo')), p(text('Foxtrot'))]),
+  box(0, 0, 520, [p(text('The quick brown fox')), p(text('jumps over the lazy dog')), p(text('Pack my box with five jugs')), p(text('Visit '), link('https://example.com/docs', 'the docs'), text(' now'))]),
+  box(0, 400, 520, [p(text('Sphinx of black quartz')), p(text('judge my vow'))]),
 ];
 
-test('Ctrl+click picks separate lines in and across boxes; Print selection prints only those, under a small title', async ({ page, context, request }) => {
-  const user = await createUser(request, 'Lina Lines');
+// ── gestures: real mouse input at points inside the text, with Ctrl/Cmd held for the "add" ones ──
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+const para = (page: Page, t: string) => page.locator('.canvas-box p', { hasText: t }).first();
+type At = 'start' | 'mid' | 'end';
+/** A point inside `t` in a paragraph: just in from its start, its middle, or just in from its end (page coordinates). */
+async function pointIn(par: Locator, t: string, at: At = 'mid') {
+  return par.evaluate(
+    (el, [needle, where]) => {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const i = (n.textContent ?? '').indexOf(needle);
+        if (i < 0) continue;
+        const r = document.createRange();
+        r.setStart(n, i);
+        r.setEnd(n, i + needle.length);
+        const b = r.getBoundingClientRect();
+        return { x: where === 'start' ? b.left + 1 : where === 'end' ? b.right - 1 : b.left + b.width / 2, y: b.top + b.height / 2 };
+      }
+      throw new Error(`no "${needle}"`);
+    },
+    [t, at] as const,
+  );
+}
+async function withMod(page: Page, add: boolean, fn: () => Promise<void>) {
+  if (add) await page.keyboard.down(MOD);
+  try {
+    await fn();
+  } finally {
+    if (add) await page.keyboard.up(MOD);
+  }
+}
+/** Double-click a word (Ctrl/Cmd held when `add`). */
+async function dblclick(page: Page, par: Locator, word: string, add = false) {
+  const pt = await pointIn(par, word);
+  await withMod(page, add, () => page.mouse.dblclick(pt.x, pt.y));
+}
+/** Triple-click a line. */
+async function triple(page: Page, par: Locator, word: string, add = false) {
+  const pt = await pointIn(par, word);
+  await withMod(page, add, () => page.mouse.click(pt.x, pt.y, { clickCount: 3 }));
+}
+/** Drag from the start of `from` to the end of `to` (both in the same paragraph, or different ones). */
+async function drag(page: Page, fromPar: Locator, from: string, toPar: Locator, to: string, add = false) {
+  const a = await pointIn(fromPar, from, 'start');
+  const b = await pointIn(toPar, to, 'end');
+  await withMod(page, add, async () => {
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 });
+    await page.mouse.move(b.x, b.y, { steps: 6 });
+    await page.mouse.up();
+  });
+}
+/** A Ctrl/Cmd+click with no drag. */
+async function click(page: Page, par: Locator, word: string, add = false, button: 'left' | 'right' = 'left') {
+  const pt = await pointIn(par, word);
+  await withMod(page, add, () => page.mouse.click(pt.x, pt.y, { button }));
+}
+
+/** The browser's own selection, and the ranges kept as picks. */
+const live = (page: Page) => page.evaluate(() => (getSelection()?.toString() ?? '').replace(/\s+/g, ' ').trim());
+const picked = async (page: Page) => (await page.locator('.canvas-box .is-range-picked').allInnerTexts()).join('').replace(/\s+/g, ' ').trim();
+const printButton = (page: Page) => ribbon(page).getByRole('button', { name: 'Print selection', exact: true });
+const squish = (s: string) => s.replace(/\s+/g, ' ').trim();
+
+async function printNow(page: Page) {
+  const before = await printed(page);
+  await printButton(page).click();
+  await expect.poll(() => printed(page)).toBe(before + 1);
+  await page.emulateMedia({ media: 'print' });
+}
+
+test('double-click a word, then Ctrl+double-click another: only those two words print; the first stays highlighted', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Wes Words');
   await signInContext(context, user);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await stubPrint(page);
   await canvasPage(request, page, user, 'Field notes', twoBoxes);
 
-  await line(page, 'Bravo').click({ modifiers: CTRL });
-  await line(page, 'Delta').click({ modifiers: CTRL });
-  await line(page, 'Foxtrot').click({ modifiers: CTRL });
-  await expect(picked(page)).toHaveCount(3);
-  await expect(picked(page)).toHaveText(['Bravo', 'Delta', 'Foxtrot']);
-  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(0); // lines, not whole boxes
-  await shot(page, 'lines-picked');
+  await dblclick(page, para(page, 'The quick'), 'quick');
+  expect(await live(page)).toBe('quick'); // the first selection is the browser's own
+  expect(await picked(page)).toBe('');
+  await dblclick(page, para(page, 'jumps over'), 'lazy', true);
+  expect(await picked(page)).toBe('quick'); // kept while the new one is made
+  expect(await live(page)).toBe('lazy');
+  await shot(page, 'words-picked');
 
-  // Ctrl+click on a picked line takes it out; once more puts it back.
-  await line(page, 'Bravo').click({ modifiers: CTRL });
-  await expect(picked(page)).toHaveCount(2);
-  await line(page, 'Bravo').click({ modifiers: CTRL });
-  await expect(picked(page)).toHaveCount(3);
+  // Ctrl/Cmd+C copies every picked piece.
+  await page.keyboard.press(`${MOD}+c`);
+  expect(squish(await page.evaluate(() => navigator.clipboard.readText()))).toBe('quick lazy');
 
-  await printButton(page).click();
-  await expect.poll(() => printed(page)).toBe(1);
-  await page.emulateMedia({ media: 'print' });
+  await printNow(page);
   const root = page.locator('#print-root');
   await expect(root.locator('.print-title')).toHaveText('Field notes');
-  await expect(root.locator('.print-title')).toHaveClass(/is-small/);
-  await expect(root.locator('.print-box')).toHaveText([/^\s*Bravo\s*Delta\s*$/, /^\s*Foxtrot\s*$/]);
-  for (const gone of ['Alpha', 'Charlie', 'Echo']) await expect(root).not.toContainText(gone);
-
-  // Escape clears the picks.
-  await page.emulateMedia({ media: 'screen' });
-  await page.keyboard.press('Escape');
-  await expect(picked(page)).toHaveCount(0);
-  await expect(printButton(page)).toHaveCount(0);
-
-  // A plain click clears them too.
-  await line(page, 'Echo').click({ modifiers: CTRL });
-  await expect(picked(page)).toHaveCount(1);
-  await line(page, 'Alpha').click();
-  await expect(picked(page)).toHaveCount(0);
+  await expect(root.locator('.print-box')).toHaveText([/^\s*quick\s*lazy\s*$/]);
+  for (const gone of ['brown', 'fox', 'jumps', 'dog']) await expect(root).not.toContainText(gone);
 });
 
-test('Ctrl+click on a box frame still picks the whole box; Ctrl+drag picks every line it sweeps', async ({ page, context, request }) => {
-  const user = await createUser(request, 'Dana Drag');
+test('drag part of a line, then Ctrl+drag part of a line in another box: both ranges print, partial, in reading order', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Dara Drag');
   await signInContext(context, user);
   await stubPrint(page);
-  await canvasPage(request, page, user, 'Sweep', twoBoxes);
+  await canvasPage(request, page, user, 'Drags', twoBoxes);
 
-  // The frame: the box's left padding, outside its text.
-  await page.locator('.canvas-box', { hasText: 'Echo' }).click({ modifiers: CTRL, position: { x: 4, y: 12 } });
-  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(1);
-  await expect(picked(page)).toHaveCount(0);
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(0);
+  const first = para(page, 'The quick');
+  await drag(page, first, 'quick', first, 'brown');
+  expect(await live(page)).toBe('quick brown');
+  await drag(page, para(page, 'Sphinx'), 'black', para(page, 'Sphinx'), 'quartz', true);
+  expect(await picked(page)).toBe('quick brown'); // the other box's earlier range stays picked
+  expect(await live(page)).toBe('black quartz');
 
-  // Ctrl+drag from Alpha down to Charlie.
-  const from = await line(page, 'Alpha').boundingBox();
-  const to = await line(page, 'Charlie').boundingBox();
-  if (!from || !to) throw new Error('lines not found');
-  await page.keyboard.down('Control');
-  await page.mouse.move(from.x + 40, from.y + from.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(to.x + 40, to.y + to.height / 2, { steps: 8 });
-  await page.mouse.up();
-  await page.keyboard.up('Control');
-  await expect(picked(page)).toHaveText(['Alpha', 'Bravo', 'Charlie']);
+  await printNow(page);
+  const root = page.locator('#print-root');
+  await expect(root.locator('.print-box')).toHaveText([/^\s*quick brown\s*$/, /^\s*black quartz\s*$/]);
+  for (const gone of ['The ', 'fox', 'Sphinx', 'of black', 'judge']) await expect(root).not.toContainText(gone);
 });
 
-test('right-click on picked lines or a selection: Print selection; elsewhere the browser keeps its own menu', async ({ page, context, request }) => {
+test('Ctrl+triple-click adds a whole line; Ctrl+click with no drag adds nothing but keeps what was picked', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Tri Click');
+  await signInContext(context, user);
+  await stubPrint(page);
+  await canvasPage(request, page, user, 'Lines', twoBoxes);
+
+  await dblclick(page, para(page, 'The quick'), 'The');
+  await triple(page, para(page, 'jumps over'), 'lazy', true);
+  expect(await live(page)).toBe('jumps over the lazy dog');
+  expect(await picked(page)).toBe('The');
+  await printNow(page);
+  const root = page.locator('#print-root');
+  await expect(root.locator('.print-box')).toHaveText([/^\s*The\s*jumps over the lazy dog\s*$/]);
+  await expect(root).not.toContainText('quick');
+  await page.emulateMedia({ media: 'screen' });
+
+  // A Ctrl+click without a drag only places the caret: nothing new is picked, what was picked stays.
+  await page.keyboard.press('Escape');
+  await dblclick(page, para(page, 'The quick'), 'quick');
+  await click(page, para(page, 'Pack my'), 'jugs', true);
+  expect(await picked(page)).toBe('quick');
+  expect(await live(page)).toBe('');
+  await printNow(page);
+  await expect(root.locator('.print-box')).toHaveText([/^\s*quick\s*$/]);
+});
+
+test('Ctrl+click on a link still opens it (and keeps the selection made so far); on a box frame it picks the whole box', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Lin Kopen');
+  await signInContext(context, user);
+  await stubPrint(page);
+  await canvasPage(request, page, user, 'Links', twoBoxes);
+
+  await dblclick(page, para(page, 'The quick'), 'quick');
+  const [opened] = await Promise.all([context.waitForEvent('page', { timeout: 10_000 }), click(page, para(page, 'Visit'), 'the docs', true)]);
+  await opened.close();
+  expect(await picked(page)).toBe('quick');
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.canvas-box .is-range-picked')).toHaveCount(0);
+  // The frame: the box's left padding, outside its text.
+  await page.locator('.canvas-box', { hasText: 'Sphinx' }).click({ modifiers: [MOD === 'Meta' ? 'Meta' : 'Control'], position: { x: 4, y: 12 } });
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.canvas-box.is-picked')).toHaveCount(0);
+});
+
+test('Escape or a plain click clears every pick and the selection', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Clea Rer');
+  await signInContext(context, user);
+  await stubPrint(page);
+  await canvasPage(request, page, user, 'Clear', twoBoxes);
+
+  await dblclick(page, para(page, 'The quick'), 'quick');
+  await dblclick(page, para(page, 'jumps over'), 'lazy', true);
+  expect(await picked(page)).toBe('quick');
+  await page.keyboard.press('Escape');
+  expect(await picked(page)).toBe('');
+  expect(await live(page)).toBe('');
+  await expect(printButton(page)).toHaveCount(0);
+
+  await dblclick(page, para(page, 'The quick'), 'quick');
+  await dblclick(page, para(page, 'jumps over'), 'lazy', true);
+  expect(await picked(page)).toBe('quick');
+  await click(page, para(page, 'Pack my'), 'jugs'); // a plain click
+  expect(await picked(page)).toBe('');
+  expect(await live(page)).toBe('');
+});
+
+test('right-click: Print selection over picks or a multi-word selection; a single word and everything else keep the browser menu', async ({ page, context, request }) => {
   const user = await createUser(request, 'Rory Rightclick');
   await signInContext(context, user);
   await stubPrint(page);
   await canvasPage(request, page, user, 'Menus', twoBoxes);
   const item = page.getByRole('menuitem', { name: 'Print selection' });
 
-  // Not on a selection: no menu of ours (the browser's own, with spelling suggestions, opens instead).
-  await line(page, 'Charlie').click({ button: 'right' });
+  // Nothing selected: the browser's own menu (no menu of ours).
+  await click(page, para(page, 'Pack my'), 'five', false, 'right');
   await expect(item).toHaveCount(0);
   await page.keyboard.press('Escape');
 
-  // Picked lines: right-click one.
-  await line(page, 'Bravo').click({ modifiers: CTRL });
-  await line(page, 'Delta').click({ modifiers: CTRL });
-  await line(page, 'Delta').click({ button: 'right' });
+  // One selected word keeps the browser's menu, so a misspelling can still be corrected.
+  await dblclick(page, para(page, 'The quick'), 'brown');
+  await click(page, para(page, 'The quick'), 'brown', false, 'right');
+  await expect(item).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // More than one word: ours.
+  const f = para(page, 'jumps over');
+  await drag(page, f, 'over', f, 'lazy');
+  await click(page, f, 'the', false, 'right');
+  await expect(item).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  // Picks: right-click a picked word, or the live selection once something is picked.
+  await dblclick(page, para(page, 'The quick'), 'quick');
+  await dblclick(page, para(page, 'Sphinx'), 'black', true);
+  await click(page, para(page, 'The quick'), 'quick', false, 'right');
   await expect(item).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Copy' })).toBeVisible();
   await shot(page, 'selection-menu');
   await item.click();
   await expect.poll(() => printed(page)).toBe(1);
   await page.emulateMedia({ media: 'print' });
-  await expect(page.locator('#print-root .print-box')).toHaveText([/^\s*Bravo\s*Delta\s*$/]);
-  await page.emulateMedia({ media: 'screen' });
-  await page.keyboard.press('Escape');
-  await expect(picked(page)).toHaveCount(0);
-
-  // A single selected word keeps the browser's menu (so a misspelling can still be corrected).
-  await line(page, 'Charlie').dblclick();
-  await line(page, 'Charlie').click({ button: 'right' });
-  await expect(item).toHaveCount(0);
-  await page.keyboard.press('Escape');
-
-  // Selected text of several words or lines: right-click inside it.
-  await line(page, 'Alpha').click();
-  await page.keyboard.press('Home');
-  await page.keyboard.press('Shift+ArrowDown');
-  await page.keyboard.press('Shift+End');
-  await expect(printButton(page)).toBeVisible(); // the editor has taken in the selection
-  await line(page, 'Bravo').click({ button: 'right', position: { x: 20, y: 8 } });
-  await expect(item).toBeVisible();
-  await item.click();
-  await expect.poll(() => printed(page)).toBe(2);
+  await expect(page.locator('#print-root .print-box')).toHaveText([/^\s*quick\s*$/, /^\s*black\s*$/]);
 });
 
 test('a selection from an untitled page prints without a title; a titled one keeps a small title', async ({ page, context, request }) => {
@@ -171,37 +278,25 @@ test('a selection from an untitled page prints without a title; a titled one kee
   await stubPrint(page);
   await canvasPage(request, page, user, '', twoBoxes);
 
-  await line(page, 'Echo').click({ modifiers: CTRL });
-  await printButton(page).click();
-  await expect.poll(() => printed(page)).toBe(1);
-  await page.emulateMedia({ media: 'print' });
+  await dblclick(page, para(page, 'Sphinx'), 'black');
+  await dblclick(page, para(page, 'judge'), 'vow', true);
+  await printNow(page);
   const root = page.locator('#print-root');
-  await expect(root.locator('.print-box')).toHaveText([/^\s*Echo\s*$/]);
+  await expect(root.locator('.print-box')).toHaveText([/^\s*black\s*vow\s*$/]);
   await expect(root.locator('.print-title')).toHaveCount(0);
   await expect(root).not.toContainText('Untitled');
 });
 
-test('a named page prints its title with a selection, including a page shared from another workspace; untitled prints none', async ({ browser, page, context, request }) => {
-  // Named, own workspace: by picked lines, and by selected text.
+test('a named page prints its title with a selection, including a page shared from another workspace', async ({ browser, page, context, request }) => {
   const user = await createUser(request, 'Nina Named');
   await signInContext(context, user);
   await stubPrint(page);
   await canvasPage(request, page, user, 'Quarterly plan', twoBoxes);
-  await line(page, 'Echo').click({ modifiers: CTRL });
-  await printButton(page).click();
-  await expect.poll(() => printed(page)).toBe(1);
-  await page.emulateMedia({ media: 'print' });
+  await dblclick(page, para(page, 'Sphinx'), 'black');
+  await dblclick(page, para(page, 'judge'), 'vow', true);
+  await printNow(page);
   await expect(page.locator('#print-root .print-title')).toHaveText('Quarterly plan');
-  await page.emulateMedia({ media: 'screen' });
-  await page.keyboard.press('Escape');
-  await line(page, 'Alpha').click();
-  await page.keyboard.press('Home');
-  await page.keyboard.press('Shift+End');
-  await expect(printButton(page)).toBeVisible();
-  await printButton(page).click();
-  await expect.poll(() => printed(page)).toBe(2);
-  await page.emulateMedia({ media: 'print' });
-  await expect(page.locator('#print-root .print-title')).toHaveText('Quarterly plan');
+  await expect(page.locator('#print-root .print-title')).toHaveClass(/is-small/);
 
   // A page shared from another workspace isn't in the viewer's page list: its title must still print.
   const alice = await createUser(request, 'Alice Owner');
@@ -218,11 +313,9 @@ test('a named page prints its title with a selection, including a page shared fr
   await stubPrint(op);
   await op.goto(pageUrl(olga.wsId, sharedId));
   await expect(op.locator('.canvas-box:not(.is-ready)')).toHaveCount(2);
-  await op.locator('.canvas-box p', { hasText: /^Echo$/ }).click({ modifiers: CTRL });
-  await op.locator('.canvas-box p', { hasText: /^Echo$/ }).click({ button: 'right' });
-  await op.getByRole('menuitem', { name: 'Print selection' }).click();
-  await expect.poll(() => printed(op)).toBe(1);
-  await op.emulateMedia({ media: 'print' });
+  await dblclick(op, para(op, 'Sphinx'), 'black');
+  await dblclick(op, para(op, 'judge'), 'vow', true);
+  await printNow(op);
   await expect(op.locator('#print-root .print-title')).toHaveText('Shared named note');
   await expect(op.locator('#print-root')).not.toContainText('Untitled');
   await a.close();
