@@ -326,9 +326,17 @@ export async function insertFiles(editor: Editor, files: File[], pos: number, at
 }
 
 /** Blocks the hover ✓ can turn into tasks. */
-const TASKABLE = new Set(['paragraph', 'heading', 'bulletList', 'orderedList', 'taskList']);
+const TASKABLE = new Set(['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList', 'taskList']);
+const LIST_ITEMS = new Set(['listItem', 'taskItem']);
+/** A list line's bullet or number sits in front of its own box: the handle keeps this far (px) clear of it. */
+const LIST_MARKER_GAP = 38;
 
-/** Notion-style handle left of each block: drag to move, click to select, "+" to insert below. */
+/**
+ * Notion-style handle left of each block: drag to move, click to select, "+" to insert below. In a list the handle
+ * belongs to the line you point at (not the whole list): dragging it moves that line with its sub-points, and it can
+ * be dropped at any level to move the branch up or down the outline ("nested" handles: the library picks the line,
+ * not the list around it).
+ */
 function BlockHandle({ editor }: { editor: Editor }) {
   const current = useRef<{ pos: number; size: number } | null>(null);
   const [taskable, setTaskable] = useState(false);
@@ -336,6 +344,14 @@ function BlockHandle({ editor }: { editor: Editor }) {
     <DragHandle
       editor={editor}
       className="block-handle"
+      nested
+      getReferencedVirtualElement={() => {
+        const c = current.current;
+        const node = c ? editor.state.doc.nodeAt(c.pos) : null;
+        const dom = c && node && LIST_ITEMS.has(node.type.name) ? (editor.view.nodeDOM(c.pos) as HTMLElement | null) : null;
+        if (!dom) return null; // everything else: next to the block itself
+        return { getBoundingClientRect: () => DOMRect.fromRect({ x: dom.getBoundingClientRect().x - LIST_MARKER_GAP, y: dom.getBoundingClientRect().y, width: dom.getBoundingClientRect().width, height: dom.getBoundingClientRect().height }) };
+      }}
       onNodeChange={({ node, pos }) => {
         current.current = node ? { pos, size: node.nodeSize } : null;
         setTaskable(!!node && TASKABLE.has(node.type.name) && node.textContent.trim() !== '');
@@ -354,9 +370,11 @@ function BlockHandle({ editor }: { editor: Editor }) {
             const { doc } = editor.state;
             // A text block: put the cursor in it. A list: select all of it (each item becomes a task).
             const node = doc.nodeAt(c.pos);
-            const sel = node?.isTextblock
-              ? TextSelection.near(doc.resolve(c.pos + 1))
-              : TextSelection.between(doc.resolve(c.pos + 1), doc.resolve(c.pos + c.size - 1));
+            // A list line: just that line's text (not the points nested under it).
+            const sel =
+              node?.isTextblock || (node && LIST_ITEMS.has(node.type.name))
+                ? TextSelection.near(doc.resolve(c.pos + (node.isTextblock ? 1 : 2)))
+                : TextSelection.between(doc.resolve(c.pos + 1), doc.resolve(c.pos + c.size - 1));
             editor.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).run();
             if (canConvert(editor)) convertToTasks(editor);
           }}
@@ -374,11 +392,14 @@ function BlockHandle({ editor }: { editor: Editor }) {
           const c = current.current;
           if (!c) return;
           const at = c.pos + c.size;
+          // Below a list line: a new line of that list (a paragraph can't sit between list items).
+          const node = editor.state.doc.nodeAt(c.pos);
+          const item = node && LIST_ITEMS.has(node.type.name) ? node.type.name : null;
           editor
             .chain()
-            .insertContentAt(at, { type: 'paragraph' })
+            .insertContentAt(at, item ? { type: item, ...(item === 'taskItem' ? { attrs: { checked: false } } : {}), content: [{ type: 'paragraph' }] } : { type: 'paragraph' })
             .command(({ tr }) => {
-              tr.setSelection(TextSelection.create(tr.doc, at + 1));
+              tr.setSelection(TextSelection.create(tr.doc, at + (item ? 2 : 1)));
               return true;
             })
             .insertContent('/') // opens the slash menu

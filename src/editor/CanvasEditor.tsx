@@ -1028,7 +1028,7 @@ function BoxEditor({ id, wide, session, pageId, workspaceId, user, canEdit, isAc
   }, [editor, id, onEditor]);
   return (
     <>
-      {editor && canEdit && isActive && <EditorChrome editor={editor} handle={wide} />}
+      {editor && canEdit && isActive && <EditorChrome editor={editor} />}
       <EditorContent editor={editor} className="canvas-box-content" />
     </>
   );
