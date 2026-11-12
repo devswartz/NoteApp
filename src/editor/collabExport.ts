@@ -1,5 +1,6 @@
 // Export a page's Yjs document as plain Markdown (no DOM; unit-tested). Owner: Collaboration & Access.
 import * as Y from 'yjs';
+import { listMarker } from '../../shared/listMarker.ts';
 
 /** Plain Markdown of a page doc (headings, lists, tasks, quotes, code), for the unsynced-copy download. */
 export function docToMarkdown(frag: Y.XmlFragment): string {
@@ -15,7 +16,7 @@ export function docToMarkdown(frag: Y.XmlFragment): string {
     if (name === 'heading') lines.push(`${prefix}${'#'.repeat(Number(n.getAttribute('level')) || 1)} ${text(n)}`);
     else if (name === 'bulletList' || name === 'orderedList' || name === 'taskList')
       n.toArray().forEach((li, i) => {
-        const marker = name === 'orderedList' ? `${i + 1}. ` : name === 'taskList' ? `- [${(li as Y.XmlElement).getAttribute('checked') ? 'x' : ' '}] ` : '- ';
+        const marker = name === 'orderedList' ? `${listMarker(n.getAttribute('type'), (Number(n.getAttribute('start')) || 1) + i)}. ` : name === 'taskList' ? `- [${(li as Y.XmlElement).getAttribute('checked') ? 'x' : ' '}] ` : '- ';
         const kids = (li as Y.XmlElement).toArray() as Y.XmlElement[];
         kids.forEach((k, j) => (j === 0 && !/List$/.test(k.nodeName) ? lines.push(`${prefix}${marker}${text(k)}`) : block(k, `${prefix}  `)));
       });

@@ -1016,6 +1016,31 @@ body.is-resizing .sidebar { transition: none; }
 .ProseMirror h3 { font-size: 1.12em; margin: 1em 0 0.2em; }
 .ProseMirror ul, .ProseMirror ol { padding-left: 1.6em; margin: 0.3em 0; }
 .ProseMirror li > p { margin: 0; }
+/* Outlines (src/editor/smartLists.ts): markers come from the nesting depth, as in Word's default
+   multilevel list, 1. → a. → i. → 1) → a) → i) and round again; bullets • ◦ ▪. Nothing is stored
+   in the doc, so renumbering after an add, delete, move or Tab is free. A list typed as "a. " or
+   "I. " keeps its own type attribute (the browser maps it), hence :not([type]). */
+@counter-style outline-decimal-paren { system: extends decimal; suffix: ') '; }
+@counter-style outline-alpha-paren { system: extends lower-alpha; suffix: ') '; }
+@counter-style outline-roman-paren { system: extends lower-roman; suffix: ') '; }
+.ProseMirror ol:not([type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: decimal; }
+.ProseMirror :is(ol, ul) ol:not([type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: lower-alpha; }
+.ProseMirror :is(ol, ul) :is(ol, ul) ol:not([type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: lower-roman; }
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: outline-decimal-paren; }
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: outline-alpha-paren; }
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ol:not([type]) { list-style-type: outline-roman-paren; }
+.ProseMirror ul:not([data-type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) ul:not([data-type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ul:not([data-type]) { list-style-type: disc; }
+.ProseMirror :is(ol, ul) ul:not([data-type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ul:not([data-type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ul:not([data-type]) { list-style-type: circle; }
+.ProseMirror :is(ol, ul) :is(ol, ul) ul:not([data-type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ul:not([data-type]),
+.ProseMirror :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) :is(ol, ul) ul:not([data-type]) { list-style-type: square; }
 .ProseMirror blockquote { border-left: 3px solid var(--border-strong); margin: 0.6em 0; padding-left: 1em; color: var(--text-2); }
 .ProseMirror pre { background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; font-family: var(--mono); font-size: 13.5px; overflow-x: auto; }
 .ProseMirror pre code { background: none; padding: 0; }
