@@ -40,7 +40,7 @@ test('move a page to another notebook: breadcrumb updates and its tasks stay lin
   expect((await listTasks(request, user)).find((t) => t.title === 'Travels with page')?.pageId).toBe(from.pageId);
 });
 
-test('deleting a page or a notebook hides its tasks in the Trash; deleting forever keeps them as standalone tasks', async ({ page, context, request }) => {
+test('deleting a page or a notebook keeps its tasks listed (on their page in the Trash); deleting forever makes them standalone tasks', async ({ page, context, request }) => {
   const user = await createUser(request, 'Del Eter');
   const p1 = await createPage(request, user, { notebook: 'Doomed Notebook', page: 'Doomed page' });
   const p2 = await createPage(request, user, { notebook: 'Second Notebook', page: 'Also doomed' });
@@ -53,8 +53,8 @@ test('deleting a page or a notebook hides its tasks in the Trash; deleting forev
   await page.getByRole('button', { name: 'Page options', exact: true }).click();
   await page.getByRole('menuitem', { name: /Delete/ }).click();
   await expect(page).toHaveURL(/\/notes$/);
-  await expect(page.locator('.toast')).toContainText('moved to Trash');
-  await eventually(() => listTasks(request, user), (ts) => !ts.some((t) => t.title === 'Survivor one'), 'task hidden while its page is in the Trash');
+  await expect(page.locator('.toast')).toContainText('Moved to Trash.');
+  await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === p1.pageId, 'task still listed, on its page in the Trash');
   await api(request, 'DELETE', `/trash/page/${p1.pageId}`, user.token);
   await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === null, 'task detached when the page is deleted forever');
 
