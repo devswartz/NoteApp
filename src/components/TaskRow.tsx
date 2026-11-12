@@ -33,7 +33,12 @@ export const TaskRow = memo(function TaskRow({
 }) {
   const { wsId } = useParams();
   const page = useStore((s) => (task.pageId ? pageIndex(s.tree.pages).get(task.pageId) : undefined));
-  const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
+  // A member (not a viewer) of the task's own workspace: a task on a page shared from outside
+  // that workspace is read-only (#98).
+  const canEdit = useStore((s) => {
+    const role = s.workspaces.find((w) => w.id === task.workspaceId)?.role;
+    return role !== undefined && role !== 'viewer';
+  });
   const lingering = useStore((s) => !!s.lingering[task.id]);
   const [editing, setEditing] = useState(false);
   // A click on the title waits briefly so a double-click can start renaming instead of opening the sheet.

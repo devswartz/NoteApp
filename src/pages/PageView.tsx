@@ -31,6 +31,7 @@ import { loadSharedPageTasks, patchSharedPage, useShared } from '../components/s
 import type { PageMeta } from '../../shared/types.ts';
 import { sectionPathLabel, sectionsInOrder } from '../../shared/sections.ts';
 import { TemplateDialogHost, templateDialog } from '../editor/TemplateDialog.tsx';
+import { setTasksAllowed } from '../editor/taskGate.ts';
 import type { CanvasHandle } from '../editor/canvasDoc.ts';
 import { UserPlus, Users } from 'lucide-react';
 
@@ -132,6 +133,9 @@ export function PageView() {
       .then((r) => {
         platform.kv.set(key, r.canEdit ? '1' : '0');
         if (cancelled) return;
+        // Tasks are for members of the page's workspace: someone editing it through a page share
+        // from outside can't create them here (#98).
+        setTasksAllowed(pageId, r.member && r.workspaceId === wsId);
         setCanEdit(r.canEdit);
         setInfo(r);
         // A page shared from another workspace: its tasks aren't in this workspace's store (#98).
@@ -221,7 +225,8 @@ export function PageView() {
   if (!meta || canEdit === null) return <div className="page-loading" />;
   const editorProps = {
     pageId,
-    workspaceId: wsId,
+    // Uploads go to the page's own workspace (a page shared from another one, #98).
+    workspaceId: info?.workspaceId ?? wsId,
     user,
     canEdit,
     onStatus: setStatus,

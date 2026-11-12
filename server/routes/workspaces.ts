@@ -324,9 +324,10 @@ workspaceRoutes.put(
 // in a private notebook, only the notebook's creator — the same rule as
 // sharing the notebook itself. Members share with members only; sharing with
 // anyone outside the workspace (an account that isn't a member, or an email
-// invite) is for workspace owners and admins. Outside the workspace a share is
-// view-only and stored that way (can_edit = 0); effective rights are always
-// min(share, role), see pageAccess.
+// invite) is for workspace owners and admins. A share stores what was asked
+// for (can_edit), for members and outsiders alike: an outsider with an edit
+// share co-edits that one page and nothing else, a member's rights are
+// min(share, role) (a viewer stays view-only); see pageAccess.
 
 const MAX_PAGE_SHARES = 200;
 
@@ -409,17 +410,16 @@ workspaceRoutes.post(
     const base = publicUrl(req.get('origin'));
     const mail = { pageTitle: pageTitle(id), inviterName: userName(req.user.id), canEdit };
     if (target) {
-      const store = canEdit && targetIsMember; // outsiders: always view-only
       const before = db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(id, target.id) as { can_edit: number } | undefined;
-      grantPageShare(id, target.id, store, req.user.id);
+      grantPageShare(id, target.id, canEdit, req.user.id);
       if (email) db.prepare('DELETE FROM page_invites WHERE page_id = ? AND email = ?').run(id, email);
-      sharesChanged(id, [target.id], !!before?.can_edit && !store);
+      sharesChanged(id, [target.id], !!before?.can_edit && !canEdit);
       const r = before ? { sent: false } : await sendPageSharedEmail({ ...mail, canEdit: !!pageAccess(id, target.id)?.canEdit, to: target.email, link: pageLink(base, id), invite: false });
       return { status: 'shared', emailed: r.sent, ...pageShares(id, a.workspaceId) };
     }
-    const token = upsertPageInvite(id, email!, false, req.user.id); // they won't be a member: view-only
+    const token = upsertPageInvite(id, email!, canEdit, req.user.id); // applied as a share with this can_edit on sign-up
     const inviteUrl = `${base}/invite/${token}`;
-    const r = await sendPageSharedEmail({ ...mail, canEdit: false, to: email!, link: inviteUrl, invite: true });
+    const r = await sendPageSharedEmail({ ...mail, to: email!, link: inviteUrl, invite: true });
     return { status: 'invited', emailed: r.sent, inviteUrl, ...pageShares(id, a.workspaceId) };
   }),
 );
@@ -431,7 +431,7 @@ workspaceRoutes.patch(
     const id = param(req, 'id');
     const target = param(req, 'userId');
     const a = mustShare(id, req.user.id);
-    const want = req.body?.canEdit === true && !!roleIn(a.workspaceId, target); // outsiders stay view-only
+    const want = req.body?.canEdit === true; // a member's role still caps it (pageAccess)
     const r = db.prepare('UPDATE page_shares SET can_edit = ? WHERE page_id = ? AND user_id = ?').run(want ? 1 : 0, id, target);
     if (!r.changes) throw new HttpError(404, 'Share not found');
     sharesChanged(id, [target], !want);
@@ -471,16 +471,16 @@ workspaceRoutes.get(
     const rows = db
       .prepare(
         `SELECT p.id, p.title, p.icon, n.workspace_id AS workspaceId, w.name AS workspaceName, ps.can_edit AS canEdit,
-           EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = n.workspace_id AND m.user_id = ps.user_id) AS member,
+           (SELECT m.role FROM workspace_members m WHERE m.workspace_id = n.workspace_id AND m.user_id = ps.user_id) AS role,
            u.name AS sharedByName, ps.created_at AS sharedAt
          FROM page_shares ps JOIN pages p ON p.id = ps.page_id JOIN sections s ON s.id = p.section_id
          JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id
          LEFT JOIN users u ON u.id = ps.created_by
          WHERE ps.user_id = ? ORDER BY ps.created_at DESC`,
       )
-      .all(req.user.id) as (Omit<SharedPage, 'canEdit' | 'member'> & { canEdit: number; member: number })[];
-    // canEdit is what the user can actually do: outside the workspace, view only.
-    return rows.map((r) => ({ ...r, member: !!r.member, canEdit: !!r.member && !!r.canEdit })) satisfies SharedPage[];
+      .all(req.user.id) as (Omit<SharedPage, 'canEdit' | 'member'> & { canEdit: number; role: Role | null })[];
+    // canEdit is what the user can actually do (pageAccess): the share, capped by a member's role.
+    return rows.map(({ role, ...r }) => ({ ...r, member: !!role, canEdit: !!r.canEdit && (!role || atLeast(role, 'member')) })) satisfies SharedPage[];
   }),
 );
 
@@ -508,7 +508,7 @@ function acceptPageInvite(userId: string, email: string, token: string) {
     throw new HttpError(403, `This invite was sent to ${inv.email}. Sign in with that email address to accept it.`);
   db.transaction(() => {
     if (!db.prepare('SELECT 1 FROM page_shares WHERE page_id = ? AND user_id = ?').get(inv.pageId, userId))
-      grantPageShare(inv.pageId, userId, false, inv.invitedBy); // invitees are outside the workspace: view-only
+      grantPageShare(inv.pageId, userId, inv.canEdit, inv.invitedBy);
     db.prepare('DELETE FROM page_invites WHERE page_id = ? AND email = ?').run(inv.pageId, inv.email);
   })();
   publish({ type: 'shared-pages' }, { userIds: [userId] });

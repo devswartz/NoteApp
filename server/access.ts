@@ -76,7 +76,7 @@ function notebookCtx(notebookId: string): NotebookCtx | null {
 export interface Access {
   workspaceId: string;
   notebookId: string;
-  /** Workspace role; 'viewer' for someone outside the workspace who has a page share. */
+  /** Workspace role; 'viewer' for someone outside the workspace who has a page share (whatever its canEdit). */
   role: Role;
   /** May change the page's content (or, for notebook/section access, add and change its pages). */
   canEdit: boolean;
@@ -131,10 +131,14 @@ export function pageShare(pageId: string, userId: string): { canEdit: boolean } 
 /**
  * Access to one page: through its notebook (notebookAccess), or through a page share
  * (page_shares). A page share reaches that page only — never its notebook, siblings or
- * sub-pages. Effective rights are the lesser of the share and the workspace role: an edit
- * share lets a member (or above) edit, a viewer stays view-only, and people outside the
- * workspace are always view-only. A share never adds to notebook-level access. Every route
- * and socket that serves page content goes through here.
+ * sub-pages. Effective rights: for a workspace member, the lesser of the share and the
+ * workspace role (an edit share lets a member or above edit; a viewer stays view-only). For
+ * someone outside the workspace, the share itself: an edit share lets them edit that page's
+ * content (text, title, icon, comments, uploads into it), and nothing else. Workspace-level
+ * things stay member-only whatever the share says: tasks (creating, editing or ticking them,
+ * and moving them on or off a page, see canMoveTask and the collab task guard), templates,
+ * the tree, search and members. A share never adds to notebook-level access. Every route and
+ * socket that serves page content goes through here.
  */
 export function pageAccess(pageId: string, userId: string): Access | null {
   const row = db
@@ -150,7 +154,8 @@ export function pageAccess(pageId: string, userId: string): Access | null {
     workspaceId: row.workspace_id,
     notebookId: row.notebook_id,
     role: role ?? 'viewer',
-    canEdit: atLeast(role, 'member') && share.canEdit, // min(share, role)
+    // Members: min(share, role). Outside the workspace: the share (#98 follow-up).
+    canEdit: share.canEdit && (role === null || atLeast(role, 'member')),
     isNotebookOwner: false,
     member: !!role,
     canManage: false,
