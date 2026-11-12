@@ -1,10 +1,11 @@
-// The All Tasks filter bar: an "Add filter" button and one chip per condition.
-// Chips combine with AND; a multi-select chip (tags) matches any of its values (OR).
+// The task filter bar: an "Add filter" button and one chip per condition.
+// Chips combine with AND. A chip holds several values (a task matches any of them) and can be flipped
+// to "is not" (it matches none of them): "Assignee is Alice, Bob" or "Assignee is not Mike".
 import { useState, type ReactNode } from 'react';
-import { ChevronLeft, Plus, X } from 'lucide-react';
+import { Check, ChevronLeft, Plus, Search, X } from 'lucide-react';
 import { useStore } from '../../store.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator } from '../../components/ui.tsx';
-import { DEFAULT_FILTERS, activeFilterKeys, orderedTeams, teamLabel, type Filters } from '../../lib/taskViews.ts';
+import { DEFAULT_FILTERS, NO_PICK, PICK_KEYS, activeFilterKeys, orderedTeams, teamLabel, type Filters, type PickKey } from '../../lib/taskViews.ts';
 import { LabelDot } from '../../components/Labels.tsx';
 
 export type Kind = 'teamId' | 'assignee' | 'assignedBy' | 'tagsAny' | 'tagsNone' | 'due' | 'priority' | 'source' | 'notebookId' | 'sectionId';
@@ -75,80 +76,185 @@ function useOptions(kind: Kind): Option[] {
   }
 }
 
-const isMulti = (k: Kind) => k === 'tagsAny' || k === 'tagsNone';
+const isPick = (k: Kind): k is Kind & PickKey => (PICK_KEYS as string[]).includes(k);
+/** Everything but "Due" takes several values. */
+const isMulti = (k: Kind) => k !== 'due';
 
-/** The options for one filter kind; single-choice kinds close on pick, tag kinds toggle. */
+/** The values a kind is filtering by, and whether it's "is not". */
+function valuesOf(kind: Kind, filters: Filters): { values: string[]; not: boolean } {
+  if (isPick(kind)) return filters[kind];
+  if (kind === 'tagsAny' || kind === 'tagsNone') return { values: filters[kind], not: false };
+  return { values: filters.due === 'any' ? [] : [filters.due], not: false };
+}
+
+/** The filters with one kind's values (and is / is not) replaced. */
+function withValues(kind: Kind, filters: Filters, values: string[], not: boolean): Filters {
+  if (isPick(kind)) return { ...filters, [kind]: values.length ? { values, not } : NO_PICK };
+  if (kind === 'tagsAny' || kind === 'tagsNone') return { ...filters, [kind]: values };
+  return { ...filters, due: (values[0] ?? 'any') as Filters['due'] };
+}
+
+/** The options for one filter kind: tick several, or flip the whole condition to "is not". */
 export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Filters; onChange: (f: Filters) => void }) {
   const options = useOptions(kind);
   const teams = useStore((s) => s.teams);
-  const value = filters[kind];
-  const hasSubteams = kind === 'teamId' && teams.some((t) => t.parentId === filters.teamId);
+  const current = valuesOf(kind, filters);
+  // "Is not" with nothing ticked yet isn't stored in the filters, so the menu remembers it meanwhile.
+  const [pendingNot, setPendingNot] = useState(current.not);
+  const [query, setQuery] = useState('');
+  const not = current.values.length ? current.not : pendingNot;
+  const write = (values: string[], n = not) => onChange(withValues(kind, filters, values, n));
+
   if (!options.length)
-    return <div className="menu-pad muted small">{kind === 'teamId' ? 'No teams yet. Owners and admins add them in Settings → Teams.' : isMulti(kind) ? 'No tags yet.' : 'Nothing to pick.'}</div>;
-  return (
-    <>
-      {options.map((o) => {
-        const checked = Array.isArray(value) ? value.includes(o.value) : value === o.value;
-        return (
-          <MenuItem
-            key={o.value}
-            icon={o.icon}
-            checked={checked}
-            keepOpen={isMulti(kind)}
-            onSelect={() => {
-              if (Array.isArray(value)) onChange({ ...filters, [kind]: checked ? value.filter((v) => v !== o.value) : [...value, o.value] });
-              else onChange({ ...filters, [kind]: o.value });
-            }}
-          >
+    return <div className="menu-pad muted small">{kind === 'teamId' ? 'No teams yet. Owners and admins add them in Settings → Teams.' : isMulti(kind) ? 'Nothing to pick yet.' : 'Nothing to pick.'}</div>;
+
+  // Due: one choice, and picking it closes the menu.
+  if (!isMulti(kind))
+    return (
+      <>
+        {options.map((o) => (
+          <MenuItem key={o.value} checked={current.values[0] === o.value} onSelect={() => write([o.value])}>
             {o.label}
           </MenuItem>
-        );
-      })}
+        ))}
+      </>
+    );
+
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+  const toggle = (v: string) => write(current.values.includes(v) ? current.values.filter((x) => x !== v) : [...current.values, v]);
+  const hasSubteams = kind === 'teamId' && teams.some((t) => t.parentId && current.values.includes(t.parentId));
+  const canNegate = isPick(kind);
+  return (
+    <div className="fp">
+      {canNegate && (
+        <div className="fp-mode" role="group" aria-label="Match">
+          <button
+            type="button"
+            aria-pressed={!not}
+            onClick={(e) => {
+              e.stopPropagation();
+              setPendingNot(false);
+              write(current.values, false);
+            }}
+          >
+            Is
+          </button>
+          <button
+            type="button"
+            aria-pressed={not}
+            className="is-not"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPendingNot(true);
+              write(current.values, true);
+            }}
+          >
+            Is not
+          </button>
+        </div>
+      )}
+      {options.length > 7 && (
+        <label className="fp-search">
+          <Search size={13} />
+          <input
+            type="search"
+            placeholder="Search…"
+            aria-label="Search options"
+            value={query}
+            autoFocus={typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+      )}
+      <div className="fp-bulk">
+        <span className="muted small">{current.values.length ? `${current.values.length} ${not ? 'left out' : 'selected'}` : 'None selected'}</span>
+        <span>
+          <button type="button" className="fp-link" disabled={!shown.length || shown.every((o) => current.values.includes(o.value))} onClick={(e) => { e.stopPropagation(); write([...new Set([...current.values, ...shown.map((o) => o.value)])]); }}>
+            Select all
+          </button>
+          <button type="button" className="fp-link" disabled={!current.values.length} onClick={(e) => { e.stopPropagation(); write([]); }}>
+            Clear
+          </button>
+        </span>
+      </div>
+      <div className="fp-list">
+        {shown.map((o) => {
+          const checked = current.values.includes(o.value);
+          return (
+            <button
+              key={o.value}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={checked}
+              className="menu-item fp-opt"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle(o.value);
+              }}
+            >
+              <span className={`fp-box ${checked ? 'is-on' : ''} ${not ? 'is-not' : ''}`}>{checked && (not ? <X size={11} strokeWidth={3} /> : <Check size={11} strokeWidth={3} />)}</span>
+              {o.icon && <span className="menu-icon">{o.icon}</span>}
+              <span className="menu-label">{o.label}</span>
+            </button>
+          );
+        })}
+        {!shown.length && <div className="menu-pad muted small">No matches.</div>}
+      </div>
       {hasSubteams && (
         <>
           <MenuSeparator />
-          <MenuItem keepOpen checked={filters.includeSubteams} onSelect={() => onChange({ ...filters, includeSubteams: !filters.includeSubteams })}>
-            Include subteams
-          </MenuItem>
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={filters.includeSubteams}
+            className="menu-item fp-opt"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange({ ...filters, includeSubteams: !filters.includeSubteams });
+            }}
+          >
+            <span className={`fp-box ${filters.includeSubteams ? 'is-on' : ''}`}>{filters.includeSubteams && <Check size={11} strokeWidth={3} />}</span>
+            <span className="menu-label">Include subteams</span>
+          </button>
         </>
       )}
-    </>
+    </div>
   );
 }
 
+/** "Alice, Bob" · "Alice, Bob +2" · "Sam"; a team filter without its subteams says "only". */
 export function useValueLabel(kind: Kind, filters: Filters): string {
   const options = useOptions(kind);
-  const v = filters[kind];
+  const { values } = valuesOf(kind, filters);
   const name = (x: string) => options.find((o) => o.value === x)?.label ?? 'Unknown';
-  if (Array.isArray(v)) return v.length > 2 ? `${name(v[0])} +${v.length - 1}` : v.map(name).join(', ');
-  const label = name(String(v));
-  return kind === 'teamId' && filters.includeSubteams === false && v !== 'none' ? `${label} only` : label;
+  const text = values.length > 2 ? `${name(values[0])}, ${name(values[1])} +${values.length - 2}` : values.map(name).join(', ');
+  return kind === 'teamId' && filters.includeSubteams === false && !values.every((v) => v === 'none') ? `${text} only` : text;
 }
+
+/** The word between a chip's name and its values. */
+const joinerOf = (kind: Kind, filters: Filters) => (kind === 'tagsAny' ? 'is any of' : kind === 'tagsNone' ? '' : valuesOf(kind, filters).not ? 'is not' : 'is');
 
 function FilterChip({ kind, filters, onChange }: { kind: Kind; filters: Filters; onChange: (f: Filters) => void }) {
   const label = KINDS.find((k) => k.key === kind)!.label;
   const value = useValueLabel(kind, filters);
-  const joiner = kind === 'tagsAny' ? 'is any of' : kind === 'tagsNone' ? '' : 'is';
+  const joiner = joinerOf(kind, filters);
+  const not = valuesOf(kind, filters).not;
   return (
-    <span className="filter-chip" data-filter={kind}>
-      <Dropdown buttonClass="filter-chip-btn" title={`${label} filter`} trigger={<><span className="filter-chip-key">{label}</span>{joiner && <span className="muted"> {joiner} </span>}<span className="filter-chip-val truncate">{value}</span></>}>
+    <span className={`filter-chip ${not ? 'is-not' : ''}`} data-filter={kind}>
+      <Dropdown buttonClass="filter-chip-btn" title={`${label} filter`} trigger={<><span className="filter-chip-key">{label}</span>{joiner && <span className={not ? 'filter-chip-not' : 'muted'}> {joiner} </span>}<span className="filter-chip-val truncate">{value}</span></>}>
         <div className="menu filter-menu">
           <KindMenu kind={kind} filters={filters} onChange={onChange} />
         </div>
       </Dropdown>
-      <button
-        type="button"
-        className="filter-chip-x"
-        aria-label={`Remove ${label} filter`}
-        onClick={() => onChange({ ...filters, [kind]: DEFAULT_FILTERS[kind], ...(kind === 'teamId' ? { includeSubteams: true } : {}) })}
-      >
+      <button type="button" className="filter-chip-x" aria-label={`Remove ${label} filter`} onClick={() => onChange(withoutFilter(filters, kind))}>
         <X size={12} />
       </button>
     </span>
   );
 }
 
-/** Add filter: pick a kind, then a value, in one popover. */
+/** Add filter: pick a kind, then values, in one popover. */
 function AddFilter({ filters, onChange, active }: { filters: Filters; onChange: (f: Filters) => void; active: Kind[] }) {
   if (KINDS.every((k) => active.includes(k.key))) return null;
   return (
@@ -162,37 +268,37 @@ export function AddFilterMenu({ filters, onChange, active, close, kinds = KINDS 
   const [kind, setKind] = useState<Kind | null>(null);
   const available = kinds.filter((k) => !active.includes(k.key) || k.key === kind);
   return (
-        <div className="menu filter-menu">
-          {kind ? (
-            <>
-              <button type="button" className="menu-item menu-back" onClick={() => setKind(null)}>
-                <span className="menu-icon"><ChevronLeft size={15} /></span>
-                <span className="menu-label">{KINDS.find((k) => k.key === kind)!.label}</span>
-              </button>
-              <MenuSeparator />
-              <KindMenu
-                kind={kind}
-                filters={filters}
-                onChange={(f) => {
-                  onChange(f);
-                  if (!isMulti(kind)) {
-                    setKind(null);
-                    close();
-                  }
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <MenuLabel>Filter by</MenuLabel>
-              {available.map((k) => (
-                <MenuItem key={k.key} keepOpen onSelect={() => setKind(k.key)}>
-                  {k.label}
-                </MenuItem>
-              ))}
-            </>
-          )}
-        </div>
+    <div className="menu filter-menu">
+      {kind ? (
+        <>
+          <button type="button" className="menu-item menu-back" onClick={() => setKind(null)}>
+            <span className="menu-icon"><ChevronLeft size={15} /></span>
+            <span className="menu-label">{KINDS.find((k) => k.key === kind)!.label}</span>
+          </button>
+          <MenuSeparator />
+          <KindMenu
+            kind={kind}
+            filters={filters}
+            onChange={(f) => {
+              onChange(f);
+              if (!isMulti(kind)) {
+                setKind(null);
+                close();
+              }
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <MenuLabel>Filter by</MenuLabel>
+          {available.map((k) => (
+            <MenuItem key={k.key} keepOpen onSelect={() => setKind(k.key)}>
+              {k.label}
+            </MenuItem>
+          ))}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -226,11 +332,17 @@ export const clearedFilters = (filters: Filters): Filters => ({ ...DEFAULT_FILTE
 /** The active filter kinds, in the bar's order. */
 export const activeKinds = (filters: Filters): Kind[] => activeFilterKeys(filters).filter((k): k is Kind => KINDS.some((x) => x.key === k));
 
+/** How many values a kind is filtering by (the ribbon's count badge). */
+export const valueCount = (kind: Kind, filters: Filters): number => valuesOf(kind, filters).values.length;
+
 function SummaryPart({ kind, filters }: { kind: Kind; filters: Filters }) {
   const value = useValueLabel(kind, filters);
+  const joiner = joinerOf(kind, filters) === 'is not' ? ' is not ' : ': ';
   return (
     <span className="filter-summary-part" data-filter={kind}>
-      {KINDS.find((k) => k.key === kind)!.label}: {value}
+      {KINDS.find((k) => k.key === kind)!.label}
+      {joiner}
+      {value}
     </span>
   );
 }
