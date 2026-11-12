@@ -1,0 +1,142 @@
+/* ==== Accent colours (Settings › Appearance › Accent colour) ====
+   <html data-accent="…"> is set by src/store/ui.ts (and before first paint by public/theme-init.js);
+   no attribute means the default blue, whose tokens are the base ones in src/styles.css.
+   Each accent has a light and a dark set, applied wherever that palette is: the light set on
+   light pages, .scheme-light previews and Hybrid's note page; the dark set in Dark, Hybrid's
+   chrome and .scheme-dark previews. --accent-soft and --bg-active mix from --accent (styles.css).
+   tests/accent-contrast.test.ts checks every set: --accent as text on every surface of its
+   palette (and on hover/active rows), --text-on-accent on --accent-solid and its hover, and
+   --accent-inverse on --bg-inverse (toasts). */
+
+/* Purple */
+:root[data-accent='purple'],
+[data-accent='purple'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='purple']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #7e22ce;
+  --accent-hover: #6b21a8;
+  --accent-solid: #7e22ce;
+  --accent-solid-hover: #6b21a8;
+  --accent-inverse: #c084fc;
+}
+:root[data-accent='purple']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='purple'] .scheme-dark {
+  --accent: #c084fc;
+  --accent-hover: #d8b4fe;
+  --accent-solid: #9333ea;
+  --accent-solid-hover: #7e22ce;
+  --accent-inverse: #7e22ce;
+}
+
+/* Teal */
+:root[data-accent='teal'],
+[data-accent='teal'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='teal']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #0d6d65;
+  --accent-hover: #115e59;
+  --accent-solid: #0d6d65;
+  --accent-solid-hover: #115e59;
+  --accent-inverse: #2dd4bf;
+}
+:root[data-accent='teal']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='teal'] .scheme-dark {
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-solid: #0f766e;
+  --accent-solid-hover: #115e59;
+  --accent-inverse: #0d6d65;
+}
+
+/* Green */
+:root[data-accent='green'],
+[data-accent='green'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='green']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #13733a;
+  --accent-hover: #166534;
+  --accent-solid: #13733a;
+  --accent-solid-hover: #166534;
+  --accent-inverse: #4ade80;
+}
+:root[data-accent='green']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='green'] .scheme-dark {
+  --accent: #4ade80;
+  --accent-hover: #86efac;
+  --accent-solid: #15803d;
+  --accent-solid-hover: #166534;
+  --accent-inverse: #13733a;
+}
+
+/* Orange */
+:root[data-accent='orange'],
+[data-accent='orange'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='orange']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #b53d0b;
+  --accent-hover: #9a3412;
+  --accent-solid: #b53d0b;
+  --accent-solid-hover: #9a3412;
+  --accent-inverse: #fb923c;
+}
+:root[data-accent='orange']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='orange'] .scheme-dark {
+  --accent: #fb923c;
+  --accent-hover: #fdba74;
+  --accent-solid: #c2410c;
+  --accent-solid-hover: #9a3412;
+  --accent-inverse: #b53d0b;
+}
+
+/* Red */
+:root[data-accent='red'],
+[data-accent='red'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='red']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #b91c1c;
+  --accent-hover: #991b1b;
+  --accent-solid: #b91c1c;
+  --accent-solid-hover: #991b1b;
+  --accent-inverse: #fb8585;
+}
+:root[data-accent='red']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='red'] .scheme-dark {
+  --accent: #fb8585;
+  --accent-hover: #fca5a5;
+  --accent-solid: #b91c1c;
+  --accent-solid-hover: #991b1b;
+  --accent-inverse: #b91c1c;
+}
+
+/* Pink */
+:root[data-accent='pink'],
+[data-accent='pink'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='pink']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #be185d;
+  --accent-hover: #9d174d;
+  --accent-solid: #be185d;
+  --accent-solid-hover: #9d174d;
+  --accent-inverse: #f472b6;
+}
+:root[data-accent='pink']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='pink'] .scheme-dark {
+  --accent: #f472b6;
+  --accent-hover: #f9a8d4;
+  --accent-solid: #be185d;
+  --accent-solid-hover: #9d174d;
+  --accent-inverse: #be185d;
+}
+
+/* Graphite */
+:root[data-accent='graphite'],
+[data-accent='graphite'] .scheme-light,
+:where(:root[data-theme='hybrid'][data-accent='graphite']) :is(.page-scroll, .history-doc, .link-editor, .slash-menu, .mention-pop, .color-grid) {
+  --accent: #3f3f46;
+  --accent-hover: #27272a;
+  --accent-solid: #3f3f46;
+  --accent-solid-hover: #27272a;
+  --accent-inverse: #a1a1aa;
+}
+:root[data-accent='graphite']:is([data-theme='dark'], [data-theme='hybrid']),
+[data-accent='graphite'] .scheme-dark {
+  --accent: #a1a1aa;
+  --accent-hover: #d4d4d8;
+  --accent-solid: #52525b;
+  --accent-solid-hover: #3f3f46;
+  --accent-inverse: #3f3f46;
+}

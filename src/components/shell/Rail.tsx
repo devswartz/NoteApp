@@ -2,7 +2,7 @@
 // notifications, the workspace switcher and the user menu at the bottom.
 // Each view button reopens the last place visited in that view (navState.ts).
 import { useNavigate } from 'react-router-dom';
-import { Activity, BookOpen, CalendarDays, ChevronDown, Keyboard, ListChecks, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun } from 'lucide-react';
+import { Activity, BookOpen, CalendarDays, ChevronDown, Contrast, Keyboard, ListChecks, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun } from 'lucide-react';
 import { post } from '../../api.ts';
 import { errorToast, loadWorkspaces, signOut, ui, useStore } from '../../store.ts';
 import { setThemePref, useTheme, type ThemePref } from '../../store/ui.ts';
@@ -140,10 +140,11 @@ export function WorkspaceSwitcher({ compact }: { compact?: boolean }) {
 const THEMES: { id: ThemePref; label: string; icon: typeof Sun }[] = [
   { id: 'light', label: 'Light', icon: Sun },
   { id: 'dark', label: 'Dark', icon: Moon },
+  { id: 'hybrid', label: 'Hybrid', icon: Contrast },
   { id: 'system', label: 'System', icon: Monitor },
 ];
 
-/** Light / Dark / System, as a row of three toggle buttons (reused in the phone drawer). */
+/** Light / Dark / Hybrid / System, as a row of toggle buttons (reused in the phone drawer). */
 export function ThemeToggle() {
   const pref = useTheme((s) => s.pref);
   return (
