@@ -1,23 +1,26 @@
-// Picking separate lines inside and across boxes (Word-style multi-select): Ctrl/Cmd+click a paragraph, heading,
-// list item or task line adds it to the picked lines (or takes it out), without moving the caret or dropping the
-// ones picked before; Ctrl/Cmd+drag picks every line it sweeps over. Picked lines are drawn highlighted.
-// "Print selection" prints exactly them, in reading order (src/print/print.ts), and Copy takes their text.
+// Word-style multi-selection inside and across boxes. The first selection is entirely the browser's own: drag,
+// double-click a word, triple-click a line. Holding Ctrl/Cmd for the next gesture keeps the earlier selection as a
+// "pick" (an exact character range, highlighted like a selection) while the browser makes the new one: Ctrl+drag
+// adds that range, Ctrl+double-click the word, Ctrl+triple-click the line. A Ctrl/Cmd+click without a drag adds
+// nothing new (it just places the caret) but keeps the earlier selection picked, so nothing is lost by accident.
+// "Print selection" prints exactly the picked ranges plus the live selection, in reading order (src/print/print.ts);
+// Copy takes their text.
 //
-// ProseMirror has one real selection, so the picks are a plugin's own state per box editor: node ranges that
-// move with edits (linePicksCore.ts). A Ctrl/Cmd+click on a box's frame still picks the whole box
-// (CanvasEditor.tsx / boxSelection.ts), and on a link still opens it. Escape or a plain click clears them.
+// ProseMirror has one real selection, so the picks are a plugin's own state per box editor: ranges that move with
+// edits, others' included (linePicksCore.ts). Kept as they were: Ctrl/Cmd+click on a link opens it, on a box's frame
+// picks the whole box (CanvasEditor.tsx / boxSelection.ts); Escape or a plain click clears everything.
 import { Extension, type Editor, type JSONContent } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { create } from 'zustand';
-import { addLines, lineAt, linesBetween, mapPicks, pickBlocks, pickText, removeLines, samePick, toggleLine, type LinePick } from './linePicksCore.ts';
+import { addRange, diffMapping, mapRanges, pickBlocks, pickText, rangeOf, replacesWholeDoc, touches, type RangePick } from './linePicksCore.ts';
 
 interface PickState {
-  picks: LinePick[];
+  picks: RangePick[];
 }
-const key = new PluginKey<PickState>('linePicks');
+const key = new PluginKey<PickState>('rangePicks');
 
-/** How many lines are picked on the open page, per box (so the ribbon can offer "Print selection"). */
+/** How many ranges are picked on the open page, per box (so the ribbon can offer "Print selection"). */
 export const useLinePicks = create<{ pageId: string | null; byBox: Record<string, number> }>(() => ({ pageId: null, byBox: {} }));
 
 interface Registered {
@@ -26,9 +29,43 @@ interface Registered {
   editor: Editor;
 }
 const registry = new Set<Registered>();
+/**
+ * The box editor that last had focus: the one holding the live (browser) selection. Kept as the editor itself, not its
+ * registration: ProseMirror rebuilds a plugin's view whenever another plugin is registered (the drag handle does), and
+ * the registration is made again with it.
+ */
+let activeEditor: Editor | null = null;
+const activeReg = () => [...registry].find((r) => r.editor === activeEditor && alive(r)) ?? null;
 
-const picksOf = (editor: Editor): LinePick[] => (editor.isDestroyed ? [] : (key.getState(editor.state)?.picks ?? []));
-const forPage = (pageId: string) => [...registry].filter((r) => r.pageId === pageId && !r.editor.isDestroyed);
+const alive = (r: Registered) => !r.editor.isDestroyed;
+const picksOf = (r: Registered): RangePick[] => (alive(r) ? (key.getState(r.editor.state)?.picks ?? []) : []);
+const forPage = (pageId: string) => [...registry].filter((r) => r.pageId === pageId && alive(r));
+const setPicks = (r: Registered, picks: RangePick[]) => r.editor.view.dispatch(r.editor.state.tr.setMeta(key, { set: picks }).setMeta('addToHistory', false));
+
+/**
+ * The live selection of an editor as a pick, or null when it is just a caret. The browser's own selection is the
+ * truth for a gesture just made (the editor learns of it a moment later), so that is read first.
+ */
+function liveRange(r: Registered): RangePick | null {
+  if (!alive(r)) return null;
+  const { view } = r.editor;
+  const dom = typeof window === 'undefined' ? null : window.getSelection();
+  if (dom && !dom.isCollapsed && dom.anchorNode && dom.focusNode && view.dom.contains(dom.anchorNode) && view.dom.contains(dom.focusNode)) {
+    try {
+      return rangeOf(view.state.doc, view.posAtDOM(dom.anchorNode, dom.anchorOffset), view.posAtDOM(dom.focusNode, dom.focusOffset));
+    } catch {
+      // a position the editor can't place: fall back to its own state
+    }
+  }
+  const { selection, doc } = r.editor.state;
+  return selection.empty ? null : rangeOf(doc, selection.from, selection.to);
+}
+
+/** The picks of a box, plus the live selection when this box holds it (merged). */
+function rangesOf(r: Registered): RangePick[] {
+  const live = r.editor === activeEditor ? liveRange(r) : null;
+  return live ? addRange(picksOf(r), live) : picksOf(r);
+}
 
 function report(r: Registered, n: number) {
   useLinePicks.setState((s) => {
@@ -39,36 +76,69 @@ function report(r: Registered, n: number) {
   });
 }
 
-/** The app's side of picked lines: counts, text, blocks and clearing, across every box of a page. */
+/** Turn the selection that is live right now into a pick, and leave a caret in its place. */
+function commitLive(pageId: string) {
+  const r = activeReg();
+  if (!r || r.pageId !== pageId) return;
+  const live = liveRange(r);
+  if (!live) return;
+  const { tr, doc } = r.editor.state;
+  r.editor.view.dispatch(
+    tr
+      .setMeta(key, { set: addRange(picksOf(r), live) })
+      .setSelection(TextSelection.create(doc, live.to))
+      .setMeta('addToHistory', false),
+  );
+}
+
+/** The app's side of picked text: counts, blocks, text, hit-testing and clearing, across every box of a page. */
 export const linePicks = {
-  count: (pageId: string) => forPage(pageId).reduce((n, r) => n + picksOf(r.editor).length, 0),
-  /** Picked lines as blocks, per box id (boxes with none are left out). */
+  /** How many ranges are picked (not counting the live selection). */
+  count: (pageId: string) => forPage(pageId).reduce((n, r) => n + picksOf(r).length, 0),
+  /** The picked ranges and the live selection as blocks, per box id; empty when nothing is picked. */
   blocks(pageId: string): Record<string, JSONContent[]> {
     const out: Record<string, JSONContent[]> = {};
+    if (!linePicks.count(pageId)) return out;
     for (const r of forPage(pageId)) {
-      const picks = picksOf(r.editor);
-      if (picks.length) out[r.boxId] = pickBlocks(r.editor.state.doc, picks);
+      const ranges = rangesOf(r);
+      if (ranges.length) out[r.boxId] = pickBlocks(r.editor.state.doc, ranges);
     }
     return out;
   },
-  /** Picked lines as plain text, boxes in the order they are on screen. */
+  /** The same as plain text, boxes in the order they are on screen. */
   text(pageId: string): string {
     const top = (r: Registered) => {
       const b = r.editor.view.dom.getBoundingClientRect();
       return [Math.round(b.top / 20), b.left] as const;
     };
+    if (!linePicks.count(pageId)) return '';
     return forPage(pageId)
-      .filter((r) => picksOf(r.editor).length)
+      .filter((r) => rangesOf(r).length)
       .sort((a, b) => top(a)[0] - top(b)[0] || top(a)[1] - top(b)[1])
-      .map((r) => pickText(r.editor.state.doc, picksOf(r.editor)))
+      .map((r) => pickText(r.editor.state.doc, rangesOf(r)))
       .filter(Boolean)
       .join('\n');
   },
-  clear(pageId: string) {
-    for (const r of forPage(pageId)) if (picksOf(r.editor).length) r.editor.view.dispatch(r.editor.state.tr.setMeta(key, { set: [] }).setMeta('addToHistory', false));
+  /** Drop every pick; `collapse` (Escape) also turns the live selection into a caret. */
+  clear(pageId: string, collapse = false) {
+    for (const r of forPage(pageId)) if (picksOf(r).length) setPicks(r, []);
+    const r = activeReg();
+    if (collapse && r && r.pageId === pageId && !r.editor.state.selection.empty) {
+      r.editor.view.dispatch(r.editor.state.tr.setSelection(TextSelection.create(r.editor.state.doc, r.editor.state.selection.to)).setMeta('addToHistory', false));
+    }
+    // The browser's own highlight, too: once the box has given up focus it would stay drawn.
+    if (collapse) window.getSelection()?.removeAllRanges();
   },
-  /** Is `el` (a DOM node in a box) on a picked line? */
-  isPicked: (el: Element | null) => !!el?.closest?.('.is-line-picked'),
+  /** What a point on the page is on: a picked range, the live selection, or neither (a right-click uses it). */
+  hit(pageId: string, target: Element | null, x: number, y: number): 'pick' | 'selection' | null {
+    const r = forPage(pageId).find((e) => !!target && e.editor.view.dom.contains(target));
+    if (!r) return null;
+    const pos = r.editor.view.posAtCoords({ left: x, top: y })?.pos;
+    if (pos === undefined) return null;
+    if (touches(picksOf(r), pos)) return 'pick';
+    const live = r.editor === activeEditor ? liveRange(r) : null;
+    return live && pos >= live.from && pos <= live.to ? 'selection' : null;
+  },
 };
 
 const extensionOptions = (editor: Editor, name: string) => editor.extensionManager.extensions.find((x) => x.name === name)?.options as Record<string, unknown> | undefined;
@@ -83,16 +153,17 @@ export const LinePicks = Extension.create({
         state: {
           init: () => ({ picks: [] }),
           apply(tr, value) {
-            const meta = tr.getMeta(key) as { set?: LinePick[] } | undefined;
+            const meta = tr.getMeta(key) as { set?: RangePick[] } | undefined;
             if (meta?.set) return { picks: meta.set };
             if (!tr.docChanged || !value.picks.length) return value;
-            return { picks: mapPicks(value.picks, tr.mapping, tr.doc) };
+            // A box re-rendered whole from the shared document keeps its picks: see diffMapping.
+            return { picks: mapRanges(value.picks, replacesWholeDoc(tr) ? diffMapping(tr.before, tr.doc) : tr.mapping, tr.doc) };
           },
         },
         props: {
           decorations(state) {
             const picks = key.getState(state)?.picks ?? [];
-            return picks.length ? DecorationSet.create(state.doc, picks.map((p) => Decoration.node(p.from, p.to, { class: 'is-line-picked' }))) : null;
+            return picks.length ? DecorationSet.create(state.doc, picks.map((p) => Decoration.inline(p.from, p.to, { class: 'is-range-picked' }))) : null;
           },
         },
         view(view) {
@@ -103,44 +174,42 @@ export const LinePicks = Extension.create({
           if (me) registry.add(me);
           let last = 0;
 
-          const set = (picks: LinePick[]) => view.dispatch(view.state.tr.setMeta(key, { set: picks }).setMeta('addToHistory', false));
-          const current = () => key.getState(view.state)?.picks ?? [];
-
-          // Capture phase on the editor's root: it must also see presses inside node views (a task's title field).
+          // The editor that has focus holds the live selection.
+          const onFocus = () => {
+            if (me) activeEditor = editor;
+          };
+          // Capture phase on the editor's root, ahead of ProseMirror's own press handling (which, with Ctrl held, would
+          // select a whole node instead of placing the caret).
           const onDown = (e: MouseEvent) => {
-            if (e.button !== 0 || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+            // A right-click once something is picked: the browser moves the caret to it, so the selection made last
+            // becomes a pick first (it would otherwise be forgotten, and only the older picks would print).
+            if (me && e.button === 2 && linePicks.count(me.pageId) > 0) commitLive(me.pageId);
+            if (!me || e.button !== 0 || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
             const t = e.target as HTMLElement | null;
-            // A link still opens; the blank area of the box (the editor's own padding) is the box's frame: it picks the box.
-            if (!t || t === view.dom || t.closest('a[href]')) return;
-            const at = view.posAtCoords({ left: e.clientX, top: e.clientY });
-            if (!at) return;
-            const hit = at.inside >= 0 ? view.state.doc.nodeAt(at.inside) : null;
-            const line: LinePick | null = hit && hit.isBlock && hit.isAtom ? { from: at.inside, to: at.inside + hit.nodeSize, node: true } : lineAt(view.state.doc, at.pos);
-            if (!line) return;
-            e.preventDefault();
-            e.stopPropagation(); // not the caret, not the box's own pick
-            const before = current();
-            const removing = before.some((p) => samePick(p, line));
-            set(toggleLine(before, line));
-            // Ctrl/Cmd+drag: every line swept over is picked (or, starting on a picked one, unpicked).
-            const move = (ev: MouseEvent) => {
-              const to = view.posAtCoords({ left: ev.clientX, top: ev.clientY });
-              if (!to) return;
-              const swept = linesBetween(view.state.doc, line.from, to.pos);
-              set(removing ? removeLines(before, swept) : addLines(before, swept));
-            };
-            const up = () => {
-              document.removeEventListener('mousemove', move);
-              document.removeEventListener('mouseup', up);
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
+            // A link still opens; a box's own padding is its frame (it picks the whole box); an inline task or other
+            // node view keeps its own behaviour.
+            if (!t || t === view.dom || t.closest('[contenteditable="false"]')) return;
+            if (t.closest('a[href]')) {
+              // The browser opens it as usual; the selection made so far stays picked.
+              if (e.detail <= 1) commitLive(me.pageId);
+              return;
+            }
+            if (e.detail <= 1) {
+              // The selection made so far becomes a pick, whichever box holds it; then a caret at the click, so what is
+              // highlighted isn't also the start of a drag-copy and the browser's own gesture starts from nothing.
+              commitLive(me.pageId);
+              const at = view.posAtCoords({ left: e.clientX, top: e.clientY });
+              if (at) view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(at.pos))).setMeta('addToHistory', false));
+            }
+            // The browser now makes the new selection itself (drag, double-click, triple-click): its default is untouched.
+            e.stopPropagation();
           };
           view.dom.addEventListener('mousedown', onDown, true);
+          view.dom.addEventListener('focusin', onFocus);
 
           return {
             update() {
-              const n = current().length;
+              const n = me ? picksOf(me).length : 0;
               if (me && n !== last) {
                 last = n;
                 report(me, n);
@@ -148,6 +217,7 @@ export const LinePicks = Extension.create({
             },
             destroy() {
               view.dom.removeEventListener('mousedown', onDown, true);
+              view.dom.removeEventListener('focusin', onFocus);
               if (me) {
                 registry.delete(me);
                 report(me, 0);
@@ -159,3 +229,4 @@ export const LinePicks = Extension.create({
     ];
   },
 });
+

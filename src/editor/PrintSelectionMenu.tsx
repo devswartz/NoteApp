@@ -1,5 +1,5 @@
 // Right-click on a selection: a small menu with "Print selection" (and Copy). It only takes the right-click over
-// something selected: picked lines, picked boxes, or a text selection of more than one word. Everywhere else the
+// something selected: picked text, picked boxes, or a text selection of more than one word. Everywhere else the
 // browser's own menu stays, so spelling suggestions still work: a web page can't add to the browser's menu, so
 // right-clicking a single selected word (the usual way to correct it) is left alone too.
 import { useEffect, useRef } from 'react';
@@ -31,7 +31,9 @@ function selectionText(pageId: string): string {
 function onSelection(e: MouseEvent, pageId: string): boolean {
   const t = e.target as HTMLElement | null;
   if (!t?.closest) return false;
-  if (t.closest('.is-line-picked') || t.closest('.canvas-box.is-picked')) return true;
+  const hit = linePicks.hit(pageId, t, e.clientX, e.clientY);
+  // Picked text or a picked box; or, once something is picked, the live selection too (it prints with the picks).
+  if (hit === 'pick' || t.closest('.canvas-box.is-picked') || (hit === 'selection' && linePicks.count(pageId) > 0)) return true;
   const ed = selectionEditor(pageId);
   if (!ed || ed.isDestroyed || ed.state.selection.empty || !ed.view.dom.contains(t)) return false;
   const { from, to } = ed.state.selection;
@@ -68,8 +70,20 @@ export function PrintSelectionMenu({ pageId }: { pageId: string }) {
       e.preventDefault();
       open.current(e.clientX, e.clientY);
     };
+    // Ctrl/Cmd+C with text picked copies every picked range (the browser would copy only the live selection).
+    const onCopy = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'c' || !linePicks.count(pageId)) return;
+      const text = linePicks.text(pageId);
+      if (!text) return;
+      e.preventDefault();
+      void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Couldn’t copy'));
+    };
     document.addEventListener('contextmenu', onContext);
-    return () => document.removeEventListener('contextmenu', onContext);
+    window.addEventListener('keydown', onCopy, true);
+    return () => {
+      document.removeEventListener('contextmenu', onContext);
+      window.removeEventListener('keydown', onCopy, true);
+    };
   }, [pageId]);
   return menu.menu;
 }
