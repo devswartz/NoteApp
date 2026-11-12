@@ -126,7 +126,7 @@ test('narrower windows fold the pages into the sections tree; hidden panels stay
   const user = await createUser(request, 'Nora Narrow');
   const { pageId } = await createPage(request, user, { notebook: 'Narrow Notebook', page: 'Folded page' });
   await signInContext(context, user);
-  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setViewportSize({ width: 1100, height: 800 });
   await openPage(page, user.wsId, pageId);
 
   const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
@@ -138,4 +138,25 @@ test('narrower windows fold the pages into the sections tree; hidden panels stay
   await page.reload();
   await expect(page.getByRole('button', { name: 'Show sidebar' })).toBeVisible();
   await expect(sidebar).toBeHidden();
+});
+
+test('1280-wide windows (1920px at 150% scaling) get two panels; the Appearance switch folds them', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Wren Wide');
+  const { pageId } = await createPage(request, user, { notebook: 'Wide Notebook', page: 'Panel page' });
+  await signInContext(context, user);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openPage(page, user.wsId, pageId);
+
+  const sidebar = page.getByRole('navigation', { name: 'Sidebar' });
+  await expect(sidebar.getByRole('tree', { name: 'Pages' }).getByText('Panel page')).toBeVisible();
+
+  await page.goto(`/w/${user.wsId}/settings?s=appearance`);
+  const toggle = page.getByRole('switch', { name: 'Show pages in a separate panel' });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await openPage(page, user.wsId, pageId);
+  await expect(sidebar.getByRole('tree', { name: 'Sections' }).getByText('Panel page')).toBeVisible();
+  await expect(sidebar.getByRole('tree', { name: 'Pages' })).toHaveCount(0);
+  await page.reload();
+  await expect(sidebar.getByRole('tree', { name: 'Pages' })).toHaveCount(0);
 });

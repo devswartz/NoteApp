@@ -22,9 +22,11 @@ import { CalendarPanel } from './shell/CalendarPanel.tsx';
 import { UserMenu, WorkspaceSwitcher } from './shell/Rail.tsx';
 import type { MoveItem, NodeProps } from './shell/notesRows.tsx';
 
-/** Below this width the pages panel folds into the section tree. */
-// Below this width the pages list folds into the sections tree (one panel instead of two).
-export const FOLD_QUERY = '(max-width: 1400px)';
+/**
+ * Below this width the pages list folds into the sections tree (one panel instead of two).
+ * 1200 keeps two panels on a maximised 1920px screen at 150% Windows scaling (1280 wide).
+ */
+export const FOLD_QUERY = '(max-width: 1199px)';
 
 export function Sidebar() {
   const { wsId } = useParams() as { wsId: string };
@@ -39,7 +41,8 @@ export function Sidebar() {
   const location = useLocation();
   const isMobile = useIsMobile();
   const narrow = useMediaQuery(FOLD_QUERY);
-  const folded = isMobile || narrow;
+  const pagesPanel = useSidebar((s) => s.pagesPanel);
+  const folded = isMobile || narrow || !pagesPanel;
   const view = viewOf(location.pathname);
   const [lastView, setLastView] = useState<RailView>(view ?? 'tasks');
   const panel = view ?? lastView;
