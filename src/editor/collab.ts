@@ -17,6 +17,7 @@ import { backoffMs, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import type { User } from '../../shared/types.ts';
 import { presenceFrom, samePresence, type PagePresence } from './collabPresenceModel.ts';
 import { toast } from '../store/toasts.ts';
+import { confirmDialog } from '../components/shell/dialogs.tsx';
 import { platform } from '../platform/index.ts';
 import { docToMarkdown } from './collabExport.ts';
 import { CommentMark } from './collabComments.ts';
@@ -227,7 +228,7 @@ function warnBlocked(doc: Y.Doc, idb?: IndexeddbPersistence) {
         void downloadUnsynced(doc).then(() =>
           toast('Then discard this device’s unsynced changes to continue from the last saved version.', {
             tone: 'error',
-            action: { label: 'Discard and reload', run: () => discardAndReload(doc) },
+            action: { label: 'Discard and reload', run: () => void discardAndReload(doc) },
           }),
         );
       },
@@ -235,10 +236,13 @@ function warnBlocked(doc: Y.Doc, idb?: IndexeddbPersistence) {
   });
 }
 
-function discardAndReload(doc: Y.Doc) {
-  const ok = confirm(
-    'Discard every change on this device that hasn’t synced to the server (including earlier offline edits), and reload the last saved version of this page?\n\nDownload a copy first if you still need them.',
-  );
+async function discardAndReload(doc: Y.Doc) {
+  const ok = await confirmDialog({
+    title: 'Discard unsynced changes?',
+    message: 'This discards every change on this device that hasn’t synced to the server (including earlier offline edits) and reloads the last saved version of this page. Download a copy first if you still need them.',
+    confirmLabel: 'Discard and reload',
+    danger: true,
+  });
   if (!ok) return;
   const idb = idbFor.get(doc);
   void (idb ? idb.clearData() : Promise.resolve()).finally(() => location.reload());

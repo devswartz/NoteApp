@@ -6,6 +6,7 @@ import { Copy, LogOut, Mail, RotateCw, Trash2, UserMinus } from 'lucide-react';
 import { del, patch, post } from '../../api.ts';
 import { errorToast, loadWorkspaces, toast, useStore } from '../../store.ts';
 import { Avatar } from '../ui.tsx';
+import { confirmDialog, promptDialog } from '../shell/dialogs.tsx';
 import type { Role } from '../../../shared/types.ts';
 import './sharing.css';
 
@@ -27,7 +28,7 @@ async function copy(text: string) {
     await navigator.clipboard.writeText(text);
     toast('Link copied');
   } catch {
-    prompt('Copy this link', text);
+    void promptDialog({ title: 'Copy this link', initial: text, confirmLabel: 'Done' }); // (the browser refused the clipboard)
   }
 }
 
@@ -140,9 +141,16 @@ export function MembersPanel() {
                 className="btn-ghost icon-btn"
                 title={m.id === user.id ? 'Leave workspace' : 'Remove member'}
                 aria-label={m.id === user.id ? 'Leave workspace' : `Remove ${m.name}`}
-                onClick={() => {
-                  if (!confirm(m.id === user.id ? 'Leave this workspace?' : `Remove ${m.name}? Their open tasks will become unassigned.`)) return;
-                  del(`/workspaces/${ws.id}/members/${m.id}`)
+                onClick={async () => {
+                  const leaving = m.id === user.id;
+                  const ok = await confirmDialog({
+                    title: leaving ? 'Leave this workspace?' : `Remove ${m.name}?`,
+                    message: leaving ? 'You will lose access to its pages and tasks until someone adds you again.' : 'Their open tasks will become unassigned.',
+                    confirmLabel: leaving ? 'Leave' : 'Remove',
+                    danger: true,
+                  });
+                  if (!ok) return;
+                  void del(`/workspaces/${ws.id}/members/${m.id}`)
                     .then(async () => {
                       if (m.id === user.id) {
                         await loadWorkspaces();
