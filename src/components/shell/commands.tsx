@@ -99,7 +99,7 @@ export function useShellCommands(wsId: string) {
         allowInInput: true,
         // Only on an open page: elsewhere the browser prints the view as usual.
         when: () => !!useRibbon.getState().page,
-        run: () => void import('../../print/print.ts').then((m) => m.printCurrentPage()),
+        run: () => void import('../../print/print.ts').then((m) => m.printWithChoice()),
       },
       { id: 'pages.new', title: 'New page', group: 'Create', keys: 'n', keywords: 'note canvas', icon: <FilePlus size={16} />, when: canEditWorkspace, run: () => newPage() },
       nav('today', 'Today', 't', 'tasks/today', <Sun size={16} />),

@@ -13,6 +13,7 @@ import type { Member, Task, Tree } from '../../shared/types.ts';
 import { canvasBoxes } from '../editor/canvasDoc.ts';
 import { documentExtensions } from '../editor/NoteEditor.tsx';
 import { sanitizeContent } from '../editor/urls.ts';
+import { resolveListStarts } from '../../shared/listMarker.ts';
 import { estimateBoxHeight, printRows, type PrintBox } from './printLayout.ts';
 import { yXmlFragmentToProseMirrorRootNode } from '@tiptap/y-tiptap';
 import '../styles/print.css';
@@ -25,6 +26,10 @@ export interface PrintPageInput {
   doc: Y.Doc;
   /** Measured canvas heights of the boxes (the open page); others are estimated. */
   heights?: Record<string, number>;
+  /** Print selection: only these boxes (laid out as on the page, in reading order). */
+  boxIds?: string[];
+  /** Print selection: just this content (a text selection's blocks) under the page's header. */
+  blocks?: JSONContent[];
 }
 
 export interface PrintContext {
@@ -83,7 +88,7 @@ export function taskLine(task: Task | undefined, members: PrintContext['members'
 function contentDOM(json: JSONContent, ctx: PrintContext): HTMLElement {
   const s = printSchema();
   const wrap = el('div', 'print-box-content ProseMirror prose');
-  const node = PMNode.fromJSON(s, sanitizeContent(json));
+  const node = PMNode.fromJSON(s, resolveListStarts(sanitizeContent(json)));
   wrap.append(DOMSerializer.fromSchema(s).serializeFragment(node.content, { document }));
   // Task references hold only an id: draw the live task.
   wrap.querySelectorAll<HTMLElement>('div[data-type="task-ref"]').forEach((ref) => {
@@ -121,7 +126,7 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
   page.append(head);
 
   const s = printSchema();
-  const boxes: (PrintBox & { json: JSONContent })[] = canvasBoxes(input.doc, s).map((b) => ({
+  let boxes: (PrintBox & { json: JSONContent })[] = input.blocks ? [] : canvasBoxes(input.doc, s).map((b) => ({
     id: b.id,
     x: b.x,
     y: b.y,
@@ -132,9 +137,14 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
   }));
   // A legacy document page (content in `default`): one wide box above everything.
   const def = input.doc.getXmlFragment(DEFAULT_FIELD);
-  if (!fragmentIsEmpty(def)) {
+  if (input.blocks) boxes.push({ id: 'selection', x: 0, y: 0, w: 1, wide: true, h: 0, json: { type: 'doc', content: input.blocks } });
+  else if (!fragmentIsEmpty(def)) {
     const json = yXmlFragmentToProseMirrorRootNode(def, s).toJSON() as JSONContent;
     boxes.unshift({ id: DEFAULT_FIELD, x: 0, y: -1, w: 1, wide: true, h: 0, json });
+  }
+  if (input.boxIds) {
+    const keep = new Set(input.boxIds);
+    boxes = boxes.filter((b) => keep.has(b.id));
   }
   const byId = new Map(boxes.map((b) => [b.id, b]));
   const body = el('div', 'print-body');

@@ -4,7 +4,7 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
-import { DEFAULT_FIELD, convertPageDoc, observePageContent, pageFragments } from '../shared/pageDoc.ts';
+import { DEFAULT_FIELD, convertPageDoc, mainFragment, observePageContent, pageFragments } from '../shared/pageDoc.ts';
 import crypto from 'node:crypto';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -68,6 +68,8 @@ interface ConnAuth {
   userId: string;
   expiresAt: number;
   canEdit: boolean;
+  /** A workspace member. False for someone editing through a page share from outside it (#98): see guardPageTasks. */
+  member: boolean;
 }
 const connAuth = new WeakMap<WebSocket, ConnAuth>();
 const REVALIDATE_MS = 30_000;
@@ -89,7 +91,10 @@ export function revalidateCollab() {
       }
       const access = pageAccess(room.pageId, a.userId);
       if (!access) revoke(conn, a, 4403, 'Access revoked');
-      else a.canEdit = access.canEdit;
+      else {
+        a.canEdit = access.canEdit;
+        a.member = access.member;
+      }
     }
   }
 }
@@ -103,6 +108,57 @@ function revoke(conn: WebSocket, a: ConnAuth, code: number, reason: string) {
 
 onAccessChange(revalidateCollab);
 setInterval(revalidateCollab, REVALIDATE_MS).unref();
+
+/**
+ * Task references removed by someone outside the workspace, per page, waiting to be checked
+ * (see guardPageTasks). Saves don't take these tasks off the page meanwhile.
+ */
+const guarded = new Map<string, Set<string>>();
+/** How long a removed reference waits for the task's own delete to land before it is put back. */
+export const TASK_GUARD_MS = 1500;
+
+/**
+ * Someone outside the workspace may edit a page shared with them, and the tasks on it, but may
+ * not move tasks off the page into the workspace (#98 follow-up). Removing a task's reference
+ * from the doc would do that when the page is saved (syncPageTasks detaches it). So references
+ * such a socket removes to tasks living on this page are held: if the task is deleted (the
+ * editor deletes it over REST as it removes the reference) nothing more happens; if it still
+ * exists after TASK_GUARD_MS and is still missing from the doc, its reference is put back at
+ * the end of the page's first box. References they add only attach tasks whoever added them
+ * may move (canMoveTask: members only), so they can't pull tasks in either. `before` is the
+ * page's task references before the update.
+ */
+function guardPageTasks(room: Room, before: Set<string>) {
+  const after = extractPage(room.doc).taskIds;
+  const removed = [...before].filter((id) => !after.has(id));
+  if (!removed.length) return;
+  const onPage = db.prepare('SELECT 1 FROM tasks WHERE id = ? AND page_id = ? AND parent_id IS NULL AND occurrence_of IS NULL');
+  const hold = removed.filter((id) => onPage.get(id, room.pageId));
+  if (!hold.length) return;
+  const pageId = room.pageId;
+  let set = guarded.get(pageId);
+  if (!set) guarded.set(pageId, (set = new Set()));
+  for (const id of hold) set.add(id);
+  setTimeout(() => {
+    const s = guarded.get(pageId);
+    for (const id of hold) s?.delete(id);
+    if (s && !s.size) guarded.delete(pageId);
+    const restore = hold.filter((id) => onPage.get(id, pageId));
+    if (!restore.length) return;
+    editPageDoc(pageId, (doc) => {
+      const present = extractPage(doc).taskIds;
+      const missing = restore.filter((id) => !present.has(id));
+      if (!missing.length) return;
+      mainFragment(doc).push(
+        missing.map((id) => {
+          const el = new Y.XmlElement('taskRef');
+          el.setAttribute('taskId', id);
+          return el;
+        }),
+      );
+    });
+  }, TASK_GUARD_MS).unref();
+}
 
 /** Text, task references and mentions of a whole page: every fragment (all canvas boxes) in reading order. */
 export function extractPage(doc: Y.Doc): { text: string; taskIds: Set<string>; mentionIds: Set<string> } {
@@ -170,8 +226,13 @@ function persist(room: Room) {
   // Only tasks that whoever inserted the reference may see and edit move onto this page (#98 review).
   const authors = room.taskAuthors;
   room.taskAuthors = new Map();
-  syncPageTasks(room.pageId, room.workspaceId, taskIds, (id) =>
-    [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
+  const held = guarded.get(room.pageId);
+  syncPageTasks(
+    room.pageId,
+    room.workspaceId,
+    taskIds,
+    (id) => [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
+    (id) => !held?.has(id), // removed by an outside editor: kept on the page until guardPageTasks decides
   );
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;
@@ -397,7 +458,7 @@ export function attachCollab(wss: WebSocketServer) {
       conn.close(4403, 'No access to this page');
       return;
     }
-    const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit };
+    const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit, member: access.member };
     connAuth.set(conn, state);
     // Close exactly when the token lapses (the 30 s sweep is a backstop).
     const expiry = setTimeout(() => revoke(conn, state, 4401, 'Token expired'), Math.max(0, auth.expiresAt - Date.now()));
@@ -430,7 +491,9 @@ export function attachCollab(wss: WebSocketServer) {
           const sub = decoding.peekVarUint(dec);
           if (sub !== syncProtocol.messageYjsSyncStep1 && !state.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
+          const guard = sub !== syncProtocol.messageYjsSyncStep1 && !state.member ? extractPage(room.doc).taskIds : null;
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
+          if (guard) guardPageTasks(room, guard);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
         } else if (type === MSG_AWARENESS) {
           if (state.expiresAt === 0) return; // revoked, closing

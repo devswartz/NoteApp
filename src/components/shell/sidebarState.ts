@@ -30,6 +30,8 @@ interface Persisted {
   lastSection: Record<string, string>;
   lastPage: Record<string, string>;
   pageSort: PageSort;
+  /** Show the selected section's pages in their own panel on windows wide enough for it (else folded into the tree). */
+  pagesPanel: boolean;
   /** wsId → view → last path (with query) visited in that view. */
   lastLoc: Record<string, Partial<Record<RailView, string>>>;
   /** Bumped when the default widths change, so saved widths from older defaults reset once. */
@@ -49,6 +51,7 @@ function load(): Persisted {
     lastSection: {},
     lastPage: {},
     pageSort: 'manual',
+    pagesPanel: true,
     lastLoc: {},
     layout: LAYOUT,
   };
@@ -91,6 +94,7 @@ export const sidebar = {
   setPagesWidth: (w: number) => useSidebar.setState({ pagesWidth: clamp(w, PAGES_MIN, PAGES_MAX) }),
   resetPagesWidth: () => useSidebar.setState({ pagesWidth: PAGES_DEFAULT }),
   setPageSort: (pageSort: PageSort) => useSidebar.setState({ pageSort }),
+  setPagesPanel: (pagesPanel: boolean) => useSidebar.setState({ pagesPanel }),
   /** Remember the Notes selection (and, per notebook / section, the last child chosen). */
   selectNotes: (wsId: string, nb: string | undefined, sec: string | undefined, page?: string) =>
     useSidebar.setState((s) => {

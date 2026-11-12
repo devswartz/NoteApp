@@ -12,6 +12,7 @@ import { subtaskIndex, type Group } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { selection, useSelection } from '../pages/tasks/selection.ts';
 import { RENAME_EVENT } from '../pages/tasks/commands.tsx';
+import { sharedPagePath, useShared } from './sharing/sharedPages.ts';
 import '../styles/tasks.css'; // row touch sizing applies wherever a TaskRow renders
 
 /** id → page, cached per tree.pages array so each row's lookup is O(1). */
@@ -32,8 +33,18 @@ export const TaskRow = memo(function TaskRow({
   draggable?: boolean;
 }) {
   const { wsId } = useParams();
-  const page = useStore((s) => (task.pageId ? pageIndex(s.tree.pages).get(task.pageId) : undefined));
-  const canEdit = useStore((s) => s.workspaces.find((w) => w.id === s.wsId)?.role !== 'viewer');
+  const treePage = useStore((s) => (task.pageId ? pageIndex(s.tree.pages).get(task.pageId) : undefined));
+  // A page shared with me one by one (#98): not in the tree, but its tasks show under it.
+  const sharedPage = useShared((s) => (task.pageId ? s.pages.find((p) => p.id === task.pageId) : undefined));
+  const page = treePage ?? sharedPage;
+  const pageHref = treePage ? `/w/${wsId}/p/${treePage.id}` : sharedPage ? sharedPagePath(sharedPage.workspaceId, sharedPage.id) : '';
+  // A member (not a viewer) of the task's own workspace, or anyone who may edit the page it lives
+  // on through a page share (#98 follow-up).
+  const memberCanEdit = useStore((s) => {
+    const role = s.workspaces.find((w) => w.id === task.workspaceId)?.role;
+    return role !== undefined && role !== 'viewer';
+  });
+  const canEdit = memberCanEdit || !!sharedPage?.canEdit;
   const lingering = useStore((s) => !!s.lingering[task.id]);
   const [editing, setEditing] = useState(false);
   // A click on the title waits briefly so a double-click can start renaming instead of opening the sheet.
@@ -154,7 +165,7 @@ export const TaskRow = memo(function TaskRow({
             <TaskIndicators task={task} />
             {showSource && page && (
               <Link
-                to={`/w/${wsId}/p/${page.id}?task=${task.id}`}
+                to={`${pageHref}?task=${task.id}`}
                 className="chip chip-link"
                 onClick={(e) => e.stopPropagation()}
                 title="Open in note"

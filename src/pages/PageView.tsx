@@ -15,7 +15,8 @@ import { IconPicker } from '../editor/IconPicker.tsx';
 import { TemplatePicker } from '../editor/TemplatePicker.tsx';
 import { saveAsTemplate } from '../editor/userTemplates.ts';
 import { VersionHistory } from '../editor/VersionHistory.tsx';
-import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, takePendingImport } from '../editor/exportPage.ts';
+import { exportMarkdown, importMarkdown, importMarkdownFiles, printPage, printSelectionOnly, takePendingImport } from '../editor/exportPage.ts';
+import { usePrintSelection } from '../editor/boxSelection.ts';
 import { Outline } from '../editor/Outline.tsx';
 import { installPrintHandlers, printPageColour, setPrintPageColour } from '../print/print.ts';
 import { setRibbonPage, usePageSettings, useRibbon } from '../editor/ribbonState.ts';
@@ -31,6 +32,7 @@ import { loadSharedPageTasks, patchSharedPage, useShared } from '../components/s
 import type { PageMeta } from '../../shared/types.ts';
 import { sectionPathLabel, sectionsInOrder } from '../../shared/sections.ts';
 import { TemplateDialogHost, templateDialog } from '../editor/TemplateDialog.tsx';
+import { setTasksAllowed } from '../editor/taskGate.ts';
 import type { CanvasHandle } from '../editor/canvasDoc.ts';
 import { UserPlus, Users } from 'lucide-react';
 
@@ -132,6 +134,8 @@ export function PageView() {
       .then((r) => {
         platform.kv.set(key, r.canEdit ? '1' : '0');
         if (cancelled) return;
+        // Whoever may edit the page may add tasks to it, through a page share too (#98 follow-up).
+        setTasksAllowed(pageId, r.canEdit);
         setCanEdit(r.canEdit);
         setInfo(r);
         // A page shared from another workspace: its tasks aren't in this workspace's store (#98).
@@ -221,7 +225,8 @@ export function PageView() {
   if (!meta || canEdit === null) return <div className="page-loading" />;
   const editorProps = {
     pageId,
-    workspaceId: wsId,
+    // Uploads go to the page's own workspace (a page shared from another one, #98).
+    workspaceId: info?.workspaceId ?? wsId,
     user,
     canEdit,
     onStatus: setStatus,
@@ -542,6 +547,7 @@ type PageMenuProps = {
 
 function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
+  const printable = usePrintSelection(pageId);
   const navigate = useNavigate();
   const current = tree.pages.find((p) => p.id === pageId);
   const [mode, setMode] = useState<'move' | 'copy'>('move');
@@ -626,6 +632,11 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
           <MenuItem icon={<Printer size={15} />} hint={keyLabel(MOD, 'P')} onSelect={() => printPage()}>
             Print / save as PDF
           </MenuItem>
+          {printable && (
+            <MenuItem icon={<Printer size={15} />} onSelect={() => printSelectionOnly()}>
+              Print selection
+            </MenuItem>
+          )}
           <PrintColourItem />
           {canEdit && (
             <MenuItem icon={<FileUp size={15} />} onSelect={() => source && void importMarkdown(source, pageId)}>

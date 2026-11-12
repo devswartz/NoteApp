@@ -2,7 +2,7 @@
 // to start a text box, type, move it by its top edge; positions and text persist, another
 // user sees boxes move live, and an inline task in a box is a real task.
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { api, createPage, createTeam, createUser, eventually, listTasks, pageUrl, railTo, signInContext, taskRow, type TestUser } from './helpers.ts';
+import { api, createPage, createTeam, createUser, eventually, listTasks, pageUrl, railTo, ribbon, signInContext, taskRow, type TestUser } from './helpers.ts';
 
 async function userPage(browser: Browser, user: TestUser) {
   const context = await browser.newContext();
@@ -139,6 +139,82 @@ test('canvas page: an empty box goes away; Escape selects a box and Delete remov
   await page.keyboard.press('Delete');
   await expect(page.locator('.canvas-box')).toHaveCount(1);
   await expect(next).toBeVisible();
+});
+
+test('canvas page: undo / redo take back the latest change, a box move or typing, wherever focus is', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Uma Undo');
+  const { sectionId } = await createPage(request, user, { notebook: 'Undo' });
+  const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: 'Undo', kind: 'canvas' });
+  await signInContext(context, user);
+  await openCanvas(page, user.wsId, id);
+  const undoBtn = ribbon(page).getByRole('button', { name: /^Undo/ });
+  const redoBtn = ribbon(page).getByRole('button', { name: /^Redo/ });
+
+  const box = await newBox(page, 40, 160, 'Undo me');
+  const text = box.locator('.ProseMirror');
+  const start = await pos(box);
+  await page.waitForTimeout(600); // the typing is its own undo step
+
+  // Move the box while typing in it: focus stays in its text.
+  await dragBox(page, box, 120, 80);
+  const moved = { x: start.x + 120, y: start.y + 80 };
+  await expect.poll(() => pos(box)).toEqual(moved);
+  await expect(text).toBeFocused();
+
+  // Ctrl+Z (in the text) undoes the move, not the typing; Ctrl+Y / Ctrl+Shift+Z redo it.
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => pos(box)).toEqual(start);
+  await expect(text).toHaveText('Undo me');
+  await page.keyboard.press('ControlOrMeta+y');
+  await expect.poll(() => pos(box)).toEqual(moved);
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => pos(box)).toEqual(start);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect.poll(() => pos(box)).toEqual(moved);
+
+  // The ribbon's Undo / Redo do the same.
+  await expect(undoBtn).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(redoBtn).toHaveAttribute('aria-disabled', 'true');
+  await undoBtn.click();
+  await expect.poll(() => pos(box)).toEqual(start);
+  await expect(text).toHaveText('Undo me');
+  await expect(redoBtn).not.toHaveAttribute('aria-disabled', 'true');
+  await redoBtn.click();
+  await expect.poll(() => pos(box)).toEqual(moved);
+
+  // Text still undoes as text, and the box stays put.
+  await text.press('End');
+  await page.keyboard.type(' and more');
+  await expect(text).toHaveText('Undo me and more');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(text).toHaveText('Undo me');
+  expect(await pos(box)).toEqual(moved);
+  await undoBtn.click(); // then the move before it
+  await expect.poll(() => pos(box)).toEqual(start);
+  await expect(text).toHaveText('Undo me');
+
+  // Moving a paragraph within the box (Alt+Shift+↑) undoes from the keyboard and the ribbon.
+  await text.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Second line');
+  await page.waitForTimeout(600);
+  const paras = text.locator('p');
+  await page.keyboard.press('Alt+Shift+ArrowUp');
+  await expect(paras.first()).toHaveText('Second line');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(paras.first()).toHaveText('Undo me');
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect(paras.first()).toHaveText('Second line');
+  await undoBtn.click();
+  await expect(paras.first()).toHaveText('Undo me');
+
+  // With the box selected (not its text), Ctrl+Z still walks back the page's changes.
+  await dragBox(page, box, 60, 0);
+  await expect.poll(() => pos(box)).toEqual({ x: start.x + 60, y: start.y });
+  await page.keyboard.press('Escape');
+  await expect(box).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect.poll(() => pos(box)).toEqual(start);
 });
 
 test('canvas page: a second user sees a box appear and move live', async ({ browser, request }) => {

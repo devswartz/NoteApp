@@ -5,7 +5,7 @@
 // text (NoteEditor.tsx).
 // WAI-ARIA toolbar pattern: one tab stop (roving tabindex), ←/→/Home/End move between
 // controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
 import {
   Baseline,
@@ -28,6 +28,8 @@ import {
   Grid3x3,
   Highlighter,
   ImagePlus,
+  IndentDecrease,
+  IndentIncrease,
   Italic,
   Link2,
   List,
@@ -51,10 +53,14 @@ import {
   Undo2,
 } from 'lucide-react';
 import { canConvert } from './TaskRef.tsx';
+import { listItemAt } from './smartLists.ts';
+import { canInsertTask } from './taskGate.ts';
 import { useActiveEditor } from './activeEditor.ts';
+import { pageUndoOf, type PageUndo } from './pageUndo.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
-import { printPage } from './exportPage.ts';
+import { printPage, printSelectionOnly } from './exportPage.ts';
+import { usePrintSelection } from './boxSelection.ts';
 import { applyColor, COLOR_LABELS, COLOR_NAMES, currentColor, type ColorKind, type ColorName } from './colors.ts';
 import { setOutlineHidden, setRibbonCollapsed, syncRibbonPrefs, usePageSettings, useRibbon } from './ribbonState.ts';
 import { PAGE_COLORS, RULE_LINES, setPageSettings, type PageColor, type RuleLines } from '../../shared/pageDoc.ts';
@@ -300,12 +306,36 @@ function ribbonState(e: Editor) {
     bullet: e.isActive('bulletList'),
     ordered: e.isActive('orderedList'),
     check: e.isActive('taskList'),
+    inList: !!listItemAt(e),
     link: e.isActive('link'),
     canTask: canConvert(e),
+    taskAllowed: canInsertTask(e),
     canUndo: e.can().undo(),
     canRedo: e.can().redo(),
     table: e.isActive('table') ? { header: headerRowOn(e), merge: e.can().mergeCells(), split: e.can().splitCell() } : null,
   };
+}
+
+const noSubscribe = () => () => {};
+const noVersion = () => 0;
+
+/**
+ * Undo / Redo: on a canvas page, the page's most recent change (a box moved or typed in,
+ * wherever focus is; pageUndo.ts); otherwise the editor's own history.
+ */
+function useHistory(editor: Editor | null, s: { canUndo: boolean; canRedo: boolean } | null) {
+  const page: PageUndo | null = pageUndoOf(editor);
+  useSyncExternalStore(page?.subscribe ?? noSubscribe, page?.getVersion ?? noVersion);
+  if (!page) {
+    return {
+      canUndo: !!s?.canUndo,
+      canRedo: !!s?.canRedo,
+      undo: () => void editor?.chain().focus().undo().run(),
+      redo: () => void editor?.chain().focus().redo().run(),
+    };
+  }
+  // Presses keep focus where it is (mousedown is prevented): in the text, or on a selected box.
+  return { canUndo: page.canUndo(), canRedo: page.canRedo(), undo: () => void page.undo(), redo: () => void page.redo() };
 }
 
 /** Whether the first row of the table at the selection is a header row. */
@@ -590,10 +620,12 @@ export function Ribbon() {
   const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
   const page = useRibbon((r) => r.page);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
+  const printable = usePrintSelection(page?.pageId);
   const settings = usePageSettings(page?.doc);
   const off = !editor || !s;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
+  const history = useHistory(editor, s);
   const button = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts & { always?: boolean } = {}) => {
     const idle = !opts.always && off;
     const disabled = idle || !!opts.disabled;
@@ -676,12 +708,14 @@ export function Ribbon() {
       <Group label="Lists">
         {btn(`Bulleted list (${keyLabel(MOD, '.')})`, <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
         {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
+        {btn('Decrease indent (Shift+Tab)', <IndentDecrease />, () => chain().outdentListItem().run(), { disabled: !s?.inList })}
+        {btn('Increase indent (Tab)', <IndentIncrease />, () => chain().indentListItem().run(), { disabled: !s?.inList })}
         <span className="rb-split">
           {btn(
             `Task: make this line a tracked task, or start a new one (${keyLabel(MOD, '1')} or ${keyLabel(MOD, ENTER)})`,
             <CircleCheck />,
             () => (s?.canTask ? chain().convertToTask().run() : chain().insertTask().run()),
-            { text: 'Task' },
+            { text: 'Task', disabled: s ? !s.taskAllowed : false },
           )}
           <ToolbarMenu
             label="More list options"
@@ -804,6 +838,7 @@ export function Ribbon() {
           }
         </ToolbarMenu>
         {viewBtn(`Print (${keyLabel(MOD, 'P')})`, <Printer />, () => printPage(), { text: 'Print', disabled: !page })}
+        {printable && viewBtn(printable === 'boxes' ? 'Print the selected boxes' : 'Print the selected text', <Printer />, () => printSelectionOnly(), { text: 'Print selection' })}
       </Group>
       <Sep />
       <Group label="View">
@@ -811,8 +846,8 @@ export function Ribbon() {
       </Group>
       <span className="tb-spacer" />
       <Group label="History">
-        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 />, () => chain().undo().run(), { disabled: !s?.canUndo })}
-        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 />, () => chain().redo().run(), { disabled: !s?.canRedo })}
+        {btn(`Undo (${keyLabel(MOD, 'Z')})`, <Undo2 />, history.undo, { disabled: !history.canUndo })}
+        {btn(`Redo (${keyLabel(MOD, SHIFT, 'Z')})`, <Redo2 />, history.redo, { disabled: !history.canRedo })}
       </Group>
     </RibbonFrame>
   );

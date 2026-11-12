@@ -1,6 +1,8 @@
 // Sharing a single page (#98): page_shares grant one page only, never its notebook,
 // siblings or workspace; co-editing over /collab; revocation closes the socket (4403);
-// people outside the workspace are view-only; email invites become shares on sign-up.
+// people outside the workspace get what the share says (view or edit that one page and the tasks
+// living on it, nothing else); tasks there can be assigned between members and share holders;
+// email invites become shares, with their rights, on sign-up.
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -143,10 +145,9 @@ test('downgrading a share to view-only stops edits from that socket', async () =
   }
 });
 
-test('someone outside the workspace gets view-only access to that page and nothing else', async () => {
+test('someone outside the workspace with a view share gets read-only access to that page and nothing else', async () => {
   const f = await fixture();
-  // They asked for edit; outside the workspace it's view only.
-  const r = await share(f.page, { email: outsider.user.email, canEdit: true });
+  const r = await share(f.page, { email: outsider.user.email, canEdit: false });
   assert.equal(r.data.status, 'shared');
   const p = await app.call('GET', `/pages/${f.page}`, outsider.token);
   assert.equal(p.status, 200);
@@ -158,7 +159,7 @@ test('someone outside the workspace gets view-only access to that page and nothi
     assert.equal((await app.call('GET', path, outsider.token)).status, 404, path);
   assert.equal((await app.call('PATCH', `/pages/${f.page}`, outsider.token, { title: 'x' })).status, 403);
   assert.equal((await app.call('POST', `/pages/${f.page}/comments`, outsider.token, { threadId: crypto.randomUUID(), body: 'x' })).status, 403);
-  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, outsider.token, { status: 'done' })).status, 404);
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, outsider.token, { status: 'done' })).status, 403, 'they see it, but view only');
   // The page's tasks, for its task references.
   assert.deepEqual(((await app.call('GET', `/pages/${f.page}/tasks`, outsider.token)).data as { id: string }[]).map((t) => t.id), [f.task]);
   assert.equal((await app.call('GET', `/pages/${f.sibling}/tasks`, outsider.token)).status, 404);
@@ -196,6 +197,207 @@ test('someone outside the workspace gets view-only access to that page and nothi
   } finally {
     other.destroy();
   }
+});
+
+/** A taskRef element pointing at `taskId`. */
+const taskRef = (taskId: string) => {
+  const el = new Y.XmlElement('taskRef');
+  el.setAttribute('taskId', taskId);
+  return el;
+};
+/** Task ids referenced from the `default` fragment of a client's doc. */
+const refIds = (doc: Y.Doc) =>
+  doc
+    .getXmlFragment('default')
+    .toArray()
+    .filter((n): n is Y.XmlElement => n instanceof Y.XmlElement && n.nodeName === 'taskRef')
+    .map((n) => n.getAttribute('taskId'));
+
+test('someone outside the workspace with an edit share edits that page, and nothing else', async () => {
+  const f = await fixture();
+  const r = await share(f.page, { email: outsider.user.email, canEdit: true });
+  assert.equal(r.data.status, 'shared');
+  assert.deepEqual(r.data.shares.map((s: { userId: string; canEdit: boolean; member: boolean }) => [s.userId, s.canEdit, s.member]), [[outsider.user.id, true, false]]);
+  const p = await app.call('GET', `/pages/${f.page}`, outsider.token);
+  assert.equal(p.status, 200);
+  assert.deepEqual([p.data.canEdit, p.data.member, p.data.canManage, p.data.canShare, p.data.viaPageShare], [true, false, false, false, true]);
+  const mine = ((await app.call('GET', '/shared-pages', outsider.token)).data as { id: string; canEdit: boolean; member: boolean }[]).filter((x) => x.id === f.page);
+  assert.deepEqual(mine.map((x) => [x.id, x.canEdit, x.member]), [[f.page, true, false]]);
+
+  // The page's content: title, icon, comments, versions, uploads into it (stored under the page's workspace).
+  assert.equal((await app.call('PATCH', `/pages/${f.page}`, outsider.token, { title: 'Plan, edited from outside', icon: '📝' })).status, 200);
+  assert.equal((await app.call('POST', `/pages/${f.page}/comments`, outsider.token, { threadId: crypto.randomUUID(), quote: 'q', body: 'From outside' })).status, 200);
+  assert.equal((await app.call('POST', `/pages/${f.page}/versions`, outsider.token, {})).status, 200);
+  const upload = (path: string) =>
+    fetch(`${app.origin}/api${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${outsider.token}`, 'content-type': 'text/plain', 'x-filename': 'note.txt' },
+      body: 'from outside',
+    });
+  const up = await upload(`/workspaces/${f.ws}/files?pageId=${f.page}`);
+  assert.equal(up.status, 200);
+  const { db } = await import('../server/db.ts');
+  const file = (await up.json()) as { id: string };
+  assert.deepEqual({ ...(db.prepare('SELECT workspace_id AS ws, page_id AS page FROM files WHERE id = ?').get(file.id) as object) }, { ws: f.ws, page: f.page }, 'counts against the page’s workspace');
+  assert.equal((await upload(`/workspaces/${f.ws}/files`)).status, 404, 'no workspace uploads outside the page');
+  assert.equal((await upload(`/workspaces/${f.ws}/files?pageId=${f.sibling}`)).status, 404, 'nor into a sibling');
+
+  // Nothing else: not the notebook, siblings, workspace, structure or sharing.
+  for (const path of [`/workspaces/${f.ws}/tree`, `/workspaces/${f.ws}/members`, `/workspaces/${f.ws}/tasks`, `/workspaces/${f.ws}/search?q=plan`, `/workspaces/${f.ws}/activity`, `/pages/${f.sibling}`, `/pages/${f.openPage}`, `/pages/${f.sibling}/tasks`, `/pages/${f.sibling}/doc`])
+    assert.equal((await app.call('GET', path, outsider.token)).status, 404, path);
+  assert.equal((await app.call('PATCH', `/pages/${f.sibling}`, outsider.token, { title: 'x' })).status, 404);
+  assert.equal((await app.call('POST', `/sections/${f.sec}/pages`, outsider.token, { title: 'New sibling' })).status, 404);
+  const forbidden: [string, string, object | undefined][] = [
+    ['PATCH', `/pages/${f.page}`, { sectionId: f.openSec }],
+    ['POST', `/pages/${f.page}/move`, { sectionId: f.sec }],
+    ['POST', `/pages/${f.page}/copy`, {}],
+    ['DELETE', `/pages/${f.page}`, undefined],
+    ['GET', `/pages/${f.page}/shares`, undefined],
+    ['POST', `/pages/${f.page}/shares`, { email: `ps-reshare-${++seq}@example.com` }],
+    ['POST', `/pages/${f.page}/templates`, { name: 'T', content: { type: 'doc', content: [] } }],
+  ];
+  for (const [method, path, body] of forbidden) assert.equal((await app.call(method, path, outsider.token, body)).status, 403, `${method} ${path}`);
+
+  // Tasks living on the page are theirs to create, tick, edit and delete (#98 follow-up)...
+  const { getTask } = await import('../server/tasks.ts');
+  const created = await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'Outsider task', pageId: f.page });
+  assert.equal(created.status, 200);
+  assert.equal(created.data.workspaceId, f.ws);
+  for (const body of [{ status: 'done' }, { status: 'open' }, { title: 'Edited from outside' }, { priority: 2, dueDate: '2030-01-02' }])
+    assert.equal((await app.call('PATCH', `/tasks/${f.task}`, outsider.token, body)).status, 200, JSON.stringify(body));
+  assert.equal(getTask(f.task)!.title, 'Edited from outside');
+  assert.equal((await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'Sub', parentId: created.data.id })).status, 200, 'subtasks too');
+  assert.equal((await app.call('DELETE', `/tasks/${created.data.id}`, outsider.token)).status, 200);
+  // ...but they can't take them off the page, or use the workspace's teams and tags.
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, outsider.token, { pageId: null })).status, 403);
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, outsider.token, { pageId: f.sibling })).status, 400);
+  assert.equal((await app.call('PATCH', `/tasks/${f.task}`, outsider.token, { tagIds: [] })).status, 400);
+  assert.equal(getTask(f.task)!.pageId, f.page);
+  // Tasks living elsewhere stay out of reach, referenced from the page or not; and no standalone tasks.
+  for (const body of [{ status: 'done' }, { title: 'Hijacked' }, { pageId: f.page }])
+    assert.equal((await app.call('PATCH', `/tasks/${f.siblingTask}`, outsider.token, body)).status, 404, JSON.stringify(body));
+  assert.equal((await app.call('DELETE', `/tasks/${f.siblingTask}`, outsider.token)).status, 404);
+  assert.equal((await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'Standalone' })).status, 404, 'no standalone tasks');
+  assert.equal((await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'Elsewhere', pageId: f.sibling })).status, 400);
+  const own = (await app.call('POST', '/workspaces', outsider.token, { name: `Outsider own ${seq}` })).data.id as string;
+  assert.equal((await app.call('POST', `/workspaces/${own}/tasks`, outsider.token, { title: 'Sneaky', pageId: f.page })).status, 400, 'nor from their own workspace onto the page');
+  assert.deepEqual([getTask(f.siblingTask)!.title, getTask(f.siblingTask)!.status], ['Task on the sibling', 'open']);
+
+  // Co-editing over /collab: their text reaches the owner; task references can't move tasks.
+  const standalone = (await app.call('POST', `/workspaces/${f.ws}/tasks`, owner.token, { title: 'Owner standalone' })).data.id as string;
+  const o = collabClient(app, f.page, owner.token);
+  const x = collabClient(app, f.page, outsider.token);
+  try {
+    await Promise.all([synced(o), synced(x)]);
+    o.doc.getXmlFragment('default').insert(0, [taskRef(f.task)]);
+    await waitFor(() => refIds(x.doc).includes(f.task), 3000, 'outsider sees the task reference');
+    const para = new Y.XmlElement('paragraph');
+    para.insert(0, [new Y.XmlText('outsider typing')]);
+    x.doc.getXmlFragment('default').insert(1, [para]);
+    await waitFor(() => o.text().includes('outsider typing'), 3000, 'owner sees the outsider’s edit');
+    // Deleting the page's task reference: the server puts it back.
+    x.doc.getXmlFragment('default').delete(0, 1);
+    await waitFor(() => refIds(o.doc).includes(f.task) && refIds(x.doc).includes(f.task), 3000, 'the task reference is restored');
+    // A task they delete (REST) with its reference: gone for good, not put back.
+    const gone = (await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'Short-lived', pageId: f.page })).data.id as string;
+    x.doc.getXmlFragment('default').insert(0, [taskRef(gone)]);
+    await waitFor(() => refIds(o.doc).includes(gone), 3000, 'owner sees the new task');
+    x.doc.getXmlFragment('default').delete(0, 1);
+    assert.equal((await app.call('DELETE', `/tasks/${gone}`, outsider.token)).status, 200);
+    await new Promise((res) => setTimeout(res, 1800));
+    assert.ok(!refIds(o.doc).includes(gone), 'a deleted task’s reference stays gone');
+    // References to tasks elsewhere (another page's, a standalone one) don't pull them in.
+    x.doc.getXmlFragment('default').insert(0, [taskRef(f.siblingTask), taskRef(standalone)]);
+    await new Promise((res) => setTimeout(res, 300));
+  } finally {
+    o.destroy();
+    x.destroy();
+  }
+  await waitFor(() => !!db.prepare("SELECT 1 FROM pages WHERE id = ? AND text LIKE '%outsider typing%'").get(f.page), 3000, 'page saved');
+  assert.equal(getTask(f.task)!.pageId, f.page, 'the page’s task stays on the page');
+  assert.equal(getTask(f.siblingTask)!.pageId, f.sibling, 'a task on another page stays there');
+  assert.equal(getTask(standalone)!.pageId, null, 'a standalone task stays standalone');
+
+  // Their socket on any other page is refused.
+  const other = collabClient(app, f.sibling, outsider.token);
+  try {
+    await waitFor(() => other.closes.includes(4403), 3000, '4403 on a sibling page');
+  } finally {
+    other.destroy();
+  }
+});
+
+test('an email invite with edit becomes an edit share on sign-up, or through its link', async () => {
+  const f = await fixture();
+  const email = `ps-editor-${++seq}@example.com`;
+  const r = await share(f.page, { email, canEdit: true });
+  assert.equal(r.data.status, 'invited');
+  assert.deepEqual(r.data.invites.map((i: { email: string; canEdit: boolean }) => [i.email, i.canEdit]), [[email, true]]);
+  const token = r.data.inviteUrl.split('/invite/')[1];
+  assert.equal((await app.call('GET', `/invites/${token}`)).data.page.canEdit, true);
+  const newcomer = await app.signUp('PsEditorNewcomer', email);
+  const p = await app.call('GET', `/pages/${f.page}`, newcomer.token);
+  assert.equal(p.status, 200);
+  assert.deepEqual([p.data.canEdit, p.data.member], [true, false]);
+  assert.equal((await app.call('GET', `/workspaces/${f.ws}/tree`, newcomer.token)).status, 404);
+
+  const linkUser = await app.signUp('PsEditorLink');
+  const { upsertPageInvite } = await import('../server/workspaces.ts');
+  const t2 = upsertPageInvite(f.page, linkUser.user.email, true, owner.user.id);
+  assert.equal((await app.call('POST', `/invites/${t2}/accept`, linkUser.token)).status, 200);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, linkUser.token)).data.canEdit, true);
+});
+
+test('tasks on a shared page can be assigned between the workspace and the people it is shared with', async () => {
+  const f = await fixture();
+  const other = await app.signUp(`PsOtherOutsider${++seq}`);
+  await share(f.page, { email: outsider.user.email, canEdit: true });
+  await share(f.page, { email: other.user.email, canEdit: false });
+  const assign = (id: string, assigneeId: string | null, token = owner.token) => app.call('PATCH', `/tasks/${id}`, token, { assigneeId });
+  const { getTask } = await import('../server/tasks.ts');
+
+  // Owner → a grantee, on that page only.
+  assert.equal((await assign(f.task, outsider.user.id)).status, 200);
+  assert.equal((await assign(f.siblingTask, outsider.user.id)).status, 400, 'not on a page they can’t open');
+  const standalone = (await app.call('POST', `/workspaces/${f.ws}/tasks`, owner.token, { title: 'Standalone' })).data.id as string;
+  assert.equal((await assign(standalone, outsider.user.id)).status, 400, 'not a standalone task');
+  // It shows in their own task list, nothing else from the workspace.
+  const mine = (await app.call('GET', '/shared-tasks', outsider.token)).data as { id: string }[];
+  assert.deepEqual(mine.map((t) => t.id), [f.task]);
+  assert.deepEqual((await app.call('GET', '/shared-tasks', other.token)).data, []);
+
+  // Who they can pick: the people who can open the page, names only; never the member list.
+  const people = (await app.call('GET', `/pages/${f.page}/people`, outsider.token)).data as Record<string, unknown>[];
+  assert.deepEqual(people.map((p) => p.id).sort(), [owner.user.id, outsider.user.id, other.user.id].sort(), 'not the teammate or viewer, who can’t open it');
+  assert.ok(people.every((p) => !('email' in p) && !('role' in p)), 'no emails or roles');
+  assert.equal((await app.call('GET', `/workspaces/${f.ws}/members`, outsider.token)).status, 404);
+  assert.equal((await app.call('GET', `/pages/${f.sibling}/people`, outsider.token)).status, 404);
+
+  // Grantee → the owner, or another person with access; not someone who can't open the page.
+  assert.equal((await assign(f.task, owner.user.id, outsider.token)).status, 200);
+  assert.equal((await assign(f.task, other.user.id, outsider.token)).status, 200, 'another grantee (view share)');
+  assert.equal((await assign(f.task, teammate.user.id, outsider.token)).status, 400, 'a member who can’t open the page');
+  const created = await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'For the owner', pageId: f.page, assigneeId: owner.user.id });
+  assert.equal(created.status, 200);
+  assert.equal((await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'For the viewer', pageId: f.page, assigneeId: viewer.user.id })).status, 400);
+  await share(f.page, { userId: teammate.user.id, canEdit: false });
+  assert.equal((await assign(f.task, teammate.user.id, outsider.token)).status, 200, 'once it’s shared with them');
+  // Not on other pages, whoever the assignee.
+  assert.equal((await assign(f.siblingTask, owner.user.id, outsider.token)).status, 404);
+  // The view-share grantee assigned a task may tick it off, nothing else.
+  await assign(created.data.id, other.user.id);
+  assert.equal((await app.call('PATCH', `/tasks/${created.data.id}`, other.token, { status: 'done' })).status, 200);
+  assert.equal((await app.call('PATCH', `/tasks/${created.data.id}`, other.token, { title: 'x' })).status, 403);
+
+  // Unsharing unassigns them from the page's tasks; others' assignments stay.
+  await assign(f.task, outsider.user.id);
+  assert.equal((await app.call('DELETE', `/pages/${f.page}/shares/${outsider.user.id}`, owner.token)).status, 200);
+  assert.equal(getTask(f.task)!.assigneeId, null);
+  assert.equal(getTask(created.data.id)!.assigneeId, other.user.id);
+  assert.deepEqual((await app.call('GET', '/shared-tasks', outsider.token)).data, []);
+  // A task leaving the page drops a grantee assignee too.
+  assert.equal((await app.call('PATCH', `/tasks/${created.data.id}`, owner.token, { pageId: null })).status, 200);
+  assert.equal(getTask(created.data.id)!.assigneeId, null);
 });
 
 test('live events: an outsider gets comments and tasks for the shared page only', async () => {
@@ -283,18 +485,29 @@ test('who may share: the private notebook’s creator; for a shared notebook, it
   assert.equal((await share(f.page, { userId: outsider.user.id })).status, 400);
 });
 
-test('effective rights are min(share, role): a viewer stays view-only; outsider shares are stored view-only', async () => {
+test('effective rights: a member gets min(share, role), so a viewer stays view-only; an outsider gets the share', async () => {
   const f = await fixture();
   await share(f.openPage, { userId: viewer.user.id, canEdit: true });
   const p = (await app.call('GET', `/pages/${f.openPage}`, viewer.token)).data;
   assert.equal(p.canEdit, false, 'a viewer role caps the share');
   assert.equal((await app.call('PATCH', `/pages/${f.openPage}`, viewer.token, { title: 'x' })).status, 403);
+  const viewerShared = ((await app.call('GET', '/shared-pages', viewer.token)).data as { id: string; canEdit: boolean }[]).find((x) => x.id === f.openPage);
+  assert.equal(viewerShared?.canEdit, false, '"Shared with me" shows what the viewer can actually do');
+  // Outside the workspace, the share is stored as asked and can be switched both ways.
   await share(f.page, { email: outsider.user.email, canEdit: true });
   const { db } = await import('../server/db.ts');
-  assert.equal((db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit, 0);
+  const stored = () => (db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit;
+  assert.equal(stored(), 1);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, outsider.token)).data.canEdit, true);
+  assert.equal((await app.call('PATCH', `/pages/${f.page}/shares/${outsider.user.id}`, owner.token, { canEdit: false })).status, 200);
+  assert.equal(stored(), 0);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, outsider.token)).data.canEdit, false);
+  assert.equal((await app.call('PATCH', `/pages/${f.page}`, outsider.token, { title: 'x' })).status, 403);
+  // Joining the workspace as a viewer caps an outsider's edit share too.
   assert.equal((await app.call('PATCH', `/pages/${f.page}/shares/${outsider.user.id}`, owner.token, { canEdit: true })).status, 200);
-  assert.equal((db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit, 0);
-  // A share never adds to notebook-level access: the viewer can't edit the open notebook's other pages.
+  await app.call('POST', `/workspaces/${f.ws}/members`, owner.token, { email: outsider.user.email, role: 'viewer' });
+  assert.equal((await app.call('GET', `/pages/${f.page}`, outsider.token)).data.canEdit, false, 'now a viewer: view only');
+  // A share never adds to notebook-level access, nor lowers it.
   await share(f.openPage, { userId: teammate.user.id, canEdit: false });
   assert.equal((await app.call('GET', `/pages/${f.openPage}`, teammate.token)).data.canEdit, true, 'a view share doesn’t lower notebook access');
 });

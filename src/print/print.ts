@@ -1,4 +1,5 @@
-// Printing notes: the open page (Ctrl/Cmd+P, the ribbon's Print, the page menu) or a whole
+// Printing notes: the open page (Ctrl/Cmd+P, the ribbon's Print, the page menu), just the selection on it
+// (selected text, or boxes picked with Ctrl/Cmd+click: "Print selection") or a whole
 // section (its context menu). Pages are rendered into #print-root (./printDoc.ts), which is
 // the only thing on paper while a print job is prepared (src/styles/print.css), then the
 // platform's native print dialog opens (platform.print: window.print on the web and Windows,
@@ -12,6 +13,9 @@ import { sectionsInOrder, sectionDescendants } from '../../shared/sections.ts';
 import { boxGeoms, isContentField } from '../../shared/pageDoc.ts';
 import type { Task } from '../../shared/types.ts';
 import { useRibbon } from '../editor/ribbonState.ts';
+import { useBoxSelection, selectionEditor } from '../editor/boxSelection.ts';
+import { selectionBlocks } from './selectionContent.ts';
+import { chooseDialog } from '../components/shell/dialogs.tsx';
 import { clearPrintRoot, imagesReady, mountPrintRoot, renderPrintPage, type PrintContext, type PrintPageInput } from './printDoc.ts';
 
 const PAGE_COLOUR_KEY = 'noteapp.printPageColour';
@@ -98,6 +102,60 @@ export async function printCurrentPage(): Promise<boolean> {
     busy = false;
   }
   return true;
+}
+
+/**
+ * What "Print selection" prints on the open page: the picked boxes (Ctrl/Cmd+click), else the
+ * selected text of the box (or document) being edited. Null when nothing is selected.
+ */
+export function pageSelection(): Pick<PrintPageInput, 'boxIds' | 'blocks'> | null {
+  const page = openPage();
+  if (!page) return null;
+  const picked = useBoxSelection.getState();
+  if (picked.pageId === page.pageId && picked.ids.length) return { boxIds: [...picked.ids] };
+  const ed = selectionEditor(page.pageId);
+  if (!ed) return null;
+  const blocks = selectionBlocks(ed.state.selection);
+  return blocks.length ? { blocks } : null;
+}
+
+/**
+ * Print only the selection (`sel`, or the current one): the page's title on top, then the
+ * picked boxes in reading order or the selected content. Rendered by the app (a webview's own
+ * "Selection" print option is unreliable). Returns false when there is nothing to print.
+ */
+export async function printSelection(sel = pageSelection()): Promise<boolean> {
+  const page = openPage();
+  if (!page || !sel) return false;
+  if (busy) return true;
+  busy = true;
+  try {
+    const meta = useStore.getState().tree.pages.find((p) => p.id === page.pageId);
+    const doc = snapshotDoc(page.doc);
+    await run([{ pageId: page.pageId, doc, heights: measuredHeights(page.doc), ...sel }], meta?.title ?? '', context());
+  } catch (e) {
+    errorToast(e);
+  } finally {
+    busy = false;
+  }
+  return true;
+}
+
+/**
+ * Ctrl/Cmd+P, the ribbon's Print and the page menu: with something selected, ask whether to
+ * print the selection or the whole page; otherwise print the page.
+ */
+export async function printWithChoice(): Promise<boolean> {
+  const sel = pageSelection();
+  if (!sel) return printCurrentPage();
+  const pick = await chooseDialog({
+    title: 'Print',
+    message: sel.boxIds ? `Print the ${sel.boxIds.length === 1 ? 'selected box' : `${sel.boxIds.length} selected boxes`} or the whole page?` : 'Print the selected text or the whole page?',
+    confirmLabel: 'Print selection',
+    cancelLabel: 'Whole page',
+  });
+  if (pick === null) return true;
+  return pick ? printSelection(sel) : printCurrentPage();
 }
 
 function decode(b64: string): Uint8Array {

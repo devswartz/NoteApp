@@ -29,6 +29,10 @@ url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
+# Spell-check defaults for WKWebView (src/spelling.rs); already in the tree via tao/wry.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSDictionary", "NSObject", "NSString", "NSUserDefaults", "NSValue"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSpellChecker"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

@@ -40,6 +40,7 @@ import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { LongPage } from './longPage.ts';
 import { BlockMove } from './blockMove.ts';
 import { BlockExit } from './blockExit.ts';
+import { SmartLists } from './smartLists.ts';
 import { UndoTasks } from './undoTasks.ts';
 import { SlashCommand, SlashMenuView, slashHooks } from './SlashMenu.tsx';
 import { Callout, CodeBlock, FileAttachment, Image, Toggle, ToggleContent, ToggleSummary } from './blocks.tsx';
@@ -124,6 +125,7 @@ export function documentExtensions(pageId: string): Extensions {
     MentionNode, // @mentions (./collabMentions.ts); the server notifies newly mentioned people on save
     Markdown, // editor.getMarkdown(), and insertContent(md, { contentType: 'markdown' })
     OneNoteKeys,
+    SmartLists, // Word-style outlines: list attributes (paren markers, continued numbering), "a. " / "1) " rules, Tab nests, Enter on an empty item outdents
   ];
 }
 
@@ -219,7 +221,8 @@ export function usePageEditor(session: CollabSession, { pageId, workspaceId, use
         ...extensions,
       ],
       editorProps: {
-        attributes: { class: 'prose', spellcheck: 'true', 'aria-label': label, 'aria-multiline': 'true' },
+        // autocorrect/autocapitalize: WebKit (iOS app, Safari) - explicit so a parent can't turn them off.
+        attributes: { class: 'prose', spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences', 'aria-label': label, 'aria-multiline': 'true' },
         handleKeyDown: (_view, event) => {
           // Alt+F10 moves focus into a toolbar (WAI-ARIA toolbar pattern): the floating one
           // over selected text, otherwise the fixed one at the top.

@@ -5,6 +5,7 @@ import { IS_PROD } from './config.ts';
 import crypto from 'node:crypto';
 import { escapeHtml, sendMail } from './mail.ts';
 import { publish } from './events.ts';
+import { unassignOutsiders } from './tasks.ts';
 import { APP_NAME } from '../shared/config.ts';
 import type { InviteInfo, Role } from '../shared/types.ts';
 
@@ -120,7 +121,7 @@ export async function sendAddedEmail(opts: { to: string; link: string; workspace
 
 // ───────────── Page invites (sharing one page, migration 013) ─────────────
 // Same token scheme as workspace invites, but the invite grants a page share
-// (view-only for anyone outside the workspace), not membership.
+// with the invite's can_edit (applied on sign-up), not membership.
 
 /** Create or refresh the page invite for `email`. Returns the raw token. */
 export function upsertPageInvite(pageId: string, email: string, canEdit: boolean, invitedBy: string): string {
@@ -191,9 +192,9 @@ export function acceptPendingPageInvites(userId: string, email: string, ts = now
     invited_by: string;
   }[];
   for (const r of rows)
-    // View-only: the invitee isn't a workspace member (#98 review: outsider shares are stored can_edit = 0).
-    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, 0, ?, ?)').run(
-      r.page_id, userId, r.invited_by, ts,
+    // With the rights the invite asked for: outsiders may hold edit shares too (#98 follow-up).
+    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(
+      r.page_id, userId, r.can_edit ? 1 : 0, r.invited_by, ts,
     );
   db.prepare(`DELETE FROM page_invites WHERE email = ? AND ${live}`).run(email, ts);
   return rows.length;
@@ -227,6 +228,7 @@ export function dropForeignPageShares(notebookId: string): number {
   ).map((r) => r.user_id);
   const n = db.prepare(`DELETE FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).run({ nb: notebookId }).changes;
   db.prepare(`DELETE FROM page_invites WHERE page_id IN (${pagesOf}) AND invited_by IS NOT ${creator}`).run({ nb: notebookId });
+  if (n) unassignOutsiders(`t.page_id IN (${pagesOf.replace('@nb', '?')})`, notebookId);
   if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
   return n;
 }
@@ -241,6 +243,7 @@ export function dropForeignSharesOnPage(pageId: string, notebookId: string): num
   const users = (db.prepare('SELECT user_id FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').all(pageId, creator) as { user_id: string }[]).map((r) => r.user_id);
   const n = db.prepare('DELETE FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').run(pageId, creator).changes;
   db.prepare('DELETE FROM page_invites WHERE page_id = ? AND invited_by IS NOT ?').run(pageId, creator);
+  if (n) unassignOutsiders('t.page_id = ?', pageId);
   if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
   return n;
 }

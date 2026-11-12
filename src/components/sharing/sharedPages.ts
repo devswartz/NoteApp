@@ -5,29 +5,75 @@
 // aren't a member of, so it isn't in the workspace tree. This small store keeps
 // the list (GET /shared-pages, refreshed on the `shared-pages` live event) and,
 // for pages from other workspaces, the tasks on them (GET /pages/:id/tasks), so
-// their task references can render.
+// their task references can render, plus the tasks assigned to me on such pages
+// (GET /shared-tasks), which show in my own task views. Task actions on them go
+// through the normal store (setForeignTasks below). It also caches who can open a
+// page (GET /pages/:id/people), for the assignee picker of its tasks.
 import { create } from 'zustand';
 import { get } from '../../api.ts';
-import { useStore } from '../../store.ts';
+import { setForeignTasks, useStore } from '../../store.ts';
 import type { SharedPage, Task } from '../../../shared/types.ts';
+
+/** Someone who can open a page (GET /pages/:id/people). */
+export interface PagePerson {
+  id: string;
+  name: string;
+  color: string;
+  member: boolean;
+  canEdit: boolean;
+}
 
 interface SharedState {
   pages: SharedPage[];
   loaded: boolean;
   /** Tasks on shared pages from workspaces other than the current one, by id. */
   tasks: Record<string, Task>;
+  /** Who can open each page, by page id (loaded on demand). */
+  people: Record<string, PagePerson[]>;
 }
 
-export const useShared = create<SharedState>(() => ({ pages: [], loaded: false, tasks: {} }));
+export const useShared = create<SharedState>(() => ({ pages: [], loaded: false, tasks: {}, people: {} }));
+
+setForeignTasks({
+  get: (id) => useShared.getState().tasks[id],
+  put: (t) => useShared.setState((s) => ({ tasks: { ...s.tasks, [t.id]: t } })),
+  remove: (id) =>
+    useShared.setState((s) => {
+      const tasks = { ...s.tasks };
+      delete tasks[id];
+      for (const t of Object.values(tasks)) if (t.parentId === id) delete tasks[t.id]; // subtasks go with it
+      return { tasks };
+    }),
+  workspaceOfPage: (pageId) => {
+    const ws = sharedPage(pageId)?.workspaceId;
+    return ws && ws !== useStore.getState().wsId ? ws : undefined;
+  },
+});
+
+const peopleInflight = new Map<string, Promise<void>>();
+/** Load (once, unless `force`) who can open a page. */
+export function loadPagePeople(pageId: string, force = false): Promise<void> {
+  if (!force && useShared.getState().people[pageId]) return Promise.resolve();
+  let p = peopleInflight.get(pageId);
+  if (!p) {
+    p = get<PagePerson[]>(`/pages/${pageId}/people`)
+      .then((list) => useShared.setState((s) => ({ people: { ...s.people, [pageId]: list } })))
+      .catch(() => {})
+      .finally(() => peopleInflight.delete(pageId));
+    peopleInflight.set(pageId, p);
+  }
+  return p;
+}
 
 let inflight: Promise<void> | null = null;
 export function loadSharedPages(): Promise<void> {
-  inflight ??= get<SharedPage[]>('/shared-pages')
-    .then((pages) => {
+  inflight ??= Promise.all([get<SharedPage[]>('/shared-pages'), get<Task[]>('/shared-tasks').catch(() => [] as Task[])])
+    .then(([pages, assigned]) => {
       useShared.setState((s) => {
         // Drop tasks of pages no longer shared with me.
         const ids = new Set(pages.map((p) => p.id));
         const tasks = Object.fromEntries(Object.entries(s.tasks).filter(([, t]) => t.pageId && ids.has(t.pageId)));
+        for (const t of assigned) tasks[t.id] = t;
         return { pages, loaded: true, tasks };
       });
     })
@@ -62,6 +108,16 @@ export function sharedTaskEvent(task: Task): boolean {
     return { tasks };
   });
   return true;
+}
+
+/** A task on a shared page from another workspace was deleted. */
+export function sharedTaskDeleted(id: string) {
+  if (!useShared.getState().tasks[id]) return;
+  useShared.setState((s) => {
+    const tasks = { ...s.tasks };
+    delete tasks[id];
+    return { tasks };
+  });
 }
 
 /** Rename locally (the page's own title input saves it). */

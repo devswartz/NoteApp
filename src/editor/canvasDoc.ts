@@ -22,6 +22,7 @@ import {
 import { documentExtensions } from './NoteEditor.tsx';
 import { newBoxId } from './canvasGeom.ts';
 import { sanitizeContent } from './urls.ts';
+import { resolveListStarts } from '../../shared/listMarker.ts';
 
 /** Transaction origin of box geometry changes the canvas undo (Ctrl+Z outside a box) tracks. */
 export const GEOM_ORIGIN = { canvas: 'geometry' };
@@ -154,7 +155,7 @@ export function withHeadlessEditor<T>(pageId: string, fn: (e: Editor) => T): T {
 export function canvasMarkdownBody(pageId: string, doc: Y.Doc): string {
   return withHeadlessEditor(pageId, (e) =>
     canvasBoxes(doc, e.schema)
-      .map((b) => (e.markdown ? e.markdown.serialize(sanitizeContent(b.json)) : '').trim())
+      .map((b) => (e.markdown ? e.markdown.serialize(resolveListStarts(sanitizeContent(b.json))) : '').trim())
       .filter(Boolean)
       .join('\n\n'),
   );

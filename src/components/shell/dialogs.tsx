@@ -24,7 +24,7 @@ interface PromptOpts {
 }
 
 type Pending =
-  | { type: 'confirm'; opts: ConfirmOpts; resolve: (v: boolean) => void }
+  | { type: 'confirm'; opts: ConfirmOpts; resolve: (v: boolean | null) => void }
   | { type: 'prompt'; opts: PromptOpts; resolve: (v: string | null) => void };
 
 const useDialogs = create<{ current: Pending | null }>(() => ({ current: null }));
@@ -32,11 +32,13 @@ const useDialogs = create<{ current: Pending | null }>(() => ({ current: null })
 function open(p: Pending) {
   // A new dialog cancels whatever was open.
   const prev = useDialogs.getState().current;
-  if (prev) prev.type === 'confirm' ? prev.resolve(false) : prev.resolve(null);
+  if (prev) prev.resolve(null);
   useDialogs.setState({ current: p });
 }
 
-export const confirmDialog = (opts: ConfirmOpts) => new Promise<boolean>((resolve) => open({ type: 'confirm', opts, resolve }));
+export const confirmDialog = (opts: ConfirmOpts) => new Promise<boolean>((resolve) => open({ type: 'confirm', opts, resolve: (v) => resolve(!!v) }));
+/** A choice of two: true (the confirm button), false (the cancel button) or null (dismissed). */
+export const chooseDialog = (opts: ConfirmOpts) => new Promise<boolean | null>((resolve) => open({ type: 'confirm', opts, resolve }));
 export const promptDialog = (opts: PromptOpts) => new Promise<string | null>((resolve) => open({ type: 'prompt', opts, resolve }));
 
 export function DialogHost() {
@@ -47,7 +49,7 @@ export function DialogHost() {
   }, [current]);
   if (!current) return null;
 
-  const finish = (v: boolean) => {
+  const finish = (v: boolean | null) => {
     useDialogs.setState({ current: null });
     if (current.type === 'confirm') current.resolve(v);
     else current.resolve(v && value.trim() ? value.trim() : null);
@@ -59,7 +61,7 @@ export function DialogHost() {
       <Dialog
         open
         size="sm"
-        onClose={() => finish(false)}
+        onClose={() => finish(null)}
         title={o.title}
         description={o.message}
         footer={

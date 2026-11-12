@@ -42,17 +42,20 @@ export function dueDigests(nowMs: number, catchUpMs: number): Notice[] {
       )
       .all({ userId, today }) as DigestTask[];
     if (!tasks.length) continue;
-    out.push(buildDigest(userId, today, tasks, key));
+    // Link to a workspace they're in: tasks from pages shared with them (#98) may live in one they aren't.
+    const mine = new Set((db.prepare('SELECT workspace_id FROM workspace_members WHERE user_id = ? ORDER BY joined_at').all(userId) as { workspace_id: string }[]).map((r) => r.workspace_id));
+    const home = tasks.find((t) => mine.has(t.workspace_id))?.workspace_id ?? [...mine][0] ?? tasks[0].workspace_id;
+    out.push(buildDigest(userId, today, tasks, key, home));
   }
   return out;
 }
 
-function buildDigest(userId: string, today: string, tasks: DigestTask[], key: string): Notice {
+function buildDigest(userId: string, today: string, tasks: DigestTask[], key: string, home = tasks[0].workspace_id): Notice {
   const label = (t: DigestTask) =>
     `${t.title || 'Untitled task'}${t.due_date < today ? ` (overdue, ${t.due_date})` : t.due_time ? ` (${t.due_time})` : ''}`;
   const overdue = tasks.filter((t) => t.due_date < today).length;
   const title = `Today: ${tasks.length} task${tasks.length === 1 ? '' : 's'}${overdue ? ` (${overdue} overdue)` : ''}`;
   const body = tasks.map((t) => `• ${label(t)}`).join('\n');
   const html = `<p>Your tasks for ${today}:</p><ul>${tasks.map((t) => `<li>${escapeHtml(label(t))}</li>`).join('')}</ul>`;
-  return { key, userId, title, body, html, path: `/w/${tasks[0].workspace_id}/tasks/today`, channels: ['email'] };
+  return { key, userId, title, body, html, path: `/w/${home}/tasks/today`, channels: ['email'] };
 }

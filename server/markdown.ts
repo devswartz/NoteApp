@@ -1,6 +1,7 @@
 // Yjs (ProseMirror XML) → Markdown, for exports. Covers the editor's node types;
 // unknown nodes fall back to their text.
 import * as Y from 'yjs';
+import { listMarker, listSuffix, xmlListStart } from '../shared/listMarker.ts';
 
 type Node = Y.XmlElement | Y.XmlText;
 export type TaskLookup = (taskId: string) => { title: string; done: boolean; due?: string | null } | undefined;
@@ -46,7 +47,7 @@ function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
     case 'taskList':
       return kids(n).flatMap((item, i) => {
         const marker =
-          n.nodeName === 'orderedList' ? `${i + 1}.` : n.nodeName === 'taskList' ? `- [${(item as Y.XmlElement).getAttribute('checked') ? 'x' : ' '}]` : '-';
+          n.nodeName === 'orderedList' ? `${listMarker(attr('type'), xmlListStart(n) + i)}${listSuffix(attr('paren'))}` : n.nodeName === 'taskList' ? `- [${(item as Y.XmlElement).getAttribute('checked') ? 'x' : ' '}]` : '-';
         const [first, ...rest] = kids(item as Y.XmlElement).flatMap((c) => block(c, tasks, indent + '  '));
         return [`${indent}${marker} ${(first ?? '').trimStart()}`, ...rest];
       });

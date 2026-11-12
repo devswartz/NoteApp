@@ -9,7 +9,7 @@
 ### Landed since v0.1.2 (2026-11-06)
 - Page panel no longer auto-opens; Tasks/Comments split with count badges (#101, #116; issue #99).
 - **Share a single page** with people, incl. from a private notebook (#107 server, #119 UI; issue #98 parts 1–2). Two independent security reviews.
-  Rules: only owners/admins share outside the workspace; rights = min(share, role); outsiders view-only; making a notebook private (or moving a page into one) drops other people's shares.
+  Rules: only owners/admins share outside the workspace; members' rights = min(share, role); outsiders get what the share says (view or edit that one page, including the tasks living on it; tasks there can be assigned between members and the page's share holders); making a notebook private (or moving a page into one) drops other people's shares.
 - Workspace export/import zip with sanitising + import/export rate limits (#77). Migration 013 = page shares.
 - BUG-5 (Escape kept raw task title, #111) and **BUG-6** (task writes raced the create on slow links → lost titles, #115) fixed.
 - Editor: table of contents + full width (#53), long-page performance (#58), keyboard/screen-reader a11y + axe in CI (#68), block e2e (#72).
