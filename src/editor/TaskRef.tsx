@@ -15,6 +15,7 @@ import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from '../components/TaskRow.tsx';
 import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
 import { markCreatedHere } from './undoTasks.ts';
+import { canInsertTask, pageIdOf, tasksAllowedOn } from './taskGate.ts';
 
 export interface TaskRefOptions {
   pageId: string;
@@ -114,6 +115,7 @@ export const TaskRef = Node.create<TaskRefOptions>({
       insertTask:
         (title = '', patch = {}) =>
         ({ chain }) => {
+          if (!tasksAllowedOn(this.options.pageId)) return false;
           const id = newTask(this.options.pageId, title, patch);
           pendingFocus = id;
           return chain().insertContent({ type: this.name, attrs: { taskId: id } }).run();
@@ -151,7 +153,10 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   const loaded = useStore((s) => s.tasksLoaded);
   const members = useStore((s) => s.members);
   const me = useStore((s) => s.user?.id ?? '');
-  const editable = editor.isEditable;
+  // Tasks are edited by members (not viewers) of the task's workspace: someone editing the page
+  // through a page share from outside the workspace sees its tasks read-only (#98).
+  const taskRole = useStore((s) => (task ? s.workspaces.find((w) => w.id === task.workspaceId)?.role : undefined));
+  const editable = editor.isEditable && !!taskRole && taskRole !== 'viewer';
   const [title, setTitleState] = useState(task?.title ?? '');
   // The latest title, readable synchronously: Escape/arrows commit and then blur the input
   // in the same tick, and the blur's commit must see the cleaned-up title, not the raw text
@@ -230,6 +235,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!editable && (e.key === 'Enter' || e.key === 'Backspace')) return; // they'd create or delete tasks
     const p = pos();
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -342,6 +348,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
 
 /** Append a new, focused task at the end of the note. */
 export function insertTaskAtEnd(editor: Editor, pageId: string) {
+  if (!tasksAllowedOn(pageId)) return;
   const id = newTask(pageId);
   pendingFocus = id;
   editor.chain().insertContentAt(editor.state.doc.content.size, { type: 'taskRef', attrs: { taskId: id } }).run();
@@ -350,15 +357,12 @@ export function insertTaskAtEnd(editor: Editor, pageId: string) {
 /** Can the selection be converted to tasks? (for enabling menu items) */
 export function canConvert(editor: Editor): boolean {
   const { $from, empty } = editor.state.selection;
-  if (!editor.isEditable) return false;
+  if (!editor.isEditable || !canInsertTask(editor)) return false;
   if (empty || $from.sameParent(editor.state.selection.$to)) return $from.parent.isTextblock && $from.parent.type.name !== 'codeBlock';
   return true;
 }
 
 const LISTS = new Set(['bulletList', 'orderedList', 'taskList']);
-
-const pageIdOf = (editor: Editor) =>
-  (editor.extensionManager.extensions.find((x) => x.name === 'taskRef')?.options as TaskRefOptions | undefined)?.pageId ?? '';
 
 /** Turn the line at the cursor into a task (lifting it out of lists first). Returns the new task id. */
 export function convertLine(editor: Editor): string | null {
@@ -389,7 +393,7 @@ export function convertToTasks(editor: Editor): string[] {
   const { selection } = state;
   const pageId = pageIdOf(editor);
   const taskType = state.schema.nodes.taskRef;
-  if (!editor.isEditable || !taskType) return [];
+  if (!editor.isEditable || !taskType || !canInsertTask(editor)) return [];
 
   // A cursor or a selection inside one line: convert that line.
   if (selection.empty || selection.$from.sameParent(selection.$to)) {

@@ -1,7 +1,9 @@
 // Sharing one page (#98): the owner shares a page from a private notebook with one teammate,
 // who opens it from "Shared with me" and co-edits it live; revoking takes it away live.
+// People outside the workspace get exactly what the share says, for that page only; its
+// tasks stay read-only for them.
 import { expect, test, type Browser } from '@playwright/test';
-import { api, createPage, createTeam, createUser, focusEnd, openNotebookPicker, openPage, signInContext, type TestUser } from './helpers.ts';
+import { addInlineTask, api, createPage, createTeam, createUser, focusEnd, openNotebookPicker, openPage, signInContext, taskRef, type TestUser } from './helpers.ts';
 
 async function userPage(browser: Browser, user: TestUser) {
   const context = await browser.newContext();
@@ -70,13 +72,13 @@ test('share a private page with one teammate, co-edit it, then revoke', async ({
   await b.context.close();
 });
 
-test('someone outside the workspace opens the shared link: that page only, view-only, with its tasks', async ({ browser, request }) => {
+test('someone outside the workspace with a view share opens the link: that page only, view-only, with its tasks', async ({ browser, request }) => {
   const alice = await createUser(request, 'Alice Owner');
   const olga = await createUser(request, 'Olga Outsider');
   const teamId = await createTeam(request, alice, [], 'Closed Team');
   const { pageId } = await createPage(request, alice, { wsId: teamId, notebook: 'Closed notebook', page: 'Public-ish note' });
   await api(request, 'POST', `/workspaces/${teamId}/tasks`, alice.token, { title: 'Visible task on the page', pageId });
-  const r = await api<{ status: string }>(request, 'POST', `/pages/${pageId}/shares`, alice.token, { email: olga.email, canEdit: true });
+  const r = await api<{ status: string }>(request, 'POST', `/pages/${pageId}/shares`, alice.token, { email: olga.email, canEdit: false });
   expect(r.status).toBe('shared');
 
   const o = await userPage(browser, olga);
@@ -100,4 +102,70 @@ test('someone outside the workspace opens the shared link: that page only, view-
   await expect(o.page.locator('.menu').getByText('Closed Team')).toHaveCount(0);
 
   await o.context.close();
+});
+
+test('someone outside the workspace with an edit share co-edits that page, but its tasks stay read-only', async ({ browser, request }) => {
+  const alice = await createUser(request, 'Alice Host');
+  const eddie = await createUser(request, 'Eddie Outside');
+  const teamId = await createTeam(request, alice, [], 'Host Team');
+  const { pageId } = await createPage(request, alice, { wsId: teamId, notebook: 'Host notebook', page: 'Joint draft', visibility: 'private' });
+
+  const a = await userPage(browser, alice);
+  await openPage(a.page, teamId, pageId);
+  await addInlineTask(a.page, 'Host-only task');
+
+  // Alice shares it by email, to edit, from the dialog: no "can only view" note, and the access is editable.
+  await a.page.getByRole('button', { name: 'Share', exact: true }).click();
+  const dialog = a.page.locator('.page-share-dialog');
+  await expect(dialog).not.toContainText('can view it but not edit');
+  await dialog.getByLabel('Name or email').fill(eddie.email);
+  await dialog.getByLabel('Access', { exact: true }).selectOption('edit');
+  await dialog.getByRole('button', { name: 'Share', exact: true }).click();
+  const row = dialog.getByTestId('page-share-row');
+  await expect(row).toContainText('outside the workspace');
+  await expect(dialog.getByLabel('Access for Eddie Outside')).toHaveValue('edit');
+  await expect(dialog.getByLabel('Access for Eddie Outside')).toBeEnabled();
+  // A pending invite says what it will grant.
+  await dialog.getByLabel('Name or email').fill(`pending-editor-${Date.now()}@example.com`);
+  await dialog.getByRole('button', { name: 'Share', exact: true }).click();
+  await expect(dialog).toContainText('Invited: can edit once they sign up');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+
+  const e = await userPage(browser, eddie);
+  await e.page.goto(`/shared/${pageId}`);
+  await expect(e.page).toHaveURL(new RegExp(`/w/${eddie.wsId}/p/${pageId}`));
+  await expect(e.page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(e.page.locator('.chip', { hasText: 'View only' })).toHaveCount(0);
+  await expect(e.page.locator('.crumbs')).toContainText('Shared with me');
+
+  // Co-edit live.
+  await focusEnd(e.page);
+  await e.page.keyboard.press('Enter');
+  await e.page.keyboard.type('Eddie was here');
+  await expect(a.page.locator('.ProseMirror').first()).toContainText('Eddie was here');
+
+  // The task is shown but read-only: no ticking, renaming or new tasks.
+  const ref = taskRef(e.page, 'Host-only task');
+  await expect(ref).toBeVisible();
+  await expect(ref.getByRole('checkbox')).toBeDisabled();
+  await expect(ref.locator('.task-ref-title')).toHaveAttribute('readonly', '');
+  await focusEnd(e.page);
+  await e.page.keyboard.press('Enter');
+  await e.page.keyboard.type('/task');
+  await expect(e.page.locator('.slash-menu .slash-title').filter({ hasText: /^Task$/ })).toHaveCount(0);
+  await e.page.keyboard.press('Escape');
+  const tasks = await api<{ id: string; title: string; status: string }[]>(request, 'GET', `/pages/${pageId}/tasks`, alice.token);
+  expect(tasks.map((t) => [t.title, t.status])).toEqual([['Host-only task', 'open']]);
+
+  // Still nothing else from that workspace: no Share, no move or delete, not in her workspace list.
+  await expect(e.page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);
+  await e.page.locator('.page-topbar').getByTitle('Page options').click();
+  await expect(e.page.locator('.page-menu')).not.toContainText('Delete page');
+  await expect(e.page.locator('.page-menu')).not.toContainText('Move to');
+  await e.page.keyboard.press('Escape');
+  await e.page.locator('.ws-switch').click();
+  await expect(e.page.locator('.menu').getByText('Host Team')).toHaveCount(0);
+
+  await a.context.close();
+  await e.context.close();
 });

@@ -1,6 +1,7 @@
 // Sharing a single page (#98): page_shares grant one page only, never its notebook,
 // siblings or workspace; co-editing over /collab; revocation closes the socket (4403);
-// people outside the workspace are view-only; email invites become shares on sign-up.
+// people outside the workspace get what the share says (view or edit that one page, never its
+// tasks or anything else); email invites become shares, with their rights, on sign-up.
 import { before, after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -143,10 +144,9 @@ test('downgrading a share to view-only stops edits from that socket', async () =
   }
 });
 
-test('someone outside the workspace gets view-only access to that page and nothing else', async () => {
+test('someone outside the workspace with a view share gets read-only access to that page and nothing else', async () => {
   const f = await fixture();
-  // They asked for edit; outside the workspace it's view only.
-  const r = await share(f.page, { email: outsider.user.email, canEdit: true });
+  const r = await share(f.page, { email: outsider.user.email, canEdit: false });
   assert.equal(r.data.status, 'shared');
   const p = await app.call('GET', `/pages/${f.page}`, outsider.token);
   assert.equal(p.status, 200);
@@ -196,6 +196,135 @@ test('someone outside the workspace gets view-only access to that page and nothi
   } finally {
     other.destroy();
   }
+});
+
+/** A taskRef element pointing at `taskId`. */
+const taskRef = (taskId: string) => {
+  const el = new Y.XmlElement('taskRef');
+  el.setAttribute('taskId', taskId);
+  return el;
+};
+/** Task ids referenced from the `default` fragment of a client's doc. */
+const refIds = (doc: Y.Doc) =>
+  doc
+    .getXmlFragment('default')
+    .toArray()
+    .filter((n): n is Y.XmlElement => n instanceof Y.XmlElement && n.nodeName === 'taskRef')
+    .map((n) => n.getAttribute('taskId'));
+
+test('someone outside the workspace with an edit share edits that page, and nothing else', async () => {
+  const f = await fixture();
+  const r = await share(f.page, { email: outsider.user.email, canEdit: true });
+  assert.equal(r.data.status, 'shared');
+  assert.deepEqual(r.data.shares.map((s: { userId: string; canEdit: boolean; member: boolean }) => [s.userId, s.canEdit, s.member]), [[outsider.user.id, true, false]]);
+  const p = await app.call('GET', `/pages/${f.page}`, outsider.token);
+  assert.equal(p.status, 200);
+  assert.deepEqual([p.data.canEdit, p.data.member, p.data.canManage, p.data.canShare, p.data.viaPageShare], [true, false, false, false, true]);
+  const mine = ((await app.call('GET', '/shared-pages', outsider.token)).data as { id: string; canEdit: boolean; member: boolean }[]).filter((x) => x.id === f.page);
+  assert.deepEqual(mine.map((x) => [x.id, x.canEdit, x.member]), [[f.page, true, false]]);
+
+  // The page's content: title, icon, comments, versions, uploads into it (stored under the page's workspace).
+  assert.equal((await app.call('PATCH', `/pages/${f.page}`, outsider.token, { title: 'Plan, edited from outside', icon: '📝' })).status, 200);
+  assert.equal((await app.call('POST', `/pages/${f.page}/comments`, outsider.token, { threadId: crypto.randomUUID(), quote: 'q', body: 'From outside' })).status, 200);
+  assert.equal((await app.call('POST', `/pages/${f.page}/versions`, outsider.token, {})).status, 200);
+  const upload = (path: string) =>
+    fetch(`${app.origin}/api${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${outsider.token}`, 'content-type': 'text/plain', 'x-filename': 'note.txt' },
+      body: 'from outside',
+    });
+  const up = await upload(`/workspaces/${f.ws}/files?pageId=${f.page}`);
+  assert.equal(up.status, 200);
+  const { db } = await import('../server/db.ts');
+  const file = (await up.json()) as { id: string };
+  assert.deepEqual({ ...(db.prepare('SELECT workspace_id AS ws, page_id AS page FROM files WHERE id = ?').get(file.id) as object) }, { ws: f.ws, page: f.page }, 'counts against the page’s workspace');
+  assert.equal((await upload(`/workspaces/${f.ws}/files`)).status, 404, 'no workspace uploads outside the page');
+  assert.equal((await upload(`/workspaces/${f.ws}/files?pageId=${f.sibling}`)).status, 404, 'nor into a sibling');
+
+  // Nothing else: not the notebook, siblings, workspace, structure or sharing.
+  for (const path of [`/workspaces/${f.ws}/tree`, `/workspaces/${f.ws}/members`, `/workspaces/${f.ws}/tasks`, `/workspaces/${f.ws}/search?q=plan`, `/workspaces/${f.ws}/activity`, `/pages/${f.sibling}`, `/pages/${f.openPage}`, `/pages/${f.sibling}/tasks`, `/pages/${f.sibling}/doc`])
+    assert.equal((await app.call('GET', path, outsider.token)).status, 404, path);
+  assert.equal((await app.call('PATCH', `/pages/${f.sibling}`, outsider.token, { title: 'x' })).status, 404);
+  assert.equal((await app.call('POST', `/sections/${f.sec}/pages`, outsider.token, { title: 'New sibling' })).status, 404);
+  const forbidden: [string, string, object | undefined][] = [
+    ['PATCH', `/pages/${f.page}`, { sectionId: f.openSec }],
+    ['POST', `/pages/${f.page}/move`, { sectionId: f.sec }],
+    ['POST', `/pages/${f.page}/copy`, {}],
+    ['DELETE', `/pages/${f.page}`, undefined],
+    ['GET', `/pages/${f.page}/shares`, undefined],
+    ['POST', `/pages/${f.page}/shares`, { email: `ps-reshare-${++seq}@example.com` }],
+    ['POST', `/pages/${f.page}/templates`, { name: 'T', content: { type: 'doc', content: [] } }],
+  ];
+  for (const [method, path, body] of forbidden) assert.equal((await app.call(method, path, outsider.token, body)).status, 403, `${method} ${path}`);
+
+  // Tasks stay member-only: the page's own task and one referenced from elsewhere are read-only.
+  for (const id of [f.task, f.siblingTask]) {
+    for (const body of [{ status: 'done' }, { title: 'Hijacked' }, { pageId: null }])
+      assert.equal((await app.call('PATCH', `/tasks/${id}`, outsider.token, body)).status, 404, `${id} ${JSON.stringify(body)}`);
+    assert.equal((await app.call('DELETE', `/tasks/${id}`, outsider.token)).status, 404);
+  }
+  assert.equal((await app.call('POST', `/workspaces/${f.ws}/tasks`, outsider.token, { title: 'New', pageId: f.page })).status, 404, 'no tasks in the workspace');
+  const own = (await app.call('POST', '/workspaces', outsider.token, { name: `Outsider own ${seq}` })).data.id as string;
+  assert.equal((await app.call('POST', `/workspaces/${own}/tasks`, outsider.token, { title: 'Sneaky', pageId: f.page })).status, 400, 'nor from their own workspace onto the page');
+  const { getTask } = await import('../server/tasks.ts');
+  assert.equal(getTask(f.task)!.status, 'open');
+  assert.equal(getTask(f.task)!.title, 'Task on the shared page');
+
+  // Co-editing over /collab: their text reaches the owner; task references can't move tasks.
+  const standalone = (await app.call('POST', `/workspaces/${f.ws}/tasks`, owner.token, { title: 'Owner standalone' })).data.id as string;
+  const o = collabClient(app, f.page, owner.token);
+  const x = collabClient(app, f.page, outsider.token);
+  try {
+    await Promise.all([synced(o), synced(x)]);
+    o.doc.getXmlFragment('default').insert(0, [taskRef(f.task)]);
+    await waitFor(() => refIds(x.doc).includes(f.task), 3000, 'outsider sees the task reference');
+    const para = new Y.XmlElement('paragraph');
+    para.insert(0, [new Y.XmlText('outsider typing')]);
+    x.doc.getXmlFragment('default').insert(1, [para]);
+    await waitFor(() => o.text().includes('outsider typing'), 3000, 'owner sees the outsider’s edit');
+    // Deleting the page's task reference: the server puts it back.
+    x.doc.getXmlFragment('default').delete(0, 1);
+    await waitFor(() => refIds(o.doc).includes(f.task) && refIds(x.doc).includes(f.task), 3000, 'the task reference is restored');
+    // References to tasks elsewhere (another page's, a standalone one) don't pull them in.
+    x.doc.getXmlFragment('default').insert(0, [taskRef(f.siblingTask), taskRef(standalone)]);
+    await new Promise((res) => setTimeout(res, 300));
+  } finally {
+    o.destroy();
+    x.destroy();
+  }
+  await waitFor(() => !!db.prepare("SELECT 1 FROM pages WHERE id = ? AND text LIKE '%outsider typing%'").get(f.page), 3000, 'page saved');
+  assert.equal(getTask(f.task)!.pageId, f.page, 'the page’s task stays on the page');
+  assert.equal(getTask(f.siblingTask)!.pageId, f.sibling, 'a task on another page stays there');
+  assert.equal(getTask(standalone)!.pageId, null, 'a standalone task stays standalone');
+
+  // Their socket on any other page is refused.
+  const other = collabClient(app, f.sibling, outsider.token);
+  try {
+    await waitFor(() => other.closes.includes(4403), 3000, '4403 on a sibling page');
+  } finally {
+    other.destroy();
+  }
+});
+
+test('an email invite with edit becomes an edit share on sign-up, or through its link', async () => {
+  const f = await fixture();
+  const email = `ps-editor-${++seq}@example.com`;
+  const r = await share(f.page, { email, canEdit: true });
+  assert.equal(r.data.status, 'invited');
+  assert.deepEqual(r.data.invites.map((i: { email: string; canEdit: boolean }) => [i.email, i.canEdit]), [[email, true]]);
+  const token = r.data.inviteUrl.split('/invite/')[1];
+  assert.equal((await app.call('GET', `/invites/${token}`)).data.page.canEdit, true);
+  const newcomer = await app.signUp('PsEditorNewcomer', email);
+  const p = await app.call('GET', `/pages/${f.page}`, newcomer.token);
+  assert.equal(p.status, 200);
+  assert.deepEqual([p.data.canEdit, p.data.member], [true, false]);
+  assert.equal((await app.call('GET', `/workspaces/${f.ws}/tree`, newcomer.token)).status, 404);
+
+  const linkUser = await app.signUp('PsEditorLink');
+  const { upsertPageInvite } = await import('../server/workspaces.ts');
+  const t2 = upsertPageInvite(f.page, linkUser.user.email, true, owner.user.id);
+  assert.equal((await app.call('POST', `/invites/${t2}/accept`, linkUser.token)).status, 200);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, linkUser.token)).data.canEdit, true);
 });
 
 test('live events: an outsider gets comments and tasks for the shared page only', async () => {
@@ -283,18 +412,29 @@ test('who may share: the private notebook’s creator; for a shared notebook, it
   assert.equal((await share(f.page, { userId: outsider.user.id })).status, 400);
 });
 
-test('effective rights are min(share, role): a viewer stays view-only; outsider shares are stored view-only', async () => {
+test('effective rights: a member gets min(share, role), so a viewer stays view-only; an outsider gets the share', async () => {
   const f = await fixture();
   await share(f.openPage, { userId: viewer.user.id, canEdit: true });
   const p = (await app.call('GET', `/pages/${f.openPage}`, viewer.token)).data;
   assert.equal(p.canEdit, false, 'a viewer role caps the share');
   assert.equal((await app.call('PATCH', `/pages/${f.openPage}`, viewer.token, { title: 'x' })).status, 403);
+  const viewerShared = ((await app.call('GET', '/shared-pages', viewer.token)).data as { id: string; canEdit: boolean }[]).find((x) => x.id === f.openPage);
+  assert.equal(viewerShared?.canEdit, false, '"Shared with me" shows what the viewer can actually do');
+  // Outside the workspace, the share is stored as asked and can be switched both ways.
   await share(f.page, { email: outsider.user.email, canEdit: true });
   const { db } = await import('../server/db.ts');
-  assert.equal((db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit, 0);
+  const stored = () => (db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit;
+  assert.equal(stored(), 1);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, outsider.token)).data.canEdit, true);
+  assert.equal((await app.call('PATCH', `/pages/${f.page}/shares/${outsider.user.id}`, owner.token, { canEdit: false })).status, 200);
+  assert.equal(stored(), 0);
+  assert.equal((await app.call('GET', `/pages/${f.page}`, outsider.token)).data.canEdit, false);
+  assert.equal((await app.call('PATCH', `/pages/${f.page}`, outsider.token, { title: 'x' })).status, 403);
+  // Joining the workspace as a viewer caps an outsider's edit share too.
   assert.equal((await app.call('PATCH', `/pages/${f.page}/shares/${outsider.user.id}`, owner.token, { canEdit: true })).status, 200);
-  assert.equal((db.prepare('SELECT can_edit FROM page_shares WHERE page_id = ? AND user_id = ?').get(f.page, outsider.user.id) as { can_edit: number }).can_edit, 0);
-  // A share never adds to notebook-level access: the viewer can't edit the open notebook's other pages.
+  await app.call('POST', `/workspaces/${f.ws}/members`, owner.token, { email: outsider.user.email, role: 'viewer' });
+  assert.equal((await app.call('GET', `/pages/${f.page}`, outsider.token)).data.canEdit, false, 'now a viewer: view only');
+  // A share never adds to notebook-level access, nor lowers it.
   await share(f.openPage, { userId: teammate.user.id, canEdit: false });
   assert.equal((await app.call('GET', `/pages/${f.openPage}`, teammate.token)).data.canEdit, true, 'a view share doesn’t lower notebook access');
 });

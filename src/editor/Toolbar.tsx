@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { canConvert } from './TaskRef.tsx';
 import { listItemAt } from './smartLists.ts';
+import { canInsertTask } from './taskGate.ts';
 import { useActiveEditor } from './activeEditor.ts';
 import { pageUndoOf, type PageUndo } from './pageUndo.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
@@ -307,6 +308,7 @@ function ribbonState(e: Editor) {
     inList: !!listItemAt(e),
     link: e.isActive('link'),
     canTask: canConvert(e),
+    taskAllowed: canInsertTask(e),
     canUndo: e.can().undo(),
     canRedo: e.can().redo(),
     table: e.isActive('table') ? { header: headerRowOn(e), merge: e.can().mergeCells(), split: e.can().splitCell() } : null,
@@ -711,7 +713,7 @@ export function Ribbon() {
             `Task: make this line a tracked task, or start a new one (${keyLabel(MOD, '1')} or ${keyLabel(MOD, ENTER)})`,
             <CircleCheck />,
             () => (s?.canTask ? chain().convertToTask().run() : chain().insertTask().run()),
-            { text: 'Task' },
+            { text: 'Task', disabled: s ? !s.taskAllowed : false },
           )}
           <ToolbarMenu
             label="More list options"

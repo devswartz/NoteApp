@@ -124,7 +124,7 @@ export interface PageShare {
   name: string;
   email: string;
   color: string;
-  /** What the share grants. Someone outside the workspace can only view, whatever this says. */
+  /** What the share grants. For a workspace member, their role still caps it (a viewer only views). */
   canEdit: boolean;
   member: boolean;
 }

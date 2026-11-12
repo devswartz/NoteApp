@@ -1,7 +1,8 @@
 // Share one page (#98): pick people with "Can view" or "Can edit". They see only
 // this page, under "Shared with me". Members share with members; owners and admins
-// may also share with people outside the workspace (by email), who can only view.
-// A viewer stays view-only whatever the share says (rights = min(share, role)). Open with openPageShareDialog(pageId, title);
+// may also share with people outside the workspace (by email), to view or edit this one
+// page (tasks on it stay read-only for them). A member who is a viewer stays view-only
+// whatever the share says (rights = min(share, role)). Open with openPageShareDialog(pageId, title);
 // <PageShareDialogHost /> is mounted once in PageView. Owner: Collaboration & Access.
 import { useEffect, useMemo, useState } from 'react';
 import { Copy, Lock, Search, X } from 'lucide-react';
@@ -89,7 +90,7 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
       <p className="muted small">
         <Lock size={12} /> Only this page: not its notebook or other pages.{' '}
         {canShareOutside
-          ? 'You can also share it with people outside the workspace by email; they can view it but not edit.'
+          ? 'You can also share it with people outside the workspace by email, without adding them to the workspace.'
           : 'You can share it with members of this workspace; owners and admins can also share it outside.'}
       </p>
 
@@ -153,9 +154,9 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
       <div className="share-list" aria-label="People with access">
         {data && !data.shares.length && !data.invites.length && <p className="muted small">Not shared with anyone yet.</p>}
         {data?.shares.map((s) => {
-          // Rights are min(share, role): outside the workspace, or as a viewer, it's view only.
-          const viewerRole = members.find((m) => m.id === s.userId)?.role === 'viewer';
-          const editable = s.member && !viewerRole;
+          // A member's rights are min(share, role): a viewer only views. Outside the workspace, the share.
+          const viewerRole = s.member && members.find((m) => m.id === s.userId)?.role === 'viewer';
+          const editable = !viewerRole;
           return (
           <div key={s.userId} className="share-row" data-testid="page-share-row">
             <Avatar user={{ name: s.name, color: s.color }} size={28} />
@@ -170,7 +171,7 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
               aria-label={`Access for ${s.name}`}
               value={editable && s.canEdit ? 'edit' : 'view'}
               disabled={!editable}
-              title={editable ? undefined : s.member ? 'Viewers can only view' : 'People outside the workspace can only view'}
+              title={editable ? undefined : 'Viewers can only view'}
               onChange={(e) => patch<PageShares>(`/pages/${pageId}/shares/${s.userId}`, { canEdit: e.target.value === 'edit' }).then(setData).catch(errorToast)}
             >
               <option value="edit">Can edit</option>
@@ -202,7 +203,7 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
             </span>
             <div className="grow">
               <div>{i.email}</div>
-              <div className="muted small">Invited: can view once they sign up</div>
+              <div className="muted small">Invited: can {i.canEdit ? 'edit' : 'view'} once they sign up</div>
             </div>
             <button
               type="button"

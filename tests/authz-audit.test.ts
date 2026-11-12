@@ -6,6 +6,8 @@
 //   private  – the same member, against resources in the owner's PRIVATE notebook
 //   pageshare – signed in, NOT a member, holding a view-only page share (#98) on the
 //              private notebook's page: that page and what's on it, nothing else
+//   pageedit – the same, with an EDIT page share: may change that page's content (text,
+//              title, comments, uploads into it) and nothing else; tasks stay member-only
 // Each cell runs against fresh resources. A coverage check fails if a route is
 // registered that this table doesn't list, so new routes must be audited here.
 // (Owner/admin rules are covered in tests/permissions.test.ts.)
@@ -15,11 +17,11 @@ import WS from 'ws';
 import crypto from 'node:crypto';
 import { startTestApp, type TestApp, type TestUser } from './helpers/app.ts';
 
-type Who = 'anon' | 'stranger' | 'viewer' | 'member' | 'private' | 'pageshare';
-const WHO: Who[] = ['anon', 'stranger', 'viewer', 'member', 'private', 'pageshare'];
+type Who = 'anon' | 'stranger' | 'viewer' | 'member' | 'private' | 'pageshare' | 'pageedit';
+const WHO: Who[] = ['anon', 'stranger', 'viewer', 'member', 'private', 'pageshare', 'pageedit'];
 
 let app: TestApp;
-let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser, target: TestUser, sharee: TestUser;
+let owner: TestUser, stranger: TestUser, viewer: TestUser, member: TestUser, target: TestUser, sharee: TestUser, editee: TestUser;
 before(async () => {
   // Admin routes: with ADMIN_EMAILS unset the first account would be admin, so name an address no persona uses.
   process.env.ADMIN_EMAILS = 'site-admin@example.com';
@@ -27,7 +29,9 @@ before(async () => {
   process.env.MS_CLIENT_ID = 'audit-client-id';
   process.env.MS_CLIENT_SECRET = 'audit-client-secret';
   app = await startTestApp();
-  [owner, stranger, viewer, member, target, sharee] = await Promise.all(['Owner', 'Stranger', 'Viewer', 'Member', 'Target', 'Sharee'].map((n) => app.signUp(`Az${n}`)));
+  [owner, stranger, viewer, member, target, sharee, editee] = await Promise.all(
+    ['Owner', 'Stranger', 'Viewer', 'Member', 'Target', 'Sharee', 'Editee'].map((n) => app.signUp(`Az${n}`)),
+  );
 });
 after(() => app.close());
 
@@ -107,9 +111,13 @@ async function fixture(): Promise<{ shared: Fx; priv: Fx }> {
       template = (await app.call('POST', `/pages/${page}/templates`, o, { name: 'Tpl', content: { type: 'doc', content: [{ type: 'paragraph' }] } })).data?.id ?? 'no-template';
     }
     if ((await registeredRoutes()).has('POST /pages/:id/shares')) {
-      // `target` (a member) holds an edit share on both pages; the pageshare persona a view share on the private one.
+      // `target` (a member) holds an edit share on both pages; the pageshare persona a view share on the
+      // private one, the pageedit persona (also outside the workspace) an edit share on it.
       await app.call('POST', `/pages/${page}/shares`, o, { userId: target.user.id, canEdit: true });
-      if (visibility === 'private') await app.call('POST', `/pages/${page}/shares`, o, { email: sharee.user.email, canEdit: false });
+      if (visibility === 'private') {
+        await app.call('POST', `/pages/${page}/shares`, o, { email: sharee.user.email, canEdit: false });
+        await app.call('POST', `/pages/${page}/shares`, o, { email: editee.user.email, canEdit: true });
+      }
     }
     const tag = (await app.call('POST', `/workspaces/${ws}/tags`, o, { name: `Tag ${visibility}` })).data?.id ?? 'no-tag';
     const team = (await app.call('POST', `/workspaces/${ws}/teams`, o, { name: `Team ${visibility}` })).data?.id ?? 'no-team';
@@ -140,8 +148,11 @@ const READ: Expect = { viewer: 200, member: 200 };
 const WRITE: Expect = { viewer: 403, member: 200 };
 const ADMIN: Expect = { viewer: 403, member: 403 };
 const inPrivate = (e: Expect, p = 404): Expect => ({ ...e, private: p });
-/** For a page-scoped row: what the view-only page share (outside the workspace) gets. */
-const shared = (e: Expect, ps: number): Expect => ({ ...e, pageshare: ps });
+/**
+ * For a page-scoped row: what the view-only page share (outside the workspace) gets, and what an
+ * edit page share from outside gets when that differs (defaults to the view-only result).
+ */
+const shared = (e: Expect, ps: number, pe?: number): Expect => ({ ...e, pageshare: ps, ...(pe === undefined ? {} : { pageedit: pe }) });
 
 const ROWS: Row[] = [
   // ── Public (no token needed; identical for everyone) ──
@@ -225,17 +236,17 @@ const ROWS: Row[] = [
   { method: 'GET', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: shared(inPrivate(READ), 200) },
   { method: 'GET', route: '/pages/:id/versions', path: (f) => `/pages/${f.page}/versions`, expect: shared(inPrivate(READ), 200) },
   { method: 'GET', route: '/pages/:id/versions/:vid', path: (f) => `/pages/${f.page}/versions/${f.version}`, expect: shared(inPrivate(READ), 200) },
-  { method: 'POST', route: '/pages/:id/versions', path: (f) => `/pages/${f.page}/versions`, body: () => ({}), expect: shared(inPrivate(WRITE), 403) },
+  { method: 'POST', route: '/pages/:id/versions', path: (f) => `/pages/${f.page}/versions`, body: () => ({}), expect: shared(inPrivate(WRITE), 403, 200) },
   { method: 'GET', route: '/pages/:id/doc', path: (f) => `/pages/${f.page}/doc`, expect: shared(inPrivate(READ), 200) },
   { method: 'GET', route: '/pages/:id/backlinks', path: (f) => `/pages/${f.page}/backlinks`, expect: shared(inPrivate(READ), 200) },
-  { method: 'PATCH', route: '/pages/:id', path: (f) => `/pages/${f.page}`, body: () => ({ title: 'Renamed' }), expect: shared(inPrivate(WRITE), 403) },
-  { method: 'POST', route: '/pages/:id/convert', path: (f) => `/pages/${f.page}/convert`, body: () => ({ kind: 'canvas' }), expect: shared(inPrivate(WRITE), 403) },
+  { method: 'PATCH', route: '/pages/:id', path: (f) => `/pages/${f.page}`, body: () => ({ title: 'Renamed' }), expect: shared(inPrivate(WRITE), 403, 200) },
+  { method: 'POST', route: '/pages/:id/convert', path: (f) => `/pages/${f.page}/convert`, body: () => ({ kind: 'canvas' }), expect: shared(inPrivate(WRITE), 403, 200) },
   { method: 'POST', route: '/pages/:id/move', path: (f) => `/pages/${f.page}/move`, body: () => ({ index: 0 }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'POST', route: '/pages/:id/copy', path: (f) => `/pages/${f.page}/copy`, body: () => ({}), expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: shared(inPrivate(WRITE), 403) },
   { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
   { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: inPrivate(WRITE) },
-  { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: shared(inPrivate(WRITE), 403) },
+  { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: shared(inPrivate(WRITE), 403, 200) },
   // ── Reminders & notification settings (#4). Reminders and settings are personal. ──
   { method: 'POST', route: '/reminders/snooze', path: () => '/reminders/snooze', body: () => ({ token: 'not-a-token', option: '1h' }), expect: { anon: 404, stranger: 404, viewer: 404, member: 404, private: 404 } }, // public: the token is the credential
   { method: 'GET', route: '/calendar/:file', plain: true, path: () => '/calendar/not-a-feed.ics', expect: { anon: 404, stranger: 404, viewer: 404, member: 404, private: 404 } }, // public: the token is the credential
@@ -267,9 +278,9 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/notifications/read-all', path: () => '/notifications/read-all', expect: { stranger: 200, ...READ } },
   { method: 'POST', route: '/notifications/:id/read', path: () => `/notifications/${crypto.randomUUID()}/read`, expect: { stranger: 200, ...READ } }, // only ever touches your own
   { method: 'GET', route: '/pages/:id/comments', path: (f) => `/pages/${f.page}/comments`, expect: shared(inPrivate(READ), 200) },
-  { method: 'POST', route: '/pages/:id/comments', path: (f) => `/pages/${f.page}/comments`, body: () => ({ threadId: crypto.randomUUID(), body: 'Hi' }), expect: shared(inPrivate(WRITE), 403) },
-  { method: 'POST', route: '/comment-threads/:id/replies', path: (f) => `/comment-threads/${f.thread}/replies`, body: () => ({ body: 'Reply' }), expect: shared(inPrivate(WRITE), 403) },
-  { method: 'PATCH', route: '/comment-threads/:id', path: (f) => `/comment-threads/${f.thread}`, body: () => ({ resolved: true }), expect: shared(inPrivate(WRITE), 403) },
+  { method: 'POST', route: '/pages/:id/comments', path: (f) => `/pages/${f.page}/comments`, body: () => ({ threadId: crypto.randomUUID(), body: 'Hi' }), expect: shared(inPrivate(WRITE), 403, 200) },
+  { method: 'POST', route: '/comment-threads/:id/replies', path: (f) => `/comment-threads/${f.thread}/replies`, body: () => ({ body: 'Reply' }), expect: shared(inPrivate(WRITE), 403, 200) },
+  { method: 'PATCH', route: '/comment-threads/:id', path: (f) => `/comment-threads/${f.thread}`, body: () => ({ resolved: true }), expect: shared(inPrivate(WRITE), 403, 200) },
   { method: 'DELETE', route: '/comment-threads/:id', path: (f) => `/comment-threads/${f.thread}`, expect: shared(inPrivate(ADMIN), 403) }, // creator or admin
   { method: 'PATCH', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, body: () => ({ body: 'Edit' }), expect: shared(inPrivate(ADMIN), 403) }, // author only
   { method: 'DELETE', route: '/comments/:id', path: (f) => `/comments/${f.comment}`, expect: shared(inPrivate(ADMIN), 403) }, // author or admin
@@ -305,10 +316,30 @@ const ROWS: Row[] = [
 ];
 
 const tokenOf = (who: Who) =>
-  who === 'anon' ? undefined : who === 'stranger' ? stranger.token : who === 'viewer' ? viewer.token : who === 'pageshare' ? sharee.token : member.token;
+  who === 'anon'
+    ? undefined
+    : who === 'stranger'
+      ? stranger.token
+      : who === 'viewer'
+        ? viewer.token
+        : who === 'pageshare'
+          ? sharee.token
+          : who === 'pageedit'
+            ? editee.token
+            : member.token;
 const expected = (r: Row, who: Who): number =>
   r.expect[who] ??
-  (who === 'anon' ? 401 : who === 'stranger' ? 404 : who === 'private' ? (r.expect.member ?? 404) : who === 'pageshare' ? expected(r, 'stranger') : 404);
+  (who === 'anon'
+    ? 401
+    : who === 'stranger'
+      ? 404
+      : who === 'private'
+        ? (r.expect.member ?? 404)
+        : who === 'pageshare'
+          ? expected(r, 'stranger')
+          : who === 'pageedit'
+            ? expected(r, 'pageshare')
+            : 404);
 
 async function runWith(r: Row, f: Fx, token: string | undefined): Promise<{ status: number; code?: string }> {
   if (r.raw) {
@@ -346,7 +377,7 @@ for (const r of ROWS) {
     const got: string[] = [];
     for (const who of WHO) {
       const { shared, priv } = await fixture();
-      const f = who === 'private' || who === 'pageshare' ? priv : shared;
+      const f = who === 'private' || who === 'pageshare' || who === 'pageedit' ? priv : shared;
       const status = await run(r, f, who);
       got.push(`${who}=${status}`);
       assert.equal(status, expected(r, who), `${r.method} ${r.route} as ${who}: expected ${expected(r, who)}, got ${status}  [${got.join(' ')}]`);
@@ -471,6 +502,8 @@ test('authz: /collab/<page> socket', async () => {
     ['private', priv.page, 4403],
     ['pageshare', priv.page, null], // the page shared with them (view-only)
     ['pageshare', shared.page, 4403], // not shared with them
+    ['pageedit', priv.page, null], // the page shared with them to edit
+    ['pageedit', shared.page, 4403],
   ];
   for (const [who, page, code] of cases) {
     const r = await connect(`/collab/${page}`, tokenOf(who));

@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { MOD, keyLabel } from '../components/ui.tsx';
+import { canInsertTask } from './taskGate.ts';
 import {
   ChevronRight,
   FileSymlink,
@@ -234,7 +235,8 @@ export const SlashCommand = Extension.create({
           const $from = state.doc.resolve(range.from);
           return $from.parent.type.name !== 'codeBlock' && !$from.parent.type.spec.code;
         },
-        items: ({ query }) => filterSlash(query),
+        // No "Task" where this user can't create tasks (a page shared from outside its workspace, #98).
+        items: ({ query, editor }) => filterSlash(query).filter((i) => i.title !== 'Task' || canInsertTask(editor)),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: () => ({
           onStart: (p) =>

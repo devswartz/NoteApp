@@ -120,7 +120,7 @@ export async function sendAddedEmail(opts: { to: string; link: string; workspace
 
 // ───────────── Page invites (sharing one page, migration 013) ─────────────
 // Same token scheme as workspace invites, but the invite grants a page share
-// (view-only for anyone outside the workspace), not membership.
+// with the invite's can_edit (applied on sign-up), not membership.
 
 /** Create or refresh the page invite for `email`. Returns the raw token. */
 export function upsertPageInvite(pageId: string, email: string, canEdit: boolean, invitedBy: string): string {
@@ -191,9 +191,9 @@ export function acceptPendingPageInvites(userId: string, email: string, ts = now
     invited_by: string;
   }[];
   for (const r of rows)
-    // View-only: the invitee isn't a workspace member (#98 review: outsider shares are stored can_edit = 0).
-    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, 0, ?, ?)').run(
-      r.page_id, userId, r.invited_by, ts,
+    // With the rights the invite asked for: outsiders may hold edit shares too (#98 follow-up).
+    db.prepare('INSERT OR IGNORE INTO page_shares (page_id, user_id, can_edit, created_by, created_at) VALUES (?, ?, ?, ?, ?)').run(
+      r.page_id, userId, r.can_edit ? 1 : 0, r.invited_by, ts,
     );
   db.prepare(`DELETE FROM page_invites WHERE email = ? AND ${live}`).run(email, ts);
   return rows.length;
