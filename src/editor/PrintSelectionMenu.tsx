@@ -9,22 +9,27 @@ import { toast } from '../store.ts';
 import { printSelectionOnly } from './exportPage.ts';
 import { selectionEditor, useBoxSelection } from './boxSelection.ts';
 import { linePicks } from './linePicks.ts';
+import { selectionBlocks } from '../print/selectionContent.ts';
+import { blocksText } from './boxClipboard.ts';
+import { taskLine, writeBlocks } from './clipboardOut.ts';
+import { pageSchema } from './canvasDoc.ts';
+import type { JSONContent } from '@tiptap/core';
 
-/** The text "Copy" takes: picked lines, else picked boxes' text, else the selected text. */
-function selectionText(pageId: string): string {
-  const lines = linePicks.text(pageId);
-  if (lines) return lines;
-  const ed = selectionEditor(pageId);
+/** What "Copy" takes, as blocks (so lists and formatting survive): picked lines, else picked boxes, else the selection. */
+function selectionContent(pageId: string): JSONContent[] {
+  const lines = linePicks.orderedBlocks(pageId);
+  if (lines.length) return lines;
   const picked = useBoxSelection.getState();
-  if (picked.pageId === pageId && picked.ids.length) {
-    return picked.ids
-      .map((id) => document.querySelector<HTMLElement>(`.canvas-box[data-box-id="${CSS.escape(id)}"] .ProseMirror`)?.innerText.trim() ?? '')
-      .filter(Boolean)
-      .join('\n\n');
-  }
-  if (!ed || ed.isDestroyed) return '';
-  const { from, to } = ed.state.selection;
-  return ed.state.doc.textBetween(from, to, '\n', ' ');
+  if (picked.pageId === pageId && picked.ids.length) return linePicks.boxBlocks(pageId, picked.ids);
+  const ed = selectionEditor(pageId);
+  return ed && !ed.isDestroyed ? selectionBlocks(ed.state.selection) : [];
+}
+
+/** Copy the selection to the clipboard as HTML and text; says so. */
+function copySelection(pageId: string) {
+  const blocks = selectionContent(pageId);
+  if (!blocks.length) return;
+  void writeBlocks(blocks, pageSchema(pageId), blocksText(blocks, taskLine)).then(() => toast('Copied'), () => toast('Couldn’t copy'));
 }
 
 /** Did this right-click land on something that "Print selection" would print? */
@@ -52,10 +57,7 @@ export function PrintSelectionMenu({ pageId }: { pageId: string }) {
       </MenuItem>
       <MenuItem
         icon={<Copy size={15} />}
-        onSelect={() => {
-          const text = selectionText(pageId);
-          if (text) void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Couldn’t copy'));
-        }}
+        onSelect={() => copySelection(pageId)}
       >
         Copy
       </MenuItem>
@@ -73,10 +75,9 @@ export function PrintSelectionMenu({ pageId }: { pageId: string }) {
     // Ctrl/Cmd+C with text picked copies every picked range (the browser would copy only the live selection).
     const onCopy = (e: KeyboardEvent) => {
       if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'c' || !linePicks.count(pageId)) return;
-      const text = linePicks.text(pageId);
-      if (!text) return;
+      if (!linePicks.orderedBlocks(pageId).length) return;
       e.preventDefault();
-      void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Couldn’t copy'));
+      copySelection(pageId);
     };
     document.addEventListener('contextmenu', onContext);
     window.addEventListener('keydown', onCopy, true);
