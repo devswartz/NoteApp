@@ -56,6 +56,17 @@ function newTask(pageId: string, title = '', patch: TaskPatch = {}): string {
   return id;
 }
 
+/**
+ * A new task like `taskId` (same title, assignee, dates, priority, tags and status), for a box pasted
+ * onto `pageId`. Null when the task isn't known here (the reference is kept as it was).
+ */
+export function cloneTask(pageId: string, taskId: string): string | null {
+  const src = useStore.getState().tasks[taskId];
+  if (!src) return null;
+  const { title, description, status, priority, dueDate, dueTime, recurrence, assigneeId, teamId, tagIds } = src;
+  return newTask(pageId, title, { description, status, priority, dueDate, dueTime, recurrence, assigneeId, teamId, tagIds });
+}
+
 export const TaskRef = Node.create<TaskRefOptions>({
   name: 'taskRef',
   group: 'block',

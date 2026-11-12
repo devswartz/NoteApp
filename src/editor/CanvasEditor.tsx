@@ -26,21 +26,22 @@ import { EditorContent, type Editor } from '@tiptap/react';
 import { Extension, type JSONContent } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { Plus } from 'lucide-react';
+import { ClipboardPaste, Copy, CopyPlus, Plus, Scissors, Trash2 } from 'lucide-react';
 import { BOXES_KEY, FIRST_BOX, FIRST_BOX_ID, READABLE_BOX_W, boxField, boxGeoms, fragmentIsEmpty, newBoxMap, readingOrder, type BoxGeom } from '../../shared/pageDoc.ts';
 import { useCollab, usePresenceRole, type CollabSession, type PresenceUser, type SaveState, type SyncStatus } from './collab.ts';
 import { EditorChrome, EditorMenus, usePageEditor, useSlashFilePickers } from './NoteEditor.tsx';
 import { clearActiveEditor, setActiveEditor } from './activeEditor.ts';
 import { useCommentBinding } from './collabComments.ts';
-import { insertTaskAtEnd, RELAYOUT_EVENT } from './TaskRef.tsx';
+import { cloneTask, insertTaskAtEnd, RELAYOUT_EVENT } from './TaskRef.tsx';
+import { clipText, mapTaskRefs, placeBoxes, textBlocks, useBoxClipboard, type Clip, type ClipBox } from './boxClipboard.ts';
 import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, nudgeOnGrid, snapY, surfaceSize, UNMEASURED_H, wideWidth } from './canvasGeom.ts';
 import { RuleGrid } from './ruleGrid.ts';
 import { usePageSettings } from './ribbonState.ts';
 import { toast } from '../store.ts';
 import { pageUndoFor, pageUndoOf, editorUndoSource } from './pageUndo.ts';
-import { GEOM_ORIGIN, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
+import { GEOM_ORIGIN, boxJSON, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
-import { useIsMobile } from '../components/ui.tsx';
+import { MOD, MenuItem, MenuSeparator, keyLabel, useContextMenu, useIsMobile } from '../components/ui.tsx';
 import { boxSelection, useBoxSelection } from './boxSelection.ts';
 import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
@@ -448,11 +449,12 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
    * bring it back. Otherwise (an empty box you left) its creation stops being an undo step too.
    */
   const removeBox = useCallback(
-    (id: string, undoable: boolean) => {
+    (id: string, undoable: boolean, quiet = false) => {
       const map = doc.getMap<unknown>(BOXES_KEY);
       if (!map.has(id)) return;
       const frag = doc.getXmlFragment(boxField(id));
-      if (undoable) undo.stopCapturing();
+      // `quiet`: one of several boxes removed as one step (Cut): the caller groups the undo step and says nothing.
+      if (undoable && !quiet) undo.stopCapturing();
       doc.transact(
         () => {
           map.delete(id);
@@ -466,6 +468,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         pageUndo.changed();
         return;
       }
+      if (quiet) return;
       const item = undo.undoStack.at(-1);
       undo.stopCapturing();
       toast('Text box deleted', {
@@ -502,6 +505,190 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     const el = elements.current.get(id);
     el?.focus({ preventScroll: true });
     el?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+
+  // ───── Copy / Cut / Paste / Duplicate of whole boxes (boxClipboard.ts) ─────
+  /** The boxes a clipboard action applies to: the picked ones, else the box that is itself selected. */
+  const selectedIds = (includeFocusedBox: boolean): string[] => {
+    const live = new Set(boxesRef.current.map((b) => b.id));
+    const sel = useBoxSelection.getState();
+    const ids = sel.pageId === pageId ? sel.ids.filter((i) => live.has(i)) : [];
+    if (ids.length || !includeFocusedBox) return ids;
+    const a = document.activeElement as HTMLElement | null;
+    const id = a?.classList.contains('canvas-box') ? a.dataset.boxId : undefined;
+    return id && live.has(id) ? [id] : [];
+  };
+  const makeClip = (ids: string[], cut: boolean): Clip | null => {
+    const schema = pageSchema(pageId);
+    const boxes: ClipBox[] = readingOrder(boxesRef.current.filter((b) => ids.includes(b.id))).map((b) => ({
+      x: b.x,
+      y: b.y,
+      w: b.w,
+      ...(b.wide ? { wide: true } : {}),
+      content: boxJSON(doc, b.id, schema).content ?? [],
+    }));
+    return boxes.length ? { boxes, text: clipText(boxes), cut } : null;
+  };
+  const copyBoxes = (ids: string[], cut: boolean) => {
+    const clip = makeClip(ids, cut && canEdit);
+    if (!clip) return;
+    useBoxClipboard.setState({ clip });
+    void navigator.clipboard
+      ?.writeText(clip.text)
+      .then(() => useBoxClipboard.setState((s) => (s.clip === clip ? { clip: { ...clip, synced: true } } : s)))
+      .catch(() => {});
+    if (!clip.cut) return;
+    // Cut: the boxes go as one undo step (their text and tasks come back with Ctrl+Z, or paste them elsewhere).
+    undo.stopCapturing();
+    undo.captureTimeout = Number.MAX_SAFE_INTEGER;
+    for (const id of ids) removeBox(id, true, true);
+    undo.captureTimeout = CAPTURE_MS;
+    undo.stopCapturing();
+    boxSelection.clear();
+  };
+  /** Add the boxes of `clip` (at `at` if given). Pasted tasks are new tasks; a cut's boxes keep theirs (they moved). */
+  const pasteBoxes = (clip: Clip, at?: { x: number; y: number }) => {
+    if (!canEdit || isMobile || !clip.boxes.length) return;
+    const placed = placeBoxes(clip.boxes, { at, existing: boxesRef.current }).map((b) => onGrid(b));
+    undo.stopCapturing();
+    const ids = writeBoxes(
+      doc,
+      pageSchema(pageId),
+      placed.map((b, i) => ({ x: b.x, y: b.y, w: b.w, z: i, ...(b.wide ? { wide: true } : {}), content: clip.cut ? b.content : mapTaskRefs(b.content, (t) => cloneTask(pageId, t)) })),
+    );
+    undo.stopCapturing();
+    ids.forEach(mount);
+    boxSelection.set(pageId, ids);
+    requestAnimationFrame(() => selectBox(ids[0]!));
+    // A cut moves once; pasting it again makes copies.
+    if (clip.cut) useBoxClipboard.setState({ clip: { ...clip, cut: false } });
+  };
+  /** Plain text pasted onto the canvas: a new box with it. */
+  const pasteText = (text: string, at?: { x: number; y: number }) => {
+    if (!canEdit || isMobile) return;
+    const g = at ? onGrid(boxAtClick(boxesRef.current, at.x, at.y)) : onGrid(below());
+    undo.stopCapturing();
+    const [id] = writeBoxes(doc, pageSchema(pageId), [{ x: g.x, y: g.y, w: g.w, z: 0, content: textBlocks(text) }]);
+    undo.stopCapturing();
+    mount(id!);
+    boxSelection.set(pageId, [id!]);
+    requestAnimationFrame(() => selectBox(id!));
+  };
+  const duplicateBoxes = (ids: string[]) => {
+    const clip = makeClip(ids, false);
+    if (clip) pasteBoxes(clip);
+  };
+  const clipActions = useRef({ selectedIds, copyBoxes, pasteBoxes, pasteText });
+  clipActions.current = { selectedIds, copyBoxes, pasteBoxes, pasteText };
+  useEffect(() => {
+    if (isMobile) return;
+    const inField = (t: HTMLElement | null) => !!t?.closest?.('input, textarea, select, [role="dialog"]');
+    // Ctrl/Cmd+C and +X act on boxes only when boxes are selected; with the caret in a box's text they copy the text,
+    // unless boxes were picked on purpose (Ctrl+click).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || !(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k !== 'c' && k !== 'x') return;
+      const t = e.target as HTMLElement | null;
+      if (inField(t) || (k === 'x' && !canEdit)) return;
+      const ids = clipActions.current.selectedIds(!t?.closest?.('.ProseMirror'));
+      if (!ids.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      clipActions.current.copyBoxes(ids, k === 'x');
+    };
+    // Paste: our own boxes (the system clipboard still holds their text), or other text as a new box. Not in a text field.
+    const onPaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented || !canEdit) return;
+      if ((e.target as HTMLElement | null)?.closest?.('.ProseMirror, input, textarea, select, [contenteditable="true"], [role="dialog"]')) return;
+      const clip = useBoxClipboard.getState().clip;
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      if (clip && (text === clip.text || (!text && !clip.synced))) {
+        e.preventDefault();
+        clipActions.current.pasteBoxes(clip);
+      } else if (text.trim()) {
+        e.preventDefault();
+        clipActions.current.pasteText(text);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('paste', onPaste);
+    };
+  }, [canEdit, isMobile]);
+
+  // Right-click a box's top edge: its options. Right-click empty canvas: paste here.
+  const menuBox = useRef<string | null>(null);
+  const menuAt = useRef({ x: 0, y: 0 });
+  const clipHere = useBoxClipboard((s) => s.clip);
+  const menuIds = () => {
+    const id = menuBox.current;
+    const picked = selectedIds(false);
+    return id && picked.includes(id) ? picked : id ? [id] : [];
+  };
+  const boxMenu = useContextMenu(() => (
+    <div className="menu" role="menu" aria-label="Text box">
+      <MenuItem icon={<Scissors size={15} />} hint={keyLabel(MOD, 'X')} onSelect={() => copyBoxes(menuIds(), true)}>
+        Cut
+      </MenuItem>
+      <MenuItem icon={<Copy size={15} />} hint={keyLabel(MOD, 'C')} onSelect={() => copyBoxes(menuIds(), false)}>
+        Copy
+      </MenuItem>
+      <MenuItem icon={<CopyPlus size={15} />} onSelect={() => duplicateBoxes(menuIds())}>
+        Duplicate
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem
+        icon={<Trash2 size={15} />}
+        danger
+        onSelect={() => {
+          const ids = menuIds();
+          boxSelection.clear();
+          undo.stopCapturing();
+          undo.captureTimeout = Number.MAX_SAFE_INTEGER;
+          for (const id of ids) removeBox(id, true, ids.length > 1);
+          undo.captureTimeout = CAPTURE_MS;
+          undo.stopCapturing();
+        }}
+      >
+        Delete
+      </MenuItem>
+    </div>
+  ));
+  const surfaceMenu = useContextMenu(() => (
+    <div className="menu" role="menu" aria-label="Canvas">
+      {clipHere ? (
+        <MenuItem icon={<ClipboardPaste size={15} />} hint={keyLabel(MOD, 'V')} onSelect={() => pasteBoxes(clipHere, menuAt.current)}>
+          Paste
+        </MenuItem>
+      ) : (
+        <button type="button" role="menuitem" className="menu-item" disabled>
+          <span className="menu-icon">
+            <ClipboardPaste size={15} />
+          </span>
+          <span className="menu-label">Paste</span>
+        </button>
+      )}
+      <MenuItem icon={<Plus size={15} />} onSelect={() => createBox(boxAtClick(boxesRef.current, menuAt.current.x, menuAt.current.y), 'focus')}>
+        New text box here
+      </MenuItem>
+    </div>
+  ));
+  const onHandleMenu = (id: string, e: React.MouseEvent) => {
+    if (!canEdit) return;
+    // The box you right-click is selected (unless it is already one of the picked boxes).
+    if (!selectedIds(false).includes(id)) boxSelection.set(pageId, [id]);
+    selectBox(id);
+    menuBox.current = id;
+    boxMenu.bind.onContextMenu(e);
+  };
+  const onSurfaceMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canEdit || isMobile || e.target !== e.currentTarget) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    menuAt.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+    surfaceMenu.bind.onContextMenu(e);
   };
 
   const onBoxFocus = (id: string) => {
@@ -592,9 +779,11 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - start.px;
       const dy = ev.clientY - start.py;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       next = mode === 'move' ? onGrid(clampPos(start.x + dx, start.y + dy)) :{ w: clampWidth(start.w + dx), wide: undefined };
       if (!frame) frame = requestAnimationFrame(flush);
     };
+    let moved = false;
     const up = () => {
       if (frame) cancelAnimationFrame(frame);
       flush();
@@ -604,8 +793,11 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
       document.body.classList.remove('canvas-dragging');
-      // Keep editing if you were; otherwise the moved box is selected.
-      if (!editors.current.get(id)?.isFocused) selectBox(id);
+      // A click on the top edge (no drag) selects the box, so it can be copied, cut or deleted.
+      if (mode === 'move' && !moved) {
+        boxSelection.set(pageId, [id]);
+        selectBox(id);
+      } else if (!editors.current.get(id)?.isFocused) selectBox(id); // keep editing if you were; otherwise the moved box is selected
     };
     document.body.classList.add('canvas-dragging');
     handle.addEventListener('pointermove', move);
@@ -662,6 +854,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
           className={`canvas-surface ${canEdit ? 'can-edit' : ''}`}
           style={stacked ? undefined : { width: size.w, height: size.h }}
           onMouseDown={onSurfaceDown}
+          onContextMenu={onSurfaceMenu}
           onMouseDownCapture={(e) => {
             // A plain click anywhere on the canvas drops the picked boxes (Shift+click extends text as usual).
             if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) boxSelection.clear();
@@ -693,6 +886,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               onKeyBox={onBoxKey}
               onDrag={startDrag}
               onPadDown={onPadDown}
+              onHandleMenu={onHandleMenu}
             />
           ))}
           {ready && blankSlot && !stacked && (
@@ -714,6 +908,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         </button>
       )}
       <EditorMenus />
+      {boxMenu.menu}
+      {surfaceMenu.menu}
     </div>
   );
 }
@@ -745,9 +941,11 @@ interface BoxProps {
   onDrag: (id: string, mode: 'move' | 'width', e: ReactPointerEvent<HTMLElement>) => void;
   /** A click on the box's own padding (not its text, not a handle). */
   onPadDown: (id: string) => void;
+  /** Right-click on the box's top edge. */
+  onHandleMenu: (id: string, e: React.MouseEvent) => void;
 }
 
-function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, mounted, ready, isActive, picked, onPick, holding, height, registerEl, onEditor, onHeight, onFocusBox, onBlurBox, onKeyBox, onDrag, onPadDown }: BoxProps) {
+function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, mounted, ready, isActive, picked, onPick, holding, height, registerEl, onEditor, onHeight, onFocusBox, onBlurBox, onKeyBox, onDrag, onPadDown, onHandleMenu }: BoxProps) {
   const { id } = box;
   const ref = useRef<HTMLDivElement | null>(null);
   const setRef = useCallback(
@@ -794,7 +992,7 @@ function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, 
         onPadDown(id);
       }}
     >
-      {canEdit && place && <div className="canvas-box-move" title="Drag to move" aria-hidden onPointerDown={(e) => onDrag(id, 'move', e)} />}
+      {canEdit && place && <div className="canvas-box-move" title="Drag to move; click to select; right-click for options" aria-hidden onPointerDown={(e) => onDrag(id, 'move', e)} onContextMenu={(e) => onHandleMenu(id, e)} />}
       {mounted ? (
         <BoxEditor id={id} wide={!!box.wide} session={session} pageId={pageId} workspaceId={workspaceId} user={user} canEdit={canEdit} isActive={isActive} onEditor={onEditor} />
       ) : (

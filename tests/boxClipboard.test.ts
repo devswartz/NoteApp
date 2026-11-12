@@ -1,0 +1,39 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import type { JSONContent } from '@tiptap/core';
+import { PASTE_STEP, clipText, jsonText, mapTaskRefs, placeBoxes, textBlocks, type ClipBox } from '../src/editor/boxClipboard.ts';
+
+const p = (t: string): JSONContent => ({ type: 'paragraph', content: [{ type: 'text', text: t }] });
+const box = (x: number, y: number, content = [p('hi')]): ClipBox => ({ x, y, w: 300, content });
+
+test('box text: one line per block, lists and tables flattened', () => {
+  assert.equal(jsonText([p('One'), p('Two')]), 'One\nTwo');
+  const list = { type: 'bulletList', content: [{ type: 'listItem', content: [p('a')] }, { type: 'listItem', content: [p('b')] }] };
+  assert.equal(jsonText([list]), 'a\nb');
+  assert.equal(jsonText([{ type: 'paragraph' }]), '');
+  assert.equal(clipText([box(0, 0, [p('A')]), box(0, 0, [{ type: 'paragraph' }]), box(0, 0, [p('B')])]), 'A\n\nB');
+});
+
+test('pasted text becomes a paragraph per line', () => {
+  assert.deepEqual(textBlocks('a\r\n\nb'), [p('a'), { type: 'paragraph' }, p('b')]);
+});
+
+test('placing pasted boxes: a right-click puts the group top-left there; otherwise it steps off what is already there', () => {
+  const two = [box(100, 200), box(300, 260)];
+  const at = placeBoxes(two, { at: { x: 10, y: 20 }, existing: [] });
+  assert.deepEqual(at.map((b) => [b.x, b.y]), [[10, 20], [210, 80]], 'relative positions kept');
+  assert.deepEqual(placeBoxes(two, { existing: [] }).map((b) => [b.x, b.y]), [[100, 200], [300, 260]], 'nothing in the way: same place');
+  const nudged = placeBoxes(two, { existing: [{ x: 100, y: 200 }] });
+  assert.deepEqual(nudged.map((b) => [b.x, b.y]), [[100 + PASTE_STEP, 200 + PASTE_STEP], [300 + PASTE_STEP, 260 + PASTE_STEP]]);
+  const twice = placeBoxes(two, { existing: [{ x: 100, y: 200 }, { x: 100 + PASTE_STEP, y: 200 + PASTE_STEP }] });
+  assert.equal(twice[0].x, 100 + 2 * PASTE_STEP, 'a third copy steps again');
+  assert.equal(placeBoxes([box(5, 5)], { at: { x: -50, y: -50 }, existing: [] })[0].x, 0, 'never off the left or top edge');
+});
+
+test('task references in pasted boxes can be swapped for new tasks', () => {
+  const blocks: JSONContent[] = [p('x'), { type: 'taskRef', attrs: { taskId: 't1' } }, { type: 'blockquote', content: [{ type: 'taskRef', attrs: { taskId: 't2' } }] }];
+  const out = mapTaskRefs(blocks, (id) => (id === 't1' ? 'n1' : null));
+  assert.equal((out[1].attrs as { taskId: string }).taskId, 'n1');
+  assert.equal((out[2].content![0].attrs as { taskId: string }).taskId, 't2', 'a task that could not be cloned keeps its reference');
+  assert.equal((blocks[1].attrs as { taskId: string }).taskId, 't1', 'the copied content is not changed');
+});
