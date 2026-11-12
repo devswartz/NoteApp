@@ -195,7 +195,7 @@ export async function addFilter(page: Page, kind: string, value: string) {
   }
   const esc = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Match the item's label exactly (people items also contain their avatar's initials).
-  await page.locator('.popover [role="menuitem"], .popover [role="menuitemcheckbox"]').filter({ has: page.locator('.menu-label', { hasText: new RegExp(`^${esc}$`) }) }).click();
+  await page.locator('.popover [role="menuitem"], .popover [role="menuitemcheckbox"]').filter({ has: page.locator('.menu-label', { hasText: new RegExp(`^${esc}$`) }) }).first().click(); // (a person in two teams is listed under both)
   await page.keyboard.press('Escape'); // most kinds take several values and stay open
 }
 
