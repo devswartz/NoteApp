@@ -461,8 +461,13 @@ class Converter {
         type: 'tableRow',
         content: cells.map((c) => {
           const inner = this.blocks(c.children);
+          // Empty paragraphs at the end of a cell only make its row taller.
+          while (inner.length > 1 && inner[inner.length - 1].type === 'paragraph' && !inner[inner.length - 1].content?.length) inner.pop();
           const span = (v: string | undefined) => Math.max(1, Math.min(50, Number(v) || 1));
-          return { type: c.tag === 'th' ? 'tableHeader' : 'tableCell', attrs: { colspan: span(c.attrs.colspan), rowspan: span(c.attrs.rowspan), colwidth: null }, content: inner.length ? inner : [{ type: 'paragraph' }] };
+          // OneNote gives each cell its width: keep it, so the table is as wide as it was (a lone cell only).
+          const width = cssPx(styleProps(c.attrs.style).get('width')) ?? cssPx(c.attrs.width);
+          const colwidth = span(c.attrs.colspan) === 1 && width !== undefined ? [clamp(width, MIN_CELL_W, MAX_CELL_W)] : null;
+          return { type: c.tag === 'th' ? 'tableHeader' : 'tableCell', attrs: { colspan: span(c.attrs.colspan), rowspan: span(c.attrs.rowspan), colwidth }, content: inner.length ? inner : [{ type: 'paragraph' }] };
         }),
       });
     }
@@ -483,7 +488,13 @@ function trimInline(nodes: PMNode[]): PMNode[] {
   if (out[0]?.type === 'text') out[0].text = out[0].text!.replace(/^ +/, '');
   const l = out[out.length - 1];
   if (l?.type === 'text') l.text = l.text!.replace(/ +$/, '');
-  return out.filter((n) => n.type !== 'text' || n.text);
+  const kept = out.filter((n) => n.type !== 'text' || n.text);
+  // OneNote pads empty cells and blank lines with &nbsp; or <br>. Kept as text or a line break they make the line two
+  // lines tall (a row of an empty table came out three times too high): a paragraph with nothing visible is simply empty.
+  if (kept.every((n) => n.type === 'hardBreak' || (n.type === 'text' && !/\S/.test(n.text ?? '')))) return [];
+  // A line break closing a paragraph only adds an empty line after it.
+  while (kept[kept.length - 1]?.type === 'hardBreak') kept.pop();
+  return kept;
 }
 
 /** The <title> text, found with indexOf (a regex here could be quadratic on many unclosed "<title"). */
@@ -526,6 +537,9 @@ const DEFAULT_X = 48;
 const DEFAULT_Y = 48;
 const DEFAULT_W = 624; // OneNote's default outline width
 const GAP = 24;
+/** A table cell's width, from OneNote's per-cell widths, is kept within these. */
+const MIN_CELL_W = 24;
+const MAX_CELL_W = 1200;
 
 /** A CSS length in px (or pt, or unitless) → px; anything else (%, em, calc(), junk) → undefined. */
 function cssPx(v: string | undefined): number | undefined {
@@ -586,6 +600,20 @@ function canvasBoxes(c: Converter, children: HNode[]): ConvertedBox[] | null {
     if (content.every((b) => b.type === 'paragraph' && !b.content?.length)) return; // nothing in it
     boxes.push({ x: g.x, y: g.y, w: g.w, z: boxes.length, doc: { type: 'doc', content }, bottom: g.y + estimateHeight(content, g.h) });
   });
+  // OneNote measures from the top-left of the whole page, title block included: its first outline sits at about
+  // (48, 115). Notivelo draws its own title above the canvas, so measured the same way the layout would start a
+  // title's height (and OneNote's margin) too low and too far right. The canvas starts at the layout instead: every
+  // box moves up and left by the empty space above and beside the topmost and leftmost, keeping where they are
+  // relative to each other.
+  if (boxes.length) {
+    const minX = Math.min(...boxes.map((b) => b.x));
+    const minY = Math.min(...boxes.map((b) => b.y));
+    for (const b of boxes) {
+      b.x -= minX;
+      b.y -= minY;
+      b.bottom -= minY;
+    }
+  }
   const rest = c.blocks(loose);
   if (rest.length) {
     const y = boxes.length ? Math.max(...boxes.map((b) => b.bottom)) + GAP : DEFAULT_Y;

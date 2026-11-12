@@ -41,13 +41,15 @@ test('positioned outlines become canvas boxes with their geometry; loose content
     <p>Loose paragraph</p>
   </body></html>`);
   assert.equal(c.kind, 'canvas');
+  // OneNote's coordinates start at the page's corner (title block included): the canvas starts at the layout, so
+  // everything moves up by 40 (the topmost box) and left by 48 (the leftmost); the empty outline is dropped.
   assert.deepEqual(
     c.boxes.map(({ x, y, w, z }) => ({ x, y, w, z })),
     [
-      { x: 48, y: 115, w: 624, z: 0 },
-      { x: 700, y: 40, w: 300, z: 1 },
-      { x: 48, y: 600, w: 320, z: 2 },
-      { x: 48, y: 824, w: 624, z: 3 }, // below the image (600 + 200 + gap); the empty outline is dropped
+      { x: 0, y: 75, w: 624, z: 0 },
+      { x: 652, y: 0, w: 300, z: 1 },
+      { x: 0, y: 560, w: 320, z: 2 },
+      { x: 0, y: 784, w: 624, z: 3 }, // below the image (560 + 200 + gap)
     ],
   );
   for (const b of c.boxes) schema.nodeFromJSON(b.doc).check();
@@ -55,6 +57,63 @@ test('positioned outlines become canvas boxes with their geometry; loose content
   assert.deepEqual([c.resources.length, c.todos.length], [1, 1], 'resource and to-do keys are shared across boxes');
   // `doc` is every box in reading order (top to bottom, then left to right).
   assert.deepEqual(c.doc.content.map((n) => n.content?.[0]?.text ?? n.type), ['Right, higher up', 'Left', 'taskRef', 'image', 'Loose paragraph']);
+});
+
+// A page like the one Devon imported: a title, "Test High" top right just under the date line, "First line text" with a
+// 4×4 table below it at the left, "Test Sideways" level with the first line and further right, and "4th" with a
+// superscript in a table cell. OneNote reports positions from the page's corner, title block included.
+const DEVON_PAGE = `<html><head><title>Import Note Test</title></head><body data-absolute-enabled="true" style="font-family:Calibri;font-size:11pt">
+  <div data-id="high" style="position:absolute;left:480px;top:115px;width:192px"><p>Test High</p></div>
+  <div data-id="first" style="position:absolute;left:48px;top:178px;width:240px"><p>First line text</p>
+    <table border="1" style="border-collapse:collapse"><tr>
+      <td style="width:60px"><p>&nbsp;</p></td><td style="width:60px"><p><br/></p></td><td style="width:60px"><p>4<sup>th</sup> line</p></td><td style="width:60px"><p>&nbsp;</p><p>&nbsp;</p></td></tr>
+      <tr><td><p>&nbsp;</p></td><td><p>&nbsp;</p></td><td><p>&nbsp;</p></td><td><p>&nbsp;</p></td></tr>
+    </table></div>
+  <div data-id="side" style="position:absolute;left:330px;top:178px;width:200px"><p>Test Sideways</p></div>
+</body></html>`;
+
+test('a OneNote page is laid out from the canvas corner, as on the page: relative positions kept, the title block offset removed', () => {
+  const c = valid(DEVON_PAGE);
+  assert.equal(c.title, 'Import Note Test');
+  assert.equal(c.kind, 'canvas');
+  const at = (text: string) => c.boxes.find((b) => JSON.stringify(b.doc).includes(text))!;
+  const [high, first, side] = [at('Test High'), at('First line text'), at('Test Sideways')];
+  // The topmost box starts at the top of the canvas and the leftmost at its left edge (OneNote's 115 / 48 are gone).
+  assert.equal(Math.min(...c.boxes.map((b) => b.y)), 0);
+  assert.equal(Math.min(...c.boxes.map((b) => b.x)), 0);
+  assert.ok(high.y <= 40, 'content starts within 40px of the canvas top');
+  // As in OneNote: "Test High" is above the first line and to the right of "Test Sideways", which is level with it.
+  assert.ok(high.y < first.y);
+  assert.ok(high.x > side.x);
+  assert.equal(first.y, side.y);
+  assert.ok(side.x > first.x);
+  assert.deepEqual([high.x - first.x, first.y - high.y, side.x - first.x], [432, 63, 282], 'distances between the outlines are OneNote’s, unscaled');
+});
+
+test('empty table cells are one empty line, not &nbsp; text or line breaks; cell widths are kept', () => {
+  const c = valid(DEVON_PAGE);
+  const table = c.boxes.find((b) => JSON.stringify(b.doc).includes('"table"'))!.doc.content.find((n) => n.type === 'table')!;
+  const cells = table.content!.flatMap((r) => r.content!);
+  const empties = cells.filter((cell) => !JSON.stringify(cell).includes('line'));
+  assert.equal(empties.length, 7);
+  for (const cell of empties) assert.deepEqual(cell.content, [{ type: 'paragraph' }], 'one empty paragraph');
+  assert.deepEqual(cells[0].attrs?.colwidth, [60]);
+  assert.equal(cells[4].attrs?.colwidth, null, 'no width given: none set');
+});
+
+test('superscript and subscript text is kept as text (the editor has no such mark)', () => {
+  const c = valid(DEVON_PAGE);
+  assert.match(JSON.stringify(c.boxes.map((b) => b.doc)), /"4th line"/);
+});
+
+test('a line break closing a paragraph is dropped; blank lines made of &nbsp; and <br> stay one empty line', () => {
+  const c = valid(`<body><p>text<br/></p><p>&nbsp;</p><p><br/><br/></p><p>a<br/>b</p></body>`);
+  assert.deepEqual(c.doc.content, [
+    { type: 'paragraph', content: [{ type: 'text', text: 'text' }] },
+    { type: 'paragraph' },
+    { type: 'paragraph' },
+    { type: 'paragraph', content: [{ type: 'text', text: 'a' }, { type: 'hardBreak' }, { type: 'text', text: 'b' }] },
+  ]);
 });
 
 test('pages without positioned top-level elements stay documents', () => {
@@ -65,7 +124,8 @@ test('pages without positioned top-level elements stay documents', () => {
 });
 
 test('malformed, negative and huge geometry is clamped to sane values', () => {
-  const box = (style: string, extra = '') => convertOneNotePage(`<body><div style="${style}" ${extra}><p>x</p></div></body>`).boxes[0];
+  // A box at the corner anchors the origin, so the box under test keeps its own coordinates (they are moved to the corner otherwise).
+  const box = (style: string, extra = '') => convertOneNotePage(`<body><div style="position:absolute;left:0;top:0"><p>anchor</p></div><div style="${style}" ${extra}><p>x</p></div></body>`).boxes[1];
   const g = (b: ReturnType<typeof box>) => [b.x, b.y, b.w];
   assert.deepEqual(g(box('position:absolute;left:-50px;top:1e308px;width:99999999999px')), [0, 48, 4000], 'exponent syntax is junk → default top');
   assert.deepEqual(g(box('position:absolute;left:999999999px;top:-1px;width:2px')), [50_000, 0, 40]);
