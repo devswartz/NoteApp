@@ -258,7 +258,7 @@ export function mustAccess<T extends Access | null>(a: T, edit = false): NonNull
  * 013) also sees the tasks that live on that page, member or not, except
  * private_owner_only ones.
  */
-export const TASK_VISIBLE = `(t.trash_id IS NULL AND (
+export const TASK_VISIBLE = `(
   (EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = @userId)
   AND (
     (t.page_id IS NULL AND t.private_owner_only = 0)
@@ -266,11 +266,12 @@ export const TASK_VISIBLE = `(t.trash_id IS NULL AND (
     OR t.created_by = @userId
     OR EXISTS (
       SELECT 1 FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id
-      WHERE p.id = t.page_id AND ${NOTEBOOK_VISIBLE}
+      WHERE p.id = t.page_id AND ${NOTEBOOK_VISIBLE_ANY}
     )
   ))
-  OR (t.page_id IS NOT NULL AND t.private_owner_only = 0 AND ${pageSharedSql('t.page_id')})
-))`;
+  OR (t.page_id IS NOT NULL AND t.private_owner_only = 0 AND ${pageSharedSql('t.page_id')}
+      AND EXISTS (SELECT 1 FROM pages tp WHERE tp.id = t.page_id AND tp.deleted_at IS NULL))
+)`;
 
 export function taskVisible(taskId: string, userId: string): boolean {
   return !!db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @taskId AND ${TASK_VISIBLE}`).get({ taskId, userId });

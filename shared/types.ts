@@ -193,6 +193,8 @@ export interface Tree {
   notebooks: Notebook[];
   sections: Section[];
   pages: PageMeta[];
+  /** Pages in the Trash (that the caller can restore): a task on one shows its page as "in Trash". Absent from older servers. */
+  trashedPages?: { id: string; title: string }[];
 }
 
 export interface Task {

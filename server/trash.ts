@@ -20,20 +20,19 @@ const TABLE = { page: 'pages', section: 'sections', notebook: 'notebooks' } as c
 
 const placeholders = (n: number) => Array.from({ length: n }, () => '?').join(', ');
 
-/** Hide the tasks on these pages: they keep their page and come back with it. Returns how many (and whose) were hidden. */
-function hideTasks(pageIds: string[], trashId: string): { id: string; workspaceId: string; assigneeId: string | null }[] {
-  if (!pageIds.length) return [];
-  const rows = db
-    .prepare(`SELECT id, workspace_id AS workspaceId, assignee_id AS assigneeId FROM tasks WHERE page_id IN (${placeholders(pageIds.length)}) AND trash_id IS NULL`)
-    .all(...pageIds) as { id: string; workspaceId: string; assigneeId: string | null }[];
-  db.prepare(`UPDATE tasks SET trash_id = ? WHERE page_id IN (${placeholders(pageIds.length)}) AND trash_id IS NULL`).run(trashId, ...pageIds);
-  return rows;
+/**
+ * Tasks on these pages. They are NOT touched when the pages go to Trash: they stay in the task views, reminders and counts,
+ * still on their page (which the task shows as "in Trash"). They become standalone only when the page is deleted for good.
+ */
+function countTasks(pageIds: string[]): number {
+  if (!pageIds.length) return 0;
+  return db.prepare(`SELECT COUNT(*) FROM tasks WHERE page_id IN (${placeholders(pageIds.length)}) AND occurrence_of IS NULL AND parent_id IS NULL`).pluck().get(...pageIds) as number;
 }
 
-/** What a trash action did, for the toast: how many tasks went out of sight with it. */
+/** What a trash action did, for the toast: how many tasks are on what went to Trash (they stay in the task list). */
 export interface Trashed {
   trashId: string;
-  tasksHidden: number;
+  tasks: number;
 }
 
 /** Flag these live sections and their live pages (and the pages' tasks) as one batch. */
@@ -49,53 +48,52 @@ function trashSections(sectionIds: string[], trashId: string, userId: string, at
   return pageIds;
 }
 
-function afterTrash(workspaceId: string, pageIds: string[], hidden: { id: string; workspaceId: string }[]) {
+function afterTrash(workspaceId: string, pageIds: string[]) {
   for (const id of pageIds) {
     db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(id); // out of search while in Trash (restored on restore)
     closeRoom(id); // anyone editing it is let go; they can still open it read-only
   }
-  for (const t of hidden) publish({ type: 'task-deleted', id: t.id, workspaceId: t.workspaceId });
   accessChanged();
   publish({ type: 'tree', workspaceId });
 }
 
 /** Move a page to Trash. */
 export function trashPage(pageId: string, workspaceId: string, userId: string, at = now()): Trashed {
-  let hidden: ReturnType<typeof hideTasks> = [];
+  let tasks = 0;
   db.transaction(() => {
     db.prepare('UPDATE pages SET deleted_at = ?, deleted_by = ?, trash_id = ? WHERE id = ? AND deleted_at IS NULL').run(at, userId, pageId, pageId);
-    hidden = hideTasks([pageId], pageId);
+    tasks = countTasks([pageId]);
   })();
-  afterTrash(workspaceId, [pageId], hidden);
-  return { trashId: pageId, tasksHidden: hidden.length };
+  afterTrash(workspaceId, [pageId]);
+  return { trashId: pageId, tasks };
 }
 
 /** Move a section, its subsections and their pages to Trash. */
 export function trashSection(sectionId: string, workspaceId: string, userId: string, at = now()): Trashed {
   let pageIds: string[] = [];
-  let hidden: ReturnType<typeof hideTasks> = [];
+  let tasks = 0;
   db.transaction(() => {
     // Subsections already in Trash on their own keep their own entry (and their own 60 days).
     const live = sectionSubtree(sectionId).filter((id) => !db.prepare('SELECT deleted_at FROM sections WHERE id = ?').pluck().get(id));
     pageIds = trashSections(live, sectionId, userId, at);
-    hidden = hideTasks(pageIds, sectionId);
+    tasks = countTasks(pageIds);
   })();
-  afterTrash(workspaceId, pageIds, hidden);
-  return { trashId: sectionId, tasksHidden: hidden.length };
+  afterTrash(workspaceId, pageIds);
+  return { trashId: sectionId, tasks };
 }
 
 /** Move a notebook, with its sections and pages, to Trash. */
 export function trashNotebook(notebookId: string, workspaceId: string, userId: string, at = now()): Trashed {
   let pageIds: string[] = [];
-  let hidden: ReturnType<typeof hideTasks> = [];
+  let tasks = 0;
   db.transaction(() => {
     const sections = (db.prepare('SELECT id FROM sections WHERE notebook_id = ? AND deleted_at IS NULL').all(notebookId) as { id: string }[]).map((r) => r.id);
     pageIds = trashSections(sections, notebookId, userId, at);
     db.prepare('UPDATE notebooks SET deleted_at = ?, deleted_by = ?, trash_id = ? WHERE id = ?').run(at, userId, notebookId, notebookId);
-    hidden = hideTasks(pageIds, notebookId);
+    tasks = countTasks(pageIds);
   })();
-  afterTrash(workspaceId, pageIds, hidden);
-  return { trashId: notebookId, tasksHidden: hidden.length };
+  afterTrash(workspaceId, pageIds);
+  return { trashId: notebookId, tasks };
 }
 
 // ───────── Who may see and act on what is in Trash ─────────
@@ -227,7 +225,6 @@ export function restoreItem(kind: TrashKind, id: string, userId: string): Restor
   const root = mustActOn(kind, id, userId);
   let movedTo = '';
   const restoredPages = (db.prepare('SELECT id FROM pages WHERE trash_id = ?').all(id) as { id: string }[]).map((r) => r.id);
-  const restoredTasks = (db.prepare('SELECT id FROM tasks WHERE trash_id = ?').all(id) as { id: string }[]).map((r) => r.id);
   db.transaction(() => {
     if (kind !== 'notebook') {
       const nbLive = db.prepare('SELECT 1 FROM notebooks WHERE id = ? AND deleted_at IS NULL').get(root.notebookId);
@@ -254,17 +251,12 @@ export function restoreItem(kind: TrashKind, id: string, userId: string): Restor
     db.prepare('UPDATE pages SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE trash_id = ?').run(id);
     db.prepare('UPDATE sections SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE trash_id = ?').run(id);
     db.prepare('UPDATE notebooks SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE trash_id = ?').run(id);
-    db.prepare('UPDATE tasks SET trash_id = NULL WHERE trash_id = ?').run(id);
     for (const pid of restoredPages) {
       const p = db.prepare('SELECT title, text FROM pages WHERE id = ?').get(pid) as { title: string; text: string };
       db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pid);
       db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pid, p.title, p.text);
     }
   })();
-  for (const tid of restoredTasks) {
-    const r = db.prepare('SELECT * FROM tasks WHERE id = ?').get(tid) as TaskRow | undefined;
-    if (r) publish({ type: 'task', task: rowToTask(r) });
-  }
   accessChanged();
   publish({ type: 'tree', workspaceId: root.workspaceId });
   return { movedTo };
@@ -296,8 +288,6 @@ function purgeRoot(root: Root) {
   const standalone = all.length ? (db.prepare(`SELECT id FROM tasks WHERE page_id IN (${placeholders(all.length)})`).all(...all) as { id: string }[]).map((r) => r.id) : [];
   detachPagesTasks(all, () => {
     db.prepare(`DELETE FROM ${TABLE[root.kind]} WHERE id = ?`).run(root.id);
-    // Their page is gone, so they are standalone now, and no longer hidden.
-    db.prepare('UPDATE tasks SET trash_id = NULL WHERE trash_id IS NOT NULL AND page_id IS NULL').run();
   });
   for (const tid of standalone) {
     const r = db.prepare('SELECT * FROM tasks WHERE id = ?').get(tid) as TaskRow | undefined;

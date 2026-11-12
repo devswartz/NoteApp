@@ -1,7 +1,7 @@
 // Workspace tree: notebooks and sections (pages are in pages.ts). Owner: Editor & Notes.
 import { Router } from 'express';
 import { db, newId, now, pickColor } from '../db.ts';
-import { NOTEBOOK_VISIBLE, accessChanged, mustAccess, notebookAccess, requireRole, sectionAccess } from '../access.ts';
+import { NOTEBOOK_VISIBLE, NOTEBOOK_VISIBLE_ANY, accessChanged, atLeast, mustAccess, notebookAccess, requireRole, roleIn, sectionAccess } from '../access.ts';
 import { publish } from '../events.ts';
 import { dropForeignPageShares } from '../workspaces.ts';
 import { trashNotebook, trashSection } from '../trash.ts';
@@ -49,7 +49,18 @@ treeRoutes.get(
          WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NULL AND s.deleted_at IS NULL AND ${NOTEBOOK_VISIBLE} ORDER BY pg.position`,
       )
       .all(p) as PageMeta[];
-    return { notebooks, sections, pages };
+    // Pages in the Trash, for the tasks that stay on them ("<title> · in Trash"): only for people who could restore them.
+    const role = roleIn(workspaceId, req.user.id);
+    const trashedPages =
+      role && atLeast(role, 'member')
+        ? (db
+            .prepare(
+              `SELECT pg.id, pg.title FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
+               WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NOT NULL AND ${NOTEBOOK_VISIBLE_ANY}`,
+            )
+            .all(p) as { id: string; title: string }[])
+        : [];
+    return { notebooks, sections, pages, trashedPages };
   }),
 );
 

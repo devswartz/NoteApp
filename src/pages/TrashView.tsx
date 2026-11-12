@@ -36,7 +36,7 @@ export function TrashView() {
   const forever = async (i: TrashItem) => {
     const ok = await confirmDialog({
       title: `Delete “${i.name || 'Untitled'}” forever?`,
-      message: 'It cannot be restored after this. Tasks on its pages are kept as standalone tasks.',
+      message: 'It cannot be restored after this. Its tasks stay as standalone tasks.',
       confirmLabel: 'Delete forever',
       danger: true,
     });
@@ -45,7 +45,7 @@ export function TrashView() {
     void load();
   };
   const empty = async () => {
-    const ok = await confirmDialog({ title: 'Empty the Trash?', message: 'Everything in it is deleted forever.', confirmLabel: 'Empty Trash', danger: true });
+    const ok = await confirmDialog({ title: 'Empty the Trash?', message: 'Everything in it is deleted forever. Its tasks stay as standalone tasks.', confirmLabel: 'Empty Trash', danger: true });
     if (!ok) return;
     try {
       const r = await del<{ removed: number }>(`/workspaces/${wsId}/trash`);

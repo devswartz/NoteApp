@@ -38,7 +38,7 @@ const search = async (u: TestUser, ws: string, q: string) => ((await app.call('G
 const tasks = async (u: TestUser, ws: string) => (await app.call('GET', `/workspaces/${ws}/tasks`, u.token)).data as { id: string; pageId: string | null }[];
 const dbm = async () => (await import('../server/db.ts')).db;
 
-test('deleting a page moves it to Trash: gone from the tree and search, listed in Trash, tasks hidden; restore brings it all back', async () => {
+test('deleting a page moves it to Trash: gone from the tree and search, listed in Trash, its tasks stay; restore brings the page back', async () => {
   const t = await team();
   const p = await newPage(t.owner, t.general, 'Zanzibar notes');
   const task = (await app.call('POST', `/workspaces/${t.ws}/tasks`, t.owner.token, { title: 'On the page', pageId: p })).data;
@@ -46,11 +46,11 @@ test('deleting a page moves it to Trash: gone from the tree and search, listed i
 
   const del = await app.call('DELETE', `/pages/${p}`, t.member.token);
   assert.equal(del.status, 200);
-  assert.equal(del.data.tasksHidden, 1, 'the delete says how many tasks went out of sight');
+  assert.equal(del.data.tasks, 1, 'the delete says how many tasks are on it');
 
   assert.ok(!(await tree(t.owner, t.ws)).pages.some((x) => x.id === p), 'not in the tree');
   assert.deepEqual(await search(t.owner, t.ws, 'zanzibar'), [], 'not in search');
-  assert.ok(!(await tasks(t.owner, t.ws)).some((x) => x.id === task.id), 'its task is hidden');
+  assert.equal((await tasks(t.owner, t.ws)).find((x) => x.id === task.id)?.pageId, p, 'its task stays in the task list, still on its page');
   const items = await trash(t.owner, t.ws);
   assert.equal(items.length, 1);
   assert.equal(items[0].kind, 'page');
@@ -166,7 +166,6 @@ test('delete forever removes the item and its tasks become standalone; items old
   assert.equal(db.prepare('SELECT 1 FROM pages WHERE id IN (?, ?)').get(p, old), undefined, 'gone from the database');
   assert.deepEqual(await trash(t.owner, t.ws), []);
   assert.equal((await tasks(t.owner, t.ws)).find((x) => x.id === task.id)?.pageId, null, 'the task is standalone and visible');
-  assert.equal(db.prepare('SELECT trash_id FROM tasks WHERE id = ?').pluck().get(task.id), null);
 
   // Delete forever by hand; only for what is in the Trash.
   const q = await newPage(t.owner, t.general, 'Delete me');
@@ -207,15 +206,16 @@ test('permissions: viewers and page-share holders see nothing; a private noteboo
   assert.ok((await trash(t.member, t.ws)).some((i) => i.id === pp), 'the private notebook\'s Trash is untouched');
 });
 
-test('everything else leaves trashed items out: export, shared-with-me, links, calendar tasks', async () => {
+test('search and links leave a trashed page out, its tasks stay; the tasks stay visible to the right people', async () => {
   const t = await team();
   const p = await newPage(t.owner, t.general, 'Quokka report');
   const linker = await newPage(t.owner, t.general, 'Linker');
   const task = (await app.call('POST', `/workspaces/${t.ws}/tasks`, t.owner.token, { title: 'Quokka task', pageId: p, dueDate: '2026-12-01' })).data;
   await app.call('DELETE', `/pages/${p}`, t.owner.token);
-  assert.ok(!(await tasks(t.owner, t.ws)).some((x) => x.id === task.id));
+  assert.ok((await tasks(t.owner, t.ws)).some((x) => x.id === task.id), 'its task is still in the list');
   const found = await app.call('GET', `/workspaces/${t.ws}/search?q=quokka`, t.owner.token);
-  assert.equal(found.data.pages.length + found.data.tasks.length, 0, 'neither the page nor its task is found');
+  assert.equal(found.data.pages.length, 0, 'the page is not found');
+  assert.equal(found.data.tasks.length, 1, 'its task still is');
   assert.equal((await app.call('GET', `/pages/${linker}/backlinks`, t.owner.token)).status, 200);
   // Notebook trash hides everything in it from the tree.
   await app.call('DELETE', `/notebooks/${t.nb}`, t.owner.token);
@@ -255,4 +255,26 @@ test('trashed and live rows stay consistent: nothing in a batch is left half-fla
   const live = (await tree(t.owner, t.ws)).pages.map((p) => p.id);
   assert.ok(live.includes(a) && live.includes(b) && !live.includes(own));
   assert.deepEqual((await trash(t.owner, t.ws)).map((i) => i.id), [own]);
+});
+
+test('tasks on a trashed page or notebook stay visible to workspace members (not only the assignee), and to nobody outside it; the tree lists the trashed page for the task chip', async () => {
+  const t = await team();
+  const p = await newPage(t.owner, t.general, 'Chip page');
+  const task = (await app.call('POST', `/workspaces/${t.ws}/tasks`, t.owner.token, { title: 'Stays listed', pageId: p })).data;
+  const outsider = await app.signUp('Trash Chip Outsider');
+  await app.call('POST', `/pages/${p}/shares`, t.owner.token, { email: outsider.user.email, canEdit: false });
+  const shared = async () => app.call('GET', `/pages/${p}/tasks`, outsider.token);
+  assert.ok(((await shared()).data as { id: string }[]).some((x) => x.id === task.id), 'a page-share holder sees the task while the page is live');
+  await app.call('DELETE', `/pages/${p}`, t.owner.token);
+  assert.ok((await tasks(t.member, t.ws)).some((x) => x.id === task.id), 'a member who is not the assignee still sees it');
+  assert.ok([403, 404].includes((await shared()).status), 'the page share ends with the page going to Trash: its tasks are no longer theirs to see');
+  assert.deepEqual((await tree(t.member, t.ws)).trashedPages?.filter((x) => x.id === p), [{ id: p, title: 'Chip page' }], 'the tree names the trashed page (for the "in Trash" chip)');
+  assert.deepEqual((await tree(t.viewer, t.ws)).trashedPages, [], 'viewers get no trashed pages');
+  // A trashed notebook keeps its tasks listed for the other members too.
+  const nb = (await app.call('POST', `/workspaces/${t.ws}/notebooks`, t.owner.token, { name: 'Gone notebook' })).data as { id: string; sectionId: string };
+  const q = await newPage(t.owner, nb.sectionId, 'In gone notebook');
+  const task2 = (await app.call('POST', `/workspaces/${t.ws}/tasks`, t.owner.token, { title: 'Notebook task', pageId: q })).data;
+  await app.call('DELETE', `/notebooks/${nb.id}`, t.owner.token);
+  assert.ok((await tasks(t.member, t.ws)).some((x) => x.id === task2.id), 'still listed for another member');
+  assert.ok((await tasks(t.admin, t.ws)).some((x) => x.id === task2.id));
 });
