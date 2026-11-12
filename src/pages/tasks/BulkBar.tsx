@@ -50,7 +50,6 @@ export function BulkBar() {
         className="btn-ghost btn-sm danger"
         title="Delete"
         onClick={() => {
-          if (!confirm(`Delete ${ids.size} task${ids.size === 1 ? '' : 's'}? Tasks in notes are removed from them too.`)) return;
           void bulkDelete(list);
           done();
         }}

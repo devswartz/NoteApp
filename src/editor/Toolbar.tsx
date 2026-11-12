@@ -100,7 +100,7 @@ const BLOCK_ICONS: Record<BlockId, ReactNode> = {
 };
 
 /** Tooltip of an editing control while there is no editor to act on. */
-const IDLE_HINT = 'Click in a note to format';
+const IDLE_HINT = 'Click in a page to format';
 
 /** The keyboard shortcut of a block type (TipTap's own, OneNote's for headings), if it has one. */
 const ALT = MOD === '⌘' ? '⌥' : 'Alt';

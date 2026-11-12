@@ -25,13 +25,13 @@ test.describe('inline tasks ↔ dashboard', () => {
     await expect(page).toHaveURL(new RegExp(tasksUrl(user.wsId, 'today')));
     const row = taskRow(page, 'Email the venue');
     await expect(row).toBeVisible();
-    await expect(row.getByTitle('Open in note')).toContainText('Sprint planning');
+    await expect(row.getByTitle('Open page')).toContainText('Sprint planning');
 
     await page.getByRole('link', { name: 'My Tasks' }).click();
     await expect(taskRow(page, 'Email the venue')).toBeVisible();
 
     // The source chip goes back to the note.
-    await taskRow(page, 'Email the venue').getByTitle('Open in note').click();
+    await taskRow(page, 'Email the venue').getByTitle('Open page').click();
     // The app opens /p/<id>?task=<id>, highlights the task, then drops the query, so accept either form.
     await expect(page).toHaveURL(new RegExp(`${pageUrl(user.wsId, pageId)}(\\?task=[^&]+)?$`));
     await expect(taskRef(page, 'Email the venue')).toBeVisible();

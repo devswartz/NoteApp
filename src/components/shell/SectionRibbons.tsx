@@ -26,6 +26,7 @@ import {
   Layers,
   ListChecks,
   Plus,
+  Printer,
   SlidersHorizontal,
   Sun,
   Tag,
@@ -144,7 +145,7 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
   const moreCount = active.filter((k) => more.some((m) => m.key === k)).length;
 
   return (
-    <RibbonFrame strip="New · Show · Organise · Filter · Views" section>
+    <RibbonFrame strip="New · Show · Organise · Filter · Views · Print" section>
       <Group label="New">
         <RibbonButton label="New task" text="New task" title="New task (Q)" icon={<Plus />} disabled={!canEdit && VIEWER} onClick={() => ui.openQuickAdd({})} />
       </Group>
@@ -239,6 +240,10 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
           title="Save these filters as a view"
           onClick={() => void saveCurrentView(wsId, setParams)}
         />
+      </Group>
+      <Sep />
+      <Group label="Print">
+        <RibbonButton label="Print" text="Print" title="Print this view (Ctrl+P)" icon={<Printer />} onClick={() => void import('../../print/print.ts').then((m) => m.printView())} />
       </Group>
       {end}
     </RibbonFrame>

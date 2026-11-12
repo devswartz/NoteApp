@@ -12,7 +12,7 @@ import './sharing.css';
 export const ROLE_HELP: Record<Role, string> = {
   owner: 'Full control, including deleting the workspace',
   admin: 'Manage members and all content',
-  member: 'Create and edit notes and tasks',
+  member: 'Create and edit pages and tasks',
   viewer: 'Read-only access to shared notebooks',
 };
 

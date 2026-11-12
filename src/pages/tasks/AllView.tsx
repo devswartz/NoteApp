@@ -79,7 +79,7 @@ export const GROUP_OPTIONS: [GroupKey, string][] = [
   ['due', 'Due date'],
   ['assignee', 'Assignee'],
   ['team', 'Team'],
-  ['note', 'Note'],
+  ['note', 'Page'],
   ['priority', 'Priority'],
 ];
 

@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { Bell, CalendarDays, Clock, CornerDownRight, FileText, Flag, ListChecks, Plus, Repeat, Tag as TagIcon, Trash2, UserRound, Users, X } from 'lucide-react';
 import { LabelDot, TagChip, TagMenu, TeamMenu } from './Labels.tsx';
 import { teamLabel } from '../lib/taskViews.ts';
-import { createTask, deleteTask, errorToast, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
+import { deleteTasksWithUndo } from '../store/tasks.ts';
+import { createTask, errorToast, memberById, toggleTask, ui, updateTask, useStore } from '../store.ts';
 import { subtaskIndex } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from './TaskRow.tsx';
@@ -68,13 +69,10 @@ export function TaskDetail() {
           <button
             className="btn-ghost icon-btn"
             title="Delete task"
+            // No confirm (a native one is blocked in some webviews, which made this button do nothing): Undo instead.
             onClick={() => {
-              const n = Object.values(useStore.getState().tasks).filter((t) => t.parentId === task.id).length;
-              const extra = n ? ` Its ${n} subtask${n === 1 ? '' : 's'} will be deleted too.` : '';
-              if (confirm((page && !task.parentId ? 'Delete this task? It will also be removed from its note.' : 'Delete this task?') + extra)) {
-                void deleteTask(task.id);
-                close();
-              }
+              void deleteTasksWithUndo([task.id]);
+              close();
             }}
           >
             <Trash2 size={16} />

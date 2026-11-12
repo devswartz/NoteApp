@@ -82,6 +82,24 @@ let busy = false;
  */
 let prepared = false;
 
+/**
+ * Print the screen the app is showing (Tasks, Calendar, Notes overview…) the way it is laid out for paper: no job is
+ * prepared, the print stylesheet hides the app's chrome and the view fills the page. A leftover job from an earlier print is
+ * cleared first so it can't take the place of the view.
+ */
+export async function printView(): Promise<void> {
+  if (busy) return;
+  busy = true;
+  installPrintHandlers();
+  clearPrintRoot();
+  prepared = false;
+  try {
+    await platform.print(document.title);
+  } finally {
+    busy = false;
+  }
+}
+
 async function run(pages: (PrintPageInput | HTMLElement)[], title: string, ctx: PrintContext) {
   installPrintHandlers();
   const root = mountPrintRoot(pages.map((p) => (p instanceof HTMLElement ? p : renderPrintPage(p, ctx))));

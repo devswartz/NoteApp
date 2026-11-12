@@ -62,7 +62,7 @@ export function ActivityFeed() {
       <h1>
         <Activity size={20} /> Activity
       </h1>
-      {loaded && !items.length && <p className="muted">Nothing yet. Changes to notes, tasks and members will show up here.</p>}
+      {loaded && !items.length && <p className="muted">Nothing yet. Changes to pages, tasks and members will show up here.</p>}
       <div className="activity-list">
         {items.map((i) => {
           const day = dayLabel(i.createdAt);

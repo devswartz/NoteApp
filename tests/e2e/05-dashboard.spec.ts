@@ -118,7 +118,7 @@ test.describe('dashboard', () => {
     await expect(taskRow(page, 'Gamma medium')).toBeVisible();
 
     // (A new personal workspace is seeded with an onboarding note that has tasks in it.)
-    await addFilter(page, 'Source', 'In notes');
+    await addFilter(page, 'Source', 'On pages');
     await expect(taskRow(page, 'Alpha urgent')).toHaveCount(0);
     await addFilter(page, 'Source', 'Standalone');
     await expect(taskRow(page, 'Alpha urgent')).toBeVisible();
