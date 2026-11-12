@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { Editor } from '@tiptap/react';
 import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
 import { api, get, patch, post, ApiError } from '../api.ts';
-import { errorToast, toast, useStore } from '../store.ts';
+import { errorToast, loadTree, toast, useStore } from '../store.ts';
 import { moveToTrash } from '../lib/trash.ts';
 import { PresenceStack } from '../editor/collabPresence.tsx';
 import { useFollow } from '../editor/collabFollow.ts';
@@ -58,7 +58,11 @@ export function PageView() {
   const user = useStore((s) => s.user!);
   const treeMeta = useStore((s) => s.tree.pages.find((p) => p.id === pageId));
   // undefined while loading, null when it failed (offline, or no access).
-  const [info, setInfo] = useState<PageInfo | null | undefined>(undefined);
+  const [infoRaw, setInfo] = useState<PageInfo | null | undefined>(undefined);
+  // What was fetched belongs to ONE page. On the first render after the route changes, `infoRaw` is still the previous page's: never
+  // show or act on another page's data (its title, icon, rights) as this page's. (A shared page isn't in the tree, so the
+  // fallback to `info.page` below used to hand the new page the old shared page's title.)
+  const info = infoRaw && infoRaw.page.id === pageId ? infoRaw : infoRaw === null ? null : undefined;
   const [gone, setGone] = useState(false);
   const [reload, setReload] = useState(0); // bumped after a restore so the page is fetched again, editable
   const shareKey = useShared((s) => {
@@ -72,7 +76,9 @@ export function PageView() {
   const notebook = useStore((s) => s.tree.notebooks.find((x) => x.id === section?.notebookId));
   const treeLoaded = useStore((s) => s.treeLoaded);
   const updatedBy = useStore((s) => s.members.find((m) => m.id === meta?.updatedBy));
-  const [canEdit, setCanEdit] = useState<boolean | null>(null);
+  const [canEditFor, setCanEditFor] = useState<{ id: string; v: boolean } | null>(null);
+  const canEdit = canEditFor && canEditFor.id === pageId ? canEditFor.v : null; // (the previous page's rights are not this page's)
+  const setCanEdit = (v: boolean | null, id = pageId) => setCanEditFor(v === null ? null : { id, v });
   const [status, setStatus] = useState<SyncStatus>('connecting');
   const [save, setSave] = useState<SaveState>('saved');
   const [synced, setSynced] = useState(false);
@@ -143,7 +149,7 @@ export function PageView() {
         if (cancelled) return;
         // Whoever may edit the page may add tasks to it, through a page share too (#98 follow-up).
         setTasksAllowed(pageId, r.canEdit);
-        setCanEdit(r.canEdit);
+        setCanEdit(r.canEdit, pageId);
         setInfo(r);
         // A page shared from another workspace: its tasks aren't in this workspace's store (#98).
         if (r.viaPageShare && r.workspaceId !== wsId) loadSharedPageTasks(pageId).catch(() => {});
@@ -152,7 +158,7 @@ export function PageView() {
         if (cancelled) return;
         setInfo(null);
         if (e instanceof ApiError && e.status === 404) setGone(true); // e.g. a page share was revoked
-        else setCanEdit(platform.kv.get(key) === '1');
+        else setCanEdit(platform.kv.get(key) === '1', pageId);
       });
     platform.kv.set(`noteapp.lastPage.${wsId}`, pageId);
     return () => {
@@ -440,8 +446,9 @@ function SaveIndicator({ status, save }: { status: SyncStatus; save: SaveState }
 }
 
 function setPageIcon(pageId: string, icon: string | null) {
+  const was = useStore.getState().tree.pages.find((p) => p.id === pageId)?.icon ?? null;
   useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, icon } : p)) } }));
-  patch(`/pages/${pageId}`, { icon }).catch(errorToast);
+  patch(`/pages/${pageId}`, { icon, ...(useStore.getState().tree.pages.some((p) => p.id === pageId) ? { iconWas: was } : {}) }).catch(errorToast);
 }
 
 function PageIcon({ pageId, icon, canEdit }: { pageId: string; icon: string | null; canEdit: boolean }) {
@@ -487,10 +494,15 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   // Typed here and not saved yet. A new page's title is focused, so without this a title set from
   // a template (or cleared by "Start blank") wouldn't show while the field has the caret.
   const typed = useRef(false);
+  // This field belongs to the page it was made for, whatever props it later gets: a save always goes to that page.
+  const owner = useRef(pageId);
+  // The title this page is known to have on the server (after our own saves too): the save says what it expects to replace.
+  const known = useRef(remote);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (!focused.current || !typed.current) setTitle(remote);
     if (remote === title) typed.current = false;
+    if (!typed.current) known.current = remote; // what the page has, unless we're mid-edit
   }, [remote]); // eslint-disable-line react-hooks/exhaustive-deps
   // Title saves are debounced while typing, but a pending save is never dropped: it's flushed
   // when the page changes or unmounts (navigating away) and when the tab is hidden or closed
@@ -499,14 +511,23 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   const flush = useRef(() => {});
   flush.current = () => {
     const next = pending.current;
-    if (next === null) return;
+    if (next === null || owner.current !== pageId) return; // only what was typed here, only into this field's own page
     pending.current = null;
-    useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === pageId ? { ...p, title: next } : p)) } }));
-    patchSharedPage(pageId, { title: next });
-    api(`/pages/${pageId}`, { method: 'PATCH', json: { title: next }, keepalive: true }).catch(errorToast);
+    const id = owner.current;
+    const was = known.current;
+    known.current = next;
+    useStore.setState((s) => ({ tree: { ...s.tree, pages: s.tree.pages.map((p) => (p.id === id ? { ...p, title: next } : p)) } }));
+    patchSharedPage(id, { title: next });
+    // titleWas: the server refuses the write if the page's title is not what we believe it replaces (a stale or crossed client).
+    api(`/pages/${id}`, { method: 'PATCH', json: { title: next, titleWas: was }, keepalive: true }).catch((e) => {
+      known.current = was;
+      errorToast(e);
+      void loadTree(); // show what the page really has
+    });
   };
   useEffect(() => {
-    if (title === remote) {
+    // A save is only ever started by typing: a field that merely differs from the store (a late refresh, a swapped value) writes nothing.
+    if (title === remote || !typed.current) {
       pending.current = null;
       return;
     }
