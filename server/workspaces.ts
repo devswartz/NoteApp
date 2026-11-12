@@ -5,6 +5,7 @@ import { IS_PROD } from './config.ts';
 import crypto from 'node:crypto';
 import { escapeHtml, sendMail } from './mail.ts';
 import { publish } from './events.ts';
+import { unassignOutsiders } from './tasks.ts';
 import { APP_NAME } from '../shared/config.ts';
 import type { InviteInfo, Role } from '../shared/types.ts';
 
@@ -227,6 +228,7 @@ export function dropForeignPageShares(notebookId: string): number {
   ).map((r) => r.user_id);
   const n = db.prepare(`DELETE FROM page_shares WHERE page_id IN (${pagesOf}) AND created_by IS NOT ${creator}`).run({ nb: notebookId }).changes;
   db.prepare(`DELETE FROM page_invites WHERE page_id IN (${pagesOf}) AND invited_by IS NOT ${creator}`).run({ nb: notebookId });
+  if (n) unassignOutsiders(`t.page_id IN (${pagesOf.replace('@nb', '?')})`, notebookId);
   if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
   return n;
 }
@@ -241,6 +243,7 @@ export function dropForeignSharesOnPage(pageId: string, notebookId: string): num
   const users = (db.prepare('SELECT user_id FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').all(pageId, creator) as { user_id: string }[]).map((r) => r.user_id);
   const n = db.prepare('DELETE FROM page_shares WHERE page_id = ? AND created_by IS NOT ?').run(pageId, creator).changes;
   db.prepare('DELETE FROM page_invites WHERE page_id = ? AND invited_by IS NOT ?').run(pageId, creator);
+  if (n) unassignOutsiders('t.page_id = ?', pageId);
   if (users.length) publish({ type: 'shared-pages' }, { userIds: users });
   return n;
 }

@@ -134,9 +134,8 @@ export function PageView() {
       .then((r) => {
         platform.kv.set(key, r.canEdit ? '1' : '0');
         if (cancelled) return;
-        // Tasks are for members of the page's workspace: someone editing it through a page share
-        // from outside can't create them here (#98).
-        setTasksAllowed(pageId, r.member && r.workspaceId === wsId);
+        // Whoever may edit the page may add tasks to it, through a page share too (#98 follow-up).
+        setTasksAllowed(pageId, r.canEdit);
         setCanEdit(r.canEdit);
         setInfo(r);
         // A page shared from another workspace: its tasks aren't in this workspace's store (#98).

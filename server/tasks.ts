@@ -1,6 +1,6 @@
 // Task persistence and business rules (completion, recurrence, linking to notes).
 import { db, newId, now } from './db.ts';
-import { HttpError, TASK_VISIBLE, atLeast, pageAccess, requireRole, roleIn } from './access.ts';
+import { HttpError, TASK_VISIBLE, atLeast, pageAccess, pageShare, roleIn } from './access.ts';
 import { publish } from './events.ts';
 import { recurrenceError } from '../shared/recurrence.ts';
 import { nextDueDate } from './reminders/recurring.ts';
@@ -117,13 +117,61 @@ function validate(p: TaskPatch, workspaceId: string) {
     if (err) throw new HttpError(400, err);
   }
   if (p.parentId !== undefined && p.parentId !== null && typeof p.parentId !== 'string') throw new HttpError(400, 'Invalid parent');
-  if (p.assigneeId && !roleIn(workspaceId, p.assigneeId)) throw new HttpError(400, 'Assignee is not a workspace member');
   if (p.teamId !== undefined && p.teamId !== null) {
     if (typeof p.teamId !== 'string' || !db.prepare('SELECT 1 FROM teams WHERE id = ? AND workspace_id = ?').get(p.teamId, workspaceId))
       throw new HttpError(400, 'Invalid team');
   }
   if (p.tagIds !== undefined && (!Array.isArray(p.tagIds) || p.tagIds.length > 50 || p.tagIds.some((x) => typeof x !== 'string')))
     throw new HttpError(400, 'Invalid tags');
+}
+
+/**
+ * Who a task may be assigned to (#98 follow-up). Workspace members, as always, when a member
+ * assigns it; on a page shared one by one, also the people that page is shared with. Someone
+ * outside the workspace (assigning a task on a page shared with them) may pick anyone who can
+ * open that page, and nobody else: the page's people are all they know of the workspace.
+ */
+function checkAssignee(assigneeId: string | null | undefined, workspaceId: string, pageId: string | null, actorIsMember: boolean) {
+  if (!assigneeId) return;
+  const ok = actorIsMember
+    ? !!roleIn(workspaceId, assigneeId) || (!!pageId && !!pageShare(pageId, assigneeId))
+    : !!pageId && !!pageAccess(pageId, assigneeId);
+  if (!ok) throw new HttpError(400, pageId ? 'Assignee can’t open this page' : 'Assignee is not a workspace member');
+}
+
+/**
+ * Tasks assigned to someone who can no longer see them: outside the workspace, and without a
+ * share on the task's page (a share removed, the task moved off the page). They're unassigned
+ * so they don't linger as "assigned to" someone who can't open them. `where` scopes the
+ * update (e.g. 'page_id = ?'). Publishes the changed tasks; returns their ids.
+ */
+export function unassignOutsiders(where: string, ...args: unknown[]): string[] {
+  const ids = (
+    db
+      .prepare(
+        `SELECT t.id FROM tasks t WHERE (${where}) AND t.assignee_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = t.workspace_id AND m.user_id = t.assignee_id)
+           AND NOT (t.page_id IS NOT NULL AND EXISTS (SELECT 1 FROM page_shares ps WHERE ps.page_id = t.page_id AND ps.user_id = t.assignee_id))`,
+      )
+      .all(...args) as { id: string }[]
+  ).map((r) => r.id);
+  if (!ids.length) return ids;
+  const ts = now();
+  const upd = db.prepare('UPDATE tasks SET assignee_id = NULL, assigned_by = NULL, updated_at = ? WHERE id = ?');
+  for (const id of ids) upd.run(ts, id);
+  for (const id of ids) publish({ type: 'task', task: getTask(id)! });
+  return ids;
+}
+
+/** Throws unless `userId` may add tasks in the workspace: a member (not a viewer), or (onto a page they can edit) someone outside it. */
+function mustCreate(workspaceId: string, userId: string, input: TaskPatch): boolean {
+  const role = roleIn(workspaceId, userId);
+  if (role === 'viewer') throw new HttpError(403, 'You do not have permission to do that');
+  if (role) return true;
+  // Outside the workspace (#98 follow-up): only on a page shared with them to edit (checked by the caller), never standalone.
+  if (!input.pageId && !input.parentId) throw new HttpError(404, 'Workspace not found');
+  if (input.teamId || input.tagIds?.length) throw new HttpError(400, 'Teams and tags are for workspace members');
+  return false;
 }
 
 /**
@@ -195,7 +243,7 @@ function cascadePage(parentId: string, pageId: string | null): string[] {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function createTask(userId: string, workspaceId: string, input: TaskPatch & { title: string; id?: string }): Task {
-  requireRole(workspaceId, userId, 'member');
+  const member = mustCreate(workspaceId, userId, input);
   validate(input, workspaceId);
   // Clients may supply the id so a task can be embedded in a note instantly
   // (before the request round-trips). Retrying with the same id is idempotent.
@@ -215,6 +263,7 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
     const a = pageAccess(pageId, userId);
     if (!a || a.workspaceId !== workspaceId || !a.canEdit) throw new HttpError(400, 'Invalid page');
   }
+  checkAssignee(input.assigneeId, workspaceId, pageId, member);
   const id = input.id ?? newId();
   const ts = now();
   db.prepare(
@@ -276,12 +325,23 @@ export function canMoveTask(taskId: string, userId: string): boolean {
   return !task.pageId || !!pageAccess(task.pageId, userId)?.canEdit;
 }
 
-function mustEditTask(task: Task, userId: string, patch?: TaskPatch) {
-  requireRole(task.workspaceId, userId, 'member');
-  if (!task.pageId) return;
-  if (pageAccess(task.pageId, userId)?.canEdit) return;
+/**
+ * Throws unless `userId` may change (or delete) the task. Returns whether they're a workspace member.
+ * Tasks on a page: whoever may edit that page, members or not (#98 follow-up: an edit page share
+ * covers the tasks living on that page). Standalone tasks: workspace members. Viewers never.
+ */
+function mustEditTask(task: Task, userId: string, patch?: TaskPatch): boolean {
+  const role = roleIn(task.workspaceId, userId);
+  if (role === 'viewer') throw new HttpError(403, 'You do not have permission to do that');
+  if (!task.pageId) {
+    if (!role) throw new HttpError(404, 'Workspace not found');
+    return true;
+  }
+  const a = pageAccess(task.pageId, userId);
+  if (a?.canEdit) return !!role;
   const statusOnly = !!patch && Object.keys(patch).every((k) => k === 'status');
-  if (statusOnly && task.assigneeId === userId) return;
+  if (statusOnly && task.assigneeId === userId && (role || a)) return !!role;
+  if (!role && !a) throw new HttpError(404, 'Task not found');
   throw new HttpError(403, 'You have view-only access to the note this task is in');
 }
 
@@ -290,8 +350,9 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   const task = getTask(id);
   if (!task || !db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId }))
     throw new HttpError(404, 'Task not found');
-  mustEditTask(task, userId, patch);
+  const member = mustEditTask(task, userId, patch);
   validate(patch, task.workspaceId);
+  if (!member && (patch.teamId !== undefined || patch.tagIds !== undefined)) throw new HttpError(400, 'Teams and tags are for workspace members');
   if (patch.pageId) {
     const a = pageAccess(patch.pageId, userId);
     if (!a || a.workspaceId !== task.workspaceId || !a.canEdit) throw new HttpError(400, 'Invalid page');
@@ -305,6 +366,10 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   } else if (task.parentId && patch.pageId !== undefined && patch.pageId !== task.pageId) {
     throw new HttpError(400, 'A subtask stays in its parent’s note');
   }
+  const pageAfter = patch.pageId !== undefined ? patch.pageId : task.pageId;
+  // Taking a task off its page makes it a workspace task: for members only.
+  if (!member && !pageAfter) throw new HttpError(403, 'Only workspace members can take a task off its page');
+  if (patch.assigneeId !== undefined) checkAssignee(patch.assigneeId, task.workspaceId, pageAfter ?? null, member);
 
   const ts = now();
   const sets: string[] = [];
@@ -380,9 +445,13 @@ export function updateTask(userId: string, id: string, input: TaskPatch): Task {
     if (sets.length || tagsChanged) db.prepare(`UPDATE tasks SET ${[...sets, 'updated_at = @ts'].join(', ')} WHERE id = @id`).run(params);
   })();
 
-  const updated = getTask(id)!;
+  let updated = getTask(id)!;
   publish({ type: 'task', task: updated });
-  if (updated.pageId !== task.pageId) for (const c of cascadePage(id, updated.pageId)) publish({ type: 'task', task: getTask(c)! });
+  if (updated.pageId !== task.pageId) {
+    for (const c of cascadePage(id, updated.pageId)) publish({ type: 'task', task: getTask(c)! });
+    // Off a shared page: someone who had it only through that page can't be its assignee any more.
+    if (unassignOutsiders('t.id = ? OR t.parent_id = ?', id, id).includes(id)) updated = getTask(id)!;
+  }
   for (const c of reopenedChildren) publish({ type: 'task', task: getTask(c)! });
   return updated;
 }
@@ -393,8 +462,22 @@ export function deleteTask(userId: string, id: string) {
     throw new HttpError(404, 'Task not found');
   mustEditTask(task, userId);
   const children = childIds(id);
+  // Share holders outside the workspace saw it on its page: tell them directly (broadcasts skip them).
+  const outsiders = task.pageId
+    ? (
+        db
+          .prepare(
+            `SELECT ps.user_id FROM page_shares ps WHERE ps.page_id = ?
+               AND NOT EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = ? AND m.user_id = ps.user_id)`,
+          )
+          .all(task.pageId, task.workspaceId) as { user_id: string }[]
+      ).map((r) => r.user_id)
+    : [];
   db.prepare('DELETE FROM tasks WHERE id = ?').run(id); // subtasks go with it (ON DELETE CASCADE)
-  for (const c of [id, ...children]) publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId });
+  for (const c of [id, ...children]) {
+    publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId });
+    if (outsiders.length) publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId }, { userIds: outsiders });
+  }
 }
 
 /**
@@ -404,14 +487,20 @@ export function deleteTask(userId: string, id: string) {
  * - tasks that claim the page but are no longer in it become standalone tasks
  *   (they are never deleted silently).
  */
-export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<string>, mayAttach: (taskId: string) => boolean = () => true) {
+export function syncPageTasks(
+  pageId: string,
+  workspaceId: string,
+  taskIds: Set<string>,
+  mayAttach: (taskId: string) => boolean = () => true,
+  mayDetach: (taskId: string) => boolean = () => true,
+) {
   const changed: string[] = [];
   db.transaction(() => {
     const current = db
       .prepare(`SELECT id FROM tasks WHERE page_id = ? AND occurrence_of IS NULL AND parent_id IS NULL`)
       .all(pageId) as { id: string }[];
     for (const { id } of current) {
-      if (!taskIds.has(id)) {
+      if (!taskIds.has(id) && mayDetach(id)) {
         keepPrivateWhenDetaching('id = ?', id);
         db.prepare('UPDATE tasks SET page_id = NULL, updated_at = ? WHERE id = ?').run(now(), id);
         changed.push(id);
@@ -429,6 +518,8 @@ export function syncPageTasks(pageId: string, workspaceId: string, taskIds: Set<
     // Subtasks follow their parent between notes.
     for (const id of [...changed]) changed.push(...cascadePage(id, (getTask(id)?.pageId ?? null)));
   })();
+  // Tasks that left the page lose an assignee who had them only through its page share.
+  if (changed.length) unassignOutsiders(`t.id IN (${changed.map(() => '?').join(', ')})`, ...changed);
   for (const id of changed) {
     const t = getTask(id);
     if (t) publish({ type: 'task', task: t });

@@ -1,10 +1,10 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
 import { Router } from 'express';
 import { db, now } from '../db.ts';
-import { TASK_VISIBLE, accessChanged, atLeast, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, requireRole, roleIn } from '../access.ts';
+import { TASK_VISIBLE, accessChanged, atLeast, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, pagePeople, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
-import { rowToTask } from '../tasks.ts';
+import { rowToTask, unassignOutsiders } from '../tasks.ts';
 import { removeFiles, templateFilePaths } from '../templates.ts';
 import {
   createWorkspace,
@@ -363,6 +363,8 @@ const pageLink = (base: string, pageId: string) => `${base}/shared/${pageId}`;
 
 function sharesChanged(pageId: string, userIds: string[], revoked: boolean) {
   if (revoked) accessChanged(); // revoked or downgraded: open editors close (4403) or go read-only
+  // Unshared: they're unassigned from the page's tasks (#98 follow-up). A downgrade to view keeps it.
+  unassignOutsiders('t.page_id = ?', pageId);
   publish({ type: 'shared-pages' }, { userIds });
   refreshPageTasks(pageId); // its tasks appear for (or vanish from) the people affected
 }
@@ -495,6 +497,36 @@ workspaceRoutes.get(
     const rows = db
       .prepare(`SELECT * FROM tasks t WHERE t.page_id = @id AND t.occurrence_of IS NULL AND ${TASK_VISIBLE} ORDER BY t.created_at LIMIT 1000`)
       .all({ id, userId: req.user.id }) as Parameters<typeof rowToTask>[0][];
+    return rows.map((r) => rowToTask(r));
+  }),
+);
+
+// Who can open a page: its tasks' assignee picker (#98 follow-up). Workspace members who can see it
+// plus the people it is shared with; names and colours only. For a share holder from outside the
+// workspace, this is the only view of who is in it.
+workspaceRoutes.get(
+  '/pages/:id/people',
+  h((req) => {
+    const id = param(req, 'id');
+    mustAccess(pageAccess(id, req.user.id));
+    return pagePeople(id);
+  }),
+);
+
+// Tasks assigned to me on pages shared with me from workspaces I'm not a member of: they show in my
+// own task views, under their page (#98 follow-up). Members get theirs from GET /workspaces/:id/tasks.
+workspaceRoutes.get(
+  '/shared-tasks',
+  h((req) => {
+    const rows = db
+      .prepare(
+        `SELECT * FROM tasks t WHERE t.assignee_id = @userId AND t.page_id IS NOT NULL AND t.occurrence_of IS NULL
+           AND (t.status = 'open' OR t.completed_at > @since)
+           AND NOT EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = t.workspace_id AND m.user_id = @userId)
+           AND ${TASK_VISIBLE}
+         ORDER BY t.created_at LIMIT 1000`,
+      )
+      .all({ userId: req.user.id, since: new Date(Date.now() - 30 * 864e5).toISOString() }) as Parameters<typeof rowToTask>[0][];
     return rows.map((r) => rowToTask(r));
   }),
 );

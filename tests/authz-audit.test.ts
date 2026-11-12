@@ -244,8 +244,9 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/pages/:id/move', path: (f) => `/pages/${f.page}/move`, body: () => ({ index: 0 }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'POST', route: '/pages/:id/copy', path: (f) => `/pages/${f.page}/copy`, body: () => ({}), expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id', path: (f) => `/pages/${f.page}`, expect: shared(inPrivate(WRITE), 403) },
-  { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: inPrivate(WRITE) },
-  { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: inPrivate(WRITE) },
+  // The task lives on the shared page: an edit page share covers it, a view share sees it but can't change it (#98 follow-up).
+  { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: shared(inPrivate(WRITE), 403, 200) },
+  { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: shared(inPrivate(WRITE), 403, 200) },
   { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: shared(inPrivate(WRITE), 403, 200) },
   // ── Reminders & notification settings (#4). Reminders and settings are personal. ──
   { method: 'POST', route: '/reminders/snooze', path: () => '/reminders/snooze', body: () => ({ token: 'not-a-token', option: '1h' }), expect: { anon: 404, stranger: 404, viewer: 404, member: 404, private: 404 } }, // public: the token is the credential
@@ -301,6 +302,8 @@ const ROWS: Row[] = [
   { method: 'DELETE', route: '/pages/:id/invites/:email', path: (f) => `/pages/${f.page}/invites/${encodeURIComponent(f.email)}`, expect: shared(inPrivate(WRITE), 403) },
   { method: 'GET', route: '/pages/:id/tasks', path: (f) => `/pages/${f.page}/tasks`, expect: shared(inPrivate(READ), 200) },
   { method: 'GET', route: '/shared-pages', path: () => '/shared-pages', expect: { stranger: 200, ...READ, pageshare: 200 } },
+  { method: 'GET', route: '/pages/:id/people', path: (f) => `/pages/${f.page}/people`, expect: shared(inPrivate(READ), 200) },
+  { method: 'GET', route: '/shared-tasks', path: () => '/shared-tasks', expect: { stranger: 200, ...READ, pageshare: 200 } }, // only my own assigned tasks
   // Import from OneNote (#117). The two browser redirects are public (no bearer token on a navigation): a bad ticket or state is a 400 for everyone.
   { method: 'GET', route: '/import/onenote/authorize', plain: true, path: () => '/import/onenote/authorize?ticket=not-a-ticket', expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
   { method: 'GET', route: '/import/onenote/callback', plain: true, path: () => '/import/onenote/callback?code=c&state=not-a-state', expect: { anon: 400, stranger: 400, viewer: 400, member: 400, private: 400 } },
