@@ -17,7 +17,8 @@
 //   app lock           optional Face ID / Touch ID / fingerprint lock (platform.appLock), with a
 //                      privacy cover while the app is in the background
 //   system UI          status bar text follows the theme, splash hidden after first render,
-//                      keyboard height exposed as --keyboard-height + html.keyboard-open,
+//                      keyboard height exposed as --keyboard-height + html.keyboard-open (and --keyboard-inset, the part
+//                      the web view didn't already give up: what the page pads by),
 //                      Android back button walks history
 //
 // Everything native goes through the `NativePlugins` object, so the logic can
@@ -34,6 +35,7 @@ import type { SecureStoragePlugin } from '@aparajita/capacitor-secure-storage';
 import type { BadgePlugin } from '@capawesome/capacitor-badge';
 import type { Task, Tree } from '../../shared/types.ts';
 import type { NotificationPermission, Platform } from './types.ts';
+import { keyboardInset } from './keyboardInset.ts';
 import { webPlatform } from './web.ts';
 import { SERVER_URL_KEY, normalizeServerUrl, storedServerUrl } from './serverUrl.ts';
 import { APP_NAME } from '../../shared/config.ts';
@@ -911,12 +913,28 @@ function installSystemUi(native: NativePlugins, haptics: MobileExtras['haptics']
   // Keyboard: hide iOS's prev/next/done bar (meaningless in a single-page app);
   // expose the keyboard height so bottom bars and the editor toolbar can react.
   void native.Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
+  // The web view is resized by the keyboard itself (capacitor.config: Keyboard.resize 'native'), so the page already has
+  // the space above the keyboard: --keyboard-inset is only the part the web view did NOT give up (keyboardInset.ts).
+  // Padding the page by the whole keyboard height squeezed the note to a line or two with an empty band under it.
+  let heightBefore = window.innerHeight;
+  let keyboardHeightNow = 0;
+  const applyInset = () => {
+    if (!keyboardHeightNow) return;
+    root.style.setProperty('--keyboard-inset', `${keyboardInset(keyboardHeightNow, heightBefore, window.innerHeight)}px`);
+  };
   void native.Keyboard.addListener('keyboardWillShow', ({ keyboardHeight }) => {
+    if (!root.classList.contains('keyboard-open')) heightBefore = window.innerHeight; // before the web view shrinks
+    keyboardHeightNow = keyboardHeight;
     root.style.setProperty('--keyboard-height', `${keyboardHeight}px`);
     root.classList.add('keyboard-open');
+    applyInset();
   });
+  void native.Keyboard.addListener('keyboardDidShow', applyInset);
+  window.addEventListener('resize', applyInset); // the web view settles a moment after the event
   void native.Keyboard.addListener('keyboardWillHide', () => {
+    keyboardHeightNow = 0;
     root.style.setProperty('--keyboard-height', '0px');
+    root.style.setProperty('--keyboard-inset', '0px');
     root.classList.remove('keyboard-open');
   });
 

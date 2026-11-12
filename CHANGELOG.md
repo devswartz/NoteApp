@@ -2,6 +2,17 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.4
+
+### Fixes
+- **iPhone app: editing with the keyboard open.** The app made room for the keyboard twice, which pushed the note up under the toolbar and left an empty band above the keyboard. The note now fills the space above the keyboard, with the line you're typing in view.
+
+### Printing
+- **Print contents:** the section and notebook menus have **Print…**, which offers **All pages** or **Contents only**. Contents only is one sheet listing sections and pages, nested as in the sidebar. A notebook can now also print all its pages.
+
+### Pages
+- **Dragging outline items:** the ⋮⋮ handle sits beside the line you point at. Dragging it moves that line with everything nested under it, and you can drop it at any level. The handle now shows in every box.
+
 ## v0.4.3
 
 ### Pages

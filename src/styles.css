@@ -1761,9 +1761,11 @@ body.is-resizing .sidebar { transition: none; }
   .fab:active { transform: scale(0.92); }
   /* Keep the last rows of a list reachable above the floating button. */
   .tasks-inner { padding-bottom: 96px !important; }
-  /* The on-screen keyboard is up (Capacitor sets html.keyboard-open): give the space to the content. */
+  /* The on-screen keyboard is up (Capacitor sets html.keyboard-open): give the space to the content. The web view is
+     resized by the keyboard itself (Keyboard.resize 'native'), so only --keyboard-inset is added, never the whole
+     --keyboard-height: that counted the keyboard twice and squeezed the page to a line or two (platform/keyboardInset.ts). */
   html.keyboard-open .tabbar { display: none; }
-  html.keyboard-open .main { padding-bottom: var(--keyboard-height, 0px); }
+  html.keyboard-open .main { padding-bottom: var(--keyboard-inset, 0px); }
 
   .sb-item, .sb-row { height: var(--touch); font-size: var(--text-md); }
   .page-row { height: 40px; }
@@ -1847,7 +1849,7 @@ body.is-resizing .sidebar { transition: none; }
   .modal-backdrop:has(.palette) { align-items: flex-start; padding-top: var(--safe-top); }
   .modal.palette { border-radius: 0 0 var(--radius-xl) var(--radius-xl); animation: palette-down var(--dur) var(--ease-out); }
   @keyframes palette-down { from { transform: translateY(-24px); opacity: 0; } }
-  .palette-list { max-height: calc(100dvh - var(--safe-top) - 120px - var(--keyboard-height, 0px)); }
+  .palette-list { max-height: calc(100dvh - var(--safe-top) - 120px - var(--keyboard-inset, 0px)); }
   .palette-item { height: var(--touch); }
   .btn-lg { height: var(--touch); }
   .palette-foot, .palette .key-hint { display: none; }
