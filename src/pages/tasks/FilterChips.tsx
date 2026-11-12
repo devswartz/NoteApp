@@ -7,6 +7,7 @@ import { useStore } from '../../store.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator } from '../../components/ui.tsx';
 import { DEFAULT_FILTERS, NO_PICK, PICK_KEYS, activeFilterKeys, orderedTeams, teamLabel, type Filters, type PickKey } from '../../lib/taskViews.ts';
 import { LabelDot } from '../../components/Labels.tsx';
+import { sectionPathLabel, sectionsInOrder } from '../../../shared/sections.ts';
 
 export type Kind = 'teamId' | 'assignee' | 'assignedBy' | 'tagsAny' | 'tagsNone' | 'due' | 'priority' | 'source' | 'notebookId' | 'sectionId';
 export const KINDS: { key: Kind; label: string }[] = [
@@ -24,8 +25,19 @@ export const KINDS: { key: Kind; label: string }[] = [
 
 interface Option {
   value: string;
+  /** The full name (a subteam is "Team › Subteam"): in chips, and in search results where the nesting isn't shown. */
   label: string;
   icon?: ReactNode;
+  /** The short name shown in the nested list. */
+  name?: string;
+  /** Nesting level in the list (0 = top). */
+  depth?: number;
+  /** The value of the option this one sits under: ticking the parent covers it too. */
+  parent?: string;
+  /** A caption that groups the options after it (a notebook); not selectable. */
+  heading?: boolean;
+  /** Muted text on the right (a team's member count). */
+  hint?: string;
 }
 
 function useOptions(kind: Kind): Option[] {
@@ -38,7 +50,18 @@ function useOptions(kind: Kind): Option[] {
   switch (kind) {
     case 'teamId':
       return [
-        ...orderedTeams(teams).map((t) => ({ value: t.id, label: teamLabel(t, teams), icon: <LabelDot color={t.color} /> })),
+        ...orderedTeams(teams).map((t): Option => {
+          const sub = !!t.parentId && teams.some((p) => p.id === t.parentId);
+          return {
+            value: t.id,
+            label: teamLabel(t, teams),
+            name: t.name,
+            depth: sub ? 1 : 0,
+            parent: sub ? t.parentId! : undefined,
+            hint: t.memberIds.length ? String(t.memberIds.length) : undefined,
+            icon: <LabelDot color={t.color} />,
+          };
+        }),
         { value: 'none', label: 'No team' },
       ];
     case 'assignee':
@@ -69,10 +92,24 @@ function useOptions(kind: Kind): Option[] {
       ];
     case 'notebookId':
       return tree.notebooks.map((n) => ({ value: n.id, label: n.name }));
-    case 'sectionId': {
-      const nb = new Map(tree.notebooks.map((n) => [n.id, n.name]));
-      return tree.sections.map((s) => ({ value: s.id, label: `${nb.get(s.notebookId) ?? ''} › ${s.name}` }));
-    }
+    case 'sectionId':
+      // Each notebook is a caption over its sections, nested the way they are in the tree.
+      return [...tree.notebooks]
+        .sort((a, b) => a.position - b.position)
+        .flatMap((nb): Option[] => {
+          const rows = sectionsInOrder(tree, nb.id);
+          if (!rows.length) return [];
+          return [
+            { value: `notebook:${nb.id}`, label: nb.name, heading: true },
+            ...rows.map(({ section, level }): Option => ({
+              value: section.id,
+              label: sectionPathLabel(tree, section.id, nb.name),
+              name: section.name,
+              depth: level - 1,
+              parent: section.parentId && rows.some((r) => r.section.id === section.parentId) ? section.parentId : undefined,
+            })),
+          ];
+        });
   }
 }
 
@@ -121,7 +158,16 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
     );
 
   const q = query.trim().toLowerCase();
-  const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+  // Searching flattens the list (matches show their full name); otherwise the hierarchy shows.
+  const shown = q ? options.filter((o) => !o.heading && o.label.toLowerCase().includes(q)) : options;
+  const pickable = shown.filter((o) => !o.heading);
+  const parentOf = new Map(options.filter((o) => o.parent).map((o) => [o.value, o.parent!]));
+  /** Covered by a ticked parent (a subteam with "Include subteams" on, a subsection), without being ticked itself. */
+  const coveredByParent = (v: string) => {
+    if (kind === 'teamId' && !filters.includeSubteams) return false;
+    for (let p = parentOf.get(v), guard = 0; p && guard < 5; p = parentOf.get(p), guard++) if (current.values.includes(p)) return true;
+    return false;
+  };
   const toggle = (v: string) => write(current.values.includes(v) ? current.values.filter((x) => x !== v) : [...current.values, v]);
   const hasSubteams = kind === 'teamId' && teams.some((t) => t.parentId && current.values.includes(t.parentId));
   const canNegate = isPick(kind);
@@ -154,7 +200,7 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
           </button>
         </div>
       )}
-      {options.length > 7 && (
+      {options.filter((o) => !o.heading).length > 7 && (
         <label className="fp-search">
           <Search size={13} />
           <input
@@ -170,7 +216,7 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
       <div className="fp-bulk">
         <span className="muted small">{current.values.length ? `${current.values.length} ${not ? 'left out' : 'selected'}` : 'None selected'}</span>
         <span>
-          <button type="button" className="fp-link" disabled={!shown.length || shown.every((o) => current.values.includes(o.value))} onClick={(e) => { e.stopPropagation(); write([...new Set([...current.values, ...shown.map((o) => o.value)])]); }}>
+          <button type="button" className="fp-link" disabled={!pickable.length || pickable.every((o) => current.values.includes(o.value))} onClick={(e) => { e.stopPropagation(); write([...new Set([...current.values, ...pickable.map((o) => o.value)])]); }}>
             Select all
           </button>
           <button type="button" className="fp-link" disabled={!current.values.length} onClick={(e) => { e.stopPropagation(); write([]); }}>
@@ -180,26 +226,34 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
       </div>
       <div className="fp-list">
         {shown.map((o) => {
+          if (o.heading) return <div key={o.value} className="fp-head">{o.label}</div>;
           const checked = current.values.includes(o.value);
+          const covered = !checked && !q && coveredByParent(o.value);
+          const depth = q ? 0 : (o.depth ?? 0);
           return (
             <button
               key={o.value}
               type="button"
               role="menuitemcheckbox"
               aria-checked={checked}
-              className="menu-item fp-opt"
+              className={`menu-item fp-opt ${depth ? 'fp-nested' : ''}`}
+              style={depth ? ({ '--d': depth } as React.CSSProperties) : undefined}
+              title={covered ? 'Included with the one above' : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 toggle(o.value);
               }}
             >
-              <span className={`fp-box ${checked ? 'is-on' : ''} ${not ? 'is-not' : ''}`}>{checked && (not ? <X size={11} strokeWidth={3} /> : <Check size={11} strokeWidth={3} />)}</span>
+              <span className={`fp-box ${checked ? 'is-on' : ''} ${covered ? 'is-covered' : ''} ${not ? 'is-not' : ''}`}>
+                {(checked || covered) && (not ? <X size={11} strokeWidth={3} /> : <Check size={11} strokeWidth={3} />)}
+              </span>
               {o.icon && <span className="menu-icon">{o.icon}</span>}
-              <span className="menu-label">{o.label}</span>
+              <span className="menu-label">{q ? o.label : (o.name ?? o.label)}</span>
+              {o.hint && !q && <span className="menu-hint" title={`${o.hint} ${o.hint === '1' ? 'person' : 'people'}`}>{o.hint}</span>}
             </button>
           );
         })}
-        {!shown.length && <div className="menu-pad muted small">No matches.</div>}
+        {!pickable.length && <div className="menu-pad muted small">No matches.</div>}
       </div>
       {hasSubteams && (
         <>
