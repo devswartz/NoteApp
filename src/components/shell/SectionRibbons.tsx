@@ -100,8 +100,6 @@ function organiseOff(view: ViewId): { group?: string; sort?: string; done?: stri
   return { group: g, sort: `${g}; sort in All Tasks`, done: view === 'completed' ? 'Completed shows only finished tasks' : 'This view shows open tasks; finished ones are in Completed' };
 }
 
-const FILTERS_ALL = 'Filters apply to All Tasks';
-
 function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -126,8 +124,8 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
     navigate(`/w/${wsId}/tasks/all?view=${encodeURIComponent(v.id)}`);
   };
 
-  const filterMenu = (kind: Kind, label: string, icon: ReactNode, count: number) => (
-    <RibbonMenu label={`${label} filter`} text={label} compact icon={icon} count={onAll ? count : 0} disabled={!onAll && FILTERS_ALL}>
+  const filterMenu = (kind: Kind, label: string, icon: ReactNode, count: number, off?: string) => (
+    <RibbonMenu label={`${label} filter`} text={label} compact icon={icon} count={count} disabled={off}>
       <KindMenu kind={kind} filters={filters} onChange={taskView.setFilters} />
       {count > 0 && (
         <>
@@ -195,18 +193,18 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
             </MenuItem>
           </RibbonMenu>
         ) : (
-          filterMenu('assignee', 'Assignee', <User />, filters.assignee !== 'any' ? 1 : 0)
+          filterMenu('assignee', 'Assignee', <User />, filters.assignee !== 'any' ? 1 : 0, view === 'my' ? 'My Tasks only shows tasks assigned to you' : undefined)
         )}
         {filterMenu('tagsAny', 'Tags', <Tag />, filters.tagsAny.length)}
         {filterMenu('teamId', 'Team', <UsersRound />, filters.teamId !== 'any' ? 1 : 0)}
         {filterMenu('priority', 'Priority', <Flag />, filters.priority !== 'any' ? 1 : 0)}
-        <RibbonMenu label="More filters" icon={<SlidersHorizontal />} count={onAll ? moreCount : 0} disabled={!onAll && FILTERS_ALL} bare>
+        <RibbonMenu label="More filters" icon={<SlidersHorizontal />} count={moreCount} bare>
           {(close) => <AddFilterMenu filters={filters} onChange={taskView.setFilters} active={[]} close={close} kinds={more} />}
         </RibbonMenu>
         <RibbonButton
           label="Clear filters"
           icon={<FilterX />}
-          disabled={!onAll ? FILTERS_ALL : !active.length && 'No filters to clear'}
+          disabled={!active.length && 'No filters to clear'}
           onClick={() => taskView.setFilters(clearedFilters(filters))}
         />
       </Group>

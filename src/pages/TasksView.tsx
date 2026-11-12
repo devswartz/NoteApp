@@ -8,6 +8,8 @@ import { AllView } from './tasks/AllView.tsx';
 import { CompletedView } from './tasks/CompletedView.tsx';
 import { CalendarView } from './tasks/CalendarView.tsx';
 import '../styles/tasks.css';
+import { useOpenedView } from './tasks/savedViews.ts';
+import { ViewFilterBar } from './tasks/ViewFilterBar.tsx';
 import { BulkBar } from './tasks/BulkBar.tsx';
 import { useTaskListCommands } from './tasks/commands.tsx';
 
@@ -16,8 +18,10 @@ export function TasksView() {
   useTaskListCommands();
   // Before the views' own effects (a ?view= link applies a saved view): another workspace starts fresh.
   useLayoutEffect(() => taskView.forWorkspace(wsId), [wsId]);
+  const opened = useOpenedView();
   if (!VIEWS.some((v) => v.id === view)) return <Navigate to="../today" replace />;
-  const label = VIEWS.find((v) => v.id === view)!.label;
+  const saved = view === 'all' ? opened : undefined;
+  const label = saved?.name ?? VIEWS.find((v) => v.id === view)!.label;
   return (
     <div className="tasks-page">
       {view === 'calendar' ? (
@@ -26,8 +30,9 @@ export function TasksView() {
         <div className="tasks-inner">
           <header className="view-head">
             <h1>{label}</h1>
-            <ViewSubtitle view={view} />
+            {saved ? <p className="muted">Saved view of All Tasks.</p> : <ViewSubtitle view={view} />}
           </header>
+          {view !== 'all' && <ViewFilterBar />}
           {view === 'today' && <TodayView />}
           {view === 'my' && <MyView />}
           {view === 'upcoming' && <UpcomingView />}

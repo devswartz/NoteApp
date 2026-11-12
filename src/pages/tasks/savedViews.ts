@@ -9,18 +9,21 @@
 //   useSavedViews(wsId) → SavedView[]   (each has id, name, shared, …)
 //   savedViewPath(wsId, viewId) → the URL that opens the view in All Tasks
 import { useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { create } from 'zustand';
+import { useStore } from '../../store.ts';
+import { useTaskView } from './taskViewState.ts';
 import { del, patch, post } from '../../api.ts';
 import { platform } from '../../platform/index.ts';
 import { cached } from '../../store/cache.ts';
 import { errorToast } from '../../store/toasts.ts';
 import { normalizeFilters, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
-import { groupOf, parseSavedViews, sortOf, type SavedView } from './savedViewsCore.ts';
+import { groupOf, openedView, parseSavedViews, sortOf, type SavedView } from './savedViewsCore.ts';
 import type { TaskView } from '../../../shared/types.ts';
 
 const deviceKey = (wsId: string) => `noteapp.taskViews.${wsId}`;
 
-export { parseSavedViews, sameView, savedViewPath, type SavedView } from './savedViewsCore.ts';
+export { openedView, parseSavedViews, sameView, savedViewPath, type SavedView } from './savedViewsCore.ts';
 function fromServer(v: TaskView): SavedView {
   return {
     id: v.id,
@@ -89,7 +92,18 @@ export function useSavedViews(wsId: string): SavedView[] {
   return views ?? EMPTY;
 }
 
-const setLocal = (wsId: string, fn: (list: SavedView[]) => SavedView[]) =>
+/** The saved view All Tasks is showing right now (for its heading and the phone top bar), if any. */
+export function useOpenedView(): SavedView | undefined {
+  const wsId = useStore((s) => s.wsId) ?? '';
+  const views = useSavedViews(wsId);
+  const [params] = useSearchParams();
+  const filters = useTaskView((s) => s.filters);
+  const sort = useTaskView((s) => s.sort);
+  const group = useTaskView((s) => s.group);
+  return openedView(views, params.get('view'), filters, sort, group);
+}
+
+const setLocal =(wsId: string, fn: (list: SavedView[]) => SavedView[]) =>
   useViews.setState((s) => ({ byWs: { ...s.byWs, [wsId]: fn(s.byWs[wsId] ?? []) } }));
 
 export async function createSavedView(wsId: string, v: { name: string; filters: Filters; sort: SortKey; group: GroupKey; shared?: boolean }): Promise<SavedView | null> {

@@ -8,6 +8,7 @@ import { ui, useStore } from '../../store.ts';
 import { NotificationBell } from '../sharing/NotificationBell.tsx';
 import { viewOf, viewTarget } from './navState.ts';
 import type { RailView } from './sidebarState.ts';
+import { useOpenedView } from '../../pages/tasks/savedViews.ts';
 
 const VIEW_TITLES: Record<string, string> = {
   today: 'Today',
@@ -26,6 +27,8 @@ function useScreenTitle(): string {
   const pageId = pathname.match(/\/p\/([^/?#]+)/)?.[1];
   const pageTitle = useStore((s) => (pageId ? s.tree.pages.find((p) => p.id === pageId)?.title : undefined));
   const view = pathname.match(/\/tasks\/([^/?#]+)/)?.[1];
+  const saved = useOpenedView(); // a saved view of All Tasks is titled by its name
+  if (view === 'all' && saved) return saved.name;
   if (view) return VIEW_TITLES[view] ?? 'Tasks';
   if (pageId) return pageTitle || 'Untitled';
   if (pathname.endsWith('/notes')) return 'Notes';

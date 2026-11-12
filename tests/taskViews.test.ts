@@ -142,6 +142,18 @@ test('saved views: stored JSON is parsed defensively', async () => {
   assert.ok(!sameView(v, DEFAULT_FILTERS, 'due', 'priority'));
 });
 
+test('saved views: the heading names the view the link opened, or an exact non-empty match', async () => {
+  const { openedView } = await import('../src/pages/tasks/savedViewsCore.ts');
+  const mk = (id: string, name: string, filters = DEFAULT_FILTERS) => ({ id, name, filters, sort: 'due' as const, group: 'none' as const, shared: false, ownerId: 'u', position: 0 });
+  const urgent = mk('a', 'Urgent', { ...DEFAULT_FILTERS, priority: '1' });
+  const empty = mk('b', 'Everything');
+  const views = [urgent, empty];
+  assert.equal(openedView(views, 'a', DEFAULT_FILTERS, 'due', 'none')?.name, 'Urgent', 'the link wins, even once its filters were edited');
+  assert.equal(openedView(views, null, urgent.filters, 'due', 'none')?.name, 'Urgent', 'an exact match names it');
+  assert.equal(openedView(views, null, DEFAULT_FILTERS, 'due', 'none'), undefined, 'plain All Tasks is not mistaken for a view with no filters');
+  assert.equal(openedView(views, 'gone', DEFAULT_FILTERS, 'due', 'none'), undefined, 'a deleted view falls back to All Tasks');
+});
+
 test('filters: tags (any / none), teams with and without subteams, assigned by, section', async () => {
   const { normalizeFilters, activeFilterKeys } = await import('../src/lib/taskViews.ts');
   const teams = [
