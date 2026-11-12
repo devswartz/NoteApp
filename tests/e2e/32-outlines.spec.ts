@@ -123,9 +123,22 @@ test.describe('outlines', () => {
       await page.keyboard.press('End');
     };
 
-    /** Wait until the caret is in the line reading `text` at `offset`, so the next key acts there. */
+    /**
+     * Wait until the caret is in the line reading `text` at `offset`, so the next key acts there.
+     * Checked in the editor's own state too: the DOM selection moves first, and an Enter that
+     * arrives before the editor reads it splits at the old place.
+     */
     const caretIs = (text: string, offset: number) =>
-      expect.poll(() => page.evaluate(() => [getSelection()?.anchorNode?.textContent, getSelection()?.anchorOffset])).toEqual([text, offset]);
+      expect
+        .poll(() =>
+          page.evaluate(() => {
+            const sel = getSelection();
+            const el = (sel?.anchorNode?.parentElement?.closest('.ProseMirror') ?? null) as (Element & { editor?: { state: { selection: { $head: { parent: { textContent: string }; parentOffset: number } } } } }) | null;
+            const head = el?.editor?.state.selection.$head;
+            return [sel?.anchorNode?.textContent, sel?.anchorOffset, head?.parent.textContent, head?.parentOffset];
+          }),
+        )
+        .toEqual([text, offset, text, offset]);
 
     // Enter in the middle of an item splits it inside the same list.
     // (Keyboard only: a click's selection can land late and undo the arrow key.)

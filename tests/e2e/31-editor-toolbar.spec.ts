@@ -157,8 +157,12 @@ test('turn a line into a task from the ribbon and from the hover ✓', async ({ 
   await expect(editor.locator('ul[data-type="taskList"] li', { hasText: 'Pack a lunch' })).toBeVisible();
 
   // Leave the checkbox list (Enter on its new empty item), so the hover ✓ acts on a plain line,
-  // not on the whole list (which converts every item, "Pack a lunch" included).
-  await focusEnd(page);
+  // not on the whole list (which converts every item, "Pack a lunch" included). The caret goes to
+  // the end of "Pack a lunch" directly: Ctrl+End from the empty line above the list lands at the
+  // start of that item in Chromium on Linux (after its checkbox), and Enter there adds items above it.
+  await editor.locator('ul[data-type="taskList"] li p', { hasText: 'Pack a lunch' }).click();
+  await page.keyboard.press('End');
+  await expect.poll(() => page.evaluate(() => [getSelection()?.anchorNode?.textContent, getSelection()?.anchorOffset])).toEqual(['Pack a lunch', 12]);
   await page.keyboard.press('Enter');
   await page.keyboard.press('Enter');
   await expect(editor.locator('ul[data-type="taskList"] li')).toHaveCount(1);
