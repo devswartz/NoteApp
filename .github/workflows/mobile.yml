@@ -181,13 +181,22 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -n 80
 
-      # Signing, without minting certificates. The archive is built UNSIGNED (CODE_SIGNING_ALLOWED=NO, no
-      # -allowProvisioningUpdates): signing the archive automatically asks Xcode for an "Apple Development"
-      # certificate, and every fresh runner then created a new one until the account hit Apple's limit. The
-      # signing happens at export instead, with the App Store Connect API key (cloud-managed signing): Xcode
-      # uses the account's cloud-managed Apple Distribution certificate and App Store profiles for App,
-      # ShareExtension and TodayWidget, and creates no local development certificate. See docs/IOS-SIGNING.md.
-      - name: Archive (unsigned) and export (cloud-signed, Apple Distribution)
+      # Free the certificate limit first: automatic signing on a fresh runner makes Xcode create an "Apple Development"
+      # certificate ("Created via API") each run, and the account runs out. This revokes only those (scripts/ios-revoke-ci-certs.mjs)
+      # before the archive, and again after it for the one this run made. See docs/IOS-SIGNING.md.
+      - name: Revoke leftover CI development certificates
+        if: env.HAS_ASC == 'true' && env.UPLOAD == 'true'
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: node ../../scripts/ios-revoke-ci-certs.mjs
+        working-directory: apps/mobile
+
+      # Archive + upload with Xcode's cloud-managed signing: the App Store Connect API key lets xcodebuild create/download the
+      # certificate and the profiles for the app and its extensions. No .p12 or .mobileprovision secrets. The archive is signed
+      # for development (which keeps the App Group and push entitlements); export re-signs it with the distribution certificate.
+      - name: Archive and export for TestFlight
         if: env.HAS_ASC == 'true' && env.UPLOAD == 'true'
         working-directory: apps/mobile/ios/App
         env:
@@ -199,9 +208,12 @@ jobs:
           KEY="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
           printf '%s' "$ASC_KEY_P8" > "$KEY"
           AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-          xcodebuild -project App.xcodeproj -scheme App -configuration Release             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive"             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="$APPLE_TEAM_ID"             MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 40
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            "${AUTH[@]}" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$VERSION_NAME" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 80
           for dest in export upload; do
-            cat > "$RUNNER_TEMP/ExportOptions-$dest.plist" <<EOF
+            cat > "$RUNNER_TEMP/ExportOptions-$dest.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
@@ -209,17 +221,18 @@ jobs:
             <key>destination</key><string>$dest</string>
             <key>teamID</key><string>${APPLE_TEAM_ID}</string>
             <key>signingStyle</key><string>automatic</string>
-            <key>signingCertificate</key><string>Apple Distribution</string>
             <key>manageAppVersionAndBuildNumber</key><false/>
           </dict></plist>
-          EOF
+          PLIST
           done
           # First a local .ipa, so the signature can be checked before anything is uploaded.
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive"             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-export.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}" | tail -n 40
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-export.plist" -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}" | tail -n 40
           rm -rf "$RUNNER_TEMP/ipa" && mkdir "$RUNNER_TEMP/ipa" && unzip -q "$RUNNER_TEMP"/export/*.ipa -d "$RUNNER_TEMP/ipa"
           for bundle in "$RUNNER_TEMP"/ipa/Payload/*.app "$RUNNER_TEMP"/ipa/Payload/*.app/PlugIns/*.appex; do
             echo "== $bundle"
             codesign -dvv "$bundle" 2>&1 | grep -E "Authority=|TeamIdentifier=" || true
+            codesign -d --entitlements - "$bundle" 2>/dev/null | grep -E "application-groups|aps-environment|associated-domains" || true
             if ! codesign -dvv "$bundle" 2>&1 | grep -q "Authority=Apple Distribution"; then
               echo "::error::$(basename "$bundle") is not signed with an Apple Distribution certificate"; exit 1
             fi
@@ -230,8 +243,19 @@ jobs:
           if ! codesign -d --entitlements - "$RUNNER_TEMP"/ipa/Payload/*.app 2>/dev/null | grep -q "aps-environment"; then
             echo "::error::the app lost its push (aps-environment) entitlement"; exit 1
           fi
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive"             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-upload.plist" -exportPath "$RUNNER_TEMP/upload" "${AUTH[@]}" | tail -n 40
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-upload.plist" -exportPath "$RUNNER_TEMP/upload" "${AUTH[@]}" | tail -n 40
           rm -f "$KEY"
+
+      # This run's own development certificate (made by the archive) goes too, so the account doesn't fill up between releases.
+      - name: Revoke the development certificate this run created
+        if: always() && env.HAS_ASC == 'true' && env.UPLOAD == 'true'
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: node ../../scripts/ios-revoke-ci-certs.mjs
+        working-directory: apps/mobile
 
       - name: TestFlight skipped
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'

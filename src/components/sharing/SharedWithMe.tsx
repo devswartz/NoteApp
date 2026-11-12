@@ -6,6 +6,7 @@ import { Navigate, NavLink, useParams } from 'react-router-dom';
 import { FileText, Users, X } from 'lucide-react';
 import { del, get } from '../../api.ts';
 import { errorToast, toast, useStore } from '../../store.ts';
+import { confirmDialog } from '../shell/dialogs.tsx';
 import { loadSharedPages, sharedPagePath, useShared } from './sharedPages.ts';
 import './sharing.css';
 
@@ -44,11 +45,18 @@ export function SharedWithMe({ wsId, heading = true, onOpen }: { wsId: string; h
             className="btn-ghost icon-btn sb-shared-remove"
             aria-label={`Remove “${p.title || 'Untitled'}” from Shared with me`}
             title="Remove from Shared with me"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
-              if (!me || !confirm('Remove this page from Shared with me? You will lose access until it is shared with you again.')) return;
-              del(`/pages/${p.id}/shares/${me}`)
+              if (!me) return;
+              const ok = await confirmDialog({
+                title: 'Remove this page from Shared with me?',
+                message: 'You will lose access until it is shared with you again.',
+                confirmLabel: 'Remove',
+                danger: true,
+              });
+              if (!ok) return;
+              void del(`/pages/${p.id}/shares/${me}`)
                 .then(() => {
                   toast('Removed from Shared with me');
                   void loadSharedPages();

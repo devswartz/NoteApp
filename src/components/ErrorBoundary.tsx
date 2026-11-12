@@ -35,7 +35,7 @@ export class ErrorBoundary extends Component<Props, { error: Error | null; key?:
       <div className={this.props.page ? 'auth' : 'empty-page'} role="alert">
         <div className={this.props.page ? 'auth-card' : undefined}>
           <h2>Something went wrong</h2>
-          <p className="muted">This part of the app hit an error. Your notes are saved.</p>
+          <p className="muted">This part of the app hit an error. Your pages are saved.</p>
           <div className="row gap-10" style={{ justifyContent: 'center', marginTop: 12 }}>
             {!this.props.page && (
               <button className="btn btn-secondary" onClick={() => this.setState({ error: null })}>

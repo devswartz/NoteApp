@@ -119,7 +119,7 @@ test('mobile: create a page from search, add a task with /task, see it on Today,
   await expect(page).toHaveURL(/\/tasks\/today$/);
   const row = taskRow(page, 'Buy lemons');
   await expect(row).toBeVisible();
-  await expect(row.getByTitle('Open in note')).toContainText('Groceries');
+  await expect(row.getByTitle('Open page')).toContainText('Groceries');
   await row.getByRole('checkbox', { name: 'Complete task' }).tap();
   await expect.poll(async () => (await listTasks(request, user)).find((t) => t.title === 'Buy lemons')?.status).toBe('done');
 

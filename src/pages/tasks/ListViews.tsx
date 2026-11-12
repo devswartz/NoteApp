@@ -57,7 +57,7 @@ export function MyView() {
             onChange={taskView.setMyGroup}
             options={[
               ['due', 'By date'],
-              ['note', 'By note'],
+              ['note', 'By page'],
               ['priority', 'By priority'],
             ]}
           />

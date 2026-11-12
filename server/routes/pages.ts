@@ -1,4 +1,5 @@
 // Page metadata (content is edited over the collab WebSocket). Owner: Editor & Notes.
+import { log } from '../log.ts';
 import { Router } from 'express';
 import { db, newId, now } from '../db.ts';
 import { accessChanged, atLeast, canSharePage, mustAccess, mustManage, pageAccess, sectionAccess } from '../access.ts';
@@ -175,6 +176,21 @@ pageRoutes.patch(
     const b = req.body;
     // Moving and reordering change its notebook: not for page-share-only access (#98).
     if (b.sectionId !== undefined || b.position !== undefined) mustManage(a);
+    // Optimistic check: a client says what it believes the title / icon is now (`titleWas`, `iconWas`). If that isn't what is
+    // stored, the write is refused, so a stale or crossed-over client (the wrong page's title in the wrong page's field) can
+    // never overwrite someone else's page blindly. Clients that send nothing are unaffected.
+    if (b.titleWas !== undefined || b.iconWas !== undefined) {
+      const cur = db.prepare('SELECT title, icon FROM pages WHERE id = ?').get(id) as { title: string; icon: string | null };
+      // Refusals are logged by ids only (never the title or icon text: it is user content).
+      if (b.title !== undefined && b.titleWas !== undefined && String(b.titleWas) !== cur.title) {
+        log.warn('Refused a page title write: it did not match the stored title', { event: 'page_write_refused', userId: req.user.id, pageId: id, field: 'title', hadWas: true });
+        throw new HttpError(409, 'The page’s title changed since you opened it. Reload to see the current one.');
+      }
+      if (b.icon !== undefined && b.iconWas !== undefined && (b.iconWas ?? null) !== (cur.icon ?? null)) {
+        log.warn('Refused a page icon write: it did not match the stored icon', { event: 'page_write_refused', userId: req.user.id, pageId: id, field: 'icon', hadWas: true });
+        throw new HttpError(409, 'The page’s icon changed since you opened it. Reload to see the current one.');
+      }
+    }
     if (b.title !== undefined) {
       const title = String(b.title).slice(0, 300);
       db.prepare('UPDATE pages SET title = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(title, now(), req.user.id, id);

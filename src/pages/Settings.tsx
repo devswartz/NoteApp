@@ -14,6 +14,7 @@ import { TagsPanel, TeamsPanel } from '../components/TeamsSettings.tsx';
 import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
 import { Avatar, Button, Input, useIsMobile } from '../components/ui.tsx';
+import { promptDialog } from '../components/shell/dialogs.tsx';
 import { AppearanceSettings } from '../components/shell/AppearanceSettings.tsx';
 import { NotificationSettingsPanel } from '../components/notifications/index.ts';
 import { AppLockSettings, hasAppLock } from '../components/shell/AppLockSettings.tsx';
@@ -291,9 +292,15 @@ function WorkspaceSection() {
           <Button
             variant="danger"
             icon={<Trash2 size={15} />}
-            onClick={() => {
-              if (prompt(`Type the workspace name (“${ws.name}”) to delete it and everything in it.`) !== ws.name) return;
-              del(`/workspaces/${ws.id}`)
+            onClick={async () => {
+              const typed = await promptDialog({
+                title: 'Delete this workspace?',
+                message: `This deletes every notebook, page and task in it, for everyone. It can’t be undone. Type the workspace name (“${ws.name}”) to confirm.`,
+                label: 'Workspace name',
+                confirmLabel: 'Delete workspace',
+              });
+              if (typed !== ws.name) return;
+              void del(`/workspaces/${ws.id}`)
                 .then(() => loadWorkspaces())
                 .then(() => navigate('/'))
                 .catch(errorToast);

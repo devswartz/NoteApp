@@ -2,9 +2,10 @@
 // Chips combine with AND. A chip holds several values (a task matches any of them) and can be flipped
 // to "is not" (it matches none of them): "Assignee is Alice, Bob" or "Assignee is not Mike".
 import { useState, type ReactNode } from 'react';
-import { Check, ChevronLeft, Plus, Search, X } from 'lucide-react';
+import { Check, ChevronLeft, Minus, Plus, Search, X } from 'lucide-react';
 import { useStore } from '../../store.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator } from '../../components/ui.tsx';
+import { groupAssignees, tickState, toggleGroup } from '../../lib/assigneeGroups.ts';
 import { DEFAULT_FILTERS, NO_PICK, PICK_KEYS, activeFilterKeys, orderedTeams, teamLabel, type Filters, type PickKey } from '../../lib/taskViews.ts';
 import { LabelDot } from '../../components/Labels.tsx';
 import { sectionPathLabel, sectionsInOrder } from '../../../shared/sections.ts';
@@ -36,8 +37,12 @@ interface Option {
   parent?: string;
   /** A caption that groups the options after it (a notebook); not selectable. */
   heading?: boolean;
-  /** Muted text on the right (a team's member count). */
+  /** Muted text on the right (a team's member count; for assignees, open tasks). */
   hint?: string;
+  /** A team heading in the Assignee menu: ticking it ticks these people (it stores their ids, never the team). */
+  group?: string[];
+  /** Muted text after the name in search results (a person's team or teams). */
+  sub?: string;
 }
 
 function useOptions(kind: Kind): Option[] {
@@ -46,6 +51,7 @@ function useOptions(kind: Kind): Option[] {
   const teams = useStore((s) => s.teams);
   const tags = useStore((s) => s.tags);
   const tree = useStore((s) => s.tree);
+  const tasks = useStore((s) => s.tasks);
   const people = members.filter((m) => m.id !== me).map((m) => ({ value: m.id, label: m.name, icon: <Avatar user={m} size={16} /> }));
   switch (kind) {
     case 'teamId':
@@ -64,8 +70,28 @@ function useOptions(kind: Kind): Option[] {
         }),
         { value: 'none', label: 'No team' },
       ];
-    case 'assignee':
-      return [{ value: 'me', label: 'Me' }, { value: 'others', label: 'Someone else' }, { value: 'unassigned', label: 'Unassigned' }, ...people];
+    case 'assignee': {
+      // Pinned Me / Someone else / Unassigned, then everyone under their teams (subteams nested), those in no team last.
+      const { groups, teamsOf } = groupAssignees(teams, members.map((m) => ({ id: m.id, name: m.name })));
+      const open = new Map<string, number>();
+      const openTasks = Object.values(tasks).filter((t) => t.status === 'open' && t.assigneeId);
+      for (const t of openTasks) open.set(t.assigneeId!, (open.get(t.assigneeId!) ?? 0) + 1);
+      const byId = new Map(members.map((m) => [m.id, m]));
+      const count = (n: number | undefined) => (n ? String(n) : undefined);
+      const out: Option[] = [{ value: 'me', label: 'Me' }, { value: 'others', label: 'Someone else' }, { value: 'unassigned', label: 'Unassigned' }];
+      for (const g of groups) {
+        const headed = !!g.name;
+        if (headed) {
+          const ids = new Set(g.all);
+          out.push({ value: g.key, label: g.name, group: g.all, depth: g.depth, icon: <LabelDot color={teams.find((t) => t.id === g.teamId)?.color ?? 'var(--text-muted)'} />, hint: count(openTasks.filter((t) => ids.has(t.assigneeId!)).length) });
+        }
+        for (const id of g.direct) {
+          const m = byId.get(id)!;
+          out.push({ value: id, label: m.name, depth: headed ? g.depth + 1 : 0, icon: <Avatar user={m} size={16} />, sub: (teamsOf.get(id) ?? []).join(', ') || undefined, hint: count(open.get(id)) });
+        }
+      }
+      return out;
+    }
     case 'assignedBy':
       return [{ value: 'me', label: 'Me' }, ...people];
     case 'tagsAny':
@@ -87,7 +113,7 @@ function useOptions(kind: Kind): Option[] {
       ];
     case 'source':
       return [
-        { value: 'notes', label: 'In notes' },
+        { value: 'notes', label: 'On pages' },
         { value: 'standalone', label: 'Standalone' },
       ];
     case 'notebookId':
@@ -159,8 +185,16 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
 
   const q = query.trim().toLowerCase();
   // Searching flattens the list (matches show their full name); otherwise the hierarchy shows.
-  const shown = q ? options.filter((o) => !o.heading && o.label.toLowerCase().includes(q)) : options;
-  const pickable = shown.filter((o) => !o.heading);
+  // (A person in two teams is in the list twice; a search lists them once, with their teams in muted text.)
+  const seen = new Set<string>();
+  const shown = q
+    ? options.filter((o) => {
+        if (o.heading || o.group || !`${o.label} ${o.sub ?? ''}`.toLowerCase().includes(q) || seen.has(o.value)) return false;
+        seen.add(o.value);
+        return true;
+      })
+    : options;
+  const pickable = [...new Map(shown.filter((o) => !o.heading && !o.group).map((o) => [o.value, o])).values()];
   const parentOf = new Map(options.filter((o) => o.parent).map((o) => [o.value, o.parent!]));
   /** Covered by a ticked parent (a subteam with "Include subteams" on, a subsection), without being ticked itself. */
   const coveredByParent = (v: string) => {
@@ -200,7 +234,7 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
           </button>
         </div>
       )}
-      {options.filter((o) => !o.heading).length > 7 && (
+      {new Set(options.filter((o) => !o.heading && !o.group).map((o) => o.value)).size > 7 && (
         <label className="fp-search">
           <Search size={13} />
           <input
@@ -225,31 +259,36 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
         </span>
       </div>
       <div className="fp-list">
-        {shown.map((o) => {
+        {shown.map((o, i) => {
           if (o.heading) return <div key={o.value} className="fp-head">{o.label}</div>;
-          const checked = current.values.includes(o.value);
-          const covered = !checked && !q && coveredByParent(o.value);
+          // A team heading in the Assignee menu: all, some or none of its people ticked.
+          const tick = o.group ? tickState(o.group, current.values) : null;
+          const checked = tick ? tick === 'all' : current.values.includes(o.value);
+          const partial = tick === 'some';
+          const covered = !checked && !partial && !q && coveredByParent(o.value);
           const depth = q ? 0 : (o.depth ?? 0);
           return (
             <button
-              key={o.value}
+              key={`${i}-${o.value}`}
               type="button"
               role="menuitemcheckbox"
               aria-checked={checked}
-              className={`menu-item fp-opt ${depth ? 'fp-nested' : ''}`}
+              className={`menu-item fp-opt ${depth ? 'fp-nested' : ''} ${o.group ? 'fp-team' : ''}`}
+              data-team-heading={o.group ? o.label : undefined}
               style={depth ? ({ '--d': depth } as React.CSSProperties) : undefined}
               title={covered ? 'Included with the one above' : undefined}
               onClick={(e) => {
                 e.stopPropagation();
-                toggle(o.value);
+                if (o.group) write(toggleGroup(o.group, current.values));
+                else toggle(o.value);
               }}
             >
-              <span className={`fp-box ${checked ? 'is-on' : ''} ${covered ? 'is-covered' : ''} ${not ? 'is-not' : ''}`}>
-                {(checked || covered) && (not ? <X size={11} strokeWidth={3} /> : <Check size={11} strokeWidth={3} />)}
+              <span className={`fp-box ${checked ? 'is-on' : ''} ${partial ? 'is-covered' : ''} ${covered ? 'is-covered' : ''} ${not ? 'is-not' : ''}`}>
+                {partial ? <Minus size={11} strokeWidth={3} /> : (checked || covered) && (not ? <X size={11} strokeWidth={3} /> : <Check size={11} strokeWidth={3} />)}
               </span>
               {o.icon && <span className="menu-icon">{o.icon}</span>}
-              <span className="menu-label">{q ? o.label : (o.name ?? o.label)}</span>
-              {o.hint && !q && <span className="menu-hint" title={`${o.hint} ${o.hint === '1' ? 'person' : 'people'}`}>{o.hint}</span>}
+              <span className="menu-label">{q ? o.label : (o.name ?? o.label)}{q && o.sub && <span className="muted small"> · {o.sub}</span>}</span>
+              {o.hint && !q && <span className="menu-hint" title={kind === 'assignee' ? `${o.hint} open task${o.hint === '1' ? '' : 's'}` : `${o.hint} ${o.hint === '1' ? 'person' : 'people'}`}>{o.hint}</span>}
             </button>
           );
         })}

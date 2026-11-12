@@ -136,8 +136,8 @@ function QuickCapture() {
         value={text}
         readOnly={busy}
         aria-busy={busy}
-        placeholder={mode === 'task' ? 'Add a task: “Send invoice tomorrow p1”' : 'New note title'}
-        aria-label={mode === 'task' ? 'New task' : 'New note'}
+        placeholder={mode === 'task' ? 'Add a task: “Send invoice tomorrow p1”' : 'New page title'}
+        aria-label={mode === 'task' ? 'New task' : 'New page'}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
@@ -162,7 +162,7 @@ function QuickCapture() {
         ) : (
           <>
             <span>
-              <b>{mode === 'task' ? 'Task' : 'Note'}</b> · ↵ add · Tab {mode === 'task' ? 'note' : 'task'} · Esc close
+              <b>{mode === 'task' ? 'Task' : 'Page'}</b> · ↵ add · Tab {mode === 'task' ? 'page' : 'task'} · Esc close
             </span>
             {chips.map((c) => (
               <span key={String(c)} style={{ padding: '0 6px', borderRadius: 999, background: 'var(--accent-soft)', color: 'var(--accent)' }}>

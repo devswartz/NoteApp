@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarDays, Flag, Repeat, Sun, Sunrise, CalendarClock, Ban, UserRound } from 'lucide-react';
 import { useStore } from '../store.ts';
+import { groupAssignees } from '../lib/assigneeGroups.ts';
 import { loadPagePeople, useShared } from './sharing/sharedPages.ts';
 import { addDays, parseISODate, today, toISODate, describeRecurrence } from '../../shared/dates.ts';
 import type { Priority, Recurrence, Task } from '../../shared/types.ts';
@@ -91,7 +92,11 @@ function useAssignable(task?: { pageId: string | null; workspaceId: string }, lo
   return [...members, ...grantees];
 }
 
-/** Pick an assignee. With `teamId`, that team's members come first; anyone in the workspace can still be picked. */
+/**
+ * Pick an assignee. Me is pinned at the top, then everyone under their teams (subteams nested; a person in two teams is
+ * under both; people in no team last) and Unassigned at the bottom. The headings are labels only. With `teamId`, that
+ * team (and its subteams) comes first. Searching flattens the list and shows each person's teams in muted text.
+ */
 export function AssigneeMenu({
   value,
   onChange,
@@ -106,20 +111,29 @@ export function AssigneeMenu({
 }) {
   const members = useAssignable(task, true);
   const me = useStore((s) => s.user?.id);
-  const team = useStore((s) => (teamId ? s.teams.find((t) => t.id === teamId) : undefined));
+  const teams = useStore((s) => s.teams);
   const [q, setQ] = useState('');
-  const list = members
-    .filter((m) => m.role !== 'viewer' || m.id === value)
-    .filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()) || m.email.includes(q.toLowerCase()))
-    .sort((a, b) => (a.id === me ? -1 : b.id === me ? 1 : 0));
-  const inTeam = team ? list.filter((m) => team.memberIds.includes(m.id)) : [];
-  const rest = team ? list.filter((m) => !team.memberIds.includes(m.id)) : list;
-  const item = (m: (typeof list)[number]) => (
-    <MenuItem key={m.id} icon={<Avatar user={m} size={18} />} onSelect={() => onChange(m.id)} checked={value === m.id}>
-      {m.name}
-      {m.id === me && <span className="muted"> (you)</span>}
-    </MenuItem>
-  );
+  const pickable = members.filter((m) => m.role !== 'viewer' || m.id === value);
+  const byId = new Map(pickable.map((m) => [m.id, m]));
+  const { groups: all, teamsOf } = groupAssignees(teams, pickable.map((m) => ({ id: m.id, name: m.name })));
+  // The task's own team (and its subteams) first.
+  const own = (g: (typeof all)[number]) => !!teamId && (g.teamId === teamId || teams.find((t) => t.id === g.teamId)?.parentId === teamId);
+  const groups = [...all.filter(own), ...all.filter((g) => !own(g))];
+  const query = q.trim().toLowerCase();
+  const item = (id: string, key: string, depth = 0, showTeams = false) => {
+    const m = byId.get(id)!;
+    return (
+      <MenuItem key={key} icon={<Avatar user={m} size={18} />} onSelect={() => onChange(m.id)} checked={value === m.id}>
+        <span style={depth ? { paddingLeft: depth * 12 } : undefined}>
+          {m.name}
+          {m.id === me && <span className="muted"> (you)</span>}
+          {showTeams && teamsOf.get(m.id) && <span className="muted small"> · {teamsOf.get(m.id)!.join(', ')}</span>}
+        </span>
+      </MenuItem>
+    );
+  };
+  const meMember = me ? byId.get(me) : undefined;
+  const matches = query ? pickable.filter((m) => `${m.name} ${m.email} ${(teamsOf.get(m.id) ?? []).join(' ')}`.toLowerCase().includes(query)).sort((a, b) => a.name.localeCompare(b.name)) : [];
   return (
     <div className="menu">
       {members.length > 6 && (
@@ -127,14 +141,22 @@ export function AssigneeMenu({
           <input autoFocus className="input input-sm" placeholder="Search people…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       )}
-      {inTeam.length > 0 && (
+      {query ? (
         <>
-          <MenuLabel>{team!.name}</MenuLabel>
-          {inTeam.map(item)}
+          {matches.map((m) => item(m.id, m.id, 0, true))}
+          {!matches.length && <div className="menu-pad muted small">No matches.</div>}
+        </>
+      ) : (
+        <>
+          {meMember && item(meMember.id, `me-${meMember.id}`)}
+          {groups.map((g) => (
+            <div key={g.key} data-team-group={g.name || undefined}>
+              {g.name ? <MenuLabel>{g.depth ? <span style={{ paddingLeft: 12 }}>{g.name}</span> : g.name}</MenuLabel> : <MenuLabel>Assign to</MenuLabel>}
+              {g.direct.filter((id) => g.name || id !== me).map((id) => item(id, `${g.key}-${id}`, g.depth))}
+            </div>
+          ))}
         </>
       )}
-      {rest.length > 0 && <MenuLabel>{inTeam.length ? 'Everyone else' : 'Assign to'}</MenuLabel>}
-      {rest.map(item)}
       <MenuSeparator />
       <MenuItem icon={<UserRound size={15} />} onSelect={() => onChange(null)} checked={!value}>
         Unassigned

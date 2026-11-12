@@ -116,7 +116,7 @@ export function groupBy(
       }
       case 'note': {
         const page = ctx.tree.pages.find((p) => p.id === t.pageId);
-        add(page ? `p${page.title}${page.id}` : '~', page ? page.title || 'Untitled' : 'Not in a note', t);
+        add(page ? `p${page.title}${page.id}` : '~', page ? page.title || 'Untitled' : 'Not on a page', t);
         break;
       }
     }
@@ -124,7 +124,7 @@ export function groupBy(
   return [...map.entries()].sort(([a], [b]) => groupKeyRank(a) - groupKeyRank(b) || a.localeCompare(b)).map(([, g]) => g);
 }
 
-/** Group keys starting with "!" sort first (Overdue), "~" last (No date, Unassigned, Not in a note). */
+/** Group keys starting with "!" sort first (Overdue), "~" last (No date, Unassigned, Not on a page). */
 function groupKeyRank(k: string) {
   return k.startsWith('!') ? 0 : k.startsWith('~') ? 2 : 1;
 }

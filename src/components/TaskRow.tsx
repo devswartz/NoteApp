@@ -168,7 +168,7 @@ export const TaskRow = memo(function TaskRow({
                 to={`${pageHref}?task=${task.id}`}
                 className="chip chip-link"
                 onClick={(e) => e.stopPropagation()}
-                title="Open in note"
+                title="Open page"
               >
                 <FileText size={12} />
                 <span className="truncate">{page.title || 'Untitled'}</span>

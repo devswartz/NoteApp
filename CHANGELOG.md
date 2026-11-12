@@ -2,6 +2,22 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.7
+
+### Fixes
+- **Page titles can't be overwritten by mistake.** A title or icon change is refused unless the app knew the page's current title, so switching pages quickly can no longer rename or blank another page, including one shared with you.
+- **Deleting a task works in the desktop and phone apps.** The task panel's and bulk bar's Delete now delete straight away, with Undo. A task deleted from the panel is also removed from its page.
+- **Print Tasks:** the Tasks ribbon has Print, and Ctrl/Cmd+P prints the task view you're on.
+- **No more browser pop-ups:** confirmations (deleting comments, removing members, leaving shared pages, restoring versions, deleting a workspace) use Notivelo's own dialogs, which work in every app.
+- **Outline drag handle:** the ⋮⋮ handle of a nested line stays on that line as you move to it, so sub-points can be dragged.
+- Tasks use "Page" consistently: Group by Page, On pages, Open page.
+
+### Tasks
+- **Assignee menus grouped by team:** Me and Unassigned at the top, then people under their teams, with subteams nested. In the filter, ticking a team picks everyone in it. Search shows each person's teams.
+
+### Behind the scenes
+- iPhone builds are signed reliably again and reach TestFlight. CI removes the development certificates it creates.
+
 ## v0.4.6
 
 ### Copy, paste and printing
