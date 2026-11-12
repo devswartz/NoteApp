@@ -373,6 +373,9 @@ test('files of a deleted page (or section, or notebook) are visible only to thei
   const f1 = (await uploadTo(owner, 'x', 'a.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${p1}`)).data;
   assert.equal((await meta(member, f1.id)).status, 200, 'visible while the page is');
   assert.equal((await app.call('DELETE', `/pages/${p1}`, owner.token)).status, 200);
+  // In the Trash the page can be opened read-only by the people who could restore it, and so can its files.
+  assert.equal((await meta(member, f1.id)).status, 200, 'members who could restore the page still see its files in the Trash');
+  assert.equal((await app.call('DELETE', `/trash/page/${p1}`, owner.token)).status, 200); // for good: the file detaches
   assert.equal((await meta(member, f1.id)).status, 404, 'not to other members after the page is deleted');
   assert.equal((await meta(owner, f1.id)).status, 200, 'still to the uploader');
   assert.equal((await app.fetchFile(f1.url, owner)).status, 200, 'bytes still served to the uploader');
@@ -382,10 +385,12 @@ test('files of a deleted page (or section, or notebook) are visible only to thei
   const p2 = await newPage(owner, owner.s2, 'In section');
   const f2 = (await uploadTo(owner, 'x', 'b.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${p2}`)).data;
   await app.call('DELETE', `/sections/${owner.s2}`, owner.token);
+  await app.call('DELETE', `/trash/section/${owner.s2}`, owner.token);
   assert.equal((await meta(member, f2.id)).status, 404);
   const p3 = await newPage(owner, owner.s1, 'In notebook');
   const f3 = (await uploadTo(owner, 'x', 'c.pdf', '', `/workspaces/${owner.wsId}/files?pageId=${p3}`)).data;
   await app.call('DELETE', `/notebooks/${owner.notebookId}`, owner.token);
+  await app.call('DELETE', `/trash/notebook/${owner.notebookId}`, owner.token);
   assert.equal((await meta(member, f3.id)).status, 404);
   assert.equal((await meta(owner, f3.id)).status, 200);
 });

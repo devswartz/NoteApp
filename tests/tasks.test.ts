@@ -234,6 +234,10 @@ test('deleting a page keeps its tasks as standalone tasks', async () => {
   const { pageId } = await makePage(u, u.wsId);
   const t = (await create(u, u.wsId, { title: 'Survivor', pageId })).data;
   assert.equal((await app.call('DELETE', `/pages/${pageId}`, u.token)).status, 200);
+  // In the Trash its tasks are hidden, still on the page (they come back with a restore)...
+  assert.ok(!(await list(u, u.wsId)).data.some((x) => x.id === t.id), 'hidden while the page is in Trash');
+  // ...and when it is deleted for good they are standalone tasks, as deleting a page always made them.
+  assert.equal((await app.call('DELETE', `/trash/page/${pageId}`, u.token)).status, 200);
   const after = (await list(u, u.wsId)).data.find((x) => x.id === t.id);
   assert.ok(after, 'task still exists');
   assert.equal(after!.pageId, null);
@@ -445,6 +449,7 @@ test('deleting a private page keeps its tasks, subtasks and history private', as
   await app.call('PATCH', `/tasks/${rec.id}`, owner.token, { status: 'done' }); // creates a history row
 
   assert.equal((await app.call('DELETE', `/pages/${pageId}`, owner.token)).status, 200);
+  assert.equal((await app.call('DELETE', `/trash/page/${pageId}`, owner.token)).status, 200); // for good: standalone, still private
 
   const titles = async (u: TestUser) => {
     const open = (await list(u, wsId)).data;
@@ -488,6 +493,7 @@ test('tasks from a deleted shared page are still visible to everyone', async () 
   const { pageId } = await makePage(owner, wsId, 'shared');
   const t = (await create(owner, wsId, { title: 'Was shared', pageId })).data;
   await app.call('DELETE', `/pages/${pageId}`, owner.token);
+  await app.call('DELETE', `/trash/page/${pageId}`, owner.token); // for good: the task is standalone and visible to all
   assert.ok((await list(other, wsId)).data.some((x) => x.id === t.id));
 });
 

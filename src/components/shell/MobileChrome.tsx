@@ -34,6 +34,7 @@ function useScreenTitle(): string {
   if (pathname.endsWith('/notes')) return 'Notes';
   if (pathname.endsWith('/settings')) return 'Settings';
   if (pathname.endsWith('/activity')) return 'Activity';
+  if (pathname.endsWith('/trash')) return 'Trash';
   return ws?.name ?? '';
 }
 

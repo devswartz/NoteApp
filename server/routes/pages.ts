@@ -7,7 +7,8 @@ import { publish } from '../events.ts';
 import { editPageDoc, flushAll, newBoxId, pageDocState } from '../collab.ts';
 import { convertPageDoc } from '../../shared/pageDoc.ts';
 import { rowToTask } from '../tasks.ts';
-import { copyPage, detachPagesTasks, nextPos, positionAt } from '../tree.ts';
+import { copyPage, nextPos, positionAt } from '../tree.ts';
+import { trashPage } from '../trash.ts';
 import type { Access } from '../access.ts';
 import { HttpError, h, param } from '../http.ts';
 import { backlinks } from '../links.ts';
@@ -72,6 +73,8 @@ pageRoutes.get(
       canManage: a.canManage,
       canShare: canSharePage(a),
       viaPageShare: a.viaPageShare,
+      // In the Trash: opened read-only by someone who could restore it (the client offers Restore).
+      trashed: !!a.trashed,
       member: a.member,
       pendingTemplate: !!pending && a.canEdit && a.member && !a.viaPageShare,
     };
@@ -253,8 +256,8 @@ pageRoutes.delete(
   h((req) => {
     const id = param(req, 'id');
     const a = mustManage(pageAccess(id, req.user.id));
-    detachPagesTasks([id], () => db.prepare('DELETE FROM pages WHERE id = ?').run(id));
-    publish({ type: 'tree', workspaceId: a.workspaceId });
-    return { ok: true };
+    // To the Trash, not gone: it can be restored for 60 days (server/trash.ts).
+    const t = trashPage(id, a.workspaceId, req.user.id);
+    return { ok: true, ...t };
   }),
 );

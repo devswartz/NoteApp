@@ -40,7 +40,7 @@ test('move a page to another notebook: breadcrumb updates and its tasks stay lin
   expect((await listTasks(request, user)).find((t) => t.title === 'Travels with page')?.pageId).toBe(from.pageId);
 });
 
-test('deleting a page or a notebook keeps its tasks as standalone tasks', async ({ page, context, request }) => {
+test('deleting a page or a notebook hides its tasks in the Trash; deleting forever keeps them as standalone tasks', async ({ page, context, request }) => {
   const user = await createUser(request, 'Del Eter');
   const p1 = await createPage(request, user, { notebook: 'Doomed Notebook', page: 'Doomed page' });
   const p2 = await createPage(request, user, { notebook: 'Second Notebook', page: 'Also doomed' });
@@ -53,7 +53,10 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   await page.getByRole('button', { name: 'Page options', exact: true }).click();
   await page.getByRole('menuitem', { name: /Delete/ }).click();
   await expect(page).toHaveURL(/\/notes$/);
-  await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === null, 'task detached on page delete');
+  await expect(page.locator('.toast')).toContainText('moved to Trash');
+  await eventually(() => listTasks(request, user), (ts) => !ts.some((t) => t.title === 'Survivor one'), 'task hidden while its page is in the Trash');
+  await api(request, 'DELETE', `/trash/page/${p1.pageId}`, user.token);
+  await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor one')?.pageId === null, 'task detached when the page is deleted forever');
 
   // Select the other notebook in the Notes panel's picker, then open its menu.
   await (await openNotebookPicker(page)).getByRole('menuitem', { name: /Second Notebook/ }).click();
@@ -62,9 +65,11 @@ test('deleting a page or a notebook keeps its tasks as standalone tasks', async 
   await nbRow.locator('.sb-label').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Delete notebook' }).click();
   // The sidebar confirms in the app's own dialog (not window.confirm).
-  await page.getByRole('dialog', { name: /Delete/ }).getByRole('button', { name: 'Delete notebook' }).click();
+  await page.getByRole('dialog', { name: /Delete/ }).getByRole('button', { name: 'Move to Trash' }).click();
   await expect(page.getByRole('navigation', { name: 'Sidebar' }).getByText('Second Notebook')).toHaveCount(0);
-  await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor two')?.pageId === null, 'task detached on notebook delete');
+  const nbs = await api<{ notebookId: string; kind: string; id: string; name: string }[]>(request, 'GET', `/workspaces/${user.wsId}/trash`, user.token);
+  await api(request, 'DELETE', `/trash/notebook/${nbs.find((i) => i.name === 'Second Notebook')!.id}`, user.token);
+  await eventually(() => listTasks(request, user), (ts) => ts.find((t) => t.title === 'Survivor two')?.pageId === null, 'task detached when the notebook is deleted forever');
 
   await page.goto(tasksUrl(user.wsId, 'my'));
   await expect(taskRow(page, 'Survivor one')).toBeVisible();

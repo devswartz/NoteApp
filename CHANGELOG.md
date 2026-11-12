@@ -2,6 +2,20 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.5
+
+### Trash
+- **Deleted notes go to Trash for 60 days.** Deleting a page, section or notebook moves it to Trash (account menu or command palette). From there you can **Restore** it to where it was, or **Delete forever**. Admins can **Empty Trash**. A trashed page opens read-only with a Restore banner.
+- Deleting a page or section no longer asks first; the toast offers **Undo** and says how many tasks are hidden with it. Deleting a notebook still asks.
+- Tasks on a trashed page are hidden until it's restored.
+
+### Selecting and printing
+- **Word-style multi-selection:** select normally (drag, double-click a word, triple-click a line), then hold Ctrl/Cmd for more selections: Ctrl+drag, Ctrl+double-click or Ctrl+triple-click. Earlier selections stay highlighted, within a box or across boxes. Print selection, right-click → Print selection and Ctrl/Cmd+C use exactly those pieces.
+- **Printing no longer collapses the sidebar.**
+
+### Behind the scenes
+- Faster checks for each change and faster releases.
+
 ## v0.4.4
 
 ### Fixes

@@ -13,7 +13,7 @@
 // edge to set its width; an empty box goes away when you leave it.
 // Keyboard: Escape leaves a box (selects it), Enter edits it again, Tab / Shift+Tab move
 // between boxes in reading order, arrows nudge a selected box (Shift: 1 px), Delete removes it.
-// Picking (OneNote-style, for "Print selection"): Ctrl/Cmd+click a line of text picks that line (linePicks.ts);
+// Picking (Word-style, for "Print selection"): hold Ctrl/Cmd for the next selection to keep the earlier ones (linePicks.ts);
 // Ctrl/Cmd+click a box's frame (its padding, edges and blank area) picks the whole box; a link still opens; Space does the same on a
 // focused box. Escape or a plain click clears it (boxSelection.ts).
 // Undo: Ctrl+Z / Ctrl+Y (and the ribbon's Undo / Redo) take back the page's most recent change,
@@ -264,7 +264,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !document.querySelector('[role="dialog"]')) {
         boxSelection.clear();
-        linePicks.clear(pageId);
+        linePicks.clear(pageId, true);
       }
     };
     window.addEventListener('keydown', onKey);

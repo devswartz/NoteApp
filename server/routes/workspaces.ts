@@ -478,7 +478,7 @@ workspaceRoutes.get(
          FROM page_shares ps JOIN pages p ON p.id = ps.page_id JOIN sections s ON s.id = p.section_id
          JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id
          LEFT JOIN users u ON u.id = ps.created_by
-         WHERE ps.user_id = ? ORDER BY ps.created_at DESC`,
+         WHERE ps.user_id = ? AND p.deleted_at IS NULL ORDER BY ps.created_at DESC`,
       )
       .all(req.user.id) as (Omit<SharedPage, 'canEdit' | 'member'> & { canEdit: number; role: Role | null })[];
     // canEdit is what the user can actually do (pageAccess): the share, capped by a member's role.
