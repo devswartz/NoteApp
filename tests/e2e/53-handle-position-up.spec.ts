@@ -81,7 +81,7 @@ test('from an empty line (no ✓ on its handle) up to a line that has one, the h
   }
 });
 
-test('a box at the very left of the page: the handle stays inside the page area, above the sidebar, and can be clicked', async ({ page, context, request }) => {
+test('a box at the very left of the page: the slim grip stays inside the page area, above the sidebar, left of the text and the bullet, and can be clicked', async ({ page, context, request }) => {
   const user = await createUser(request, 'Up left');
   await signInContext(context, user);
   await open(page, request, user, 640, 0);
@@ -96,9 +96,12 @@ test('a box at the very left of the page: the handle stays inside the page area,
     expect(h.x, `${t}: the handle is not under the sidebar`).toBeGreaterThanOrEqual(area.x);
     // Whatever is at the handle's centre is the handle (not the sidebar's pages panel).
     const top = await page.evaluate(([x, y]) => (document.elementFromPoint(x!, y!)?.closest('.block-handle') ? 'handle' : document.elementFromPoint(x!, y!)?.className), [h.x + h.width / 2, h.y + h.height / 2]);
-    expect(top, `${t}: the handle can be clicked`).toBe('handle');
-    // ...and it covers none of the box's text (there is a gutter for it: no overlay).
-    expect(h.x + h.width, `${t}: the handle ends left of the text`).toBeLessThanOrEqual((await textLeft(box, t)) - 2);
+    expect(top, `${t}: the grip can be clicked`).toBe('handle');
+    // The grip is slim (<= 20px wide) and ends left of the text, and of a list line's bullet or number (~14px in front of the text).
+    expect(h.width, `${t}: a slim grip`).toBeLessThanOrEqual(21);
+    const left = await textLeft(box, t);
+    expect(h.x + h.width, `${t}: ends left of the text`).toBeLessThanOrEqual(left - 2);
+    if (t !== 'Agenda') expect(h.x + h.width, `${t}: ends left of the bullet`).toBeLessThanOrEqual(left - 14);
   }
 });
 

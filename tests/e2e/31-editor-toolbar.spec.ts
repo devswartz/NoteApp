@@ -170,9 +170,10 @@ test('turn a line into a task from the ribbon and from the hover ✓', async ({ 
   const line = editor.locator(':scope > p', { hasText: 'Send the invites' });
   await expect(line).toBeVisible();
   await line.hover();
-  const check = page.getByRole('button', { name: 'Turn this line into a task' });
-  await expect(check).toBeVisible();
-  await check.click();
+  const grip = page.getByRole('button', { name: 'Block options' });
+  await expect(grip).toBeVisible();
+  await grip.click(); // the grip's menu
+  await page.getByRole('menuitem', { name: /Turn into task/ }).click();
   await expect(taskRef(page, 'Send the invites')).toBeVisible();
   await expect(editor.locator('p', { hasText: 'Send the invites' })).toHaveCount(0);
   // Only that line: the checkbox list above is untouched.

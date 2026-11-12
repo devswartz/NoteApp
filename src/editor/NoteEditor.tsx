@@ -54,7 +54,7 @@ import { safeLinkUrl } from './urls.ts';
 import { errorToast, toast } from '../store.ts';
 import type { User } from '../../shared/types.ts';
 import { platform } from '../platform/index.ts';
-import { ENTER, MOD, SHIFT, keyLabel, useIsMobile } from '../components/ui.tsx';
+import { ENTER, MOD, MenuItem, Popover, SHIFT, keyLabel, useIsMobile } from '../components/ui.tsx';
 import '../styles/editor.css';
 
 export type { PresenceUser, SaveState, SyncStatus };
@@ -329,111 +329,135 @@ export async function insertFiles(editor: Editor, files: File[], pos: number, at
 /** Blocks the hover ✓ can turn into tasks. */
 const TASKABLE = new Set(['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList', 'taskList']);
 const LIST_ITEMS = new Set(['listItem', 'taskItem']);
-/** A list line's bullet or number sits in front of its own box: the handle keeps this far (px) clear of it. */
-const LIST_MARKER_GAP = 38;
-/** Any other block: the handle ends this far (px) before its text. */
-const BLOCK_GAP = 8;
+/** A list line's bullet or number sits in front of its own box: the grip keeps this far (px) clear of the line's text. */
+const LIST_MARKER_GAP = 26;
+/** Any other block: the grip ends this far (px) before its text. */
+const BLOCK_GAP = 4;
 
 /**
- * Notion-style handle left of each block: drag to move, click to select, "+" to insert below. In a list the handle
- * belongs to the line you point at (not the whole list): dragging it moves that line with its sub-points, and it can
- * be dropped at any level to move the branch up or down the outline ("nested" handles: the library picks the line,
- * not the list around it).
+ * A slim grip (⋮⋮, ~20px) left of the line you point at, in the page's existing left gutter (it fits even for a box at x=0, without
+ * covering text, a list marker or the sidebar): drag to move; click for a small menu (turn into a task, add a line below, delete the
+ * line). In a list the grip belongs to the line you point at (not the whole list): dragging it moves that line with its sub-points,
+ * and it can be dropped at any level to move the branch up or down the outline ("nested" handles: the library picks the line, not
+ * the list around it).
  */
 function BlockHandle({ editor }: { editor: Editor }) {
   const current = useRef<{ pos: number; size: number } | null>(null);
   const [taskable, setTaskable] = useState(false);
-  // Nested lists: the line under the pointer's row is the target, and the handle waits for the pointer to reach it (handleReach.ts).
+  const [menu, setMenu] = useState<{ pos: number; size: number; taskable: boolean } | null>(null);
+  const grip = useRef<HTMLSpanElement>(null);
+  // Nested lists: the line under the pointer's row is the target, and the grip waits for the pointer to reach it (handleReach.ts).
   useEffect(() => {
     if (editor.isDestroyed || !editor.view?.dom) return;
     return installHandleReach(editor.view.dom);
   }, [editor]);
+
+  const turnIntoTask = (c: { pos: number; size: number }) => {
+    const { doc } = editor.state;
+    // A text block: put the cursor in it. A list: select all of it (each item becomes a task).
+    const node = doc.nodeAt(c.pos);
+    // A list line: just that line's text (not the points nested under it).
+    const sel =
+      node?.isTextblock || (node && LIST_ITEMS.has(node.type.name))
+        ? TextSelection.near(doc.resolve(c.pos + (node.isTextblock ? 1 : 2)))
+        : TextSelection.between(doc.resolve(c.pos + 1), doc.resolve(c.pos + c.size - 1));
+    editor.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).run();
+    if (canConvert(editor)) convertToTasks(editor);
+  };
+  const addLineBelow = (c: { pos: number; size: number }) => {
+    const at = c.pos + c.size;
+    // Below a list line: a new line of that list (a paragraph can't sit between list items).
+    const node = editor.state.doc.nodeAt(c.pos);
+    const item = node && LIST_ITEMS.has(node.type.name) ? node.type.name : null;
+    editor
+      .chain()
+      .insertContentAt(at, item ? { type: item, ...(item === 'taskItem' ? { attrs: { checked: false } } : {}), content: [{ type: 'paragraph' }] } : { type: 'paragraph' })
+      .command(({ tr }) => {
+        tr.setSelection(TextSelection.create(tr.doc, at + (item ? 2 : 1)));
+        return true;
+      })
+      .focus()
+      .run();
+  };
+  const deleteLine = (c: { pos: number; size: number }) => {
+    editor.chain().focus().deleteRange({ from: c.pos, to: c.pos + c.size }).run();
+  };
+
   return (
-    <DragHandle
-      editor={editor}
-      className="block-handle"
-      nested
-      getReferencedVirtualElement={() => {
-        const c = current.current;
-        const node = c ? editor.state.doc.nodeAt(c.pos) : null;
-        const dom = c && node ? (editor.view.nodeDOM(c.pos) as HTMLElement | null) : null;
-        if (!c || !node || !dom) return null;
-        // The handle's place always comes from the CURRENT target's own left edge, recomputed at every retarget (up to a parent or a
-        // heading too): a list line keeps clear of its bullet or number, any other block gets a small gutter. (Left to the library,
-        // a block's handle touched the first letter of its text.)
-        const gap = LIST_ITEMS.has(node.type.name) ? LIST_MARKER_GAP : BLOCK_GAP;
-        return {
-          getBoundingClientRect: () => {
-            const r = dom.getBoundingClientRect();
-            // (The page's left padding is a gutter wide enough for the handle, so even a box at x=0 has room: .page-article in styles.css.)
-            return DOMRect.fromRect({ x: r.x - gap, y: r.y, width: r.width, height: r.height });
-          },
-        };
-      }}
-      onNodeChange={({ node, pos }) => {
-        current.current = node ? { pos, size: node.nodeSize } : null;
-        setTaskable(!!node && TASKABLE.has(node.type.name) && node.textContent.trim() !== '');
-      }}
-    >
-      {/* The ✓ slot is always there (hidden when the line can't be a task), so the handle's width never changes between targets: a width that
-          changes after the handle was placed would push it over the text. */}
-      {!taskable && <span className="block-handle-btn block-handle-task" aria-hidden="true" style={{ visibility: 'hidden' }} />}
-      {taskable && (
-        <button
-          type="button"
-          className="block-handle-btn block-handle-task"
-          title={`Turn into task (${keyLabel(MOD, ENTER)})`}
-          aria-label="Turn this line into a task"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const c = current.current;
-            if (!c) return;
-            const { doc } = editor.state;
-            // A text block: put the cursor in it. A list: select all of it (each item becomes a task).
-            const node = doc.nodeAt(c.pos);
-            // A list line: just that line's text (not the points nested under it).
-            const sel =
-              node?.isTextblock || (node && LIST_ITEMS.has(node.type.name))
-                ? TextSelection.near(doc.resolve(c.pos + (node.isTextblock ? 1 : 2)))
-                : TextSelection.between(doc.resolve(c.pos + 1), doc.resolve(c.pos + c.size - 1));
-            editor.chain().focus().setTextSelection({ from: sel.from, to: sel.to }).run();
-            if (canConvert(editor)) convertToTasks(editor);
-          }}
-        >
-          <CircleCheck size={15} />
-        </button>
-      )}
-      <button
-        type="button"
-        className="block-handle-btn"
-        title="Insert below"
-        aria-label="Insert a block below"
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
+    <>
+      <DragHandle
+        editor={editor}
+        className="block-handle"
+        nested
+        getReferencedVirtualElement={() => {
           const c = current.current;
-          if (!c) return;
-          const at = c.pos + c.size;
-          // Below a list line: a new line of that list (a paragraph can't sit between list items).
-          const node = editor.state.doc.nodeAt(c.pos);
-          const item = node && LIST_ITEMS.has(node.type.name) ? node.type.name : null;
-          editor
-            .chain()
-            .insertContentAt(at, item ? { type: item, ...(item === 'taskItem' ? { attrs: { checked: false } } : {}), content: [{ type: 'paragraph' }] } : { type: 'paragraph' })
-            .command(({ tr }) => {
-              tr.setSelection(TextSelection.create(tr.doc, at + (item ? 2 : 1)));
-              return true;
-            })
-            .insertContent('/') // opens the slash menu
-            .focus()
-            .run();
+          const node = c ? editor.state.doc.nodeAt(c.pos) : null;
+          const dom = c && node ? (editor.view.nodeDOM(c.pos) as HTMLElement | null) : null;
+          if (!c || !node || !dom) return null;
+          // The grip's place always comes from the CURRENT target's own left edge, recomputed at every retarget (up to a parent or a
+          // heading too): a list line keeps clear of its bullet or number, any other block gets a small gap.
+          const gap = LIST_ITEMS.has(node.type.name) ? LIST_MARKER_GAP : BLOCK_GAP;
+          return { getBoundingClientRect: () => { const r = dom.getBoundingClientRect(); return DOMRect.fromRect({ x: r.x - gap, y: r.y, width: r.width, height: r.height }); } };
+        }}
+        onNodeChange={({ node, pos }) => {
+          current.current = node ? { pos, size: node.nodeSize } : null;
+          setTaskable(!!node && TASKABLE.has(node.type.name) && node.textContent.trim() !== '');
         }}
       >
-        <Plus size={15} />
-      </button>
-      <span className="block-handle-btn block-handle-grip" title="Drag to move (or Alt+Shift+↑/↓)" aria-hidden="true" data-drag-handle>
-        <GripVertical size={15} />
-      </span>
-    </DragHandle>
+        <span
+          ref={grip}
+          role="button"
+          className="block-handle-grip"
+          title="Drag to move · click for more (or Alt+Shift+↑/↓)"
+          aria-label="Block options"
+          data-drag-handle
+          onClick={() => {
+            // A click (no drag) opens the menu for the line the grip is on.
+            const c = current.current;
+            if (c) setMenu({ ...c, taskable });
+          }}
+        >
+          <GripVertical size={15} />
+        </span>
+      </DragHandle>
+      <Popover anchor={grip} open={!!menu} onClose={() => setMenu(null)} placement="bottom-start">
+        {menu && (
+          <div className="menu" role="menu" aria-label="Block options">
+            {menu.taskable && (
+              <MenuItem
+                icon={<CircleCheck size={15} />}
+                hint={keyLabel(MOD, ENTER)}
+                onSelect={() => {
+                  setMenu(null);
+                  turnIntoTask(menu);
+                }}
+              >
+                Turn into task
+              </MenuItem>
+            )}
+            <MenuItem
+              icon={<Plus size={15} />}
+              onSelect={() => {
+                setMenu(null);
+                addLineBelow(menu);
+              }}
+            >
+              Add line below
+            </MenuItem>
+            <MenuItem
+              icon={<Trash2 size={15} />}
+              danger
+              onSelect={() => {
+                setMenu(null);
+                deleteLine(menu);
+              }}
+            >
+              Delete line
+            </MenuItem>
+          </div>
+        )}
+      </Popover>
+    </>
   );
 }
 

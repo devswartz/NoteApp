@@ -1020,12 +1020,7 @@ body.is-resizing .sidebar { transition: none; }
 /* OneNote-style: the page starts at the left of the note area and runs its full width.
    51px on the left = the canvas's 40px handle gutter + a box's 11px inset (styles/canvas.css),
    so the main box's edge sits 40px in and its text lines up with the title. */
-/* --handle-gutter: room left of the canvas for the block handle (✓ + + + ⋮⋮ is ~70px; a list line's sits 38px further left), so the
-   handle never covers a box's text or goes under the sidebar, even for a box at x=0. Where there is no hover (phones, tablets) the handle
-   isn't shown and the gutter is the old 40px. The article's padding adds a box's 11px inset so the title lines up with the text. */
-:root { --handle-gutter: 108px; }
-@media (hover: none), (max-width: 760px) { :root { --handle-gutter: 40px; } }
-.page-article { padding: 32px 40px 30vh calc(var(--handle-gutter) + 11px); }
+.page-article { padding: 32px 40px 30vh 51px; }
 .page-title {
   display: block;
   width: 100%;

@@ -3,9 +3,9 @@
    OneNote-style, the page is left-aligned and full width (.page-article in styles.css): the
    surface starts 40px from the left of the note area and its visible part ends 40px from the
    right, which is how wide the main ("wide") boxes are drawn.
-   Its left padding (--handle-gutter, styles.css) holds the boxes' block handle; the extra 11px lines the text
+   Its 40px of left padding holds the main box's block handle; the extra 11px lines the text
    of a box at x = 0 up with the title (a box's own padding and border). */
-.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px 0 calc(-1 * (var(--handle-gutter) + 11px)); padding: 14px 8px 0 var(--handle-gutter); }
+.canvas-viewport { overflow-x: auto; overflow-y: hidden; margin: 0 -8px 0 -51px; padding: 14px 8px 0 40px; }
 /* isolation: box z-indexes (which grow as boxes come to the front) stay under the ribbon. */
 .canvas-surface { position: relative; isolation: isolate; min-height: 320px; }
 .canvas-surface.can-edit { cursor: text; }
