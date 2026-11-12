@@ -1,47 +1,70 @@
 # Notivelo
 
-Collaborative notes with built-in task management. Notebooks, sections and pages like OneNote, a block editor like Notion, and tasks like Todoist. **A task you write inside a note is a real task**: it shows up on your dashboard, stays linked to its note, and stays in sync everywhere it appears.
+**Notes and tasks, beautifully together.** Notebooks, sections and pages on a free-form canvas, with tasks that live in your notes, a calendar, sharing and printing. On the web, Windows, Mac, iPhone, iPad and Android.
 
-Built for a small team (about 2–10 people). Self-hosted, invite-only, and available on the web, macOS, Windows, iPhone and Android.
+<p align="center">
+  <img src="docs/screens/readme-light.png" alt="Notivelo on the desktop: a project brief with a table and a numbered outline" width="900">
+</p>
 
-![A note with embedded tasks; the tasks panel on the right lists them](docs/images/notes.png)
-
-| Today | Calendar | Mobile |
-|---|---|---|
-| ![Today view: overdue and due-today tasks](docs/images/today.png) | ![Month calendar with tasks on their due dates](docs/images/calendar.png) | ![Mobile layout with the bottom tab bar](docs/images/mobile.png) |
+**[Open the web app](https://notes.devswartz.com)** · **[Download for Windows, Mac and Android](https://github.com/devswartz/NoteApp/releases/latest)** · iPhone and iPad: App Store, coming soon · [Privacy](https://notes.devswartz.com/privacy) · [Support](https://notes.devswartz.com/support)
 
 ## Features
 
-**Notes**
-- Workspaces → notebooks → sections → pages, with drag-and-drop reordering and moving. Favourites, recent pages, context menus and a resizable sidebar.
-- Block editor: headings, lists, checklists, tables, callouts, toggles, quotes, dividers, code blocks with highlighting, links (⌘K), images (resizable) and file attachments.
-- Page templates (meeting notes, project, daily journal), `[[` page links with backlinks ("Linked from"), `/` slash menu, Markdown shortcuts, block drag handles, page icons, autosave with a save-status indicator, and page move and copy.
-- Page version history with preview and restore.
-- Real-time co-editing with live cursors and presence.
-- Works offline: the app opens without a connection, notes stay editable and sync when you reconnect, and tasks are readable from a local cache.
+**Canvas pages and ribbon**
+- Click anywhere on a page and type. Drag boxes around, resize them, add tables, images and files. Word-style numbered outlines (1, a, i) with drag handles to reorder.
+- A ribbon across the top that changes with the view, page colour and rule lines, page version history, and a phone layout with a floating toolbar.
 
-**Tasks**
-- Type `/task` in a note, or press ⌘↵ (Ctrl+Enter on Windows and Linux) on a line, to make it a task. You can also add standalone tasks from anywhere with **Q**.
-- Each task has an assignee, a due date and time, a priority (P1–P4) and recurrence. Edit it from the note or the dashboard; it is the same task in both places.
-- **Natural-language quick add:** `Send invoice tomorrow 3pm p1 @sam every month`.
-- **Dashboard:** Today (including overdue, with a progress strip), My Tasks, Upcoming, Team, All (filter, sort, group, saved views), Calendar (month and week, drag to reschedule) and Completed.
-- **Keyboard-driven task lists** (J/K, X, D, A, 1–4), bulk actions with undo, and one level of subtasks with progress.
-- **Recurrence:** daily, weekdays, every N weeks on chosen days, monthly (on a date, or e.g. the 2nd Tuesday), yearly, until a date or N times, or "after completion".
-- **Reminders** by web push, email or mobile push, with snooze, quiet hours, a daily digest email and a private calendar feed (.ics) for Apple or Google Calendar.
+**Tasks and calendar**
+- Type `/task` in a note and it becomes a real task: assignee, due date and time, priority, tags, recurrence and subtasks. It shows on your dashboard and stays linked to its page.
+- Today, My tasks, Upcoming, Team and Completed views, filters and saved views, a month and week calendar, reminders and a private calendar feed.
 
-**Team**
-- Email invites. Workspace roles: owner, admin, member and viewer.
-- Notebooks shared with the whole workspace, or private to you plus people you choose.
-- Task changes are pushed live to everyone who can see them.
+**Sharing and collaboration**
+- Share a notebook with your workspace, or a single page with anyone by email, as view or edit. Live co-editing with cursors, comments, and tasks on shared pages.
+- Roles for owners, admins, members and viewers. Works offline and syncs when you reconnect.
 
-**Everywhere**
-- ⌘K search across pages and tasks (ranked full-text), plus a command palette.
-- Keyboard-first: `?` lists every shortcut. Light, dark or system theme.
-- **Web/PWA**, a **desktop app** (menu bar icon, global quick capture ⌥⌘N, native notifications, auto-update) and **mobile apps** (push reminders, share sheet, Today widget, Face ID lock).
+**Templates**
+- Meeting notes, project and daily journal, your own templates, and a default template per section.
 
-New here? Read the **[user guide](docs/USER_GUIDE.md)**.
+**Printing**
+- Print a page, a selection, a section or a notebook, or just a contents sheet. Save as PDF from the same dialog.
 
-## Quick start (development)
+**Themes**
+- Light, Dark, Hybrid (dark ribbon around a paper-like page) or System, with eight accent colours.
+
+**Import**
+- Import notebooks from Microsoft OneNote and keep their layout, box positions and tables.
+
+**Privacy**
+- Your notes live on a server you control. Files need sign-in, there is an Export my data button, and the iPhone app has Apple's privacy manifest. No ads and no tracking. See the [Privacy Policy](https://notes.devswartz.com/privacy).
+
+Full detail by release is in the [changelog](CHANGELOG.md), and the [user guide](docs/USER_GUIDE.md) explains how to use it.
+
+## Screenshots
+
+| Hybrid theme | Dark theme |
+|---|---|
+| ![Hybrid theme with a teal accent](docs/screens/readme-hybrid.png) | ![Dark theme with a purple accent](docs/screens/readme-dark.png) |
+
+| Tasks | Calendar |
+|---|---|
+| ![Upcoming tasks grouped by day](docs/screens/readme-tasks.png) | ![Month calendar with tasks on their due dates](docs/screens/readme-calendar.png) |
+
+| Numbered outline and table | iPhone: a page | iPhone: tasks |
+|---|---|---|
+| ![A page with a nested numbered outline and a table](docs/screens/readme-outline.png) | <img src="docs/screens/readme-mobile-page.png" alt="Meeting notes on iPhone" width="240"> | <img src="docs/screens/readme-mobile-tasks.png" alt="Upcoming tasks on iPhone" width="240"> |
+
+## Get it
+
+- **Web:** [notes.devswartz.com](https://notes.devswartz.com). It installs as an app from your browser.
+- **Windows and Mac:** download the latest installer from [Releases](https://github.com/devswartz/NoteApp/releases/latest). The app updates itself.
+- **iPhone and iPad:** on the App Store, coming soon.
+- **Android:** [download the APK](https://github.com/devswartz/NoteApp/releases/latest/download/Notivelo.apk). Android asks you to allow installs from your browser or file manager the first time.
+
+## Self-hosting
+
+Notivelo can be self-hosted. Deployment notes (docs/DEPLOY.md) are available on request; ask through the [Support page](https://notes.devswartz.com/support).
+
+## Development
 
 Needs Node 22.
 
@@ -64,20 +87,17 @@ npm start           # production server: API, WebSockets and the web app on one 
 
 Desktop: `npm run desktop:dev` (needs Rust). Mobile: `npm run mobile:ios` / `npm run mobile:android` (needs Xcode / Android Studio).
 
+Store and README images are made by `scripts/store-assets/` (capture with Playwright against a demo server, then composite); see the header of each script.
+
 ## Documentation
 
 | Doc | What's in it |
 |---|---|
 | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | How to use the app: notes, tasks, views, quick add, reminders, sharing, shortcuts |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How it's built: stack, folder layout, data model, auth, sync, platform adapter, API |
-| [docs/DEPLOY_CONTRACT.md](docs/DEPLOY_CONTRACT.md) | The hosting interface: image, ports, environment, volumes, health check |
-| [docs/LAUNCH_CHECKLIST.md](docs/LAUNCH_CHECKLIST.md) | Step by step from `main` to staging, prod v0.1.0, and the signed desktop and mobile apps |
-| [docs/RELEASING.md](docs/RELEASING.md) | Releasing the server image (CI, GHCR, staging and production) |
-| [docs/DESKTOP.md](docs/DESKTOP.md) | The macOS/Windows app: building, signing, notarisation, auto-update |
+| [docs/DESKTOP.md](docs/DESKTOP.md) | The Mac and Windows app: building, signing, notarisation, auto-update |
 | [docs/MOBILE.md](docs/MOBILE.md) | The iPhone/Android app: building, push, widgets, store secrets |
 | [docs/REMINDERS.md](docs/REMINDERS.md) | Recurrence rules, the reminder scheduler and delivery channels |
 | [docs/QA.md](docs/QA.md) | The end-to-end test suite and the bug list |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, by release |
 | [PLAN.md](PLAN.md) | Product scope, platforms and roadmap |
-
-Screenshots are generated by `scripts/docs-screenshots.cjs` against a demo build.
