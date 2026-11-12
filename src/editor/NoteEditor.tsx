@@ -5,6 +5,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { beginComment, useCommentBinding } from './collabComments.ts';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
+import { installHandleReach } from './handleReach.ts';
 import StarterKit from '@tiptap/starter-kit';
 import { TableKit } from '@tiptap/extension-table';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
@@ -340,6 +341,11 @@ const LIST_MARKER_GAP = 38;
 function BlockHandle({ editor }: { editor: Editor }) {
   const current = useRef<{ pos: number; size: number } | null>(null);
   const [taskable, setTaskable] = useState(false);
+  // Nested lists: the line under the pointer's row is the target, and the handle waits for the pointer to reach it (handleReach.ts).
+  useEffect(() => {
+    if (editor.isDestroyed || !editor.view?.dom) return;
+    return installHandleReach(editor.view.dom);
+  }, [editor]);
   return (
     <DragHandle
       editor={editor}
