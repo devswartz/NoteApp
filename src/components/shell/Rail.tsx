@@ -125,11 +125,14 @@ export function WorkspaceSwitcher({ compact }: { compact?: boolean }) {
           >
             New workspace
           </MenuItem>
-          <MenuItem icon={<Settings size={15} />} onSelect={() => navigate(`/w/${wsId}/settings?s=members`)}>
-            Settings & members
+          <MenuItem icon={<Settings size={15} />} onSelect={() => navigate(`/w/${wsId}/settings?scope=workspace`)}>
+            Workspace settings
           </MenuItem>
-          <MenuItem icon={<LogOut size={15} />} onSelect={() => void signOut().then(() => navigate('/login'))}>
-            Sign out
+          <MenuItem icon={<Activity size={15} />} onSelect={() => navigate(`/w/${wsId}/activity`)}>
+            Activity
+          </MenuItem>
+          <MenuItem icon={<Trash2 size={15} />} onSelect={() => navigate(`/w/${wsId}/trash`)}>
+            Trash
           </MenuItem>
         </div>
       )}
@@ -182,14 +185,8 @@ export function UserMenu({ wsId, full }: { wsId: string; full?: boolean }) {
         <MenuLabel>Theme</MenuLabel>
         <ThemeToggle />
         <MenuSeparator />
-        <MenuItem icon={<Settings size={15} />} onSelect={() => navigate(`/w/${wsId}/settings`)}>
+        <MenuItem icon={<Settings size={15} />} onSelect={() => navigate(`/w/${wsId}/settings?scope=personal`)}>
           Settings
-        </MenuItem>
-        <MenuItem icon={<Activity size={15} />} onSelect={() => navigate(`/w/${wsId}/activity`)}>
-          Activity
-        </MenuItem>
-        <MenuItem icon={<Trash2 size={15} />} onSelect={() => navigate(`/w/${wsId}/trash`)}>
-          Trash
         </MenuItem>
         <MenuItem icon={<Keyboard size={15} />} hint="?" onSelect={() => ui.setShortcuts(true)}>
           Keyboard shortcuts

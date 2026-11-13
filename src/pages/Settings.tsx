@@ -59,10 +59,25 @@ const SECTIONS: SectionDef[] = [
   { id: 'about', title: 'About', icon: <Info size={16} />, group: 'App', render: () => <AboutSection /> },
 ];
 
+/** Two settings pages: the workspace's (General, Members, Teams, Tags) and yours (Account and App sections). */
+export type SettingsScope = 'workspace' | 'personal';
+const scopeOf = (x: SectionDef): SettingsScope => (x.group === 'Workspace' ? 'workspace' : 'personal');
+
+/**
+ * Which page a settings link opens: a section names its own page (so an old ?s=members link still opens the
+ * workspace page), else ?scope=, else your own settings.
+ */
+export function settingsScope(params: URLSearchParams): SettingsScope {
+  const named = SECTIONS.find((x) => x.id === params.get('s'));
+  if (named) return scopeOf(named);
+  return params.get('scope') === 'workspace' ? 'workspace' : 'personal';
+}
+
 export function Settings() {
-  const sections = SECTIONS.filter((x) => !x.when || x.when());
-  const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
   const [params, setParams] = useSearchParams();
+  const scope = settingsScope(params);
+  const sections = SECTIONS.filter((x) => scopeOf(x) === scope && (!x.when || x.when()));
+  const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
   const isMobile = useIsMobile();
   const requested = sections.find((x) => x.id === params.get('s'));
   const scroller = useRef<HTMLDivElement>(null);
@@ -75,16 +90,17 @@ export function Settings() {
   }, [current?.id]);
 
   if (!ws) return null;
-  const groups = ['Account', 'Workspace', 'App'] as const;
+  const groups = scope === 'workspace' ? (['Workspace'] as const) : (['Account', 'App'] as const);
+  const pageTitle = scope === 'workspace' ? `${ws.name} settings` : 'Settings';
   // Mobile pushes a history entry per section (Back returns to the list); desktop replaces it.
-  const select = (id: string | null) => setParams(id ? { s: id } : {}, { replace: !isMobile });
+  const select = (id: string | null) => setParams(id ? { scope, s: id } : { scope }, { replace: !isMobile });
   const active = current?.id;
 
   const nav = (
     <nav className="settings-nav" aria-label="Settings sections">
       {groups.map((g) => (
         <div key={g} className="settings-nav-group">
-          <div className="settings-nav-heading">{g === 'Workspace' ? ws.name : g}</div>
+          {scope === 'personal' && <div className="settings-nav-heading">{g}</div>}
           {sections.filter((x) => x.group === g).map((x) => (
             <button
               key={x.id}
@@ -106,7 +122,7 @@ export function Settings() {
   if (isMobile && !current)
     return (
       <div className="settings is-list">
-        <h1>Settings</h1>
+        <h1>{pageTitle}</h1>
         {nav}
       </div>
     );
@@ -116,14 +132,14 @@ export function Settings() {
     <div className="settings" ref={scroller}>
       {!isMobile && (
         <aside className="settings-side">
-          <div className="settings-side-title">Settings</div>
+          <div className="settings-side-title">{pageTitle}</div>
           {nav}
         </aside>
       )}
       <section className="settings-content settings-section" key={section.id} id={`settings-${section.id}`} aria-labelledby="settings-title">
         {isMobile && (
           <button type="button" className="settings-back" onClick={() => select(null)}>
-            <ChevronLeft size={18} /> Settings
+            <ChevronLeft size={18} /> {pageTitle}
           </button>
         )}
         <header className="settings-head">
