@@ -488,6 +488,9 @@ export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void
 
 export function attachCollab(wss: WebSocketServer) {
   wss.on('connection', (conn: WebSocket, req: IncomingMessage) => {
+    // ws emits 'error' for protocol violations (a frame over maxPayload, bad opcodes, invalid UTF-8). With no
+    // listener that is an uncaught exception that takes the whole server down, so this comes before auth.
+    conn.on('error', () => setTimeout(() => conn.terminate(), 2000).unref()); // ws has already started closing (1009 etc.)
     const url = new URL(req.url ?? '', 'http://x');
     // y-websocket connects to `${serverUrl}/${roomName}`; room = page id.
     const pageId = decodeURIComponent(url.pathname.split('/').pop() ?? '');

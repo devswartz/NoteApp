@@ -87,3 +87,17 @@ test('ACCESS_TOKEN_TTL_S: bad values use the default; production clamps to 60–
   assert.equal(accessTtlFromEnv('1800', true), 1800);
   assert.equal(accessTtlFromEnv('5', false), 5, 'tests may use short tokens outside production');
 });
+
+test('/collab: a frame far over the size limit closes that socket (1009) and does not crash the server', async () => {
+  const u = await app.signUp('Frame');
+  const tree = await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token);
+  const pageId = (await app.call('POST', `/sections/${tree.data.sections[0].id}/pages`, u.token, { title: 'T' })).data.id;
+  // ws emits 'error' on the server's socket for an oversized frame; unhandled, that killed the process.
+  for (const token of [u.token, 'not-a-token']) {
+    const ws = await openCollab(token, pageId);
+    const code = closed(ws);
+    ws.send(new Uint8Array(20 * 1024 * 1024));
+    await code;
+  }
+  assert.equal((await app.call('GET', '/workspaces', u.token)).status, 200, 'server still up');
+});

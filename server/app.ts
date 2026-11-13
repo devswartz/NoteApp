@@ -14,7 +14,7 @@ import { WebSocketServer } from 'ws';
 import { api } from './routes/index.ts';
 import { serveUploads } from './routes/files.ts';
 import { wellKnownRoutes } from './wellKnown.ts';
-import { attachCollab } from './collab.ts';
+import { MAX_SYNC_MESSAGE_BYTES, attachCollab } from './collab.ts';
 import { attachEvents } from './events.ts';
 import { handleProtocols } from './auth.ts';
 import { securityHeaders } from './security.ts';
@@ -55,7 +55,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   }
 
   const server = http.createServer(app);
-  const collab = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024, handleProtocols });
+  const collab = new WebSocketServer({ noServer: true, maxPayload: MAX_SYNC_MESSAGE_BYTES + 1024, handleProtocols });
   const events = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, handleProtocols });
   attachCollab(collab);
   attachEvents(events);
