@@ -248,7 +248,7 @@ test('at full speed, deleting a just-created empty task never leaves a phantom i
   expect(server.filter((t) => t.pageId === pageId).map((t) => t.title).sort()).toEqual(['Fast 0', 'Fast 1', 'Fast 2', 'Fast 3']);
   // Same session, no reload: the dashboard shows exactly the server's open tasks (no "Untitled" phantom).
   await railTo(page, 'Tasks');
-  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('link', { name: /All Tasks/ }).click();
+  await page.getByRole('navigation', { name: 'Sidebar' }).getByRole('link', { name: /All tasks/ }).click();
   await expect(page.locator('.task-row')).toHaveCount(server.filter((t) => t.status === 'open').length);
   await expect(page.locator('.task-row', { hasText: 'Untitled task' })).toHaveCount(0);
 });

@@ -2,7 +2,7 @@
 // saved views (Track 1 serves them from the server behind useSavedViews).
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Bookmark, CalendarRange, CheckCircle2, Inbox, ListChecks, Plus, Sun, Users } from 'lucide-react';
+import { Bookmark, CalendarRange, Inbox, ListChecks, Plus, Sun, Users } from 'lucide-react';
 import { ui, useStore } from '../../store.ts';
 import { Badge, Kbd } from '../ui.tsx';
 import { isMine } from '../../lib/taskViews.ts';
@@ -44,9 +44,8 @@ export function TasksPanel({ wsId, canEdit }: { wsId: string; canEdit: boolean }
           <NavItem to={`/w/${wsId}/tasks/today`} active={at('today')} icon={<Sun size={16} />} label="Today" count={todayCount} danger={overdue} />
           <NavItem to={`/w/${wsId}/tasks/my`} active={at('my')} icon={<Inbox size={16} />} label="My Tasks" count={mine.length} />
           <NavItem to={`/w/${wsId}/tasks/upcoming`} active={at('upcoming')} icon={<CalendarRange size={16} />} label="Upcoming" count={upcomingCount} />
-          <NavItem to={`/w/${wsId}/tasks/all`} active={at('all')} icon={<ListChecks size={16} />} label="All Tasks" />
+          <NavItem to={`/w/${wsId}/tasks/all`} active={at('all')} icon={<ListChecks size={16} />} label="All tasks" />
           <NavItem to={`/w/${wsId}/tasks/team`} active={at('team')} icon={<Users size={16} />} label="Team" />
-          <NavItem to={`/w/${wsId}/tasks/completed`} active={at('completed')} icon={<CheckCircle2 size={16} />} label="Completed" />
         </div>
         <Group id={`views:${wsId}`} title="Views">
           <div className="sb-section">

@@ -13,7 +13,6 @@ import {
   BookmarkPlus,
   CalendarDays,
   CalendarRange,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Eye,
@@ -84,24 +83,22 @@ const SHOW: { id: ViewId; label: string; text: string; icon: ReactNode }[] = [
   { id: 'today', label: 'Today', text: 'Today', icon: <Sun /> },
   { id: 'upcoming', label: 'Upcoming', text: 'Upcoming', icon: <CalendarRange /> },
   { id: 'my', label: 'My Tasks', text: 'My Tasks', icon: <Inbox /> },
-  { id: 'all', label: 'All Tasks', text: 'All', icon: <ListChecks /> },
-  { id: 'completed', label: 'Completed', text: 'Completed', icon: <CheckCircle2 /> },
+  { id: 'all', label: 'All tasks', text: 'All tasks', icon: <ListChecks /> },
 ];
 
 const MY_GROUPS: MyGroup[] = ['due', 'note', 'priority'];
 
-/** Why Group by / Sort / Show completed don't apply to a view (undefined: they do). */
-function organiseOff(view: ViewId): { group?: string; sort?: string; done?: string } {
+/** Why Group by / Sort don't apply to a view (undefined: they do). */
+function organiseOff(view: ViewId): { group?: string; sort?: string } {
   const fixed: Partial<Record<ViewId, string>> = {
     today: 'Today is always grouped into Overdue and Today',
     upcoming: 'Upcoming is grouped by day',
-    completed: 'Completed is grouped by the day each task was finished',
     team: 'Team is grouped by person or team (switch on the page)',
   };
   if (view === 'all') return {};
-  if (view === 'my') return { sort: 'My Tasks is sorted by due date; sort in All Tasks', done: 'My Tasks shows open tasks; finished ones are in Completed' };
+  if (view === 'my') return { sort: 'My Tasks is sorted by due date; sort in All tasks' };
   const g = fixed[view];
-  return { group: g, sort: `${g}; sort in All Tasks`, done: view === 'completed' ? 'Completed shows only finished tasks' : 'This view shows open tasks; finished ones are in Completed' };
+  return { group: g, sort: `${g}; sort in All tasks` };
 }
 
 function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
@@ -141,7 +138,7 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
       )}
     </RibbonMenu>
   );
-  const more = KINDS.filter((k) => !['assignee', 'tagsAny', 'teamId', 'priority'].includes(k.key));
+  const more = KINDS.filter((k) => !['status', 'assignee', 'tagsAny', 'teamId', 'priority'].includes(k.key));
   const moreCount = active.filter((k) => more.some((m) => m.key === k)).length;
 
   return (
@@ -175,18 +172,10 @@ function TasksRibbon({ wsId, view }: { wsId: string; view: ViewId }) {
             </MenuItem>
           ))}
         </RibbonMenu>
-        <RibbonButton
-          label="Show completed"
-
-          icon={<Eye />}
-          active={filters.status !== 'open'}
-          disabled={off.done}
-          title={filters.status === 'done' ? 'Showing only completed tasks (this saved view)' : undefined}
-          onClick={() => taskView.setFilters((f) => ({ ...f, status: f.status === 'open' ? 'any' : 'open' }))}
-        />
       </Group>
       <Sep />
       <Group label="Filter">
+        {filterMenu('status', 'Status', <Eye />, filters.status === 'open' ? 0 : 1)}
         {view === 'upcoming' ? (
           <RibbonMenu label="Assignee filter" text="Assignee" compact icon={<User />} count={upcomingScope === 'all' ? 0 : 1} title={upcomingScope === 'mine' ? 'Showing your tasks' : 'Showing everyone’s tasks'}>
             <MenuItem checked={upcomingScope === 'mine'} onSelect={() => taskView.setUpcomingScope('mine')}>

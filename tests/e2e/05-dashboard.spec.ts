@@ -1,9 +1,9 @@
-// Priority 5: dashboard views (Today/Upcoming/Calendar/Completed/All), filters, quick add parsing.
+// Priority 5: dashboard views (Today/Upcoming/Calendar/All, with Status), filters, quick add parsing.
 import { expect, test } from '@playwright/test';
-import { addFilter, api, createTask, createUser, isoDay, listTasks, removeFilter, ribbon, signInContext, taskRow, tasksUrl, eventually } from './helpers.ts';
+import { addFilter, api, createTask, createUser, isoDay, listTasks, removeFilter, ribbon, setStatus, signInContext, taskRow, tasksUrl, eventually } from './helpers.ts';
 
 test.describe('dashboard', () => {
-  test('Today shows overdue + today; Upcoming shows the future; Completed shows done tasks', async ({ page, context, request }) => {
+  test('Today shows overdue + today; Upcoming shows the future; Status Completed shows done tasks', async ({ page, context, request }) => {
     const user = await createUser(request, 'Victor Views');
     await createTask(request, user, user.wsId, { title: 'Overdue thing', dueDate: isoDay(-2) });
     await createTask(request, user, user.wsId, { title: 'Due today thing', dueDate: isoDay(0) });
@@ -29,7 +29,8 @@ test.describe('dashboard', () => {
     await expect(taskRow(page, 'Next week thing')).toBeVisible();
     await expect(taskRow(page, 'Someday thing')).toHaveCount(0);
 
-    await page.getByRole('link', { name: 'Completed' }).click();
+    await page.getByRole('link', { name: 'All tasks' }).click();
+    await setStatus(page, 'Completed');
     await expect(taskRow(page, 'Finished thing')).toBeVisible();
     await expect(taskRow(page, 'Due today thing')).toHaveCount(0);
 

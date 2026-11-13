@@ -4,16 +4,15 @@ import type { Task, Team, Tree } from '../../shared/types.ts';
 import { describeDue, longDate } from './format.ts';
 import { sectionDescendants } from '../../shared/sections.ts';
 
-export type ViewId = 'today' | 'my' | 'upcoming' | 'team' | 'all' | 'calendar' | 'completed';
+export type ViewId = 'today' | 'my' | 'upcoming' | 'team' | 'all' | 'calendar';
 
 export const VIEWS: { id: ViewId; label: string; shortcut: string }[] = [
   { id: 'today', label: 'Today', shortcut: 'G T' },
   { id: 'my', label: 'My Tasks', shortcut: 'G M' },
   { id: 'upcoming', label: 'Upcoming', shortcut: 'G U' },
   { id: 'team', label: 'Team', shortcut: 'G E' },
-  { id: 'all', label: 'All Tasks', shortcut: 'G A' },
+  { id: 'all', label: 'All tasks', shortcut: 'G A' },
   { id: 'calendar', label: 'Calendar', shortcut: 'G C' },
-  { id: 'completed', label: 'Completed', shortcut: 'G D' },
 ];
 
 export interface Group {
@@ -237,9 +236,10 @@ export function sameFilters(a: Filters, b: Filters): boolean {
   );
 }
 
-/** The filter fields that are on (search text, status and subteams are excluded: they have their own controls). */
+/** The filter fields that are on (search text and subteams are excluded: they have their own controls). Status counts once it isn't the default (Open). */
 export function activeFilterKeys(f: Filters): (keyof Filters)[] {
   const keys: (keyof Filters)[] = [];
+  if (f.status !== 'open') keys.push('status');
   for (const k of PICK_KEYS) if (f[k].values.length) keys.push(k);
   if (f.due !== 'any') keys.push('due');
   if (f.tagsAny.length) keys.push('tagsAny');
@@ -253,6 +253,24 @@ export function teamScope(teamId: string, includeSubteams: boolean, teams: Team[
   if (includeSubteams) for (const t of teams) if (t.parentId === teamId) ids.add(t.id);
   return ids;
 }
+
+export type Status = Filters['status'];
+export const STATUS_LABELS: Record<Status, string> = { open: 'Open', done: 'Completed', any: 'All' };
+
+/**
+ * Filters for a saved view. One saved before Status existed has none: it behaves as Open, or as Completed when it
+ * was based on the old Completed view (`view`/`base`/`from` of "completed"). A Status it does have is kept.
+ */
+export function migrateFilters(raw: unknown, viewHint?: unknown): Filters {
+  const f = normalizeFilters(raw);
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const hasStatus = typeof r.status === 'string' && ENUMS.status.includes(r.status);
+  const completed = [viewHint, r.view, r.base, r.from].some((v) => v === 'completed');
+  return !hasStatus && completed ? { ...f, status: 'done' } : f;
+}
+
+/** Completed tasks, newest completion first. */
+export const byCompletion = (a: Task, b: Task) => (b.completedAt ?? '').localeCompare(a.completedAt ?? '');
 
 export function applyFilters(list: Task[], f: Filters, me: string, tree: Tree, teams: Team[] = []): Task[] {
   const t = today();

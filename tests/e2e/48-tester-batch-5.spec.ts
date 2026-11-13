@@ -94,7 +94,7 @@ test('Print on the Tasks view prints the view laid out for paper: its tasks, non
   await expect(page.locator('html.print-job')).toHaveCount(0); // no page job: the view itself is on paper
   await expect(page.locator('#print-root')).toHaveCount(0);
   for (const title of ['Order paper', 'Buy toner']) await expect(taskRow(page, title)).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'All Tasks' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'All tasks' })).toBeVisible();
   await expect(page.locator('.rail')).toBeHidden();
   await expect(page.locator('.sidebar')).toBeHidden();
   await expect(page.locator('.ribbon')).toBeHidden();

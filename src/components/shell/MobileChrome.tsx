@@ -15,9 +15,8 @@ const VIEW_TITLES: Record<string, string> = {
   my: 'My Tasks',
   upcoming: 'Upcoming',
   team: 'Team',
-  all: 'All Tasks',
+  all: 'All tasks',
   calendar: 'Calendar',
-  completed: 'Completed',
 };
 
 /** Title for the current screen: the view name, the page title, or the workspace. */

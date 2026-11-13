@@ -6,7 +6,6 @@ import {
   Trash2,
   CalendarDays,
   CalendarRange,
-  CheckCircle2,
   BookPlus,
   FilePlus,
   Inbox,
@@ -119,13 +118,20 @@ export function useShellCommands(wsId: string) {
       nav('my', 'My Tasks', 'm', 'tasks/my', <Inbox size={16} />),
       nav('upcoming', 'Upcoming', 'u', 'tasks/upcoming', <CalendarRange size={16} />),
       nav('team', 'Team', 'e', 'tasks/team', <Users size={16} />),
-      nav('all', 'All Tasks', 'a', 'tasks/all', <ListChecks size={16} />),
+      nav('all', 'All tasks', 'a', 'tasks/all', <ListChecks size={16} />),
       nav('calendar', 'Calendar', 'c', 'tasks/calendar', <CalendarDays size={16} />),
-      nav('completed', 'Completed', 'd', 'tasks/completed', <CheckCircle2 size={16} />),
       nav('notes', 'Notes', 'n', 'notes', <NotebookText size={16} />),
       nav('activity', 'Activity', 'v', 'activity', <Activity size={16} />),
       nav('trash', 'Trash', 'r', 'trash', <Trash2 size={16} />),
-      nav('settings', 'Settings', 's', 'settings', <Settings size={16} />),
+      nav('settings', 'Settings', 's', 'settings?scope=personal', <Settings size={16} />),
+      {
+        id: 'nav.workspaceSettings',
+        title: 'Go to Workspace settings',
+        group: 'Navigation',
+        keywords: 'members teams tags general invite',
+        icon: <Settings size={16} />,
+        run: go('settings?scope=workspace'),
+      },
     ];
   }, [wsId, navigate]);
 

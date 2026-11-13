@@ -20,7 +20,6 @@ export const DESKTOP_SHORTCUTS: DesktopShortcut[] = [
   { keys: 'mod+4', command: 'nav.team' },
   { keys: 'mod+5', command: 'nav.all' },
   { keys: 'mod+6', command: 'nav.calendar' },
-  { keys: 'mod+7', command: 'nav.completed' },
   { keys: 'mod+8', command: 'nav.notes' },
   { keys: 'mod+,', command: 'nav.settings' },
   { keys: 'mod+/', command: 'app.shortcuts' },

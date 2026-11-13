@@ -199,6 +199,21 @@ export async function addFilter(page: Page, kind: string, value: string) {
   await page.keyboard.press('Escape'); // most kinds take several values and stay open
 }
 
+/** The Status filter (Open, Completed or All) of the task view that is open: the ribbon's Status menu, or on phones the chip / Add filter. */
+export async function setStatus(page: Page, status: 'Open' | 'Completed' | 'All') {
+  const bar = ribbon(page);
+  if (await bar.isVisible()) await bar.getByRole('button', { name: /^Status filter/ }).click();
+  else {
+    const chip = page.locator('.filter-chip[data-filter="status"] .filter-chip-btn');
+    if (await chip.count()) await chip.click();
+    else {
+      await page.getByRole('button', { name: 'Add filter' }).click();
+      await page.getByRole('menuitem', { name: 'Status', exact: true }).click();
+    }
+  }
+  await page.getByRole('menuitem', { name: status, exact: true }).click();
+}
+
 /** Desktop: remove one filter from its ribbon menu. */
 export async function removeFilter(page: Page, kind: string) {
   const bar = ribbon(page);

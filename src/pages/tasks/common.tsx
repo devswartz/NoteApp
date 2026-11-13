@@ -25,7 +25,7 @@ export function useOpen() {
 
 /**
  * The filters the ribbon (or, on phones, the filter bar) has set, applied on top of a view's own list.
- * Search text and status are All Tasks' own (each view decides which tasks it shows), so they're ignored here.
+ * Search text is All tasks' own, and Status is applied by WithStatus (CompletedView.tsx), so both are ignored here.
  * Returns the list untouched when no filter is on.
  */
 export function useViewFilter(): <T extends Task>(list: T[]) => T[] {

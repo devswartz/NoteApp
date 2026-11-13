@@ -19,7 +19,7 @@ test('sign up, sign out and sign back in', async ({ page }) => {
   await page.reload();
   await expect(page.locator('.ws-switch')).toContainText("Ada's Space");
 
-  await page.locator('.ws-switch').click();
+  await page.getByRole('button', { name: 'Account and settings' }).click();
   await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 
