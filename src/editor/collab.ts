@@ -283,12 +283,16 @@ export const SyncSizeGuard = Extension.create<{ doc: Y.Doc | null }>({
  * TipTap extensions that bind the editor to the shared doc and show other people's carets.
  * Canvas boxes each bind their own fragment and share the page's awareness: a caret is
  * a relative position, so each editor only draws the ones that fall inside its fragment.
+ *
+ * `undoManager`: a text history kept outside the editor (a canvas box's, pageUndo.ts), instead of
+ * one of the editor's own that goes with it.
  */
-export function collabExtensions(session: CollabSession, user: User, field = 'default'): Extensions {
+export function collabExtensions(session: CollabSession, user: User, field = 'default', undoManager?: Y.UndoManager): Extensions {
   return [
     SyncSizeGuard.configure({ doc: session.doc }),
     CommentMark, // anchors of comment threads (./collabComments.ts)
-    Collaboration.configure({ document: session.doc, field }), // 'default', or 'box:<id>' on canvas pages
+    // field: 'default', or 'box:<id>' on canvas pages
+    Collaboration.configure({ document: session.doc, field, ...(undoManager ? { yUndoOptions: { undoManager } } : {}) }),
     CollaborationCaret.configure({
       provider: session.provider,
       user: { id: user.id, name: user.name, color: user.color },
