@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { signIn } from '../store.ts';
 import { get, post } from '../api.ts';
 import { hasPendingInvite } from '../components/sharing/InvitePage.tsx';
+import { hasPendingOAuth } from './OAuthConsent.tsx';
 import { syncThemePref } from '../store/ui.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { Button } from '../components/ui.tsx';
@@ -38,7 +39,9 @@ export function Login() {
             ? sent
               ? 'If that email has an account, a reset link is on its way. It works for an hour.'
               : "Enter your email and we'll send you a link to choose a new password."
-            : 'Notes and tasks, connected — for you and your team.'}
+            : hasPendingOAuth()
+              ? 'Sign in to finish connecting an app to your account.'
+              : 'Notes and tasks, connected — for you and your team.'}
         </p>
         <form
           onSubmit={async (e) => {

@@ -15,6 +15,7 @@ import { ShareDialogHost } from './components/sharing/ShareDialog.tsx';
 import { SharedPageRedirect } from './components/sharing/SharedWithMe.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { ResetPassword } from './pages/ResetPassword.tsx';
+import { OAuthConsent, takePendingOAuth } from './pages/OAuthConsent.tsx';
 import { RouteBoundary } from './components/ErrorBoundary.tsx';
 import { Button, useIsMobile } from './components/ui.tsx';
 import { DialogHost, promptDialog } from './components/shell/dialogs.tsx';
@@ -59,6 +60,7 @@ export function App() {
           <Route path="/support" element={<LegalPage doc="support" />} />
         <Route path="/reset" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/oauth/consent" element={<OAuthConsent />} />
         {user ? (
           <>
             <Route path="/" element={<Home />} />
@@ -110,7 +112,9 @@ function NoWorkspace() {
 
 function Home() {
   const workspaces = useStore((s) => s.workspaces);
-  const [invite] = useState(takePendingInvite); // signed in from an invite link: finish joining
+  const [connect] = useState(takePendingOAuth); // signed in to connect an AI app: back to its consent page
+  const [invite] = useState(() => (connect ? null : takePendingInvite())); // signed in from an invite link: finish joining
+  if (connect) return <Navigate to={connect} replace />;
   if (invite) return <Navigate to={invite} replace />;
   const last = platform.kv.get('noteapp.lastWs');
   const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];

@@ -4,6 +4,7 @@
 //   /api/events   WebSocket: live task/tree/member events (server/events.ts)
 //   /collab/<id>  WebSocket: Yjs sync for one page (server/collab.ts)
 //   /uploads/*    uploaded files
+//   /oauth/*      OAuth authorization server for AI connectors (server/oauth/routes.ts)
 //   everything else: the web app (dist/), with index.html as the SPA fallback
 // server/index.ts starts it; tests start it on a random port.
 import express from 'express';
@@ -14,6 +15,8 @@ import { WebSocketServer } from 'ws';
 import { api } from './routes/index.ts';
 import { serveUploads } from './routes/files.ts';
 import { wellKnownRoutes } from './wellKnown.ts';
+import { oauthRoutes } from './oauth/routes.ts';
+import { errorHandler } from './http.ts';
 import { MAX_SYNC_MESSAGE_BYTES, attachCollab } from './collab.ts';
 import { attachEvents } from './events.ts';
 import { handleProtocols } from './auth.ts';
@@ -42,7 +45,8 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   });
   if (testHooksEnabled()) app.use('/api/__test', testHookRoutes); // e2e only; never in production (server/verification.ts)
   app.use('/api', api);
-  app.use('/.well-known', wellKnownRoutes()); // universal / app links for the mobile apps (docs/MOBILE.md)
+  app.use('/.well-known', wellKnownRoutes()); // universal / app links for the mobile apps (docs/MOBILE.md), OAuth metadata
+  app.use('/oauth', requestLog, oauthRoutes(), errorHandler); // AI connector authorization server (server/oauth/routes.ts); /oauth/consent is a web app page
   app.use('/uploads', serveUploads); // nosniff + sandbox CSP + attachment disposition (routes/files.ts)
 
   // In production the server also serves the built web app.

@@ -511,3 +511,36 @@ export interface TrashItem {
   pages: number;
   sections: number;
 }
+
+/** AI connector permissions (server/oauth/). notes:write implies notes:read. */
+export type OAuthScope = 'notes:read' | 'notes:write';
+
+/** What the consent page shows for a pending authorization request (GET /api/oauth/requests/:id). */
+export interface OAuthConsentInfo {
+  client: {
+    id: string;
+    /** Self-reported by the app; not verified. */
+    name: string;
+    /** 'cimd': identified by the https URL of its metadata document (idHost is that URL's host). 'dcr': registered itself. */
+    kind: 'dcr' | 'cimd';
+    /** Self-reported home page, if any. */
+    uri: string | null;
+    idHost: string | null;
+  };
+  /** Where the browser goes after Allow / Deny. */
+  redirectHost: string;
+  scopes: OAuthScope[];
+  resource: string;
+  origin: string;
+}
+
+/** Settings → Connected apps (GET /api/me/connected-apps). */
+export interface ConnectedApp {
+  clientId: string;
+  name: string;
+  clientUri: string | null;
+  kind: 'dcr' | 'cimd';
+  scopes: OAuthScope[];
+  connectedAt: string;
+  lastUsedAt: string | null;
+}

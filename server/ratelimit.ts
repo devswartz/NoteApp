@@ -118,6 +118,11 @@ export const LIMITS = {
   // "Export my data" (any signed-in user; see takeDataExport): three a day per user, thirty an hour server-wide.
   dataExportUser: { capacity: 3, perMinute: 3 / (24 * 60) },
   dataExportGlobal: { capacity: 30, perMinute: 30 / 60 },
+  // AI connector OAuth (server/oauth/, see takeOAuth). Registration is unauthenticated and stores a row: tight.
+  oauthRegisterIp: { capacity: 10, perMinute: 10 / 60 }, // ten, then ten an hour
+  oauthRegisterGlobal: { capacity: 100, perMinute: 100 / 60 },
+  oauthAuthorizeIp: { capacity: 30, perMinute: 30 }, // may fetch a client metadata document
+  oauthTokenIp: { capacity: 60, perMinute: 60 }, // token exchange, refresh and revocation
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -303,6 +308,25 @@ export function takeClientError(req: Request): number {
   const g = limiters.clientErrorGlobal.take('all');
   if (g) limiters.clientErrorIp.refund(ip);
   return g;
+}
+
+/**
+ * Rate limit for the public OAuth endpoints (server/oauth/routes.ts). 0 if allowed, else seconds to wait.
+ * Per IP with the usual loopback exemption; registration also has a server-wide cap that always applies.
+ */
+export function takeOAuth(req: Request, kind: 'register' | 'authorize' | 'token'): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const { ip, loopback } = clientIp(req);
+  const exempt = loopback && process.env.RATE_LIMIT_LOOPBACK !== '1';
+  if (kind === 'register') {
+    const w = exempt ? 0 : limiters.oauthRegisterIp.take(ip);
+    if (w) return w;
+    const g = limiters.oauthRegisterGlobal.take('all');
+    if (g && !exempt) limiters.oauthRegisterIp.refund(ip);
+    return g;
+  }
+  if (exempt) return 0;
+  return (kind === 'authorize' ? limiters.oauthAuthorizeIp : limiters.oauthTokenIp).take(ip);
 }
 
 /** Rate limit for POST /feedback, called by the handler: per user and server-wide. 0 if allowed, else seconds to wait. */

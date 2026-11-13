@@ -81,6 +81,10 @@ export default defineConfig({
       '/api': { target: api, changeOrigin: true },
       '/uploads': { target: api, changeOrigin: true },
       '/collab': { target: wsApi, ws: true },
+      // AI connectors (server/oauth/): the server's OAuth endpoints and metadata; /oauth/consent is an app page.
+      '/oauth': { target: api, changeOrigin: true, bypass: (req) => (req.url?.startsWith('/oauth/consent') ? req.url : undefined) },
+      '/.well-known': { target: api, changeOrigin: true },
+      '/mcp': { target: api, changeOrigin: true },
     },
   },
 });

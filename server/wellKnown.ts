@@ -6,7 +6,12 @@
 // Both are public (no auth), served as application/json without redirects, and
 // 404 until configured. Only in-app paths under /w/ are claimed, so login and
 // API URLs always stay in the browser. See docs/MOBILE.md.
+//
+// Also the OAuth metadata for AI connectors (always public, CORS *):
+//   /.well-known/oauth-authorization-server            RFC 8414
+//   /.well-known/oauth-protected-resource[/mcp]        RFC 9728, resource = <origin>/mcp
 import { Router } from 'express';
+import { oauthWellKnownRoutes } from './oauth/routes.ts';
 
 export const DEFAULT_APP_ID = 'com.devswartz.notivelo';
 
@@ -67,5 +72,6 @@ export function wellKnownRoutes(config: () => WellKnownConfig = wellKnownConfig)
   };
   r.get('/apple-app-site-association', (_req, res) => void send(appleAppSiteAssociation(config()), res));
   r.get('/assetlinks.json', (_req, res) => void send(assetLinks(config()), res));
+  r.use(oauthWellKnownRoutes()); // oauth-authorization-server, oauth-protected-resource[/mcp] (server/oauth/routes.ts)
   return r;
 }
