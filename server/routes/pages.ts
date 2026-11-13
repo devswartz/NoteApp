@@ -11,7 +11,7 @@ import { rowToTask } from '../tasks.ts';
 import { copyPage, nextPos, positionAt } from '../tree.ts';
 import { trashPage } from '../trash.ts';
 import type { Access } from '../access.ts';
-import { HttpError, h, param } from '../http.ts';
+import { HttpError, clip, h, param } from '../http.ts';
 import { backlinks } from '../links.ts';
 import { dropForeignSharesOnPage } from '../workspaces.ts';
 import { getVersion, listVersions, snapshot, startVersionSweep } from '../versions.ts';
@@ -34,7 +34,7 @@ pageRoutes.post(
     const a = mustAccess(sectionAccess(sectionId, req.user.id), true);
     const id = newId();
     const ts = now();
-    const title = typeof req.body.title === 'string' ? req.body.title.slice(0, 300) : '';
+    const title = typeof req.body.title === 'string' ? clip(req.body.title, 300) : '';
     // Every page is a canvas of text boxes (docs/PLAN_CANVAS.md); a `kind` in the body is ignored.
     const kind = 'canvas';
     // template: 'default' (the app's New page) starts from the section's default template, a
@@ -192,7 +192,7 @@ pageRoutes.patch(
       }
     }
     if (b.title !== undefined) {
-      const title = String(b.title).slice(0, 300);
+      const title = clip(String(b.title), 300);
       db.prepare('UPDATE pages SET title = ?, updated_at = ?, updated_by = ? WHERE id = ?').run(title, now(), req.user.id, id);
       db.prepare('UPDATE pages_fts SET title = ? WHERE page_id = ?').run(title, id);
     }
@@ -260,7 +260,7 @@ pageRoutes.post(
       const next = db.prepare('SELECT MIN(position) AS p FROM pages WHERE section_id = ? AND position > ?').get(sectionId, src.position) as { p: number | null };
       position = next.p === null ? src.position + 1 : (src.position + next.p) / 2;
     }
-    const title = typeof req.body.title === 'string' ? req.body.title.slice(0, 300) : sectionId === src.section_id ? `${src.title || 'Untitled'} (copy)` : src.title;
+    const title = typeof req.body.title === 'string' ? clip(req.body.title, 300) : sectionId === src.section_id ? `${src.title || 'Untitled'} (copy)` : src.title;
     const r = copyPage(id, sectionId, req.user.id, { title, position });
     publish({ type: 'tree', workspaceId: a.workspaceId });
     return { id: r.id };

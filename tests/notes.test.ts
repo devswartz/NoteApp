@@ -394,3 +394,18 @@ test('files of a deleted page (or section, or notebook) are visible only to thei
   assert.equal((await meta(member, f3.id)).status, 404);
   assert.equal((await meta(owner, f3.id)).status, 200);
 });
+
+test('a long page title is cut without splitting an emoji in half', async () => {
+  const u = await setup('Clipper');
+  const title = 'a'.repeat(299) + '😀tail';
+  const id = await newPage(u, u.s1, title);
+  const patch = await app.call('PATCH', `/pages/${id}`, u.token, { title });
+  assert.equal(patch.status, 200);
+  const { db } = await import('../server/db.ts');
+  const stored = (db.prepare('SELECT title FROM pages WHERE id = ?').get(id) as { title: string }).title;
+  assert.equal(stored, 'a'.repeat(299), 'the emoji is dropped whole, not left as a replacement character');
+  assert.ok(!stored.includes('�'));
+  assert.equal(('a'.repeat(298) + '😀tail').length > 300, true);
+  const id2 = await newPage(u, u.s1, 'b'.repeat(298) + '😀tail');
+  assert.equal((db.prepare('SELECT title FROM pages WHERE id = ?').get(id2) as { title: string }).title, 'b'.repeat(298) + '😀');
+});

@@ -10,6 +10,13 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 ### Monitoring
 - Admin metrics now time live editing: update count, size and apply time, plus save time and the largest page saved. Health checks are counted apart, so they no longer drag the request latency percentiles down.
 
+### Reliability
+- **The server can no longer be knocked over by a malformed live-editing connection.** A badly formed web address, an oversized message, or a hand-crafted edit sent to a page could stop the whole server for everyone until it restarted. Each is now refused for that one connection, and a failed save is logged and retried.
+
+### Fixes
+- Long page titles are cut cleanly: a title that ran past the length limit in the middle of an emoji no longer ends in a replacement character.
+- Search no longer shows an error for a query containing a stray invisible null character, and creating or editing a task with an empty page no longer fails.
+
 ## v0.4.10
 
 ### Tasks
