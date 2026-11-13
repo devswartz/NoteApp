@@ -13,7 +13,7 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 - Requests and changes are rate-limited, and writes and page reads are capped in size.
 
 ### Behind the scenes
-- An OAuth 2.1 authorization server for remote MCP clients, following the MCP authorization spec: authorization code with PKCE (S256 only), app registration by Client ID Metadata Document or Dynamic Client Registration (public clients, rate limited, https or loopback redirect addresses only), discovery metadata at `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, tokens bound to `/mcp`, short-lived access tokens and rotating refresh tokens (only hashes are stored), and token revocation.
+- An OAuth 2.1 authorization server for remote MCP clients, following the MCP authorization spec: authorization code with PKCE (S256 only), app registration by Client ID Metadata Document or Dynamic Client Registration (public clients, rate limited, https or loopback redirect addresses only), discovery metadata at `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, tokens bound to `/mcp`, short-lived access tokens and rotating refresh tokens (only hashes are stored; a retry within 30 seconds of rotation is honoured, later reuse of an old refresh token disconnects the app), and token revocation.
 
 ## v0.4.11
 

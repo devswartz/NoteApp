@@ -7,6 +7,7 @@ import {
   ACCESS_TOKEN_TTL_S,
   CODE_TTL_S,
   REFRESH_PREFIX,
+  REFRESH_REUSE_GRACE_S,
   REFRESH_TOKEN_TTL_DAYS,
   REQUEST_TTL_S,
   hashToken,
@@ -163,7 +164,8 @@ interface TokenRow {
 
 /**
  * refresh_token grant with rotation: the old refresh token is retired and a new pair issued. Presenting a
- * retired refresh token again revokes the whole connection (it may have been stolen). `scope` may narrow the
+ * retired refresh token again within REFRESH_REUSE_GRACE_S gets another fresh pair (a retry); after that it revokes
+ * the whole connection (it may have been stolen). `scope` may narrow the
  * new access token, never widen it; the new refresh token keeps the old one's scopes (RFC 6749 §6).
  */
 export function refresh(p: { token: unknown; clientId: unknown; scope: unknown; resource: string | null }): TokenSet {
@@ -175,7 +177,9 @@ export function refresh(p: { token: unknown; clientId: unknown; scope: unknown; 
     const g = db.prepare('SELECT * FROM oauth_grants WHERE id = ?').get(t.grant_id) as { client_id: string; resource: string; revoked_at: string | null } | undefined;
     if (!g || g.revoked_at || t.revoked_at) throw bad('Refresh token revoked');
     if (g.client_id !== p.clientId) throw bad('The refresh token was issued to another client');
-    if (t.used_at) throw new ReplayError(t.grant_id, 'Refresh token already used; the connection has been revoked');
+    // Reuse within the grace window (a retry after a lost response) gets a fresh pair; later reuse looks like theft.
+    if (t.used_at && Date.parse(t.used_at) + REFRESH_REUSE_GRACE_S * 1000 < Date.now())
+      throw new ReplayError(t.grant_id, 'Refresh token already used; the connection has been revoked');
     if (t.expires_at < now()) throw bad('Refresh token expired');
     if (p.resource !== null && p.resource !== g.resource) throw new OAuthError('invalid_target', 'resource does not match this grant');
     const held = scopeList(t.scopes);
@@ -185,7 +189,8 @@ export function refresh(p: { token: unknown; clientId: unknown; scope: unknown; 
       if (asked.some((s) => !held.includes(s as Scope))) throw new OAuthError('invalid_scope', 'Refresh can’t add scopes that weren’t granted');
       accessScopes = scopeList(p.scope);
     }
-    db.prepare('UPDATE oauth_tokens SET used_at = ? WHERE id = ?').run(now(), t.id);
+    // The first use starts the grace window; a retry inside it doesn't extend it.
+    if (!t.used_at) db.prepare('UPDATE oauth_tokens SET used_at = ? WHERE id = ?').run(now(), t.id);
     return issue(t.grant_id, accessScopes, held);
   });
 }

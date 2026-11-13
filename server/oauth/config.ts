@@ -12,6 +12,8 @@ export const MCP_PATH = '/mcp';
 
 export const ACCESS_TOKEN_TTL_S = 60 * 60;
 export const REFRESH_TOKEN_TTL_DAYS = 30;
+/** A rotated refresh token still works this long (a client retrying after a lost response); after that, reuse revokes the connection. */
+export const REFRESH_REUSE_GRACE_S = 30;
 export const CODE_TTL_S = 120;
 /** How long a sign-in + consent may take after /oauth/authorize (the user may need to sign in or sign up first). */
 export const REQUEST_TTL_S = 30 * 60;
