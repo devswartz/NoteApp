@@ -12,7 +12,7 @@ test('removing a member asks in the app\'s own dialog; cancelling keeps them, co
     native++;
     void d.dismiss();
   });
-  await page.goto(`/w/${ws}/settings`);
+  await page.goto(`/w/${ws}/settings?scope=workspace`);
   await page.getByRole('button', { name: 'Members', exact: true }).click();
   const remove = page.getByRole('button', { name: 'Remove Mel Member' });
   await remove.click();
@@ -37,7 +37,7 @@ test('deleting a workspace needs its name typed into the app\'s dialog', async (
     native++;
     void d.dismiss();
   });
-  await page.goto(`/w/${ws}/settings`);
+  await page.goto(`/w/${ws}/settings?scope=workspace`);
   await page.getByRole('button', { name: 'General', exact: true }).click();
   await page.getByRole('button', { name: 'Delete workspace' }).click();
   const dialog = page.getByRole('dialog', { name: 'Delete this workspace?' });
