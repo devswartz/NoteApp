@@ -17,7 +17,7 @@ import { del, patch, post } from '../../api.ts';
 import { platform } from '../../platform/index.ts';
 import { cached } from '../../store/cache.ts';
 import { errorToast } from '../../store/toasts.ts';
-import { normalizeFilters, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
+import { migrateFilters, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
 import { groupOf, openedView, parseSavedViews, sortOf, type SavedView } from './savedViewsCore.ts';
 import type { TaskView } from '../../../shared/types.ts';
 
@@ -28,7 +28,7 @@ function fromServer(v: TaskView): SavedView {
   return {
     id: v.id,
     name: v.name,
-    filters: normalizeFilters(v.query?.filters),
+    filters: migrateFilters(v.query?.filters, (v.query as { view?: unknown } | undefined)?.view),
     sort: sortOf(v.query?.sort),
     group: groupOf(v.query?.group),
     shared: v.shared,

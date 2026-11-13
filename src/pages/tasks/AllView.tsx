@@ -8,7 +8,9 @@ import { useStore } from '../../store.ts';
 import { TaskGroups } from '../../components/TaskRow.tsx';
 import { Dropdown, MenuItem, MenuSeparator, useIsMobile } from '../../components/ui.tsx';
 import { confirmDialog, promptDialog } from '../../components/shell/dialogs.tsx';
-import { applyFilters, groupBy, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
+import { activeFilterKeys, applyFilters, groupBy, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
+import type { Task } from '../../../shared/types.ts';
+import { CompletedList } from './CompletedView.tsx';
 import { Loading, useOpen } from './common.tsx';
 import { FilterChips, FilterSummary } from './FilterChips.tsx';
 import { createSavedView, deleteSavedView, sameView, updateSavedView, useSavedViews, type SavedView } from './savedViews.ts';
@@ -85,7 +87,6 @@ export const GROUP_OPTIONS: [GroupKey, string][] = [
 
 export function AllView() {
   const open = useOpen();
-  const tasks = useStore((s) => s.tasks);
   const me = useStore((s) => s.user!.id);
   const tree = useStore((s) => s.tree);
   const members = useStore((s) => s.members);
@@ -122,13 +123,16 @@ export function AllView() {
   // Filtering thousands of tasks shouldn't block typing in the search box.
   const deferred = useDeferredValue(filters);
   // "Open" reads from the open list so just-completed tasks linger for their check animation.
+  // Open tasks first; finished ones (Status Completed or All) come from CompletedList, newest completion first.
   const filtered = useMemo(
-    () =>
-      deferred.status === 'open'
-        ? applyFilters(open, { ...deferred, status: 'any' }, me, tree, teams)
-        : applyFilters(Object.values(tasks), deferred, me, tree, teams),
-    [open, tasks, deferred, me, tree, teams],
+    () => (deferred.status === 'done' ? [] : applyFilters(open, { ...deferred, status: 'any' }, me, tree, teams)),
+    [open, deferred, me, tree, teams],
   );
+  const doneFilter = useMemo(() => {
+    const f = { ...deferred, status: 'any' as const };
+    return (list: Task[]) => applyFilters(list, f, me, tree, teams);
+  }, [deferred, me, tree, teams]);
+  const filtering = activeFilterKeys({ ...deferred, status: 'open' }).length > 0 || !!deferred.q.trim();
   const groups = useMemo(() => groupBy(filtered, group, sort, { members, tree, teams }), [filtered, group, sort, members, tree, teams]);
   const f = <K extends keyof Filters>(k: K, v: Filters[K]) => taskView.setFilters((x) => ({ ...x, [k]: v }));
   const select = (v: SavedView) => {
@@ -186,23 +190,25 @@ export function AllView() {
                 ))}
               </select>
             </label>
-            <label className="select-label">
-              Status
-              <select className="input input-sm" value={filters.status} onChange={(e) => f('status', e.target.value as Filters['status'])}>
-                <option value="open">Open</option>
-                <option value="done">Completed</option>
-                <option value="any">All</option>
-              </select>
-            </label>
           </>
         )}
       </div>
       {isMobile && <FilterChips filters={filters} onChange={taskView.setFilters} />}
       <div className="muted small result-count">
-        {filtered.length} task{filtered.length === 1 ? '' : 's'}
+        {filters.status !== 'done' && (
+          <>
+            {filtered.length} task{filtered.length === 1 ? '' : 's'}
+          </>
+        )}
         {!isMobile && <FilterSummary filters={filters} viewName={current?.name} />}
+        {!isMobile && filters.status !== 'open' && (
+          <button type="button" className="btn-ghost btn-sm" onClick={() => f('status', 'open')}>
+            Clear
+          </button>
+        )}
       </div>
-      <TaskGroups groups={groups} emptyText="No tasks match these filters." addable={false} />
+      {filters.status !== 'done' && <TaskGroups groups={groups} emptyText={filters.status === 'any' ? '' : 'No tasks match these filters.'} addable={false} />}
+      {filters.status !== 'open' && <CompletedList filter={doneFilter} filtering={filtering} heading={filters.status === 'any' ? 'Completed' : undefined} />}
     </>
   );
 }

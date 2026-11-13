@@ -109,9 +109,9 @@ test('Tasks ribbon: a tag filter from the ribbon, saved as a view; in-page dupli
   // Grouping is fixed on Today; the filters work there too.
   await expect(bar.getByRole('button', { name: 'Tags filter' })).not.toHaveAttribute('aria-disabled', 'true');
   await expect(bar.getByRole('button', { name: 'Group by' })).toHaveAttribute('aria-disabled', 'true');
-  await bar.getByRole('button', { name: 'All Tasks' }).click();
+  await bar.getByRole('button', { name: 'All tasks' }).click();
   await expect(page).toHaveURL(/\/tasks\/all$/);
-  await expect(bar.getByRole('button', { name: 'All Tasks' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(bar.getByRole('button', { name: 'All tasks' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('button', { name: 'Add filter' })).toHaveCount(0);
   await expect(page.locator('.saved-views, .select-label')).toHaveCount(0);
 
@@ -139,7 +139,7 @@ test('quick add understands #tag and +team; task details show team, tags and ass
   await api(request, 'POST', `/workspaces/${ws}/teams`, owner.token, { name: 'Staff', memberIds: [sam.id] });
   await signInContext(context, owner);
   await page.goto(tasksUrl(ws, 'all'));
-  await expect(page.getByRole('heading', { name: 'All Tasks', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'All tasks', level: 1 })).toBeVisible();
 
   await page.keyboard.press('q');
   await page.getByPlaceholder(/e\.g\./).fill('Call the printer #Waiting +staff @sam');

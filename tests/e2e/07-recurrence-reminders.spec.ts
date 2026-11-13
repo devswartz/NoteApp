@@ -1,6 +1,6 @@
 // Priority 7: recurring task completion creates the next occurrence; reminder settings UI.
 import { expect, test } from '@playwright/test';
-import { api, createTask, createUser, eventually, isoDay, listTasks, signInContext, taskRow, tasksUrl } from './helpers.ts';
+import { api, createTask, createUser, eventually, isoDay, listTasks, setStatus, signInContext, taskRow, tasksUrl } from './helpers.ts';
 
 type FullTask = Awaited<ReturnType<typeof listTasks>>[number] & { recurrence: unknown; completedAt: string | null };
 
@@ -35,7 +35,8 @@ test('completing a daily task rolls it to tomorrow and keeps a completed copy', 
   await page.getByRole('link', { name: 'Upcoming' }).click();
   await expect(taskRow(page, 'Water the plants')).toBeVisible();
   await expect(taskRow(page, 'Water the plants')).toContainText('Tomorrow');
-  await page.getByRole('link', { name: 'Completed' }).click();
+  await page.getByRole('link', { name: 'All tasks' }).click();
+    await setStatus(page, 'Completed');
   await expect(taskRow(page, 'Water the plants')).toHaveCount(1);
 });
 

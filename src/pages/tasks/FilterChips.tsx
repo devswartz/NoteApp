@@ -10,8 +10,9 @@ import { DEFAULT_FILTERS, NO_PICK, PICK_KEYS, activeFilterKeys, orderedTeams, te
 import { LabelDot } from '../../components/Labels.tsx';
 import { sectionPathLabel, sectionsInOrder } from '../../../shared/sections.ts';
 
-export type Kind = 'teamId' | 'assignee' | 'assignedBy' | 'tagsAny' | 'tagsNone' | 'due' | 'priority' | 'source' | 'notebookId' | 'sectionId';
+export type Kind = 'status' | 'teamId' | 'assignee' | 'assignedBy' | 'tagsAny' | 'tagsNone' | 'due' | 'priority' | 'source' | 'notebookId' | 'sectionId';
 export const KINDS: { key: Kind; label: string }[] = [
+  { key: 'status', label: 'Status' },
   { key: 'teamId', label: 'Team' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'assignedBy', label: 'Assigned by' },
@@ -54,6 +55,12 @@ function useOptions(kind: Kind): Option[] {
   const tasks = useStore((s) => s.tasks);
   const people = members.filter((m) => m.id !== me).map((m) => ({ value: m.id, label: m.name, icon: <Avatar user={m} size={16} /> }));
   switch (kind) {
+    case 'status':
+      return [
+        { value: 'open', label: 'Open' },
+        { value: 'done', label: 'Completed' },
+        { value: 'any', label: 'All' },
+      ];
     case 'teamId':
       return [
         ...orderedTeams(teams).map((t): Option => {
@@ -140,12 +147,13 @@ function useOptions(kind: Kind): Option[] {
 }
 
 const isPick = (k: Kind): k is Kind & PickKey => (PICK_KEYS as string[]).includes(k);
-/** Everything but "Due" takes several values. */
-const isMulti = (k: Kind) => k !== 'due';
+/** Everything but Due and Status takes several values. */
+const isMulti = (k: Kind) => k !== 'due' && k !== 'status';
 
 /** The values a kind is filtering by, and whether it's "is not". */
 function valuesOf(kind: Kind, filters: Filters): { values: string[]; not: boolean } {
   if (isPick(kind)) return filters[kind];
+  if (kind === 'status') return { values: filters.status === 'open' ? [] : [filters.status], not: false };
   if (kind === 'tagsAny' || kind === 'tagsNone') return { values: filters[kind], not: false };
   return { values: filters.due === 'any' ? [] : [filters.due], not: false };
 }
@@ -153,6 +161,7 @@ function valuesOf(kind: Kind, filters: Filters): { values: string[]; not: boolea
 /** The filters with one kind's values (and is / is not) replaced. */
 function withValues(kind: Kind, filters: Filters, values: string[], not: boolean): Filters {
   if (isPick(kind)) return { ...filters, [kind]: values.length ? { values, not } : NO_PICK };
+  if (kind === 'status') return { ...filters, status: (values[0] ?? 'open') as Filters['status'] };
   if (kind === 'tagsAny' || kind === 'tagsNone') return { ...filters, [kind]: values };
   return { ...filters, due: (values[0] ?? 'any') as Filters['due'] };
 }
@@ -176,7 +185,7 @@ export function KindMenu({ kind, filters, onChange }: { kind: Kind; filters: Fil
     return (
       <>
         {options.map((o) => (
-          <MenuItem key={o.value} checked={current.values[0] === o.value} onSelect={() => write([o.value])}>
+          <MenuItem key={o.value} checked={(kind === 'status' ? filters.status : current.values[0]) === o.value} onSelect={() => write([o.value])}>
             {o.label}
           </MenuItem>
         ))}
@@ -404,7 +413,7 @@ export function FilterChips({ filters, onChange }: { filters: Filters; onChange:
       ))}
       <AddFilter filters={filters} onChange={onChange} active={active} />
       {active.length > 1 && (
-        <button type="button" className="btn-ghost btn-sm" onClick={() => onChange({ ...DEFAULT_FILTERS, q: filters.q, status: filters.status })}>
+        <button type="button" className="btn-ghost btn-sm" onClick={() => onChange({ ...DEFAULT_FILTERS, q: filters.q })}>
           Clear all
         </button>
       )}
@@ -419,8 +428,8 @@ export const withoutFilter = (filters: Filters, kind: Kind): Filters => ({
   ...(kind === 'teamId' ? { includeSubteams: true } : {}),
 });
 
-/** All the filter conditions cleared (the search text and status stay). */
-export const clearedFilters = (filters: Filters): Filters => ({ ...DEFAULT_FILTERS, q: filters.q, status: filters.status });
+/** All the filter conditions cleared, Status back to Open (the search text stays). */
+export const clearedFilters = (filters: Filters): Filters => ({ ...DEFAULT_FILTERS, q: filters.q });
 
 /** The active filter kinds, in the bar's order. */
 export const activeKinds = (filters: Filters): Kind[] => activeFilterKeys(filters).filter((k): k is Kind => KINDS.some((x) => x.key === k));
@@ -443,11 +452,10 @@ function SummaryPart({ kind, filters }: { kind: Kind; filters: Filters }) {
 /** Desktop: the active filters in words next to the result count (the ribbon sets them). */
 export function FilterSummary({ filters, viewName }: { filters: Filters; viewName?: string }) {
   const active = activeKinds(filters);
-  if (!active.length && !viewName && filters.status === 'open') return null;
+  if (!active.length && !viewName) return null;
   return (
     <span className="filter-summary" aria-label="Active filters">
       {viewName && <span className="filter-summary-part">View: {viewName}</span>}
-      {filters.status !== 'open' && <span className="filter-summary-part">{filters.status === 'done' ? 'Completed only' : 'Including completed'}</span>}
       {active.map((k) => (
         <SummaryPart key={k} kind={k} filters={filters} />
       ))}

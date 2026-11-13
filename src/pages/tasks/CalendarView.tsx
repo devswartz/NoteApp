@@ -10,6 +10,7 @@ import { addDays, parseISODate, toISODate, today } from '../../../shared/dates.t
 import type { Task } from '../../../shared/types.ts';
 import { formatTime } from '../../lib/format.ts';
 import { Segmented, useOpen } from './common.tsx';
+import { taskView, useTaskView } from './taskViewState.ts';
 
 export type Mode = 'month' | 'week';
 const DRAG_TYPE = 'application/x-task';
@@ -73,7 +74,8 @@ export function CalendarView() {
   const scope = calendarWho(params);
   const tagsParam = params.get('tags') ?? '';
   const teamParam = calendarTeam(params);
-  const [showDone, setShowDone] = useState(false);
+  // The checkbox that showed completed tasks is the shared Status: Open, Completed or All.
+  const status = useTaskView((s) => s.filters.status);
   const cursor = calendarDate(params);
   const setCursor = (d: string, toMode?: Mode) => setParams((p) => setCalendarDate(p, d, toMode), { replace: true });
   const [dropDay, setDropDay] = useState<string | null>(null);
@@ -88,11 +90,11 @@ export function CalendarView() {
       (!teamParam || (teamParam === 'none' ? !x.teamId : !!x.teamId && team!.has(x.teamId)));
   }, [scope, me, tagsParam, teamParam, teams]);
   const byDay = useMemo(() => {
-    const list = (showDone ? Object.values(tasks) : open).filter((x) => x.dueDate && inScope(x));
+    const list = (status === 'open' ? open : Object.values(tasks).filter((x) => status === 'any' || x.status === 'done')).filter((x) => x.dueDate && inScope(x));
     const map = new Map<string, Task[]>();
     for (const x of sortTasks(list)) map.set(x.dueDate!, [...(map.get(x.dueDate!) ?? []), x]);
     return map;
-  }, [tasks, open, showDone, inScope]);
+  }, [tasks, open, status, inScope]);
   const undated = useMemo(() => sortTasks(open.filter((x) => !x.dueDate && x.status === 'open' && inScope(x)), 'priority'), [open, inScope]);
 
   const days = mode === 'month' ? monthGrid(cursor) : Array.from({ length: 7 }, (_, i) => addDays(weekStart(cursor), i));
@@ -165,8 +167,13 @@ export function CalendarView() {
           </div>
         )}
         <div className="row gap-10 wrap" style={{ marginLeft: 'auto' }}>
-          <label className="check-label">
-            <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> Completed
+          <label className="select-label">
+            Status
+            <select className="input input-sm" value={status} onChange={(e) => taskView.setFilters((f) => ({ ...f, status: e.target.value as typeof status }))}>
+              <option value="open">Open</option>
+              <option value="done">Completed</option>
+              <option value="any">All</option>
+            </select>
           </label>
           {isMobile && (
             <Segmented value={mode} onChange={(m) => setParams((p) => setCalendarMode(p, m), { replace: true })} options={[['month', 'Month'], ['week', 'Week']]} />

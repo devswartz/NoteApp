@@ -49,7 +49,7 @@ test('loadPlatform: loads the shell implementation lazily, web otherwise', async
 
 test('menu fallback navigation', () => {
   assert.equal(fallbackPath('nav.today', '/w/ws1/p/abc'), '/w/ws1/tasks/today');
-  assert.equal(fallbackPath('nav.completed', '/w/ws1/tasks/my'), '/w/ws1/tasks/completed');
+  assert.equal(fallbackPath('nav.all', '/w/ws1/tasks/my'), '/w/ws1/tasks/all');
   assert.equal(fallbackPath('nav.notes', '/w/ws1'), '/w/ws1/notes');
   assert.equal(fallbackPath('nav.today', '/login'), null);
   assert.equal(fallbackPath('pages.new', '/w/ws1'), null);
