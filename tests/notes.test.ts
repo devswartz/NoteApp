@@ -91,7 +91,7 @@ test('search: prefix + stemming, all terms required, FTS syntax is neutralised',
   assert.equal((await q('plan')).data.pages.length, 1);
   assert.equal((await q('runs lisbon')).data.pages.length, 1, 'stemmed: runs ~ running');
   assert.equal((await q('lisbon paris')).data.pages.length, 0, 'every term must match');
-  for (const weird of ['"', 'AND', 'NEAR(', '*', 'title:x', "o'brien", '-x']) assert.equal((await q(weird)).status, 200, weird);
+  for (const weird of ['"', 'AND', 'NEAR(', '*', 'title:x', "o'brien", '-x', '\u0000', 'x\u0000y']) assert.equal((await q(weird)).status, 200, weird);
   assert.deepEqual((await q('   ')).data, { pages: [], tasks: [] });
 });
 

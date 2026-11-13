@@ -20,7 +20,8 @@ export const searchRoutes = Router();
 export function ftsQuery(q: string): string {
   return q
     .split(/\s+/)
-    .map((t) => t.replace(/["«»]/g, '').trim())
+    // A NUL ends the quoted string early ("unterminated string"), which was a 500.
+    .map((t) => t.replace(/["«»\u0000]/g, '').trim())
     .filter(Boolean)
     .slice(0, 12)
     .map((t) => `"${t}"*`)
