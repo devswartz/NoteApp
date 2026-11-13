@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { Extension, type Extensions } from '@tiptap/core';
 import type { Awareness } from 'y-protocols/awareness';
+import type * as Y from 'yjs';
 import { BubbleMenu } from '@tiptap/react/menus';
 import { beginComment, useCommentBinding } from './collabComments.ts';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
@@ -199,13 +200,15 @@ export interface PageEditorOptions {
   label?: string;
   /** More extensions (e.g. canvas box keys). */
   extensions?: Extensions;
+  /** The text history to use, when it must outlive the editor (canvas boxes; pageUndo.ts). */
+  undoManager?: Y.UndoManager;
 }
 
 /**
  * A rich-text editor bound to one fragment of the page's shared doc: the document
  * schema, the slash menu, tasks, uploads and collaboration (carets share the page's awareness).
  */
-export function usePageEditor(session: CollabSession, { pageId, workspaceId, user, canEdit, field = 'default', long = false, label = 'Page content', extensions = [] }: PageEditorOptions): Editor | null {
+export function usePageEditor(session: CollabSession, { pageId, workspaceId, user, canEdit, field = 'default', long = false, label = 'Page content', extensions = [], undoManager }: PageEditorOptions): Editor | null {
   const target = useRef({ pageId, workspaceId });
   target.current = { pageId, workspaceId };
   const editorRef = useRef<Editor | null>(null);
@@ -219,7 +222,7 @@ export function usePageEditor(session: CollabSession, { pageId, workspaceId, use
         UndoTasks, // undoing a convert-to-task removes the task it created
         SlashCommand,
         ...(long ? [LongPage] : []), // long pages: render-skipping CSS away from the cursor
-        ...collabExtensions(session, user, field),
+        ...collabExtensions(session, user, field, undoManager),
         ...extensions,
       ],
       editorProps: {

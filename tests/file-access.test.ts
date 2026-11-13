@@ -171,3 +171,14 @@ test('GET /api/files/key needs a session and returns a working key', async () =>
   assert.equal(refreshed.data.fileKey.u, owner.user.id);
   owner = { ...owner, token: refreshed.data.accessToken, refreshToken: refreshed.data.refreshToken, fileKey: refreshed.data.fileKey };
 });
+
+test('deleting a workspace removes its uploaded files from disk, not just their rows', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { FILES_DIR } = await import('../server/config.ts');
+  const f = await fixture();
+  const onDisk = (u: { url: string }) => fs.existsSync(path.join(FILES_DIR, u.url.slice('/uploads/'.length)));
+  assert.ok(onDisk(f.pageFile) && onDisk(f.siblingFile) && onDisk(f.wsFile), 'uploaded');
+  assert.equal((await app.call('DELETE', `/workspaces/${f.ws}`, owner.token)).status, 200);
+  assert.ok(!onDisk(f.pageFile) && !onDisk(f.siblingFile) && !onDisk(f.wsFile), 'bytes are gone with the workspace');
+});

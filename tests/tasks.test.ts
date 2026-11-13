@@ -512,3 +512,14 @@ test('history of a private standalone recurring task (one that left its private 
     assert.ok(!seen.some((x) => x.title === 'Private daily'), `no leak in ${path}`);
   }
 });
+
+test('an empty pageId / parentId means "none" instead of failing a foreign key (500)', async () => {
+  const u = await app.signUp('Blank');
+  const created = await app.call('POST', `/workspaces/${u.wsId}/tasks`, u.token, { title: 'a', pageId: '', parentId: '' });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  assert.equal(created.data.pageId, null);
+  const patched = await app.call('PATCH', `/tasks/${created.data.id}`, u.token, { pageId: '', parentId: '', title: 'b' });
+  assert.equal(patched.status, 200, JSON.stringify(patched.data));
+  assert.equal(patched.data.title, 'b');
+  assert.equal(patched.data.pageId, null);
+});

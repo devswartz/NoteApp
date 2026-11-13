@@ -2,6 +2,25 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.11
+
+### Performance
+- **Pages no longer grow huge after pasting.** The editor's sync library kept a hidden record of every paste and structural edit (indent, drag, list changes) inside the page and never removed it. They could become most of a page's size (one page was 4.6 MB for 240 KB of text), which made typing lag. The updated library stops writing them, and the server removes the existing ones: from every stored page at startup, when a page opens, and before each save, so older desktop and phone apps can't bring them back.
+
+### Monitoring
+- Admin metrics now time live editing: update count, size and apply time, plus save time and the largest page saved. Health checks are counted apart, so they no longer drag the request latency percentiles down.
+
+### Reliability
+- **The server can no longer be knocked over by a malformed live-editing connection.** A badly formed web address, an oversized message, or a hand-crafted edit sent to a page could stop the whole server for everyone until it restarted. Each is now refused for that one connection, and a failed save is logged and retried.
+- **A page can no longer be broken for everyone by a malformed edit.** A hand-crafted edit could put content the editor cannot draw into a page, so that it crashed for everyone who opened it. The server now removes such content (and absurdly deep nesting) as soon as it arrives, and when it opens a page that already contains some.
+
+### Fixes
+- Long page titles are cut cleanly: a title that ran past the length limit in the middle of an emoji no longer ends in a replacement character.
+- If you delete the only workspace you belong to, you now get a **Create a workspace** button instead of a dead-end message.
+- Deleting a workspace now also deletes its uploaded images and files from the server, instead of leaving them behind and using up space.
+- Search no longer shows an error for a query containing a stray invisible null character, and creating or editing a task with an empty page no longer fails.
+- **Undo and redo keep a box's text.** Undoing a new box and then redoing it brings its text back (it used to come back empty), and a deleted box brought back with Undo can still have its typing undone and redone. Typing in a box that's scrolled out of view undoes and redoes too.
+
 ## v0.4.10
 
 ### Tasks

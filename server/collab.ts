@@ -4,7 +4,7 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
-import { DEFAULT_FIELD, convertPageDoc, mainFragment, observePageContent, pageFragments } from '../shared/pageDoc.ts';
+import { DEFAULT_FIELD, convertPageDoc, isContentField, mainFragment, observePageContent, pageFragments } from '../shared/pageDoc.ts';
 import crypto from 'node:crypto';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -15,10 +15,12 @@ import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import { onAccessChange, pageAccess, taskVisible } from './access.ts';
 import { canMoveTask, syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
+import { log } from './log.ts';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 const SAVE_DEBOUNCE_MS = 1000;
+const SAVE_RETRY_MS = 5000;
 /**
  * Largest single message accepted on /collab. Normal typing sends bytes to a
  * few KB; pasting a long document or syncing a page edited offline can reach
@@ -30,6 +32,131 @@ export const MAX_SYNC_MESSAGE_BYTES = 4 * 1024 * 1024;
 export const MAX_AWARENESS_MESSAGE_BYTES = 64 * 1024;
 /** Save at least this often while people keep typing (the debounce alone would wait for a pause). */
 const SAVE_MAX_WAIT_MS = 5000;
+
+/**
+ * @tiptap/y-tiptap 3.0.x kept a "position migration" record in a root map per edited fragment
+ * for every structural edit (a paste, a list indent, a drag) and never removed them: on some
+ * pages they were 90% of the doc (4.6 MB for 240 KB of text). 3.1+ stops writing them and
+ * clears the maps; the server clears them too, for clients that haven't updated yet and for
+ * pages nobody has opened since. Cleared entries leave only small tombstones.
+ */
+const POSITION_MIGRATIONS = '__tiptap_position_migrations:';
+
+/** Empties every leftover position-migration map in the doc. Returns how many entries it removed. */
+export function clearPositionMigrations(doc: Y.Doc): number {
+  const stores: Y.Map<unknown>[] = [];
+  doc.share.forEach((_type, name) => {
+    if (!name.startsWith(POSITION_MIGRATIONS)) return;
+    const store = doc.getMap(name);
+    if (store.size) stores.push(store);
+  });
+  let removed = 0;
+  if (stores.length) {
+    doc.transact(() => {
+      for (const store of stores) {
+        removed += store.size;
+        store.clear();
+      }
+    }, clearPositionMigrations);
+  }
+  return removed;
+}
+
+
+/**
+ * Page content must be a tree of Y.XmlElement / Y.XmlText only, nested sanely. A client can send a
+ * hand-built update with a Y.Map, Y.Array or Y.Text inside a content fragment or an element, or
+ * thousands of levels of nesting: the server copes, but every editor that opens the page then
+ * crashes in its renderer. The room removes such nodes in a follow-up transaction, so everyone converges.
+ */
+export const MAX_NODE_DEPTH = 64;
+const SANITIZE_ORIGIN = Symbol('sanitize');
+type AnyType = Y.AbstractType<any>;
+
+const isXmlNode = (t: AnyType) => t instanceof Y.XmlElement || t instanceof Y.XmlText;
+const typeOf = (item: Y.Item): AnyType | null => (!item.deleted && item.content instanceof Y.ContentType ? (item.content.type as AnyType) : null);
+const contentRoots = (doc: Y.Doc) => {
+  const roots = new Set<AnyType>();
+  doc.share.forEach((t, name) => isContentField(name) && roots.add(t as AnyType));
+  return roots;
+};
+
+/**
+ * Checks `type`'s children (all of them, or only those `only` accepts), queuing bad ones in `bad`
+ * and valid element children in `stack` (with their depth) to be swept in full.
+ */
+function checkChildren(type: AnyType, depth: number, bad: Y.Item[], stack: [AnyType, number][], only?: (i: Y.Item) => boolean) {
+  for (let i = type._start; i; i = i.right) {
+    if (i.deleted || (only && !only(i))) continue;
+    const t = typeOf(i);
+    if (!t) continue;
+    if (!isXmlNode(t) || (t instanceof Y.XmlElement && depth + 1 > MAX_NODE_DEPTH)) bad.push(i);
+    else if (t instanceof Y.XmlElement) stack.push([t, depth + 1]);
+  }
+}
+/** Attribute values must be plain values too: queue any that is a Yjs type. */
+function checkAttrs(type: AnyType, bad: Y.Item[], keys?: Iterable<string | null>) {
+  const items = keys ? [...keys].map((k) => (k === null ? undefined : type._map.get(k))) : [...type._map.values()];
+  for (const i of items) if (i && typeOf(i)) bad.push(i);
+}
+function drain(stack: [AnyType, number][], bad: Y.Item[]) {
+  while (stack.length) {
+    const [t, d] = stack.pop()!;
+    checkChildren(t, d, bad, stack);
+    checkAttrs(t, bad);
+  }
+}
+function removeBad(doc: Y.Doc, bad: Y.Item[]): number {
+  if (!bad.length) return 0;
+  doc.transact((tr) => bad.forEach((i) => i.delete(tr)), SANITIZE_ORIGIN);
+  return bad.length;
+}
+
+/** Full walk of every content fragment (a stored page, on room load). Returns how many nodes it removed. */
+export function sanitizePageDoc(doc: Y.Doc): number {
+  const bad: Y.Item[] = [];
+  const stack: [AnyType, number][] = [];
+  for (const root of contentRoots(doc)) stack.push([root, 0]);
+  drain(stack, bad);
+  return removeBad(doc, bad);
+}
+
+/** How many XmlElements `type` is nested in inside a content fragment (0 for the fragment itself); -1 if it is not in one. */
+function depthIn(type: AnyType, roots: Set<AnyType>): number {
+  let d = 0;
+  for (let t: AnyType = type; ; ) {
+    if (roots.has(t)) return d;
+    const item = t._item;
+    if (!item || !item.parent) return -1;
+    if (t instanceof Y.XmlElement) d++;
+    t = item.parent as AnyType;
+  }
+}
+
+/**
+ * Finds what a transaction put wrongly into page content, looking only at the types it changed
+ * directly (typing in a paragraph changes just its text, which can hold no nodes).
+ */
+function findOffenders(doc: Y.Doc, tr: Y.Transaction): Y.Item[] {
+  const bad: Y.Item[] = [];
+  const stack: [AnyType, number][] = [];
+  let roots: Set<AnyType> | null = null;
+  const added = (i: Y.Item) => i.id.clock >= (tr.beforeState.get(i.id.client) ?? 0);
+  for (const [type, keys] of tr.changed) {
+    if (type instanceof Y.XmlText) continue;
+    roots ??= contentRoots(doc);
+    const depth = depthIn(type as AnyType, roots);
+    if (depth < 0) continue;
+    checkChildren(type as AnyType, depth, bad, stack, added);
+    if ([...keys].some((k) => k !== null)) checkAttrs(type as AnyType, bad, keys);
+  }
+  drain(stack, bad);
+  return bad;
+}
+
+/** Sync timings for /admin/metrics: the collab socket is not part of the request log. */
+const syncMetrics = { updates: 0, updateBytes: 0, applyMs: 0, applyMaxMs: 0, saves: 0, saveMs: 0, saveMaxMs: 0, docMaxBytes: 0, migrationsCleared: 0, nodesRemoved: 0 };
+const ms = (start: bigint) => Number(process.hrtime.bigint() - start) / 1e6;
 
 interface Room {
   pageId: string;
@@ -47,6 +174,9 @@ interface Room {
   mentionAuthors: Map<string, string>;
   /** Who put each task reference into the doc since the last save (task id → user ids), see syncPageTasks. */
   taskAuthors: Map<string, Set<string>>;
+  /** A client update that put invalid nodes in the page: held back until its cleanup is ready (see getRoom). */
+  held: Uint8Array | null;
+  sanitizing: boolean;
 }
 
 const rooms = new Map<string, Room>();
@@ -180,6 +310,9 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
   const mentionIds = new Set<string>();
   const parts: string[] = [];
   const walk = (node: Y.XmlElement | Y.XmlText | Y.XmlFragment) => {
+    // A client can put any Yjs type (a Y.Map, Y.Array, Y.Text) in a fragment with a hand-built update. Skip those:
+    // walking one threw out of the save timer and took the server down.
+    if (!(node instanceof Y.XmlText || node instanceof Y.XmlElement || node instanceof Y.XmlFragment)) return;
     if (node instanceof Y.XmlText) {
       parts.push(
         (node.toDelta() as { insert: unknown }[]).map((d) => (typeof d.insert === 'string' ? d.insert : '')).join(''),
@@ -204,11 +337,33 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
   return { text: parts.join('').replace(/\n{3,}/g, '\n\n').trim(), taskIds, mentionIds };
 }
 
+/** Save a room now. A failure is logged (ids only) and retried shortly: it must never throw out of a timer or socket event. */
 function persist(room: Room) {
+  try {
+    persistNow(room);
+  } catch (err) {
+    log.error('page save failed', { pageId: room.pageId, err });
+    if (rooms.get(room.pageId) === room && !room.saveTimer) {
+      room.saveTimer = setTimeout(() => persist(room), SAVE_RETRY_MS);
+      room.saveTimer.unref();
+    }
+  }
+}
+
+function persistNow(room: Room) {
   room.saveTimer = null;
   room.dirtySince = 0;
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);
   if (!exists) return; // page deleted while open
+  const started = process.hrtime.bigint();
+  const cleared = clearPositionMigrations(room.doc);
+  if (cleared) {
+    syncMetrics.migrationsCleared += cleared;
+    // The clear is an update, which scheduled another save: this one includes it.
+    if (room.saveTimer) clearTimeout(room.saveTimer);
+    room.saveTimer = null;
+    room.dirtySince = 0;
+  }
   const state = Buffer.from(Y.encodeStateAsUpdate(room.doc));
   const { text, taskIds, mentionIds } = extractPage(room.doc);
   db.transaction(() => {
@@ -249,6 +404,11 @@ function persist(room: Room) {
     console.error('page saved hook', e);
   }
   publish({ type: 'tree', workspaceId: room.workspaceId });
+  const took = ms(started);
+  syncMetrics.saves++;
+  syncMetrics.saveMs += took;
+  syncMetrics.saveMaxMs = Math.max(syncMetrics.saveMaxMs, took);
+  syncMetrics.docMaxBytes = Math.max(syncMetrics.docMaxBytes, state.length);
 }
 
 function scheduleSave(room: Room) {
@@ -265,6 +425,12 @@ function getRoom(pageId: string, workspaceId: string): Room {
   const doc = new Y.Doc({ gc: true });
   const row = db.prepare('SELECT ydoc FROM pages WHERE id = ?').get(pageId) as { ydoc: Buffer | null } | undefined;
   if (row?.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
+  syncMetrics.migrationsCleared += clearPositionMigrations(doc); // saved with the page's next save
+  const stored = sanitizePageDoc(doc); // a bad doc stored before this check existed
+  if (stored) {
+    syncMetrics.nodesRemoved += stored;
+    log.warn('removed invalid nodes from a stored page', { pageId, count: stored });
+  }
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
   const r: Room = {
@@ -279,6 +445,8 @@ function getRoom(pageId: string, workspaceId: string): Room {
     mentioned: extractPage(doc).mentionIds,
     mentionAuthors: new Map(),
     taskAuthors: new Map(),
+    held: null,
+    sanitizing: false,
   };
 
   // Attribute new @mentions to whoever's update inserted them (not just the last editor).
@@ -309,7 +477,35 @@ function getRoom(pageId: string, workspaceId: string): Room {
     }
   });
 
+  // After each client update: remove anything invalid it put into page content, in a follow-up transaction.
+  // The offending update is not forwarded on its own: it is merged with the cleanup and sent as one, so other
+  // editors never render the bad nodes (inserted and deleted in one Yjs transaction they raise no change).
+  doc.on('afterTransaction', (tr: Y.Transaction) => {
+    if (!(tr.origin instanceof WebSocket)) return;
+    try {
+      const bad = findOffenders(doc, tr);
+      if (!bad.length) return;
+      r.sanitizing = true; // the 'update' for this transaction fires after this handler, before the cleanup's
+      const removed = removeBad(doc, bad);
+      syncMetrics.nodesRemoved += removed;
+      log.warn('removed invalid nodes from a page edit', { pageId, userId: connAuth.get(tr.origin)?.userId, count: removed });
+    } catch (err) {
+      r.sanitizing = false;
+      log.error('page sanitize failed', { pageId, err });
+    }
+  });
+
   doc.on('update', (update: Uint8Array, origin: unknown) => {
+    if (r.sanitizing) {
+      if (origin !== SANITIZE_ORIGIN) {
+        r.held = update;
+        scheduleSave(r);
+        return;
+      }
+      r.sanitizing = false;
+      if (r.held) update = Y.mergeUpdates([r.held, update]);
+      r.held = null;
+    }
     const enc = encoding.createEncoder();
     encoding.writeVarUint(enc, MSG_SYNC);
     syncProtocol.writeUpdate(enc, update);
@@ -440,9 +636,18 @@ export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void
 
 export function attachCollab(wss: WebSocketServer) {
   wss.on('connection', (conn: WebSocket, req: IncomingMessage) => {
+    // ws emits 'error' for protocol violations (a frame over maxPayload, bad opcodes, invalid UTF-8). With no
+    // listener that is an uncaught exception that takes the whole server down, so this comes before auth.
+    conn.on('error', () => setTimeout(() => conn.terminate(), 2000).unref()); // ws has already started closing (1009 etc.)
     const url = new URL(req.url ?? '', 'http://x');
     // y-websocket connects to `${serverUrl}/${roomName}`; room = page id.
-    const pageId = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+    let pageId = '';
+    try {
+      pageId = decodeURIComponent(url.pathname.split('/').pop() ?? ''); // throws URIError on a bad escape like %E0%A4%A
+    } catch {
+      conn.close(4403, 'No access to this page');
+      return;
+    }
     const auth = verifyAccessToken(tokenFromUpgrade(req));
     if (!auth) {
       conn.close(4401, 'Unauthorized');
@@ -492,7 +697,15 @@ export function attachCollab(wss: WebSocketServer) {
           if (sub !== syncProtocol.messageYjsSyncStep1 && !state.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
           const guard = sub !== syncProtocol.messageYjsSyncStep1 && !state.member ? extractPage(room.doc).taskIds : null;
+          const started = process.hrtime.bigint();
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
+          if (sub !== syncProtocol.messageYjsSyncStep1) {
+            const took = ms(started);
+            syncMetrics.updates++;
+            syncMetrics.updateBytes += data.byteLength;
+            syncMetrics.applyMs += took;
+            syncMetrics.applyMaxMs = Math.max(syncMetrics.applyMaxMs, took);
+          }
           if (guard) guardPageTasks(room, guard);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
         } else if (type === MSG_AWARENESS) {
@@ -542,5 +755,22 @@ export function shutdownCollab() {
 export function collabStats() {
   let connections = 0;
   for (const r of rooms.values()) connections += r.conns.size;
-  return { openPages: rooms.size, connections };
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const m = syncMetrics;
+  return {
+    openPages: rooms.size,
+    connections,
+    // Totals since start: rate and average come from differences between two reads.
+    sync: {
+      updates: m.updates,
+      updateBytes: m.updateBytes,
+      applyMsTotal: r1(m.applyMs),
+      applyMsMax: r1(m.applyMaxMs),
+      saves: m.saves,
+      saveMsTotal: r1(m.saveMs),
+      saveMsMax: r1(m.saveMaxMs),
+      docBytesMax: m.docMaxBytes,
+      positionMigrationsCleared: m.migrationsCleared,
+    },
+  };
 }

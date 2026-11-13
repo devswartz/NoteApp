@@ -17,6 +17,16 @@ export const h = (fn: Handler) => async (req: Request, res: Response, next: Next
   }
 };
 
+/**
+ * The first `max` UTF-16 units of `s`, without cutting an emoji or other surrogate pair in half (a lone half is stored as
+ * U+FFFD, a visible replacement character).
+ */
+export const clip = (s: string, max: number): string => {
+  if (s.length <= max) return s;
+  const hi = s.charCodeAt(max - 1);
+  return s.slice(0, hi >= 0xd800 && hi <= 0xdbff ? max - 1 : max);
+};
+
 /** Required, trimmed, length-limited string field. */
 export const str = (v: unknown, field: string, max = 500): string => {
   if (typeof v !== 'string' || !v.trim()) throw new HttpError(400, `${field} is required`);

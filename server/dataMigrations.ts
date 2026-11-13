@@ -4,7 +4,7 @@
 // and does only that, in small batches so a large database is never held in memory at once.
 import * as Y from 'yjs';
 import { db } from './db.ts';
-import { newBoxId } from './collab.ts';
+import { clearPositionMigrations, newBoxId } from './collab.ts';
 import { snapshot } from './versions.ts';
 import { convertPageDoc } from '../shared/pageDoc.ts';
 
@@ -54,8 +54,45 @@ export function convertDocumentPages(batch = BATCH): number {
   return converted;
 }
 
+/**
+ * Empty the position-migration maps that @tiptap/y-tiptap 3.0.x left in stored docs (see
+ * clearPositionMigrations). Only pages whose doc mentions the map are read; a page is written
+ * only if something was removed, so later starts just re-read those pages. Returns the count.
+ */
+export function clearStoredPositionMigrations(batch = BATCH): number {
+  const next = db.prepare("SELECT id FROM pages WHERE id > ? AND instr(ydoc, CAST('__tiptap_position_migrations:' AS BLOB)) > 0 ORDER BY id LIMIT ?");
+  const read = db.prepare('SELECT ydoc FROM pages WHERE id = ?');
+  const write = db.prepare('UPDATE pages SET ydoc = ? WHERE id = ?');
+  let cleaned = 0;
+  let after = '';
+  for (;;) {
+    const ids = (next.all(after, batch) as { id: string }[]).map((r) => r.id);
+    if (!ids.length) break;
+    after = ids[ids.length - 1]!;
+    for (const id of ids) {
+      const doc = new Y.Doc();
+      try {
+        const row = read.get(id) as { ydoc: Buffer | null } | undefined;
+        if (!row?.ydoc?.length) continue;
+        Y.applyUpdate(doc, new Uint8Array(row.ydoc));
+        if (clearPositionMigrations(doc)) {
+          write.run(Buffer.from(Y.encodeStateAsUpdate(doc)), id);
+          cleaned++;
+        }
+      } catch (e) {
+        console.error(`Could not clean page ${id}`, e);
+      } finally {
+        doc.destroy();
+      }
+    }
+  }
+  return cleaned;
+}
+
 /** Run every data migration; logs what each one changed. */
 export function runDataMigrations() {
   const pages = convertDocumentPages();
   if (pages) console.log(`Data migration: converted ${pages} document page${pages === 1 ? '' : 's'} to canvas pages (each kept as a version)`);
+  const cleaned = clearStoredPositionMigrations();
+  if (cleaned) console.log(`Data migration: removed editor position records from ${cleaned} page${cleaned === 1 ? '' : 's'}`);
 }

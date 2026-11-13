@@ -87,3 +87,59 @@ test('ACCESS_TOKEN_TTL_S: bad values use the default; production clamps to 60–
   assert.equal(accessTtlFromEnv('1800', true), 1800);
   assert.equal(accessTtlFromEnv('5', false), 5, 'tests may use short tokens outside production');
 });
+
+test('/collab: a frame far over the size limit closes that socket (1009) and does not crash the server', async () => {
+  const u = await app.signUp('Frame');
+  const tree = await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token);
+  const pageId = (await app.call('POST', `/sections/${tree.data.sections[0].id}/pages`, u.token, { title: 'T' })).data.id;
+  // ws emits 'error' on the server's socket for an oversized frame; unhandled, that killed the process.
+  for (const token of [u.token, 'not-a-token']) {
+    const ws = await openCollab(token, pageId);
+    const code = closed(ws);
+    ws.send(new Uint8Array(20 * 1024 * 1024));
+    await code;
+  }
+  assert.equal((await app.call('GET', '/workspaces', u.token)).status, 200, 'server still up');
+});
+
+test('a malformed WebSocket upgrade (bad %-escape in the page id, odd request targets) is refused without crashing the server', async () => {
+  const net = await import('node:net');
+  const port = Number(new URL(app.origin).port);
+  const raw = (target: string) =>
+    new Promise<void>((resolve) => {
+      const s = net.connect(port, '127.0.0.1', () =>
+        s.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: noteapp.v1\r\n\r\n`),
+      );
+      s.on('data', () => {});
+      s.on('error', () => resolve());
+      s.on('close', () => resolve());
+      setTimeout(() => (s.destroy(), resolve()), 700);
+    });
+  for (const t of ['/collab/%E0%A4%A', '/collab/%', '/collab/%00', 'http://[/collab/x', '//[', '/api/events%', '/collab/' + '%FF'.repeat(50)]) await raw(t);
+  const u = await app.signUp('Odd');
+  assert.equal((await app.call('GET', '/workspaces', u.token)).status, 200, 'server still up');
+});
+
+test('/collab: a hand-built update that puts a Y.Map / Y.Array / Y.Text inside the text does not crash the save', async () => {
+  const u = await app.signUp('Poison');
+  const tree = await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token);
+  const pageId = (await app.call('POST', `/sections/${tree.data.sections[0].id}/pages`, u.token, { title: 'P' })).data.id;
+  const doc = new Y.Doc();
+  const frag = doc.getXmlFragment('default');
+  const p = new Y.XmlElement('paragraph');
+  frag.push([p]);
+  p.insert(0, [new Y.XmlText('still saved')]);
+  // The editor never makes these; a raw update can. Extracting text from the page used to throw inside the save timer.
+  const odd = [new Y.Map(), new Y.Array(), new Y.Text('t')] as unknown as Y.XmlElement[];
+  p.insert(1, odd);
+  frag.insert(0, [new Y.Map() as unknown as Y.XmlElement]);
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, 0);
+  syncProtocol.writeUpdate(enc, Y.encodeStateAsUpdate(doc));
+  const ws = await openCollab(u.token, pageId);
+  ws.send(encoding.toUint8Array(enc));
+  await new Promise((r) => setTimeout(r, 1400)); // past the save debounce
+  const { db } = await import('../server/db.ts');
+  assert.match((db.prepare('SELECT text FROM pages WHERE id = ?').get(pageId) as { text: string }).text, /still saved/);
+  ws.close();
+});
