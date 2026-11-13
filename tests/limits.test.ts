@@ -101,3 +101,21 @@ test('/collab: a frame far over the size limit closes that socket (1009) and doe
   }
   assert.equal((await app.call('GET', '/workspaces', u.token)).status, 200, 'server still up');
 });
+
+test('a malformed WebSocket upgrade (bad %-escape in the page id, odd request targets) is refused without crashing the server', async () => {
+  const net = await import('node:net');
+  const port = Number(new URL(app.origin).port);
+  const raw = (target: string) =>
+    new Promise<void>((resolve) => {
+      const s = net.connect(port, '127.0.0.1', () =>
+        s.write(`GET ${target} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: noteapp.v1\r\n\r\n`),
+      );
+      s.on('data', () => {});
+      s.on('error', () => resolve());
+      s.on('close', () => resolve());
+      setTimeout(() => (s.destroy(), resolve()), 700);
+    });
+  for (const t of ['/collab/%E0%A4%A', '/collab/%', '/collab/%00', 'http://[/collab/x', '//[', '/api/events%', '/collab/' + '%FF'.repeat(50)]) await raw(t);
+  const u = await app.signUp('Odd');
+  assert.equal((await app.call('GET', '/workspaces', u.token)).status, 200, 'server still up');
+});

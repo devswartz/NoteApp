@@ -60,10 +60,16 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   attachCollab(collab);
   attachEvents(events);
   server.on('upgrade', (req, socket, head) => {
-    const pathname = new URL(req.url ?? '/', 'http://x').pathname;
-    const wss = pathname === '/api/events' ? events : pathname.startsWith('/collab/') ? collab : null;
-    if (!wss) return socket.destroy();
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    // A malformed request target must refuse that one socket, not throw out of the event handler (an
+    // uncaught exception takes the whole server down, and this runs before any authentication).
+    try {
+      const pathname = new URL(req.url ?? '/', 'http://x').pathname;
+      const wss = pathname === '/api/events' ? events : pathname.startsWith('/collab/') ? collab : null;
+      if (!wss) return socket.destroy();
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+    } catch {
+      socket.destroy();
+    }
   });
   return { app, server, collab, events };
 }

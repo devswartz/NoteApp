@@ -493,7 +493,13 @@ export function attachCollab(wss: WebSocketServer) {
     conn.on('error', () => setTimeout(() => conn.terminate(), 2000).unref()); // ws has already started closing (1009 etc.)
     const url = new URL(req.url ?? '', 'http://x');
     // y-websocket connects to `${serverUrl}/${roomName}`; room = page id.
-    const pageId = decodeURIComponent(url.pathname.split('/').pop() ?? '');
+    let pageId = '';
+    try {
+      pageId = decodeURIComponent(url.pathname.split('/').pop() ?? ''); // throws URIError on a bad escape like %E0%A4%A
+    } catch {
+      conn.close(4403, 'No access to this page');
+      return;
+    }
     const auth = verifyAccessToken(tokenFromUpgrade(req));
     if (!auth) {
       conn.close(4401, 'Unauthorized');
