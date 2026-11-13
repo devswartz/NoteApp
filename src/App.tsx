@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
-import { bootstrap, markEmailUnverified, signOut, useStore } from './store.ts';
-import { fileUrl, setEmailUnverifiedHandler, setUnauthorizedHandler } from './api.ts';
+import { bootstrap, errorToast, loadWorkspaces, markEmailUnverified, signOut, useStore } from './store.ts';
+import { fileUrl, post, setEmailUnverifiedHandler, setUnauthorizedHandler } from './api.ts';
 import { CheckEmail } from './pages/CheckEmail.tsx';
 import { VerifyEmail } from './pages/VerifyEmail.tsx';
 import { AppShell } from './components/AppShell.tsx';
@@ -16,7 +16,8 @@ import { SharedPageRedirect } from './components/sharing/SharedWithMe.tsx';
 import { workspaceRoutes } from './routes.tsx';
 import { ResetPassword } from './pages/ResetPassword.tsx';
 import { RouteBoundary } from './components/ErrorBoundary.tsx';
-import { useIsMobile } from './components/ui.tsx';
+import { Button, useIsMobile } from './components/ui.tsx';
+import { DialogHost, promptDialog } from './components/shell/dialogs.tsx';
 import { platform } from './platform/index.ts';
 
 export function App() {
@@ -84,13 +85,36 @@ export function App() {
   );
 }
 
+/** Signed in with no workspace (the only one was deleted): without a way to make one this is a dead end. */
+function NoWorkspace() {
+  const create = async () => {
+    const name = await promptDialog({ title: 'New workspace', label: 'Name', confirmLabel: 'Create' });
+    if (!name) return;
+    try {
+      await post<{ id: string }>('/workspaces', { name });
+      await loadWorkspaces(); // Home then redirects into it
+    } catch (e) {
+      errorToast(e);
+    }
+  };
+  return (
+    <div className="empty-page">
+      <p>You don’t belong to any workspace yet.</p>
+      <Button variant="primary" onClick={() => void create()}>
+        Create a workspace
+      </Button>
+      <DialogHost /> {/* the app shell, which normally hosts dialogs, isn't mounted here */}
+    </div>
+  );
+}
+
 function Home() {
   const workspaces = useStore((s) => s.workspaces);
   const [invite] = useState(takePendingInvite); // signed in from an invite link: finish joining
   if (invite) return <Navigate to={invite} replace />;
   const last = platform.kv.get('noteapp.lastWs');
   const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];
-  if (!ws) return <div className="empty-page">You don’t belong to any workspace yet.</div>;
+  if (!ws) return <NoWorkspace />;
   return <Navigate to={`/w/${ws.id}`} replace />;
 }
 
