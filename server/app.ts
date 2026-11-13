@@ -5,6 +5,7 @@
 //   /collab/<id>  WebSocket: Yjs sync for one page (server/collab.ts)
 //   /uploads/*    uploaded files
 //   /oauth/*      OAuth authorization server for AI connectors (server/oauth/routes.ts)
+//   /mcp          the AI connector: a remote MCP server (server/mcp/)
 //   everything else: the web app (dist/), with index.html as the SPA fallback
 // server/index.ts starts it; tests start it on a random port.
 import express from 'express';
@@ -24,6 +25,7 @@ import { securityHeaders } from './security.ts';
 import { requestLog } from './requests.ts';
 import { testHookRoutes } from './testHooks.ts';
 import { testHooksEnabled } from './verification.ts';
+import { mcpRoutes } from './mcp/index.ts';
 
 export function createServer(opts: { serveWeb?: boolean } = {}) {
   const app = express();
@@ -48,6 +50,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   app.use('/.well-known', wellKnownRoutes()); // universal / app links for the mobile apps (docs/MOBILE.md), OAuth metadata
   app.use('/oauth', requestLog, oauthRoutes(), errorHandler); // AI connector authorization server (server/oauth/routes.ts); /oauth/consent is a web app page
   app.use('/uploads', serveUploads); // nosniff + sandbox CSP + attachment disposition (routes/files.ts)
+  app.use('/mcp', requestLog, mcpRoutes); // AI connector: OAuth bearer tokens only (server/mcp/index.ts)
 
   // In production the server also serves the built web app.
   const dist = path.resolve('dist');
@@ -55,7 +58,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
     // Hashed assets can be cached forever; index.html and sw.js must revalidate.
     app.use('/assets', express.static(path.join(dist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(dist, { index: false, maxAge: 0 }));
-    app.get(/^(?!\/api\/|\/uploads\/|\/collab\/).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+    app.get(/^(?!\/api\/|\/uploads\/|\/collab\/|\/mcp(\/|$)).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
   }
 
   const server = http.createServer(app);

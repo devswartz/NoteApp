@@ -338,9 +338,9 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
 }
 
 /** Save a room now. A failure is logged (ids only) and retried shortly: it must never throw out of a timer or socket event. */
-function persist(room: Room) {
+function persist(room: Room, notifySaved = true) {
   try {
-    persistNow(room);
+    persistNow(room, notifySaved);
   } catch (err) {
     log.error('page save failed', { pageId: room.pageId, err });
     if (rooms.get(room.pageId) === room && !room.saveTimer) {
@@ -350,7 +350,7 @@ function persist(room: Room) {
   }
 }
 
-function persistNow(room: Room) {
+function persistNow(room: Room, notifySaved = true) {
   room.saveTimer = null;
   room.dirtySince = 0;
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);
@@ -399,7 +399,7 @@ function persistNow(room: Room) {
   room.mentionAuthors.clear();
   for (const [actor, ids] of byActor) pageMentionHook?.(room.pageId, room.workspaceId, ids, actor);
   try {
-    pageSavedHook?.(room.pageId, room.lastEditor);
+    if (notifySaved) pageSavedHook?.(room.pageId, room.lastEditor);
   } catch (e) {
     console.error('page saved hook', e);
   }
@@ -576,13 +576,15 @@ export function closeUserCollab(userId: string) {
  * Change a page's content on the server (e.g. converting it to a canvas) and save it now.
  * If the page is open, the change is made in its live room, so every client gets it as a
  * normal update (and an offline client merges it later); otherwise on the stored doc.
+ * `notifySaved: false` skips the activity feed's "edited" entry for the room's last editor
+ * (the AI connector records its own, attributed to the app; it flushes pending edits first).
  */
-export function editPageDoc(pageId: string, fn: (doc: Y.Doc) => void) {
+export function editPageDoc(pageId: string, fn: (doc: Y.Doc) => void, opts: { notifySaved?: boolean } = {}) {
   const room = rooms.get(pageId);
   if (room) {
     room.doc.transact(() => fn(room.doc));
     if (room.saveTimer) clearTimeout(room.saveTimer);
-    persist(room);
+    persist(room, opts.notifySaved ?? true);
     return;
   }
   const doc = new Y.Doc();
