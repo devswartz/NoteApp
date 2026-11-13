@@ -5,16 +5,27 @@
 // grows), and undo / redo pick the manager whose top item is newest. A new change anywhere
 // clears every manager's redo stack, as a single history would. Only this client's changes
 // are tracked (each manager tracks local origins only).
-import type * as Y from 'yjs';
+//
+// A box's text history belongs to the page, not to the box's editor (textUndo): it outlives the
+// editor, so a box deleted and brought back by undo / redo, or one whose editor isn't mounted,
+// still has its typing to undo and redo. The box's editor uses that manager as its own (y-tiptap's
+// undo plugin), so the caret still comes back where the change was.
+import * as Y from 'yjs';
 import type { Editor } from '@tiptap/core';
-import { ySyncPluginKey, yUndoPluginKey } from '@tiptap/y-tiptap';
+import { defaultDeleteFilter, defaultProtectedNodes, ySyncPluginKey, yUndoPluginKey } from '@tiptap/y-tiptap';
 
 /** One undo history on the page. `undo` / `redo` default to the manager's own. */
 export interface UndoSource {
   manager: () => Y.UndoManager | null | undefined;
   undo?: () => void;
   redo?: () => void;
+  /** False while its changes can't be seen (a box someone else deleted): passed over. */
+  live?: () => boolean;
 }
+
+/** Listeners PageUndo adds to a manager; an editor letting go of a text history leaves them. */
+const OWN = new WeakSet<object>();
+type Observers = Map<string, Set<object>>;
 
 const SEQ = 'pageUndo.seq';
 let counter = 0;
@@ -26,6 +37,50 @@ export class PageUndo {
   private hooked = new Map<Y.UndoManager, () => void>();
   private listeners = new Set<() => void>();
   private version = 0;
+  private texts = new Map<string, Y.UndoManager>();
+
+  /**
+   * The text history of one fragment (a box's `box:<id>`), made on first use and kept until the
+   * page closes. Its box's editor passes it to y-tiptap's undo plugin (Collaboration's
+   * `yUndoOptions.undoManager`), configured as y-tiptap would its own: this client's typing only.
+   * `live`: whether the box is on the page (see UndoSource.live).
+   */
+  textUndo(doc: Y.Doc, field: string, live?: () => boolean): Y.UndoManager {
+    const had = this.texts.get(field);
+    if (had) return had;
+    const um = new Y.UndoManager(doc.getXmlFragment(field), {
+      trackedOrigins: new Set<unknown>([ySyncPluginKey]),
+      deleteFilter: (item) => defaultDeleteFilter(item, defaultProtectedNodes),
+      captureTransaction: (tr) => tr.meta.get('addToHistory') !== false,
+    });
+    // y-tiptap destroys the manager when the editor goes. This one stays with the page (the doc's
+    // destroy still ends it): the editor only takes back the listener its undo plugin added.
+    um.destroy = () => {
+      const set = (um as unknown as { _observers: Observers })._observers.get('stack-item-added');
+      set?.forEach((f) => {
+        if (!OWN.has(f)) set.delete(f);
+      });
+    };
+    this.texts.set(field, um);
+    this.add({ manager: () => um, live });
+    return um;
+  }
+
+  /** Forget a fragment's text history (its box was removed for good). */
+  forgetText(field: string) {
+    const um = this.texts.get(field);
+    if (um?.undoStack.length || um?.redoStack.length) um.clear();
+  }
+
+  /** The page closed: let go of every history. */
+  dispose() {
+    for (const off of this.hooked.values()) off();
+    this.hooked.clear();
+    for (const um of this.texts.values()) Y.UndoManager.prototype.destroy.call(um);
+    this.texts.clear();
+    this.sources = [];
+    this.changed();
+  }
 
   /** Add a history to the page; returns its removal. */
   add(source: UndoSource): () => void {
@@ -77,7 +132,7 @@ export class PageUndo {
     let bestSeq = -1;
     for (const s of this.sources) {
       const um = s.manager();
-      if (!um) continue;
+      if (!um || (s.live && !s.live())) continue;
       const seq = seqOf((kind === 'undo' ? um.undoStack : um.redoStack).at(-1));
       if (seq > bestSeq) {
         best = [s, um];
@@ -111,6 +166,7 @@ export class PageUndo {
       this.changed();
     };
     const changed = () => this.changed();
+    OWN.add(stamp);
     um.on('stack-item-added', stamp);
     um.on('stack-item-updated', stamp);
     um.on('stack-item-popped', changed);
@@ -129,7 +185,11 @@ const byDoc = new WeakMap<Y.Doc, PageUndo>();
 /** The page undo of a canvas page's Y.Doc (made on first use). */
 export function pageUndoFor(doc: Y.Doc): PageUndo {
   let p = byDoc.get(doc);
-  if (!p) byDoc.set(doc, (p = new PageUndo()));
+  if (!p) {
+    const page = (p = new PageUndo());
+    byDoc.set(doc, page);
+    doc.on('destroy', () => page.dispose());
+  }
   return p;
 }
 
@@ -149,13 +209,4 @@ export function pageUndoOf(editor: Editor | null | undefined): PageUndo | null {
 export function closeUndoGroup(editor: Editor | null | undefined) {
   if (!editor || editor.isDestroyed) return;
   (yUndoPluginKey.getState(editor.state) as { undoManager?: Y.UndoManager } | undefined)?.undoManager?.stopCapturing();
-}
-
-/** A box editor's text history, undone through the editor (so its selection comes back). */
-export function editorUndoSource(editor: Editor): UndoSource {
-  return {
-    manager: () => (editor.isDestroyed ? null : (yUndoPluginKey.getState(editor.state) as { undoManager?: Y.UndoManager } | undefined)?.undoManager),
-    undo: () => void editor.commands.undo(),
-    redo: () => void editor.commands.redo(),
-  };
 }

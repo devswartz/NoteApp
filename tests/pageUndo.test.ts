@@ -92,3 +92,47 @@ test('remote changes are not undone', () => {
   assert.equal(boxes.get('y'), 2);
   assert.equal(page.canUndo(), false);
 });
+
+test('a box text history outlives its editor: redo after the box is undone away and back (F9)', async () => {
+  const { ySyncPluginKey } = await import('@tiptap/y-tiptap');
+  const doc = new Y.Doc();
+  const boxes = doc.getMap<number>('boxes');
+  const geom = new Y.UndoManager(boxes, { trackedOrigins: new Set([GEOM]), captureTimeout: 0 });
+  const page = new PageUndo();
+  page.add({ manager: () => geom });
+  const frag = doc.getXmlFragment('box:b');
+  const typing = page.textUndo(doc, 'box:b', () => boxes.has('b'));
+  typing.captureTimeout = 0;
+  assert.equal(page.textUndo(doc, 'box:b'), typing, 'one history per box');
+  const text = () => frag.toString();
+
+  doc.transact(() => boxes.set('b', 1), GEOM); // create the box
+  doc.transact(() => {
+    const p = new Y.XmlElement('paragraph');
+    p.insert(0, [new Y.XmlText('Bravo')]);
+    frag.insert(0, [p]);
+  }, ySyncPluginKey); // type in it
+  // The editor unmounts (y-tiptap destroys "its" manager): the history stays, still on the page.
+  typing.destroy();
+
+  page.undo(); // typing
+  assert.equal(text(), '');
+  page.undo(); // the box
+  assert.equal(boxes.has('b'), false);
+  assert.equal(page.canUndo(), false);
+  page.redo(); // the box comes back
+  assert.equal(boxes.has('b'), true);
+  assert.equal(page.redo(), true); // and its text
+  assert.match(text(), /Bravo/);
+  assert.equal(page.canRedo(), false);
+
+  // A box someone else removed: its text history is passed over.
+  doc.transact(() => boxes.delete('b'), 'remote');
+  assert.equal(typing.undoStack.length, 1);
+  page.undo(); // the box's creation, not its (invisible) text
+  assert.match(text(), /Bravo/);
+  assert.equal(page.canUndo(), false, 'nothing left on boxes that exist');
+
+  doc.destroy(); // page closed: histories let go
+  assert.equal(page.canUndo(), false);
+});

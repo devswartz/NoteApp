@@ -41,7 +41,7 @@ import { usePageSettings } from './ribbonState.ts';
 import { LinePicks, linePicks } from './linePicks.ts';
 import { PrintSelectionMenu } from './PrintSelectionMenu.tsx';
 import { toast } from '../store.ts';
-import { pageUndoFor, pageUndoOf, editorUndoSource } from './pageUndo.ts';
+import { pageUndoFor, pageUndoOf } from './pageUndo.ts';
 import { GEOM_ORIGIN, boxJSON, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
 import { MOD, MenuItem, MenuSeparator, keyLabel, useContextMenu, useIsMobile } from '../components/ui.tsx';
@@ -182,7 +182,7 @@ const CAPTURE_MS = 500;
 /**
  * Undo for box geometry: one Y.UndoManager over the boxes map (and each box's content, so
  * undoing a delete brings the text back), tracking only this client's GEOM_ORIGIN changes.
- * Text typed in a box has its own undo inside the box.
+ * Text typed in a box has its own history, kept by the page (PageUndo.textUndo) so it outlives the box's editor.
  */
 function useGeometryUndo(doc: Y.Doc) {
   const um = useMemo(() => new Y.UndoManager(doc.getMap<unknown>(BOXES_KEY), { trackedOrigins: new Set([GEOM_ORIGIN]), captureTimeout: CAPTURE_MS }), [doc]);
@@ -245,14 +245,6 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   // The page's undo: box geometry and every box's text, most recent first.
   const pageUndo = useMemo(() => pageUndoFor(doc), [doc]);
   useEffect(() => pageUndo.add({ manager: () => undo }), [pageUndo, undo]);
-  const editorUndo = useRef(new Map<string, () => void>());
-  useEffect(() => {
-    const m = editorUndo.current;
-    return () => {
-      m.forEach((off) => off());
-      m.clear();
-    };
-  }, []);
   const heightsRef = useRef(heights);
   heightsRef.current = heights;
 
@@ -366,9 +358,6 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   const onEditor = useCallback(
     (id: string, editor: Editor | null) => {
-      editorUndo.current.get(id)?.();
-      editorUndo.current.delete(id);
-      if (editor) editorUndo.current.set(id, pageUndo.add(editorUndoSource(editor)));
       if (!editor) {
         const gone = editors.current.get(id);
         editors.current.delete(id);
@@ -394,7 +383,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         }, 0);
       }
     },
-    [onReady, pageUndo], // eslint-disable-line react-hooks/exhaustive-deps
+    [onReady], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const createBox = (geom: Omit<BoxGeom, 'id'>, then: Pending['then']) => {
@@ -477,6 +466,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       if (!undoable) {
         const i = undo.undoStack.findIndex((s) => s.meta.get('created') === id);
         if (i >= 0) undo.undoStack.splice(i, 1);
+        pageUndo.forgetText(boxField(id)); // the box is gone for good: so is its typing
         pageUndo.changed();
         return;
       }
@@ -1029,7 +1019,12 @@ function CanvasBox({ box, session, pageId, workspaceId, user, canEdit, stacked, 
 
 function BoxEditor({ id, wide, session, pageId, workspaceId, user, canEdit, isActive, onEditor }: Pick<BoxProps, 'session' | 'pageId' | 'workspaceId' | 'user' | 'canEdit' | 'isActive' | 'onEditor'> & { id: string; wide: boolean }) {
   // The main (wide) box holds what used to be a whole document: render-skipping for long ones, and the block handle.
-  const editor = usePageEditor(session, { pageId, workspaceId, user, canEdit, field: boxField(id), long: wide, label: 'Text box content', extensions: BOX_EXTENSIONS });
+  // Its text history belongs to the page, so it survives this editor (a box deleted and brought back, or unmounted).
+  const undoManager = useMemo(() => {
+    const boxes = session.doc.getMap<unknown>(BOXES_KEY);
+    return pageUndoFor(session.doc).textUndo(session.doc, boxField(id), () => boxes.has(id));
+  }, [session.doc, id]);
+  const editor = usePageEditor(session, { pageId, workspaceId, user, canEdit, field: boxField(id), long: wide, label: 'Text box content', extensions: BOX_EXTENSIONS, undoManager });
   useEffect(() => {
     if (!editor) return;
     onEditor(id, editor);

@@ -19,6 +19,7 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 - If you delete the only workspace you belong to, you now get a **Create a workspace** button instead of a dead-end message.
 - Deleting a workspace now also deletes its uploaded images and files from the server, instead of leaving them behind and using up space.
 - Search no longer shows an error for a query containing a stray invisible null character, and creating or editing a task with an empty page no longer fails.
+- **Undo and redo keep a box's text.** Undoing a new box and then redoing it brings its text back (it used to come back empty), and a deleted box brought back with Undo can still have its typing undone and redone. Typing in a box that's scrolled out of view undoes and redoes too.
 
 ## v0.4.10
 
