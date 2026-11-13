@@ -1,5 +1,7 @@
 // Workspaces, members and invites. Owner: Collaboration & Access.
+import path from 'node:path';
 import { Router } from 'express';
+import { FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
 import { TASK_VISIBLE, accessChanged, atLeast, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, pagePeople, requireRole, roleIn } from '../access.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
@@ -69,8 +71,10 @@ workspaceRoutes.delete(
     requireRole(wsId, req.user.id, 'owner');
     const members = memberIds(wsId);
     const templateFiles = templateFilePaths((db.prepare('SELECT id FROM templates WHERE workspace_id = ?').all(wsId) as { id: string }[]).map((t) => t.id));
+    // Uploads of the workspace (page attachments and images): their rows go with it (ON DELETE CASCADE), so the bytes would be orphaned on disk for good.
+    const uploads = (db.prepare('SELECT id, ext FROM files WHERE workspace_id = ?').all(wsId) as { id: string; ext: string }[]).map((f) => path.join(FILES_DIR, f.id + f.ext));
     db.prepare('DELETE FROM workspaces WHERE id = ?').run(wsId);
-    removeFiles(templateFiles); // template attachment copies don't outlive their workspace
+    removeFiles([...templateFiles, ...uploads]); // template attachment copies and uploads don't outlive their workspace
     accessChanged();
     publish({ type: 'workspaces' }, { userIds: members });
     return { ok: true };

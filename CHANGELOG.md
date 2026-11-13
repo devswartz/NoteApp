@@ -16,6 +16,7 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 ### Fixes
 - Long page titles are cut cleanly: a title that ran past the length limit in the middle of an emoji no longer ends in a replacement character.
 - If you delete the only workspace you belong to, you now get a **Create a workspace** button instead of a dead-end message.
+- Deleting a workspace now also deletes its uploaded images and files from the server, instead of leaving them behind and using up space.
 - Search no longer shows an error for a query containing a stray invisible null character, and creating or editing a task with an empty page no longer fails.
 
 ## v0.4.10
