@@ -14,6 +14,7 @@ const SAMPLE = 1000; // latency samples kept for percentiles
 const latencies: number[] = [];
 const byStatus: Record<string, number> = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
 let total = 0;
+let health = 0;
 const startedAt = Date.now();
 
 /** Assigns req.id (accepting a sane incoming X-Request-Id), echoes it, logs and counts the request. */
@@ -24,6 +25,12 @@ export function requestLog(req: Request, res: Response, next: NextFunction) {
   const start = process.hrtime.bigint();
   res.on('finish', () => {
     const ms = Number(process.hrtime.bigint() - start) / 1e6;
+    // Health checks (every few seconds) would swamp the percentiles: counted apart.
+    if (req.path === '/health' || req.originalUrl.startsWith('/api/health')) {
+      health++;
+      if (res.statusCode >= 500) log.error('request', { id: req.id, method: req.method, path: '/api/health', status: res.statusCode });
+      return;
+    }
     total++;
     byStatus[`${Math.floor(res.statusCode / 100)}xx`] = (byStatus[`${Math.floor(res.statusCode / 100)}xx`] ?? 0) + 1;
     latencies.push(ms);
@@ -49,6 +56,7 @@ export function requestStats() {
   return {
     since: new Date(startedAt).toISOString(),
     total,
+    healthChecks: health,
     byStatus: { ...byStatus },
     latencyMs: { p50: Math.round(pct(sorted, 50)), p95: Math.round(pct(sorted, 95)), p99: Math.round(pct(sorted, 99)), samples: sorted.length },
   };

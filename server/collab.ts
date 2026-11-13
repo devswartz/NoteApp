@@ -31,6 +31,39 @@ export const MAX_AWARENESS_MESSAGE_BYTES = 64 * 1024;
 /** Save at least this often while people keep typing (the debounce alone would wait for a pause). */
 const SAVE_MAX_WAIT_MS = 5000;
 
+/**
+ * @tiptap/y-tiptap 3.0.x kept a "position migration" record in a root map per edited fragment
+ * for every structural edit (a paste, a list indent, a drag) and never removed them: on some
+ * pages they were 90% of the doc (4.6 MB for 240 KB of text). 3.1+ stops writing them and
+ * clears the maps; the server clears them too, for clients that haven't updated yet and for
+ * pages nobody has opened since. Cleared entries leave only small tombstones.
+ */
+const POSITION_MIGRATIONS = '__tiptap_position_migrations:';
+
+/** Empties every leftover position-migration map in the doc. Returns how many entries it removed. */
+export function clearPositionMigrations(doc: Y.Doc): number {
+  const stores: Y.Map<unknown>[] = [];
+  doc.share.forEach((_type, name) => {
+    if (!name.startsWith(POSITION_MIGRATIONS)) return;
+    const store = doc.getMap(name);
+    if (store.size) stores.push(store);
+  });
+  let removed = 0;
+  if (stores.length) {
+    doc.transact(() => {
+      for (const store of stores) {
+        removed += store.size;
+        store.clear();
+      }
+    }, clearPositionMigrations);
+  }
+  return removed;
+}
+
+/** Sync timings for /admin/metrics: the collab socket is not part of the request log. */
+const syncMetrics = { updates: 0, updateBytes: 0, applyMs: 0, applyMaxMs: 0, saves: 0, saveMs: 0, saveMaxMs: 0, docMaxBytes: 0, migrationsCleared: 0 };
+const ms = (start: bigint) => Number(process.hrtime.bigint() - start) / 1e6;
+
 interface Room {
   pageId: string;
   workspaceId: string;
@@ -209,6 +242,15 @@ function persist(room: Room) {
   room.dirtySince = 0;
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);
   if (!exists) return; // page deleted while open
+  const started = process.hrtime.bigint();
+  const cleared = clearPositionMigrations(room.doc);
+  if (cleared) {
+    syncMetrics.migrationsCleared += cleared;
+    // The clear is an update, which scheduled another save: this one includes it.
+    if (room.saveTimer) clearTimeout(room.saveTimer);
+    room.saveTimer = null;
+    room.dirtySince = 0;
+  }
   const state = Buffer.from(Y.encodeStateAsUpdate(room.doc));
   const { text, taskIds, mentionIds } = extractPage(room.doc);
   db.transaction(() => {
@@ -249,6 +291,11 @@ function persist(room: Room) {
     console.error('page saved hook', e);
   }
   publish({ type: 'tree', workspaceId: room.workspaceId });
+  const took = ms(started);
+  syncMetrics.saves++;
+  syncMetrics.saveMs += took;
+  syncMetrics.saveMaxMs = Math.max(syncMetrics.saveMaxMs, took);
+  syncMetrics.docMaxBytes = Math.max(syncMetrics.docMaxBytes, state.length);
 }
 
 function scheduleSave(room: Room) {
@@ -265,6 +312,7 @@ function getRoom(pageId: string, workspaceId: string): Room {
   const doc = new Y.Doc({ gc: true });
   const row = db.prepare('SELECT ydoc FROM pages WHERE id = ?').get(pageId) as { ydoc: Buffer | null } | undefined;
   if (row?.ydoc) Y.applyUpdate(doc, new Uint8Array(row.ydoc));
+  syncMetrics.migrationsCleared += clearPositionMigrations(doc); // saved with the page's next save
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
   const r: Room = {
@@ -492,7 +540,15 @@ export function attachCollab(wss: WebSocketServer) {
           if (sub !== syncProtocol.messageYjsSyncStep1 && !state.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
           const guard = sub !== syncProtocol.messageYjsSyncStep1 && !state.member ? extractPage(room.doc).taskIds : null;
+          const started = process.hrtime.bigint();
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);
+          if (sub !== syncProtocol.messageYjsSyncStep1) {
+            const took = ms(started);
+            syncMetrics.updates++;
+            syncMetrics.updateBytes += data.byteLength;
+            syncMetrics.applyMs += took;
+            syncMetrics.applyMaxMs = Math.max(syncMetrics.applyMaxMs, took);
+          }
           if (guard) guardPageTasks(room, guard);
           if (encoding.length(enc) > 1) send(room, conn, encoding.toUint8Array(enc));
         } else if (type === MSG_AWARENESS) {
@@ -542,5 +598,22 @@ export function shutdownCollab() {
 export function collabStats() {
   let connections = 0;
   for (const r of rooms.values()) connections += r.conns.size;
-  return { openPages: rooms.size, connections };
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  const m = syncMetrics;
+  return {
+    openPages: rooms.size,
+    connections,
+    // Totals since start: rate and average come from differences between two reads.
+    sync: {
+      updates: m.updates,
+      updateBytes: m.updateBytes,
+      applyMsTotal: r1(m.applyMs),
+      applyMsMax: r1(m.applyMaxMs),
+      saves: m.saves,
+      saveMsTotal: r1(m.saveMs),
+      saveMsMax: r1(m.saveMaxMs),
+      docBytesMax: m.docMaxBytes,
+      positionMigrationsCleared: m.migrationsCleared,
+    },
+  };
 }
