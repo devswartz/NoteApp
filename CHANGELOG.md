@@ -12,6 +12,7 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 
 ### Reliability
 - **The server can no longer be knocked over by a malformed live-editing connection.** A badly formed web address, an oversized message, or a hand-crafted edit sent to a page could stop the whole server for everyone until it restarted. Each is now refused for that one connection, and a failed save is logged and retried.
+- **A page can no longer be broken for everyone by a malformed edit.** A hand-crafted edit could put content the editor cannot draw into a page, so that it crashed for everyone who opened it. The server now removes such content (and absurdly deep nesting) as soon as it arrives, and when it opens a page that already contains some.
 
 ### Fixes
 - Long page titles are cut cleanly: a title that ran past the length limit in the middle of an emoji no longer ends in a replacement character.
