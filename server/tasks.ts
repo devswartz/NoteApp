@@ -255,8 +255,8 @@ export function createTask(userId: string, workspaceId: string, input: TaskPatch
       return existing;
     }
   }
-  let pageId = input.pageId ?? null;
-  const parentId = input.parentId ?? null;
+  let pageId = input.pageId || null; // '' means none (an empty id is not a page: it failed the foreign key, a 500)
+  const parentId = input.parentId || null;
   if (parentId) {
     pageId = resolveParent(userId, workspaceId, parentId).pageId;
   } else if (pageId) {
@@ -347,6 +347,8 @@ function mustEditTask(task: Task, userId: string, patch?: TaskPatch): boolean {
 
 export function updateTask(userId: string, id: string, input: TaskPatch): Task {
   const patch: TaskPatch = { ...input };
+  if (patch.pageId === '') patch.pageId = null; // an empty id is "none", not a page (it failed the foreign key, a 500)
+  if (patch.parentId === '') patch.parentId = null;
   const task = getTask(id);
   if (!task || !db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @id AND ${TASK_VISIBLE}`).get({ id, userId }))
     throw new HttpError(404, 'Task not found');
