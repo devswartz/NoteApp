@@ -15,10 +15,12 @@ import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import { onAccessChange, pageAccess, taskVisible } from './access.ts';
 import { canMoveTask, syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
+import { log } from './log.ts';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 const SAVE_DEBOUNCE_MS = 1000;
+const SAVE_RETRY_MS = 5000;
 /**
  * Largest single message accepted on /collab. Normal typing sends bytes to a
  * few KB; pasting a long document or syncing a page edited offline can reach
@@ -213,6 +215,9 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
   const mentionIds = new Set<string>();
   const parts: string[] = [];
   const walk = (node: Y.XmlElement | Y.XmlText | Y.XmlFragment) => {
+    // A client can put any Yjs type (a Y.Map, Y.Array, Y.Text) in a fragment with a hand-built update. Skip those:
+    // walking one threw out of the save timer and took the server down.
+    if (!(node instanceof Y.XmlText || node instanceof Y.XmlElement || node instanceof Y.XmlFragment)) return;
     if (node instanceof Y.XmlText) {
       parts.push(
         (node.toDelta() as { insert: unknown }[]).map((d) => (typeof d.insert === 'string' ? d.insert : '')).join(''),
@@ -237,7 +242,20 @@ export function extractDoc(fragment: Y.XmlFragment): { text: string; taskIds: Se
   return { text: parts.join('').replace(/\n{3,}/g, '\n\n').trim(), taskIds, mentionIds };
 }
 
+/** Save a room now. A failure is logged (ids only) and retried shortly: it must never throw out of a timer or socket event. */
 function persist(room: Room) {
+  try {
+    persistNow(room);
+  } catch (err) {
+    log.error('page save failed', { pageId: room.pageId, err });
+    if (rooms.get(room.pageId) === room && !room.saveTimer) {
+      room.saveTimer = setTimeout(() => persist(room), SAVE_RETRY_MS);
+      room.saveTimer.unref();
+    }
+  }
+}
+
+function persistNow(room: Room) {
   room.saveTimer = null;
   room.dirtySince = 0;
   const exists = db.prepare('SELECT 1 FROM pages WHERE id = ?').get(room.pageId);

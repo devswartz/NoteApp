@@ -119,3 +119,27 @@ test('a malformed WebSocket upgrade (bad %-escape in the page id, odd request ta
   const u = await app.signUp('Odd');
   assert.equal((await app.call('GET', '/workspaces', u.token)).status, 200, 'server still up');
 });
+
+test('/collab: a hand-built update that puts a Y.Map / Y.Array / Y.Text inside the text does not crash the save', async () => {
+  const u = await app.signUp('Poison');
+  const tree = await app.call('GET', `/workspaces/${u.wsId}/tree`, u.token);
+  const pageId = (await app.call('POST', `/sections/${tree.data.sections[0].id}/pages`, u.token, { title: 'P' })).data.id;
+  const doc = new Y.Doc();
+  const frag = doc.getXmlFragment('default');
+  const p = new Y.XmlElement('paragraph');
+  frag.push([p]);
+  p.insert(0, [new Y.XmlText('still saved')]);
+  // The editor never makes these; a raw update can. Extracting text from the page used to throw inside the save timer.
+  const odd = [new Y.Map(), new Y.Array(), new Y.Text('t')] as unknown as Y.XmlElement[];
+  p.insert(1, odd);
+  frag.insert(0, [new Y.Map() as unknown as Y.XmlElement]);
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, 0);
+  syncProtocol.writeUpdate(enc, Y.encodeStateAsUpdate(doc));
+  const ws = await openCollab(u.token, pageId);
+  ws.send(encoding.toUint8Array(enc));
+  await new Promise((r) => setTimeout(r, 1400)); // past the save debounce
+  const { db } = await import('../server/db.ts');
+  assert.match((db.prepare('SELECT text FROM pages WHERE id = ?').get(pageId) as { text: string }).text, /still saved/);
+  ws.close();
+});
