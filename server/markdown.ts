@@ -68,6 +68,11 @@ function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
 
 /** `frag` may be several fragments (a canvas page's boxes in reading order); their blocks run on in that order. */
 export function toMarkdown(title: string, frag: Y.XmlFragment | Y.XmlFragment[], tasks: TaskLookup): string {
+  return `# ${title || 'Untitled'}\n\n${markdownBody(frag, tasks)}\n`;
+}
+
+/** The Markdown of some content without the title heading (the AI connector reads a page box by box). */
+export function markdownBody(frag: Y.XmlFragment | Y.XmlFragment[], tasks: TaskLookup): string {
   const nodes = (Array.isArray(frag) ? frag : [frag]).flatMap((f) => kids(f));
   let out = '';
   nodes.forEach((n, i) => {
@@ -77,5 +82,5 @@ export function toMarkdown(title: string, frag: Y.XmlFragment | Y.XmlFragment[],
     const tight = i > 0 && n instanceof Y.XmlElement && n.nodeName === 'taskRef' && (nodes[i - 1] as Y.XmlElement).nodeName === 'taskRef';
     out += (out ? (tight ? '\n' : '\n\n') : '') + text;
   });
-  return `# ${title || 'Untitled'}\n\n${out.replace(/\n{3,}/g, '\n\n').trim()}\n`;
+  return out.replace(/\n{3,}/g, '\n\n').trim();
 }

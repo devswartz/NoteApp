@@ -96,6 +96,16 @@ function taskCtx(t: TaskInfo) {
   return { workspaceId: t.workspaceId, taskId: t.id, private: nb?.visibility === 'private' };
 }
 
+/** Where an entry about a page or a task belongs, for callers outside the request recorder (the AI connector, server/mcp/). */
+export function pageActivityCtx(pageId: string) {
+  const p = pageInfo(pageId);
+  return p ? nbCtx(p.notebookId) : null;
+}
+export function taskActivityCtx(taskId: string) {
+  const t = taskInfo(taskId);
+  return t ? taskCtx(t) : null;
+}
+
 // ───────────── Rules ─────────────
 
 interface Ctx {

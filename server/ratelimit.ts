@@ -123,6 +123,11 @@ export const LIMITS = {
   oauthRegisterGlobal: { capacity: 100, perMinute: 100 / 60 },
   oauthAuthorizeIp: { capacity: 30, perMinute: 30 }, // may fetch a client metadata document
   oauthTokenIp: { capacity: 60, perMinute: 60 }, // token exchange, refresh and revocation
+  // The AI connector (/mcp, server/mcp/; see takeMcp): every request per user (all their AI apps together) and per
+  // access token, plus a tighter budget for tool calls that change notes or tasks.
+  mcpUser: { capacity: 120, perMinute: 120 },
+  mcpToken: { capacity: 60, perMinute: 60 },
+  mcpWriteUser: { capacity: 30, perMinute: 20 },
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -185,6 +190,31 @@ export function takeExport(userId: string): number {
 export function takeDataExport(userId: string): number {
   if (process.env.RATE_LIMIT === 'off') return 0;
   return limiters.dataExportUser.take(userId) || limiters.dataExportGlobal.take('all');
+}
+
+/**
+ * Rate limit for the AI connector (/mcp). Each request draws from the user's bucket and the access token's
+ * (`tokenKey`: a hash of the token, never the token itself); with `write`, a tool call that changes something
+ * also draws from the user's write bucket. 0 if allowed, else seconds to wait. A refused request costs nothing.
+ * Not exempt on loopback: the caller is an AI app, not a person typing.
+ */
+export function takeMcp(userId: string, tokenKey: string, write = false): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const checks: Check[] = write
+    ? [{ limiter: 'mcpWriteUser', key: userId }]
+    : [
+        { limiter: 'mcpUser', key: userId },
+        { limiter: 'mcpToken', key: tokenKey },
+      ];
+  let wait = 0;
+  const taken: Check[] = [];
+  for (const c of checks) {
+    const w = limiters[c.limiter].take(c.key);
+    if (w) wait = Math.max(wait, w);
+    else taken.push(c);
+  }
+  if (wait) taken.forEach((c) => limiters[c.limiter].refund(c.key));
+  return wait;
 }
 
 /** Most password checks (bcrypt) running at once, server-wide; more are refused rather than queued. */

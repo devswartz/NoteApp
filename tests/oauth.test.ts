@@ -171,11 +171,19 @@ test('full flow: register → authorize → consent → token → refresh rotati
   assert.equal((await app.call('GET', '/me/connected-apps', u.token)).data.length, 0);
 });
 
-test('a replayed refresh token revokes the whole connection', async () => {
+test('a reused refresh token: a retry within 30s works, later reuse revokes the connection', async () => {
   const u = await app.signUp('Rex');
   const c = await connect(u);
   const r1 = await token({ grant_type: 'refresh_token', refresh_token: c.tokens.refresh_token, client_id: c.clientId });
   assert.equal(r1.status, 200);
+  // A retry inside the grace window gets a fresh pair and the connection survives.
+  const retry = await token({ grant_type: 'refresh_token', refresh_token: c.tokens.refresh_token, client_id: c.clientId });
+  assert.equal(retry.status, 200);
+  assert.notEqual(retry.data.refresh_token, r1.data.refresh_token);
+  assert.ok(await verify.verifyAccessToken(r1.data.access_token), 'the first pair still works');
+  // After the window, reuse revokes everything.
+  const old = new Date(Date.now() - 31_000).toISOString();
+  db.prepare("UPDATE oauth_tokens SET used_at = ? WHERE used_at IS NOT NULL AND kind = 'refresh'").run(old);
   const replay = await token({ grant_type: 'refresh_token', refresh_token: c.tokens.refresh_token, client_id: c.clientId });
   assert.equal(replay.status, 400);
   assert.equal(replay.data.error, 'invalid_grant');

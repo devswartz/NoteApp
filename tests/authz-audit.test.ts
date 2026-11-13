@@ -491,17 +491,18 @@ test('authz: sockets refuse an unverified user (4403), including for a page they
   assert.equal((await app.fetchFile(`/uploads/${shared.file}${ext}`, unv)).status, 403, 'uploads');
 });
 
-test('authz: nothing is mounted outside the audited /api router except uploads, /.well-known and /oauth', async () => {
+test('authz: nothing is mounted outside the audited /api router except uploads, /.well-known, /oauth and /mcp', async () => {
   // Express layers on the app itself. A new top-level mount fails here, so it has to be looked at: unverified
   // users must not reach it. /uploads/* checks its own signed links (tests/file-access.test.ts),
   // /.well-known/* is public app-link and OAuth metadata with no user data, and /oauth/* is the public half of the
   // OAuth server (register, authorize, token, revoke): only a code the user approved through /api yields a token
-  // (tests/oauth.test.ts).
+  // (tests/oauth.test.ts). /mcp takes only OAuth access tokens, refuses unverified users and checks every tool
+  // through server/access.ts (tests/mcp.test.ts).
   const { createServer } = await import('../server/app.ts');
   const { app: express, server } = createServer({ serveWeb: false });
   try {
     const names = (express as unknown as { router: { stack: { name: string }[] } }).router.stack.map((l) => l.name);
-    assert.deepEqual(names, ['securityHeaders', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads']);
+    assert.deepEqual(names, ['securityHeaders', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads', 'requestLog', 'router']);
   } finally {
     server.close();
   }

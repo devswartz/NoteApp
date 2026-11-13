@@ -49,10 +49,14 @@ export async function verifyAccessToken(
 }
 
 /**
- * The WWW-Authenticate value for a 401 from /mcp: where the protected-resource metadata is, and the scopes
- * to ask for. `origin` is the public origin, e.g. "https://notes.example.com" (no trailing slash).
+ * The WWW-Authenticate value for a 401 or 403 from /mcp (one Bearer challenge): where the protected-resource
+ * metadata is, and the scopes to ask for. `origin` is the public origin, e.g. "https://notes.example.com".
+ * `opts.error` adds an RFC 6750 error code (invalid_token, insufficient_scope); `opts.scope` replaces the
+ * default scope list (e.g. the scopes a step-up needs).
  */
-export function buildWwwAuthenticate(origin: string): string {
+export function buildWwwAuthenticate(origin: string, opts: { error?: string; scope?: string } = {}): string {
   const base = origin.replace(/\/+$/, '');
-  return `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource${MCP_PATH}", scope="${SCOPES.join(' ')}"`;
+  const params = [`resource_metadata="${base}/.well-known/oauth-protected-resource${MCP_PATH}"`, `scope="${opts.scope ?? SCOPES.join(' ')}"`];
+  if (opts.error) params.push(`error="${opts.error}"`);
+  return `Bearer ${params.join(', ')}`;
 }
