@@ -12,8 +12,8 @@ export function ViewFilterBar() {
   if (!activeKinds(filters).length) return null;
   return (
     <div className="muted small result-count view-filter-line">
-      {/* Search text and status belong to All Tasks, so they aren't part of what's shown here. */}
-      <FilterSummary filters={{ ...filters, q: '', status: 'open' }} />
+      {/* Search text belongs to All tasks, so it isn't part of what's shown here. */}
+      <FilterSummary filters={{ ...filters, q: '' }} />
       <button type="button" className="btn-ghost btn-sm" onClick={() => taskView.setFilters(clearedFilters(filters))}>
         Clear filters
       </button>

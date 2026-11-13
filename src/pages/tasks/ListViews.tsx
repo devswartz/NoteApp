@@ -7,28 +7,31 @@ import { activeFilterKeys, groupBy, isMine, memberStats, productivity, sortTasks
 import { taskView, useTaskView } from './taskViewState.ts';
 import { addDays, parseISODate, today } from '../../../shared/dates.ts';
 import { Loading, Segmented, useOpen, useViewFilter } from './common.tsx';
+import { WithStatus } from './CompletedView.tsx';
 
 export function TodayView() {
   const open = useOpen();
   const me = useStore((s) => s.user!.id);
   const loaded = useStore((s) => s.tasksLoaded);
   const filter = useViewFilter();
-  const filtering = useTaskView((s) => activeFilterKeys(s.filters).length > 0);
+  const filtering = useTaskView((s) => activeFilterKeys({ ...s.filters, status: 'open' }).length > 0);
   const groups = useMemo(() => todayGroups(filter(open), me), [open, me, filter]);
   if (!loaded) return <Loading />;
   const empty = groups.every((g) => !g.tasks.length);
   return (
     <>
       <ProductivityStrip />
-      <TaskGroups groups={groups} emptyText="" />
-      {empty && filtering && <div className="empty">No tasks due today match these filters.</div>}
-      {empty && !filtering && (
-        <div className="empty-state">
-          <div className="empty-emoji">☀️</div>
-          <strong>You’re all caught up</strong>
-          <p className="muted">Nothing due today. Enjoy it — or plan ahead in Upcoming.</p>
-        </div>
-      )}
+      <WithStatus scope="today">
+        <TaskGroups groups={groups} emptyText="" />
+        {empty && filtering && <div className="empty">No tasks due today match these filters.</div>}
+        {empty && !filtering && (
+          <div className="empty-state">
+            <div className="empty-emoji">☀️</div>
+            <strong>You’re all caught up</strong>
+            <p className="muted">Nothing due today. Enjoy it — or plan ahead in Upcoming.</p>
+          </div>
+        )}
+      </WithStatus>
     </>
   );
 }
@@ -63,7 +66,9 @@ export function MyView() {
           />
         </div>
       )}
-      <TaskGroups groups={groups.length ? groups : [{ key: 'none', label: '', tasks: [] }]} emptyText="No tasks assigned to you." />
+      <WithStatus scope="mine">
+        <TaskGroups groups={groups.length ? groups : [{ key: 'none', label: '', tasks: [] }]} emptyText="No tasks assigned to you." />
+      </WithStatus>
     </>
   );
 }
@@ -84,7 +89,9 @@ export function UpcomingView() {
           <Segmented value={scope} onChange={taskView.setUpcomingScope} options={[['mine', 'Mine'], ['all', 'Everyone']]} />
         </div>
       )}
-      <TaskGroups groups={groups} emptyText="Nothing scheduled." />
+      <WithStatus scope={scope === 'mine' ? 'datedMine' : 'dated'}>
+        <TaskGroups groups={groups} emptyText="Nothing scheduled." />
+      </WithStatus>
     </>
   );
 }
@@ -99,7 +106,7 @@ export function TeamView() {
           <Segmented value={by} onChange={setBy} options={[['person', 'By person'], ['team', 'By team']]} />
         </div>
       )}
-      {by === 'team' && hasTeams ? <ByTeam /> : <ByPerson />}
+      <WithStatus scope="all">{by === 'team' && hasTeams ? <ByTeam /> : <ByPerson />}</WithStatus>
     </>
   );
 }

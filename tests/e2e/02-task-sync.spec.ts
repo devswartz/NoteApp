@@ -1,6 +1,6 @@
 // Priority 2 — the core promise: a task written in a note is a real task, in sync with the dashboard both ways.
 import { expect, test } from '@playwright/test';
-import { addInlineTask, createPage, createUser, eventually, listTasks, openPage, pageUrl, railTo, signInContext, taskRef, taskRow, tasksUrl } from './helpers.ts';
+import { addInlineTask, createPage, createUser, eventually, listTasks, openPage, pageUrl, railTo, setStatus, signInContext, taskRef, taskRow, tasksUrl } from './helpers.ts';
 
 test.describe('inline tasks ↔ dashboard', () => {
   test('an inline task shows up in Today and My Tasks, linked to its note', async ({ page, context, request }) => {
@@ -63,7 +63,8 @@ test.describe('inline tasks ↔ dashboard', () => {
     await taskRef(page, 'Pack bags').getByRole('checkbox', { name: 'Complete task' }).click();
     await expect(taskRef(page, 'Pack bags')).toHaveClass(/is-done/);
     await railTo(page, 'Tasks');
-    await page.getByRole('link', { name: 'Completed' }).click();
+    await page.getByRole('link', { name: 'All tasks' }).click();
+    await setStatus(page, 'Completed');
     await expect(taskRow(page, 'Pack bags')).toBeVisible();
     await expect(taskRow(page, 'Book flights')).toBeVisible();
 

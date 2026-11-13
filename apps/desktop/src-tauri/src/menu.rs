@@ -42,9 +42,8 @@ mod app_menu {
         ("nav.upcoming", "Upcoming", Some("CmdOrCtrl+2")),
         ("nav.my", "My Tasks", Some("CmdOrCtrl+3")),
         ("nav.team", "Team", Some("CmdOrCtrl+4")),
-        ("nav.all", "All Tasks", Some("CmdOrCtrl+5")),
+        ("nav.all", "All tasks", Some("CmdOrCtrl+5")),
         ("nav.calendar", "Calendar", Some("CmdOrCtrl+6")),
-        ("nav.completed", "Completed", Some("CmdOrCtrl+7")),
         ("nav.notes", "Notes", Some("CmdOrCtrl+8")),
     ];
     const HELP: &[Item] = &[("app.shortcuts", "Keyboard Shortcuts", Some("CmdOrCtrl+/"))];

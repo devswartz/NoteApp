@@ -1,5 +1,5 @@
 // Pure parts of saved views (no API or platform imports, so unit tests can load them).
-import { normalizeFilters, sameFilters, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
+import { migrateFilters, normalizeFilters, sameFilters, type Filters, type GroupKey, type SortKey } from '../../lib/taskViews.ts';
 
 export interface SavedView {
   id: string;
@@ -36,7 +36,7 @@ export function parseSavedViews(raw: string | null): SavedView[] {
   const out: SavedView[] = [];
   for (const v of data) {
     if (!v || typeof v !== 'object' || typeof v.name !== 'string' || typeof v.id !== 'string') continue;
-    out.push({ id: v.id, name: v.name.slice(0, 60), filters: normalizeFilters(v.filters), sort: sortOf(v.sort), group: groupOf(v.group), shared: false, ownerId: '', position: out.length });
+    out.push({ id: v.id, name: v.name.slice(0, 60), filters: migrateFilters(v.filters, v.view ?? v.base), sort: sortOf(v.sort), group: groupOf(v.group), shared: false, ownerId: '', position: out.length });
   }
   return out;
 }
