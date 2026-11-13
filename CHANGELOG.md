@@ -2,6 +2,14 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.11
+
+### Performance
+- **Pages no longer grow huge after pasting.** The editor's sync library kept a hidden record of every paste and structural edit (indent, drag, list changes) inside the page and never removed it. On one page these records were 95% of its size (4.6 MB for 240 KB of text), which made typing lag. The updated library stops writing them, and the server removes the existing ones: from every stored page at startup, when a page opens, and before each save, so older desktop and phone apps can't bring them back.
+
+### Monitoring
+- Admin metrics now time live editing: update count, size and apply time, plus save time and the largest page saved. Health checks are counted apart, so they no longer drag the request latency percentiles down.
+
 ## v0.4.10
 
 ### Tasks
