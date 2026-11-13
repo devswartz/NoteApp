@@ -6,6 +6,8 @@ import { PORT, VERSION, DATA_DIR, SEED_DEMO, IS_PROD, PUBLIC_URL } from './confi
 import { seedDemoIfEmpty } from './demo.ts';
 import { runDataMigrations } from './dataMigrations.ts';
 import { pruneRefreshTokens } from './auth.ts';
+import { pruneOAuth } from './oauth/store.ts';
+import { pruneClients } from './oauth/clients.ts';
 import { pruneEmailVerifications, pruneUnverifiedAccounts } from './verification.ts';
 import { startReminderScheduler } from './reminders/scheduler.ts';
 import { purgeExpired, TRASH_DAYS } from './trash.ts';
@@ -20,6 +22,12 @@ if (SEED_DEMO) seedDemoIfEmpty();
 const housekeeping = () => {
   pruneRefreshTokens();
   pruneEmailVerifications();
+  try {
+    pruneOAuth();
+    pruneClients();
+  } catch (e) {
+    console.error('oauth cleanup crashed', e);
+  }
   try {
     const n = purgeExpired();
     if (n) console.log(`[trash] removed ${n} item${n === 1 ? '' : 's'} older than ${TRASH_DAYS} days`);

@@ -329,6 +329,12 @@ const ROWS: Row[] = [
   { method: 'GET', route: '/import/onenote/jobs/:id', path: () => `/import/onenote/jobs/${crypto.randomUUID()}`, expect: { viewer: 404, member: 404 } },
   // Feedback to the admins: any verified, signed-in user (not tied to a workspace).
   { method: 'POST', route: '/feedback', path: () => '/feedback', body: () => ({ message: 'Audit feedback', page: '/w/x/tasks/today', client: { version: 'test', platform: 'web' } }), expect: { stranger: 200, viewer: 200, member: 200 } },
+  // AI connector consent and Connected apps (server/oauth/routes.ts): personal, not tied to a workspace. Requests are
+  // random ids (anyone signed in who has the link may answer one, like an /oauth/authorize link); full flow in tests/oauth.test.ts.
+  { method: 'GET', route: '/oauth/requests/:id', path: () => `/oauth/requests/${crypto.randomUUID()}`, expect: { stranger: 404, viewer: 404, member: 404 } },
+  { method: 'POST', route: '/oauth/requests/:id', path: () => `/oauth/requests/${crypto.randomUUID()}`, body: () => ({ allow: true }), expect: { stranger: 404, viewer: 404, member: 404 } },
+  { method: 'GET', route: '/me/connected-apps', path: () => '/me/connected-apps', expect: { stranger: 200, viewer: 200, member: 200 } },
+  { method: 'DELETE', route: '/me/connected-apps/:clientId', path: () => `/me/connected-apps/${crypto.randomUUID()}`, expect: { stranger: 404, viewer: 404, member: 404 } },
 ];
 
 const tokenOf = (who: Who) =>
@@ -485,15 +491,17 @@ test('authz: sockets refuse an unverified user (4403), including for a page they
   assert.equal((await app.fetchFile(`/uploads/${shared.file}${ext}`, unv)).status, 403, 'uploads');
 });
 
-test('authz: nothing is mounted outside the audited /api router except uploads and /.well-known', async () => {
+test('authz: nothing is mounted outside the audited /api router except uploads, /.well-known and /oauth', async () => {
   // Express layers on the app itself. A new top-level mount fails here, so it has to be looked at: unverified
-  // users must not reach it. /uploads/* checks its own signed links (tests/file-access.test.ts) and
-  // /.well-known/* is public app-link metadata with no user data.
+  // users must not reach it. /uploads/* checks its own signed links (tests/file-access.test.ts),
+  // /.well-known/* is public app-link and OAuth metadata with no user data, and /oauth/* is the public half of the
+  // OAuth server (register, authorize, token, revoke): only a code the user approved through /api yields a token
+  // (tests/oauth.test.ts).
   const { createServer } = await import('../server/app.ts');
   const { app: express, server } = createServer({ serveWeb: false });
   try {
     const names = (express as unknown as { router: { stack: { name: string }[] } }).router.stack.map((l) => l.name);
-    assert.deepEqual(names, ['securityHeaders', 'requestLog', '<anonymous>', 'router', 'router', 'serveUploads']);
+    assert.deepEqual(names, ['securityHeaders', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads']);
   } finally {
     server.close();
   }

@@ -177,9 +177,12 @@ export function revokeFamily(familyId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL').run(now(), familyId);
 }
 
-/** Revoke every sign-in of a user (after a password change or reset). */
+/** Revoke every sign-in of a user (after a password change or reset), including connected AI apps (server/oauth/). */
 export function revokeAllForUser(userId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(now(), userId);
+  const ts = now();
+  db.prepare('UPDATE oauth_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id IN (SELECT id FROM oauth_grants WHERE user_id = ?)').run(ts, userId);
+  db.prepare('UPDATE oauth_grants SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(ts, userId);
 }
 
 // ── Password reset tokens ──

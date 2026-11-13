@@ -692,6 +692,17 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
 .auth-card > .form-error { margin-top: var(--space-3); }
 .auth-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
 .form-error { color: var(--danger); background: var(--danger-soft); padding: 8px 10px; border-radius: var(--radius); font-size: 13px; }
+/* AI connector consent (src/pages/OAuthConsent.tsx). */
+.oauth-card { max-width: 440px; }
+.oauth-card h1 { overflow-wrap: anywhere; }
+.oauth-claim { overflow-wrap: anywhere; }
+.oauth-scopes { display: grid; gap: var(--space-3); margin: var(--space-4) 0; padding: var(--space-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-subtle); }
+.oauth-scope-toggle { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.oauth-scope-toggle input { margin-top: 3px; accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+.oauth-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin: var(--space-4) 0; }
+/* Settings → Connected apps. */
+.connected-apps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-4); }
+.connected-app .setting-title { overflow-wrap: anywhere; }
 
 /* ───────────────────────── App layout ───────────────────────── */
 .app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }

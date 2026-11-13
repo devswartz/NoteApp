@@ -9,7 +9,7 @@
 //   Members       → Collaboration & Access (MembersPanel)
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Tag, Trash2, User, Users, UsersRound, Building2 } from 'lucide-react';
+import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Plug, Tag, Trash2, User, Users, UsersRound, Building2 } from 'lucide-react';
 import { TagsPanel, TeamsPanel } from '../components/TeamsSettings.tsx';
 import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
@@ -26,6 +26,7 @@ import { AvatarColorPicker, ChangePasswordForm } from '../components/AccountSett
 import { ExportMyData, WorkspaceData } from '../components/WorkspaceData.tsx';
 import { OneNoteImport, useOneNoteEnabled } from '../components/OneNoteImport.tsx';
 import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
+import { ConnectedApps } from '../components/ConnectedApps.tsx';
 
 
 interface SectionDef {
@@ -51,6 +52,7 @@ const SECTIONS: SectionDef[] = [
       </>
     ),
   },
+  { id: 'connected-apps', title: 'Connected apps', description: 'AI assistants and other apps you’ve allowed to use your notes.', icon: <Plug size={16} />, group: 'Account', render: () => <ConnectedApps /> },
   { id: 'workspace', title: 'General', description: 'Name, backups and imports for this workspace.', icon: <Building2 size={16} />, group: 'Workspace', render: () => <WorkspaceSection /> },
   { id: 'members', title: 'Members', description: 'Who can open this workspace, and what they can do.', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
   { id: 'teams', title: 'Teams', description: 'Groups of people that tasks can belong to, with subteams.', icon: <UsersRound size={16} />, group: 'Workspace', render: () => <TeamsPanel /> },

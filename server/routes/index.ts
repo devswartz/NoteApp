@@ -21,6 +21,7 @@ import { notificationRoutes } from './notifications.ts';
 import { activityRecorder, activityRoutes } from './activity.ts';
 import { templateRoutes } from './templates.ts';
 import { feedbackRoutes } from './feedback.ts';
+import { oauthApiRoutes } from '../oauth/routes.ts';
 
 import { adminRoutes } from './admin.ts';
 import { exportRoutes } from './export.ts';
@@ -66,6 +67,7 @@ api.use(notificationRoutes);
 api.use(activityRoutes);
 api.use(templateRoutes);
 api.use(feedbackRoutes);
+api.use(oauthApiRoutes); // AI connectors: consent decisions and Settings → Connected apps (server/oauth/routes.ts)
 
 api.use(adminRoutes);
 

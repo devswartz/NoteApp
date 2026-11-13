@@ -57,6 +57,8 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || url.origin !== location.origin) return;
   const p = url.pathname;
   if (p.startsWith('/api/') || p.startsWith('/collab/')) return;
+  // OAuth for AI connectors: server redirects and JSON, never the cached shell (the consent page itself is an app page).
+  if ((p.startsWith('/oauth/') && p !== '/oauth/consent') || p.startsWith('/.well-known/') || p === '/mcp') return;
   if (p.startsWith('/uploads/')) return e.respondWith(uploadFirst(req, url));
   if (req.mode === 'navigate') {
     // Network first so deploys show up; the cached shell when offline.
