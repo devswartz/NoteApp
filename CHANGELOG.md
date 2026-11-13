@@ -2,6 +2,14 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.4.10
+
+### Tasks
+- **Status filter:** "All" and "Completed" are now one view, **All tasks**, with a **Status** choice of Open (the default), Completed or All. Status works in every task view and in printing, so you can print just open or just finished tasks. Saved views remember it, and old links to Completed still work.
+
+### Settings
+- **Workspace and personal settings are separate.** The workspace button opens Workspace settings (General, Members, Teams, Tags), Activity and Trash. Your avatar opens your own Settings (Profile, Appearance, Security, Notifications, Keyboard shortcuts, About) and Sign out.
+
 ## v0.4.9
 
 ### Fixes
