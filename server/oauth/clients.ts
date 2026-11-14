@@ -181,8 +181,12 @@ export function parseMetadataDocument(url: string, body: string): Omit<OAuthClie
   if (!m || typeof m !== 'object' || Array.isArray(m)) throw new OAuthError('invalid_client', 'The client metadata document must be a JSON object');
   if (m.client_id !== url) throw new OAuthError('invalid_client', 'The client metadata document’s client_id does not match its URL');
   if (typeof m.client_name !== 'string' || !m.client_name.trim()) throw new OAuthError('invalid_client', 'The client metadata document has no client_name');
+  // Every client here is public. A document may prefer another method as long as it also supports "none":
+  // ChatGPT's says token_endpoint_auth_method "private_key_jwt" with token_endpoint_auth_methods_supported
+  // ["none", "private_key_jwt"], and picks "none" from our metadata (token_endpoint_auth_methods_supported).
   const method = m.token_endpoint_auth_method ?? 'none';
-  if (method !== 'none') throw new OAuthError('invalid_client', 'Only public clients (token_endpoint_auth_method "none") are supported');
+  const alsoNone = Array.isArray(m.token_endpoint_auth_methods_supported) && m.token_endpoint_auth_methods_supported.includes('none');
+  if (method !== 'none' && !alsoNone) throw new OAuthError('invalid_client', 'Only public clients (token_endpoint_auth_method "none") are supported');
   if ('client_secret' in m || 'client_secret_expires_at' in m) throw new OAuthError('invalid_client', 'A client metadata document must not contain a secret');
   let redirectUris: string[];
   try {
