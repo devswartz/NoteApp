@@ -13,10 +13,13 @@ import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import { onAccessChange, pageAccess, taskVisible } from './access.ts';
-import { canMoveTask, placePageTasks, setChecklistCounts, syncPageTasks } from './tasks.ts';
-import { taskPlaces } from './taskNotes.ts';
+import { canMoveTask, syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
 import { log } from './log.ts';
+
+// Notes under a task: subtask parents and checklist counts follow the page (server/taskNotes.ts).
+import { placePageTasks, setChecklistCounts } from './tasks.ts';
+import { taskPlaces } from './taskNotes.ts';
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;

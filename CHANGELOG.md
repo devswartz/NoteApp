@@ -4,13 +4,6 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 
 ## Unreleased
 
-### Tasks
-- **Notes under a task.** A task in a page can now hold lines indented under it, like a OneNote To Do tag: bullets, numbered lists, paragraphs, plain checklists and subtasks. Turning a bullet into a task keeps its sub-points under it, exactly as they were (they stay notes: only the line you convert becomes a task). **Tab** on the line just below a task moves it in (a whole list when you're on its first line), **Shift+Tab** moves it back out, and **Enter** on an empty last line leaves the task. Enter at the end of a task's title starts its first note line. The notes move with the task (drag, Alt+Shift+arrows, copy and paste, undo), print and export with it, and fold away with the arrow next to the task (remembered on this device).
-- **Subtasks where you write them.** Converting a line in a task's notes (or tabbing a task under another) makes it a real subtask of that task, shown where it is; moving it out makes it a task of its own again. Subtasks stay one level deep.
-- **Checklists that aren't tasks.** "Add checklist" on a task (or **/Checklist under task**) puts a plain checklist under it: a 25-item packing list stays a checklist, and only its count ("12/25") shows next to the task and in the Tasks views.
-- **"From the note" in the task panel** shows what's written under the task in its page, read-only. The task's own details are untouched.
-- Completing a task leaves its notes as they are. Deleting a task from the Tasks views removes its line from the page but keeps its notes there. Pages written before this load exactly as they were; sub-points that already sit under a task as a separate list join it with Tab.
-
 ### AI connectors
 - **Connect ChatGPT, Claude and other AI assistants.** Notivelo can now let an AI app ask for access to your notes. The app sends you to a Notivelo page (after signing in, if needed) that names the app, says the name comes from the app itself and isn't verified, and lists what it may do in plain words: read your notes, and optionally create and edit them. Untick editing to allow reading only. Allow sends you back to the app; Deny tells it no.
 - **Settings → Connected apps** lists every app you've allowed, with what it may do, when you connected it and when it last used your account. **Revoke** cuts it off straight away. Changing or resetting your password disconnects every app.
@@ -18,6 +11,13 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 - It only ever sees what you can see: private notebooks, pages shared with you and Trash follow the same rules as in the app, and pages in Trash are invisible to it. View-only access stays view-only.
 - Its changes appear live for anyone with the page open, keep a version from before each change (undo it from **Version history**), and show in Activity as yours “via” the app's name. Images in its writes are dropped, and “- [ ]” lines become real tasks on the page.
 - Requests and changes are rate-limited, and writes and page reads are capped in size.
+
+### Tasks
+- **Notes under a task.** A task in a page can now hold lines indented under it, like a OneNote To Do tag: bullets, numbered lists, paragraphs, plain checklists and subtasks. Turning a bullet into a task keeps its sub-points under it, exactly as they were (they stay notes: only the line you convert becomes a task). **Tab** on the line just below a task moves it in (a whole list when you're on its first line), **Shift+Tab** moves it back out, and **Enter** on an empty last line leaves the task. Enter at the end of a task's title starts its first note line. The notes move with the task (drag, Alt+Shift+arrows, copy and paste, undo), print and export with it, and fold away with the arrow next to the task (remembered on this device).
+- **Subtasks where you write them.** Converting a line in a task's notes (or tabbing a task under another) makes it a real subtask of that task, shown where it is; moving it out makes it a task of its own again. Subtasks stay one level deep.
+- **Checklists that aren't tasks.** "Add checklist" on a task (or **/Checklist under task**) puts a plain checklist under it: a 25-item packing list stays a checklist, and only its count ("12/25") shows next to the task and in the Tasks views.
+- **"From the note" in the task panel** shows what's written under the task in its page, read-only. The task's own details are untouched.
+- Completing a task leaves its notes as they are. Deleting a task from the Tasks views removes its line from the page but keeps its notes there. Pages written before this load exactly as they were; sub-points that already sit under a task as a separate list join it with Tab.
 
 ### Behind the scenes
 - An OAuth 2.1 authorization server for remote MCP clients, following the MCP authorization spec: authorization code with PKCE (S256 only), app registration by Client ID Metadata Document or Dynamic Client Registration (public clients, rate limited, https or loopback redirect addresses only), discovery metadata at `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, tokens bound to `/mcp`, short-lived access tokens and rotating refresh tokens (only hashes are stored; a retry within 30 seconds of rotation is honoured, later reuse of an old refresh token disconnects the app), and token revocation.
