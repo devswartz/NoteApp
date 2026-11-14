@@ -19,6 +19,7 @@ const LOCK_PW = 'diary-pass-1';
 
 let app: TestApp;
 let owner: TestUser, admin: TestUser, member: TestUser;
+let privSec: string;
 let ws: string, nb: string, sec: string, page: string, task: string, file: string, fileUrl: string, thread: string, comment: string, version: string;
 const mcpTokens = new Map<string, { userId: string; scopes: string[]; clientId: string; clientName: string }>();
 
@@ -57,6 +58,8 @@ before(async () => {
   fileUrl = upJson.url;
   // An edit page share for the member, so a share doesn't keep the page reachable either.
   await app.call('POST', `/pages/${page}/shares`, owner.token, { userId: member.user.id, canEdit: true });
+  // The owner's private notebook: where the page goes to be locked (only pages nobody else can see can be).
+  privSec = (await app.call('POST', `/workspaces/${ws}/notebooks`, owner.token, { name: 'Mine', visibility: 'private' })).data.sectionId;
 });
 after(() => app.close());
 
@@ -119,21 +122,85 @@ async function sweep(u: TestUser, forbidden: string[], label: string) {
 }
 
 test('locking needs a locked-notes password, and notebook-level edit access', async () => {
+  // Only a page nobody else can see: not while it is in a shared notebook, nor while it is shared one by one.
+  const shared = await app.call('POST', `/pages/${page}/lock`, owner.token);
+  assert.deepEqual([shared.status, shared.data.code], [403, 'not_private']);
+  assert.match(shared.data.error, /Only pages only you can see can be locked/);
+  assert.equal((await app.call('GET', `/pages/${page}`, owner.token)).data.canLock, false);
+  assert.equal((await app.call('POST', `/pages/${page}/move`, owner.token, { sectionId: privSec })).status, 200);
+  assert.equal((await app.call('POST', `/pages/${page}/lock`, owner.token)).data.code, 'not_private', 'still shared with the member');
+  assert.equal((await app.call('DELETE', `/pages/${page}/shares/${member.user.id}`, owner.token)).status, 200);
+  assert.equal((await app.call('GET', `/pages/${page}`, owner.token)).data.canLock, true);
+  // Private now, but there is no locked-notes password yet.
   const noPw = await app.call('POST', `/pages/${page}/lock`, owner.token);
-  assert.equal(noPw.status, 409);
-  assert.equal(noPw.data.code, 'no_lock_password');
+  assert.deepEqual([noPw.status, noPw.data.code], [409, 'no_lock_password']);
   assert.equal((await lockedNotes(owner, '/password', { password: 'abc' })).status, 400, 'too short');
   const set = await lockedNotes(owner, '/password', { password: LOCK_PW });
   assert.equal(set.status, 200);
   assert.ok(set.data.expiresAt, 'choosing the password unlocks this sign-in');
-  // The member's edit share isn't notebook-level access... but they are a member: they could. A page share from
-  // outside the workspace never can (tested below with a stranger); here the owner locks it.
   assert.equal((await app.call('POST', `/pages/${page}/lock`, owner.token)).status, 200);
   assert.equal((await app.call('POST', `/pages/${page}/lock`, owner.token)).status, 409, 'already locked');
   assert.equal((await app.call('POST', `/pages/${page}/lock`, admin.token)).status, 404, 'the admin no longer sees it');
   // Lock now.
   assert.equal((await lockedNotes(owner, '/lock')).status, 200);
   assert.equal((await app.call('GET', '/locked-notes', owner.token)).data.unlocked, false);
+});
+
+test('only private pages: a teammate can’t lock a shared page or anyone else’s; a locked page can’t be shared or moved out', async () => {
+  (await import('../server/ratelimit.ts')).resetRateLimits();
+  await app.call('POST', '/locked-notes/password', member.token, { password: 'member-pass' });
+  // A shared page (the member's own, in a shared notebook): refused.
+  const theirs = (await app.call('POST', `/sections/${sec}/pages`, member.token, { title: 'Team page' })).data.id;
+  const r1 = await app.call('POST', `/pages/${theirs}/lock`, member.token);
+  assert.deepEqual([r1.status, r1.data.code], [403, 'not_private']);
+  // Someone else's page in a shared notebook: refused too.
+  const ownersShared = (await app.call('POST', `/sections/${sec}/pages`, owner.token, { title: 'Owner team page' })).data.id;
+  assert.equal((await app.call('POST', `/pages/${ownersShared}/lock`, member.token)).status, 403);
+  // A private notebook shared with a teammate isn't private.
+  const shNb = (await app.call('POST', `/workspaces/${ws}/notebooks`, owner.token, { name: 'Shared private', visibility: 'private' })).data;
+  await app.call('PUT', `/notebooks/${shNb.id}/shares`, owner.token, { userIds: [member.user.id] });
+  const inShared = (await app.call('POST', `/sections/${shNb.sectionId}/pages`, owner.token, { title: 'In shared private' })).data.id;
+  assert.equal((await app.call('POST', `/pages/${inShared}/lock`, owner.token)).data.code, 'not_private');
+
+  // A locked page in the owner's private notebook: no sharing it, no moving it into a shared notebook, no sharing
+  // its notebook (with people or the workspace), no moving its section out.
+  await lockedNotes(owner, '/unlock', { password: LOCK_PW });
+  const privNb = (await app.call('POST', `/workspaces/${ws}/notebooks`, owner.token, { name: 'Diary', visibility: 'private' })).data;
+  const lp = (await app.call('POST', `/sections/${privNb.sectionId}/pages`, owner.token, { title: 'Locked diary' })).data.id;
+  assert.equal((await app.call('POST', `/pages/${lp}/lock`, owner.token)).status, 200);
+  assert.equal((await app.call('POST', `/pages/${lp}/shares`, owner.token, { userId: member.user.id, canEdit: false })).status, 403, 'no page share');
+  assert.equal((await app.call('POST', `/pages/${lp}/move`, owner.token, { sectionId: sec })).data.code, 'not_private', 'not into a shared notebook');
+  assert.equal((await app.call('PATCH', `/pages/${lp}`, owner.token, { sectionId: sec })).status, 400);
+  assert.equal((await app.call('POST', `/pages/${lp}/move`, owner.token, { sectionId: privSec })).status, 200, 'into another private notebook of theirs: fine');
+  assert.equal((await app.call('PUT', `/notebooks/${(await app.call('GET', `/workspaces/${ws}/tree`, owner.token)).data.sections.find((s: { id: string }) => s.id === privSec).notebookId}/shares`, owner.token, { userIds: [member.user.id] })).data.code, 'has_locked_page');
+  const privNbId = (await app.call('GET', `/workspaces/${ws}/tree`, owner.token)).data.sections.find((s: { id: string }) => s.id === privSec).notebookId;
+  assert.equal((await app.call('PATCH', `/notebooks/${privNbId}`, owner.token, { visibility: 'shared' })).data.code, 'has_locked_page');
+  assert.equal((await app.call('POST', `/sections/${privSec}/move`, owner.token, { notebookId: nb })).data.code, 'not_private', 'its section stays private');
+  await app.call('POST', `/pages/${lp}/lock/remove`, owner.token, { password: LOCK_PW });
+
+  // A one-person workspace counts as private; adding someone while a locked page sits in its shared notebook is refused.
+  const solo = await app.signUp('LkSolo');
+  await app.call('POST', '/locked-notes/password', solo.token, { password: 'solo-pass' });
+  const soloSec = (await app.call('GET', `/workspaces/${solo.wsId}/tree`, solo.token)).data.sections[0].id;
+  const sp = (await app.call('POST', `/sections/${soloSec}/pages`, solo.token, { title: 'Solo locked' })).data.id;
+  assert.equal((await app.call('POST', `/pages/${sp}/lock`, solo.token)).status, 200);
+  const add = await app.call('POST', `/workspaces/${solo.wsId}/members`, solo.token, { email: member.user.email, role: 'member' });
+  assert.deepEqual([add.status, add.data.code], [400, 'has_locked_page']);
+  await lockedNotes(owner, '/lock');
+});
+
+test('changing or resetting the locked-notes password emails the user every time', async () => {
+  const { outbox } = await import('../server/mail.ts');
+  const u = await app.signUp('LkMail');
+  const count = () => outbox.filter((m) => m.to === u.user.email && m.subject === 'Your locked notes password was changed').length;
+  await app.call('POST', '/locked-notes/password', u.token, { password: 'first-pass' });
+  assert.equal(count(), 0, 'not when it is first set');
+  await app.call('POST', '/locked-notes/password', u.token, { password: 'second-pass', currentPassword: 'first-pass' });
+  assert.equal(count(), 1);
+  await app.call('POST', '/locked-notes/reset/start', u.token, { password: 'password123' });
+  const code = outbox.filter((m) => m.to === u.user.email).at(-1)!.text.match(/\b(\d{6})\b/)![1];
+  assert.equal((await app.call('POST', '/locked-notes/reset', u.token, { code, newPassword: 'third-pass' })).status, 200);
+  assert.equal(count(), 2);
 });
 
 test('a page share from outside the workspace cannot lock the page it was given', async () => {
@@ -160,7 +227,7 @@ test('sweep: while locked, its owner gets its title (sidebar, title search) and 
   assert.deepEqual([meta.data.locked, meta.data.open], [true, false]);
   assert.equal((await app.call('GET', `/pages/${page}/doc`, owner.token)).status, 404);
   const s = (await app.call('GET', `/workspaces/${ws}/search?q=${encodeURIComponent('Locked Diary')}`, owner.token)).data;
-  assert.equal(s.pages[0]?.id, page, 'title-searchable for its owner');
+  assert.ok(s.pages.some((x: { id: string }) => x.id === page), 'title-searchable for its owner');
   const tasks = (await app.call('GET', `/workspaces/${ws}/tasks`, owner.token)).data as { id: string; title: string; dueDate: string; locked?: boolean }[];
   const t = tasks.find((x) => x.id === task)!;
   assert.deepEqual([t.title, t.dueDate, t.locked], ['Locked task', '2030-01-02', true]);
@@ -250,6 +317,7 @@ test('the AI connector never sees a locked page, its title or its tasks, even wh
   const out = [
     await call('list_workspaces', {}),
     await call('list_sections', { workspace_id: ws }),
+    await call('list_pages', { section_id: privSec }),
     await call('list_pages', { section_id: sec }),
     await call('search_pages', { query: 'Locked Diary' }),
     await call('search_pages', { query: BODY }),
@@ -424,7 +492,7 @@ test('upload links: a file on a locked page opens only with a link signed for an
 });
 
 test('locking a page tells every device that had it (all members and share holders) to drop it', async () => {
-  const p = (await app.call('POST', `/sections/${sec}/pages`, owner.token, { title: 'Soon locked' })).data.id;
+  const p = (await app.call('POST', `/sections/${privSec}/pages`, owner.token, { title: 'Soon locked' })).data.id;
   const msgs: string[] = [];
   const s = new WS(`${app.wsOrigin}/api/events`, ['noteapp.v1', `bearer.${member.token}`]);
   s.on('message', (d) => msgs.push(String(d)));
@@ -437,14 +505,16 @@ test('locking a page tells every device that had it (all members and share holde
   await lockedNotes(owner, '/lock');
 });
 
-test('removing the lock needs the password; then the page is everyone’s again', async () => {
+test('removing the lock needs the password; then it is an ordinary (private) page again', async () => {
   (await import('../server/ratelimit.ts')).resetRateLimits();
   assert.equal((await app.call('POST', `/pages/${page}/lock/remove`, owner.token, { password: 'nope' })).status, 400);
   assert.equal((await app.call('POST', `/pages/${page}/lock/remove`, owner.token, { password: 'reset-pass-3' })).status, 200);
-  const tree = (await app.call('GET', `/workspaces/${ws}/tree`, admin.token)).data;
-  assert.ok(tree.pages.some((p: { id: string }) => p.id === page));
+  assert.equal((await app.call('GET', `/pages/${page}/doc`, owner.token)).status, 200, 'no unlock needed');
+  const tree = (await app.call('GET', `/workspaces/${ws}/tree`, owner.token)).data;
+  assert.equal(tree.pages.find((p: { id: string }) => p.id === page)?.locked, undefined);
+  // Its assignee has the task again (TASK_VISIBLE lets an assignee see a task in a private notebook).
   assert.ok(((await app.call('GET', `/workspaces/${ws}/tasks`, admin.token)).data as { id: string }[]).some((x) => x.id === task));
-  const s = (await app.call('GET', `/workspaces/${ws}/search?q=${BODY}`, admin.token)).data;
+  const s = (await app.call('GET', `/workspaces/${ws}/search?q=${BODY}`, owner.token)).data;
   assert.equal(s.pages[0]?.id, page, 'body searchable again');
 });
 
@@ -461,7 +531,8 @@ test('rate limit: wrong locked-notes passwords run out, then 429', async () => {
 test('deleting the account deletes the pages it locked', async () => {
   const u = await app.signUp('LkLeaver');
   await app.call('POST', `/workspaces/${ws}/members`, owner.token, { email: u.user.email, role: 'member' });
-  const p = (await app.call('POST', `/sections/${sec}/pages`, u.token, { title: 'Leaver locked' })).data.id;
+  const mine = (await app.call('POST', `/workspaces/${ws}/notebooks`, u.token, { name: 'Leaver private', visibility: 'private' })).data.sectionId;
+  const p = (await app.call('POST', `/sections/${mine}/pages`, u.token, { title: 'Leaver locked' })).data.id;
   await app.call('POST', '/locked-notes/password', u.token, { password: 'leaver-pw' });
   assert.equal((await app.call('POST', `/pages/${p}/lock`, u.token)).status, 200);
   assert.equal((await app.call('DELETE', '/auth/account', u.token, { password: 'password123' })).status, 200);

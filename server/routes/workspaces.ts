@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
 import { TASK_VISIBLE, accessChanged, atLeast, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, pagePeople, requireRole, roleIn } from '../access.ts';
+import { assertNoLockedPages, assertWorkspaceMayGrow } from '../locks.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import { rowToTask, unassignOutsiders } from '../tasks.ts';
@@ -113,6 +114,7 @@ workspaceRoutes.post(
   h(async (req) => {
     const wsId = param(req, 'id');
     const myRole = requireRole(wsId, req.user.id, 'admin');
+    assertWorkspaceMayGrow(wsId); // a locked page in a one-person space would become visible to the newcomer
     const email = str(req.body.email, 'Email', 200).toLowerCase();
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Enter a valid email address');
     const role: Role = ROLES.includes(req.body.role) ? req.body.role : 'member';
@@ -304,6 +306,7 @@ workspaceRoutes.put(
     const raw: unknown = req.body.userIds;
     if (!Array.isArray(raw) || raw.some((u) => typeof u !== 'string') || raw.length > 500) throw new HttpError(400, 'userIds must be a list of user ids');
     const wanted = new Set((raw as string[]).filter((u) => u !== req.user.id));
+    if (wanted.size) assertNoLockedPages(id); // a notebook holding a locked page is shared with nobody
     for (const u of wanted) if (!roleIn(a.workspaceId, u)) throw new HttpError(400, 'You can only share with members of this workspace');
     const before = new Set(notebookShares(id));
     const removed = [...before].filter((u) => !wanted.has(u));

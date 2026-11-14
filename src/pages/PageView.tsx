@@ -57,6 +57,9 @@ interface PageInfo {
   /** Locked by the caller (server/locks.ts); `open`: this sign-in has it unlocked. */
   locked?: boolean;
   open?: boolean;
+  /** May lock it (only a page nobody else can see); else `lockHint` says why not. */
+  canLock?: boolean;
+  lockHint?: string | null;
 }
 
 export function PageView() {
@@ -360,6 +363,8 @@ export function PageView() {
                 canEdit={canEdit}
                 title={meta.title}
                 locked={isLocked}
+                canLock={!!info?.canLock}
+                lockHint={info?.lockHint ?? null}
               />
             )}
           </div>
@@ -635,9 +640,11 @@ type PageMenuProps = {
   canvas: CanvasHandle | null;
   /** Locked by the caller (and open on this sign-in). */
   locked?: boolean;
+  canLock?: boolean;
+  lockHint?: string | null;
 };
 
-function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas, locked }: PageMenuProps) {
+function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas, locked, canLock, lockHint }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const printable = usePrintSelection(pageId);
   const navigate = useNavigate();
@@ -694,8 +701,8 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
               <MenuSeparator />
             </>
           )}
-          {canManage && !locked && (
-            <MenuItem icon={<Lock size={15} />} onSelect={() => void lockPageFlow(pageId)}>
+          {canEdit && !locked && (
+            <MenuItem icon={<Lock size={15} />} disabled={!canLock} note={canLock ? undefined : lockHint} onSelect={() => void lockPageFlow(pageId)}>
               Lock page
             </MenuItem>
           )}

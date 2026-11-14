@@ -16,6 +16,7 @@ import {
   sectionSubtree,
   validColor,
 } from '../tree.ts';
+import { assertLockedMayMoveTo, assertNoLockedPages, lockersInSections } from '../locks.ts';
 import { HttpError, h, param, str } from '../http.ts';
 import type { Notebook, PageMeta, Section } from '../../shared/types.ts';
 
@@ -104,6 +105,7 @@ treeRoutes.patch(
     if (b.visibility !== undefined) {
       if (!a.isNotebookOwner) throw new HttpError(403, 'Only the notebook creator can change its visibility');
       if (!['shared', 'private'].includes(b.visibility)) throw new HttpError(400, 'Invalid visibility');
+      if (b.visibility === 'shared') assertNoLockedPages(id); // locked pages stay in a space only their owner can see
       const was = (db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(id) as { visibility: string }).visibility;
       db.prepare('UPDATE notebooks SET visibility = ? WHERE id = ?').run(b.visibility, id);
       // Made private: single-page shares someone else granted on its pages end (#98).
@@ -189,6 +191,8 @@ function moveSectionTo(id: string, a: { workspaceId: string; notebookId: string 
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
   checkSectionParent(id, notebookId, parentId);
   const subtree = sectionSubtree(id);
+  // A section holding locked pages only goes where nobody but their owner can see them (server/locks.ts).
+  if (notebookId !== a.notebookId) assertLockedMayMoveTo(lockersInSections(subtree), notebookId);
   db.transaction(() => {
     db.prepare('UPDATE sections SET parent_id = ? WHERE id = ?').run(parentId, id);
     if (notebookId !== a.notebookId) {

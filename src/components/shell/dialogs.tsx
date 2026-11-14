@@ -2,7 +2,7 @@
 //   if (await confirmDialog({ title: 'Delete page?', confirmLabel: 'Delete', danger: true })) …
 //   const name = await promptDialog({ title: 'New section', label: 'Name' });
 // <DialogHost /> is mounted once by the app shell.
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { Button, Dialog, Input } from '../ui.tsx';
 
@@ -46,10 +46,11 @@ export const promptDialog = (opts: PromptOpts) => new Promise<string | null>((re
 
 export function DialogHost() {
   const current = useDialogs((s) => s.current);
-  const [value, setValue] = useState('');
-  useEffect(() => {
-    if (current?.type === 'prompt') setValue(current.opts.initial ?? '');
-  }, [current]);
+  // The typed value belongs to one dialog: a new one starts from its `initial`. (Resetting it in an effect raced with
+  // typing: text entered right after the dialog appeared could be wiped.)
+  const [typed, setTyped] = useState<{ for: Pending | null; value: string }>({ for: null, value: '' });
+  const value = typed.for === current ? typed.value : current?.type === 'prompt' ? (current.opts.initial ?? '') : '';
+  const setValue = (v: string) => setTyped({ for: current, value: v });
   if (!current) return null;
 
   const finish = (v: boolean | null) => {

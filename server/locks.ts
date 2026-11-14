@@ -252,6 +252,71 @@ export function consumeResetCode(userId: string, code: unknown): boolean {
   return ok;
 }
 
+// ── Only private pages can be locked ──
+
+export const NOT_PRIVATE = 'Only pages only you can see can be locked. Move it to a private notebook first.';
+
+/**
+ * Is notebook `notebookId` a space only `userId` can access? Their own private notebook shared with nobody, or any
+ * notebook of a workspace they are the only member of.
+ */
+export function notebookPrivateTo(notebookId: string, userId: string): boolean {
+  const nb = db.prepare('SELECT workspace_id, visibility, created_by FROM notebooks WHERE id = ?').get(notebookId) as
+    | { workspace_id: string; visibility: string; created_by: string }
+    | undefined;
+  if (!nb) return false;
+  const others = db.prepare('SELECT COUNT(*) FROM workspace_members WHERE workspace_id = ? AND user_id != ?').pluck().get(nb.workspace_id, userId) as number;
+  if (!others && db.prepare('SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(nb.workspace_id, userId)) return true;
+  return nb.visibility === 'private' && nb.created_by === userId && !db.prepare('SELECT 1 FROM notebook_shares WHERE notebook_id = ?').get(notebookId);
+}
+
+/** Can nobody but `userId` see this page? In a space only they can access, and not shared one by one with anyone. */
+export function pagePrivateTo(pageId: string, userId: string): boolean {
+  const p = db.prepare('SELECT s.notebook_id AS nb FROM pages p JOIN sections s ON s.id = p.section_id WHERE p.id = ?').get(pageId) as { nb: string } | undefined;
+  if (!p) return false;
+  if (db.prepare('SELECT 1 FROM page_shares WHERE page_id = ?').get(pageId)) return false;
+  if (db.prepare('SELECT 1 FROM page_invites WHERE page_id = ?').get(pageId)) return false;
+  return notebookPrivateTo(p.nb, userId);
+}
+
+/** Locked pages in a notebook (Trash included): who locked each. */
+function lockersIn(notebookId: string): string[] {
+  return (
+    db
+      .prepare('SELECT DISTINCT p.locked_by FROM pages p JOIN sections s ON s.id = p.section_id WHERE s.notebook_id = ? AND p.locked_by IS NOT NULL')
+      .all(notebookId) as { locked_by: string }[]
+  ).map((r) => r.locked_by);
+}
+
+/** Refuse sharing a notebook (making it shared, or sharing it with people) while it holds a locked page. */
+export function assertNoLockedPages(notebookId: string) {
+  if (lockersIn(notebookId).length) throw new HttpError(400, 'This notebook has a locked page. Remove its lock, or move it out, before sharing the notebook.', 'has_locked_page');
+}
+
+/** Refuse adding people to a workspace whose locked pages would become visible to them (a single-member space). */
+export function assertWorkspaceMayGrow(workspaceId: string) {
+  const nbs = db.prepare('SELECT id FROM notebooks WHERE workspace_id = ?').all(workspaceId) as { id: string }[];
+  for (const { id } of nbs) {
+    const nb = db.prepare('SELECT visibility, created_by FROM notebooks WHERE id = ?').get(id) as { visibility: string; created_by: string };
+    for (const locker of lockersIn(id))
+      if (nb.visibility !== 'private' || nb.created_by !== locker)
+        throw new HttpError(400, 'This workspace has a locked page outside a private notebook. Move it to a private notebook, or remove its lock, before adding people.', 'has_locked_page');
+  }
+}
+
+/** Moving a locked page (or a section holding one) into notebook `notebookId`: only into a space only its owner can access. */
+export function assertLockedMayMoveTo(lockers: string[], notebookId: string) {
+  for (const u of lockers) if (!notebookPrivateTo(notebookId, u)) throw new HttpError(400, 'A locked page can only be moved into a private notebook. Remove its lock first.', 'not_private');
+}
+
+/** Who locked the pages of these sections (Trash included). */
+export function lockersInSections(sectionIds: string[]): string[] {
+  if (!sectionIds.length) return [];
+  return (
+    db.prepare(`SELECT DISTINCT locked_by FROM pages WHERE locked_by IS NOT NULL AND section_id IN (${sectionIds.map(() => '?').join(', ')})`).all(...sectionIds) as { locked_by: string }[]
+  ).map((r) => r.locked_by);
+}
+
 // ── Locking and unlocking pages ──
 
 type TaskRow = Parameters<typeof rowToTask>[0];
@@ -267,7 +332,8 @@ export function lockPage(pageId: string, userId: string) {
   const a = pageAccess(pageId, userId);
   if (!a || a.trashed) throw new HttpError(404, 'Not found');
   if (a.locked) throw new HttpError(409, 'This page is already locked');
-  if (!a.canManage) throw new HttpError(403, 'Only people who can edit its notebook can lock a page');
+  // Only a page nobody else can see (Devon's decision): never a shared page, never someone else's.
+  if (!a.canEdit || a.viaPageShare || !pagePrivateTo(pageId, userId)) throw new HttpError(403, NOT_PRIVATE, 'not_private');
   if (!hasLockPassword(userId)) throw new HttpError(409, 'Set a locked-notes password first', 'no_lock_password');
   // Everyone who could open it until now (its owner too): their devices drop its offline copy and close its editor.
   const holders = (

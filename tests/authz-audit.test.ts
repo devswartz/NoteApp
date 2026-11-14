@@ -348,8 +348,8 @@ const ROWS: Row[] = [
   { method: 'DELETE', route: '/locked-notes/devices/:id', path: () => `/locked-notes/devices/${crypto.randomUUID()}`, expect: { stranger: 404, viewer: 404, member: 404 } },
   { method: 'POST', route: '/locked-notes/reset/start', path: () => '/locked-notes/reset/start', body: () => ({ password: 'wrong-login-password' }), expect: { stranger: 400, viewer: 400, member: 400 } },
   { method: 'POST', route: '/locked-notes/reset', path: () => '/locked-notes/reset', body: () => ({ code: '000000', newPassword: 'new-lock-pass' }), expect: { stranger: 400, viewer: 400, member: 400 } },
-  // Locking: notebook-level edit access (a member without a locked-notes password gets 409), never a page share.
-  { method: 'POST', route: '/pages/:id/lock', path: (f) => `/pages/${f.page}/lock`, expect: shared(inPrivate({ viewer: 403, member: 409 }), 403) },
+  // Locking: only a page nobody else can see, so never one in a shared notebook or reached through a share (403).
+  { method: 'POST', route: '/pages/:id/lock', path: (f) => `/pages/${f.page}/lock`, expect: shared(inPrivate({ viewer: 403, member: 403 }), 403) },
   // Removing a lock: its owner only (the fixture page isn't locked, so 404 for everyone).
   { method: 'POST', route: '/pages/:id/lock/remove', path: (f) => `/pages/${f.page}/lock/remove`, body: () => ({ password: 'x' }), expect: { viewer: 404, member: 404 } },
 ];

@@ -211,6 +211,8 @@ export function MenuItem({
   danger,
   hint,
   keepOpen,
+  disabled,
+  note,
 }: {
   icon?: ReactNode;
   children: ReactNode;
@@ -219,21 +221,29 @@ export function MenuItem({
   danger?: boolean;
   hint?: ReactNode;
   keepOpen?: boolean;
+  /** Shown but not available; `note` (a line under the label) says why. */
+  disabled?: boolean;
+  note?: ReactNode;
 }) {
   const close = useClosePopover();
   return (
     <button
       type="button"
       role="menuitem"
-      className={`menu-item ${danger ? 'danger' : ''}`}
+      className={`menu-item ${danger ? 'danger' : ''} ${note ? 'has-note' : ''}`}
+      aria-disabled={disabled || undefined}
       onClick={(e) => {
         e.stopPropagation();
+        if (disabled) return;
         onSelect();
         if (!keepOpen) close();
       }}
     >
       <span className="menu-icon">{icon}</span>
-      <span className="menu-label">{children}</span>
+      <span className="menu-label">
+        {children}
+        {note && <span className="menu-note">{note}</span>}
+      </span>
       {hint && <span className="menu-hint">{hint}</span>}
       {checked && <Check size={14} className="menu-check" />}
     </button>

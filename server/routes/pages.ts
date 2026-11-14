@@ -15,6 +15,7 @@ import { HttpError, clip, h, param } from '../http.ts';
 import { backlinks } from '../links.ts';
 import { dropForeignSharesOnPage } from '../workspaces.ts';
 import { getVersion, listVersions, snapshot, startVersionSweep } from '../versions.ts';
+import { assertLockedMayMoveTo, NOT_PRIVATE, pagePrivateTo } from '../locks.ts';
 
 export const pageRoutes = Router();
 
@@ -84,6 +85,9 @@ pageRoutes.get(
       // Locked by the caller; `open`: this sign-in has it unlocked (else only the title above is served).
       locked: !!a.locked,
       open,
+      // May lock it: only a page nobody else can see (server/locks.ts); else why not.
+      canLock: !a.locked && a.canEdit && !a.viaPageShare && !a.trashed && pagePrivateTo(id, req.user.id),
+      lockHint: !a.locked && !(a.canEdit && !a.viaPageShare && pagePrivateTo(id, req.user.id)) ? NOT_PRIVATE : null,
     };
   }),
 );
@@ -215,6 +219,7 @@ pageRoutes.patch(
 function movePageTo(id: string, a: Access, sectionId: string, userId: string) {
   const t = mustAccess(sectionAccess(sectionId, userId), true);
   if (t.workspaceId !== a.workspaceId) throw new HttpError(400, 'Cannot move between workspaces');
+  if (a.locked) assertLockedMayMoveTo([userId], t.notebookId); // a locked page stays where only its owner can see it
   db.prepare('UPDATE pages SET section_id = ? WHERE id = ?').run(sectionId, id);
   if (t.notebookId !== a.notebookId) {
     // Into a private notebook: page shares its creator didn't grant end (#98).

@@ -102,6 +102,20 @@ async function guarded(req: Request, res: Response, check: () => boolean | Promi
   throw new HttpError(code === 'device_revoked' ? 401 : 400, `${wrong}. ${left} ${left === 1 ? 'try' : 'tries'} left before unlocking is paused for 15 minutes.`, code);
 }
 
+/** Tell the user their locked-notes password was changed or reset (sent every time; nothing is delayed). */
+async function mailPasswordChanged(req: Request, how: 'changed' | 'reset') {
+  const u = db.prepare('SELECT email, name FROM users WHERE id = ?').get(req.user.id) as { email: string; name: string };
+  const when = new Date().toUTCString();
+  const device = `${String(req.get('user-agent') ?? 'unknown device').slice(0, 200)} (IP ${clientIp(req).ip})`;
+  const text = `Hi ${u.name},\n\nYour locked notes password was ${how}.\n\nWhen: ${when}\nDevice: ${device}\n\nFace ID / Touch ID unlock was turned off on every device. If this wasn't you, change your sign-in password now.`;
+  await sendMail({
+    to: u.email,
+    subject: 'Your locked notes password was changed',
+    text,
+    html: `<p>Hi ${escapeHtml(u.name)},</p><p>Your locked notes password was ${how}.</p><p>When: ${escapeHtml(when)}<br>Device: ${escapeHtml(device)}</p><p>Face ID / Touch ID unlock was turned off on every device. If this wasn't you, change your sign-in password now.</p>`,
+  }).catch(() => {});
+}
+
 lockRoutes.get('/locked-notes', h((req) => lockStatus(req.user.id, req.sid)));
 
 /** A key for signing upload links that also opens files on this sign-in's unlocked locked pages (server/routes/files.ts). */
@@ -117,11 +131,13 @@ lockRoutes.post(
   '/locked-notes/password',
   h(async (req, res) => {
     const password = validLockPassword(req.body?.password);
-    if (hasLockPassword(req.user.id)) {
+    const changing = hasLockPassword(req.user.id);
+    if (changing) {
       const ok = await guarded(req, res, () => checkLockPassword(req.user.id, req.body?.currentPassword), 'Your current locked-notes password is incorrect');
       if (ok === null) return;
     }
     await setLockPassword(req.user.id, password);
+    if (changing) await mailPasswordChanged(req, 'changed');
     // Whoever just chose the password is unlocked on this sign-in (they are about to lock something).
     const expiresAt = req.sid ? grantUnlock(req.user.id, req.sid) : null;
     return { ok: true, expiresAt };
@@ -204,6 +220,7 @@ lockRoutes.post(
     if (ok === null) return;
     if (!ok) throw new HttpError(400, 'That code is wrong or has expired', 'bad_code');
     await setLockPassword(req.user.id, password); // relocks every sign-in and forgets every device
+    await mailPasswordChanged(req, 'reset');
     return { ok: true };
   }),
 );

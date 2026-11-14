@@ -1943,3 +1943,10 @@ body.is-resizing .sidebar { transition: none; }
 .lock-card a, .lock-card a:visited { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .mobile-title-main { display: inline-flex; align-items: center; gap: 5px; }
 .mobile-title-lock { flex: none; color: var(--text-muted); }
+.menu-item[aria-disabled] { opacity: 0.6; cursor: default; }
+.menu-item[aria-disabled]:hover { background: none; }
+.menu-item.has-note { align-items: flex-start; }
+.menu-note { display: block; font-size: var(--text-xs); color: var(--text-muted); white-space: normal; max-width: 240px; margin-top: 2px; line-height: 1.35; }
+.menu-item[aria-disabled] .menu-note { opacity: 1; }
+.menu-item.has-note { height: auto; min-height: 32px; padding-top: 7px; padding-bottom: 7px; white-space: normal; }
+.menu-item.has-note .menu-icon { padding-top: 1px; }

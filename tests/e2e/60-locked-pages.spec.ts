@@ -14,8 +14,16 @@ test('set password → lock → relock → unlock → remove lock; another membe
   const owner = await createUser(request, 'Lena Locker');
   const other = await createUser(request, 'Max Member');
   const ws = await createTeam(request, owner, [{ user: other, role: 'admin' }], 'Lock Team');
-  const { pageId } = await createPage(request, owner, { wsId: ws, notebook: 'Journal', page: 'Secret plans' });
+  // Only a page nobody else can see can be locked: a page in a shared notebook offers it disabled, with the reason.
+  const team = await createPage(request, owner, { wsId: ws, notebook: 'Team notes', page: 'Team page' });
+  const { pageId } = await createPage(request, owner, { wsId: ws, notebook: 'Journal', page: 'Secret plans', visibility: 'private' });
   await signInContext(context, owner);
+
+  await openPage(page, ws, team.pageId);
+  const teamLock = (await pageMenu(page)).getByRole('menuitem', { name: /Lock page/ });
+  await expect(teamLock).toHaveAttribute('aria-disabled', 'true');
+  await expect(teamLock).toContainText('Only pages only you can see can be locked');
+  await page.keyboard.press('Escape');
 
   // Write something on the page.
   const editor = await openPage(page, ws, pageId);
@@ -25,13 +33,13 @@ test('set password → lock → relock → unlock → remove lock; another membe
   await expect.poll(async () => (await api<{ ydoc: string }>(request, 'GET', `/pages/${pageId}/doc`, owner.token)).ydoc.length).toBeGreaterThan(40);
 
   // Lock it: no locked-notes password yet, so one is created on the way (twice, to confirm).
-  await (await pageMenu(page)).getByRole('menuitem', { name: 'Lock page' }).click();
+  await (await pageMenu(page)).getByRole('menuitem', { name: /^Lock page/ }).click();
   await page.getByRole('dialog').locator('input').fill(LOCK_PW);
   await page.getByRole('button', { name: 'Next' }).click();
   await page.getByRole('dialog', { name: 'Create a locked-notes password' }).locator('input').fill(LOCK_PW);
   await page.getByRole('button', { name: 'Save password' }).click();
   await expect(page.getByText('Page locked.')).toBeVisible();
-  await expect(page.locator('.sb-row.page-row', { hasText: 'Secret plans' }).locator('.sb-lock')).toBeVisible();
+  await expect(page.locator('.sb-row.page-row', { hasText: 'Secret plans' }).locator('.sb-lock-icon')).toBeVisible();
 
   // The other member (an admin) doesn't have it anywhere: not in the tree, not by link.
   const bc = await browser.newContext();
@@ -57,13 +65,11 @@ test('set password → lock → relock → unlock → remove lock; another membe
   await expect(firstEditor(page)).toContainText('The launch is on Friday');
   await expect(lock).toHaveCount(0);
 
-  // Remove the lock (needs the password): the other member has it again.
+  // Remove the lock (needs the password): an ordinary private page again.
   await (await pageMenu(page)).getByRole('menuitem', { name: 'Remove lock…' }).click();
   await page.getByRole('dialog').locator('input').fill(LOCK_PW);
   await page.getByRole('button', { name: 'Remove lock' }).click();
   await expect(page.getByText('Lock removed')).toBeVisible();
-  await expect(page.locator('.sb-row.page-row', { hasText: 'Secret plans' }).locator('.sb-lock')).toHaveCount(0);
-  await op.goto(pageUrl(ws, pageId));
-  await expect(firstEditor(op)).toContainText('The launch is on Friday');
+  await expect(page.locator('.sb-row.page-row', { hasText: 'Secret plans' }).locator('.sb-lock-icon')).toHaveCount(0);
   await bc.close();
 });
