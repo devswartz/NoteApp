@@ -111,7 +111,8 @@ test('From the note: the notes under a task as Markdown, checklists with their s
   ]);
   await eventually(async () => (await app.call('GET', `/tasks/${t.id}/notes`, u.token)).data.markdown !== '', 'notes readable');
   const md = (await app.call('GET', `/tasks/${t.id}/notes`, u.token)).data.markdown as string;
-  assert.equal(md, ['- flights', '- trains', '- [x] passport', '- [ ] adapter', '- [ ] Book hotel', '  near the station'].join('\n'));
+  // The subtask (and its notes) are left out: the panel lists subtasks on their own.
+  assert.equal(md, ['- flights', '- trains', '- [x] passport', '- [ ] adapter'].join('\n'));
   assert.equal((await app.call('GET', `/tasks/${bare.id}/notes`, u.token)).data.markdown, '');
   // The checklist's count is on the task for the Tasks views; its items are never tasks.
   await eventually(async () => JSON.stringify((await taskOf(u, t.id) as { checklist?: unknown })?.checklist) === '{"done":1,"total":2}', 'checklist count');

@@ -4,7 +4,8 @@ import * as Y from 'yjs';
 import { listMarker, listSuffix, xmlListStart } from '../shared/listMarker.ts';
 
 type Node = Y.XmlElement | Y.XmlText;
-export type TaskLookup = (taskId: string) => { title: string; done: boolean; due?: string | null } | undefined;
+/** A task's line for an id; undefined when it can't be shown (its notes still are), null to leave it and its notes out. */
+export type TaskLookup = (taskId: string) => { title: string; done: boolean; due?: string | null } | undefined | null;
 
 function inline(t: Y.XmlText): string {
   return (t.toDelta() as { insert: unknown; attributes?: Record<string, { href?: string } | true> }[])
@@ -54,6 +55,7 @@ export function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
     case 'taskRef': {
       // The task's line, then the notes under it indented one level (they're kept even when the task can't be shown).
       const t = tasks(String(attr('taskId') ?? ''));
+      if (t === null) return []; // left out on purpose (the task panel lists subtasks on their own)
       const notes = kids(n).flatMap((c) => block(c, tasks, t ? indent + '  ' : indent));
       return t ? [`${indent}- [${t.done ? 'x' : ' '}] ${t.title}${t.due ? ` (due ${t.due})` : ''}`, ...notes] : notes;
     }

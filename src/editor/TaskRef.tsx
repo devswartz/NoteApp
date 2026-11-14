@@ -7,7 +7,7 @@ import { Selection, TextSelection, type EditorState, type Transaction } from '@t
 import type { EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, GripVertical, ListChecks, Maximize2, FileX2, Flag } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical, ListPlus, Maximize2, FileX2, Flag, SquareCheck } from 'lucide-react';
 import { deletedHere, deletedTitles, UNDO_WINDOW_MS } from '../store/tasks.ts';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
 import { useAnyTask } from '../components/sharing/sharedPages.ts';
@@ -471,6 +471,20 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
             <GripVertical size={14} />
           </span>
         )}
+        {hasNotes && (
+          // Fold the notes away, OneNote style: left of the circle, in the margin, so the line stays aligned with
+          // tasks without notes. Remembered in this browser; collaborators keep their own view.
+          <button
+            type="button"
+            className="icon-btn btn-ghost task-ref-fold"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Show the notes under this task' : 'Hide the notes under this task'}
+            title={collapsed ? 'Show notes' : 'Hide notes'}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
         <TaskCheckbox task={task} onToggle={() => toggleTask(id)} disabled={!editable} />
         <textarea
           ref={inputRef}
@@ -505,31 +519,28 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           }}
         />
         <div className="task-ref-meta">
-          {hasNotes && (
-            // Fold the notes under the task away (remembered in this browser; collaborators keep their own view).
-            <button
-              type="button"
-              className="chip chip-btn task-ref-fold"
-              aria-expanded={!collapsed}
-              aria-label={collapsed ? 'Show the notes under this task' : 'Hide the notes under this task'}
-              title={collapsed ? 'Show notes' : 'Hide notes'}
-              onClick={() => setCollapsed(!collapsed)}
-            >
-              {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
-              {collapsed && <span className="task-ref-fold-count">{noteCount(node)}</span>}
+          {hasNotes && collapsed && (
+            <button type="button" className="chip chip-btn task-ref-fold-count" title="Show notes" onClick={() => setCollapsed(false)}>
+              {noteCount(node)}
             </button>
           )}
           {(() => {
             const c = checklistCount(node);
             return c.total > 0 ? (
               <span className={`chip task-ref-checks ${c.done === c.total ? 'is-complete' : ''}`} title={`${c.done} of ${c.total} checklist items ticked`} aria-label={`Checklist ${c.done} of ${c.total} ticked`}>
+                <SquareCheck size={12} aria-hidden="true" />
                 {c.done}/{c.total}
               </span>
             ) : null;
           })()}
-          <PriorityChip task={task} readOnly={!editable} onChange={(priority) => void updateTask(id, { priority })} />
+          {/* On a phone the line keeps the due date and the counts; the rest is in the task panel. */}
+          <span className="task-ref-wide">
+            <PriorityChip task={task} readOnly={!editable} onChange={(priority) => void updateTask(id, { priority })} />
+          </span>
           <DueChip task={task} readOnly={!editable} onChange={(dueDate) => void updateTask(id, { dueDate })} />
-          <AssigneeChip task={task} readOnly={!editable} onChange={(assigneeId) => void updateTask(id, { assigneeId })} />
+          <span className="task-ref-wide">
+            <AssigneeChip task={task} readOnly={!editable} onChange={(assigneeId) => void updateTask(id, { assigneeId })} />
+          </span>
           {editable && (
             <button
               type="button"
@@ -545,7 +556,8 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
                 editor.view.focus();
               }}
             >
-              <ListChecks size={13} />
+              <ListPlus size={13} aria-hidden="true" />
+              <span className="task-ref-add-label">Add checklist</span>
             </button>
           )}
           <button className="icon-btn btn-ghost task-ref-open" title="Open task details" aria-label="Open task details" onClick={() => ui.openTask(id)}>
@@ -573,14 +585,20 @@ export function checklistCount(node: PMNode): { done: number; total: number } {
   return { done, total };
 }
 
-/** "3 notes": the lines under a folded task (text lines and nested tasks, not the lists around them). */
-function noteCount(node: PMNode): string {
-  let n = 0;
-  node.descendants((c) => {
-    if (c.isTextblock || c.type.name === 'taskRef' || (c.isLeaf && c.isBlock)) n++;
-    return !c.isTextblock;
+/** "6 notes · 1 subtask": what a folded task hides. Notes are its own lines; subtasks (and what's under them) count apart. */
+export function noteCount(node: PMNode): string {
+  let notes = 0;
+  let subtasks = 0;
+  node.forEach(function visit(c: PMNode) {
+    if (c.type.name === 'taskRef') {
+      subtasks++;
+      return;
+    }
+    if (c.isTextblock || (c.isLeaf && c.isBlock)) notes++;
+    else c.forEach(visit);
   });
-  return n === 1 ? '1 note' : `${n} notes`;
+  const part = (n: number, one: string) => (n ? `${n} ${one}${n === 1 ? '' : 's'}` : '');
+  return [part(notes, 'note'), part(subtasks, 'subtask')].filter(Boolean).join(' · ');
 }
 
 /** Which tasks' notes are folded away: per browser (like a section's open/closed state), not shared with collaborators. */

@@ -67,6 +67,21 @@ test('Tab moves a line into the task above, the ribbon checkbox works there, con
   await eventually(() => tasksOn(request, user, pageId), (ts) => ts.find((t) => t.title === 'write the brief')?.parentId === null, 'top-level again');
 });
 
+test('the ribbon’s indent buttons move a line into and out of the task above (touch has no Tab)', async ({ page, context, request }) => {
+  const user = await createUser(request, 'Ivy Indent');
+  const { pageId } = await createPage(request, user);
+  await signInContext(context, user);
+  await openPage(page, user.wsId, pageId);
+  const task = await addInlineTask(page, 'Ribbon task');
+  await page.keyboard.type('indented by button');
+  await settleCaret(page);
+  await ribbon(page).getByRole('button', { name: 'Increase indent (Tab)' }).click();
+  await expect(task.locator('.task-ref-children')).toContainText('indented by button');
+  await ribbon(page).getByRole('button', { name: 'Decrease indent (Shift+Tab)' }).click();
+  await expect(task.locator('.task-ref-children')).toBeHidden();
+  await expect(firstEditor(page)).toContainText('indented by button');
+});
+
 test('a task moves with its notes (Alt+Shift+arrows), and deleting it from the task panel keeps the notes', async ({ page, context, request }) => {
   test.setTimeout(45_000);
   const user = await createUser(request, 'Moe Mover');

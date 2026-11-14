@@ -9,7 +9,7 @@ import { MOD, keyLabel } from '../components/ui.tsx';
 import { canInsertTask } from './taskGate.ts';
 import { addChecklistToTask, taskNear } from './taskChildren.ts';
 import {
-  ListChecks,
+  ListPlus,
   ChevronRight,
   FileSymlink,
   Link2,
@@ -90,10 +90,10 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   {
     // Offered on a line in a task's notes or just below a task (see the items filter).
-    title: 'Checklist under task',
+    title: 'Add checklist',
     description: 'A checklist at the top of this task’s notes (its items are not tasks)',
     keywords: 'checkbox list todo plain task packing subitems',
-    icon: <ListChecks size={18} />,
+    icon: <ListPlus size={18} />,
     run: (e, r) => {
       const tr = e.state.tr.delete(r.from, r.to);
       const $at = tr.doc.resolve(r.from);
@@ -261,7 +261,7 @@ export const SlashCommand = Extension.create({
         // "Checklist under task" only next to a task (in its notes or on the line just below it).
         items: ({ query, editor }) =>
           filterSlash(query).filter(
-            (i) => (i.title !== 'Task' || canInsertTask(editor)) && (i.title !== 'Checklist under task' || taskNear(editor.state.selection.$from) >= 0),
+            (i) => (i.title !== 'Task' || canInsertTask(editor)) && (i.title !== 'Add checklist' || taskNear(editor.state.selection.$from) >= 0),
           ),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: () => ({

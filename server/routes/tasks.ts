@@ -54,12 +54,8 @@ taskRoutes.get(
       Y.applyUpdate(doc, state);
       const el = findTaskElement(doc, id);
       if (!el) return { markdown: '' };
-      const visible = (tid: string) => {
-        if (!taskVisible(tid, userId)) return undefined;
-        const t = getTask(tid);
-        return t ? { title: t.title, done: t.status === 'done', due: t.dueDate } : undefined;
-      };
-      return { markdown: notesMarkdown(el, visible) };
+      // Subtasks in the notes are left out: the panel lists them under Subtasks.
+      return { markdown: notesMarkdown(el, () => null) };
     } finally {
       doc.destroy();
     }

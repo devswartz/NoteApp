@@ -1230,8 +1230,22 @@ body.is-resizing .sidebar { transition: none; }
 .task-ref.is-collapsed > .task-ref-children { display: none; }
 /* Done task: its notes stay as they are, a little quieter. */
 .task-ref.is-done > .task-ref-children { border-left-style: dashed; }
-.task-ref-fold { gap: 2px; color: var(--text-2); }
-.task-ref-checks { font-size: var(--text-xs, 12px); color: var(--text-2); font-variant-numeric: tabular-nums; }
+/* Fold arrow: in the margin left of the circle (OneNote), so the line lines up with tasks without notes. */
+.task-ref-inner > .task-ref-fold { position: absolute; left: -24px; top: 7px; width: 22px; height: 22px; color: var(--text-muted); }
+.task-ref-inner > .task-ref-fold:hover { color: var(--text); }
+.task-ref.has-notes > .task-ref-inner > .drag-handle { left: -44px; }
+.task-ref-fold-count { font-size: var(--text-xs); color: var(--text-muted); }
+.task-ref-checks { font-size: var(--text-xs); color: var(--text-2); font-variant-numeric: tabular-nums; gap: 3px; }
+/* A checklist under a task lines its text up with the bullets beside it (bullets sit in a wider marker column). */
+.task-ref-children ul[data-type='taskList'] { padding-left: 0; margin-left: -0.3em; }
+.task-ref-wide { display: contents; }
+.task-ref-add-checklist { width: auto; padding: 0 4px; gap: 4px; }
+.task-ref-add-label { display: none; font-size: var(--text-xs); }
+/* Touch: no hover, so "Add checklist" is always there, with its words. */
+@media (hover: none) {
+  .task-ref-add-checklist { opacity: 1; }
+  .task-ref-add-label { display: inline; }
+}
 .task-ref-checks.is-complete { color: var(--success, var(--text-2)); }
 .task-ref-fold-count { font-size: var(--text-xs, 12px); color: var(--text-muted); }
 /* The row is top-aligned (long titles wrap), so centre the circle and chips on the title's
@@ -1821,6 +1835,9 @@ body.is-resizing .sidebar { transition: none; }
   .ProseMirror { font-size: 16.5px; }
   .task-ref-inner { margin-left: 0; padding-left: 4px; flex-wrap: wrap; }
   .task-ref-children { margin-left: 14px; padding-left: 8px; }
+  /* Phones: the line keeps the due date and the counts; priority, assignee and the rest are in the task panel. */
+  .task-ref-wide { display: none; }
+  .task-ref-inner > .task-ref-fold { left: -22px; top: 6px; }
   .drag-handle { display: none; }
   .task-ref-open { opacity: 1; }
   .chip-empty, .avatar-btn-empty { opacity: 1; }
