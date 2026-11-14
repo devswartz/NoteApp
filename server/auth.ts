@@ -85,14 +85,16 @@ function session(userId: string, refreshToken: string, familyId: string): Omit<A
  * The key a user signs upload links with until `e` (shared/fileLinks.ts). Derived from the server
  * secret, the user and the expiry, so nothing is stored and the server can recompute it from a link.
  */
-export function fileKeySecret(userId: string, e: number): string {
-  return crypto.createHmac('sha256', SECRET).update(`files:${userId}:${e}`).digest('hex');
+export function fileKeySecret(userId: string, e: number, lockTag?: string): string {
+  return crypto.createHmac('sha256', SECRET).update(lockTag ? `files:${userId}:${lockTag}:${e}` : `files:${userId}:${e}`).digest('hex');
 }
 
 /** A FileKey for the current bucket (handed out with every session and by GET /api/files/key). */
-export function fileKeyFor(userId: string, nowS = Math.floor(Date.now() / 1000)): FileKey {
+export function fileKeyFor(userId: string, nowS = Math.floor(Date.now() / 1000), lockTag?: string): FileKey {
   const e = fileKeyExpiry(nowS);
-  return { u: userId, e, k: fileKeySecret(userId, e) };
+  // `lockTag` names an unlocked sign-in (server/locks.ts lockFileTag): links signed with it also open files on that
+  // user's locked pages, for as long as that sign-in stays unlocked.
+  return lockTag ? { u: userId, e, k: fileKeySecret(userId, e, lockTag), l: lockTag } : { u: userId, e, k: fileKeySecret(userId, e) };
 }
 
 /** Start a new sign-in (new token family). */
@@ -179,12 +181,14 @@ function chainHead(token: string, row: RefreshRow): string | null {
 export function revokeFamily(familyId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL').run(now(), familyId);
   db.prepare('DELETE FROM lock_unlocks WHERE family_id = ?').run(familyId); // signing out locks that sign-in's locked pages
+  db.prepare('DELETE FROM lock_devices WHERE family_id = ?').run(familyId); // ...and forgets its Face ID / Touch ID secret
 }
 
 /** Revoke every sign-in of a user (after a password change or reset), including connected AI apps (server/oauth/). */
 export function revokeAllForUser(userId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(now(), userId);
   db.prepare('DELETE FROM lock_unlocks WHERE user_id = ?').run(userId);
+  db.prepare('DELETE FROM lock_devices WHERE user_id = ?').run(userId);
   const ts = now();
   db.prepare('UPDATE oauth_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id IN (SELECT id FROM oauth_grants WHERE user_id = ?)').run(ts, userId);
   db.prepare('UPDATE oauth_grants SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(ts, userId);

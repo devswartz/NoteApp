@@ -22,6 +22,8 @@ import { platform } from '../platform/index.ts';
 import { docToMarkdown } from './collabExport.ts';
 import { CommentMark } from './collabComments.ts';
 import { renderCaret } from './collabFollow.ts';
+import { cacheOpened, mayCache } from '../lib/pageCache.ts';
+import { useStore } from '../store/state.ts';
 
 export type SyncStatus = 'connecting' | 'live' | 'offline';
 /** What the page header shows: is everything I typed safely on the server? */
@@ -66,8 +68,17 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
   const [serverSynced, setServerSynced] = useState(false);
 
   useEffect(() => {
-    // Local cache for offline reading/editing; merges when the socket reconnects.
-    const idb = new IndexeddbPersistence(`noteapp-page-${pageId}`, doc);
+    // Local cache for offline reading/editing; merges when the socket reconnects. Never for a locked page
+    // (src/lib/pageCache.ts): it is dropped, and this cache closed, when the page gets locked.
+    const idb = mayCache(pageId) ? new IndexeddbPersistence(`noteapp-page-${pageId}`, doc) : null;
+    let idbOpen = !!idb;
+    const closeIdb = () => {
+      if (!idbOpen) return;
+      idbOpen = false;
+      void idb?.destroy();
+    };
+    const unregister = idb ? cacheOpened(pageId, useStore.getState().wsId, closeIdb) : () => {};
+    if (!idb) queueMicrotask(() => setSynced(true)); // nothing local to wait for
     let connected = false;
     let dirty = false; // local edits the server may not have persisted yet
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -109,14 +120,14 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
       else report();
     };
     // Set when the server refused a change as too large: editing pauses, nothing syncs.
-    const warnTooLarge = () => warnBlocked(doc, idb);
+    const warnTooLarge = () => idb && warnBlocked(doc, idb);
     const onUpdate = (_u: Uint8Array, origin: unknown) => {
       if (origin === provider || origin === idb) return; // remote or cached, not a local edit
       dirty = true;
       report();
       if (connected) settle();
     };
-    idb.once('synced', () => setSynced(true));
+    idb?.once('synced', () => setSynced(true));
     provider.on('status', onStatusEv);
     provider.on('sync', onSync);
     doc.on('update', onUpdate);
@@ -170,7 +181,8 @@ export function useCollab(pageId: string, user: User, cb: Callbacks): CollabSess
       doc.off('update', onUpdate);
       provider.awareness.off('change', onAwareness);
       provider.destroy();
-      void idb.destroy();
+      unregister();
+      closeIdb();
       doc.destroy();
     };
   }, [doc, provider]); // eslint-disable-line react-hooks/exhaustive-deps

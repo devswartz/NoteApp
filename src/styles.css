@@ -1938,3 +1938,8 @@ body.is-resizing .sidebar { transition: none; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; }
 .link-btn:hover { text-decoration: underline; }
 .lock-card a { color: var(--accent); }
+.lock-attempts { margin: 0; font-size: var(--text-sm); color: var(--text-muted); }
+.lock-attempts.is-blocked { color: var(--danger); }
+.lock-card a, .lock-card a:visited { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.mobile-title-main { display: inline-flex; align-items: center; gap: 5px; }
+.mobile-title-lock { flex: none; color: var(--text-muted); }

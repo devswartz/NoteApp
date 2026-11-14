@@ -8,6 +8,7 @@ import { errorToast, toast, useStore } from '../store.ts';
 import { Button, Input } from './ui.tsx';
 import { confirmDialog, promptDialog } from './shell/dialogs.tsx';
 import { platform } from '../platform/index.ts';
+import { setRibbonLocked } from '../editor/ribbonState.ts';
 import {
   disableBiometrics,
   enableBiometrics,
@@ -24,7 +25,7 @@ import {
 } from '../lib/lockedNotes.ts';
 import { post } from '../api.ts';
 
-const MIN = 4;
+const MIN = 6;
 const offeredKey = (userId: string) => `noteapp.lockedNotes.bioOffered.${userId}`;
 
 const BioIcon = ({ method }: { method: string }) => (/face/i.test(method) ? <ScanFace size={16} /> : <Fingerprint size={16} />);
@@ -120,6 +121,22 @@ export function LockScreen({ title, onUnlocked }: { title: string; onUnlocked: (
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const hasPassword = useLockedNotes((s) => s.status?.hasPassword ?? true);
+  const blockedUntil = useLockedNotes((s) => s.status?.blockedUntil ?? null);
+  const triesLeft = useLockedNotes((s) => s.status?.triesBeforeLockout ?? null);
+  const failures = useLockedNotes((s) => s.status?.failures ?? 0);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!blockedUntil) return;
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, [blockedUntil]);
+  const blocked = !!blockedUntil && Date.parse(blockedUntil) > now;
+  useEffect(() => void refreshLockStatus(), []);
+  // Nothing in the ribbon works on a locked page.
+  useEffect(() => {
+    setRibbonLocked(true);
+    return () => setRibbonLocked(false);
+  }, []);
 
   const tryBio = async () => {
     setError(null);
@@ -154,7 +171,10 @@ export function LockScreen({ title, onUnlocked }: { title: string; onUnlocked: (
                 onUnlocked();
                 void offerBiometrics(userId);
               })
-              .catch((err) => setError(err instanceof ApiError && err.status === 400 ? 'That password isn’t right.' : err instanceof Error ? err.message : 'Couldn’t unlock'))
+              .catch((err) => {
+                setError(err instanceof ApiError && err.code === 'wrong_password' ? 'That password isn’t right.' : err instanceof Error ? err.message : 'Couldn’t unlock');
+                void refreshLockStatus(); // tries left, or the pause
+              })
               .finally(() => setBusy(false));
           }}
         >
@@ -166,9 +186,21 @@ export function LockScreen({ title, onUnlocked }: { title: string; onUnlocked: (
             onChange={(e) => setPw(e.target.value)}
             autoFocus={!bio?.has}
             error={error ?? undefined}
-            disabled={!hasPassword}
+            disabled={!hasPassword || blocked}
           />
-          <Button type="submit" variant="primary" loading={busy} disabled={!pw} icon={<LockOpen size={15} />}>
+          {blocked ? (
+            <p className="lock-attempts is-blocked" role="status">
+              Too many wrong tries. You can try again at {new Date(blockedUntil!).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+            </p>
+          ) : (
+            failures > 0 &&
+            triesLeft !== null && (
+              <p className="lock-attempts" role="status">
+                {triesLeft} {triesLeft === 1 ? 'try' : 'tries'} left before unlocking is paused for 15 minutes.
+              </p>
+            )
+          )}
+          <Button type="submit" variant="primary" loading={busy} disabled={blocked} icon={<LockOpen size={15} />}>
             Unlock
           </Button>
           {bio?.has && bio.method && (
@@ -263,20 +295,25 @@ export function LockedNotesSettings() {
       {status.hasPassword && (
         <div className="setting-row">
           <div className="grow">
-            <div className="setting-title">{unlocked ? 'Unlocked on this device' : 'Locked'}</div>
-            <div className="muted small">Locked pages lock again after 5 minutes without activity, when the app goes to the background, and when you sign out.</div>
+            <div className="setting-title">Status on this device</div>
+            <div className="muted small">
+              {unlocked ? 'Unlocked. ' : 'Locked: open a locked page to unlock. '}
+              Locked pages lock again after 5 minutes without activity, when the app goes to the background, and when you sign out.
+            </div>
           </div>
-          <Button size="sm" disabled={!unlocked} icon={<Lock size={14} />} onClick={() => void lockNow()}>
-            Lock now
-          </Button>
+          {unlocked && (
+            <Button size="sm" icon={<Lock size={14} />} onClick={() => void lockNow()}>
+              Lock now
+            </Button>
+          )}
         </div>
       )}
-      {status.hasPassword && bio && (
+      {status.hasPassword && bio?.method && (
         <div className="setting-row">
           <div className="grow">
-            <div className="setting-title">Use {bio.method ?? 'Face ID / Touch ID'} for locked notes</div>
+            <div className="setting-title">Use {bio.method} for locked notes</div>
             <div className="muted small">
-              {bio.method ? (unlocked || bio.has ? 'Open locked pages on this device without typing the password.' : 'Unlock your locked notes with the password first.') : 'Set up Face ID, Touch ID or a fingerprint on this device to use this.'}
+              {unlocked || bio.has ? 'Open locked pages on this device without typing the password. Ends after 30 days, on sign-out, and when either password changes.' : 'Unlock your locked notes with the password first.'}
             </div>
           </div>
           <label className="switch">
@@ -320,7 +357,7 @@ export function LockedNotesSettings() {
             <div className="setting-title">Forgot it?</div>
             <div className="muted small">Reset with your sign-in password and a code sent to your email. Your locked pages stay locked.</div>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => void reset()}>
+          <Button size="sm" onClick={() => void reset()}>
             Reset…
           </Button>
         </div>

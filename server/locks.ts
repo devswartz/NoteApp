@@ -25,7 +25,13 @@ import type { LockedNotesStatus, Task } from '../shared/types.ts';
 export { UNLOCK_IDLE_MS };
 import { LOCKED_REMINDER_TITLE, LOCKED_TASK_TITLE } from '../shared/config.ts';
 export { LOCKED_REMINDER_TITLE, LOCKED_TASK_TITLE };
-export const MIN_LOCK_PASSWORD = 4;
+export const MIN_LOCK_PASSWORD = 6;
+/** Wrong tries before unlocking is refused for a while (LOCKOUT_BASE_MS, doubling per further failure, up to LOCKOUT_MAX_MS). */
+export const LOCKOUT_AFTER = 5;
+export const LOCKOUT_BASE_MS = 15 * 60_000;
+export const LOCKOUT_MAX_MS = 24 * 60 * 60_000;
+/** Device (biometric) secrets lapse after this long; the device has to be set up again with the password. */
+export const DEVICE_TTL_MS = 30 * 24 * 60 * 60_000;
 const MAX_LOCK_PASSWORD_BYTES = 72; // bcrypt
 const BCRYPT_ROUNDS = 10;
 const RESET_TTL_MS = 15 * 60_000;
@@ -53,7 +59,7 @@ export async function checkLockPassword(userId: string, password: unknown): Prom
 export async function setLockPassword(userId: string, password: string) {
   const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   db.transaction(() => {
-    db.prepare('UPDATE users SET lock_password_hash = ? WHERE id = ?').run(hash, userId);
+    db.prepare('UPDATE users SET lock_password_hash = ?, lock_failures = 0, lock_blocked_until = NULL WHERE id = ?').run(hash, userId);
     db.prepare('DELETE FROM lock_devices WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM lock_unlocks WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM lock_resets WHERE user_id = ?').run(userId);
@@ -107,26 +113,93 @@ setInterval(() => {
   }
 }, 15_000).unref();
 
+// ── Wrong passwords: lockout ──
+
+export interface LockoutState {
+  failures: number;
+  /** Unlocking is refused until then (null: not locked out). */
+  blockedUntil: string | null;
+}
+
+export function lockoutState(userId: string): LockoutState {
+  const r = db.prepare('SELECT lock_failures AS f, lock_blocked_until AS b FROM users WHERE id = ?').get(userId) as { f: number; b: string | null } | undefined;
+  const blocked = r?.b && r.b > new Date().toISOString() ? r.b : null;
+  return { failures: r?.f ?? 0, blockedUntil: blocked };
+}
+
+/** How long the lockout after the `failures`-th wrong try in a row lasts (0 below LOCKOUT_AFTER). */
+export function lockoutMs(failures: number): number {
+  if (failures < LOCKOUT_AFTER) return 0;
+  return Math.min(LOCKOUT_MAX_MS, LOCKOUT_BASE_MS * 2 ** (failures - LOCKOUT_AFTER));
+}
+
+/** A wrong password or device secret. Returns the new state; `alert` is true the moment it reaches LOCKOUT_AFTER. */
+export function recordFailure(userId: string): LockoutState & { alert: boolean } {
+  const failures = (lockoutState(userId).failures ?? 0) + 1;
+  const ms = lockoutMs(failures);
+  const blockedUntil = ms ? new Date(Date.now() + ms).toISOString() : null;
+  db.prepare('UPDATE users SET lock_failures = ?, lock_blocked_until = ? WHERE id = ?').run(failures, blockedUntil, userId);
+  return { failures, blockedUntil, alert: failures === LOCKOUT_AFTER };
+}
+
+export function recordSuccess(userId: string) {
+  db.prepare('UPDATE users SET lock_failures = 0, lock_blocked_until = NULL WHERE id = ? AND (lock_failures > 0 OR lock_blocked_until IS NOT NULL)').run(userId);
+}
+
 // ── Device secrets (Face ID / Touch ID / Android biometrics) ──
 
-/** A new device secret, handed out once to a sign-in that is unlocked right now. The device keeps it behind biometry. */
-export function createDevice(userId: string, label: unknown): { id: string; secret: string } {
+const installHash = (userId: string, installId: unknown) => (typeof installId === 'string' && installId.length >= 16 && installId.length <= 200 ? sha(`install:${userId}:${installId}`) : null);
+
+/**
+ * A new device secret, handed out once to a sign-in that is unlocked right now. The device keeps it behind biometry.
+ * It only ever works for this sign-in (`sid`: signing out or changing the login password removes it), from this app
+ * install (`installId`, a random id the app keeps), for DEVICE_TTL_MS.
+ */
+export function createDevice(userId: string, sid: string, installId: unknown, label: unknown): { id: string; secret: string; expiresAt: string } {
+  const install = installHash(userId, installId);
+  if (!install) throw new HttpError(400, 'Missing device id');
   const id = newId();
   const secret = crypto.randomBytes(32).toString('base64url');
   const name = typeof label === 'string' ? label.trim().slice(0, 80) || null : null;
-  db.prepare('INSERT INTO lock_devices (id, user_id, secret_hash, label, created_at) VALUES (?, ?, ?, ?, ?)').run(id, userId, sha(secret), name, now());
-  return { id, secret };
+  const expiresAt = new Date(Date.now() + DEVICE_TTL_MS).toISOString();
+  db.transaction(() => {
+    // One per sign-in and install: setting it up again replaces the old one.
+    db.prepare('DELETE FROM lock_devices WHERE user_id = ? AND family_id = ? AND install_hash = ?').run(userId, sid, install);
+    db.prepare('INSERT INTO lock_devices (id, user_id, family_id, install_hash, expires_at, secret_hash, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+      id, userId, sid, install, expiresAt, sha(secret), name, now(),
+    );
+  })();
+  return { id, secret, expiresAt };
 }
 
-export function checkDevice(userId: string, id: unknown, secret: unknown): boolean {
+/** Does this device secret unlock, for this sign-in and app install? Lapsed ones are removed. */
+export function checkDevice(userId: string, sid: string, installId: unknown, id: unknown, secret: unknown): boolean {
   if (typeof id !== 'string' || typeof secret !== 'string' || !secret) return false;
-  const row = db.prepare('SELECT secret_hash FROM lock_devices WHERE id = ? AND user_id = ?').get(id, userId) as { secret_hash: string } | undefined;
+  const row = db.prepare('SELECT secret_hash, family_id, install_hash, expires_at FROM lock_devices WHERE id = ? AND user_id = ?').get(id, userId) as
+    | { secret_hash: string; family_id: string; install_hash: string; expires_at: string }
+    | undefined;
   if (!row) return false;
+  if (row.expires_at <= new Date().toISOString()) {
+    db.prepare('DELETE FROM lock_devices WHERE id = ?').run(id);
+    return false;
+  }
+  if (row.family_id !== sid || row.install_hash !== installHash(userId, installId)) return false;
   const a = Buffer.from(row.secret_hash, 'hex');
   const b = Buffer.from(sha(secret), 'hex');
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
   db.prepare('UPDATE lock_devices SET last_used_at = ? WHERE id = ?').run(now(), id);
   return true;
+}
+
+// ── Upload links for an unlocked sign-in ──
+
+/** The tag in upload links signed for an unlocked sign-in (an opaque stand-in for its id). */
+export const lockFileTag = (sid: string) => sha(`lockfile:${sid}`).slice(0, 24);
+
+/** The sign-in behind a tag, if it belongs to `userId` and is unlocked right now. */
+export function sidForLockTag(userId: string, tag: string): string | null {
+  const live = db.prepare('SELECT family_id FROM lock_unlocks WHERE user_id = ? AND expires_at > ?').all(userId, new Date().toISOString()) as { family_id: string }[];
+  return live.find((r) => lockFileTag(r.family_id) === tag)?.family_id ?? null;
 }
 
 export function removeDevice(userId: string, id: string): boolean {
@@ -141,12 +214,15 @@ export function lockStatus(userId: string, sid: string | null): LockedNotesStatu
     expiresAt,
     idleMs: UNLOCK_IDLE_MS,
     lockedPages: db.prepare('SELECT COUNT(*) FROM pages WHERE locked_by = ? AND deleted_at IS NULL').pluck().get(userId) as number,
+    ...lockoutState(userId),
+    triesBeforeLockout: Math.max(0, LOCKOUT_AFTER - lockoutState(userId).failures),
     devices: (
-      db.prepare('SELECT id, label, created_at AS createdAt, last_used_at AS lastUsedAt FROM lock_devices WHERE user_id = ? ORDER BY created_at').all(userId) as {
+      db.prepare('SELECT id, label, created_at AS createdAt, last_used_at AS lastUsedAt, expires_at AS expiresAt FROM lock_devices WHERE user_id = ? AND expires_at > ? ORDER BY created_at').all(userId, new Date().toISOString()) as {
         id: string;
         label: string | null;
         createdAt: string;
         lastUsedAt: string | null;
+        expiresAt: string;
       }[]
     ),
   };
@@ -193,11 +269,18 @@ export function lockPage(pageId: string, userId: string) {
   if (a.locked) throw new HttpError(409, 'This page is already locked');
   if (!a.canManage) throw new HttpError(403, 'Only people who can edit its notebook can lock a page');
   if (!hasLockPassword(userId)) throw new HttpError(409, 'Set a locked-notes password first', 'no_lock_password');
+  // Everyone who could open it until now (its owner too): their devices drop its offline copy and close its editor.
+  const holders = (
+    db
+      .prepare('SELECT user_id FROM workspace_members WHERE workspace_id = ? UNION SELECT user_id FROM page_shares WHERE page_id = ?')
+      .all(a.workspaceId, pageId) as { user_id: string }[]
+  ).map((r) => r.user_id);
   db.transaction(() => {
     db.prepare('UPDATE pages SET locked_by = ?, locked_at = ? WHERE id = ?').run(userId, now(), pageId);
     db.prepare("UPDATE pages_fts SET text = '' WHERE page_id = ?").run(pageId); // never in search while locked
   })();
   accessChanged(); // everyone else's sockets on it close; caches of who may read its files drop
+  publish({ type: 'page-locked', workspaceId: a.workspaceId, pageId }, { userIds: holders });
   publish({ type: 'tree', workspaceId: a.workspaceId });
   republishTasks(pageId);
   return { workspaceId: a.workspaceId };

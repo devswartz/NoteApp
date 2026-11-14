@@ -39,6 +39,7 @@ import type { CanvasHandle } from '../editor/canvasDoc.ts';
 import { Lock, LockOpen, UserPlus, Users } from 'lucide-react';
 import { LockScreen, lockPageFlow, removeLockFlow } from '../components/LockedNotes.tsx';
 import { lockNow, useLockedNotes } from '../lib/lockedNotes.ts';
+import { markNoCache } from '../lib/pageCache.ts';
 
 /** GET /pages/:id. viaPageShare: opened through a page share (#98), so it isn't in the tree. */
 interface PageInfo {
@@ -240,11 +241,25 @@ export function PageView() {
   useEffect(() => {
     if (isLocked) setReload((n) => n + 1);
   }, [unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Someone locked this page (src/lib/pageCache.ts dropped its offline copy): close the editor at once. Its owner gets
+  // it back (lock screen, or the editor if unlocked) as soon as the tree says it is theirs and locked.
+  const [kicked, setKicked] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === pageId) {
+        setKicked(pageId);
+        setReload((n) => n + 1);
+      }
+    };
+    window.addEventListener('noteapp:page-locked', on);
+    return () => window.removeEventListener('noteapp:page-locked', on);
+  }, [pageId]);
+  if (isLocked) markNoCache(pageId, true); // never in the offline cache
   const settings = usePageSettings(canvas?.doc);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
   const rules = useRuleArea(settings.rules !== 'none' ? scroller : null, article);
 
-  if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
+  if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta) || (kicked === pageId && !isLocked)) {
     return (
       <div className="empty-page">
         <h2>Page not found</h2>

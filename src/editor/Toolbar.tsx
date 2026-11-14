@@ -618,16 +618,17 @@ export function Ribbon() {
   const active = useActiveEditor();
   const editor = active && !active.isDestroyed && active.isEditable ? active : null;
   const s = useEditorState({ editor, selector: ({ editor: e }) => (e && !e.isDestroyed ? ribbonState(e) : null) });
-  const page = useRibbon((r) => r.page);
+  const locked = !!useRibbon((r) => r.locked);
+  const page = useRibbon((r) => (r.locked ? null : r.page));
   const outlineHidden = useRibbon((r) => r.outlineHidden);
   const printable = usePrintSelection(page?.pageId);
   const settings = usePageSettings(page?.doc);
-  const off = !editor || !s;
+  const off = !editor || !s || locked;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
   const history = useHistory(editor, s);
   const button = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts & { always?: boolean } = {}) => {
-    const idle = !opts.always && off;
+    const idle = (!opts.always && off) || locked;
     const disabled = idle || !!opts.disabled;
     const on = !disabled && !!opts.active;
     return (

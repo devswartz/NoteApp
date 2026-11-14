@@ -19,7 +19,7 @@ const LOCK_PW = 'diary-pass-1';
 
 let app: TestApp;
 let owner: TestUser, admin: TestUser, member: TestUser;
-let ws: string, nb: string, sec: string, page: string, task: string, file: string, thread: string, comment: string, version: string;
+let ws: string, nb: string, sec: string, page: string, task: string, file: string, fileUrl: string, thread: string, comment: string, version: string;
 const mcpTokens = new Map<string, { userId: string; scopes: string[]; clientId: string; clientName: string }>();
 
 before(async () => {
@@ -52,7 +52,9 @@ before(async () => {
     headers: { authorization: `Bearer ${owner.token}`, 'content-type': 'text/plain', 'x-filename': `${BODY}.txt` },
     body: BODY,
   });
-  file = (await up.json()).id;
+  const upJson = (await up.json()) as { id: string; url: string };
+  file = upJson.id;
+  fileUrl = upJson.url;
   // An edit page share for the member, so a share doesn't keep the page reachable either.
   await app.call('POST', `/pages/${page}/shares`, owner.token, { userId: member.user.id, canEdit: true });
 });
@@ -301,22 +303,84 @@ test('unlocks lapse after idle time; sign-out locks that sign-in', async () => {
   assert.equal((await app.call('GET', `/pages/${page}/doc`, t2.token)).status, 404, 'signed out: locked again');
 });
 
+const INSTALL = 'install-0123456789abcdef';
+
 test('devices: a device secret unlocks like the password, only while issued, and dies with a password change', async () => {
-  assert.equal((await lockedNotes(owner, '/devices', { label: 'iPhone' })).status, 403, 'needs an unlock first');
+  assert.equal((await lockedNotes(owner, '/devices', { label: 'iPhone', installId: INSTALL })).status, 403, 'needs an unlock first');
   await lockedNotes(owner, '/unlock', { password: LOCK_PW });
-  const dev = (await lockedNotes(owner, '/devices', { label: 'iPhone' })).data as { id: string; secret: string };
+  const dev = (await lockedNotes(owner, '/devices', { label: 'iPhone', installId: INSTALL })).data as { id: string; secret: string };
   await lockedNotes(owner, '/lock');
-  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: 'nope' })).status, 401);
-  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: dev.secret })).status, 200);
+  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: 'nope', installId: INSTALL })).status, 401);
+  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: dev.secret, installId: 'another-install-0000' })).status, 401, 'another app install');
+  // Another sign-in of the same account can't use it.
+  const login = await app.call('POST', '/auth/login', undefined, { email: owner.user.email, password: 'password123' });
+  assert.equal((await app.call('POST', '/locked-notes/unlock', login.data.accessToken, { deviceId: dev.id, secret: dev.secret, installId: INSTALL })).status, 401, 'another sign-in');
+  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: dev.secret, installId: INSTALL })).status, 200);
   assert.equal((await app.call('GET', `/pages/${page}/doc`, owner.token)).status, 200);
   assert.equal((await app.call('GET', '/locked-notes', owner.token)).data.devices.length, 1);
   // Change the password: the device and every unlock end.
   assert.equal((await lockedNotes(owner, '/password', { password: 'new-pass-2', currentPassword: 'wrong' })).status, 400);
   assert.equal((await lockedNotes(owner, '/password', { password: 'new-pass-2', currentPassword: LOCK_PW })).status, 200);
   await lockedNotes(owner, '/lock');
-  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: dev.secret })).status, 401);
+  assert.equal((await lockedNotes(owner, '/unlock', { deviceId: dev.id, secret: dev.secret, installId: INSTALL })).status, 401);
   assert.equal((await lockedNotes(owner, '/password', { password: LOCK_PW, currentPassword: 'new-pass-2' })).status, 200);
   await lockedNotes(owner, '/lock');
+});
+
+test('devices: sign-out, a login-password change and 30 days each end a device secret', async () => {
+  const { db } = await import('../server/db.ts');
+  const u = await app.signUp('LkDevices');
+  await app.call('POST', '/locked-notes/password', u.token, { password: 'device-pass' }); // unlocks this sign-in
+  const mk = async (token: string) => (await app.call('POST', '/locked-notes/devices', token, { installId: INSTALL })).data as { id: string; secret: string };
+  const use = (token: string, d: { id: string; secret: string }) => app.call('POST', '/locked-notes/unlock', token, { deviceId: d.id, secret: d.secret, installId: INSTALL });
+  // 30 days.
+  const d1 = await mk(u.token);
+  db.prepare("UPDATE lock_devices SET expires_at = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(d1.id);
+  assert.equal((await use(u.token, d1)).status, 401, 'lapsed');
+  // Sign-out of that sign-in.
+  const login = await app.call('POST', '/auth/login', undefined, { email: u.user.email, password: 'password123' });
+  await app.call('POST', '/locked-notes/unlock', login.data.accessToken, { password: 'device-pass' });
+  await mk(login.data.accessToken);
+  await app.call('POST', '/auth/logout', undefined, { refreshToken: login.data.refreshToken });
+  assert.equal(db.prepare('SELECT COUNT(*) FROM lock_devices WHERE user_id = ?').pluck().get(u.user.id), 0, 'gone with the sign-in');
+  // Login-password change.
+  const d3 = await mk(u.token);
+  assert.equal((await use(u.token, d3)).status, 200);
+  const changed = await app.call('POST', '/me/password', u.token, { currentPassword: 'password123', newPassword: 'password456' });
+  assert.equal(changed.status, 200);
+  assert.equal(db.prepare('SELECT COUNT(*) FROM lock_devices WHERE user_id = ?').pluck().get(u.user.id), 0, 'gone with a password change');
+});
+
+test('lockout: 5 wrong tries pause unlocking for 15 minutes (doubling up to 24 h), the owner is emailed, a right password resets', async () => {
+  const { db } = await import('../server/db.ts');
+  const { outbox } = await import('../server/mail.ts');
+  const { lockoutMs } = await import('../server/locks.ts');
+  assert.deepEqual([1, 4, 5, 6, 7, 20].map(lockoutMs), [0, 0, 15 * 60_000, 30 * 60_000, 60 * 60_000, 24 * 3600_000]);
+  const u = await app.signUp('LkLockout');
+  await app.call('POST', '/locked-notes/password', u.token, { password: 'lockout-pass' });
+  await app.call('POST', '/locked-notes/lock', u.token);
+  const statuses: number[] = [];
+  let last: { error: string; code: string } = { error: '', code: '' };
+  for (let i = 0; i < 5; i++) {
+    const r = await app.call('POST', '/locked-notes/unlock', u.token, { password: `wrong-${i}` });
+    statuses.push(r.status);
+    last = r.data;
+  }
+  assert.deepEqual(statuses, [400, 400, 400, 400, 429]);
+  assert.equal(last.code, 'locked_out');
+  const status = (await app.call('GET', '/locked-notes', u.token)).data;
+  assert.ok(status.blockedUntil && Date.parse(status.blockedUntil) - Date.now() > 14 * 60_000, 'about 15 minutes');
+  assert.equal((await app.call('POST', '/locked-notes/unlock', u.token, { password: 'lockout-pass' })).status, 429, 'even the right one waits');
+  const mail = outbox.filter((m) => m.to === u.user.email && /Someone tried to unlock/.test(m.subject));
+  assert.equal(mail.length, 1, 'one email at the fifth failure');
+  assert.match(mail[0].text, /When: .+\nDevice: /);
+  // Time passes: the right password works and the count starts over.
+  db.prepare("UPDATE users SET lock_blocked_until = '2000-01-01T00:00:00.000Z' WHERE id = ?").run(u.user.id);
+  (await import('../server/ratelimit.ts')).resetRateLimits();
+  assert.equal((await app.call('POST', '/locked-notes/unlock', u.token, { password: 'lockout-pass' })).status, 200);
+  assert.equal((await app.call('GET', '/locked-notes', u.token)).data.failures, 0);
+  // Too short a password is refused.
+  assert.equal((await app.call('POST', '/locked-notes/password', u.token, { password: '12345', currentPassword: 'lockout-pass' })).status, 400);
 });
 
 test('reset: login password, then the emailed code; it sets a new password and reveals nothing', async () => {
@@ -335,6 +399,41 @@ test('reset: login password, then the emailed code; it sets a new password and r
   assert.equal((await lockedNotes(owner, '/reset', { code, newPassword: 'again-pass-4' })).status, 400, 'the code works once');
   assert.equal((await lockedNotes(owner, '/unlock', { password: LOCK_PW })).status, 400, 'old password is gone');
   assert.equal((await lockedNotes(owner, '/unlock', { password: 'reset-pass-3' })).status, 200);
+  await lockedNotes(owner, '/lock');
+});
+
+test('upload links: a file on a locked page opens only with a link signed for an unlocked sign-in; old links stop working', async () => {
+  const { signUploadPath } = await import('../shared/fileLinks.ts');
+  const { clearFileReadCache } = await import('../server/routes/files.ts');
+  (await import('../server/ratelimit.ts')).resetRateLimits();
+  const plainKey = (await app.call('GET', '/files/key', owner.token)).data;
+  const get = (key: unknown) => fetch(app.origin + signUploadPath(fileUrl, key as never)).then((r) => r.status);
+  clearFileReadCache();
+  assert.equal(await get(plainKey), 403, 'locked: the ordinary link is refused, owner or not');
+  assert.equal(await get(admin.fileKey), 403);
+  assert.equal((await app.call('GET', '/locked-notes/file-key', owner.token)).status, 403, 'no key while locked');
+  await lockedNotes(owner, '/unlock', { password: 'reset-pass-3' });
+  const lockedKey = (await app.call('GET', '/locked-notes/file-key', owner.token)).data;
+  assert.ok(lockedKey.l, 'tagged');
+  assert.equal(await get(lockedKey), 200, 'unlocked sign-in');
+  assert.equal(await get(plainKey), 403, 'still not with an ordinary link');
+  // Another sign-in's tag, or a forged one, doesn't help.
+  assert.equal(await get({ ...lockedKey, l: '0'.repeat(24) }), 403);
+  await lockedNotes(owner, '/lock');
+  assert.equal(await get(lockedKey), 403, 'relocked: the link stops working');
+});
+
+test('locking a page tells every device that had it (all members and share holders) to drop it', async () => {
+  const p = (await app.call('POST', `/sections/${sec}/pages`, owner.token, { title: 'Soon locked' })).data.id;
+  const msgs: string[] = [];
+  const s = new WS(`${app.wsOrigin}/api/events`, ['noteapp.v1', `bearer.${member.token}`]);
+  s.on('message', (d) => msgs.push(String(d)));
+  await new Promise((r) => s.once('message', r));
+  await lockedNotes(owner, '/unlock', { password: 'reset-pass-3' });
+  assert.equal((await app.call('POST', `/pages/${p}/lock`, owner.token)).status, 200);
+  await waitFor(() => msgs.some((m) => m.includes('"page-locked"') && m.includes(p)), 3000, 'page-locked event');
+  s.close();
+  await app.call('POST', `/pages/${p}/lock/remove`, owner.token, { password: 'reset-pass-3' });
   await lockedNotes(owner, '/lock');
 });
 

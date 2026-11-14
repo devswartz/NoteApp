@@ -35,11 +35,18 @@ interface RibbonState {
   page: RibbonPage | null;
   collapsed: boolean;
   outlineHidden: boolean;
+  /** A locked page's lock screen is showing: every ribbon control is off (src/components/LockedNotes.tsx). */
+  locked?: boolean;
 }
 
 export const useRibbon = create<RibbonState>(() => ({ page: null, collapsed: readFlag(COLLAPSED_KEY), outlineHidden: readFlag(OUTLINE_KEY) }));
 
 /** The page the ribbon's Page and View groups act on (PageView sets it while a page is open). */
+/** The lock screen is up (or gone): the whole ribbon is disabled while it is. */
+export function setRibbonLocked(locked: boolean) {
+  useRibbon.setState({ locked });
+}
+
 export function setRibbonPage(page: RibbonPage | null) {
   const cur = useRibbon.getState().page;
   if (cur?.pageId === page?.pageId && cur?.doc === page?.doc && cur?.canEdit === page?.canEdit) return;

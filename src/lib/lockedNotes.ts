@@ -7,6 +7,21 @@ import { ApiError, del, get, post } from '../api.ts';
 import { platform } from '../platform/index.ts';
 import type { LockedNotesBio } from '../platform/capacitor.ts';
 import type { LockedNotesStatus } from '../../shared/types.ts';
+import type { FileKey } from '../../shared/fileLinks.ts';
+import { setLockedFileKey } from '../api.ts';
+import { useStore } from '../store/state.ts';
+import { dropLockedPageCaches } from './pageCache.ts';
+
+const INSTALL_KEY = 'noteapp.installId';
+/** A random id for this app install: device (biometric) secrets only work from the install that set them up. */
+export function installId(): string {
+  let id = platform.kv.get(INSTALL_KEY);
+  if (!id) {
+    id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+    platform.kv.set(INSTALL_KEY, id);
+  }
+  return id;
+}
 
 interface LockState {
   status: LockedNotesStatus | null;
@@ -28,12 +43,28 @@ function setUnlocked(unlocked: boolean) {
   if (useLockedNotes.getState().unlocked === unlocked) return;
   useLockedNotes.setState({ unlocked });
   if (unlocked) lastActivity = Date.now();
+  else {
+    // Locked again: links signed for the unlocked sign-in stop working, and no copy of a locked page stays here.
+    setLockedFileKey(null);
+    void dropLockedPageCaches(useStore.getState().tree);
+  }
+}
+
+/** While unlocked, upload links are signed with a key for this sign-in, so images on locked pages load (server/routes/files.ts). */
+async function loadLockedFileKey() {
+  try {
+    setLockedFileKey(await get<FileKey>('/locked-notes/file-key'));
+  } catch {
+    setLockedFileKey(null);
+  }
 }
 
 export async function refreshLockStatus(): Promise<LockedNotesStatus | null> {
   try {
     const status = await get<LockedNotesStatus>('/locked-notes');
-    useLockedNotes.setState({ status, unlocked: status.unlocked });
+    if (status.unlocked && !useLockedNotes.getState().unlocked) await loadLockedFileKey();
+    useLockedNotes.setState({ status });
+    setUnlocked(status.unlocked);
     return status;
   } catch {
     return null;
@@ -43,6 +74,7 @@ export async function refreshLockStatus(): Promise<LockedNotesStatus | null> {
 /** Unlock with the locked-notes password. Throws ApiError (400 wrong password, 429 too many tries). */
 export async function unlockWithPassword(password: string) {
   await post('/locked-notes/unlock', { password });
+  await loadLockedFileKey();
   setUnlocked(true);
   void refreshLockStatus();
 }
@@ -56,7 +88,7 @@ export async function unlockWithBiometrics(userId: string): Promise<BioUnlock> {
   const r = await bio.read(userId);
   if (r.result !== 'ok') return r.result;
   try {
-    await post('/locked-notes/unlock', { deviceId: r.cred.deviceId, secret: r.cred.secret });
+    await post('/locked-notes/unlock', { deviceId: r.cred.deviceId, secret: r.cred.secret, installId: installId() });
   } catch (e) {
     // The password was changed or reset (or the device removed): this device has to be set up again.
     if (e instanceof ApiError && e.status === 401) {
@@ -65,6 +97,7 @@ export async function unlockWithBiometrics(userId: string): Promise<BioUnlock> {
     }
     throw e;
   }
+  await loadLockedFileKey();
   setUnlocked(true);
   void refreshLockStatus();
   return 'ok';
@@ -77,7 +110,7 @@ export async function unlockWithBiometrics(userId: string): Promise<BioUnlock> {
 export async function enableBiometrics(userId: string, label: string): Promise<boolean> {
   const bio = lockedNotesBio();
   if (!bio) return false;
-  const cred = await post<{ id: string; secret: string }>('/locked-notes/devices', { label });
+  const cred = await post<{ id: string; secret: string }>('/locked-notes/devices', { label, installId: installId() });
   const saved = await bio.save(userId, { deviceId: cred.id, secret: cred.secret }).catch(() => false);
   if (!saved) await removeDevice(cred.id);
   void refreshLockStatus();
@@ -106,6 +139,7 @@ export async function lockNow() {
 /** Set the locked-notes password (or change it: `current` is then required). Unlocks this sign-in. */
 export async function saveLockPassword(password: string, current?: string) {
   await post('/locked-notes/password', current === undefined ? { password } : { password, currentPassword: current });
+  await loadLockedFileKey();
   setUnlocked(true);
   await refreshLockStatus();
 }

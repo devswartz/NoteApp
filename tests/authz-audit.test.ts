@@ -341,6 +341,8 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/locked-notes/password', path: () => '/locked-notes/password', body: () => ({ password: 'abc' }), expect: { stranger: 400, viewer: 400, member: 400 } }, // too short
   { method: 'POST', route: '/locked-notes/unlock', path: () => '/locked-notes/unlock', body: () => ({ password: 'whatever' }), expect: { stranger: 409, viewer: 409, member: 409 } },
   { method: 'POST', route: '/locked-notes/lock', path: () => '/locked-notes/lock', expect: { stranger: 200, ...READ } },
+  // Upload-link key for an unlocked sign-in: nobody here is unlocked.
+  { method: 'GET', route: '/locked-notes/file-key', path: () => '/locked-notes/file-key', expect: { stranger: 403, viewer: 403, member: 403 } },
   { method: 'POST', route: '/locked-notes/keepalive', path: () => '/locked-notes/keepalive', expect: { stranger: 200, ...READ } },
   { method: 'POST', route: '/locked-notes/devices', path: () => '/locked-notes/devices', body: () => ({ label: 'Phone' }), expect: { stranger: 403, viewer: 403, member: 403 } },
   { method: 'DELETE', route: '/locked-notes/devices/:id', path: () => `/locked-notes/devices/${crypto.randomUUID()}`, expect: { stranger: 404, viewer: 404, member: 404 } },

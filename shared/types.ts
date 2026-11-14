@@ -201,8 +201,13 @@ export interface LockedNotesStatus {
   /** Idle time after which locked pages lock again. */
   idleMs: number;
   lockedPages: number;
+  /** Wrong tries in a row, and until when unlocking is refused (null: it isn't). */
+  failures: number;
+  blockedUntil: string | null;
+  /** Wrong tries left before a lockout. */
+  triesBeforeLockout: number;
   /** Devices that can unlock with Face ID / Touch ID / biometrics. */
-  devices: { id: string; label: string | null; createdAt: string; lastUsedAt: string | null }[];
+  devices: { id: string; label: string | null; createdAt: string; lastUsedAt: string | null; expiresAt: string }[];
 }
 
 export interface Tree {
@@ -452,7 +457,9 @@ export type ServerEvent =
   /** The pages shared with you (GET /shared-pages) changed: refetch. Sent only to the people affected. */
   | { type: 'shared-pages' }
   /** The server can't replay what was missed: reload tree, tasks and members. */
-  | { type: 'resync' };
+  | { type: 'resync' }
+  /** A page was locked (server/locks.ts): drop every copy of it on this device (offline cache, open editor). */
+  | { type: 'page-locked'; workspaceId: string; pageId: string };
 
 /**
  * Envelope on the /api/events WebSocket. `seq` increases per server process;

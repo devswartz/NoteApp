@@ -1,12 +1,15 @@
 // Face ID / Touch ID for locked notes: the platform glue (src/platform/capacitor.ts createLockedNotesBiometrics) with
-// fake BiometricAuth and SecureStorage plugins. The real iOS/Android path needs a device (see CHANGELOG).
+// fake BiometricAuth, SecureStorage and kv. The real iOS/Android path needs a device.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createLockedNotesBiometrics, lockedNotesKey } from '../src/platform/capacitor.ts';
+import { createLockedNotesBiometrics, lockedNotesKey, lockedNotesMarker } from '../src/platform/capacitor.ts';
 
-function fakes(opts: { biometryType?: number; isAvailable?: boolean; fail?: string | null } = {}) {
+function fakes(opts: { biometryType?: number; isAvailable?: boolean; fail?: string | null; withSet?: boolean } = {}) {
   const store = new Map<string, string>();
+  const access = new Map<string, number | undefined>();
+  const reads: string[] = [];
   const calls: { reason?: string; allowDeviceCredential?: boolean }[] = [];
+  const kvMap = new Map<string, string>();
   let fail = opts.fail ?? null;
   const native = {
     os: 'ios' as const,
@@ -18,57 +21,77 @@ function fakes(opts: { biometryType?: number; isAvailable?: boolean; fail?: stri
       },
     },
     SecureStorage: {
-      getItem: async (k: string) => store.get(k) ?? null,
+      getItem: async (k: string) => (reads.push(k), store.get(k) ?? null),
       setItem: async (k: string, v: string) => void store.set(k, v),
       removeItem: async (k: string) => void store.delete(k),
       setDefaultKeychainAccess: async () => {},
+      ...(opts.withSet === false
+        ? {}
+        : {
+            set: async (k: string, v: unknown, _c?: boolean, _s?: boolean, a?: number) => {
+              store.set(k, String(v));
+              access.set(k, a);
+            },
+          }),
     },
   };
-  return { native: native as never, store, calls, setFail: (f: string | null) => (fail = f) };
+  const kv = { get: (k: string) => kvMap.get(k) ?? null, set: (k: string, v: string) => void kvMap.set(k, v), remove: (k: string) => void kvMap.delete(k) };
+  return { native: native as never, kv, store, access, reads, calls, kvMap, setFail: (f: string | null) => (fail = f) };
 }
+const make = (f: ReturnType<typeof fakes>) => createLockedNotesBiometrics(f.native, f.kv);
 
-test('method: Face ID on an iPhone with Face ID; nothing on a passcode-only device', async () => {
-  assert.equal(await createLockedNotesBiometrics(fakes({ biometryType: 2 }).native).method(), 'Face ID');
-  assert.equal(await createLockedNotesBiometrics(fakes({ biometryType: 1 }).native).method(), 'Touch ID');
-  assert.equal(await createLockedNotesBiometrics(fakes({ biometryType: 0 }).native).method(), null);
-  assert.equal(await createLockedNotesBiometrics(fakes({ isAvailable: false }).native).method(), null);
+test('method: Face ID / Touch ID; nothing on a passcode-only device or without biometrics', async () => {
+  assert.equal(await make(fakes({ biometryType: 2 })).method(), 'Face ID');
+  assert.equal(await make(fakes({ biometryType: 1 })).method(), 'Touch ID');
+  assert.equal(await make(fakes({ biometryType: 0 })).method(), null);
+  assert.equal(await make(fakes({ isAvailable: false })).method(), null);
 });
 
-test('save asks for biometrics first (no passcode fallback) and stores per user; read asks again', async () => {
+test('save asks for biometrics first (no passcode fallback), stores this-device-only, and sets only a marker in kv', async () => {
   const f = fakes();
-  const bio = createLockedNotesBiometrics(f.native);
-  assert.equal(await bio.has('u1'), false);
-  assert.deepEqual(await bio.read('u1'), { result: 'none' });
-  assert.equal(f.calls.length, 0, 'nothing to read: no prompt');
+  const bio = make(f);
   assert.equal(await bio.save('u1', { deviceId: 'd1', secret: 's1' }), true);
   assert.equal(f.calls.at(-1)?.allowDeviceCredential, false);
-  assert.ok(f.store.has(lockedNotesKey('u1')));
-  assert.equal(await bio.has('u1'), true);
-  assert.equal(await bio.has('u2'), false, 'per user');
-  assert.deepEqual(await bio.read('u1'), { result: 'ok', cred: { deviceId: 'd1', secret: 's1' } });
-  assert.equal(f.calls.length, 2, 'read prompted again');
+  assert.equal(f.access.get(lockedNotesKey('u1')), 4, 'whenPasscodeSetThisDeviceOnly');
+  assert.equal(f.kvMap.get(lockedNotesMarker('u1')), '1');
+  assert.ok(![...f.kvMap.values()].some((v) => v.includes('s1')), 'the secret is never in kv');
 });
 
-test('a cancelled or unavailable check stores nothing and hands back nothing', async () => {
-  const f = fakes({ fail: 'userCancel' });
-  const bio = createLockedNotesBiometrics(f.native);
-  assert.equal(await bio.save('u1', { deviceId: 'd1', secret: 's1' }), false);
-  assert.equal(f.store.size, 0);
-  f.setFail(null);
+test('has() never touches the keychain or prompts; read() prompts before reading the secret', async () => {
+  const f = fakes();
+  const bio = make(f);
   await bio.save('u1', { deviceId: 'd1', secret: 's1' });
+  const prompts = f.calls.length;
+  f.reads.length = 0;
+  assert.equal(await bio.has('u1'), true);
+  assert.equal(await bio.has('u2'), false);
+  assert.equal(f.reads.length, 0, 'no keychain read');
+  assert.equal(f.calls.length, prompts, 'no prompt');
   f.setFail('userCancel');
   assert.deepEqual(await bio.read('u1'), { result: 'cancelled' });
-  f.setFail('biometryLockout');
-  assert.deepEqual(await bio.read('u1'), { result: 'unavailable' });
+  assert.equal(f.reads.length, 0, 'a cancelled prompt reads nothing');
+  f.setFail(null);
+  assert.deepEqual(await bio.read('u1'), { result: 'ok', cred: { deviceId: 'd1', secret: 's1' } });
+  assert.equal(f.reads.length, 1);
 });
 
-test('forget removes the credential; garbage in the keychain counts as none', async () => {
-  const f = fakes();
-  const bio = createLockedNotesBiometrics(f.native);
+test('cancelled or unavailable checks store nothing; forget clears marker and secret; a lost secret clears the marker', async () => {
+  const f = fakes({ fail: 'userCancel', withSet: false });
+  const bio = make(f);
+  assert.equal(await bio.save('u1', { deviceId: 'd1', secret: 's1' }), false);
+  assert.equal(f.store.size, 0);
+  assert.equal(await bio.has('u1'), false);
+  f.setFail(null);
   await bio.save('u1', { deviceId: 'd1', secret: 's1' });
+  f.setFail('biometryLockout');
+  assert.deepEqual(await bio.read('u1'), { result: 'unavailable' });
+  f.setFail(null);
   await bio.forget('u1');
   assert.equal(await bio.has('u1'), false);
-  f.store.set(lockedNotesKey('u1'), 'not json');
-  assert.equal(await bio.has('u1'), false);
+  assert.equal(f.store.size, 0);
   assert.deepEqual(await bio.read('u1'), { result: 'none' });
+  // Marker without a secret (keychain wiped, e.g. passcode removed): none, and the marker goes.
+  f.kvMap.set(lockedNotesMarker('u1'), '1');
+  assert.deepEqual(await bio.read('u1'), { result: 'none' });
+  assert.equal(await bio.has('u1'), false);
 });

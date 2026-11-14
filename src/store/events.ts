@@ -1,6 +1,7 @@
 // Live event client: applies server-pushed task/tree/member changes.
 // Tracks the server's boot id + last sequence number, and reconnects with
 // ?since= so missed events are replayed; on `resync` it reloads everything.
+import { dropPageCache } from '../lib/pageCache.ts';
 import { backoffMs, freshAccessToken, reauthorize, wsProtocols, wsUrl } from '../api.ts';
 import { set, st } from './state.ts';
 import { loadMembers, loadTags, loadTeams, loadTree, loadWorkspaces } from './workspace.ts';
@@ -156,6 +157,12 @@ function handle(ev: ServerEvent) {
       receiveNotification(ev.notification);
       if (ev.notification.kind === 'mention' || ev.notification.kind === 'shared' || ev.notification.kind === 'assigned')
         toast(ev.notification.title);
+      break;
+    case 'page-locked':
+      // Never keep a locked page on a device: drop its offline copy (closing its editor's cache first), then tell an
+      // open page view, which closes its editor (for anyone but the owner the page is now gone).
+      void dropPageCache(ev.pageId).finally(() => window.dispatchEvent(new CustomEvent('noteapp:page-locked', { detail: ev.pageId })));
+      if (ev.workspaceId === wsId) debounce('tree', () => void loadTree(), 100);
       break;
     case 'templates':
       if (ev.workspaceId === wsId) debounce('templates', () => void loadUserTemplates(ev.workspaceId));

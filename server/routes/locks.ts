@@ -36,6 +36,9 @@ import {
   validLockPassword,
 } from '../locks.ts';
 import { escapeHtml, sendMail } from '../mail.ts';
+import { clientIp } from '../ratelimit.ts';
+import { LOCKOUT_AFTER, lockFileTag, lockoutState, recordFailure, recordSuccess } from '../locks.ts';
+import { fileKeyFor } from '../auth.ts';
 import { APP_NAME } from '../../shared/config.ts';
 
 export const lockRoutes = Router();
@@ -57,16 +60,66 @@ async function limited(req: Request, res: Response, check: () => boolean | Promi
   return ok;
 }
 
+const waitText = (until: string) => {
+  const min = Math.max(1, Math.ceil((Date.parse(until) - Date.now()) / 60_000));
+  return min < 60 ? `${min} minute${min === 1 ? '' : 's'}` : `${Math.ceil(min / 60)} hour${Math.ceil(min / 60) === 1 ? '' : 's'}`;
+};
+const lockedOut = (until: string) => new HttpError(429, `Too many wrong tries. Try again in ${waitText(until)}.`, 'locked_out');
+
+/** Tell the owner someone keeps getting the locked-notes password wrong (at the LOCKOUT_AFTER-th failure). */
+async function alertOwner(req: Request) {
+  const u = db.prepare('SELECT email, name FROM users WHERE id = ?').get(req.user.id) as { email: string; name: string };
+  const when = new Date().toUTCString();
+  const device = `${String(req.get('user-agent') ?? 'unknown device').slice(0, 200)} (IP ${clientIp(req).ip})`;
+  const text = `Hi ${u.name},\n\nSomeone tried to unlock your ${APP_NAME} locked notes and got the password wrong ${LOCKOUT_AFTER} times in a row.\n\nWhen: ${when}\nDevice: ${device}\n\nUnlocking is paused for a while. If this wasn't you, change your sign-in password now: whoever did this is signed in to your account.`;
+  await sendMail({
+    to: u.email,
+    subject: `Someone tried to unlock your ${APP_NAME} locked notes`,
+    text,
+    html: `<p>Hi ${escapeHtml(u.name)},</p><p>Someone tried to unlock your ${escapeHtml(APP_NAME)} locked notes and got the password wrong ${LOCKOUT_AFTER} times in a row.</p><p>When: ${escapeHtml(when)}<br>Device: ${escapeHtml(device)}</p><p>Unlocking is paused for a while. If this wasn't you, change your sign-in password now: whoever did this is signed in to your account.</p>`,
+  });
+}
+
+/**
+ * A locked-notes password or device-secret check, with the per-user lockout (server/locks.ts) on top of the rate limit:
+ * after LOCKOUT_AFTER wrong tries in a row unlocking is refused for 15 minutes, doubling per further failure up to
+ * 24 hours, and the owner is emailed. Resolves true when right; throws (400 with tries left, or 429) when wrong.
+ * null: refused by the rate limiter (already answered).
+ */
+async function guarded(req: Request, res: Response, check: () => boolean | Promise<boolean>, wrong = 'Incorrect password', code = 'wrong_password'): Promise<true | null> {
+  const before = lockoutState(req.user.id);
+  if (before.blockedUntil) throw lockedOut(before.blockedUntil);
+  const ok = await limited(req, res, check);
+  if (ok === null) return null;
+  if (ok) {
+    recordSuccess(req.user.id);
+    return true;
+  }
+  const after = recordFailure(req.user.id);
+  if (after.alert) await alertOwner(req).catch(() => {});
+  if (after.blockedUntil) throw lockedOut(after.blockedUntil);
+  const left = LOCKOUT_AFTER - after.failures;
+  throw new HttpError(code === 'device_revoked' ? 401 : 400, `${wrong}. ${left} ${left === 1 ? 'try' : 'tries'} left before unlocking is paused for 15 minutes.`, code);
+}
+
 lockRoutes.get('/locked-notes', h((req) => lockStatus(req.user.id, req.sid)));
+
+/** A key for signing upload links that also opens files on this sign-in's unlocked locked pages (server/routes/files.ts). */
+lockRoutes.get(
+  '/locked-notes/file-key',
+  h((req) => {
+    if (!unlockExpiry(req.user.id, req.sid)) throw new HttpError(403, 'Unlock your locked notes first', 'locked');
+    return fileKeyFor(req.user.id, undefined, lockFileTag(req.sid!));
+  }),
+);
 
 lockRoutes.post(
   '/locked-notes/password',
   h(async (req, res) => {
     const password = validLockPassword(req.body?.password);
     if (hasLockPassword(req.user.id)) {
-      const ok = await limited(req, res, () => checkLockPassword(req.user.id, req.body?.currentPassword));
+      const ok = await guarded(req, res, () => checkLockPassword(req.user.id, req.body?.currentPassword), 'Your current locked-notes password is incorrect');
       if (ok === null) return;
-      if (!ok) throw new HttpError(400, 'Your current locked-notes password is incorrect');
     }
     await setLockPassword(req.user.id, password);
     // Whoever just chose the password is unlocked on this sign-in (they are about to lock something).
@@ -82,9 +135,10 @@ lockRoutes.post(
     if (!hasLockPassword(req.user.id)) throw new HttpError(409, 'Set a locked-notes password first', 'no_lock_password');
     const b = req.body ?? {};
     const viaDevice = typeof b.deviceId === 'string';
-    const ok = await limited(req, res, () => (viaDevice ? checkDevice(req.user.id, b.deviceId, b.secret) : checkLockPassword(req.user.id, b.password)));
+    const ok = viaDevice
+      ? await guarded(req, res, () => checkDevice(req.user.id, sid, b.installId, b.deviceId, b.secret), 'This device can no longer unlock locked notes. Use your password', 'device_revoked')
+      : await guarded(req, res, () => checkLockPassword(req.user.id, b.password));
     if (ok === null) return;
-    if (!ok) throw new HttpError(viaDevice ? 401 : 400, viaDevice ? 'This device can no longer unlock locked notes. Use your password.' : 'Incorrect password', viaDevice ? 'device_revoked' : 'wrong_password');
     return { expiresAt: grantUnlock(req.user.id, sid) };
   }),
 );
@@ -109,7 +163,7 @@ lockRoutes.post(
   '/locked-notes/devices',
   h((req) => {
     if (!unlockExpiry(req.user.id, req.sid)) throw new HttpError(403, 'Unlock your locked notes with your password first', 'locked');
-    return createDevice(req.user.id, req.body?.label);
+    return createDevice(req.user.id, req.sid!, req.body?.installId, req.body?.label);
   }),
 );
 
@@ -169,9 +223,8 @@ lockRoutes.post(
     // Existence first, without revealing anything to non-owners (404 for them, like every other route).
     const owner = db.prepare('SELECT locked_by FROM pages WHERE id = ?').pluck().get(id) as string | null | undefined;
     if (owner !== req.user.id) throw new HttpError(404, 'Not found');
-    const ok = await limited(req, res, () => checkLockPassword(req.user.id, req.body?.password));
+    const ok = await guarded(req, res, () => checkLockPassword(req.user.id, req.body?.password));
     if (ok === null) return;
-    if (!ok) throw new HttpError(400, 'Incorrect password', 'wrong_password');
     removeLock(id, req.user.id);
     return { ok: true };
   }),
