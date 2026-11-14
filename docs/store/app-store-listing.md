@@ -1,6 +1,6 @@
 # App Store listing: Notivelo (iOS)
 
-Copy for App Store Connect, version 0.4.4. Every limit below is Apple's; the counts are characters as App Store Connect counts them (checked by script). Screenshots are in `docs/store/ios-6.9/` (iPhone 6.9", 1320 x 2868) and `docs/store/ipad-13/` (iPad 13", 2064 x 2752), five each, in order. The GitHub social preview (`github-social-preview.png`) and link preview (`og-image.png`) are not App Store assets.
+Copy for App Store Connect, version 0.4.4. Every limit below is Apple's; the counts are characters as App Store Connect counts them (checked by script). Screenshots are in `docs/store/ios-6.9/` (iPhone 6.9", 1320 x 2868) and `docs/store/ipad-13/` (iPad 13", 2064 x 2752), five each, in order. Mac App Store screenshots are in `docs/store/mac/` (2880 x 1800, same five slides; `node scripts/store-assets/capture.cjs mac`, then `node scripts/store-assets/compose.cjs mac` and `python scripts/store-assets/flatten.py`). The GitHub social preview (`github-social-preview.png`) and link preview (`og-image.png`) are not App Store assets.
 
 Pricing is free for now. Paid plans may come later, so nothing here promises "free forever" or "no subscriptions". Keep it that way if you edit.
 
