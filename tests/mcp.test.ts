@@ -354,6 +354,58 @@ test('append_box and replace_box_content: live in an open editor, versioned, tas
   editor.destroy();
 });
 
+test('task notes: read_page shows them nested; a rewrite keeps, replaces or leaves them as plain lines, never drops them', async () => {
+  const u = await app.signUp('Noter');
+  const t = tokenFor(u);
+  const md = [
+    '- [ ] Pack for the trip',
+    '  - [x] passport',
+    '  - [ ] adapter',
+    '  - pack light',
+    '- [ ] Call the hotel',
+    '  - ask about late check-in',
+    '- [ ] Old plan',
+    '  - stale note',
+  ].join('\n');
+  const page = await json(t, 'create_page', { section_id: await firstSection(u), title: 'Trip', content: md });
+  // Written nested: the indented lines are the tasks' notes; "- [ ]" lines in them are a plain checklist, not tasks.
+  const read = (await call(t, 'read_page', { page_id: page.page_id })).text;
+  assert.match(read, /- \[ \] Pack for the trip\n {2}- \[x\] passport\n {2}- \[ \] adapter\n {2}- pack light/);
+  assert.match(read, /- \[ \] Call the hotel\n {2}- ask about late check-in/);
+  let tasks = (await json(t, 'list_tasks', { page_id: page.page_id, status: 'all' })).tasks as { id: string; title: string }[];
+  assert.deepEqual(tasks.map((x) => x.title).sort(), ['Call the hotel', 'Old plan', 'Pack for the trip'], 'checklist lines under a task are not tasks');
+  // A real subtask written in the task's notes (as the editor makes them).
+  const sub = (await app.call('POST', `/workspaces/${u.wsId}/tasks`, u.token, { title: 'Book taxi', pageId: page.page_id })).data as { id: string };
+  const { editPageDoc } = await import('../server/collab.ts');
+  const { findTaskElement } = await import('../server/taskNotes.ts');
+  editPageDoc(page.page_id, (d) => {
+    const ref = new Y.XmlElement('taskRef');
+    ref.setAttribute('taskId', sub.id);
+    findTaskElement(d, tasks.find((x) => x.title === 'Pack for the trip')!.id)!.push([ref]);
+  });
+  tasks = (await json(t, 'list_tasks', { page_id: page.page_id, status: 'all' })).tasks;
+  const idOf = (title: string) => tasks.find((x) => x.title === title)!.id;
+
+  // (1) "Pack for the trip" kept with nothing under it: its notes stay. (2) "Call the hotel" given new notes: those
+  // replace the old ones. (3) "Old plan" left out: kept at the end, its note a plain line after it.
+  const r = await json(t, 'replace_box_content', {
+    page_id: page.page_id,
+    box_id: 'first',
+    content: ['Rewritten', '', '- [ ] Pack for the trip', '- [ ] Call the hotel', '  - ask for a quiet room'].join('\n'),
+  });
+  assert.deepEqual(r.kept_task_ids, [idOf('Old plan')]);
+  const after = (await call(t, 'read_page', { page_id: page.page_id })).text;
+  assert.match(after, /- \[ \] Pack for the trip\n {2}- \[x\] passport\n {2}- \[ \] adapter\n {2}- pack light\n {2}- \[ \] Book taxi/, 'kept notes');
+  assert.match(after, /- \[ \] Call the hotel\n {2}- ask for a quiet room/, 'new notes');
+  assert.doesNotMatch(after, /late check-in/);
+  assert.match(after, /- \[ \] Old plan\n(\n)?- stale note/, 'left-out task: its note stays as a plain line after it');
+  const doc = await pageDoc(page.page_id);
+  const { taskPlaces } = await import('../server/taskNotes.ts');
+  const places = taskPlaces(doc);
+  assert.equal(places.filter((p) => p.id === idOf('Book taxi')).length, 1, 'the subtask is in the box once');
+  assert.equal(places.find((p) => p.id === idOf('Old plan'))?.parent, null);
+});
+
 test('create_task and update_task: on a page (live), standalone and as a subtask; activity via the app', async () => {
   const u = await app.signUp('Tasker');
   const t = tokenFor(u, ['notes:read', 'notes:write'], 'Claude');
