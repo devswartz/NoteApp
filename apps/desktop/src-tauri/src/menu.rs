@@ -112,26 +112,20 @@ mod app_menu {
         let help_items = items(app, HELP)?;
         let help = Submenu::with_items(app, "Help", true, &refs(&help_items))?;
 
-        let app_menu = Submenu::with_items(
-            app,
-            app_name,
-            true,
-            &[
-                &about,
-                &updates,
-                &sep()?,
-                &settings,
-                &server,
-                &sep()?,
-                &PredefinedMenuItem::services(app, None)?,
-                &sep()?,
-                &PredefinedMenuItem::hide(app, None)?,
-                &PredefinedMenuItem::hide_others(app, None)?,
-                &PredefinedMenuItem::show_all(app, None)?,
-                &sep()?,
-                &PredefinedMenuItem::quit(app, None)?,
-            ],
-        )?;
+        // "Change Server…" only in builds that may switch servers (debug / internal; config.rs).
+        let (a1, a2, a3, a4) = (sep()?, sep()?, sep()?, sep()?);
+        let services = PredefinedMenuItem::services(app, None)?;
+        let hide = PredefinedMenuItem::hide(app, None)?;
+        let hide_others = PredefinedMenuItem::hide_others(app, None)?;
+        let show_all = PredefinedMenuItem::show_all(app, None)?;
+        let quit = PredefinedMenuItem::quit(app, None)?;
+        let mut app_items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![&about, &updates, &a1, &settings];
+        if crate::config::switchable() {
+            app_items.push(&server);
+        }
+        let rest: [&dyn tauri::menu::IsMenuItem<R>; 8] = [&a2, &services, &a3, &hide, &hide_others, &show_all, &a4, &quit];
+        app_items.extend(rest);
+        let app_menu = Submenu::with_items(app, app_name, true, &app_items)?;
         Menu::with_items(app, &[&app_menu, &file, &edit, &view, &go, &window, &help])
     }
 }
@@ -146,7 +140,7 @@ pub fn on_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         QUICK_CAPTURE => crate::quick::toggle(app),
         SHOW_MAIN => crate::show_main(app),
-        CHANGE_SERVER => {
+        CHANGE_SERVER if crate::config::switchable() => {
             crate::show_main(app);
             let _ = app.emit_to("main", "change-server", ());
         }

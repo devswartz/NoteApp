@@ -29,7 +29,7 @@ docker compose ps    # wait for "healthy"
 | `NOTEAPP_TAG` | `staging` | `prod` |
 | `HOST_PORT` (cloudflared → `http://<app host>:<port>`) | `3002` | `3001` |
 | `BIND_ADDR` | `127.0.0.1`, or `0.0.0.0` + firewall when cloudflared is on another host | same |
-| `PUBLIC_URL` | `https://notes-staging.devswartz.com` | `https://notes.devswartz.com` |
+| `PUBLIC_URL` | `https://staging.notiveloapp.com` | `https://app.notiveloapp.com` |
 | `SEED_DEMO` | `1` | remove |
 
 Each environment gets its own compose project (`noteapp-staging` / `noteapp-prod`)

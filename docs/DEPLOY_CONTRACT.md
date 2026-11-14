@@ -23,13 +23,14 @@ This is the fixed interface between the code in this repo and the homelab that r
 | Var | Required | Example / notes |
 |---|---|---|
 | `NODE_ENV` | yes | `production` |
-| `PUBLIC_URL` | yes | `https://notes.devswartz.com` (staging: `https://notes-staging.devswartz.com`) |
+| `PUBLIC_URL` | yes | `https://app.notiveloapp.com` (staging: `https://staging.notiveloapp.com`) |
+| `REDIRECT_HOSTS` | no | Old host names of this server, comma-separated (no scheme). A browser page load (GET/HEAD of an app page) arriving on one gets a `301` to the same path on `PUBLIC_URL`; `/api`, the WebSockets, `/uploads`, `/mcp`, `/oauth`, `/.well-known` and static files keep working there, for app builds that still call the old host. Use after a domain move (`docs/DOMAIN_MOVE.md`). |
 | `DATA_DIR` | no | default `/data` |
 | `JWT_SECRET` | yes | 64+ random bytes, different per environment |
 | `SMTP_HOST` | yes for email | `email-smtp.<region>.amazonaws.com` (AWS SES SMTP interface) |
 | `SMTP_PORT` | no | `587` (STARTTLS) |
 | `SMTP_USER` / `SMTP_PASS` | yes for email | SES SMTP credentials (from an IAM user limited to `ses:SendRawEmail`) |
-| `MAIL_FROM` | yes for email | `NoteApp <notes@devswartz.com>` |
+| `MAIL_FROM` | yes for email | `Notivelo <no-reply@notiveloapp.com>` |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | yes for web push | generate once per environment: `npx web-push generate-vapid-keys` |
 | `VAPID_SUBJECT` | yes for web push | `mailto:<admin address>` |
 | `SEED_DEMO` | no | `1` on staging only: loads demo content on an empty DB |
@@ -42,15 +43,15 @@ This is the fixed interface between the code in this repo and the homelab that r
 | `APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_BUNDLE_ID` / `APNS_PRIVATE_KEY` / `APNS_ENV` | for iOS push | APNs token auth (`.p8` key contents in `APNS_PRIVATE_KEY`; `APNS_ENV` = `production` or `sandbox`). Optional until the iOS app ships. |
 | `FCM_SERVICE_ACCOUNT_JSON` | for Android push | Firebase service-account JSON (one line). Optional until the Android app ships. |
 | `ANDROID_CERT_SHA256` | for Android app links | SHA-256 fingerprint(s) of the Android signing certificate(s), comma-separated. Served in `/.well-known/assetlinks.json` (404 until set). `APNS_TEAM_ID` likewise drives `/.well-known/apple-app-site-association`. See `docs/MOBILE.md`. |
-| `MS_CLIENT_ID` / `MS_CLIENT_SECRET` | for OneNote import | Application (client) ID and a client secret of the Microsoft Entra app registration used by **Import from OneNote** (#117). Supported accounts: personal **and** work/school (the app uses the `common` authority). Redirect URI (platform *Web*), exactly **`${PUBLIC_URL}/api/import/onenote/callback`**: `https://notes.devswartz.com/api/import/onenote/callback` and `https://notes-staging.devswartz.com/api/import/onenote/callback`. Delegated Microsoft Graph permissions: `Notes.Read`, `offline_access`, `User.Read`. **If either is unset the feature is hidden** (no UI; every `/api/import/onenote/*` route answers 404). The secret is a credential: keep it in the homelab `.env` only, and renew it in Entra before it expires. |
+| `MS_CLIENT_ID` / `MS_CLIENT_SECRET` | for OneNote import | Application (client) ID and a client secret of the Microsoft Entra app registration used by **Import from OneNote** (#117). Supported accounts: personal **and** work/school (the app uses the `common` authority). Redirect URI (platform *Web*), exactly **`${PUBLIC_URL}/api/import/onenote/callback`**: `https://app.notiveloapp.com/api/import/onenote/callback` and `https://staging.notiveloapp.com/api/import/onenote/callback`. Delegated Microsoft Graph permissions: `Notes.Read`, `offline_access`, `User.Read`. **If either is unset the feature is hidden** (no UI; every `/api/import/onenote/*` route answers 404). The secret is a credential: keep it in the homelab `.env` only, and renew it in Entra before it expires. |
 
 If email or push settings are missing, the app still starts and logs a warning; reminders through that channel are skipped. `MAIL_FROM` must be a sender the SMTP provider has verified: confirmation emails, invites and password resets all use it.
 
 `E2E_TEST_HOOKS` is a test-only variable used by the e2e suite and is **ignored when `NODE_ENV=production`**. Never set it on a real environment.
 
 ## Hostnames
-- Production: `notes.devswartz.com`
-- Staging: `notes-staging.devswartz.com`
+- Production: `app.notiveloapp.com`
+- Staging: `staging.notiveloapp.com`
 - Both go through a Cloudflare Tunnel. **The app's port must not be reachable any other way** (bind it to localhost or the Docker network, or publish it only to the cloudflared host behind a host firewall; never open to the LAN or internet), because rate limiting trusts `CF-Connecting-IP` when `TRUST_PROXY_HEADER=cf`.
 - **Cloudflare Access must be off**, because the desktop and mobile apps call the API directly; the app does its own auth.
 

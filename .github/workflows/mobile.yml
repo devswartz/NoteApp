@@ -11,15 +11,20 @@ on:
         description: Upload the iOS build to TestFlight (needs the App Store Connect secrets)
         type: boolean
         default: false
+      allow_server_switch:
+        description: Internal build (e.g. TestFlight for staging) with a hidden "Change server…" command. Release builds always use https://app.notiveloapp.com.
+        type: boolean
+        default: false
       server_url:
-        description: Server the app talks to
-        default: https://notes.devswartz.com
+        description: Default server of an internal build (only used with allow_server_switch)
+        default: https://staging.notiveloapp.com
   push:
     tags: ['v*.*.*', 'mobile-v*']
   pull_request:
     paths:
       - 'apps/mobile/**'
       - 'src/platform/capacitor.ts'
+      - 'src/platform/serverUrl.ts'
       - 'src/platform/index.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -38,7 +43,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  MOBILE_SERVER_URL: ${{ inputs.server_url || 'https://notes.devswartz.com' }}
+  # Release builds are locked to https://app.notiveloapp.com (src/platform/serverUrl.ts); these two only
+  # matter for an internal build with the hidden server switch.
+  MOBILE_SERVER_URL: ${{ inputs.allow_server_switch && inputs.server_url || 'https://app.notiveloapp.com' }}
+  MOBILE_ALLOW_SERVER_SWITCH: ${{ inputs.allow_server_switch && '1' || '' }}
+  # Old host names of the production server: a sign-in saved for one of them is kept on upgrade (docs/RELEASING.md).
+  LEGACY_PROD_HOSTS: ${{ vars.LEGACY_PROD_HOSTS || secrets.LEGACY_PROD_HOSTS }}
   BUILD_NUMBER: ${{ github.run_number }}
 
 jobs:

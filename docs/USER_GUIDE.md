@@ -194,7 +194,7 @@ The **desktop app** adds menu shortcuts:
 
 ## Desktop app (macOS, Windows)
 
-- The same app in its own window. It starts instantly and opens offline. It runs on `https://notes.devswartz.com` by default; **Change Server…** in the menu points it elsewhere (e.g. staging).
+- The same app in its own window. It starts instantly and opens offline. It uses Notivelo's server at `https://app.notiveloapp.com`.
 - **Menu bar / tray icon:** shows how many tasks are due today, with quick actions. On a Mac the same number is on the Dock icon.
 - **Quick capture:** ⌥⌘N, from anywhere (see Quick add).
 - Your sign-in is kept in the system keychain. `notivelo://` links open pages directly. The app updates itself (it asks before restarting).

@@ -6,7 +6,7 @@ test('/privacy and /terms open signed out, with headings and the contact address
   await expect(page).toHaveURL(/\/privacy$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Privacy Policy' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 2, name: 'What we keep about you' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'support@devswartz.com' }).first()).toBeVisible();
+  await expect(page.getByRole('link', { name: 'support@notiveloapp.com' }).first()).toBeVisible();
   await expect(page.locator('body')).not.toContainText('{{');
   await expect(page.locator('body')).not.toContainText('TODO');
 

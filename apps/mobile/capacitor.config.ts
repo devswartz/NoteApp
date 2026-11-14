@@ -1,9 +1,9 @@
 // Capacitor shell for iPhone and Android. See docs/MOBILE.md.
 //
 // The built web app (dist/ at the repo root) is bundled into the app, so it
-// starts instantly and opens offline; it talks to the server at VITE_API_URL,
-// which `npm run mobile:sync` sets from MOBILE_SERVER_URL (default
-// https://notes.devswartz.com).
+// starts instantly and opens offline. Release builds always talk to
+// https://app.notiveloapp.com; internal builds (MOBILE_ALLOW_SERVER_SWITCH=1)
+// start on MOBILE_SERVER_URL and can switch (src/platform/serverUrl.ts).
 //
 // Live reload during development: CAP_SERVER_URL=http://<your-lan-ip>:5173 npm run mobile:sync
 import type { CapacitorConfig } from '@capacitor/cli';

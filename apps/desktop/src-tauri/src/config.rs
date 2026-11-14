@@ -1,17 +1,28 @@
 //! Which server the app talks to. The web app is bundled (dist/), so only the
-//! API is remote. The URL is stored in `<app config dir>/server.json` and handed
-//! to the web app before any of its scripts run, as `window.__NOTEAPP_API_URL__`
-//! (read by src/api.ts).
+//! API is remote. The URL is handed to the web app before any of its scripts
+//! run, as `window.__NOTEAPP_API_URL__` (read by src/api.ts).
 //!
-//! Precedence: `NOTEAPP_SERVER_URL` env var → saved choice → default. The
-//! default is `https://notes.devswartz.com` in release builds and "" (same
-//! origin, i.e. the Vite dev server's proxy) in debug builds.
+//! Release builds are locked to `DEFAULT_SERVER_URL`: no first-run screen, no
+//! "Change Server…", and `NOTEAPP_SERVER_URL` is ignored. Builds that may switch
+//! (debug builds, or a release built with `NOTEAPP_ALLOW_SERVER_SWITCH=1` for
+//! internal testing) use: `NOTEAPP_SERVER_URL` env var → the choice saved in
+//! `<app config dir>/server.json` → default ("" = same origin, i.e. the Vite dev
+//! server's proxy, in debug builds; `DEFAULT_SERVER_URL` otherwise).
+//!
+//! Older versions saved a server choice. A locked build removes it on start
+//! (`migrate`): a session for the production server is kept (moved to the new
+//! keychain namespace); one for any other server is signed out. Hosts that count
+//! as "production" besides the default come from `LEGACY_PROD_HOSTS` at build
+//! time (comma-separated, set by CI; see docs/RELEASING.md).
 
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime};
 
-pub const DEFAULT_SERVER_URL: &str = "https://notes.devswartz.com";
+pub const DEFAULT_SERVER_URL: &str = "https://app.notiveloapp.com";
+
+/// Keychain keys that belong to a server (see src/api.ts).
+const SESSION_KEYS: &[&str] = &["noteapp.refreshToken"];
 
 #[derive(Serialize, Deserialize, Default)]
 struct Saved {
@@ -23,9 +34,14 @@ struct Saved {
 pub struct ServerConfig {
     /// The URL in use ("" = same origin, dev only).
     pub url: String,
-    /// Whether the user has confirmed a server yet (drives the first-run screen).
-    pub configured: bool,
+    /// Whether this build offers "Change Server…" (debug / internal builds only).
+    pub switchable: bool,
     pub default_url: String,
+}
+
+/// Debug builds, or builds made with `NOTEAPP_ALLOW_SERVER_SWITCH=1`.
+pub fn switchable() -> bool {
+    cfg!(debug_assertions) || matches!(option_env!("NOTEAPP_ALLOW_SERVER_SWITCH"), Some("1"))
 }
 
 fn file<R: Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
@@ -40,22 +56,28 @@ fn default_url() -> String {
     }
 }
 
-pub fn load<R: Runtime>(app: &AppHandle<R>) -> ServerConfig {
-    if let Ok(url) = std::env::var("NOTEAPP_SERVER_URL") {
-        return ServerConfig { url: normalize(&url).unwrap_or_default(), configured: true, default_url: default_url() };
-    }
-    let saved: Saved = file(app)
+fn read_saved<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    file(app)
         .and_then(|p| fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    match saved.server_url {
-        Some(url) => ServerConfig { url, configured: true, default_url: default_url() },
-        // Debug builds skip the first-run screen and use the Vite proxy.
-        None => ServerConfig { url: default_url(), configured: cfg!(debug_assertions), default_url: default_url() },
+        .and_then(|s| serde_json::from_str::<Saved>(&s).ok())
+        .and_then(|s| s.server_url)
+}
+
+pub fn load<R: Runtime>(app: &AppHandle<R>) -> ServerConfig {
+    if !switchable() {
+        return ServerConfig { url: DEFAULT_SERVER_URL.into(), switchable: false, default_url: DEFAULT_SERVER_URL.into() };
     }
+    let url = match std::env::var("NOTEAPP_SERVER_URL") {
+        Ok(url) => normalize(&url).unwrap_or_default(),
+        Err(_) => read_saved(app).unwrap_or_else(default_url),
+    };
+    ServerConfig { url, switchable: true, default_url: default_url() }
 }
 
 pub fn save<R: Runtime>(app: &AppHandle<R>, url: &str) -> Result<String, String> {
+    if !switchable() {
+        return Err("This build always uses the Notivelo server.".into());
+    }
     let url = normalize(url)?;
     let path = file(app).ok_or("no config directory")?;
     if let Some(dir) = path.parent() {
@@ -64,6 +86,68 @@ pub fn save<R: Runtime>(app: &AppHandle<R>, url: &str) -> Result<String, String>
     let json = serde_json::to_string_pretty(&Saved { server_url: Some(url.clone()) }).map_err(|e| e.to_string())?;
     fs::write(&path, json).map_err(|e| e.to_string())?;
     Ok(url)
+}
+
+/// What to do with a server choice saved by an older version.
+#[derive(Debug, PartialEq)]
+pub enum Stale {
+    /// It was the locked server: nothing to move.
+    Same,
+    /// The old production host: keep the session (move it to the locked server's namespace).
+    KeepSession,
+    /// Another server: its session doesn't belong here, sign out.
+    SignOut,
+}
+
+/// Classifies a saved server URL. `legacy` is the comma-separated LEGACY_PROD_HOSTS list.
+pub fn classify_stale(saved: &str, legacy: &str) -> Stale {
+    let Ok(url) = normalize(saved) else { return Stale::SignOut };
+    if url == DEFAULT_SERVER_URL {
+        return Stale::Same;
+    }
+    let host = url::Url::parse(&url).ok().and_then(|u| u.host_str().map(str::to_ascii_lowercase));
+    let legacy_hosts: Vec<String> = legacy
+        .split(',')
+        .map(|h| h.trim().trim_end_matches('/').to_ascii_lowercase())
+        .map(|h| h.strip_prefix("https://").map(str::to_string).unwrap_or(h))
+        .filter(|h| !h.is_empty())
+        .collect();
+    match host {
+        Some(h) if url.starts_with("https://") && legacy_hosts.contains(&h) => Stale::KeepSession,
+        _ => Stale::SignOut,
+    }
+}
+
+/// Locked builds: forget a server choice saved by an older version (runs once at start-up,
+/// before any window exists). Keeps or signs out its session as `classify_stale` says.
+pub fn migrate<R: Runtime>(app: &AppHandle<R>) {
+    if switchable() {
+        return;
+    }
+    let Some(path) = file(app) else { return };
+    if !path.exists() {
+        return;
+    }
+    let saved = read_saved(app);
+    let _ = fs::remove_file(&path);
+    let Some(saved) = saved else { return };
+    let action = classify_stale(&saved, option_env!("LEGACY_PROD_HOSTS").unwrap_or(""));
+    for key in SESSION_KEYS {
+        match action {
+            Stale::Same => {}
+            Stale::KeepSession => {
+                if let Ok(Some(v)) = crate::secure::get(&saved, key) {
+                    let _ = crate::secure::set(DEFAULT_SERVER_URL, key, &v);
+                }
+                let _ = crate::secure::remove(&saved, key);
+            }
+            Stale::SignOut => {
+                let _ = crate::secure::remove(&saved, key);
+                // A token stored under the locked server's name now would be a stale one too.
+                let _ = crate::secure::remove(DEFAULT_SERVER_URL, key);
+            }
+        }
+    }
 }
 
 /// "notes.example.com/" → "https://notes.example.com". Only https origins (plus
@@ -101,7 +185,7 @@ pub fn init_script(cfg: &ServerConfig) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize;
+    use super::{classify_stale, normalize, switchable, Stale, DEFAULT_SERVER_URL};
 
     #[test]
     fn normalizes_server_urls() {
@@ -116,5 +200,22 @@ mod tests {
         assert!(normalize("ftp://x.y").is_err());
         assert!(normalize("https://x.y/?a=1").is_err());
         assert!(normalize("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn classifies_stale_server_choices() {
+        assert_eq!(classify_stale(DEFAULT_SERVER_URL, ""), Stale::Same);
+        assert_eq!(classify_stale("app.notiveloapp.com/", ""), Stale::Same);
+        assert_eq!(classify_stale("https://old.example.com", ""), Stale::SignOut);
+        assert_eq!(classify_stale("https://old.example.com", "x.example, OLD.example.com"), Stale::KeepSession);
+        assert_eq!(classify_stale("https://old.example.com", "https://old.example.com/"), Stale::KeepSession);
+        assert_eq!(classify_stale("https://staging.example.com", "old.example.com"), Stale::SignOut);
+        assert_eq!(classify_stale("http://localhost:3001", "localhost"), Stale::SignOut);
+        assert_eq!(classify_stale("not a url", "old.example.com"), Stale::SignOut);
+    }
+
+    #[test]
+    fn debug_builds_can_switch() {
+        assert_eq!(switchable(), cfg!(debug_assertions) || option_env!("NOTEAPP_ALLOW_SERVER_SWITCH") == Some("1"));
     }
 }

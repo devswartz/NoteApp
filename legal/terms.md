@@ -1,7 +1,7 @@
 <!--
 TODO for the owner (this comment is not shown to users):
 - This is a plain-English STARTING TEMPLATE, not legal advice. Have a lawyer review it before real outside users sign up and before store submission.
-- Contact email and operator name default to support@devswartz.com and "devswartz.com" (src/pages/Legal.tsx). The server env vars LEGAL_CONTACT_EMAIL and LEGAL_OPERATOR_NAME override them; {{CONTACT_EMAIL}}, {{OPERATOR_NAME}} and {{APP_NAME}} below are filled from those.
+- Contact email and operator name default to support@notiveloapp.com and "Notivelo" (src/pages/Legal.tsx). The server env vars LEGAL_CONTACT_EMAIL and LEGAL_OPERATOR_NAME override them; {{CONTACT_EMAIL}}, {{OPERATOR_NAME}} and {{APP_NAME}} below are filled from those.
 - Decide: governing law / jurisdiction, whether the service is free, and any liability wording your lawyer wants.
 - Update "Last updated" when you change this.
 - Edit this file freely: headings (#), paragraphs, lists (- or 1.), links [text](url), **bold**, *italic*. No HTML.

@@ -29,6 +29,9 @@ env:
   TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('desktop-{0}', github.run_number) }}
   # App version: the tag (tauri.mjs drops the "v"); manual runs keep package.json's.
   APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+  # Old host names of the production server, compiled in (config.rs): a sign-in saved for one of them is
+  # kept when an older version upgrades (docs/RELEASING.md). Release builds are locked to app.notiveloapp.com.
+  LEGACY_PROD_HOSTS: ${{ vars.LEGACY_PROD_HOSTS || secrets.LEGACY_PROD_HOSTS }}
 
 concurrency:
   group: desktop-${{ github.ref }}

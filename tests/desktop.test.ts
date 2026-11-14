@@ -173,3 +173,26 @@ test('quick capture failure messages', () => {
   assert.match(describeFailure(new Error('boom'), false), /offline/);
   assert.equal(describeFailure(new Error('Not allowed'), true), 'Not allowed');
 });
+
+test('desktop: release builds are locked to the same production server as the mobile apps', async () => {
+  const { PRODUCTION_SERVER_URL } = await import('../src/platform/serverUrl.ts');
+  const rust = readFileSync(new URL('../apps/desktop/src-tauri/src/config.rs', import.meta.url), 'utf8');
+  assert.equal(rust.match(/pub const DEFAULT_SERVER_URL: &str = "([^"]+)";/)?.[1], PRODUCTION_SERVER_URL);
+  // The switch exists only in debug / NOTEAPP_ALLOW_SERVER_SWITCH builds, and an env override can't unlock a release build.
+  assert.match(rust, /cfg!\(debug_assertions\) \|\| matches!\(option_env!\("NOTEAPP_ALLOW_SERVER_SWITCH"\), Some\("1"\)\)/);
+  assert.match(rust, /if !switchable\(\) \{\s*return ServerConfig \{ url: DEFAULT_SERVER_URL/);
+  assert.match(readFileSync(new URL('../apps/desktop/src-tauri/src/lib.rs', import.meta.url), 'utf8'), /config::migrate\(&handle\);/);
+  const menu = readFileSync(new URL('../apps/desktop/src-tauri/src/menu.rs', import.meta.url), 'utf8');
+  assert.match(menu, /if crate::config::switchable\(\) \{\s*app_items\.push\(&server\);/);
+
+  // The web side: no server UI unless the shell says the build is switchable.
+  const { serverInfo, showServerSetup } = await import('../src/platform/tauri/serverSetup.ts');
+  const g = globalThis as Record<string, unknown>;
+  assert.equal(serverInfo().switchable, false);
+  g.__NOTEAPP_SERVER__ = { url: PRODUCTION_SERVER_URL, switchable: false, defaultUrl: PRODUCTION_SERVER_URL };
+  try {
+    assert.equal(await showServerSetup(), undefined, 'resolves at once without opening a dialog');
+  } finally {
+    delete g.__NOTEAPP_SERVER__;
+  }
+});

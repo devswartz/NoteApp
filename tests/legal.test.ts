@@ -6,7 +6,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Markdown, safeHref } from '../src/lib/markdown.tsx';
 
-const values = { CONTACT_EMAIL: 'support@devswartz.com', OPERATOR_NAME: 'devswartz.com', APP_NAME: 'Notivelo' };
+const values = { CONTACT_EMAIL: 'support@notiveloapp.com', OPERATOR_NAME: 'Notivelo', APP_NAME: 'Notivelo' };
 const render = (source: string) => renderToStaticMarkup(createElement(Markdown, { source, values }));
 
 test('privacy.md and terms.md render with headings and no leftover placeholders or comments', () => {
@@ -18,7 +18,7 @@ test('privacy.md and terms.md render with headings and no leftover placeholders 
     assert.match(html, new RegExp(`<h1>${title}</h1>`));
     assert.ok((html.match(/<h2>/g) ?? []).length >= 5, `${file} has sections`);
     assert.match(html, /Last updated/);
-    assert.match(html, /href="mailto:support@devswartz\.com"/);
+    assert.match(html, /href="mailto:support@notiveloapp\.com"/);
     assert.doesNotMatch(html, /\{\{|TODO|lawyer|<!--/);
   }
   assert.match(render(fs.readFileSync('legal/privacy.md', 'utf8')), /Settings → Profile → Delete account/);
@@ -27,7 +27,7 @@ test('privacy.md and terms.md render with headings and no leftover placeholders 
 test('support.md renders with a contact email and links to the policies', () => {
   const html = render(fs.readFileSync('legal/support.md', 'utf8'));
   assert.match(html, /<h1>Support<\/h1>/);
-  assert.match(html, /href="mailto:support@devswartz\.com"/);
+  assert.match(html, /href="mailto:support@notiveloapp\.com"/);
   assert.match(html, /href="\/privacy"/);
   assert.doesNotMatch(html, /\{\{|<!--/);
 });

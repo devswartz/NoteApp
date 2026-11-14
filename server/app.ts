@@ -22,6 +22,7 @@ import { MAX_SYNC_MESSAGE_BYTES, attachCollab } from './collab.ts';
 import { attachEvents } from './events.ts';
 import { handleProtocols } from './auth.ts';
 import { securityHeaders } from './security.ts';
+import { redirectOldHosts } from './redirectHosts.ts';
 import { requestLog } from './requests.ts';
 import { testHookRoutes } from './testHooks.ts';
 import { testHooksEnabled } from './verification.ts';
@@ -32,6 +33,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   app.disable('x-powered-by');
   app.set('trust proxy', 'loopback'); // behind the Cloudflare tunnel / reverse proxy
   app.use(securityHeaders); // CSP, HSTS, framing, referrer, permissions (server/security.ts)
+  app.use(redirectOldHosts); // REDIRECT_HOSTS: page loads on an old host name → PUBLIC_URL (server/redirectHosts.ts)
 
   // The API uses bearer tokens, never cookies, so any origin may call it
   // (native shells run on tauri:// and capacitor:// origins).

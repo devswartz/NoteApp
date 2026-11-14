@@ -29,10 +29,10 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 > 3. **`ACCESS_TOKEN_TTL_S`:** leave **unset** (default 900 s; production clamps it to 60–3600).
 > 4. **iOS push (when the iOS app ships):** `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.devswartz.notivelo`, `APNS_PRIVATE_KEY` (the `.p8` contents, newlines as `\n`) and `APNS_ENV=production`. The values come from the user (see `docs/MOBILE.md` → *Server environment*).
 > 5. **Android push (when the Android app ships):** `FCM_SERVICE_ACCOUNT_JSON` (the Firebase service-account JSON, one line or base64).
-> 6. **App links (#57):** `ANDROID_CERT_SHA256` (comma-separated SHA-256 fingerprints of the Play app-signing and upload certs). `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) is used for the iOS `apple-app-site-association`. Verify with `curl -i https://notes.devswartz.com/.well-known/assetlinks.json` and `…/apple-app-site-association` (200, `application/json`, no redirect).
+> 6. **App links (#57):** `ANDROID_CERT_SHA256` (comma-separated SHA-256 fingerprints of the Play app-signing and upload certs). `APNS_TEAM_ID` (or `APPLE_TEAM_ID`) is used for the iOS `apple-app-site-association`. Verify with `curl -i https://app.notiveloapp.com/.well-known/assetlinks.json` and `…/apple-app-site-association` (200, `application/json`, no redirect).
 > 7. **`ADMIN_EMAILS=<the user's email>` on staging AND prod, before anyone signs up** (#67). Without it, **the first account created becomes the instance admin** (who may call `GET /api/admin/stats`). Comma-separated if there's more than one admin. Admins can always sign up.
 > 7b. **`SIGNUP_MODE`:** leave **unset**. In production it defaults to `invite`: only people with a pending invite, plus the addresses in `ADMIN_EMAILS`, can create accounts. Set `SIGNUP_MODE=open` only if you ever want public sign-up, and only after working through section 5b (open sign-up needs email confirmation, which needs SMTP). Logs also become one JSON object per line; `LOG_LEVEL` is optional (default `info`).
-> 7c. **`MAIL_FROM` on prod (and staging) should say Notivelo**, e.g. `Notivelo <notes@devswartz.com>`. It is the sender name on invites and password resets and is set per environment in `.env`, so the rename alone doesn't change it. The address must stay one the SMTP provider has verified.
+> 7c. **`MAIL_FROM` on prod (and staging) should say Notivelo**, e.g. `Notivelo <no-reply@notiveloapp.com>`. It is the sender name on invites and password resets and is set per environment in `.env`, so the rename alone doesn't change it. The address must stay one the SMTP provider has verified.
 > 8. **Staging only, optional:** `DEMO_PASSWORD=<something>` so the `SEED_DEMO` accounts (`demo@example.com`, `sam@example.com`) have a known password instead of a random one printed once in the log. With #70, the *Demo Team* workspace shows off every feature (a notebook per area, every block type, subtasks, recurrence, links, comments, versions, a private notebook), which makes it a good tour for the team on staging.
 > 9. Unchanged from the brief: `NODE_ENV`, `PUBLIC_URL`, `JWT_SECRET` (per env), the SES SMTP settings (`SMTP_HOST`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`), VAPID (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`), `SEED_DEMO=1` on staging only, backups (`sqlite3 .backup` or Litestream, plus `/data/files/`, off the box), Cloudflare Access **off**.
 > 10. **Feedback goes to `ADMIN_EMAILS`.** The in-app **Send feedback** command emails every address in `ADMIN_EMAILS` (Reply-To is the sender), so it needs working SMTP (item 9) and a monitored admin inbox. Without SMTP or with `ADMIN_EMAILS` empty, nothing is lost: each submission is also written as one JSON log line (`"event":"feedback"`, with the text included when it wasn't mailed) and the user still sees success. Limits: 5 per user per hour, 60 per hour server-wide.
@@ -46,8 +46,8 @@ The homelab agent was briefed with `docs/HOMELAB_BRIEF.md` at 03:18 UTC. Since t
 
 Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and the homelab timer pulls it within about 5 minutes.
 
-- [ ] **Health:** `curl -s https://notes-staging.devswartz.com/api/health` → `{"ok":true,"version":"<sha>"}`, where `<sha>` matches the latest `main` commit (`git rev-parse --short origin/main`).
-- [ ] **Security headers:** `curl -sI https://notes-staging.devswartz.com/ | grep -iE "strict-transport|content-security"` shows both (#51).
+- [ ] **Health:** `curl -s https://staging.notiveloapp.com/api/health` → `{"ok":true,"version":"<sha>"}`, where `<sha>` matches the latest `main` commit (`git rev-parse --short origin/main`).
+- [ ] **Security headers:** `curl -sI https://staging.notiveloapp.com/ | grep -iE "strict-transport|content-security"` shows both (#51).
 - [ ] **Sign up** (only after `ADMIN_EMAILS` is set, section 2) with your real email in a private window, check that you land in your workspace, then sign out and back in.
 - [ ] **Invite-only sign-up:** in a private window, try to create an account with an address that has **no** invite. It's refused.
 - [ ] **Invite email (SES):** Settings → Members → invite a second address you own as *Member*. The email arrives (check spam), the link opens the invite page, and signing up with that address works and joins the workspace. If no email arrives, check the staging log for `mail:` warnings and the SES sending statistics.
@@ -59,7 +59,7 @@ Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and 
 - [ ] **Email reminder / digest (optional):** Settings → Notifications → turn on the daily digest for a time a few minutes away; the email arrives.
 - [ ] **Real time:** open the same page in two browsers (two accounts in a shared notebook). Typing and cursors show live, and checking a task in one updates the other.
 - [ ] **Offline:** open a page, go offline (DevTools → Network → Offline), and reload. The app still opens and the page is editable. Go back online and the edit syncs.
-- [ ] **Run the e2e suite against staging** (optional, from a laptop): `E2E_BASE_URL=https://notes-staging.devswartz.com npx playwright test --project=chromium`. Note that it creates test accounts on staging.
+- [ ] **Run the e2e suite against staging** (optional, from a laptop): `E2E_BASE_URL=https://staging.notiveloapp.com npx playwright test --project=chromium`. Note that it creates test accounts on staging.
 
 ## 4. Production v0.1.0 (~10 min)
 
@@ -76,7 +76,7 @@ Staging follows `main` automatically: CI's `publish` job pushes `:staging`, and 
   - **Desktop**: a draft GitHub Release with the macOS/Windows installers (section 5);
   - **Mobile**: the Android APK/AAB and the iOS build, uploaded to TestFlight if its secrets exist (section 5).
 - [ ] Wait for the CI run's `publish` job to go green. Prod pulls `:prod` on its next timer run, or right away with `sudo systemctl start noteapp-update@prod.service`.
-- [ ] `curl -s https://notes.devswartz.com/api/health` → `"version"` matches the tagged commit.
+- [ ] `curl -s https://app.notiveloapp.com/api/health` → `"version"` matches the tagged commit.
 - [ ] Check that `ADMIN_EMAILS` is set in prod's `.env` (otherwise the first account to sign up becomes the instance admin). Then sign up with your real email, create the team workspace, and invite the team.
 - [ ] Move `CHANGELOG.md`'s `v0.1.0 (unreleased)` heading to `v0.1.0 (2026-11-xx)` in a small PR.
 
@@ -113,7 +113,7 @@ Production stays `SIGNUP_MODE=invite` (the default) until you decide otherwise. 
 
 - [ ] **Admin accounts exist first.** Sign up every address in `ADMIN_EMAILS` (they're auto-confirmed as bootstrap accounts) **before** switching to `open`, so nobody else can register one of those addresses first.
 - [ ] **SMTP works.** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` are set on prod and SES is out of the sandbox (or the test recipients are verified). Check with an invite or a password reset to an address you own: it arrives.
-- [ ] **`MAIL_FROM` is a verified sender**, named for the product (e.g. `Notivelo <notes@devswartz.com>`). If the provider rejects the sender, no confirmation email goes out and new people are stuck on "Check your email".
+- [ ] **`MAIL_FROM` is a verified sender**, named for the product (e.g. `Notivelo <no-reply@notiveloapp.com>`). If the provider rejects the sender, no confirmation email goes out and new people are stuck on "Check your email".
 - [ ] **`PUBLIC_URL` is the real origin**, because the confirmation link is `$PUBLIC_URL/verify-email?token=…`.
 - [ ] **Then set `SIGNUP_MODE=open`** and restart. Test in a private window: create an account with an address you own; you land on "Check your email"; the email arrives (check spam); the link opens the app; **Resend** works (one a minute); the app is unusable until the link is opened.
 - [ ] **Without SMTP, do not set `open` in production**: with no `SMTP_HOST` the server cannot send mail, so it treats every new account as confirmed. Anyone could then register any address, including one that has a pending workspace invite, and read what that invite grants. (`invite` mode is unaffected: it needs an invite either way.)
@@ -144,7 +144,7 @@ As of 2026-11-05 ~11:55 UTC (`docs/STATUS.md`, open PRs).
 **Known gaps (not planned for v0.1.0)**
 - Desktop and mobile builds have **never run on real macOS/Windows/iOS hardware**. The first tag is their first real build, so watch those workflow runs.
 - Desktop: no Windows code signing (SmartScreen warns), and no taskbar badge on Windows (the tray tooltip has the count).
-- Mobile: the server is chosen on first launch (default `https://notes.devswartz.com`; **Change server…** in ⌘K), like the desktop app (#57).
+- Mobile and desktop: release builds always use `https://app.notiveloapp.com`; only debug / internal builds have a hidden **Change server…** (#57).
 - Tasks are read-only offline (notes are fully editable offline).
 - Deferred by `PLAN.md`: freeform canvas pages, Google/Apple two-way calendar sync (a one-way `.ics` feed exists), public share links, page-level permissions, AI features.
 - **Usage limits:** the agent team hit the account's 5-hour usage cap at 06:25 UTC and lost about 4 hours. Run fewer agents in parallel for follow-up work.

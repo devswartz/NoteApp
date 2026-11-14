@@ -12,8 +12,8 @@ Pricing is free for now. Paid plans may come later, so nothing here promises "fr
 | Subtitle | Notes and tasks, together | 25 / 30 |
 | Primary category | Productivity | |
 | Secondary category | Business | |
-| Support URL | https://notes.devswartz.com/support | |
-| Privacy Policy URL | https://notes.devswartz.com/privacy | |
+| Support URL | https://app.notiveloapp.com/support | |
+| Privacy Policy URL | https://app.notiveloapp.com/privacy | |
 | Marketing URL (optional) | https://github.com/devswartz/NoteApp | |
 | Price | Free | |
 
@@ -69,11 +69,11 @@ WORKS WHEN YOU DON'T
 Notes stay editable offline and sync when you reconnect. Lock the app with Face ID, and drop a task or note in from the share sheet or the Today widget.
 
 PRIVATE BY DESIGN
-No ads and no tracking. Uploaded files open only for people who can see the page they belong to, and you can export your data from Settings at any time. Read our Privacy Policy at notes.devswartz.com/privacy.
+No ads and no tracking. Uploaded files open only for people who can see the page they belong to, and you can export your data from Settings at any time. Read our Privacy Policy at app.notiveloapp.com/privacy.
 
 You need a Notivelo account to sign in. Notivelo also runs on the web, Windows and Mac, so your notebooks are with you on every device.
 
-Support: notes.devswartz.com/support
+Support: app.notiveloapp.com/support
 ```
 
 ## What's New in this version (406 / 4000)
@@ -116,7 +116,7 @@ Use the demo workspace (names like Jordan and Priya, a "Cafe Website" project) a
 App Review needs a working sign-in and something to look at. Create the account in the app (or on the web) the normal way, verify its email, then fill it with friendly demo content with the seed script. It uses only the public API, never creates accounts, never prints the password, and is safe to run twice (existing items are skipped by title).
 
 ```
-BASE_URL=https://notes.devswartz.com REVIEW_EMAIL=reviewer@example.com REVIEW_PASSWORD='the review password' SHARE_WITH_EMAIL=second-account@example.com npx tsx scripts/seed-review-account.ts
+BASE_URL=https://app.notiveloapp.com REVIEW_EMAIL=reviewer@example.com REVIEW_PASSWORD='the review password' SHARE_WITH_EMAIL=second-account@example.com npx tsx scripts/seed-review-account.ts
 ```
 
 On PowerShell set the variables first (`$env:BASE_URL = "..."`, and so on), then run `npx tsx scripts/seed-review-account.ts`. `SHARE_WITH_EMAIL` is optional: if it is set, the Project brief page is shared with that address (can edit), so the reviewer can see sharing in action. Use a second account you control, or leave it out.
@@ -134,6 +134,6 @@ To try tasks: open the Tasks tab for Today and Upcoming, or tap a task in the Ki
 
 Account deletion: Settings > Profile > Delete account. It permanently deletes the account and its data.
 
-Privacy policy: https://notes.devswartz.com/privacy
-Support: https://notes.devswartz.com/support
+Privacy policy: https://app.notiveloapp.com/privacy
+Support: https://app.notiveloapp.com/support
 ```

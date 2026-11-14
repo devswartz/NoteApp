@@ -2,7 +2,7 @@
 
 Answer sheet for the App Privacy questionnaire (App Store Connect → the app → App Privacy). Based on the code as of 12 November 2026 (v0.4.0 page sharing included); the user-facing policy is `legal/privacy.md`, served at `/privacy`. Re-check both when a feature changes what is stored or sent.
 
-Privacy Policy URL: `https://notes.devswartz.com/privacy`
+Privacy Policy URL: `https://app.notiveloapp.com/privacy`
 
 ## Why not "Data Not Collected"
 

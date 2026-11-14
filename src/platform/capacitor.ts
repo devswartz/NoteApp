@@ -6,14 +6,14 @@
 //   secure storage     Keychain (iOS) / Keystore-encrypted prefs (Android) for the refresh token
 //   notifications      local notifications for in-app reminders; APNs/FCM push registered with
 //                      the server after sign-in; tapping either deep-links to the task
-//   deep links         notivelo://… and https://notes.devswartz.com/w/… (universal/app links)
+//   deep links         notivelo://… and https://app.notiveloapp.com/w/… (universal/app links)
 //   app badge          number of my open tasks due today or overdue
 //   Today widget       a snapshot of those tasks for the iOS WidgetKit / Android home-screen widget
 //   haptics            light tap on checkbox toggles and [data-haptic] elements; platform.haptics
 //   share capture      "Share to Notivelo" (iOS Share Extension, Android share targets): a task opens
 //                      quick add prefilled, a note becomes a new page in the workspace's Inbox section
-//   server             first-run "Connect to a server" screen and "Change server…" (platform.server),
-//                      same rules as the desktop app (src/platform/serverUrl.ts)
+//   server             locked to the production server in release builds; debug / internal builds
+//                      get a "Change server…" command (platform.server, src/platform/serverUrl.ts)
 //   app lock           optional Face ID / Touch ID / fingerprint lock (platform.appLock), with a
 //                      privacy cover while the app is in the background
 //   system UI          status bar text follows the theme, splash hidden after first render,
@@ -37,7 +37,15 @@ import type { Task, Tree } from '../../shared/types.ts';
 import type { NotificationPermission, Platform } from './types.ts';
 import { keyboardInset } from './keyboardInset.ts';
 import { webPlatform } from './web.ts';
-import { SERVER_URL_KEY, normalizeServerUrl, storedServerUrl } from './serverUrl.ts';
+import {
+  REFRESH_TOKEN_KEY,
+  SERVER_URL_KEY,
+  mobileServerUrl,
+  normalizeServerUrl,
+  serverBuild,
+  takeStaleServer,
+  type ServerBuild,
+} from './serverUrl.ts';
 import { APP_NAME } from '../../shared/config.ts';
 
 export type MobileOS = 'ios' | 'android';
@@ -106,11 +114,13 @@ export interface MobileExtras {
     tap(): void;
     success(): void;
   };
-  /** The server this app talks to. Settings or the login screen can offer "Change server…". */
+  /** The server this app talks to. Release builds are locked to it (src/platform/serverUrl.ts). */
   server: {
-    /** The server in use ("https://notes.example.com"), or null when same-origin (dev). */
+    /** The server in use ("https://app.example.com"), or null when same-origin (dev). */
     current(): string | null;
-    /** Shows the server screen; saving a different server signs out and restarts the app. */
+    /** Debug / internal builds: whether change() does anything. */
+    switchable: boolean;
+    /** Shows the server screen (switchable builds only); saving a different server signs out and restarts the app. */
     change(): Promise<void>;
   };
   /** Optional biometric lock. Settings can offer a toggle when `'appLock' in platform`. */
@@ -316,9 +326,33 @@ export function dueTodayCount(tasks: Iterable<Task>, me: string | null, today = 
 
 // ───────────── Server choice ─────────────
 
-const SERVER_CONFIRMED_KEY = 'noteapp.serverConfirmed';
-/** The server baked into this build (npm run mobile:sync → MOBILE_SERVER_URL). */
-const BUILD_SERVER = (import.meta.env?.VITE_API_URL ?? '').replace(/\/+$/, '') || null;
+/**
+ * Locked builds, on start: forget a server saved by an older version (takeStaleServer). If it
+ * was another server than production, sign out: the refresh token belongs to that server, so it
+ * is removed here (and revoked there, best effort); bootstrap then finds no session and clears
+ * this device's copy of that account's data. A sign-in to production is kept.
+ */
+export async function forgetStaleServer(
+  kv: Pick<Platform['kv'], 'get' | 'remove'>,
+  secure: Pick<Platform['secureStorage'], 'get' | 'remove'>,
+  build: ServerBuild,
+  doFetch: typeof fetch = fetch,
+): Promise<'none' | 'kept' | 'signedOut'> {
+  const stale = takeStaleServer(kv, build);
+  if (!stale) return 'none';
+  if (stale.keepSession) return 'kept';
+  const token = await secure.get(REFRESH_TOKEN_KEY).catch(() => null);
+  await secure.remove(REFRESH_TOKEN_KEY).catch(() => {});
+  kv.remove('noteapp.token'); // pre-refresh-token sessions
+  if (token && stale.stored) {
+    void doFetch(`${stale.stored}/api/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: token }),
+    }).catch(() => {});
+  }
+  return 'signedOut';
+}
 
 /** Is there a Notivelo server at this address? (GET /api/health → {ok:true}) */
 export async function probeServer(url: string, doFetch: typeof fetch = fetch, timeoutMs = 8000): Promise<boolean> {
@@ -337,8 +371,8 @@ export async function probeServer(url: string, doFetch: typeof fetch = fetch, ti
 }
 
 /**
- * Validates and probes an address the user typed; on success saves it (and
- * marks the first-run choice as made). Resolves to the saved URL or an error.
+ * Validates and probes an address the user typed (switchable builds); on success saves it.
+ * Resolves to the saved URL or an error.
  */
 export async function chooseServer(
   input: string,
@@ -349,12 +383,11 @@ export async function chooseServer(
   if (!r.ok) return r;
   if (!(await probeServer(r.url, doFetch))) return { ok: false, error: `Couldn't reach a server at ${r.url}. Check the address and your connection.` };
   kv.set(SERVER_URL_KEY, r.url);
-  kv.set(SERVER_CONFIRMED_KEY, '1');
   return { ok: true, url: r.url };
 }
 
 /** The "Connect to a server" screen (DOM, outside React; it can run before the app renders). */
-function serverScreen(opts: { firstRun: boolean; current: string; appName: string; kv: Platform['kv'] }): Promise<string | null> {
+function serverScreen(opts: { current: string; appName: string; kv: Platform['kv'] }): Promise<string | null> {
   return new Promise((resolve) => {
     const el = (tag: string, css = '', text = '') => {
       const e = document.createElement(tag);
@@ -370,7 +403,7 @@ function serverScreen(opts: { firstRun: boolean; current: string; appName: strin
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-label', 'Connect to a server');
     const title = el('h1', 'margin:0;font-size:22px', 'Connect to a server');
-    const hint = el('p', 'margin:0;color:var(--text-muted, #71717a)', `The address of your ${opts.appName} server.`);
+    const hint = el('p', 'margin:0;color:var(--text-muted, #71717a)', `Internal build: the address of a staging or local ${opts.appName} server.`);
     const input = document.createElement('input');
     input.type = 'url';
     input.inputMode = 'url';
@@ -387,16 +420,14 @@ function serverScreen(opts: { firstRun: boolean; current: string; appName: strin
     form.style.cssText = 'display:flex;flex-direction:column;gap:14px';
     form.append(input, error, connect);
     root.append(title, hint, form);
-    if (!opts.firstRun) {
-      const cancel = el('button', 'padding:10px;font-size:15px', 'Cancel') as HTMLButtonElement;
-      cancel.type = 'button';
-      cancel.className = 'btn btn-ghost';
-      cancel.addEventListener('click', () => {
-        root.remove();
-        resolve(null);
-      });
-      root.append(cancel);
-    }
+    const cancel = el('button', 'padding:10px;font-size:15px', 'Cancel') as HTMLButtonElement;
+    cancel.type = 'button';
+    cancel.className = 'btn btn-ghost';
+    cancel.addEventListener('click', () => {
+      root.remove();
+      resolve(null);
+    });
+    root.append(cancel);
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       connect.disabled = true;
@@ -666,8 +697,13 @@ export function createLockedNotesBiometrics(native: Pick<NativePlugins, 'os' | '
 
 type Listener = (url: string) => void;
 
-export function createCapacitorPlatform(native: NativePlugins, bridge: () => Promise<AppBridge>): Platform & MobileExtras {
+export function createCapacitorPlatform(
+  native: NativePlugins,
+  bridge: () => Promise<AppBridge>,
+  build: ServerBuild = serverBuild(),
+): Platform & MobileExtras {
   const kv = webPlatform.kv; // WKWebView / Android WebView localStorage persists with the app's data
+  const currentServer = () => mobileServerUrl(build) || null;
   let hidden = false;
   let notifPermission: NotificationPermission = 'default';
 
@@ -813,10 +849,12 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
     kind: 'capacitor',
     haptics,
     server: {
-      current: () => storedServerUrl() ?? BUILD_SERVER,
+      current: currentServer,
+      switchable: build.allowSwitch,
       async change() {
-        const before = storedServerUrl() ?? BUILD_SERVER;
-        const chosen = await serverScreen({ firstRun: false, current: before ?? '', appName: APP_NAME, kv });
+        if (!build.allowSwitch) return; // release builds are locked to the production server
+        const before = currentServer();
+        const chosen = await serverScreen({ current: before ?? '', appName: APP_NAME, kv });
         if (!chosen || chosen === before) return;
         // Tokens belong to the old server: sign out there, then restart on the new one.
         await (await appBridge()).signOut().catch(() => {});
@@ -846,14 +884,9 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       // refresh works) and never restored onto another device from a backup.
       await native.SecureStorage.setDefaultKeychainAccess(3 /* afterFirstUnlockThisDeviceOnly */).catch(() => {});
       await refreshPermission();
-      // First run: confirm which server to use (the build's default is filled in). Dev builds that
-      // load the Vite server (same origin) skip this.
-      if (BUILD_SERVER && kv.get(SERVER_CONFIRMED_KEY) !== '1' && typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
-        void native.SplashScreen.hide().catch(() => {});
-        const chosen = await serverScreen({ firstRun: true, current: storedServerUrl() ?? BUILD_SERVER, appName: APP_NAME, kv });
-        // src/api.ts read the server when the app loaded; restart if the choice differs.
-        if (chosen && chosen !== BUILD_SERVER) return void location.reload();
-      }
+      // Release builds are locked to one server: forget a choice an older version saved, and
+      // sign out if it was another server (before the app restores its session).
+      await forgetStaleServer(kv, platform.secureStorage, build);
       appLock.start(); // before the first render, so nothing shows through
       appLock.onUnlock(() => void drainShares());
       appLock.api.subscribe(() => {
@@ -916,7 +949,8 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
         void native.NoteAppNative.setConfig({ apiBase: b.apiBase() }).catch(() => {});
         b.onUser((u) => void onUser(u));
         b.onTasks(scheduleBadge);
-        if (BUILD_SERVER)
+        // Hidden switch: only debug / internal builds (VITE_ALLOW_SERVER_SWITCH) can change the server.
+        if (build.allowSwitch)
           b.registerCommands([
             { id: 'mobile.changeServer', title: 'Change server…', group: 'Settings', keywords: 'server url address host', run: () => void platform.server.change() },
           ]);
