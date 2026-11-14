@@ -95,9 +95,20 @@ function contentDOM(json: JSONContent, ctx: PrintContext): HTMLElement {
   const wrap = el('div', 'print-box-content ProseMirror prose');
   const node = PMNode.fromJSON(s, resolveListStarts(sanitizeContent(json)));
   wrap.append(DOMSerializer.fromSchema(s).serializeFragment(node.content, { document }));
-  // Task references hold only an id: draw the live task.
-  wrap.querySelectorAll<HTMLElement>('div[data-type="task-ref"]').forEach((ref) => {
-    ref.replaceWith(taskLine(ctx.tasks[ref.getAttribute('data-task-id') ?? ''], ctx.members));
+  // Task references hold only an id: draw the live task, with the notes under it (folded or not) indented below.
+  // Innermost first, so a subtask inside a task's notes is drawn before its task's element is replaced.
+  [...wrap.querySelectorAll<HTMLElement>('div[data-type="task-ref"]')].reverse().forEach((ref) => {
+    const line = taskLine(ctx.tasks[ref.getAttribute('data-task-id') ?? ''], ctx.members);
+    const notes = ref.querySelector(':scope > [data-task-children]');
+    if (!notes?.childNodes.length) {
+      ref.replaceWith(line);
+      return;
+    }
+    const block = el('div', 'print-task-block');
+    const kids = el('div', 'print-task-notes');
+    kids.append(...notes.childNodes);
+    block.append(line, kids);
+    ref.replaceWith(block);
   });
   // Collapsed toggles print open: nothing is lost on paper.
   wrap.querySelectorAll('details').forEach((d) => d.setAttribute('open', ''));

@@ -61,8 +61,11 @@ export function taskRefsDeletedBy(tr: { steps: { getMap(): { forEach(f: (oldStar
     const doc = tr.docs[i];
     step.getMap().forEach((oldStart, oldEnd) => {
       if (oldEnd <= oldStart) return;
-      doc.nodesBetween(oldStart, Math.min(oldEnd, doc.content.size), (node) => {
-        if (node.type.name === 'taskRef' && node.attrs.taskId) out.add(node.attrs.taskId as string);
+      const end = Math.min(oldEnd, doc.content.size);
+      doc.nodesBetween(oldStart, end, (node, pos) => {
+        // Only tasks wholly inside the deleted range: typing in the notes under a task changes that task's
+        // content, it doesn't remove the task.
+        if (node.type.name === 'taskRef' && node.attrs.taskId && pos >= oldStart && pos + node.nodeSize <= end) out.add(node.attrs.taskId as string);
         return !node.isTextblock;
       });
     });

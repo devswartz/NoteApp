@@ -8,6 +8,7 @@ import { addDays, parseISODate, today, toISODate, describeRecurrence } from '../
 import type { Priority, Recurrence, Task } from '../../shared/types.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator, useClosePopover } from './ui.tsx';
 import { describeDue, dueTone, formatTime, initials } from '../lib/format.ts';
+import { MiniCalendar } from './MiniCalendar.tsx';
 
 export const PRIORITY_COLORS: Record<number, string> = {
   1: 'var(--p1)',
@@ -52,17 +53,15 @@ export function DueMenu({ value, onChange }: { value: string | null; onChange: (
         </MenuItem>
       )}
       <MenuSeparator />
-      <div className="menu-pad">
-        <input
-          type="date"
-          className="input input-sm"
-          value={value ?? ''}
-          onChange={(e) => {
-            onChange(e.target.value || null);
-            close();
-          }}
-        />
-      </div>
+      {/* Built-in calendar, not <input type="date">: the native picker's month arrows change the value, which set the date and closed the menu. */}
+      <MiniCalendar
+        value={value}
+        label="Due date"
+        onSelect={(d) => {
+          onChange(d);
+          close();
+        }}
+      />
     </div>
   );
 }

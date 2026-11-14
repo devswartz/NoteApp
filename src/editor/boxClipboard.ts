@@ -71,6 +71,7 @@ export function blocksText(blocks: JSONContent[] | undefined, taskText?: TaskTex
         });
       } else if (n.type === 'taskRef') {
         lines.push(`${pad}${taskText?.(String(n.attrs?.taskId ?? '')) ?? '[ ]'}`);
+        visit(n.content ?? [], depth + 1); // the notes under the task
       } else if (n.type === 'table') {
         for (const row of n.content ?? []) lines.push(pad + (row.content ?? []).map((c) => (c.content ?? []).map(inlineText).join(' ')).join('\t'));
       } else if (n.content?.some((c) => c.type && !TEXT_BLOCKS.has(c.type) && c.type !== 'text' && c.type !== 'hardBreak' ? true : TEXT_BLOCKS.has(c.type ?? ''))) {
@@ -151,11 +152,12 @@ export function placeBoxes(boxes: ClipBox[], opts: { at?: { x: number; y: number
 /** The blocks with every task reference replaced by `clone(taskId)` (a new task): pasted boxes get their own tasks. */
 export function mapTaskRefs(blocks: JSONContent[], clone: (taskId: string) => string | null): JSONContent[] {
   const walk = (n: JSONContent): JSONContent => {
+    const out = n.content ? { ...n, content: n.content.map(walk) } : n; // subtasks in a task's notes get their own copies too
     if (n.type === 'taskRef' && typeof n.attrs?.taskId === 'string') {
       const id = clone(n.attrs.taskId);
-      return id ? { ...n, attrs: { ...n.attrs, taskId: id } } : n;
+      return id ? { ...out, attrs: { ...n.attrs, taskId: id } } : out;
     }
-    return n.content ? { ...n, content: n.content.map(walk) } : n;
+    return out;
   };
   return blocks.map(walk);
 }

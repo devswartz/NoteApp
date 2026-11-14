@@ -312,6 +312,9 @@ const addMark = (marks: Mark[], m: Mark): Mark[] => {
 class Converter {
   resources: Resource[] = [];
   todos: Todo[] = [];
+  /** A to-do's nested blocks become the notes under its task block (AI writes) instead of following it (OneNote import). */
+  private todoSeq = 0;
+  constructor(private nestTodoNotes = false) {}
 
   private resource(kind: Resource['kind'], url: string, type: string, name: string, alt?: string): string {
     const key = `${RES_PREFIX}${this.resources.length}`;
@@ -472,9 +475,37 @@ class Converter {
       else this.inline(c, [], inline, (b) => extra.push(b));
     }
     const title = inline.map((x) => (x.type === 'text' ? x.text : ' ')).join('').replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE) || 'To-do';
-    const key = `${TODO_PREFIX}${this.todos.length}`;
+    const key = `${TODO_PREFIX}${this.todoSeq++}`; // not todos.length: plainChecks takes some back out
     this.todos.push({ key, title, done });
+    if (this.nestTodoNotes && extra.length) return [{ type: 'taskRef', attrs: { taskId: key }, content: this.plainChecks(extra) }];
     return [{ type: 'taskRef', attrs: { taskId: key } }, ...extra];
+  }
+
+  /**
+   * In a task's notes, to-dos are a plain checklist, not tasks (a packing list under "Pack for the trip" never
+   * fills the Tasks views): runs of to-do blocks become checklist items, and their placeholders are dropped.
+   */
+  private plainChecks(nodes: PMNode[]): PMNode[] {
+    const out: PMNode[] = [];
+    let run: PMNode[] = [];
+    const flush = () => {
+      if (run.length) out.push({ type: 'taskList', content: run });
+      run = [];
+    };
+    for (const n of nodes) {
+      const key = n.type === 'taskRef' ? String(n.attrs?.taskId ?? '') : '';
+      const i = key ? this.todos.findIndex((t) => t.key === key) : -1;
+      if (i < 0) {
+        flush();
+        out.push(n.content ? { ...n, content: this.plainChecks(n.content) } : n);
+        continue;
+      }
+      const [todo] = this.todos.splice(i, 1);
+      const title: PMNode = todo.title ? { type: 'paragraph', content: [{ type: 'text', text: todo.title }] } : { type: 'paragraph' };
+      run.push({ type: 'taskItem', attrs: { checked: todo.done }, content: [title, ...this.plainChecks(n.content ?? [])] });
+    }
+    flush();
+    return out;
   }
 
   /** ul/ol → lists. A to-do item can't live inside a list item (taskRef isn't allowed first), so it splits the list. */
@@ -614,13 +645,13 @@ function titleOf(html: string): string {
 }
 
 /** Convert one OneNote page. `fallbackTitle` is used when the HTML has no <title>. */
-export function convertOneNotePage(html: string, fallbackTitle = ''): Converted {
+export function convertOneNotePage(html: string, fallbackTitle = '', opts: { nestTodoNotes?: boolean } = {}): Converted {
   const root = parseHtml(html);
   // <title> is inside <head>, which the parser skips, so read it directly.
   const t = fallbackTitle ? '' : titleOf(html);
   const title = (fallbackTitle || decodeEntities(t)).replace(/\s+/g, ' ').trim().slice(0, 300) || 'Untitled';
   const body = findAll(root, 'body')[0] ?? root;
-  const c = new Converter();
+  const c = new Converter(!!opts.nestTodoNotes);
   const asDoc = (content: PMNode[]): DocNode => ({ type: 'doc', content: content.length ? content : [{ type: 'paragraph' }] });
   const boxes = canvasBoxes(c, body.children);
   if (!boxes) return { title, kind: 'document', doc: asDoc(c.blocks(body.children)), boxes: [], resources: c.resources, todos: c.todos };

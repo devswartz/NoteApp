@@ -22,7 +22,10 @@ export function docToMarkdown(frag: Y.XmlFragment): string {
       });
     else if (name === 'blockquote') (n.toArray() as Y.XmlElement[]).forEach((k) => block(k, `${prefix}> `));
     else if (name === 'codeBlock') lines.push(`${prefix}\`\`\``, text(n), `${prefix}\`\`\``);
-    else if (name === 'taskRef') lines.push(`${prefix}- [task] ${n.getAttribute('taskId') ?? ''}`);
+    else if (name === 'taskRef') {
+      lines.push(`${prefix}- [task] ${n.getAttribute('taskId') ?? ''}`);
+      (n.toArray() as Y.XmlElement[]).forEach((k) => (k instanceof Y.XmlElement ? block(k, `${prefix}  `) : lines.push(`${prefix}  ${text(k)}`))); // its notes
+    }
     else if (name === 'horizontalRule') lines.push(`${prefix}---`);
     else if (name === 'paragraph') lines.push(`${prefix}${text(n)}`);
     else (n.toArray() as Y.XmlElement[]).forEach((k) => (k instanceof Y.XmlElement ? block(k, prefix) : lines.push(prefix + text(k))));

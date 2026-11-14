@@ -22,7 +22,7 @@ import { clip } from '../http.ts';
 import { log } from '../log.ts';
 import { BOXES_KEY, FIRST_BOX, FIRST_BOX_ID, boxField, boxGeoms, fragmentIsEmpty, newBoxMap, readingOrder, type BoxGeom } from '../../shared/pageDoc.ts';
 import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
-import type { Todo } from '../onenoteHtml.ts';
+import type { PMNode as PMNodeJson, Todo } from '../onenoteHtml.ts';
 import { appendBlocks, capText, estimateBoxHeight, fillTasks, pageBoxes, prepareContent, READ_DEFAULT_CHARS, type Format } from './content.ts';
 
 /** Who is calling: the token's user, and the AI app it was issued to. */
@@ -152,6 +152,96 @@ const taskRefEl = (id: string) => {
   el.setAttribute('taskId', id);
   return el;
 };
+
+type YNode = Y.XmlElement | Y.XmlText;
+const refId = (n: unknown) => (n instanceof Y.XmlElement && n.nodeName === 'taskRef' ? String(n.getAttribute('taskId') ?? '') : '');
+
+/** A fresh copy of `n` (and what's under it), leaving out the task blocks `drop` picks. Null when `n` itself is dropped. */
+function copyWithout(n: YNode, drop: (id: string) => boolean): YNode | null {
+  if (n instanceof Y.XmlText) return n.clone();
+  const id = refId(n);
+  if (id && drop(id)) return null;
+  const e = new Y.XmlElement(n.nodeName);
+  for (const [k, v] of Object.entries(n.getAttributes())) e.setAttribute(k, v as never);
+  const kids = (n.toArray() as YNode[]).map((c) => copyWithout(c, drop)).filter((c): c is YNode => c !== null);
+  if (kids.length) e.insert(0, kids);
+  return e;
+}
+
+/**
+ * The notes under tasks (src/editor/taskChildren.ts) when an AI app rewrites a box, so they're never silently lost.
+ * Read from the box before it is emptied:
+ *   - a task the new content keeps ("- [ ]" with its title) with nothing indented under it keeps its notes; with
+ *     indented lines, those are its notes now;
+ *   - a task the new content leaves out is kept at the end of the box (as before), its notes as plain lines after it
+ *     (the subtasks in them are handled as tasks of their own).
+ * `apply` puts them in once the new content is in the box. `kept` lists the tasks kept at the end.
+ */
+function keepTaskNotes(frag: Y.XmlFragment, blocks: PMNodeJson[]) {
+  const old = new Map<string, Y.XmlElement>();
+  const order: string[] = [];
+  const walk = (n: Y.XmlFragment | Y.XmlElement) => {
+    for (const c of n.toArray()) {
+      if (!(c instanceof Y.XmlElement)) continue;
+      const id = refId(c);
+      if (id && !old.has(id)) {
+        old.set(id, c);
+        order.push(id);
+      }
+      walk(c);
+    }
+  };
+  walk(frag);
+  // Tasks in the new content, and whether it gives them notes.
+  const incoming = new Map<string, boolean>();
+  const scan = (nodes: PMNodeJson[]) => {
+    for (const n of nodes) {
+      if (n.type === 'taskRef' && typeof n.attrs?.taskId === 'string') incoming.set(n.attrs.taskId, !!n.content?.length);
+      if (n.content) scan(n.content);
+    }
+  };
+  scan(blocks);
+  const present = new Set(incoming.keys());
+  const restore = new Map<string, YNode[]>();
+  for (const [id, hasNotes] of incoming) {
+    const el = old.get(id);
+    if (hasNotes || !el || !el.length) continue;
+    const kids = (el.toArray() as YNode[]).map((c) => copyWithout(c, (sub) => incoming.has(sub))).filter((c): c is YNode => c !== null);
+    restore.set(id, kids);
+    const mark = (n: YNode) => {
+      const sub = refId(n);
+      if (sub) present.add(sub);
+      if (n instanceof Y.XmlElement) for (const c of n.toArray() as YNode[]) mark(c);
+    };
+    // The subtasks restored with them are in the box again (read from the originals: the copies aren't in a doc yet).
+    for (const c of el.toArray() as YNode[]) if (!incoming.has(refId(c))) mark(c);
+  }
+  const kept = order.filter((id) => !present.has(id));
+  const keptBlocks = kept.flatMap((id) => {
+    const el = old.get(id)!;
+    const plain = (el.toArray() as YNode[]).map((c) => copyWithout(c, () => true)).filter((c): c is YNode => c !== null);
+    return [taskRefEl(id), ...plain];
+  });
+  return {
+    kept,
+    apply(target: Y.XmlFragment) {
+      if (restore.size) {
+        const fill = (n: Y.XmlFragment | Y.XmlElement) => {
+          for (const c of n.toArray()) {
+            if (!(c instanceof Y.XmlElement)) continue;
+            const kids = restore.get(refId(c));
+            if (kids && !c.length) {
+              c.insert(0, kids);
+              restore.delete(refId(c));
+            } else fill(c);
+          }
+        };
+        fill(target);
+      }
+      if (keptBlocks.length) target.insert(target.length, keptBlocks);
+    },
+  };
+}
 
 /** Where a new box goes: the blank page's first box, or below everything else at the main box's left edge and width. */
 function newBoxPlacement(doc: Y.Doc): { id: string; geom: Omit<BoxGeom, 'id'> } {
@@ -484,15 +574,18 @@ export function replaceBoxContent(ctx: McpCtx, pageId: string, boxId: string, co
   const kept = [...new Set(oldTasks)].filter((id) => !reused.has(id));
   beforeEdit(pageId);
   const blocks = fillTasks(prepared.blocks, createTodos(ctx, a.workspaceId, pageId, prepared.todos, reuse));
+  let keptIds: string[] = kept;
   editPageDoc(pageId, (doc) => {
     const frag = doc.getXmlFragment(boxField(boxId));
+    const notes = keepTaskNotes(frag, blocks);
+    keptIds = notes.kept;
     if (frag.length) frag.delete(0, frag.length);
     appendBlocks(frag, blocks);
-    if (kept.length) frag.insert(frag.length, kept.map(taskRefEl));
+    notes.apply(frag);
     sanitizeYDoc(doc, {}, boxField(boxId));
   }, QUIET);
   afterEdit(ctx, pageId, a, `edited ${q(pageTitle(pageId))}`);
-  return { page_id: pageId, box_id: boxId, kept_task_ids: kept };
+  return { page_id: pageId, box_id: boxId, kept_task_ids: keptIds };
 }
 
 export interface NewTask {

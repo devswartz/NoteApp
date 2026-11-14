@@ -43,16 +43,29 @@ export function Popover({ anchor, point, open, onClose, children, placement = 'b
 
   useLayoutEffect(() => {
     if (!open || !ref.current || (!point && !anchor.current)) return;
-    const a = point ? new DOMRect(point.x, point.y, 0, 0) : anchor.current!.getBoundingClientRect();
-    const p = ref.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let left = placement === 'bottom-end' ? a.right - p.width : placement === 'right-end' ? a.right + 8 : a.left;
-    let top = placement === 'top-start' ? a.top - p.height - 6 : placement === 'right-end' ? a.bottom - p.height : a.bottom + 6;
-    if (placement === 'right-end') top = Math.min(Math.max(8, top), vh - p.height - 8);
-    else if (top + p.height > vh - 8) top = Math.max(8, a.top - p.height - 6);
-    left = Math.min(Math.max(8, left), vw - p.width - 8);
-    setPos({ top, left });
+    const place = () => {
+      if (!ref.current || (!point && !anchor.current)) return;
+      const a = point ? new DOMRect(point.x, point.y, 0, 0) : anchor.current!.getBoundingClientRect();
+      const p = ref.current.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let left = placement === 'bottom-end' ? a.right - p.width : placement === 'right-end' ? a.right + 8 : a.left;
+      let top = placement === 'top-start' ? a.top - p.height - 6 : placement === 'right-end' ? a.bottom - p.height : a.bottom + 6;
+      if (placement === 'right-end') top = Math.min(Math.max(8, top), vh - p.height - 8);
+      else if (top + p.height > vh - 8) top = Math.max(8, a.top - p.height - 6);
+      left = Math.min(Math.max(8, left), vw - p.width - 8);
+      setPos({ top, left });
+    };
+    place();
+    // Content that grows while open (e.g. a calendar shown in the recurrence editor) is moved back
+    // into view, but only once it no longer fits, so the popover doesn't jump about as it changes.
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const r = ref.current?.getBoundingClientRect();
+      if (r && r.top >= 0 && (r.bottom > window.innerHeight - 8 || r.right > window.innerWidth - 8)) place();
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
   }, [open, anchor, placement, point]);
 
   useEffect(() => {
@@ -72,7 +85,8 @@ export function Popover({ anchor, point, open, onClose, children, placement = 'b
       // Arrow keys, Home and End move between menu items (unless typing in a field inside the popover).
       if (ref.current && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
         const t = e.target as HTMLElement;
-        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') return;
+        // A calendar grid inside the popover (MiniCalendar) moves between its days itself.
+        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.closest?.('[role="grid"]')) return;
         const items = [...ref.current.querySelectorAll<HTMLElement>('.menu-item:not(:disabled)')];
         const next = menuTarget(e.key, items.length, items.indexOf(document.activeElement as HTMLElement));
         if (next === null) return;

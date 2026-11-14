@@ -46,6 +46,7 @@ import { GEOM_ORIGIN, boxJSON, pageSchema, writeBoxes, type CanvasHandle } from 
 import { headingsOf } from './Outline.tsx';
 import { MOD, MenuItem, MenuSeparator, keyLabel, useContextMenu, useIsMobile } from '../components/ui.tsx';
 import { boxSelection, useBoxSelection } from './boxSelection.ts';
+import { editorIsEmpty } from './taskGate.ts';
 import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
 
@@ -379,7 +380,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         readyFocused.current = true;
         setTimeout(() => {
           const a = document.activeElement;
-          if (!editor.isDestroyed && editor.isEmpty && (!a || a === document.body)) editor.commands.focus('start');
+          if (!editor.isDestroyed && editorIsEmpty(editor) && (!a || a === document.body)) editor.commands.focus('start');
         }, 0);
       }
     },
@@ -488,7 +489,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const dropIfEmpty = useCallback(
     (id: string) => {
       const ed = editors.current.get(id);
-      if (!canEdit || !ed || ed.isDestroyed || !ed.isEmpty) return;
+      if (!canEdit || !ed || ed.isDestroyed || !editorIsEmpty(ed)) return;
       removeBox(id, false);
     },
     [canEdit, removeBox],

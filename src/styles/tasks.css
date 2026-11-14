@@ -81,6 +81,14 @@ button.cal-more:hover { color: var(--accent); }
 .saved-view .saved-view-x { padding: 0 8px 0 4px; opacity: 0.5; }
 .saved-view .saved-view-x:hover { opacity: 1; }
 
+/* "From the note" (task detail): the notes under the task in its page, read-only */
+.note-notes { margin: 16px 0 8px; }
+.note-notes-body { border-left: 2px solid var(--border); padding: 2px 0 2px 10px; font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
+.note-notes-line { display: flex; gap: 6px; line-height: 1.5; }
+.note-notes-line.is-done > span:last-child { text-decoration: line-through; color: var(--text-muted); }
+.note-notes-marker { flex: none; width: 1em; text-align: center; color: var(--text-muted); }
+.note-notes-gap { height: 6px; }
+
 /* Subtasks (task detail) */
 .subtasks { margin: 16px 0 8px; display: grid; gap: 2px; }
 .subtasks-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }

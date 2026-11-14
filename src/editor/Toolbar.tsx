@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { canConvert } from './TaskRef.tsx';
 import { listItemAt } from './smartLists.ts';
+import { indentIntoTask, liftOutOfTask, shiftTabBlock, tabBlock } from './taskChildren.ts';
 import { canInsertTask } from './taskGate.ts';
 import { useActiveEditor } from './activeEditor.ts';
 import { pageUndoOf, type PageUndo } from './pageUndo.ts';
@@ -307,6 +308,9 @@ function ribbonState(e: Editor) {
     ordered: e.isActive('orderedList'),
     check: e.isActive('taskList'),
     inList: !!listItemAt(e),
+    // Tab / Shift+Tab also move a line into (and out of) the notes of the task above: the buttons do too (touch).
+    intoTask: indentIntoTask(e.state, tabBlock(e.state)),
+    outOfTask: !listItemAt(e) && liftOutOfTask(e.state, shiftTabBlock(e.state)),
     link: e.isActive('link'),
     canTask: canConvert(e),
     taskAllowed: canInsertTask(e),
@@ -708,8 +712,26 @@ export function Ribbon() {
       <Group label="Lists">
         {btn(`Bulleted list (${keyLabel(MOD, '.')})`, <List />, () => chain().toggleBulletList().run(), { active: s?.bullet })}
         {btn(`Numbered list (${keyLabel(MOD, SHIFT, '7')})`, <ListOrdered />, () => chain().toggleOrderedList().run(), { active: s?.ordered })}
-        {btn('Decrease indent (Shift+Tab)', <IndentDecrease />, () => chain().outdentListItem().run(), { disabled: !s?.inList })}
-        {btn('Increase indent (Tab)', <IndentIncrease />, () => chain().indentListItem().run(), { disabled: !s?.inList })}
+        {btn(
+          'Decrease indent (Shift+Tab)',
+          <IndentDecrease />,
+          () => {
+            const ed = editor;
+            if (ed && liftOutOfTask(ed.state, listItemAt(ed) ? null : shiftTabBlock(ed.state), ed.view.dispatch)) ed.view.focus();
+            else chain().outdentListItem().run();
+          },
+          { disabled: !s?.inList && !s?.outOfTask },
+        )}
+        {btn(
+          'Increase indent (Tab)',
+          <IndentIncrease />,
+          () => {
+            const ed = editor;
+            if (ed && indentIntoTask(ed.state, tabBlock(ed.state), ed.view.dispatch)) ed.view.focus();
+            else chain().indentListItem().run();
+          },
+          { disabled: !s?.inList && !s?.intoTask },
+        )}
         <span className="rb-split">
           {btn(
             `Task: make this line a tracked task, or start a new one (${keyLabel(MOD, '1')} or ${keyLabel(MOD, ENTER)})`,

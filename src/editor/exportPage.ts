@@ -8,6 +8,7 @@ import { fileName, liftInlineImages, splitTitle } from './markdownUtils.ts';
 import { sanitizeContent } from './urls.ts';
 import { resolveListStarts } from '../../shared/listMarker.ts';
 import { canvasMarkdownBody, withHeadlessEditor, type CanvasHandle } from './canvasDoc.ts';
+import { editorIsEmpty } from './taskGate.ts';
 
 /**
  * Hand a generated file to the user. The platform adapter has no "save file" yet,
@@ -107,7 +108,7 @@ export async function importMarkdownFiles(target: Editor | CanvasHandle, pageId:
       if (editor.isDestroyed || !editor.markdown) return;
       // Parse first, then drop javascript:/data: links and images before anything enters the document.
       const doc = liftInlineImages(sanitizeContent(editor.markdown.parse(md)));
-      const empty = editor.isEmpty;
+      const empty = editorIsEmpty(editor);
       const chain = editor.chain().focus('end');
       if (empty) chain.setContent(doc);
       else chain.insertContentAt(editor.state.doc.content.size, doc.content ?? []);

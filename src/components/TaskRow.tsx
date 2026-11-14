@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileText, AlignLeft, CalendarClock, Check, CornerDownRight, ListChecks, Plus, RotateCcw } from 'lucide-react';
+import { FileText, AlignLeft, CalendarClock, Check, CornerDownRight, ListChecks, Plus, RotateCcw, SquareCheck } from 'lucide-react';
 import { SwipeRow } from './shell/SwipeRow.tsx';
 import { TaskIndicators } from './notifications/TaskIndicators.tsx';
 import { createTask, toast, toggleTask, ui, updateTask, useStore } from '../store.ts';
@@ -149,6 +149,12 @@ export const TaskRow = memo(function TaskRow({
             {subs && subs.length > 0 && (
               <span className={`chip ${subsDone === subs.length ? 'chip-active' : ''}`} title={`${subsDone} of ${subs.length} subtasks done`}>
                 <ListChecks size={12} /> {subsDone}/{subs.length}
+              </span>
+            )}
+            {task.checklist && task.checklist.total > 0 && (
+              // A plain checklist written under the task in its page: only its count shows here, never its items.
+              <span className={`chip chip-checklist ${task.checklist.done === task.checklist.total ? 'chip-active' : ''}`} title={`Checklist in the note: ${task.checklist.done} of ${task.checklist.total} ticked`}>
+                <SquareCheck size={12} /> {task.checklist.done}/{task.checklist.total}
               </span>
             )}
             {parent && (

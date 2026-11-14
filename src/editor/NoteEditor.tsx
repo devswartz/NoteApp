@@ -409,7 +409,8 @@ function BlockHandle({ editor }: { editor: Editor }) {
           if (!c || !node || !dom) return null;
           // The grip's place always comes from the CURRENT target's own left edge, recomputed at every retarget (up to a parent or a
           // heading too): a list line keeps clear of its bullet or number, any other block gets a small gap.
-          const gap = LIST_ITEMS.has(node.type.name) ? LIST_MARKER_GAP : BLOCK_GAP;
+          // A task with notes has its fold arrow in that margin: the grip goes left of it.
+          const gap = LIST_ITEMS.has(node.type.name) ? LIST_MARKER_GAP : node.type.name === 'taskRef' && node.childCount ? BLOCK_GAP + 24 : BLOCK_GAP;
           return { getBoundingClientRect: () => { const r = dom.getBoundingClientRect(); return DOMRect.fromRect({ x: r.x - gap, y: r.y, width: r.width, height: r.height }); } };
         }}
         onNodeChange={({ node, pos }) => {

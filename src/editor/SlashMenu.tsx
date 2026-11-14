@@ -7,7 +7,9 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { MOD, keyLabel } from '../components/ui.tsx';
 import { canInsertTask } from './taskGate.ts';
+import { addChecklistToTask, taskNear } from './taskChildren.ts';
 import {
+  ListPlus,
   ChevronRight,
   FileSymlink,
   Link2,
@@ -85,6 +87,26 @@ export const SLASH_ITEMS: SlashItem[] = [
     keywords: 'checkbox list todo plain',
     icon: <CheckSquare size={18} />,
     run: (e, r) => e.chain().focus().deleteRange(r).toggleTaskList().run(),
+  },
+  {
+    // Offered on a line in a task's notes or just below a task (see the items filter).
+    title: 'Add checklist',
+    description: 'A checklist at the top of this task’s notes (its items are not tasks)',
+    keywords: 'checkbox list todo plain task packing subitems',
+    icon: <ListPlus size={18} />,
+    run: (e, r) => {
+      const tr = e.state.tr.delete(r.from, r.to);
+      const $at = tr.doc.resolve(r.from);
+      const taskPos = taskNear($at);
+      if (taskPos < 0) return;
+      // The line typed on goes when it is now empty and sits just below the task or right in its notes (it was only
+      // there for the "/").
+      const $line = $at.depth >= 1 ? tr.doc.resolve($at.before()) : null;
+      const besideTask = !!$line && ($line.parent === tr.doc.nodeAt(taskPos) || ($line.nodeBefore?.type.name === 'taskRef' && $line.pos - $line.nodeBefore.nodeSize === taskPos));
+      if ($line && besideTask && !$at.parent.content.size && $at.parent.type.name === 'paragraph') tr.delete($at.before(), $at.after());
+      if (addChecklistToTask(tr, taskPos)) e.view.dispatch(tr.scrollIntoView());
+      e.view.focus();
+    },
   },
   {
     title: 'Bulleted list',
@@ -236,7 +258,11 @@ export const SlashCommand = Extension.create({
           return $from.parent.type.name !== 'codeBlock' && !$from.parent.type.spec.code;
         },
         // No "Task" where this user can't create tasks (a page shared from outside its workspace, #98).
-        items: ({ query, editor }) => filterSlash(query).filter((i) => i.title !== 'Task' || canInsertTask(editor)),
+        // "Checklist under task" only next to a task (in its notes or on the line just below it).
+        items: ({ query, editor }) =>
+          filterSlash(query).filter(
+            (i) => (i.title !== 'Task' || canInsertTask(editor)) && (i.title !== 'Add checklist' || taskNear(editor.state.selection.$from) >= 0),
+          ),
         command: ({ editor, range, props }) => props.run(editor, range),
         render: () => ({
           onStart: (p) =>

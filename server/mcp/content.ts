@@ -63,7 +63,8 @@ export function prepareContent(content: string, format: Format): Prepared {
   if (content.length > MAX_WRITE_CHARS) throw new HttpError(413, `Content is too long (at most ${MAX_WRITE_CHARS} characters per call)`);
   const html = format === 'html' ? content : markdownToHtml(content);
   // A fallback title stops the converter reading <title>; the title is set separately.
-  const converted = convertOneNotePage(html, 'x');
+  // Lines indented under a "- [ ]" item are that task's notes (as read_page shows them).
+  const converted = convertOneNotePage(html, 'x', { nestTodoNotes: true });
   const doc = sanitizeContent({ type: 'doc', content: dropMedia(converted.doc.content) } as PMNode);
   if (depth(doc) > MAX_WRITE_DEPTH) throw new HttpError(400, 'Content is nested too deeply');
   const blocks = (doc.content ?? []).filter((n, i, all) => !(isEmptyParagraph(n) && all.length === 1));
@@ -78,7 +79,9 @@ export function fillTasks(blocks: PMNode[], ids: Map<string, string>): PMNode[] 
     if (n.type === 'taskRef') {
       const key = String(n.attrs?.taskId ?? '');
       const id = key.startsWith(TODO_PREFIX) ? ids.get(key) : undefined;
-      if (id) out.push({ type: 'taskRef', attrs: { taskId: id } });
+      const notes = n.content?.length ? fillTasks(n.content, ids) : [];
+      if (id) out.push({ type: 'taskRef', attrs: { taskId: id }, ...(notes.length ? { content: notes } : {}) });
+      else out.push(...notes); // never lose the lines written under it
       continue;
     }
     out.push(n.content ? { ...n, content: fillTasks(n.content, ids) } : n);

@@ -114,6 +114,9 @@
   .print-box-content ul[data-type='taskList'] li > label { position: relative; }
   .print-task.is-done .print-task-title { text-decoration: line-through; color: var(--text-muted); }
   .print-task-meta { font-size: 8.5pt; color: var(--text-muted); }
+  /* The notes under a task, indented to its title. */
+  .print-task-notes { margin-left: 5mm; }
+  .print-task-notes > :first-child { margin-top: 0; }
 
   .print-root * { animation: none !important; transition: none !important; box-shadow: none !important; }
 }

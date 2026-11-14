@@ -340,7 +340,8 @@ function hasUnknownTask(doc: Y.Doc, known: Record<string, Task>): boolean {
       if (c.nodeName === 'taskRef') {
         const id = c.getAttribute('taskId');
         if (id && !known[id]) found = true;
-      } else walk(c);
+      }
+      walk(c); // a task's notes can hold subtasks
     }
   };
   for (const name of doc.share.keys()) if (isContentField(name)) walk(doc.getXmlFragment(name));

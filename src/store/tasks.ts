@@ -217,6 +217,8 @@ export async function bulkUpdate(ids: string[], p: TaskPatch, label: string) {
 
 /** Tasks deleted from the task panel or the bulk bar in this tab: their placeholder in a page goes after the Undo window. */
 export const deletedHere = new Set<string>();
+/** Titles of tasks deleted from the task panel or the bulk bar in this tab (their subtasks too), by id. */
+export const deletedTitles = new Map<string, string>();
 /** How long the Undo toast stays (toasts.ts), plus a moment: a page's placeholder for the task is removed after it. */
 export const UNDO_WINDOW_MS = 7000;
 
@@ -232,6 +234,9 @@ export async function deleteTasksWithUndo(ids: string[]) {
   }
   if (!snap.size) return;
   ids.forEach((id) => deletedHere.add(id));
+  // Subtasks go with their task. Where one is written in the task's notes, the task's line going leaves it as a
+  // plain line with its title (deletedTitles), so nothing written in the page is lost.
+  for (const t of snap.values()) deletedTitles.set(t.id, t.title);
   await Promise.all(ids.map((id) => deleteTask(id)));
   const onPage = [...snap.values()].some((t) => t.pageId && !t.parentId);
   const n = ids.length;

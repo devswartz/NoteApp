@@ -223,6 +223,12 @@ export interface Task {
   tagIds: string[];
   /** Who last set the assignee; null while unassigned. Set by the server. */
   assignedBy: string | null;
+  /**
+   * Ticked / all items of the plain checklists written under the task in its page (its notes, not its subtasks'),
+   * counted by the server when the page is saved; null without any. The items themselves are never tasks. Absent
+   * from older servers.
+   */
+  checklist?: { done: number; total: number } | null;
   completedAt: string | null;
   completedBy: string | null;
   createdAt: string;

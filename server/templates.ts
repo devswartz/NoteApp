@@ -58,8 +58,11 @@ interface Ctx {
   resetChecks: boolean;
 }
 
-/** Rewrites a JSON doc by `ctx`. Returns null if the node itself must be dropped. */
-function walk(node: J, ctx: Ctx, depth: number): J | null {
+/**
+ * Rewrites a JSON doc by `ctx`. Returns null if the node itself must be dropped, or a list of nodes to put in its
+ * place (a task that can't be kept leaves the notes under it).
+ */
+function walk(node: J, ctx: Ctx, depth: number): J | J[] | null {
   if (!node || typeof node !== 'object' || Array.isArray(node)) throw new HttpError(400, 'Invalid content');
   if (depth > MAX_DEPTH) throw new HttpError(400, 'Content is nested too deeply');
   const out: J = { ...node };
@@ -67,7 +70,7 @@ function walk(node: J, ctx: Ctx, depth: number): J | null {
     const attrs: Record<string, unknown> = { ...node.attrs };
     if (node.type === 'taskRef') {
       const key = ctx.task(attrs.taskId);
-      if (key === null) return null;
+      if (key === null) return Array.isArray(node.content) ? walkContent(node.content, ctx, depth + 1) : null;
       attrs.taskId = key;
     } else if (node.type === 'taskItem' && ctx.resetChecks) {
       attrs.checked = false;
@@ -97,10 +100,29 @@ function walk(node: J, ctx: Ctx, depth: number): J | null {
       return [{ ...m, ...(a ? { attrs: a } : {}) }];
     });
   }
-  if (Array.isArray(node.content)) {
-    out.content = node.content.map((c) => walk(c, ctx, depth + 1)).filter((c): c is J => c !== null);
-  }
+  if (Array.isArray(node.content)) out.content = walkContent(node.content, ctx, depth + 1);
   return out;
+}
+
+function walkContent(content: J[], ctx: Ctx, depth: number): J[] {
+  return content.flatMap((c): J[] => {
+    const w = walk(c, ctx, depth);
+    return w === null ? [] : Array.isArray(w) ? w : [w];
+  });
+}
+
+/** The doc, rewritten (the root is never replaced). */
+function walkDoc(doc: J, ctx: Ctx): J {
+  const out = walk(doc, ctx, 0);
+  if (!out || Array.isArray(out)) throw new HttpError(400, 'Invalid content');
+  return out;
+}
+
+/** Ids of every task block in the doc. */
+function taskRefIds(node: J, found: Set<string>, depth = 0) {
+  if (!node || typeof node !== 'object' || depth > MAX_DEPTH + 1) return;
+  if (node.type === 'taskRef' && typeof node.attrs?.taskId === 'string') found.add(node.attrs.taskId);
+  for (const c of Array.isArray(node.content) ? node.content : []) taskRefIds(c, found, depth + 1);
 }
 
 /** Every upload URL mentioned in the doc. */
@@ -271,18 +293,27 @@ export function createTemplate(opts: {
   // Tasks: snapshot.
   const tasks: TplTask[] = [];
   let subtotal = 0;
+  // A subtask written in its task's notes on the page is kept there, as its own task block (using the template
+  // makes it a subtask again where it sits); the task's snapshot lists only its other subtasks.
+  const inDoc = new Set<string>();
+  taskRefIds(doc, inDoc);
   const taskKey = (id: unknown): string | null => {
     if (typeof id !== 'string') return null;
-    const t = db.prepare('SELECT * FROM tasks WHERE id = ? AND workspace_id = ? AND parent_id IS NULL').get(id, opts.workspaceId) as
+    const t = db.prepare('SELECT * FROM tasks WHERE id = ? AND workspace_id = ? AND (parent_id IS NULL OR parent_id IN (SELECT value FROM json_each(?)))').get(id, opts.workspaceId, JSON.stringify([...inDoc])) as
       | { title: string; description: string; priority: number }
       | undefined;
     if (!t || !taskVisible(id, opts.userId)) return null;
     if (!visibleToWorkspace(id)) visibility = 'private';
     if (tasks.length >= MAX_TEMPLATE_TASKS || tasks.length + subtotal >= MAX_TEMPLATE_TASKS_TOTAL)
       throw new HttpError(413, `A template can include up to ${MAX_TEMPLATE_TASKS} tasks (${MAX_TEMPLATE_TASKS_TOTAL} with subtasks)`);
-    const subs = db
-      .prepare('SELECT title, description, priority FROM tasks WHERE parent_id = ? ORDER BY created_at LIMIT ?')
-      .all(id, MAX_SUBTASKS_PER_TASK) as { title: string; description: string; priority: number }[];
+    const subs = (
+      db.prepare('SELECT id, title, description, priority FROM tasks WHERE parent_id = ? ORDER BY created_at LIMIT ?').all(id, MAX_SUBTASKS_PER_TASK) as {
+        id: string;
+        title: string;
+        description: string;
+        priority: number;
+      }[]
+    ).filter((s) => !inDoc.has(s.id));
     subtotal += subs.length;
     const key = `tpl-task-${tasks.length}`;
     tasks.push({
@@ -311,7 +342,7 @@ export function createTemplate(opts: {
         written.push(c.path);
         newUrl.set(url, c.url);
       }
-      const out = walk(doc, { file: (u) => newUrl.get(u) ?? null, task: taskKey, resetChecks: true }, 0);
+      const out = walkDoc(doc, { file: (u) => newUrl.get(u) ?? null, task: taskKey, resetChecks: true });
       db.prepare('UPDATE templates SET visibility = ? WHERE id = ?').run(visibility, templateId);
       const content = JSON.stringify(out);
       if (Buffer.byteLength(content) > MAX_TEMPLATE_CONTENT_BYTES) throw new HttpError(413, 'That page is too large for a template');
@@ -357,7 +388,7 @@ export function useTemplate(t: TemplateRow, pageId: string, userId: string) {
         }
         return task.id;
       };
-      const out = walk(doc, { file: (u) => urlMap.get(u) ?? null, task: (k) => (typeof k === 'string' ? make(k) : null), resetChecks: false }, 0);
+      const out = walkDoc(doc, { file: (u) => urlMap.get(u) ?? null, task: (k) => (typeof k === 'string' ? make(k) : null), resetChecks: false });
       content = out;
     })();
   } catch (e) {

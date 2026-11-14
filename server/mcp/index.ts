@@ -160,7 +160,7 @@ function buildServer(ctx: McpCtx, scopes: Set<Scope>, tokenKey: string): McpServ
     'read_page',
     {
       title: 'Read a page',
-      description: `A page as Markdown, box by box in reading order. Each box starts with a "<!-- box: <id> -->" line: use those ids with append_box and replace_box_content. Long pages are cut at max_chars with a notice. ${UNTRUSTED}`,
+      description: `A page as Markdown, box by box in reading order. Each box starts with a "<!-- box: <id> -->" line: use those ids with append_box and replace_box_content. A task's notes (bullets, checklists with their ticks, subtasks) are indented under its "- [ ]" line. Long pages are cut at max_chars with a notice. ${UNTRUSTED}`,
       inputSchema: {
         page_id: id('Page id'),
         max_chars: z.number().int().min(1000).max(READ_MAX_CHARS).default(READ_DEFAULT_CHARS).describe('Most characters of content to return'),
@@ -222,7 +222,7 @@ function buildServer(ctx: McpCtx, scopes: Set<Scope>, tokenKey: string): McpServ
     {
       title: 'Add to a page',
       description:
-        'Add content to an existing page: as a new text box below everything else, or, with box_id, at the end of that box. Nothing already on the page changes. The page keeps a version from before the change.',
+        'Add content to an existing page: as a new text box below everything else, or, with box_id, at the end of that box. Nothing already on the page changes. The page keeps a version from before the change. Lines indented under a "- [ ]" item become that new task\'s notes (bullets, "- [ ]" sub-items become its subtasks).',
       inputSchema: {
         page_id: id('Page id'),
         content,
@@ -240,7 +240,7 @@ function buildServer(ctx: McpCtx, scopes: Set<Scope>, tokenKey: string): McpServ
     {
       title: 'Rewrite a text box',
       description:
-        'Replace all the content of one text box on a page (ids from read_page). The page keeps a version from before the change, so the user can undo it from Version history. Tasks in the box are kept: a "- [ ]" line with the same title as one of them stays that task (ticked or not as you write it); the others are kept at the end of the box. The content cannot be empty.',
+        'Replace all the content of one text box on a page (ids from read_page). The page keeps a version from before the change, so the user can undo it from Version history. Tasks in the box are kept: a "- [ ]" line with the same title as one of them stays that task (ticked or not as you write it); the others are kept at the end of the box. A task\'s notes (the lines indented under it in read_page) are never lost: write indented lines under a kept task to replace its notes, or none to keep them as they are; a task you leave out is kept at the end with its notes as plain lines after it. The content cannot be empty.',
       inputSchema: { page_id: id('Page id'), box_id: id('Box id (from read_page)'), content, format },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     },
