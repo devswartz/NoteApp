@@ -2,13 +2,15 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
-## v0.5.0
+## v0.5.1
 
 ### New address: notiveloapp.com
 - Notivelo moves to its own domain. The app is at **https://app.notiveloapp.com** (staging: https://staging.notiveloapp.com), support is support@notiveloapp.com, and app emails come from no-reply@notiveloapp.com. The Privacy Policy and Terms name Notivelo as the operator.
 - **The apps always use Notivelo's server.** Release builds of the iPhone, Android and desktop apps talk only to https://app.notiveloapp.com: the first-run "Connect to a server" screen and **Change server…** are gone. A server picked in an older version is forgotten on the first start; if it was Notivelo's own server under its old address you stay signed in, otherwise you're signed out once. Debug and internal test builds keep a hidden **Change server…** for staging or a local server.
 - Universal links and Android app links now open `https://app.notiveloapp.com/w/…` (and staging) in the app.
 - Server: optional `REDIRECT_HOSTS` (old host names, comma-separated). Opening a page there redirects (301) to the same page on `PUBLIC_URL`, while the API, live updates, files, the AI connector and `/.well-known` keep answering on the old name for app versions already installed. AI connectors set up against the old address need to be connected again.
+
+## v0.5.0
 
 ### Locked pages
 - **Lock a page.** Page menu → **Lock page**, for pages only you can see (in your private notebook, or a workspace nobody else is in, and not shared with anyone). While a page is locked it can't be shared, moved into a shared notebook, or have its notebook shared, and its icon in the sidebar is a lock. Changing or resetting the locked-notes password always sends you an email. A locked page opens only for you, with a locked-notes password that is separate from your sign-in password (you create it the first time you lock something). For everyone else in the workspace, admins included, the page is gone: not in the sidebar, search, links, tasks, activity, notifications, exports or connected AI apps.
