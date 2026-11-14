@@ -1,5 +1,5 @@
 // Submits one platform's App Store version for review through the App Store Connect API. Run by
-// .github/workflows/store-submit.yml after the `app-store` environment is approved; see docs/STORE_RELEASES.md.
+// .github/workflows/store-submit.yml for a tag with a What's New section; see docs/STORE_RELEASES.md.
 //
 //   ASC_KEY_P8=... ASC_KEY_ID=... ASC_ISSUER_ID=... PLATFORM=IOS|MAC_OS VERSION=0.5.4 WHATS_NEW_FILE=whats-new.txt \
 //     node scripts/store-submit.mjs [--dry-run]

@@ -1,6 +1,6 @@
 // "What's New" text for an App Store version (iOS and macOS get the same text). Used by .github/workflows/store-submit.yml.
 //
-//   node scripts/store-whats-new.mjs v0.5.4 [--whats-new docs/store/whats-new.md] [--changelog CHANGELOG.md] [--explain]
+//   node scripts/store-whats-new.mjs v0.5.4 [--whats-new docs/store/whats-new.md] [--changelog CHANGELOG.md] [--explain] [--section-only]
 //
 // Prints the text on stdout; warnings go to stderr as GitHub `::warning::` lines. Sources, in order:
 //   1. The `## v0.5.4` section of docs/store/whats-new.md (format documented at the top of that file). Used as written,
@@ -10,6 +10,7 @@
 //      bullet is shortened to its first sentence or two. If most of the entry is developer-facing, or nothing is left, the
 //      generic line below is used instead, with a warning, so internal notes never reach the store.
 //   3. No entry anywhere: the generic line, with a warning.
+// --section-only: use only source 1; with no section, print nothing and exit 3 (tag pushes: no section = no store release).
 // --explain prints which bullets were kept or dropped (stderr), for checking the heuristics.
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -124,7 +125,7 @@ export function fromChangelog(body) {
 }
 
 /** { text, source, warnings } for a version. */
-export function whatsNew(version, { whatsNewPath = 'docs/store/whats-new.md', changelogPath = 'CHANGELOG.md' } = {}) {
+export function whatsNew(version, { whatsNewPath = 'docs/store/whats-new.md', changelogPath = 'CHANGELOG.md', sectionOnly = false } = {}) {
   const warnings = [];
   if (existsSync(whatsNewPath)) {
     const body = section(readFileSync(whatsNewPath, 'utf8').replace(/<!--[\s\S]*?-->/g, ''), version);
@@ -135,6 +136,7 @@ export function whatsNew(version, { whatsNewPath = 'docs/store/whats-new.md', ch
       return { text, source: whatsNewPath, warnings };
     }
   }
+  if (sectionOnly) return null;
   if (existsSync(changelogPath)) {
     const body = section(readFileSync(changelogPath, 'utf8'), version);
     if (body !== null) {
@@ -157,11 +159,15 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const opt = (name, dflt) => (args.includes(name) ? args[args.indexOf(name) + 1] : dflt);
   const version = args.find((a, i) => !a.startsWith('--') && !['--whats-new', '--changelog'].includes(args[i - 1]));
   if (!version || !/^v?\d+\.\d+\.\d+$/.test(version)) {
-    console.error('::error::usage: node scripts/store-whats-new.mjs vX.Y.Z [--whats-new file] [--changelog file] [--explain]');
+    console.error('::error::usage: node scripts/store-whats-new.mjs vX.Y.Z [--whats-new file] [--changelog file] [--explain] [--section-only]');
     process.exit(2);
   }
   try {
-    const r = whatsNew(version, { whatsNewPath: opt('--whats-new', 'docs/store/whats-new.md'), changelogPath: opt('--changelog', 'CHANGELOG.md') });
+    const r = whatsNew(version, { whatsNewPath: opt('--whats-new', 'docs/store/whats-new.md'), changelogPath: opt('--changelog', 'CHANGELOG.md'), sectionOnly: args.includes('--section-only') });
+    if (!r) {
+      console.error(`No What's New section for v${version.replace(/^v/, '')} in ${opt('--whats-new', 'docs/store/whats-new.md')}.`);
+      process.exit(3);
+    }
     for (const w of r.warnings) console.error(`::warning::${w}`);
     if (args.includes('--explain') && r.detail) {
       for (const k of r.detail.kept) console.error(`kept    [${k.section}] ${k.text.slice(0, 100)}`);

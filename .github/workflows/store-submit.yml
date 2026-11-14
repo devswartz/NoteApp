@@ -1,8 +1,11 @@
-# Submits the iOS and macOS App Store versions of a release tag for review, once someone approves the `app-store`
-# environment. The builds themselves come from mobile.yml (iOS, TestFlight) and mac-app-store.yml (.pkg), which run on
-# the same tag; the submit jobs wait for those builds to finish processing in App Store Connect, then attach them, set
-# What's New (docs/store/whats-new.md, else CHANGELOG.md), release after approval, and submit. A version already in
-# review is cancelled and replaced by the newer build. Flow, setup and what still needs a person: docs/STORE_RELEASES.md.
+# Submits the iOS and macOS App Store versions of a release tag for review. The builds themselves come from mobile.yml
+# (iOS, TestFlight) and mac-app-store.yml (.pkg), which run on the same tag; the submit jobs wait for those builds to
+# finish processing in App Store Connect, then attach them, set What's New, release after approval, and submit. A
+# version already in review is cancelled and replaced by the newer build.
+#
+# The release notes decide: a tag push is submitted only when docs/store/whats-new.md has a `## vX.Y.Z` section for it.
+# No section: the run succeeds and nothing is sent to Apple. A manual run (older tag) may fall back to CHANGELOG.md or a
+# generic line. Flow and what still needs a person: docs/STORE_RELEASES.md.
 name: Store submit
 
 on:
@@ -34,13 +37,15 @@ env:
   TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
-  # No approval needed: shows the What's New text in the run summary, so you can read it before approving.
+  # Decides whether to submit and with which text; the text is shown in the run summary.
   whats-new:
     name: What's New
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      submit: ${{ steps.text.outputs.submit }}
       version: ${{ steps.text.outputs.version }}
+      text_b64: ${{ steps.text.outputs.text_b64 }}
       matrix: ${{ steps.text.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +58,8 @@ jobs:
         id: text
         env:
           PLATFORMS: ${{ inputs.platforms }}
+          # Tag pushes use only docs/store/whats-new.md; a manual run may fall back to CHANGELOG.md / generic text.
+          SECTION_ONLY: ${{ github.event_name == 'push' && '--section-only' || '' }}
         run: |
           if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "::error::'$TAG' is not a release tag like v1.2.3"; exit 1; fi
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
@@ -63,7 +70,17 @@ jobs:
             macos) echo "matrix=[$mac]" ;;
             *) echo "matrix=[$ios,$mac]" ;;
           esac >> "$GITHUB_OUTPUT"
-          node scripts/store-whats-new.mjs "$TAG" --explain > "$RUNNER_TEMP/whats-new.txt"
+          status=0
+          node scripts/store-whats-new.mjs "$TAG" --explain $SECTION_ONLY > "$RUNNER_TEMP/whats-new.txt" || status=$?
+          if [ "$status" = 3 ]; then
+            echo "submit=false" >> "$GITHUB_OUTPUT"
+            echo "No What's New section for $TAG; not submitted to the App Store" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice::No What's New section for $TAG in docs/store/whats-new.md; not submitted to the App Store."
+            exit 0
+          fi
+          if [ "$status" != 0 ]; then exit "$status"; fi
+          echo "submit=true" >> "$GITHUB_OUTPUT"
+          echo "text_b64=$(base64 -w0 "$RUNNER_TEMP/whats-new.txt")" >> "$GITHUB_OUTPUT"
           {
             echo "### What's New for $TAG (iOS and macOS)"
             echo
@@ -71,22 +88,23 @@ jobs:
             cat "$RUNNER_TEMP/whats-new.txt"
             echo '```'
             echo
-            echo "Approve the **app-store** environment to submit; reject it to skip this tag."
+            echo "Submitting to App Review; each version is released automatically once Apple approves it."
           } >> "$GITHUB_STEP_SUMMARY"
 
   submit:
     name: Submit ${{ matrix.name }}
     needs: whats-new
+    if: needs.whats-new.outputs.submit == 'true'
     runs-on: ubuntu-latest
-    # Waits here for a required reviewer (Settings → Environments → app-store). One approval covers both platforms.
-    environment: app-store
     # Builds take up to ~1 hour to upload and process; the script itself gives up after BUILD_TIMEOUT_MIN.
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.whats-new.outputs.matrix) }}
-    # A newer tag's run waits for this one instead of racing it on the same App Store version.
+    # One submission per platform at a time: a newer tag's job queues behind the running one, never cancels it.
+    # (GitHub keeps one queued job per group, so if a third tag arrives while one runs, the middle one is dropped and
+    # the newest goes next, which is what the store needs anyway.)
     concurrency:
       group: store-submit-${{ matrix.key }}
       cancel-in-progress: false
@@ -98,7 +116,9 @@ jobs:
           node-version: 22
 
       - name: What's New
-        run: node scripts/store-whats-new.mjs "$TAG" > "$RUNNER_TEMP/whats-new.txt"
+        env:
+          TEXT_B64: ${{ needs.whats-new.outputs.text_b64 }}
+        run: printf '%s' "$TEXT_B64" | base64 -d > "$RUNNER_TEMP/whats-new.txt"
 
       - name: Submit for review
         env:

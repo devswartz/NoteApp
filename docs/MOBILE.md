@@ -126,7 +126,7 @@ Only `/w/…` paths are claimed. Login links and the API always stay in the brow
 
 To ship a TestFlight build: push a tag `mobile-v0.1.0` (or `v0.1.0`, which also releases the server), or run the workflow by hand with *TestFlight* ticked.
 
-Submitting to App Review is a separate workflow: on `v*.*.*` tags, **Store submit** waits for an approval, then submits the TestFlight build of that version (`docs/STORE_RELEASES.md`). `mobile-v*` tags are not submitted.
+Submitting to App Review is a separate workflow: on `v*.*.*` tags, **Store submit** submits the TestFlight build of that version when `docs/store/whats-new.md` has a section for the tag (`docs/STORE_RELEASES.md`). `mobile-v*` tags are not submitted.
 
 ## Verified so far / known gaps
 
