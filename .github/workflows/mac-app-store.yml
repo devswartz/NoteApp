@@ -1,0 +1,212 @@
+# Mac App Store build of the desktop app (apps/desktop): sandboxed, no self-updater, signed with an
+# "Apple Distribution" certificate, packaged as a .pkg signed with a "Mac Installer Distribution"
+# certificate and uploaded to App Store Connect (TestFlight). Runs next to desktop.yml (Developer ID
+# .dmg), which it doesn't touch. Setup, secrets and the TestFlight checklist: docs/MAC_APP_STORE.md.
+#
+# Without the APPLE_MAS_* secrets (or APPLE_TEAM_ID) every step is skipped with a notice, so tag
+# releases stay green until the store build is set up.
+name: Mac App Store
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload the .pkg to App Store Connect (otherwise only a workflow artifact)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# `shell: bash` runs with -o pipefail.
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: mac-app-store-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # App version: the tag (tauri.mjs drops the "v"); manual runs keep package.json's.
+  APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+  # CFBundleVersion: goes up with every run, like the iOS build number (mobile.yml).
+  BUILD_NUMBER: ${{ github.run_number }}
+  LEGACY_PROD_HOSTS: ${{ vars.LEGACY_PROD_HOSTS || secrets.LEGACY_PROD_HOSTS }}
+
+jobs:
+  mas:
+    name: macOS App Store (universal .pkg)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      HAS_MAS: ${{ secrets.APPLE_MAS_APP_CERTIFICATE != '' && secrets.APPLE_MAS_INSTALLER_CERTIFICATE != '' && secrets.APPLE_MAS_PROVISION_PROFILE != '' && secrets.APPLE_TEAM_ID != '' }}
+      HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' }}
+      UPLOAD: ${{ github.event_name == 'push' || inputs.upload }}
+    steps:
+      - name: Mac App Store build skipped
+        if: env.HAS_MAS != 'true'
+        run: echo "::notice::APPLE_MAS_APP_CERTIFICATE / APPLE_MAS_INSTALLER_CERTIFICATE / APPLE_MAS_PROVISION_PROFILE / APPLE_TEAM_ID not all set; skipped the Mac App Store build (see docs/MAC_APP_STORE.md)."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_MAS == 'true'
+
+      - uses: actions/setup-node@v4
+        if: env.HAS_MAS == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      # Newest stable Xcode on the image: App Store Connect requires a recent SDK.
+      - name: Xcode
+        if: env.HAS_MAS == 'true'
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -1)"
+          xcodebuild -version
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.HAS_MAS == 'true'
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        if: env.HAS_MAS == 'true'
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+          key: mas
+
+      - if: env.HAS_MAS == 'true'
+        run: npm ci --no-audit --no-fund --ignore-scripts
+
+      # Both certificates into a temporary keychain (as desktop.yml does for Developer ID), the profile
+      # checked against the team and bundle ID, and the team ID filled into the entitlements.
+      - name: Signing setup
+        if: env.HAS_MAS == 'true'
+        env:
+          APPLE_MAS_APP_CERTIFICATE: ${{ secrets.APPLE_MAS_APP_CERTIFICATE }}
+          APPLE_MAS_APP_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAS_APP_CERTIFICATE_PASSWORD }}
+          APPLE_MAS_INSTALLER_CERTIFICATE: ${{ secrets.APPLE_MAS_INSTALLER_CERTIFICATE }}
+          APPLE_MAS_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_MAS_INSTALLER_CERTIFICATE_PASSWORD }}
+          APPLE_MAS_PROVISION_PROFILE: ${{ secrets.APPLE_MAS_PROVISION_PROFILE }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/mas.keychain"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$APPLE_MAS_APP_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/app.p12"
+          echo "$APPLE_MAS_INSTALLER_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/installer.p12"
+          security import "$RUNNER_TEMP/app.p12" -k "$KEYCHAIN" -P "$APPLE_MAS_APP_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/installer.p12" -k "$KEYCHAIN" -P "$APPLE_MAS_INSTALLER_CERTIFICATE_PASSWORD" -T /usr/bin/productbuild -T /usr/bin/pkgbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/installer.p12"
+
+          # "Apple Distribution: …" (older certificates: "3rd Party Mac Developer Application: …").
+          APP_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -E '"(Apple Distribution|3rd Party Mac Developer Application): ' | head -1 | sed -E 's/.*"(.*)"/\1/')"
+          # The installer certificate isn't a code-signing identity, so list without -p.
+          INSTALLER_IDENTITY="$(security find-identity -v "$KEYCHAIN" | grep -E '"(3rd Party Mac Developer Installer|Mac Installer Distribution): ' | head -1 | sed -E 's/.*"(.*)"/\1/')"
+          if [ -z "$APP_IDENTITY" ]; then echo "::error::No 'Apple Distribution' identity in APPLE_MAS_APP_CERTIFICATE"; exit 1; fi
+          if [ -z "$INSTALLER_IDENTITY" ]; then echo "::error::No 'Mac Installer Distribution' identity in APPLE_MAS_INSTALLER_CERTIFICATE"; exit 1; fi
+          echo "App identity: $APP_IDENTITY"
+          echo "Installer identity: $INSTALLER_IDENTITY"
+          { echo "APPLE_SIGNING_IDENTITY=$APP_IDENTITY"; echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY"; } >> "$GITHUB_ENV"
+
+          PROFILE="$RUNNER_TEMP/embedded.provisionprofile"
+          echo "$APPLE_MAS_PROVISION_PROFILE" | base64 --decode > "$PROFILE"
+          security cms -D -i "$PROFILE" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$RUNNER_TEMP/profile.plist")"
+          echo "Profile: $(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist"), app ID $PROFILE_APP_ID"
+          if [ "$PROFILE_APP_ID" != "$APPLE_TEAM_ID.com.devswartz.notivelo" ]; then
+            echo "::error::APPLE_MAS_PROVISION_PROFILE is for $PROFILE_APP_ID, expected $APPLE_TEAM_ID.com.devswartz.notivelo"; exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$RUNNER_TEMP/profile.plist" >/dev/null 2>&1; then
+            echo "::error::APPLE_MAS_PROVISION_PROFILE is a development profile; it must be a Mac App Store distribution profile"; exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/notivelo-mas.provisionprofile"
+
+          ENTITLEMENTS="$RUNNER_TEMP/Entitlements.mas.plist"
+          sed "s/__APPLE_TEAM_ID__/$APPLE_TEAM_ID/g" apps/desktop/src-tauri/Entitlements.mas.plist > "$ENTITLEMENTS"
+          if grep -q __APPLE_TEAM_ID__ "$ENTITLEMENTS"; then echo "::error::team ID not filled into the entitlements"; exit 1; fi
+          plutil -lint "$ENTITLEMENTS"
+
+          # The parts of the store config that depend on this run (merged after tauri.mas.conf.json).
+          jq -n --arg ent "$ENTITLEMENTS" --arg prof "$PROFILE" --arg build "$BUILD_NUMBER" \
+            '{bundle: {macOS: {entitlements: $ent, bundleVersion: $build, files: {"embedded.provisionprofile": $prof}}}}' \
+            > "$RUNNER_TEMP/mas.run.conf.json"
+          cat "$RUNNER_TEMP/mas.run.conf.json"
+
+      # No TAURI_SIGNING_* / notarisation variables here: tauri.mjs adds no updater config, and the
+      # bundler signs with APPLE_SIGNING_IDENTITY without notarising. --no-default-features drops
+      # the updater plugin from the binary (Cargo feature `updater`).
+      - name: Build (sandboxed, no updater)
+        if: env.HAS_MAS == 'true'
+        run: |
+          node apps/desktop/scripts/tauri.mjs build --target universal-apple-darwin \
+            --config "$GITHUB_WORKSPACE/apps/desktop/src-tauri/tauri.mas.conf.json" \
+            --config "$RUNNER_TEMP/mas.run.conf.json" \
+            -- --no-default-features
+
+      - name: Check the app
+        if: env.HAS_MAS == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP="$(ls -d apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app | head -1)"
+          echo "APP=$APP" >> "$GITHUB_ENV"
+          plutil -p "$APP/Contents/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleShortVersionString|CFBundleVersion|LSApplicationCategoryType|ITSAppUsesNonExemptEncryption|LSMinimumSystemVersion'
+          test -f "$APP/Contents/embedded.provisionprofile" || { echo "::error::embedded.provisionprofile missing"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dvv "$APP" 2>&1 | grep -E 'Authority=|TeamIdentifier='
+          codesign -d --entitlements - --xml "$APP" > "$RUNNER_TEMP/signed-entitlements.plist"
+          plutil -p "$RUNNER_TEMP/signed-entitlements.plist"
+          for key in com.apple.security.app-sandbox com.apple.security.network.client com.apple.application-identifier com.apple.developer.team-identifier; do
+            grep -q "$key" "$RUNNER_TEMP/signed-entitlements.plist" || { echo "::error::signed app lacks $key"; exit 1; }
+          done
+          grep -q "$APPLE_TEAM_ID.com.devswartz.notivelo" "$RUNNER_TEMP/signed-entitlements.plist" || { echo "::error::wrong application-identifier"; exit 1; }
+          if codesign -dvv "$APP" 2>&1 | grep -q 'Authority=Developer ID'; then echo "::error::signed with Developer ID, not Apple Distribution"; exit 1; fi
+          # The updater must not be in the store binary (App Review 2.4.5).
+          if strings "$APP/Contents/MacOS/"* | grep -q 'tauri-plugin-updater-'; then echo "::error::the updater is compiled into the store build"; exit 1; fi
+
+      - name: Package (.pkg)
+        if: env.HAS_MAS == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          PKG="$RUNNER_TEMP/out/Notivelo-${APP_VERSION:-manual}-$BUILD_NUMBER.pkg"
+          productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
+          pkgutil --check-signature "$PKG"
+          echo "PKG=$PKG" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_MAS == 'true'
+        with:
+          name: mac-app-store-pkg
+          path: ${{ runner.temp }}/out/*.pkg
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to App Store Connect
+        if: env.HAS_MAS == 'true' && env.HAS_ASC == 'true' && env.UPLOAD == 'true'
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          # altool looks for AuthKey_<id>.p8 in ~/.appstoreconnect/private_keys.
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          KEY="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s' "$ASC_KEY_P8" > "$KEY"
+          xcrun altool --upload-app -t macos -f "$PKG" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal
+          rm -f "$KEY"
+
+      - name: Upload skipped
+        if: env.HAS_MAS == 'true' && env.HAS_ASC != 'true' && env.UPLOAD == 'true'
+        run: echo "::notice::ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_P8 not set; the .pkg is only a workflow artifact."
+
+      - name: Remove the keychain
+        if: always() && env.HAS_MAS == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/mas.keychain" || true
