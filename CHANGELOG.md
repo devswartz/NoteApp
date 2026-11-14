@@ -2,6 +2,13 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.5.3
+
+### ChatGPT directory
+- **Domain verification for OpenAI.** The server answers `/.well-known/openai-apps-challenge` with the token in `OPENAI_APPS_CHALLENGE` (plain text, nothing else) on every host, and 404 while it's unset. Any other `/.well-known` path is now a plain 404 instead of the web app's page.
+- **Privacy Policy: connected apps.** New section "Connected apps and AI assistants": what a connected assistant such as ChatGPT can read and change with your permission, that it can't delete anything or see locked pages, what its maker receives, what we keep, and how to disconnect in Settings → Connected apps. Pending lawyer review.
+- **Review account seed script.** `scripts/seed-review-account.ts` also adds a "Supplier shortlist" page and a private "Personal" notebook with a locked page (set `LOCK_PASSWORD`), for the ChatGPT review cases. Submission material is in `docs/store/chatgpt-directory/`.
+
 ## v0.5.2
 
 ### Fixes
