@@ -1,6 +1,7 @@
 <!--
 Owner checklist (this comment is not shown to users):
 - [ ] Have a lawyer review this before outside users sign up and before App Store submission. It is a plain-English draft, not legal advice.
+- [ ] Lawyer review: the new "Connected apps and AI assistants" section (added 13 Nov 2026 for the ChatGPT Directory submission).
 - [ ] Confirm the contact inbox exists and is read: {{CONTACT_EMAIL}} defaults to support@notiveloapp.com and {{OPERATOR_NAME}} to "Notivelo" (src/pages/Legal.tsx); LEGAL_CONTACT_EMAIL and LEGAL_OPERATOR_NAME on the server override them.
 - [ ] Re-check this page, and docs/app-store-privacy.md, whenever a feature changes what is stored or sent (new third party, new upload type, analytics, sharing changes), then update "Last updated".
 - Edit freely: headings (#), paragraphs, lists (- or 1.), links [text](url), **bold**, *italic*. No HTML.
@@ -8,7 +9,7 @@ Owner checklist (this comment is not shown to users):
 
 # Privacy Policy
 
-Last updated: 12 November 2026
+Last updated: 13 November 2026
 
 {{APP_NAME}} is a notes and tasks app. It is run by {{OPERATOR_NAME}} ("we", "us"), who host it on their own server. This page explains what information the app keeps about you, where it goes and what we do with it. We have tried to keep it short and plain.
 
@@ -48,6 +49,16 @@ Last updated: 12 November 2026
 - **Us:** the people who run the server can technically access the database and uploaded files, because they host them. We will only look at your content when needed to keep the service running, to deal with abuse, or if the law requires it.
 
 **Uploaded files and images** open only for people who can open the page or workspace they belong to, including people a page is shared with. The app shows them through links that are signed for you and stop working after at most 12 hours. If you copy such a link, it opens only that one file, only until it expires, and only while you still have access. An older or copied file address opened in a browser asks you to sign in first, and then checks that you may see the file.
+
+## Connected apps and AI assistants
+
+You can connect an AI assistant, such as ChatGPT, to your {{APP_NAME}} account. Nothing is connected unless you sign in and allow it on our consent page, which shows what the app is asking for.
+
+- **What it can do:** with "read" permission, the assistant can list and search your workspaces, notebooks, sections and pages, read pages and read tasks. With "edit" permission it can also create pages, add to or rewrite text on a page, and create or update tasks. It cannot delete anything, and it acts only as you, so it sees only what you can see. It never sees locked pages, not even their titles, or the tasks on them.
+- **When it acts:** the assistant reads or changes your notes only when you ask it to in a conversation. Changes it makes show in the page's activity as made through that app, and a page keeps a version from before each change so you can restore it.
+- **What the assistant's maker receives:** the notes and tasks the assistant reads or writes are sent to that app's provider (for ChatGPT, OpenAI) as part of your conversation, and are handled under that provider's own privacy policy, not this one.
+- **What we keep:** the app's name and web address as it reports them, which permissions you gave, when you connected it and last used it, and scrambled (hashed) versions of its access tokens. Our server log briefly records which tool was used, by which app and account, but not the content.
+- **Disconnecting:** go to **Settings → Connected apps** and choose Disconnect. The app's access stops at once. Changing your password also disconnects every app.
 
 ## What we do with it
 

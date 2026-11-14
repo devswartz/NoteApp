@@ -1,0 +1,92 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "notivelo",
+  "version": "1.0.0",
+  "description": "Find, read and write your Notivelo notes and tasks from ChatGPT.",
+  "author": {
+    "name": "Notivelo",
+    "email": "support@notiveloapp.com",
+    "url": "https://notiveloapp.com"
+  },
+  "homepage": "https://notiveloapp.com",
+  "keywords": ["notes", "tasks", "to-do", "notebook", "meeting notes", "project planning", "onenote"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Notivelo",
+        "shortDescription": "Your notes and tasks in chat",
+        "longDescription": "Notivelo is a notes and tasks app: workspaces, notebooks, sections and pages, with tasks that live inside your notes. Connect your Notivelo account to ChatGPT to find, read and write your notes from a conversation.\n\nWhat you can ask ChatGPT to do\n- Find notes: search page titles and text across your workspaces, or browse your notebooks, sections and pages.\n- Read a page: get a page's text box by box, with the tasks on it and their notes.\n- Write notes: create a page in a section, add text to the end of a page or of one text box, or rewrite one text box. Headings, lists, tables and \"- [ ]\" to-do lines become Notivelo formatting and real tasks.\n- Manage tasks: list open or completed tasks, see one task with its subtasks, create a task (on a page, in a workspace, or as a subtask), and tick, reopen, rename, reschedule, reprioritise or reassign it.\n\nWho it is for\nPeople and small teams who keep meeting notes, project plans and to-do lists in Notivelo and want ChatGPT to summarise them, draft new pages, tidy up a page or turn a conversation into tasks.\n\nYou stay in control\n- You sign in to Notivelo and choose what ChatGPT may do: read only, or read and edit. You can disconnect at any time in Notivelo, Settings > Connected apps.\n- ChatGPT acts as you and sees only what you can see in Notivelo.\n- It cannot delete anything: no pages, sections, notebooks or tasks.\n- Locked pages are never shown to ChatGPT, not even their titles.\n- Every change shows in the page's activity as made through ChatGPT, and the page keeps a version from before the change, so you can restore it from Version history.\n\nLimitations\n- Images and file attachments are not read or written.\n- Very long pages are cut off, with a notice saying so.\n- There are limits on how much text can be written at once and how many changes can be made in a short time.\n- You need a Notivelo account. You can create one at app.notiveloapp.com.",
+        "developerName": "Notivelo",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://notiveloapp.com",
+        "supportURL": "https://app.notiveloapp.com/support",
+        "privacyPolicyURL": "https://app.notiveloapp.com/privacy",
+        "termsOfServiceURL": "https://app.notiveloapp.com/terms",
+        "defaultPrompt": [
+          "Search my Notivelo notes for last week's meeting and summarise the decisions.",
+          "Turn the action items from this chat into Notivelo tasks with due dates.",
+          "Create a Notivelo page in my Planning section with a project plan for this idea."
+        ],
+        "brandColor": "#4F46E5",
+        "brandColorDark": "#818CF8",
+        "logo": "./assets/logo.png"
+      },
+      "review": {
+        "positive_test_cases": [
+          {
+            "description": "Search: full-text search finds the supplier page and answers from it.",
+            "prompt": "Search my Notivelo notes for Harbor Print and tell me what they quoted.",
+            "tools_triggered": ["search_pages", "read_page"],
+            "expected_behavior": "Finds the page \"Supplier shortlist\" (Projects > Planning) and answers that Harbor Print Co. quoted £420 with a 5-day lead time. Nothing is changed."
+          },
+          {
+            "description": "Read: summarise an existing meeting page, including its tasks.",
+            "prompt": "Open my Kickoff meeting page in Notivelo and summarise the decisions and the action items.",
+            "tools_triggered": ["search_pages", "read_page"],
+            "expected_behavior": "Lists the decisions (launch in six weeks; keep the existing logo and colours; photos before copy) and the action-item tasks (Rewrite the homepage copy, Share homepage mock-ups, Book the photographer) with due dates. Nothing is changed."
+          },
+          {
+            "description": "Create a page in a chosen section.",
+            "prompt": "Create a new Notivelo page called \"Launch week plan\" in my Launch prep section, with a short plan for Monday to Friday.",
+            "tools_triggered": ["list_workspaces", "list_sections", "create_page"],
+            "expected_behavior": "A page \"Launch week plan\" appears at the end of Projects > Launch prep with one text box holding a plan per weekday. Its activity in Notivelo says it was created through ChatGPT."
+          },
+          {
+            "description": "Edit one existing text box on a page.",
+            "prompt": "On my Notivelo \"Supplier shortlist\" page, add \"Ask Brightline Press for a faster lead time\" to the Open questions list.",
+            "tools_triggered": ["search_pages", "read_page", "append_box"],
+            "expected_behavior": "The Open questions box gains a fourth bullet with that text; the table box is unchanged. The change appears live in an open Notivelo editor, and Version history keeps the version from before it. replace_box_content on the same box is also acceptable."
+          },
+          {
+            "description": "Create a task on a page and complete another task.",
+            "prompt": "In Notivelo, add a task \"Order launch flyers from Harbor Print Co.\" to the Supplier shortlist page, due next Friday, high priority. Then mark \"Book the photographer\" as done.",
+            "tools_triggered": ["search_pages", "create_task", "list_tasks", "update_task"],
+            "expected_behavior": "A new task with that title appears on the Supplier shortlist page, due next Friday, priority high. The task \"Book the photographer\" is marked done. Both show in Notivelo's task views."
+          }
+        ],
+        "negative_test_cases": [
+          {
+            "description": "Deleting is not offered: the connector has no delete tools on purpose (deleting is only done in the Notivelo app, where it goes to the Trash).",
+            "prompt": "Delete my Notivelo page \"Launch checklist\".",
+            "expected_behavior": "No write tool is called (search_pages to find the page is fine). ChatGPT explains it cannot delete pages through Notivelo and suggests deleting it in the app. The page still exists."
+          },
+          {
+            "description": "Locked pages are private: the connector never sees locked pages, their titles or their tasks.",
+            "prompt": "Show me my Notivelo page \"Salary and bonus notes\".",
+            "expected_behavior": "search_pages and list_pages return no such page. ChatGPT says it cannot find it, and no title, text or task from the locked page appears in the answer."
+          },
+          {
+            "description": "Read-only connection: the user allowed reading only (edit unticked on the Notivelo consent page), so writes need the notes:write scope.",
+            "prompt": "Create a Notivelo page called \"Test\" in my Planning section.",
+            "expected_behavior": "The create_page call is refused with 403 insufficient_scope (scope \"notes:read notes:write\"). ChatGPT says it only has read access and may offer to reconnect with edit permission. No page is created."
+          }
+        ],
+        "commerce": false
+      },
+      "publication": {
+        "release_notes": "First release: search, read and write Notivelo pages and tasks from ChatGPT. No delete tools; locked pages are never visible."
+      }
+    }
+  }
+}

@@ -1,15 +1,23 @@
-// Fills an EXISTING account with friendly demo content, for the App Store review account.
-// Uses only the public API (REST plus the /collab WebSocket), as that user. It does not create
-// accounts. Safe to run twice: notebooks, sections, pages, tags and tasks are matched by name
-// and skipped if they exist, and a page's content is only written when the page is still empty.
+// Fills an EXISTING account with friendly demo content, for the App Store and ChatGPT Directory
+// review accounts. Uses only the public API (REST plus the /collab WebSocket), as that user. It
+// does not create accounts. Safe to run twice: notebooks, sections, pages, tags and tasks are
+// matched by name and skipped if they exist, and a page's content is only written when the page
+// is still empty.
 //
 //   BASE_URL=https://app.notiveloapp.com REVIEW_EMAIL=... REVIEW_PASSWORD=... \
-//     [SHARE_WITH_EMAIL=...] npx tsx scripts/seed-review-account.ts
+//     [SHARE_WITH_EMAIL=...] [LOCK_PASSWORD=...] npx tsx scripts/seed-review-account.ts
 //
 // Content goes into the account's own (first owned) workspace: a "Projects" notebook with
 // Planning, Design and Launch prep sections, a meeting-notes page laid out like the Meeting
-// notes template, a page with a numbered outline and a table, a checklist page, tags, and tasks
-// with due dates. With SHARE_WITH_EMAIL, the project brief is shared (can edit) with that person.
+// notes template, a page with a numbered outline and a table, a checklist page, a supplier
+// shortlist (a distinctive search target for the ChatGPT review cases), tags, and tasks with due
+// dates. With SHARE_WITH_EMAIL, the project brief is shared (can edit) with that person.
+//
+// A private "Personal" notebook gets a page "Salary and bonus notes" that is then LOCKED, for the
+// ChatGPT negative case (the connector never sees locked pages). Locking needs a locked-notes
+// password: if the account has none, set LOCK_PASSWORD (6+ characters) and the script sets it;
+// without either, the page is created but left unlocked and a warning is printed. The script
+// never prints passwords. docs/store/chatgpt-directory/reviewer-account.md has the full steps.
 import WebSocket from 'ws';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
@@ -18,6 +26,7 @@ const BASE = (process.env.BASE_URL ?? '').replace(/\/+$/, '');
 const EMAIL = process.env.REVIEW_EMAIL ?? '';
 const PASSWORD = process.env.REVIEW_PASSWORD ?? '';
 const SHARE_WITH = process.env.SHARE_WITH_EMAIL ?? '';
+const LOCK_PASSWORD = process.env.LOCK_PASSWORD ?? '';
 if (!BASE || !EMAIL || !PASSWORD) {
   console.error('Set BASE_URL, REVIEW_EMAIL and REVIEW_PASSWORD (and optionally SHARE_WITH_EMAIL).');
   process.exit(1);
@@ -118,7 +127,11 @@ async function writePage(pageId: string, boxes: Box[]): Promise<boolean> {
   }
 }
 
-type Tree = { notebooks: { id: string; name: string }[]; sections: { id: string; notebookId: string; name: string }[]; pages: { id: string; sectionId: string; title: string }[] };
+type Tree = {
+  notebooks: { id: string; name: string }[];
+  sections: { id: string; notebookId: string; name: string }[];
+  pages: { id: string; sectionId: string; title: string; locked?: boolean }[];
+};
 
 async function main() {
   const session = await api<{ accessToken: string; user: { id: string } }>('POST', '/auth/login', { email: EMAIL, password: PASSWORD });
@@ -172,6 +185,7 @@ async function main() {
   };
   await ensurePage(planning, 'Kickoff meeting', '🤝');
   await ensurePage(planning, 'Project brief', '🎯');
+  await ensurePage(planning, 'Supplier shortlist', '📦');
   await ensurePage(design, 'Site structure', '🧭');
   await ensurePage(launch, 'Launch checklist', '🚀');
 
@@ -235,6 +249,51 @@ async function main() {
   await fill('Launch checklist', [
     [0, 0, 560, [h(2, 'Before we go live'), checklist(['Redirect the old addresses', true], ['Proofread every page', false], ['Check the site on a phone', false], ['Back up the old site', true], ['Tell our newsletter list', false])]],
   ]);
+
+  await fill('Supplier shortlist', [
+    [0, 0, 420, [
+      h(2, 'Print suppliers'),
+      p('We need flyers and business cards for launch week. Three quotes so far:'),
+      table([['Supplier', 'Quote', 'Lead time'], ['Harbor Print Co.', '£420', '5 days'], ['Inkwell Studio', '£510', '3 days'], ['Brightline Press', '£380', '10 days']]),
+    ]],
+    [450, 0, 240, [h(3, 'Open questions'), bullets('Does Harbor Print Co. deliver on Saturdays?', 'Recycled paper option?', 'Who signs off the proof?')]],
+  ]);
+
+  // A private notebook with one locked page, for the ChatGPT negative case. Lock it only after its content is written.
+  let personal = tree.notebooks.find((n) => n.name === 'Personal');
+  let personalSection: string;
+  if (!personal) {
+    const r = await api<{ id: string; sectionId: string }>('POST', `/workspaces/${ws.id}/notebooks`, { name: 'Personal', color: '#10b981', visibility: 'private' });
+    personal = { id: r.id, name: 'Personal' };
+    personalSection = r.sectionId;
+    created.push('notebook Personal (private)');
+  } else {
+    personalSection = tree.sections.find((s) => s.notebookId === personal!.id)?.id ?? (await api<{ id: string }>('POST', `/notebooks/${personal.id}/sections`, { name: 'General', color: '#10b981' })).id;
+  }
+  tree = await api<Tree>('GET', `/workspaces/${ws.id}/tree`);
+  const lockedTitle = 'Salary and bonus notes';
+  let lockedPage = tree.pages.find((x) => x.sectionId === personalSection && x.title === lockedTitle);
+  if (!lockedPage) {
+    const r = await api<{ id: string }>('POST', `/sections/${personalSection}/pages`, { title: lockedTitle });
+    await api('PATCH', `/pages/${r.id}`, { icon: '🔒' });
+    lockedPage = { id: r.id, sectionId: personalSection, title: lockedTitle };
+    created.push(`page ${lockedTitle}`);
+  }
+  if (!lockedPage.locked) {
+    if (await writePage(lockedPage.id, [[0, 0, 480, [h(2, 'Private'), p('Sample locked page for review. AI connectors must never see this page, its title or its content.'), bullets('Current salary: (sample) 50,000', 'Bonus target: (sample) 10%')]]]))
+      created.push(`content ${lockedTitle}`);
+    const status = await api<{ hasPassword: boolean }>('GET', '/locked-notes');
+    if (!status.hasPassword && LOCK_PASSWORD) {
+      await api('POST', '/locked-notes/password', { password: LOCK_PASSWORD });
+      created.push('locked-notes password');
+    }
+    if (status.hasPassword || LOCK_PASSWORD) {
+      await api('POST', `/pages/${lockedPage.id}/lock`);
+      created.push(`lock ${lockedTitle}`);
+    } else {
+      console.warn(`Warning: "${lockedTitle}" was NOT locked. The account has no locked-notes password: set LOCK_PASSWORD and run again.`);
+    }
+  }
 
   // Share the brief with a second account, if given. Sharing again just updates the same share.
   if (SHARE_WITH) {
