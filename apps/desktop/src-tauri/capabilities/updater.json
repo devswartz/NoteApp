@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "The self-updater. Not in the Mac App Store build: tauri.mas.conf.json selects only \"default\", and that build has no updater plugin (Cargo feature `updater` off).",
+  "windows": ["main", "quick"],
+  "permissions": ["updater:default"]
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mac App Store build only (tauri.mas.conf.json, docs/MAC_APP_STORE.md).
+  __APPLE_TEAM_ID__ is replaced with the APPLE_TEAM_ID secret by
+  .github/workflows/mac-app-store.yml; the build fails if it is still here.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <!-- The API (https://app.notiveloapp.com) and images from the web. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <!-- Open panels (<input type=file>) and save panels. -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <!-- Exports are WKWebView downloads into ~/Downloads. -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
+  <key>com.apple.security.print</key>
+  <true/>
+  <key>com.apple.application-identifier</key>
+  <string>__APPLE_TEAM_ID__.com.devswartz.notivelo</string>
+  <key>com.apple.developer.team-identifier</key>
+  <string>__APPLE_TEAM_ID__</string>
+</dict>
+</plist>

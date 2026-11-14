@@ -17,7 +17,6 @@
     "notification:default",
     "opener:default",
     "deep-link:default",
-    "process:allow-restart",
-    "updater:default"
+    "process:allow-restart"
   ]
 }

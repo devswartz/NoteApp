@@ -10,6 +10,12 @@ publish = false
 name = "noteapp_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["updater"]
+# The self-updater: tauri-plugin-updater, "Check for Updates…" and capabilities/updater.json.
+# The Mac App Store build turns it off (--no-default-features; App Review 2.4.5, docs/MAC_APP_STORE.md).
+updater = ["dep:tauri-plugin-updater"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -21,7 +27,7 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = { version = "2", optional = true }
 tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

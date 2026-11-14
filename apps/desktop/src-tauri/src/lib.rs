@@ -132,10 +132,17 @@ fn updater_enabled(app: AppHandle) -> bool {
     updater_configured(&app)
 }
 
+#[cfg(feature = "updater")]
 fn updater_configured<R: Runtime>(app: &AppHandle<R>) -> bool {
     // CI adds plugins.updater (endpoint + public key) only when release signing
     // is set up; unsigned builds have no updater.
     app.config().plugins.0.contains_key("updater")
+}
+
+/// Built without the updater (the Mac App Store build: updates come from the store).
+#[cfg(not(feature = "updater"))]
+fn updater_configured<R: Runtime>(_app: &AppHandle<R>) -> bool {
+    false
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -187,6 +194,7 @@ pub fn run() {
             // Locked builds: drop a server choice saved by an older version (before any window reads it).
             config::migrate(&handle);
             let name = app.package_info().name.clone();
+            #[cfg(feature = "updater")]
             if updater_configured(&handle) {
                 handle.plugin(tauri_plugin_updater::Builder::new().build())?;
             }

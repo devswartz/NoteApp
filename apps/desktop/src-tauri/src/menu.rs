@@ -18,7 +18,7 @@ pub use app_menu::build;
 
 #[cfg(target_os = "macos")]
 mod app_menu {
-    use super::{CHANGE_SERVER, CHECK_UPDATES, QUICK_CAPTURE};
+    use super::{CHANGE_SERVER, QUICK_CAPTURE};
     use tauri::{
         menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
         AppHandle, Runtime,
@@ -63,7 +63,9 @@ mod app_menu {
         let about = PredefinedMenuItem::about(app, None, Some(AboutMetadata { name: Some(app_name.into()), ..Default::default() }))?;
         let quick = MenuItem::with_id(app, QUICK_CAPTURE, "Quick Capture…", true, Some(crate::quick::SHORTCUT))?;
         let server = MenuItem::with_id(app, CHANGE_SERVER, "Change Server…", true, None::<&str>)?;
-        let updates = MenuItem::with_id(app, CHECK_UPDATES, "Check for Updates…", true, None::<&str>)?;
+        // No "Check for Updates…" in the Mac App Store build (no updater; the store updates the app).
+        #[cfg(feature = "updater")]
+        let updates = MenuItem::with_id(app, super::CHECK_UPDATES,"Check for Updates…", true, None::<&str>)?;
         let settings = MenuItem::with_id(app, "cmd:nav.settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
 
         let file_items = items(app, FILE)?;
@@ -119,7 +121,11 @@ mod app_menu {
         let hide_others = PredefinedMenuItem::hide_others(app, None)?;
         let show_all = PredefinedMenuItem::show_all(app, None)?;
         let quit = PredefinedMenuItem::quit(app, None)?;
-        let mut app_items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![&about, &updates, &a1, &settings];
+        let mut app_items: Vec<&dyn tauri::menu::IsMenuItem<R>> = vec![&about];
+        #[cfg(feature = "updater")]
+        app_items.push(&updates);
+        app_items.push(&a1);
+        app_items.push(&settings);
         if crate::config::switchable() {
             app_items.push(&server);
         }
