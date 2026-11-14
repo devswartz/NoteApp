@@ -46,7 +46,8 @@ Without the five `APPLE_MAS_*` secrets (or `APPLE_TEAM_ID`) the workflow skips e
 ## Running it
 
 - **Tags:** every `vX.Y.Z` tag builds and uploads, alongside the `.dmg` build.
-- **By hand:** Actions → **Mac App Store** → Run workflow. Untick **upload** to only get the `.pkg` artifact (`mac-app-store-pkg`).
+- **By hand:** Actions → **Mac App Store** → Run workflow. Untick **upload** to only get the `.pkg` artifact (`mac-app-store-pkg`). Run from a branch (not a tag), the version is `package.json`'s, so Store submit won't pick that build up for a tag.
+- **Submitting for review:** after the tag's upload, **Store submit** (when `docs/store/whats-new.md` has a section for the tag) attaches the build to the macOS App Store version and submits it, with the iOS one. See `docs/STORE_RELEASES.md`.
 
 The job checks the profile (team + bundle ID, not a development profile), the signature (Apple Distribution, sandbox and application-identifier entitlements), that the updater isn't compiled in, and the `.pkg` signature (`pkgutil --check-signature`) before uploading with `xcrun altool --upload-app -t macos`. The build appears in App Store Connect → TestFlight (macOS) after processing, usually 10–30 minutes; Apple emails if processing rejects it.
 
