@@ -187,6 +187,27 @@ export interface PageMeta {
   position: number;
   updatedAt: string;
   updatedBy: string | null;
+  /** Locked by the caller (only its owner ever sees a locked page): shown with a lock, opens to a lock screen. */
+  locked?: boolean;
+}
+
+/** GET /locked-notes: the caller's locked-notes password and this sign-in's unlock (server/locks.ts). */
+export interface LockedNotesStatus {
+  hasPassword: boolean;
+  /** This sign-in has the user's locked pages unlocked right now. */
+  unlocked: boolean;
+  /** When the unlock lapses without activity (null when locked). */
+  expiresAt: string | null;
+  /** Idle time after which locked pages lock again. */
+  idleMs: number;
+  lockedPages: number;
+  /** Wrong tries in a row, and until when unlocking is refused (null: it isn't). */
+  failures: number;
+  blockedUntil: string | null;
+  /** Wrong tries left before a lockout. */
+  triesBeforeLockout: number;
+  /** Devices that can unlock with Face ID / Touch ID / biometrics. */
+  devices: { id: string; label: string | null; createdAt: string; lastUsedAt: string | null; expiresAt: string }[];
 }
 
 export interface Tree {
@@ -233,6 +254,8 @@ export interface Task {
   completedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  /** On the caller's locked page, which this sign-in hasn't unlocked: title and text are withheld ("Locked task"). */
+  locked?: boolean;
 }
 
 export type TaskPatch = Partial<
@@ -440,7 +463,9 @@ export type ServerEvent =
   /** The pages shared with you (GET /shared-pages) changed: refetch. Sent only to the people affected. */
   | { type: 'shared-pages' }
   /** The server can't replay what was missed: reload tree, tasks and members. */
-  | { type: 'resync' };
+  | { type: 'resync' }
+  /** A page was locked (server/locks.ts): drop every copy of it on this device (offline cache, open editor). */
+  | { type: 'page-locked'; workspaceId: string; pageId: string };
 
 /**
  * Envelope on the /api/events WebSocket. `seq` increases per server process;

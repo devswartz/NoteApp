@@ -42,8 +42,15 @@ export const plainFileUrl = (url: string) => (url.startsWith('/uploads/') ? API_
 let fileKey: FileKey | null = null;
 let fileKeyFetch: Promise<void> | null = null;
 
+/** While locked notes are unlocked on this sign-in: a key whose links also open files on locked pages (src/lib/lockedNotes.ts). */
+let lockedFileKey: FileKey | null = null;
+export function setLockedFileKey(k: FileKey | null) {
+  lockedFileKey = k;
+}
+
 /** The key to sign upload links with, while it still has a little life left (else null: links render unsigned). */
 function currentFileKey(): FileKey | null {
+  if (lockedFileKey && lockedFileKey.e - Date.now() / 1000 > 60) return lockedFileKey;
   if (!fileKey) return null;
   const left = fileKey.e - Date.now() / 1000;
   if (left < 15 * 60) {
@@ -103,6 +110,7 @@ export async function endSession() {
   const refreshToken = await tokenStore.get();
   access = null;
   fileKey = null;
+  lockedFileKey = null;
   if (refreshTimer) clearTimeout(refreshTimer);
   refreshTimer = null;
   await tokenStore.set(null);

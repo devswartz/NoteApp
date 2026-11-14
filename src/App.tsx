@@ -20,6 +20,7 @@ import { RouteBoundary } from './components/ErrorBoundary.tsx';
 import { Button, useIsMobile } from './components/ui.tsx';
 import { DialogHost, promptDialog } from './components/shell/dialogs.tsx';
 import { platform } from './platform/index.ts';
+import { startLockWatch } from './lib/lockedNotes.ts';
 
 export function App() {
   const [ready, setReady] = useState(false);
@@ -30,6 +31,10 @@ export function App() {
     setEmailUnverifiedHandler(markEmailUnverified); // any API call answered 403 email_unverified
     bootstrap().finally(() => setReady(true));
   }, []);
+
+  // Locked pages: relock after idle time / in the background; reset when the user changes (src/lib/lockedNotes.ts).
+  const userId = user?.id ?? null;
+  useEffect(() => (userId ? startLockWatch() : undefined), [userId]);
 
   if (!ready) return <div className="splash" />;
 

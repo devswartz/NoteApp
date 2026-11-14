@@ -11,6 +11,7 @@ import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
 import { trashRoutes } from './trash.ts';
+import { lockRoutes } from './locks.ts';
 import { taskRoutes } from './tasks.ts';
 import { teamRoutes } from './teams.ts';
 import { searchRoutes } from './search.ts';
@@ -56,6 +57,7 @@ api.use(exportRoutes); // before workspaceRoutes: /workspaces/import must not hi
 api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);
+api.use(lockRoutes); // locked pages: password, unlock/relock, lock a page (server/locks.ts)
 api.use(trashRoutes);
 api.use(taskRoutes);
 api.use(teamRoutes); // tags, teams, saved task views

@@ -1,6 +1,7 @@
 // Workspace export (zip) and import, and "Export my data" for everyone. Owner: Foundation.
 import express, { Router, type RequestHandler } from 'express';
-import { requireRole } from '../access.ts';
+import { requireRole, sessionUnlocked } from '../access.ts';
+import { db } from '../db.ts';
 import { publish } from '../events.ts';
 import { exportWorkspace, importWorkspace } from '../export.ts';
 import { HttpError, h, param } from '../http.ts';
@@ -49,6 +50,9 @@ exportRoutes.get(
 exportRoutes.get(
   '/me/export',
   h((req, res) => {
+    // Locked pages (server/locks.ts) are part of "my data": exporting needs them unlocked on this sign-in first.
+    if (db.prepare('SELECT 1 FROM pages WHERE locked_by = ? LIMIT 1').get(req.user.id) && !sessionUnlocked(req.user.id, req.sid))
+      throw new HttpError(403, 'Unlock your locked notes first: they are included in your data export.', 'locked');
     const wait = takeDataExport(req.user.id);
     if (wait) return tooMany(res, wait, 'You have exported your data several times recently.');
     const { zip, filename } = exportUserData(req.user.id);

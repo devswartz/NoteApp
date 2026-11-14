@@ -20,6 +20,7 @@ import {
   Globe,
   Link2,
   Lock,
+  LockOpen,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -37,6 +38,9 @@ import { sidebar, useSidebar } from './sidebarState.ts';
 import { byPos, dragProps, dropClass, dropProps, movePage, moveSection, useDnd } from './treeDnd.ts';
 import { confirmDialog, promptDialog } from './dialogs.tsx';
 import { moveToTrash } from '../../lib/trash.ts';
+import { lockPageFlow, removeLockFlow } from '../LockedNotes.tsx';
+
+const NOT_PRIVATE_HINT = 'Only pages only you can see can be locked. Move it to a private notebook first.';
 import { openShareDialog } from '../sharing/ShareDialog.tsx';
 import { childSections, sectionTarget } from './navState.ts';
 import { MAX_SECTION_DEPTH, sectionDepth } from '../../../shared/sections.ts';
@@ -346,6 +350,13 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
     return n;
   });
   const isFav = useSidebar((s) => (s.favorites[p.wsId] ?? []).includes(page.id));
+  // Only a page nobody else can see may be locked (the server decides; this hides the obvious no's): its own private
+  // notebook, or a workspace with nobody else in it.
+  const lockable = useStore((s) => {
+    const sec = s.tree.sections.find((x) => x.id === page.sectionId);
+    const nb = sec && s.tree.notebooks.find((n) => n.id === sec.notebookId);
+    return (!!nb && nb.visibility === 'private' && nb.createdBy === s.user?.id) || s.members.length <= 1;
+  });
   const drop = useDnd((s) => s.drop);
   const navigate = useNavigate();
   const rowId = favorite ? `fav-${page.id}` : flat ? `recent-${page.id}` : page.id;
@@ -368,7 +379,16 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
           <MenuItem icon={<Pencil size={15} />} onSelect={() => p.setEditing(rowId)}>
             Rename
           </MenuItem>
-          <MenuItem
+          {page.locked ? (
+            <MenuItem icon={<LockOpen size={15} />} onSelect={() => void removeLockFlow(page.id)}>
+              Remove lock…
+            </MenuItem>
+          ) : (
+            <MenuItem icon={<Lock size={15} />} disabled={!lockable} note={lockable ? undefined : NOT_PRIVATE_HINT} onSelect={() => void lockPageFlow(page.id)}>
+              Lock page
+            </MenuItem>
+          )}
+          {!page.locked && <MenuItem
             icon={<Copy size={15} />}
             onSelect={() =>
               post<{ id: string }>(`/pages/${page.id}/copy`, {})
@@ -377,7 +397,7 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
             }
           >
             Duplicate
-          </MenuItem>
+          </MenuItem>}
           <MenuItem icon={<FolderInput size={15} />} onSelect={() => p.setMoving({ kind: 'page', id: page.id })}>
             Move to…
           </MenuItem>
@@ -421,7 +441,13 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
               } else if (drag.kind === 'page' || drag.kind === 'favorite') void movePage(drag.id, page.sectionId, page.id, where);
             }))}
       >
-        {page.icon ? <span className="page-emoji">{page.icon}</span> : <PageKindIcon kind={page.kind} size={14} className="muted" />}
+        {page.locked ? (
+          <Lock size={14} className="muted sb-lock-icon" aria-label="Locked" />
+        ) : page.icon ? (
+          <span className="page-emoji">{page.icon}</span>
+        ) : (
+          <PageKindIcon kind={page.kind} size={14} className="muted" />
+        )}
         {p.editing === rowId ? (
           <RenameInput
             value={page.title}
@@ -433,7 +459,7 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
         ) : (
           <span className="truncate sb-label">{page.title || 'Untitled'}</span>
         )}
-        {openTasks > 0 && (
+        {openTasks > 0 && !page.locked && (
           <span className="sb-count subtle" title={`${openTasks} open task(s)`}>
             <CircleCheck size={11} /> {openTasks}
           </span>

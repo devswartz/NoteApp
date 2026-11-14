@@ -13,6 +13,8 @@ import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import { onAccessChange, pageAccess, taskVisible } from './access.ts';
+import { runAsViewer } from './viewer.ts';
+import { keepUnlocked, searchableText } from './locks.ts';
 import { canMoveTask, syncPageTasks } from './tasks.ts';
 import { publish } from './events.ts';
 import { log } from './log.ts';
@@ -206,6 +208,11 @@ interface ConnAuth {
   canEdit: boolean;
   /** A workspace member. False for someone editing through a page share from outside it (#98): see guardPageTasks. */
   member: boolean;
+  /** The sign-in behind the socket: a locked page (server/locks.ts) stays open only while it is unlocked. */
+  sid: string | null;
+  /** The page is locked (by this user): edits keep the unlock alive. */
+  locked: boolean;
+  lastKeepAlive: number;
 }
 const connAuth = new WeakMap<WebSocket, ConnAuth>();
 const REVALIDATE_MS = 30_000;
@@ -225,11 +232,12 @@ export function revalidateCollab() {
         revoke(conn, a, 4401, 'Token expired');
         continue;
       }
-      const access = pageAccess(room.pageId, a.userId);
+      const access = runAsViewer({ userId: a.userId, sid: a.sid }, () => pageAccess(room.pageId, a.userId));
       if (!access) revoke(conn, a, 4403, 'Access revoked');
       else {
         a.canEdit = access.canEdit;
         a.member = access.member;
+        a.locked = !!access.locked;
       }
     }
   }
@@ -382,7 +390,7 @@ function persistNow(room: Room, notifySaved = true) {
     );
     const title = (db.prepare('SELECT title FROM pages WHERE id = ?').get(room.pageId) as { title: string }).title;
     db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(room.pageId);
-    db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(room.pageId, title, text);
+    db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(room.pageId, title, searchableText(room.pageId, text));
   })();
   // Only tasks that whoever inserted the reference may see and edit move onto this page (#98 review).
   const authors = room.taskAuthors;
@@ -392,7 +400,7 @@ function persistNow(room: Room, notifySaved = true) {
     room.pageId,
     room.workspaceId,
     taskIds,
-    (id) => [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
+    (id) => [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u, { ignoreLock: true })?.canEdit && canMoveTask(id, u)),
     (id) => !held?.has(id), // removed by an outside editor: kept on the page until guardPageTasks decides
   );
   // A task block moved into (or out of) another task's notes: it becomes (or stops being) that task's subtask.
@@ -611,7 +619,7 @@ export function editPageDoc(pageId: string, fn: (doc: Y.Doc) => void, opts: { no
     db.transaction(() => {
       db.prepare('UPDATE pages SET ydoc = ?, text = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(doc)), text, pageId);
       db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pageId);
-      db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pageId, row.title, text);
+      db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pageId, row.title, searchableText(pageId, text));
     })();
   } finally {
     doc.destroy();
@@ -647,7 +655,7 @@ export function seedPageDoc(pageId: string, build: (frag: Y.XmlFragment) => void
   db.prepare("UPDATE pages SET ydoc = ?, text = ?, kind = 'canvas' WHERE id = ?").run(Buffer.from(Y.encodeStateAsUpdate(doc)), text, pageId);
   const title = (db.prepare('SELECT title FROM pages WHERE id = ?').get(pageId) as { title: string }).title;
   db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pageId);
-  db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pageId, title, text);
+  db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pageId, title, searchableText(pageId, text));
 }
 
 export function attachCollab(wss: WebSocketServer) {
@@ -674,12 +682,13 @@ export function attachCollab(wss: WebSocketServer) {
       conn.close(4403, 'Email not verified');
       return;
     }
-    const access = pageAccess(pageId, user.id);
+    // As this user and sign-in: a locked page opens only for its owner, on a sign-in that unlocked it.
+    const access = runAsViewer({ userId: user.id, sid: auth.sid }, () => pageAccess(pageId, user.id));
     if (!access) {
       conn.close(4403, 'No access to this page');
       return;
     }
-    const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit, member: access.member };
+    const state: ConnAuth = { userId: user.id, expiresAt: auth.expiresAt, canEdit: access.canEdit, member: access.member, sid: auth.sid, locked: !!access.locked, lastKeepAlive: 0 };
     connAuth.set(conn, state);
     // Close exactly when the token lapses (the 30 s sweep is a backstop).
     const expiry = setTimeout(() => revoke(conn, state, 4401, 'Token expired'), Math.max(0, auth.expiresAt - Date.now()));
@@ -712,6 +721,11 @@ export function attachCollab(wss: WebSocketServer) {
           const sub = decoding.peekVarUint(dec);
           if (sub !== syncProtocol.messageYjsSyncStep1 && !state.canEdit) return;
           if (sub !== syncProtocol.messageYjsSyncStep1) room.lastEditor = user.id;
+          // Typing in an unlocked locked page counts as activity: it stays unlocked (checked at most every 30 s).
+          if (sub !== syncProtocol.messageYjsSyncStep1 && state.locked && Date.now() - state.lastKeepAlive > 30_000) {
+            state.lastKeepAlive = Date.now();
+            keepUnlocked(user.id, state.sid);
+          }
           const guard = sub !== syncProtocol.messageYjsSyncStep1 && !state.member ? extractPage(room.doc).taskIds : null;
           const started = process.hrtime.bigint();
           syncProtocol.readSyncMessage(dec, enc, room.doc, conn);

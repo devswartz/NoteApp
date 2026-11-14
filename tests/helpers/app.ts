@@ -41,7 +41,7 @@ export async function startTestApp() {
   process.env.DATA_DIR = tmp;
 
   const { createServer } = await import('../../server/app.ts');
-  const { server } = createServer({ serveWeb: false });
+  const { server, collab, events } = createServer({ serveWeb: false });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;
   const origin = `http://127.0.0.1:${port}`;
@@ -71,6 +71,8 @@ export async function startTestApp() {
   }
 
   async function close() {
+    // Upgraded sockets aren't HTTP connections: end them too, or their ping timers keep the test process alive.
+    for (const wss of [collab, events]) for (const c of wss.clients) c.terminate();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     fs.rmSync(tmp, { recursive: true, force: true });

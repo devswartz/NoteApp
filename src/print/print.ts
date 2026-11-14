@@ -16,6 +16,7 @@ import { useRibbon } from '../editor/ribbonState.ts';
 import { useBoxSelection, selectionEditor } from '../editor/boxSelection.ts';
 import { linePicks } from '../editor/linePicks.ts';
 import { useShared } from '../components/sharing/sharedPages.ts';
+import { useLockedNotes } from '../lib/lockedNotes.ts';
 import { selectionBlocks } from './selectionContent.ts';
 import { chooseDialog } from '../components/shell/dialogs.tsx';
 import { clearPrintRoot, imagesReady, mountPrintRoot, renderContents, renderPrintPage, type PrintContext, type PrintPageInput } from './printDoc.ts';
@@ -252,8 +253,12 @@ export async function printNotebook(notebookId: string) {
 }
 
 /** Print these pages in order (`name` titles the print job). */
-async function printPages(ids: string[], name: string, empty: string) {
+async function printPages(all: string[], name: string, empty: string) {
   if (busy) return;
+  // Locked pages (src/lib/lockedNotes.ts) print only while unlocked; the server refuses their content otherwise.
+  const { tree } = useStore.getState();
+  const open = useLockedNotes.getState().unlocked;
+  const ids = all.filter((id) => open || !tree.pages.find((p) => p.id === id)?.locked);
   if (!ids.length) {
     toast(empty);
     return;

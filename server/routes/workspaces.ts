@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
 import { TASK_VISIBLE, accessChanged, atLeast, canSharePage, mustAccess, mustManage, notebookAccess, pageAccess, pagePeople, requireRole, roleIn } from '../access.ts';
+import { assertNoLockedPages, assertWorkspaceMayGrow } from '../locks.ts';
 import { refreshTasksForNotebook } from '../tree.ts';
 import { publish } from '../events.ts';
 import { rowToTask, unassignOutsiders } from '../tasks.ts';
@@ -113,6 +114,7 @@ workspaceRoutes.post(
   h(async (req) => {
     const wsId = param(req, 'id');
     const myRole = requireRole(wsId, req.user.id, 'admin');
+    assertWorkspaceMayGrow(wsId); // a locked page in a one-person space would become visible to the newcomer
     const email = str(req.body.email, 'Email', 200).toLowerCase();
     if (!EMAIL_RE.test(email)) throw new HttpError(400, 'Enter a valid email address');
     const role: Role = ROLES.includes(req.body.role) ? req.body.role : 'member';
@@ -304,6 +306,7 @@ workspaceRoutes.put(
     const raw: unknown = req.body.userIds;
     if (!Array.isArray(raw) || raw.some((u) => typeof u !== 'string') || raw.length > 500) throw new HttpError(400, 'userIds must be a list of user ids');
     const wanted = new Set((raw as string[]).filter((u) => u !== req.user.id));
+    if (wanted.size) assertNoLockedPages(id); // a notebook holding a locked page is shared with nobody
     for (const u of wanted) if (!roleIn(a.workspaceId, u)) throw new HttpError(400, 'You can only share with members of this workspace');
     const before = new Set(notebookShares(id));
     const removed = [...before].filter((u) => !wanted.has(u));
@@ -482,7 +485,7 @@ workspaceRoutes.get(
          FROM page_shares ps JOIN pages p ON p.id = ps.page_id JOIN sections s ON s.id = p.section_id
          JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id
          LEFT JOIN users u ON u.id = ps.created_by
-         WHERE ps.user_id = ? AND p.deleted_at IS NULL ORDER BY ps.created_at DESC`,
+         WHERE ps.user_id = ? AND p.deleted_at IS NULL AND (p.locked_by IS NULL OR p.locked_by = ps.user_id) ORDER BY ps.created_at DESC`,
       )
       .all(req.user.id) as (Omit<SharedPage, 'canEdit' | 'member'> & { canEdit: number; role: Role | null })[];
     // canEdit is what the user can actually do (pageAccess): the share, capped by a member's role.

@@ -1,7 +1,8 @@
 // Optional daily digest email: open tasks due today or overdue, sent at the
 // user's chosen local time. Idempotent per user and local date.
 import { db } from '../db.ts';
-import { TASK_VISIBLE } from '../access.ts';
+import { TASK_ON_LOCKED_PAGE, TASK_VISIBLE } from '../access.ts';
+import { LOCKED_TASK_TITLE } from '../../shared/config.ts';
 import { todayIn, zonedTimeToUtc } from '../../shared/recurrence.ts';
 import { getSettings } from './settings.ts';
 import { escapeHtml } from './email.ts';
@@ -33,7 +34,8 @@ export function dueDigests(nowMs: number, catchUpMs: number): Notice[] {
     if (db.prepare('SELECT 1 FROM notification_log WHERE key = ?').get(key)) continue;
     const tasks = db
       .prepare(
-        `SELECT t.id, t.title, t.due_date, t.due_time, t.workspace_id, w.name AS workspace_name
+        // A task on a locked page is listed as "Locked task" (server/locks.ts): email is never unlocked.
+        `SELECT t.id, CASE WHEN ${TASK_ON_LOCKED_PAGE} THEN '${LOCKED_TASK_TITLE}' ELSE t.title END AS title, t.due_date, t.due_time, t.workspace_id, w.name AS workspace_name
          FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
          WHERE t.status = 'open' AND t.due_date IS NOT NULL AND t.due_date <= @today
            AND (t.assignee_id = @userId OR (t.assignee_id IS NULL AND t.created_by = @userId))

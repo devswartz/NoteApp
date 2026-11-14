@@ -7,7 +7,7 @@
 // needs no hook, and a restart just means one rescan on the first request.
 import * as Y from 'yjs';
 import { db } from './db.ts';
-import { PAGE_VISIBLE } from './access.ts';
+import { PAGE_VISIBLE_NO_LOCKED } from './access.ts';
 import { pageFragments } from '../shared/pageDoc.ts';
 
 const cache = new Map<string, { updatedAt: string; targets: Set<string> }>();
@@ -68,14 +68,14 @@ export interface Backlink {
   updatedAt: string;
 }
 
-/** Pages in the workspace that link to `pageId` and that `userId` can see, most recently edited first. */
+/** Pages in the workspace that link to `pageId` and that `userId` can see, most recently edited first. Never a locked page (server/locks.ts). */
 export function backlinks(pageId: string, workspaceId: string, userId: string): Backlink[] {
   // Only pages updated since we last read them pay for decoding.
   const rows = db
     .prepare(
       `SELECT pg.id, pg.title, pg.icon, pg.updated_at AS updatedAt, s.name AS sectionName, n.name AS notebookName
        FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
-       WHERE n.workspace_id = @workspaceId AND pg.id != @pageId AND ${PAGE_VISIBLE}
+       WHERE n.workspace_id = @workspaceId AND pg.id != @pageId AND ${PAGE_VISIBLE_NO_LOCKED}
        ORDER BY pg.updated_at DESC`,
     )
     .all({ workspaceId, pageId, userId }) as Backlink[];

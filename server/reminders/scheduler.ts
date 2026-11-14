@@ -9,7 +9,8 @@
 // anything that came due while the server was down, as long as it is within
 // the catch-up window (12 h). Older ones are dropped rather than sent late.
 import { db } from '../db.ts';
-import { TASK_VISIBLE } from '../access.ts';
+import { TASK_ON_LOCKED_PAGE, TASK_VISIBLE } from '../access.ts';
+import { LOCKED_REMINDER_TITLE } from '../../shared/config.ts';
 import { syncReminders } from './store.ts';
 import { deliver, pruneNotificationLog } from './deliver.ts';
 import { dueDigests } from './digest.ts';
@@ -57,6 +58,8 @@ interface DueRow {
   page_id: string | null;
   due_date: string | null;
   due_time: string | null;
+  /** 1 if the task is on a locked page. */
+  locked?: number;
 }
 
 export class ReminderScheduler {
@@ -89,7 +92,8 @@ export class ReminderScheduler {
 
     const due = db
       .prepare(
-        `SELECT r.id, r.task_id, r.user_id, r.next_fire_at, t.title, t.workspace_id, t.page_id, t.due_date, t.due_time
+        `SELECT r.id, r.task_id, r.user_id, r.next_fire_at, t.title, t.workspace_id, t.page_id, t.due_date, t.due_time,
+           ${TASK_ON_LOCKED_PAGE} AS locked
          FROM task_reminders r JOIN tasks t ON t.id = r.task_id
          WHERE r.next_fire_at IS NOT NULL AND r.next_fire_at <= ? ORDER BY r.next_fire_at LIMIT 500`,
       )
@@ -163,7 +167,8 @@ function reminderNotice(r: DueRow): Notice {
   return {
     key: `reminder:${r.id}:${r.next_fire_at}`,
     userId: r.user_id,
-    title: r.title || 'Task reminder',
+    // A task on a locked page (server/locks.ts): push and email say nothing of it but its due date.
+    title: r.locked ? LOCKED_REMINDER_TITLE : r.title || 'Task reminder',
     body,
     path,
     taskId: r.task_id,

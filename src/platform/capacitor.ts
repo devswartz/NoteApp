@@ -58,7 +58,7 @@ export interface NativePlugins {
   >;
   SplashScreen: Pick<SplashScreenPlugin, 'hide'>;
   SystemBars: { setStyle(options: SystemBarsStyleOptions): Promise<void> };
-  SecureStorage: Pick<SecureStoragePlugin, 'getItem' | 'setItem' | 'removeItem' | 'setDefaultKeychainAccess'>;
+  SecureStorage: Pick<SecureStoragePlugin, 'getItem' | 'setItem' | 'removeItem' | 'setDefaultKeychainAccess'> & Partial<Pick<SecureStoragePlugin, 'set'>>;
   Badge: Pick<BadgePlugin, 'set' | 'clear'>;
   /** The app's own plugin (apps/mobile/ios/App/App/NoteAppNativePlugin.swift, android/…/NoteAppNativePlugin.java). */
   NoteAppNative: {
@@ -123,6 +123,26 @@ export interface MobileExtras {
     /** Notifies when the setting changes (for a Settings toggle). */
     subscribe(cb: (enabled: boolean) => void): () => void;
   };
+  /** Face ID / Touch ID / fingerprint for locked pages (src/lib/lockedNotes.ts). */
+  lockedNotesBio: LockedNotesBio;
+}
+
+/** A device unlock secret for locked notes (POST /api/locked-notes/devices), kept in the keychain behind biometry. */
+export interface LockedNotesCredential {
+  deviceId: string;
+  secret: string;
+}
+
+export interface LockedNotesBio {
+  /** "Face ID", "Touch ID", "Fingerprint"… or null when the device has no biometrics enrolled (a passcode alone is not enough). */
+  method(): Promise<string | null>;
+  /** Whether this device was set up for this user (a marker only: the secret is never read without a biometric check). */
+  has(userId: string): Promise<boolean>;
+  /** Asks for Face ID / Touch ID once, then stores the credential. False if that was cancelled or failed. */
+  save(userId: string, cred: LockedNotesCredential): Promise<boolean>;
+  /** Asks for Face ID / Touch ID, then hands back the credential. */
+  read(userId: string): Promise<{ result: 'ok'; cred: LockedNotesCredential } | { result: 'none' | 'cancelled' | 'unavailable' }>;
+  forget(userId: string): Promise<void>;
 }
 
 // ───────────── Pure helpers (unit tested) ─────────────
@@ -571,6 +591,77 @@ export function createAppLock(native: NativePlugins, kv: Platform['kv'], now = (
   return lock;
 }
 
+// ───────────── Locked notes: Face ID / Touch ID ─────────────
+
+export const lockedNotesKey = (userId: string) => `noteapp.lockedNotes.${userId}`;
+/** Non-secret marker in kv: "this device is set up for biometric unlock", so asking needs no keychain read. */
+export const lockedNotesMarker = (userId: string) => `noteapp.lockedNotes.bio.${userId}`;
+/** KeychainAccess.whenPasscodeSetThisDeviceOnly: gone if the passcode is removed, never in backups or on another device. */
+const WHEN_PASSCODE_SET_THIS_DEVICE_ONLY = 4;
+
+/**
+ * The device side of "Use Face ID for locked notes". After a password unlock the app asks the server for a device
+ * secret (only an unlocked sign-in gets one) and keeps it in the keychain (SecureStorage, this-device-only). It is only
+ * read back after a successful biometric check, with no passcode fallback: biometrics are the second factor here.
+ * The server forgets every device secret when the locked-notes password changes or is reset.
+ */
+export function createLockedNotesBiometrics(native: Pick<NativePlugins, 'os' | 'BiometricAuth' | 'SecureStorage'>, kv: Platform['kv']): LockedNotesBio {
+  async function authenticate(reason: string): Promise<'ok' | 'cancelled' | 'unavailable'> {
+    try {
+      await native.BiometricAuth.authenticate({ reason, cancelTitle: 'Use password', allowDeviceCredential: false, androidTitle: 'Locked notes', androidSubtitle: reason });
+      return 'ok';
+    } catch (e) {
+      return UNAVAILABLE.has((e as { code?: string } | null)?.code ?? '') ? 'unavailable' : 'cancelled';
+    }
+  }
+  const load = async (userId: string): Promise<LockedNotesCredential | null> => {
+    try {
+      const raw = (await native.SecureStorage.getItem(lockedNotesKey(userId))) as unknown;
+      const v = typeof raw === 'string' ? (JSON.parse(raw) as Partial<LockedNotesCredential>) : null;
+      return v && typeof v.deviceId === 'string' && typeof v.secret === 'string' ? { deviceId: v.deviceId, secret: v.secret } : null;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    async method() {
+      try {
+        const r = await native.BiometricAuth.checkBiometry();
+        // Biometrics only: a passcode-only device can't offer this (biometryType 0).
+        return r.isAvailable && r.biometryType ? biometryLabel(r.biometryType, native.os, r.deviceIsSecure) : null;
+      } catch {
+        return null;
+      }
+    },
+    has: async (userId) => kv.get(lockedNotesMarker(userId)) === '1',
+    async save(userId, cred) {
+      if ((await authenticate('Use biometrics to unlock locked notes')) !== 'ok') return false;
+      const value = JSON.stringify(cred);
+      // The secure-storage plugin can't require biometry on the keychain item itself (no access-control flags), so the
+      // app asks first; the item is at least this-device-only and goes with the device passcode.
+      if (native.SecureStorage.set) await native.SecureStorage.set(lockedNotesKey(userId), value, false, false, WHEN_PASSCODE_SET_THIS_DEVICE_ONLY);
+      else await native.SecureStorage.setItem(lockedNotesKey(userId), value);
+      kv.set(lockedNotesMarker(userId), '1');
+      return true;
+    },
+    async read(userId) {
+      if (kv.get(lockedNotesMarker(userId)) !== '1') return { result: 'none' };
+      const r = await authenticate('Unlock locked notes');
+      if (r !== 'ok') return { result: r };
+      const cred = await load(userId); // only after the biometric check
+      if (!cred) {
+        kv.remove(lockedNotesMarker(userId));
+        return { result: 'none' };
+      }
+      return { result: 'ok', cred };
+    },
+    async forget(userId) {
+      kv.remove(lockedNotesMarker(userId));
+      await native.SecureStorage.removeItem(lockedNotesKey(userId)).catch(() => {});
+    },
+  };
+}
+
 // ───────────── The adapter ─────────────
 
 type Listener = (url: string) => void;
@@ -733,6 +824,7 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
       },
     },
     appLock: appLock.api,
+    lockedNotesBio: createLockedNotesBiometrics(native, kv),
 
     // The native app updates through the App Store / Play Store; the web
     // bundle inside it ships with each native release, so nothing to prompt.
@@ -777,7 +869,11 @@ export function createCapacitorPlatform(native: NativePlugins, bridge: () => Pro
           void refreshPermission();
           void drainShares();
           if (lastTasks) scheduleBadge(...lastTasks); // the date may have changed overnight
-        } else appLock.background();
+        } else {
+          appLock.background();
+          // Locked pages lock again when the app goes to the background (src/lib/lockedNotes.ts).
+          if (typeof window !== 'undefined') window.dispatchEvent(new Event('noteapp:background'));
+        }
       });
       void native.App.addListener('backButton', ({ canGoBack }) => {
         if (canGoBack) history.back();

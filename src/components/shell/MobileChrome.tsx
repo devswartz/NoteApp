@@ -3,7 +3,8 @@
 // Rendered by AppShell only at phone widths (useIsMobile).
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, CalendarDays, ChevronLeft, ListChecks, Menu, Plus, Search } from 'lucide-react';
+import { BookOpen, CalendarDays, ChevronLeft, ListChecks, Lock, Menu, Plus, Search } from 'lucide-react';
+import { useLockedNotes } from '../../lib/lockedNotes.ts';
 import { ui, useStore } from '../../store.ts';
 import { NotificationBell } from '../sharing/NotificationBell.tsx';
 import { viewOf, viewTarget } from './navState.ts';
@@ -86,7 +87,13 @@ export function MobileTopBar() {
   const title = useScreenTitle();
   const ws = useStore((s) => s.workspaces.find((w) => w.id === s.wsId));
   const headingVisible = useHeadingVisible();
-  const showTitle = !headingVisible && ws && title !== ws.name;
+  const { pathname } = useLocation();
+  const lockedId = pathname.match(/\/p\/([^/?#]+)/)?.[1];
+  const pageLocked = useStore((s) => !!lockedId && !!s.tree.pages.find((p) => p.id === lockedId)?.locked);
+  const unlocked = useLockedNotes((s) => s.unlocked);
+  // A locked page's lock screen: the bar names the page, with a lock (its heading is the lock screen's own).
+  const lockScreen = pageLocked && !unlocked;
+  const showTitle = (lockScreen || !headingVisible) && ws && title !== ws.name;
   const back = usePageBack();
   const navigate = useNavigate();
   return (
@@ -103,7 +110,10 @@ export function MobileTopBar() {
       <div className={`mobile-title ${showTitle ? 'has-title' : ''}`}>
         {showTitle ? (
           <>
-            <span className="truncate">{title}</span>
+            <span className="truncate mobile-title-main">
+              {lockScreen && <Lock size={14} aria-label="Locked" className="mobile-title-lock" />}
+              {title}
+            </span>
             <span className="mobile-subtitle truncate">{ws!.name}</span>
           </>
         ) : (

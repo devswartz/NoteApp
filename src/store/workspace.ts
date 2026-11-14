@@ -1,4 +1,5 @@
 // Workspaces and the current workspace's tree and members.
+import { prunePageCaches } from '../lib/pageCache.ts';
 import { emptyTree, set, st } from './state.ts';
 import { loadTasks } from './tasks.ts';
 import { cached } from './cache.ts';
@@ -23,6 +24,8 @@ export async function loadTree() {
   if (!wsId) return;
   const tree = await cached<Tree>(`tree:${wsId}`, `/workspaces/${wsId}/tree`);
   if (st().wsId === wsId) set({ tree, treeLoaded: true });
+  // Offline copies of pages that are locked, or no longer here, go (src/lib/pageCache.ts).
+  void prunePageCaches(wsId, tree).catch(() => {});
 }
 
 export async function loadMembers() {

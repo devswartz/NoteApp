@@ -106,6 +106,8 @@ interface Root {
   deletedAt: string;
   deletedBy: string | null;
   name: string;
+  /** Pages only: who locked it (server/locks.ts). */
+  lockedBy?: string | null;
 }
 
 /** The item at the top of a trash batch (the one the Trash lists), or null if there is no such entry. */
@@ -123,7 +125,7 @@ function rootOf(kind: TrashKind, id: string): Root | null {
             .get(id)
         : db
             .prepare(
-              `SELECT 'page' AS kind, p.id, n.workspace_id AS workspaceId, s.notebook_id AS notebookId, p.deleted_at AS deletedAt, p.deleted_by AS deletedBy, p.title AS name
+              `SELECT 'page' AS kind, p.id, n.workspace_id AS workspaceId, s.notebook_id AS notebookId, p.deleted_at AS deletedAt, p.deleted_by AS deletedBy, p.title AS name, p.locked_by AS lockedBy
                FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ? AND p.trash_id = p.id AND p.deleted_at IS NOT NULL`,
             )
             .get(id);
@@ -136,6 +138,7 @@ function rootOf(kind: TrashKind, id: string): Root | null {
  * its creator or a workspace admin. Viewers and page-share holders see nothing.
  */
 function canActOn(root: Root, userId: string): boolean {
+  if (root.lockedBy && root.lockedBy !== userId) return false; // someone else's locked page doesn't exist for anyone else (server/locks.ts)
   const a = notebookAccessAny(root.notebookId, userId);
   if (!a || !a.canEdit) return false;
   if (root.kind === 'notebook') return a.isNotebookOwner || atLeast(a.role, 'admin');
@@ -252,9 +255,9 @@ export function restoreItem(kind: TrashKind, id: string, userId: string): Restor
     db.prepare('UPDATE sections SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE trash_id = ?').run(id);
     db.prepare('UPDATE notebooks SET deleted_at = NULL, deleted_by = NULL, trash_id = NULL WHERE trash_id = ?').run(id);
     for (const pid of restoredPages) {
-      const p = db.prepare('SELECT title, text FROM pages WHERE id = ?').get(pid) as { title: string; text: string };
+      const p = db.prepare('SELECT title, text, locked_by FROM pages WHERE id = ?').get(pid) as { title: string; text: string; locked_by: string | null };
       db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pid);
-      db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pid, p.title, p.text);
+      db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(pid, p.title, p.locked_by ? '' : p.text); // a locked page's body is never searchable
     }
   })();
   accessChanged();

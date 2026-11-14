@@ -128,6 +128,10 @@ export const LIMITS = {
   mcpUser: { capacity: 120, perMinute: 120 },
   mcpToken: { capacity: 60, perMinute: 60 },
   mcpWriteUser: { capacity: 30, perMinute: 20 },
+  // Locked pages (server/locks.ts): wrong locked-notes passwords, device secrets and reset codes, per user (successes
+  // are refunded): ~8 tries, then one every 2 minutes. Reset codes by email: three, then one per 10 minutes.
+  lockCheckUser: { capacity: 8, perMinute: 0.5 },
+  lockResetUser: { capacity: 3, perMinute: 0.1 },
 } satisfies Record<string, BucketSpec>;
 
 let clock: () => number = Date.now;
@@ -382,6 +386,32 @@ export function takeAccountDelete(req: Request, userId: string): number {
   const g = passwordChecks >= MAX_PASSWORD_CHECKS ? 1 : limiters.passwordChecks.take('all');
   if (g) limiters.accountDeleteUser.refund(userId);
   return g;
+}
+
+/**
+ * Rate limit for a locked-notes password (or device secret, or reset code) check: per user, plus the server-wide
+ * bcrypt budget. Returns 0 if allowed, else seconds to wait. Call lockCheckPassed() when it was right.
+ */
+export function takeLockCheck(req: Request, userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  const wait = limiters.lockCheckUser.take(userId);
+  if (wait) return wait;
+  const { loopback } = clientIp(req);
+  if (loopback && process.env.RATE_LIMIT_LOOPBACK !== '1') return 0;
+  const g = passwordChecks >= MAX_PASSWORD_CHECKS ? 1 : limiters.passwordChecks.take('all');
+  if (g) limiters.lockCheckUser.refund(userId);
+  return g;
+}
+
+/** A locked-notes check succeeded: it doesn't count against the user. */
+export function lockCheckPassed(userId: string) {
+  limiters.lockCheckUser.refund(userId);
+}
+
+/** Rate limit for emailing a locked-notes reset code. 0 if allowed, else seconds to wait. */
+export function takeLockReset(userId: string): number {
+  if (process.env.RATE_LIMIT === 'off') return 0;
+  return limiters.lockResetUser.take(userId);
 }
 
 export function refuse(res: Response, wait: number) {

@@ -21,6 +21,8 @@ export interface FileKey {
   e: number;
   /** HMAC key (hex) for signing file names until `e`. */
   k: string;
+  /** Set on a key for an unlocked sign-in: its links also open files on the user's locked pages while it stays unlocked. */
+  l?: string;
 }
 
 /** Keys roll over on fixed boundaries so a file's URL (and so the browser cache) is stable for hours. */
@@ -45,7 +47,7 @@ export function signFileName(key: string, name: string): string {
 export function signUploadPath(path: string, key: FileKey | null): string {
   const m = UPLOAD_PATH.exec(path);
   if (!m || !key) return path;
-  return `${path}?u=${encodeURIComponent(key.u)}&e=${key.e}&s=${signFileName(key.k, m[1])}`;
+  return `${path}?u=${encodeURIComponent(key.u)}&e=${key.e}${key.l ? `&l=${key.l}` : ''}&s=${signFileName(key.k, m[1])}`;
 }
 
 /**

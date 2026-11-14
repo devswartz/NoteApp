@@ -36,7 +36,10 @@ import { sectionPathLabel, sectionsInOrder } from '../../shared/sections.ts';
 import { TemplateDialogHost, templateDialog } from '../editor/TemplateDialog.tsx';
 import { setTasksAllowed } from '../editor/taskGate.ts';
 import type { CanvasHandle } from '../editor/canvasDoc.ts';
-import { UserPlus, Users } from 'lucide-react';
+import { Lock, LockOpen, UserPlus, Users } from 'lucide-react';
+import { LockScreen, lockPageFlow, removeLockFlow } from '../components/LockedNotes.tsx';
+import { lockNow, useLockedNotes } from '../lib/lockedNotes.ts';
+import { markNoCache } from '../lib/pageCache.ts';
 
 /** GET /pages/:id. viaPageShare: opened through a page share (#98), so it isn't in the tree. */
 interface PageInfo {
@@ -51,6 +54,12 @@ interface PageInfo {
   member: boolean;
   /** Just made from a template that this (creating) client still has to fill in (defaultTemplates.ts). */
   pendingTemplate?: boolean;
+  /** Locked by the caller (server/locks.ts); `open`: this sign-in has it unlocked. */
+  locked?: boolean;
+  open?: boolean;
+  /** May lock it (only a page nobody else can see); else `lockHint` says why not. */
+  canLock?: boolean;
+  lockHint?: string | null;
 }
 
 export function PageView() {
@@ -119,9 +128,13 @@ export function PageView() {
   const openTasks = ownOpen + sharedOpen;
   const openThreads = useComments((s) => (s.pageId === pageId ? s.threads.filter((t) => !t.resolvedAt).length : 0));
   // Highlights need the threads even while the panel is closed.
+  const unlocked = useLockedNotes((s) => s.unlocked);
+  const isLocked = !!(treeMeta?.locked ?? info?.locked);
+  const metaKnown = !!treeMeta || info !== undefined; // (whether it is locked isn't known before)
   useEffect(() => {
+    if (!metaKnown || (isLocked && !unlocked)) return; // a locked page's comments wait for the unlock
     void loadComments(pageId);
-  }, [pageId]);
+  }, [pageId, metaKnown, isLocked, unlocked]);
   // Starting a comment (or clicking a highlighted one) opens Comments so the composer/thread is visible.
   const commentPending = useComments((s) => !!s.pending || !!s.activeId);
   useEffect(() => {
@@ -227,11 +240,29 @@ export function PageView() {
   useEffect(() => {
     if (pendingTemplate && canvas && canEdit && synced) void fillPendingTemplate(canvas, pageId).finally(() => setFilled(pageId));
   }, [pendingTemplate, canvas, canEdit, synced, pageId]);
+  // A locked page (src/lib/lockedNotes.ts) shows its lock screen until this sign-in unlocks; relocking shows it again.
+  useEffect(() => {
+    if (isLocked) setReload((n) => n + 1);
+  }, [unlocked]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Someone locked this page (src/lib/pageCache.ts dropped its offline copy): close the editor at once. Its owner gets
+  // it back (lock screen, or the editor if unlocked) as soon as the tree says it is theirs and locked.
+  const [kicked, setKicked] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === pageId) {
+        setKicked(pageId);
+        setReload((n) => n + 1);
+      }
+    };
+    window.addEventListener('noteapp:page-locked', on);
+    return () => window.removeEventListener('noteapp:page-locked', on);
+  }, [pageId]);
+  if (isLocked) markNoCache(pageId, true); // never in the offline cache
   const settings = usePageSettings(canvas?.doc);
   const outlineHidden = useRibbon((r) => r.outlineHidden);
   const rules = useRuleArea(settings.rules !== 'none' ? scroller : null, article);
 
-  if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta)) {
+  if ((treeLoaded && !meta && info !== undefined) || (gone && !treeMeta) || (kicked === pageId && !isLocked)) {
     return (
       <div className="empty-page">
         <h2>Page not found</h2>
@@ -243,6 +274,7 @@ export function PageView() {
     );
   }
   if (!meta || canEdit === null) return <div className="page-loading" />;
+  if (isLocked && !(info?.open && unlocked)) return <LockScreen key={`lock-${pageId}`} title={meta.title} onUnlocked={() => setReload((n) => n + 1)} />;
   const editorProps = {
     pageId,
     // Uploads go to the page's own workspace (a page shared from another one, #98).
@@ -330,6 +362,9 @@ export function PageView() {
                 canShare={!!info?.canShare}
                 canEdit={canEdit}
                 title={meta.title}
+                locked={isLocked}
+                canLock={!!info?.canLock}
+                lockHint={info?.lockHint ?? null}
               />
             )}
           </div>
@@ -603,9 +638,13 @@ type PageMenuProps = {
   title: string;
   /** Whole-page actions (export, import, templates) act on the page's canvas. */
   canvas: CanvasHandle | null;
+  /** Locked by the caller (and open on this sign-in). */
+  locked?: boolean;
+  canLock?: boolean;
+  lockHint?: string | null;
 };
 
-function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas }: PageMenuProps) {
+function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, title, canvas, locked, canLock, lockHint }: PageMenuProps) {
   const tree = useStore((s) => s.tree);
   const printable = usePrintSelection(pageId);
   const navigate = useNavigate();
@@ -662,7 +701,22 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
               <MenuSeparator />
             </>
           )}
-          {canManage && (
+          {canEdit && !locked && (
+            <MenuItem icon={<Lock size={15} />} disabled={!canLock} note={canLock ? undefined : lockHint} onSelect={() => void lockPageFlow(pageId)}>
+              Lock page
+            </MenuItem>
+          )}
+          {locked && (
+            <>
+              <MenuItem icon={<Lock size={15} />} onSelect={() => void lockNow()}>
+                Lock now
+              </MenuItem>
+              <MenuItem icon={<LockOpen size={15} />} onSelect={() => void removeLockFlow(pageId)}>
+                Remove lock…
+              </MenuItem>
+            </>
+          )}
+          {canManage && !locked && (
             <MenuItem
               icon={<Copy size={15} />}
             onSelect={() => {
@@ -677,7 +731,7 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
               Duplicate
             </MenuItem>
           )}
-          {canManage && (
+          {canManage && !locked && (
             <MenuItem icon={<LayoutTemplate size={15} />} onSelect={() => source && void saveTemplate()}>
               Save as template…
             </MenuItem>

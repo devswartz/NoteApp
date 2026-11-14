@@ -6,6 +6,7 @@ import { createTask, deleteTask, getTask, listCompleted, listTasks, updateTask }
 import { pageDocState } from '../collab.ts';
 import { findTaskElement, notesMarkdown } from '../taskNotes.ts';
 import { HttpError, h, param } from '../http.ts';
+import { viewTask, viewTasks } from '../locks.ts';
 
 export const taskRoutes = Router();
 
@@ -13,7 +14,7 @@ taskRoutes.get(
   '/workspaces/:id/tasks',
   h((req) => {
     requireRole(param(req, 'id'), req.user.id, 'viewer');
-    return listTasks(param(req, 'id'), req.user.id);
+    return viewTasks(listTasks(param(req, 'id'), req.user.id), req.user.id); // tasks on a locked page: "Locked task" until unlocked
   }),
 );
 
@@ -21,7 +22,7 @@ taskRoutes.get(
   '/workspaces/:id/tasks/completed',
   h((req) => {
     requireRole(param(req, 'id'), req.user.id, 'viewer');
-    return listCompleted(param(req, 'id'), req.user.id, (req.query.before as string) || null);
+    return viewTasks(listCompleted(param(req, 'id'), req.user.id, (req.query.before as string) || null), req.user.id);
   }),
 );
 
@@ -31,11 +32,11 @@ taskRoutes.post(
   h((req) => {
     const title = req.body.title ?? '';
     if (typeof title !== 'string' || title.length > 1000) throw new HttpError(400, 'Invalid title');
-    return createTask(req.user.id, param(req, 'id'), { ...req.body, title });
+    return viewTask(createTask(req.user.id, param(req, 'id'), { ...req.body, title }), req.user.id);
   }),
 );
 
-taskRoutes.patch('/tasks/:id', h((req) => updateTask(req.user.id, param(req, 'id'), req.body)));
+taskRoutes.patch('/tasks/:id', h((req) => viewTask(updateTask(req.user.id, param(req, 'id'), req.body), req.user.id)));
 
 // The notes written under the task in its page (read-only, for the task panel's "From the note"): read from the page
 // as it is now, the live room's copy when it's open. `markdown` is '' when the task has no notes or isn't on a page.

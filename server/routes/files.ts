@@ -30,7 +30,9 @@ import path from 'node:path';
 import { HttpError, h, param } from '../http.ts';
 import { DATA_DIR, FILES_DIR } from '../config.ts';
 import { db, now } from '../db.ts';
-import { PAGE_VISIBLE, onAccessChange, pageAccess, requireRole, roleIn } from '../access.ts';
+import { PAGE_VISIBLE, onAccessChange, pageAccess, requireRole, roleIn, sessionUnlocked } from '../access.ts';
+import { currentViewer, runAsViewer } from '../viewer.ts';
+import { sidForLockTag } from '../locks.ts';
 import { fileKeyFor, fileKeySecret, getUser } from '../auth.ts';
 import { FILE_KEY_MAX_S, signFileName } from '../../shared/fileLinks.ts';
 import { visibleTemplate } from '../templates.ts';
@@ -162,6 +164,8 @@ export interface FileMeta {
  * otherwise to workspace members, or for legacy workspace-less uploads only to the uploader.
  */
 export function fileVisible(row: FileMeta, userId: string): boolean {
+  // A file on a locked page (server/locks.ts): its owner only, on a sign-in that has it unlocked (pageAccess checks the
+  // current viewer: for upload links, the sign-in named by the link's lock tag, if any).
   if (row.page_id) return !!pageAccess(row.page_id, userId);
   if (row.template_id) return !!visibleTemplate(row.template_id, userId);
   if (row.workspace_id) return roleIn(row.workspace_id, userId) !== null;
@@ -183,12 +187,14 @@ onAccessChange(() => readCache.clear()); // a role, membership, share or move ch
  * members, and for old files with no page recorded. A "yes" is cached for a minute and dropped
  * whenever access is taken away anywhere.
  */
-export function canReadFile(fileId: string, userId: string): boolean {
-  const key = `${fileId}:${userId}`;
+export function canReadFile(fileId: string, userId: string, sid: string | null = viewerSid(userId)): boolean {
+  const key = `${fileId}:${userId}:${sid ?? ''}`;
   const hit = readCache.get(key);
   if (hit && Date.now() - hit.at < READ_CACHE_MS) return hit.ok;
   const row = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as FileMeta | undefined;
-  const ok = (!!row && fileVisible(row, userId)) || referencedInVisiblePage(fileId, userId);
+  // As that sign-in: files on the user's locked pages only while it has them unlocked. Locking, relocking and an
+  // unlock lapsing all call accessChanged(), which empties the cache, so links stop working at once.
+  const ok = runAsViewer({ userId, sid }, () => (!!row && fileVisible(row, userId)) || referencedInVisiblePage(fileId, userId, sessionUnlocked(userId, sid)));
   // Only "yes" is cached: a new share or membership doesn't announce itself (accessChanged is for losing access).
   if (ok) {
     if (readCache.size >= READ_CACHE_MAX) readCache.clear();
@@ -197,17 +203,23 @@ export function canReadFile(fileId: string, userId: string): boolean {
   return ok;
 }
 
-/** True if a page `userId` can open (or one of its saved versions) contains the file id. */
-function referencedInVisiblePage(fileId: string, userId: string): boolean {
+/** The current viewer's sign-in, when it is `userId`'s. */
+const viewerSid = (userId: string) => {
+  const v = currentViewer();
+  return v && v.userId === userId ? v.sid : null;
+};
+
+/** True if a page `userId` can open (or one of its saved versions) contains the file id. Their locked pages count only while `unlocked`. */
+function referencedInVisiblePage(fileId: string, userId: string, unlocked: boolean): boolean {
   const needle = Buffer.from(fileId); // Yjs stores attribute strings as plain UTF-8 inside the update
   return !!db
     .prepare(
       `SELECT 1 FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
-       WHERE ${PAGE_VISIBLE}
+       WHERE ${PAGE_VISIBLE} AND (pg.locked_by IS NULL OR @unlocked = 1)
          AND (instr(pg.ydoc, @needle) > 0 OR EXISTS (SELECT 1 FROM page_versions v WHERE v.page_id = pg.id AND instr(v.ydoc, @needle) > 0))
        LIMIT 1`,
     )
-    .get({ userId, needle });
+    .get({ userId, needle, unlocked: unlocked ? 1 : 0 });
 }
 
 /** Tests only. */
@@ -219,18 +231,25 @@ export function clearFileReadCache() {
  * Checks a signed upload link's query (u, e, s) for stored file `name`. Returns the signer's user
  * id, or a status: 401 without a signature, 403 for a bad or expired one or an unverified account.
  */
-export function verifyFileSignature(name: string, q: Record<string, unknown>, nowS = Math.floor(Date.now() / 1000)): { userId: string } | { status: 401 | 403 } {
-  const { u, e, s } = q;
+export function verifyFileSignature(name: string, q: Record<string, unknown>, nowS = Math.floor(Date.now() / 1000)): { userId: string; sid: string | null } | { status: 401 | 403 } {
+  const { u, e, s, l } = q;
+  if (l !== undefined && (typeof l !== 'string' || !/^[0-9a-f]{24}$/.test(l))) return { status: 403 };
   if (typeof u !== 'string' || typeof e !== 'string' || typeof s !== 'string' || !u || !e || !s) return { status: 401 };
   const exp = Number(e);
   // Expired, or further out than any key we issue (a forged expiry).
   if (!/^\d{1,12}$/.test(e) || exp <= nowS || exp > nowS + FILE_KEY_MAX_S + 60) return { status: 403 };
   if (!/^[0-9a-f]{32}$/.test(s) || u.length > 100) return { status: 403 };
-  const want = Buffer.from(signFileName(fileKeySecret(u, exp), name));
+  const want = Buffer.from(signFileName(fileKeySecret(u, exp, l as string | undefined), name));
   if (!crypto.timingSafeEqual(want, Buffer.from(s))) return { status: 403 };
   const user = getUser(u);
   if (!user || !user.emailVerified) return { status: 403 };
-  return { userId: u };
+  // A link signed for an unlocked sign-in (server/locks.ts): only while that sign-in is still unlocked.
+  if (typeof l === 'string') {
+    const sid = sidForLockTag(u, l);
+    if (!sid) return { status: 403 };
+    return { userId: u, sid };
+  }
+  return { userId: u, sid: null };
 }
 
 /** A fresh key for signing upload links (the client also gets one with every session refresh). */
@@ -290,7 +309,7 @@ export function serveUploads(req: Request, res: Response, next: NextFunction) {
       .type('text/plain')
       .send(signed.status === 401 ? 'Sign in to open this file' : DENIED);
   }
-  if (!canReadFile(m[1], signed.userId)) return res.status(403).type('text/plain').send(DENIED);
+  if (!canReadFile(m[1], signed.userId, signed.sid)) return res.status(403).type('text/plain').send(DENIED);
   const file = path.join(UPLOAD_DIR, stored);
   if (!fs.existsSync(file)) return res.status(404).type('text/plain').send('Not found');
   const row = db.prepare('SELECT name FROM files WHERE id = ?').get(m[1]) as { name: string } | undefined;
