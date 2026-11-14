@@ -1,0 +1,113 @@
+# Submits the iOS and macOS App Store versions of a release tag for review, once someone approves the `app-store`
+# environment. The builds themselves come from mobile.yml (iOS, TestFlight) and mac-app-store.yml (.pkg), which run on
+# the same tag; the submit jobs wait for those builds to finish processing in App Store Connect, then attach them, set
+# What's New (docs/store/whats-new.md, else CHANGELOG.md), release after approval, and submit. A version already in
+# review is cancelled and replaced by the newer build. Flow, setup and what still needs a person: docs/STORE_RELEASES.md.
+name: Store submit
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to submit (e.g. v0.5.4); its builds must already be in App Store Connect
+        required: true
+      platforms:
+        description: Which App Store versions to submit
+        type: choice
+        options: [both, ios, macos]
+        default: both
+      dry_run:
+        description: Only read App Store Connect and log what would change
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  # No approval needed: shows the What's New text in the run summary, so you can read it before approving.
+  whats-new:
+    name: What's New
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.text.outputs.version }}
+      matrix: ${{ steps.text.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Text for ${{ env.TAG }}
+        id: text
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "::error::'$TAG' is not a release tag like v1.2.3"; exit 1; fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          ios='{"key":"ios","name":"iOS","platform":"IOS"}'
+          mac='{"key":"macos","name":"macOS","platform":"MAC_OS"}'
+          case "${PLATFORMS:-both}" in
+            ios) echo "matrix=[$ios]" ;;
+            macos) echo "matrix=[$mac]" ;;
+            *) echo "matrix=[$ios,$mac]" ;;
+          esac >> "$GITHUB_OUTPUT"
+          node scripts/store-whats-new.mjs "$TAG" --explain > "$RUNNER_TEMP/whats-new.txt"
+          {
+            echo "### What's New for $TAG (iOS and macOS)"
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/whats-new.txt"
+            echo '```'
+            echo
+            echo "Approve the **app-store** environment to submit; reject it to skip this tag."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  submit:
+    name: Submit ${{ matrix.name }}
+    needs: whats-new
+    runs-on: ubuntu-latest
+    # Waits here for a required reviewer (Settings → Environments → app-store). One approval covers both platforms.
+    environment: app-store
+    # Builds take up to ~1 hour to upload and process; the script itself gives up after BUILD_TIMEOUT_MIN.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.whats-new.outputs.matrix) }}
+    # A newer tag's run waits for this one instead of racing it on the same App Store version.
+    concurrency:
+      group: store-submit-${{ matrix.key }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: What's New
+        run: node scripts/store-whats-new.mjs "$TAG" > "$RUNNER_TEMP/whats-new.txt"
+
+      - name: Submit for review
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.whats-new.outputs.version }}
+          WHATS_NEW_FILE: ${{ runner.temp }}/whats-new.txt
+          BUILD_TIMEOUT_MIN: '90'
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: node scripts/store-submit.mjs

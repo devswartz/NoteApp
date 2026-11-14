@@ -43,6 +43,7 @@ Check: `curl -s https://staging.notiveloapp.com/api/health`.
 5. Check: `curl -s https://app.notiveloapp.com/api/health`.
 
 6. Desktop: check the **Desktop** run, review its draft release, and **publish** it. That's what ships the update to installed apps.
+7. App Store (iOS and macOS): check the What's New text in the **Store submit** run's summary and approve the `app-store` environment. It submits both for review and they release automatically once Apple approves. See `docs/STORE_RELEASES.md`.
 
 Versions follow semver: `vMAJOR.MINOR.PATCH`. Never re-push an existing tag.
 The first release, with every one-time setup step, is walked through in `docs/LAUNCH_CHECKLIST.md`.
