@@ -80,13 +80,17 @@ function validRedirectList(v: unknown): string[] {
   return [...new Set(v as string[])];
 }
 
-/** Public clients only: refuse grant and response types we don't do. */
+/**
+ * The client must be able to use the authorization code flow. Other grant and response types it lists
+ * (e.g. Claude's metadata document also lists urn:ietf:params:oauth:grant-type:jwt-bearer) are ignored, not
+ * refused: this server only ever issues codes and refresh tokens, and the registration response says so.
+ */
 function checkTypes(meta: Record<string, unknown>) {
   const grants = meta.grant_types ?? ['authorization_code'];
-  if (!Array.isArray(grants) || grants.some((g) => g !== 'authorization_code' && g !== 'refresh_token'))
-    throw new OAuthError('invalid_client_metadata', 'Only the authorization_code and refresh_token grant types are supported');
+  if (!Array.isArray(grants) || !grants.includes('authorization_code'))
+    throw new OAuthError('invalid_client_metadata', 'The client must support the authorization_code grant type');
   const responses = meta.response_types ?? ['code'];
-  if (!Array.isArray(responses) || responses.some((r) => r !== 'code')) throw new OAuthError('invalid_client_metadata', 'Only response_type "code" is supported');
+  if (!Array.isArray(responses) || !responses.includes('code')) throw new OAuthError('invalid_client_metadata', 'The client must support response_type "code"');
 }
 
 /** RFC 7591 registration. Any requested auth method is answered with "none": every client here is public. */
@@ -177,8 +181,12 @@ export function parseMetadataDocument(url: string, body: string): Omit<OAuthClie
   if (!m || typeof m !== 'object' || Array.isArray(m)) throw new OAuthError('invalid_client', 'The client metadata document must be a JSON object');
   if (m.client_id !== url) throw new OAuthError('invalid_client', 'The client metadata document’s client_id does not match its URL');
   if (typeof m.client_name !== 'string' || !m.client_name.trim()) throw new OAuthError('invalid_client', 'The client metadata document has no client_name');
+  // Every client here is public. A document may prefer another method as long as it also supports "none":
+  // ChatGPT's says token_endpoint_auth_method "private_key_jwt" with token_endpoint_auth_methods_supported
+  // ["none", "private_key_jwt"], and picks "none" from our metadata (token_endpoint_auth_methods_supported).
   const method = m.token_endpoint_auth_method ?? 'none';
-  if (method !== 'none') throw new OAuthError('invalid_client', 'Only public clients (token_endpoint_auth_method "none") are supported');
+  const alsoNone = Array.isArray(m.token_endpoint_auth_methods_supported) && m.token_endpoint_auth_methods_supported.includes('none');
+  if (method !== 'none' && !alsoNone) throw new OAuthError('invalid_client', 'Only public clients (token_endpoint_auth_method "none") are supported');
   if ('client_secret' in m || 'client_secret_expires_at' in m) throw new OAuthError('invalid_client', 'A client metadata document must not contain a secret');
   let redirectUris: string[];
   try {

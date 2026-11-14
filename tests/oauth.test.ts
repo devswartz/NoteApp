@@ -226,6 +226,10 @@ test('redirect URIs: https or loopback only at registration, exact match at auth
   }
   assert.equal((await register({ redirect_uris: ['http://127.0.0.1:33418/cb', 'http://localhost/cb'] })).status, 201);
   assert.equal((await register({ grant_types: ['client_credentials'] })).data.error, 'invalid_client_metadata');
+  // Extra grant types are ignored, not refused; the registration only grants what the server does.
+  const extra = await register({ grant_types: ['authorization_code', 'refresh_token', 'urn:ietf:params:oauth:grant-type:jwt-bearer'] });
+  assert.equal(extra.status, 201);
+  assert.deepEqual(extra.data.grant_types, ['authorization_code', 'refresh_token']);
 
   const clientId = (await register()).data.client_id;
   const { challenge } = pkce();
@@ -338,7 +342,15 @@ test('Client ID Metadata Documents: fetched, validated and cached', async () => 
   const u = await app.signUp('Cim');
   const url = 'https://assistant.example/oauth/client.json';
   let fetches = 0;
-  let doc: Record<string, unknown> = { client_id: url, client_name: 'Metadata Assistant', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' };
+  // Shaped like Claude's real document, which also lists the jwt-bearer grant.
+  let doc: Record<string, unknown> = {
+    client_id: url,
+    client_name: 'Metadata Assistant',
+    redirect_uris: [REDIRECT],
+    grant_types: ['authorization_code', 'refresh_token', 'urn:ietf:params:oauth:grant-type:jwt-bearer'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  };
   clients.setMetadataFetcher(async (u2) => {
     fetches++;
     assert.equal(u2, url);
@@ -362,6 +374,29 @@ test('Client ID Metadata Documents: fetched, validated and cached', async () => 
     doc = { ...doc, client_id: url2, redirect_uris: ['http://evil.example/cb'] };
     clients.setMetadataFetcher(async () => ({ body: JSON.stringify(doc), maxAge: null }));
     assert.equal((await authorize({ response_type: 'code', client_id: url2, redirect_uri: 'http://evil.example/cb', code_challenge: challenge, code_challenge_method: 'S256' })).location, '/oauth/consent?error=invalid_client');
+
+    // Shaped like ChatGPT's real document: prefers private_key_jwt but also supports "none", so it connects as a public client.
+    const gpt = 'https://assistant.example/oauth/gpt/client.json';
+    const gptDoc = {
+      client_id: gpt,
+      client_name: 'ChatGPT-like',
+      client_uri: 'https://assistant.example/',
+      redirect_uris: [REDIRECT],
+      token_endpoint_auth_method: 'private_key_jwt',
+      token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_signing_alg: 'RS256',
+      jwks_uri: 'https://assistant.example/oauth/jwks.json',
+      logo_uri: 'https://assistant.example/logo.png',
+    };
+    clients.setMetadataFetcher(async () => ({ body: JSON.stringify(gptDoc), maxAge: null }));
+    const g = await connect(u, { clientId: gpt });
+    assert.ok(await verify.verifyAccessToken(g.tokens.access_token), 'a ChatGPT-shaped document connects');
+    // A document that can only authenticate with a key or secret is still refused.
+    const keyOnly = 'https://assistant.example/oauth/key-only/client.json';
+    clients.setMetadataFetcher(async () => ({ body: JSON.stringify({ ...gptDoc, client_id: keyOnly, token_endpoint_auth_methods_supported: ['private_key_jwt'] }), maxAge: null }));
+    assert.equal((await authorize({ response_type: 'code', client_id: keyOnly, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256' })).location, '/oauth/consent?error=invalid_client');
   } finally {
     clients.setMetadataFetcher(undefined);
   }

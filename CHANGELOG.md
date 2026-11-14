@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.5.2
+
+### Fixes
+- **AI connector: ChatGPT and Claude can connect.** Connecting stopped at "Can't connect this app". ChatGPT's registration prefers signing in with its own key (`private_key_jwt`) while also supporting Notivelo's keyless sign-in, and Claude's also lists a sign-in method Notivelo doesn't use (`jwt-bearer`); Notivelo refused both. Now an app is accepted when it supports keyless sign-in and the authorization code flow, and anything else it lists is ignored. Notivelo still requires PKCE and never issues client secrets.
+
 ## v0.5.1
 
 ### New address: notiveloapp.com
