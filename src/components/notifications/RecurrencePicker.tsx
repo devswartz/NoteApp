@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { Repeat, X } from 'lucide-react';
 import { describeRecurrence, firstOccurrence, isISODate, previewOccurrences, WEEKDAY_SHORT, weekdayOf } from '../../../shared/recurrence.ts';
 import type { Recurrence, RecurrenceOptions, Weekday } from '../../../shared/types.ts';
+import { MiniCalendar } from '../MiniCalendar.tsx';
 import './notifications.css';
 
 type Unit = 'day' | 'week' | 'month' | 'year';
@@ -205,7 +206,6 @@ function CustomRecurrence({
           <option value="until">On date</option>
           <option value="count">After</option>
         </select>
-        {ends === 'until' && <input type="date" className="input input-sm" aria-label="End date" value={until} min={anchor} onChange={(e) => setUntil(e.target.value)} />}
         {ends === 'count' && (
           <>
             <input type="number" min={1} max={10000} className="input input-sm rp-n" aria-label="Occurrences" value={count} onChange={(e) => setCount(Number(e.target.value))} />
@@ -213,6 +213,7 @@ function CustomRecurrence({
           </>
         )}
       </div>
+      {ends === 'until' && <MiniCalendar value={isISODate(until) ? until : null} min={anchor} label="End date" onSelect={setUntil} />}
 
       <div className="rp-row">
         <span className="muted small">Next date counts from</span>

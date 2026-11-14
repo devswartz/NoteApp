@@ -575,6 +575,38 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
 }
 .menu-group-title { text-transform: none; letter-spacing: 0; padding-top: 8px; }
 .menu-pad { padding: 6px 10px; }
+
+/* MiniCalendar: month calendar in the due-date menu and the recurrence end date. */
+.dcal { --cal-cell: 32px; padding: 4px 4px 2px; width: max-content; max-width: 100%; align-self: center; }
+.dcal-head { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+.dcal-title { flex: 1; text-align: center; font-weight: 600; font-size: var(--text-sm); }
+.dcal-nav { height: 28px; width: 28px; color: var(--text-2); }
+.dcal-grid { display: flex; flex-direction: column; gap: 2px; }
+.dcal-row { display: grid; grid-template-columns: repeat(7, var(--cal-cell)); gap: 2px; }
+.dcal-dow { text-align: center; font-size: var(--text-2xs); font-weight: 600; color: var(--text-muted); padding: 2px 0; }
+.dcal-cell { display: flex; }
+.dcal-day {
+  width: var(--cal-cell);
+  height: var(--cal-cell);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  touch-action: manipulation;
+}
+@media (hover: hover) { .dcal-day:hover { background: var(--bg-hover); } }
+.dcal-day:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dcal-day.is-past, .dcal-day.is-outside { color: var(--text-muted); }
+.dcal-day.is-outside { opacity: 0.6; }
+.dcal-day.is-today { color: var(--accent); font-weight: 700; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.dcal-day.is-selected, .dcal-day.is-selected:hover { background: var(--accent-solid); color: var(--text-on-accent); font-weight: 600; opacity: 1; }
+.dcal-day[aria-disabled='true'] { opacity: 0.35; cursor: not-allowed; }
+.dcal-day[aria-disabled='true']:hover { background: none; }
+@media (max-width: 760px), (pointer: coarse) {
+  .dcal { --cal-cell: 40px; }
+  .dcal-nav { height: 40px; width: 40px; }
+  .dcal-day { font-size: var(--text-base); }
+}
 .color-row { display: flex; gap: 6px; padding: 8px; }
 .swatch { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
 .swatch:hover { transform: scale(1.12); }

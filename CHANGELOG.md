@@ -22,6 +22,9 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 ### Behind the scenes
 - An OAuth 2.1 authorization server for remote MCP clients, following the MCP authorization spec: authorization code with PKCE (S256 only), app registration by Client ID Metadata Document or Dynamic Client Registration (public clients, rate limited, https or loopback redirect addresses only), discovery metadata at `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource`, tokens bound to `/mcp`, short-lived access tokens and rotating refresh tokens (only hashes are stored; a retry within 30 seconds of rotation is honoured, later reuse of an old refresh token disconnects the app), and token revocation.
 
+### Fixes
+- **Picking a due date no longer sets one by accident.** In the desktop app on Windows, stepping to the next month in a task's due-date picker set the date and closed the menu. The due-date menu now has its own small calendar: the month arrows only change month, and a date is set only when you click a day. Today is outlined, the chosen day is filled, past days are dimmed, and the week starts on your region's first day. Keyboard: arrow keys move between days, Page Up/Page Down change month (with Shift, year), Enter picks, Escape closes. A repeating task's **Ends on date** uses the same calendar, and days before the due date can't be picked.
+
 ## v0.4.11
 
 ### Performance
