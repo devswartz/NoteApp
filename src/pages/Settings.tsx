@@ -27,6 +27,7 @@ import { ExportMyData, WorkspaceData } from '../components/WorkspaceData.tsx';
 import { OneNoteImport, useOneNoteEnabled } from '../components/OneNoteImport.tsx';
 import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
 import { ConnectedApps } from '../components/ConnectedApps.tsx';
+import { LockedNotesSettings } from '../components/LockedNotes.tsx';
 
 
 interface SectionDef {
@@ -44,7 +45,13 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   { id: 'profile', title: 'Profile', description: 'How you appear to your team, and how you sign in.', icon: <User size={16} />, group: 'Account', render: () => <ProfileSection /> },
   { id: 'appearance', title: 'Appearance', description: 'How the app looks on this device.', icon: <Palette size={16} />, group: 'Account', render: () => <Card><AppearanceSettings /></Card> },
-  { id: 'security', title: 'Security', icon: <Lock size={16} />, group: 'Account', render: () => <AppLockSettings />, when: hasAppLock },
+  { id: 'security', title: 'Security', description: 'Locked notes, and locking the app on this device.', icon: <Lock size={16} />, group: 'Account', render: () => (
+      <>
+        <LockedNotesSettings />
+        {hasAppLock() && <Card title="This device"><AppLockSettings /></Card>}
+      </>
+    ),
+  },
   { id: 'notifications', title: 'Notifications', description: 'How and when you hear about due tasks.', icon: <Bell size={16} />, group: 'Account', render: () => (
       <>
         <DeviceNotifications />

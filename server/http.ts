@@ -40,7 +40,7 @@ export const param = (req: Request, name: string): string => String(req.params[n
 export const ROLES: Role[] = ['owner', 'admin', 'member', 'viewer'];
 
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
-  if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+  if (err instanceof HttpError) return res.status(err.status).json(err.code ? { error: err.message, code: err.code } : { error: err.message });
   if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.parse.failed')
     return res.status(400).json({ error: 'Invalid JSON' });
   if (err && typeof err === 'object' && 'type' in err && err.type === 'entity.too.large')

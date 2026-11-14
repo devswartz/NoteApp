@@ -187,6 +187,22 @@ export interface PageMeta {
   position: number;
   updatedAt: string;
   updatedBy: string | null;
+  /** Locked by the caller (only its owner ever sees a locked page): shown with a lock, opens to a lock screen. */
+  locked?: boolean;
+}
+
+/** GET /locked-notes: the caller's locked-notes password and this sign-in's unlock (server/locks.ts). */
+export interface LockedNotesStatus {
+  hasPassword: boolean;
+  /** This sign-in has the user's locked pages unlocked right now. */
+  unlocked: boolean;
+  /** When the unlock lapses without activity (null when locked). */
+  expiresAt: string | null;
+  /** Idle time after which locked pages lock again. */
+  idleMs: number;
+  lockedPages: number;
+  /** Devices that can unlock with Face ID / Touch ID / biometrics. */
+  devices: { id: string; label: string | null; createdAt: string; lastUsedAt: string | null }[];
 }
 
 export interface Tree {
@@ -227,6 +243,8 @@ export interface Task {
   completedBy: string | null;
   createdAt: string;
   updatedAt: string;
+  /** On the caller's locked page, which this sign-in hasn't unlocked: title and text are withheld ("Locked task"). */
+  locked?: boolean;
 }
 
 export type TaskPatch = Partial<

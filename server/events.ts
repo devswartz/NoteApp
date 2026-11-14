@@ -13,7 +13,9 @@ import type { IncomingMessage } from 'node:http';
 import crypto from 'node:crypto';
 import { WebSocket, type WebSocketServer } from 'ws';
 import { db } from './db.ts';
-import { pageAccess, taskVisible } from './access.ts';
+import { pageAccess, pageLockedBy, taskVisible } from './access.ts';
+import { runAsViewer } from './viewer.ts';
+import { LOCKED_TASK_TITLE } from '../shared/config.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import type { EventMessage, ServerEvent } from '../shared/types.ts';
 
@@ -30,6 +32,8 @@ const buffer: Entry[] = [];
 let seq = 0;
 
 const clients = new Map<string, Set<WebSocket>>(); // userId -> open sockets
+/** The sign-in behind each socket: what its user's locked pages (server/locks.ts) look like depends on it. */
+const socketSid = new WeakMap<WebSocket, string | null>();
 
 function addClient(userId: string, ws: WebSocket) {
   let set = clients.get(userId);
@@ -59,6 +63,7 @@ export function attachEvents(wss: WebSocketServer) {
       ws.close(4403, 'Email not verified');
       return;
     }
+    socketSid.set(ws, auth.sid);
     addClient(auth.user.id, ws);
     // Close when the access token lapses; the client refreshes, reconnects and catches up.
     const expiry = setTimeout(() => {
@@ -93,7 +98,7 @@ function catchUp(ws: WebSocket, userId: string, since: { boot: string; seq: numb
   if (since.seq + 1 < oldest) return raw(ws, { type: 'resync' });
   for (const e of buffer) {
     if (e.seq <= since.seq) continue;
-    const msg = messageFor(userId, e);
+    const msg = forSocket(ws, userId, e);
     if (msg) raw(ws, msg);
   }
 }
@@ -117,6 +122,24 @@ function raw(ws: WebSocket, msg: EventMessage) {
 
 function isMember(workspaceId: string, userId: string): boolean {
   return !!db.prepare('SELECT 1 FROM workspace_members WHERE workspace_id = ? AND user_id = ?').get(workspaceId, userId);
+}
+
+/** Does what this event carries for `userId` depend on whether their sign-in has their locked pages unlocked? */
+function lockSensitive(ev: ServerEvent, userId: string): boolean {
+  const page = ev.type === 'task' ? ev.task.pageId : ev.type === 'comments' ? ev.pageId : null;
+  return pageLockedBy(page) === userId;
+}
+
+/**
+ * messageFor, as the socket's own sign-in: a task on its user's locked page goes out as "Locked task" (title and
+ * text withheld) unless this sign-in has it unlocked, and comment events on it only while unlocked.
+ */
+function forSocket(ws: WebSocket, userId: string, e: Entry): EventMessage | null {
+  return runAsViewer({ userId, sid: socketSid.get(ws) ?? null }, () => {
+    const msg = messageFor(userId, e);
+    if (msg?.type !== 'task' || !msg.task.pageId || pageLockedBy(msg.task.pageId) !== userId || pageAccess(msg.task.pageId, userId)) return msg;
+    return { ...msg, task: { ...msg.task, title: LOCKED_TASK_TITLE, description: '', tagIds: [], locked: true } };
+  });
 }
 
 /** What `userId` should receive for buffered entry `e`, judged by current permissions (null = nothing). */
@@ -174,10 +197,19 @@ export function publish(ev: ServerEvent, opts: { userIds?: string[] } = {}) {
   for (const userId of recipients) {
     const sockets = clients.get(userId);
     if (!sockets?.size) continue;
-    const msg = messageFor(userId, entry);
-    if (!msg) continue;
-    const data = JSON.stringify(msg);
-    for (const ws of sockets) if (ws.readyState === WebSocket.OPEN) ws.send(data);
+    // One message per user, except where a locked page is involved: then each socket gets what its sign-in may see.
+    const perSocket = lockSensitive(entry.ev, userId);
+    const shared = perSocket ? null : messageFor(userId, entry);
+    if (!perSocket && !shared) continue;
+    const data = shared && JSON.stringify(shared);
+    for (const ws of sockets) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (data) ws.send(data);
+      else {
+        const msg = forSocket(ws, userId, entry);
+        if (msg) ws.send(JSON.stringify(msg));
+      }
+    }
   }
 }
 

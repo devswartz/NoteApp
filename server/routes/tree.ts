@@ -44,11 +44,17 @@ treeRoutes.get(
     const pages = db
       .prepare(
         `SELECT pg.id, pg.section_id AS sectionId, pg.title, pg.icon, pg.kind, pg.position, pg.updated_at AS updatedAt,
-           pg.updated_by AS updatedBy
+           pg.updated_by AS updatedBy, pg.locked_by IS NOT NULL AS locked
          FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
-         WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NULL AND s.deleted_at IS NULL AND ${NOTEBOOK_VISIBLE} ORDER BY pg.position`,
+         WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NULL AND s.deleted_at IS NULL AND ${NOTEBOOK_VISIBLE}
+           AND (pg.locked_by IS NULL OR pg.locked_by = @userId) ORDER BY pg.position`,
       )
-      .all(p) as PageMeta[];
+      .all(p)
+      // Someone else's locked page isn't listed at all; one's own is, with a lock (server/locks.ts).
+      .map((r) => {
+        const { locked, ...pg } = r as Omit<PageMeta, 'locked'> & { locked: number };
+        return locked ? { ...pg, locked: true } : pg;
+      }) as PageMeta[];
     // Pages in the Trash, for the tasks that stay on them ("<title> · in Trash"): only for people who could restore them.
     const role = roleIn(workspaceId, req.user.id);
     const trashedPages =
@@ -56,7 +62,8 @@ treeRoutes.get(
         ? (db
             .prepare(
               `SELECT pg.id, pg.title FROM pages pg JOIN sections s ON s.id = pg.section_id JOIN notebooks n ON n.id = s.notebook_id
-               WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NOT NULL AND ${NOTEBOOK_VISIBLE_ANY}`,
+               WHERE n.workspace_id = @workspaceId AND pg.deleted_at IS NOT NULL AND ${NOTEBOOK_VISIBLE_ANY}
+                 AND (pg.locked_by IS NULL OR pg.locked_by = @userId)`,
             )
             .all(p) as { id: string; title: string }[])
         : [];
@@ -258,7 +265,8 @@ treeRoutes.post(
       db.prepare('INSERT INTO sections (id, notebook_id, parent_id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
         newSection, notebookId, parent, sectionName, color, position, now(),
       );
-      const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? AND deleted_at IS NULL ORDER BY position').all(from) as { id: string; position: number }[];
+      // Locked pages are not copied (anyone's: a copy would be an unlocked page, server/locks.ts).
+      const pages = db.prepare('SELECT id, position FROM pages WHERE section_id = ? AND deleted_at IS NULL AND locked_by IS NULL ORDER BY position').all(from) as { id: string; position: number }[];
       for (const p of pages) copyPage(p.id, newSection, req.user.id, { position: p.position });
       const subs = db.prepare('SELECT id, name, color, position FROM sections WHERE parent_id = ? AND deleted_at IS NULL ORDER BY position').all(from) as {
         id: string;

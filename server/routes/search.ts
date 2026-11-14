@@ -10,6 +10,7 @@ import { Router } from 'express';
 import { db } from '../db.ts';
 import { PAGE_VISIBLE, TASK_VISIBLE, requireRole } from '../access.ts';
 import { rowToTask } from '../tasks.ts';
+import { viewTasks } from '../locks.ts';
 import { sectionPathNames } from '../tree.ts';
 import { h, param } from '../http.ts';
 import type { SearchResult } from '../../shared/types.ts';
@@ -61,7 +62,9 @@ export function search(workspaceId: string, userId: string, q: string, limit = 2
     // Only a description match is worth a snippet; the title is shown anyway.
     return r.fts_snippet.includes('«') ? { ...t, snippet: r.fts_snippet } : t;
   });
-  return { pages, tasks };
+  // Tasks on the caller's locked page match on their title only while unlocked; otherwise they are left out (a
+  // "Locked task" hit would confirm what was searched for). Page bodies of locked pages are never indexed.
+  return { pages, tasks: viewTasks(tasks, userId).filter((t) => !t.locked) };
 }
 
 searchRoutes.get(

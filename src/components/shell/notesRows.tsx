@@ -20,6 +20,7 @@ import {
   Globe,
   Link2,
   Lock,
+  LockOpen,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -37,6 +38,7 @@ import { sidebar, useSidebar } from './sidebarState.ts';
 import { byPos, dragProps, dropClass, dropProps, movePage, moveSection, useDnd } from './treeDnd.ts';
 import { confirmDialog, promptDialog } from './dialogs.tsx';
 import { moveToTrash } from '../../lib/trash.ts';
+import { lockPageFlow, removeLockFlow } from '../LockedNotes.tsx';
 import { openShareDialog } from '../sharing/ShareDialog.tsx';
 import { childSections, sectionTarget } from './navState.ts';
 import { MAX_SECTION_DEPTH, sectionDepth } from '../../../shared/sections.ts';
@@ -368,7 +370,16 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
           <MenuItem icon={<Pencil size={15} />} onSelect={() => p.setEditing(rowId)}>
             Rename
           </MenuItem>
-          <MenuItem
+          {page.locked ? (
+            <MenuItem icon={<LockOpen size={15} />} onSelect={() => void removeLockFlow(page.id)}>
+              Remove lock…
+            </MenuItem>
+          ) : (
+            <MenuItem icon={<Lock size={15} />} onSelect={() => void lockPageFlow(page.id)}>
+              Lock page
+            </MenuItem>
+          )}
+          {!page.locked && <MenuItem
             icon={<Copy size={15} />}
             onSelect={() =>
               post<{ id: string }>(`/pages/${page.id}/copy`, {})
@@ -377,7 +388,7 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
             }
           >
             Duplicate
-          </MenuItem>
+          </MenuItem>}
           <MenuItem icon={<FolderInput size={15} />} onSelect={() => p.setMoving({ kind: 'page', id: page.id })}>
             Move to…
           </MenuItem>
@@ -433,7 +444,12 @@ export function PageRow({ page, favorite, flat, draggable = true, indent, ...p }
         ) : (
           <span className="truncate sb-label">{page.title || 'Untitled'}</span>
         )}
-        {openTasks > 0 && (
+        {page.locked && (
+          <span className="sb-lock subtle" title="Locked page: only you can open it" aria-label="Locked">
+            <Lock size={12} />
+          </span>
+        )}
+        {openTasks > 0 && !page.locked && (
           <span className="sb-count subtle" title={`${openTasks} open task(s)`}>
             <CircleCheck size={11} /> {openTasks}
           </span>

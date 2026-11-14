@@ -9,7 +9,20 @@
 //   - mark the page as edited by the user, and add an Activity entry "… via <app name>".
 import * as Y from 'yjs';
 import { db, newId, now } from '../db.ts';
-import { HttpError, NOTEBOOK_VISIBLE, PAGE_VISIBLE, TASK_VISIBLE, pageAccess, requireRole, sectionAccess, taskVisible, type Access } from '../access.ts';
+// AI connectors never see locked pages (server/locks.ts), not even their titles, nor the tasks on them: every
+// listing here uses the NO_LOCKED predicates, and pageAccess refuses a locked page when there is no unlocked viewer
+// (there never is on /mcp).
+import {
+  HttpError,
+  NOTEBOOK_VISIBLE,
+  PAGE_VISIBLE_NO_LOCKED as PAGE_VISIBLE,
+  TASK_VISIBLE_NO_LOCKED as TASK_VISIBLE,
+  pageAccess,
+  requireRole,
+  sectionAccess,
+  taskVisibleNoLocked as taskVisible,
+  type Access,
+} from '../access.ts';
 import { editPageDoc, flushAll, pageDocState, newBoxId } from '../collab.ts';
 import { snapshot } from '../versions.ts';
 import { publish } from '../events.ts';
@@ -221,7 +234,7 @@ export function listWorkspaces(ctx: McpCtx) {
     .prepare(
       `SELECT p.id, p.title, w.name AS workspaceName FROM page_shares ps JOIN pages p ON p.id = ps.page_id
          JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id JOIN workspaces w ON w.id = n.workspace_id
-       WHERE ps.user_id = ? AND p.deleted_at IS NULL ORDER BY ps.created_at DESC LIMIT 100`,
+       WHERE ps.user_id = ? AND p.deleted_at IS NULL AND p.locked_by IS NULL ORDER BY ps.created_at DESC LIMIT 100`,
     )
     .all(ctx.userId) as { id: string; title: string; workspaceName: string }[];
   const sharedPages = shared.flatMap((p) => {
@@ -260,9 +273,9 @@ export function listPages(ctx: McpCtx, sectionId: string, limit: number, offset:
   const a = sectionAccess(sectionId, ctx.userId);
   if (!a) throw new HttpError(404, 'Section not found');
   const nb = db.prepare('SELECT name FROM notebooks WHERE id = ?').get(a.notebookId) as { name: string };
-  const total = db.prepare('SELECT COUNT(*) FROM pages WHERE section_id = ? AND deleted_at IS NULL').pluck().get(sectionId) as number;
+  const total = db.prepare('SELECT COUNT(*) FROM pages WHERE section_id = ? AND deleted_at IS NULL AND locked_by IS NULL').pluck().get(sectionId) as number;
   const pages = db
-    .prepare('SELECT id, title, updated_at AS updatedAt FROM pages WHERE section_id = ? AND deleted_at IS NULL ORDER BY position LIMIT ? OFFSET ?')
+    .prepare('SELECT id, title, updated_at AS updatedAt FROM pages WHERE section_id = ? AND deleted_at IS NULL AND locked_by IS NULL ORDER BY position LIMIT ? OFFSET ?')
     .all(sectionId, limit, offset) as { id: string; title: string; updatedAt: string }[];
   return {
     section: { id: sectionId, path: [nb.name, ...sectionPathNames(sectionId)].join(' › '), workspace_id: a.workspaceId, can_edit: a.canEdit },

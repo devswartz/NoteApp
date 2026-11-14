@@ -161,8 +161,10 @@ export interface FileMeta {
  * view that page (private notebooks included); a template's copy to whoever can see that template;
  * otherwise to workspace members, or for legacy workspace-less uploads only to the uploader.
  */
-export function fileVisible(row: FileMeta, userId: string): boolean {
-  if (row.page_id) return !!pageAccess(row.page_id, userId);
+export function fileVisible(row: FileMeta, userId: string, bytes = false): boolean {
+  // A file on a locked page (server/locks.ts): its owner only, and its metadata (name) only while unlocked. Upload
+  // links (the bytes) carry no sign-in, so the unlock can't be checked there: the owner's own signed link works.
+  if (row.page_id) return !!pageAccess(row.page_id, userId, { ignoreLock: bytes });
   if (row.template_id) return !!visibleTemplate(row.template_id, userId);
   if (row.workspace_id) return roleIn(row.workspace_id, userId) !== null;
   return row.created_by === userId;
@@ -188,7 +190,7 @@ export function canReadFile(fileId: string, userId: string): boolean {
   const hit = readCache.get(key);
   if (hit && Date.now() - hit.at < READ_CACHE_MS) return hit.ok;
   const row = db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as FileMeta | undefined;
-  const ok = (!!row && fileVisible(row, userId)) || referencedInVisiblePage(fileId, userId);
+  const ok = (!!row && fileVisible(row, userId, true)) || referencedInVisiblePage(fileId, userId);
   // Only "yes" is cached: a new share or membership doesn't announce itself (accessChanged is for losing access).
   if (ok) {
     if (readCache.size >= READ_CACHE_MAX) readCache.clear();

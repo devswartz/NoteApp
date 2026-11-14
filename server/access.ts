@@ -1,6 +1,7 @@
 // Access-control helpers. All authorisation decisions go through here.
 import { db } from './db.ts';
 import type { Role } from '../shared/types.ts';
+import { currentViewer } from './viewer.ts';
 
 const RANK: Record<Role, number> = { viewer: 0, member: 1, admin: 2, owner: 3 };
 
@@ -19,8 +20,11 @@ export function accessChanged() {
 }
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  /** Optional machine-readable reason, sent as `code` next to `error`. */
+  code?: string;
+  constructor(public status: number, message: string, code?: string) {
     super(message);
+    if (code) this.code = code;
   }
 }
 
@@ -95,6 +99,38 @@ export interface Access {
   viaPageShare: boolean;
   /** The page is in Trash: readable by the people who could restore it, and nothing else (no editing, moving or sharing). */
   trashed?: boolean;
+  /** The page is locked (by this user: nobody else gets an Access to it). See server/locks.ts. */
+  locked?: boolean;
+}
+
+// ── Locked pages (server/locks.ts) ──
+
+/** How long an unlock lasts without activity. The client relocks on its own after the same idle time. */
+export const UNLOCK_IDLE_MS = 5 * 60_000;
+
+/** Has this sign-in of `userId` unlocked their locked pages, and not relocked since? */
+export function sessionUnlocked(userId: string, sid: string | null | undefined): boolean {
+  if (!sid) return false;
+  const r = db.prepare('SELECT expires_at FROM lock_unlocks WHERE family_id = ? AND user_id = ?').get(sid, userId) as { expires_at: string } | undefined;
+  return !!r && r.expires_at > new Date().toISOString();
+}
+
+/**
+ * May the current viewer (server/viewer.ts) read the content of a page locked by `lockedBy` (null = not locked),
+ * acting as `userId`? Only its owner, on a sign-in that has unlocked. No viewer (timers, the AI connector,
+ * upload links) means no.
+ */
+export function lockOpen(lockedBy: string | null, userId: string): boolean {
+  if (!lockedBy) return true;
+  if (lockedBy !== userId) return false;
+  const v = currentViewer();
+  return !!v && v.userId === userId && sessionUnlocked(userId, v.sid);
+}
+
+/** Who locked this page (null if it isn't locked or doesn't exist). */
+export function pageLockedBy(pageId: string | null | undefined): string | null {
+  if (!pageId) return null;
+  return (db.prepare('SELECT locked_by FROM pages WHERE id = ?').pluck().get(pageId) as string | null | undefined) ?? null;
 }
 
 function accessFor(ctx: NotebookCtx | null, userId: string): Access | null {
@@ -151,11 +187,24 @@ export function pageShare(pageId: string, userId: string): { canEdit: boolean } 
  * and the member list. A share never adds to notebook-level access. Every route and socket
  * that serves page content goes through here.
  */
-export function pageAccess(pageId: string, userId: string): Access | null {
+export function pageAccess(pageId: string, userId: string, opts: { ignoreLock?: boolean } = {}): Access | null {
   const row = db
-    .prepare('SELECT s.notebook_id, n.workspace_id, p.deleted_at FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ?')
-    .get(pageId) as { notebook_id: string; workspace_id: string; deleted_at: string | null } | undefined;
+    .prepare('SELECT s.notebook_id, n.workspace_id, p.deleted_at, p.locked_by FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.id = ?')
+    .get(pageId) as { notebook_id: string; workspace_id: string; deleted_at: string | null; locked_by: string | null } | undefined;
   if (!row) return null;
+  if (row.locked_by) {
+    // A locked page (server/locks.ts) exists only for whoever locked it, and its content only while they have it
+    // unlocked on this sign-in. `ignoreLock` is for the few title-level actions on one's own locked page (opening
+    // the lock screen, moving it, removing the lock) and for internal checks that serve no content.
+    if (row.locked_by !== userId) return null;
+    if (!opts.ignoreLock && !lockOpen(row.locked_by, userId)) return null;
+    const a = pageAccessUnlocked(pageId, userId, row);
+    return a && { ...a, locked: true };
+  }
+  return pageAccessUnlocked(pageId, userId, row);
+}
+
+function pageAccessUnlocked(pageId: string, userId: string, row: { notebook_id: string; workspace_id: string; deleted_at: string | null }): Access | null {
   if (row.deleted_at) {
     // In Trash: only the people who could restore it (members who can see its notebook) may look, and only look.
     const a = notebookAccessAny(row.notebook_id, userId);
@@ -227,7 +276,7 @@ export function mustManage(a: Access | null): Access {
  * notebook only that notebook's creator (the rule for sharing the notebook itself).
  */
 export function canSharePage(a: Access): boolean {
-  if (!a.canManage) return false;
+  if (!a.canManage || a.locked) return false; // a locked page is its owner's alone
   const nb = db.prepare('SELECT visibility FROM notebooks WHERE id = ?').get(a.notebookId) as { visibility: string } | undefined;
   return nb?.visibility !== 'private' || a.isNotebookOwner;
 }
@@ -240,9 +289,14 @@ export const pageSharedSql = (pageIdExpr: string) =>
  * SQL predicate: page `pg` (in notebook `n`) is visible to @userId — through its notebook
  * (workspace membership included) or through a page share.
  */
-export const PAGE_VISIBLE = `(pg.deleted_at IS NULL AND ((${NOTEBOOK_VISIBLE}
+export const PAGE_VISIBLE = `(pg.deleted_at IS NULL AND (pg.locked_by IS NULL OR pg.locked_by = @userId) AND ((${NOTEBOOK_VISIBLE}
     AND EXISTS (SELECT 1 FROM workspace_members pvm WHERE pvm.workspace_id = n.workspace_id AND pvm.user_id = @userId))
   OR ${pageSharedSql('pg.id')}))`;
+/**
+ * PAGE_VISIBLE without any locked page, the caller's own included. For listings that carry content, and for the
+ * AI connector (server/mcp/), which never sees locked pages at all, not even their titles.
+ */
+export const PAGE_VISIBLE_NO_LOCKED = `(${PAGE_VISIBLE} AND pg.locked_by IS NULL)`;
 
 export function mustAccess<T extends Access | null>(a: T, edit = false): NonNullable<T> {
   if (!a) throw new HttpError(404, 'Not found');
@@ -256,9 +310,10 @@ export function mustAccess<T extends Access | null>(a: T, edit = false): NonNull
  * private notebook, or left one (private_owner_only, migration 010) — but the
  * assignee and creator can always see it. Someone with a page share (migration
  * 013) also sees the tasks that live on that page, member or not, except
- * private_owner_only ones.
+ * private_owner_only ones. Tasks on a page someone else locked (server/locks.ts) don't exist for anyone else,
+ * assignee and creator included.
  */
-export const TASK_VISIBLE = `(
+export const TASK_VISIBLE = `((
   (EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id = t.workspace_id AND wm.user_id = @userId)
   AND (
     (t.page_id IS NULL AND t.private_owner_only = 0)
@@ -271,8 +326,19 @@ export const TASK_VISIBLE = `(
   ))
   OR (t.page_id IS NOT NULL AND t.private_owner_only = 0 AND ${pageSharedSql('t.page_id')}
       AND EXISTS (SELECT 1 FROM pages tp WHERE tp.id = t.page_id AND tp.deleted_at IS NULL))
-)`;
+)
+  AND NOT EXISTS (SELECT 1 FROM pages lkp WHERE lkp.id = t.page_id AND lkp.locked_by IS NOT NULL AND lkp.locked_by != @userId))`;
+
+/** SQL predicate: task `t` lives on a locked page (anyone's). Content of such tasks goes out redacted, if at all. */
+export const TASK_ON_LOCKED_PAGE = `EXISTS (SELECT 1 FROM pages lkq WHERE lkq.id = t.page_id AND lkq.locked_by IS NOT NULL)`;
+/** TASK_VISIBLE without tasks on locked pages, the caller's own included (the AI connector). */
+export const TASK_VISIBLE_NO_LOCKED = `(${TASK_VISIBLE} AND NOT ${TASK_ON_LOCKED_PAGE})`;
 
 export function taskVisible(taskId: string, userId: string): boolean {
   return !!db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @taskId AND ${TASK_VISIBLE}`).get({ taskId, userId });
+}
+
+/** taskVisible, but never a task on a locked page (the AI connector). */
+export function taskVisibleNoLocked(taskId: string, userId: string): boolean {
+  return !!db.prepare(`SELECT 1 FROM tasks t WHERE t.id = @taskId AND ${TASK_VISIBLE_NO_LOCKED}`).get({ taskId, userId });
 }

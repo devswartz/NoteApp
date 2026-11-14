@@ -142,6 +142,7 @@ function PageLink({ wsId, page, icon }: { wsId: string; page: PageMeta; icon?: R
     <Link to={`/w/${wsId}/p/${page.id}`} className="drill-row">
       {icon ?? (page.icon ? <span className="page-emoji">{page.icon}</span> : <PageKindIcon kind={page.kind} size={15} className="muted" />)}
       <span className="truncate grow">{page.title || 'Untitled'}</span>
+      {page.locked && <Lock size={13} className="muted" aria-label="Locked" />}
       <span className="muted small">{relativeTime(page.updatedAt)}</span>
     </Link>
   );
@@ -221,7 +222,9 @@ function Overview({ wsId }: { wsId: string }) {
               {recent.map((p) => (
                 <Link key={p.id} to={`/w/${wsId}/p/${p.id}`} className="recent-card">
                   {p.icon ? <span className="page-emoji">{p.icon}</span> : <PageKindIcon kind={p.kind} size={18} className="muted" />}
-                  <strong className="truncate">{p.title || 'Untitled'}</strong>
+                  <strong className="truncate">
+                    {p.locked && <Lock size={13} className="muted" aria-label="Locked" />} {p.title || 'Untitled'}
+                  </strong>
                   <span className="muted small">{relativeTime(p.updatedAt)}</span>
                 </Link>
               ))}
@@ -249,6 +252,7 @@ function Overview({ wsId }: { wsId: string }) {
                       <Link key={p.id} to={`/w/${wsId}/p/${p.id}`} className="notes-page-row">
                         {p.icon ? <span className="page-emoji page-emoji-sm">{p.icon}</span> : <PageKindIcon kind={p.kind} size={15} className="muted" />}
                         <span className="truncate grow">{p.title || 'Untitled'}</span>
+                        {p.locked && <Lock size={13} className="muted" aria-label="Locked" />}
                         <span className="muted small">{relativeTime(p.updatedAt)}</span>
                       </Link>
                     ))}

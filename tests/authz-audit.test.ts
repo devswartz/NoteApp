@@ -335,6 +335,21 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/oauth/requests/:id', path: () => `/oauth/requests/${crypto.randomUUID()}`, body: () => ({ allow: true }), expect: { stranger: 404, viewer: 404, member: 404 } },
   { method: 'GET', route: '/me/connected-apps', path: () => '/me/connected-apps', expect: { stranger: 200, viewer: 200, member: 200 } },
   { method: 'DELETE', route: '/me/connected-apps/:clientId', path: () => `/me/connected-apps/${crypto.randomUUID()}`, expect: { stranger: 404, viewer: 404, member: 404 } },
+  // Locked pages (server/locks.ts; the content gate itself: tests/locked-pages.test.ts). The locked-notes password and
+  // unlocks are personal. Nobody here has a locked-notes password, so unlocking is a 409 and a device needs an unlock.
+  { method: 'GET', route: '/locked-notes', path: () => '/locked-notes', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/locked-notes/password', path: () => '/locked-notes/password', body: () => ({ password: 'abc' }), expect: { stranger: 400, viewer: 400, member: 400 } }, // too short
+  { method: 'POST', route: '/locked-notes/unlock', path: () => '/locked-notes/unlock', body: () => ({ password: 'whatever' }), expect: { stranger: 409, viewer: 409, member: 409 } },
+  { method: 'POST', route: '/locked-notes/lock', path: () => '/locked-notes/lock', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/locked-notes/keepalive', path: () => '/locked-notes/keepalive', expect: { stranger: 200, ...READ } },
+  { method: 'POST', route: '/locked-notes/devices', path: () => '/locked-notes/devices', body: () => ({ label: 'Phone' }), expect: { stranger: 403, viewer: 403, member: 403 } },
+  { method: 'DELETE', route: '/locked-notes/devices/:id', path: () => `/locked-notes/devices/${crypto.randomUUID()}`, expect: { stranger: 404, viewer: 404, member: 404 } },
+  { method: 'POST', route: '/locked-notes/reset/start', path: () => '/locked-notes/reset/start', body: () => ({ password: 'wrong-login-password' }), expect: { stranger: 400, viewer: 400, member: 400 } },
+  { method: 'POST', route: '/locked-notes/reset', path: () => '/locked-notes/reset', body: () => ({ code: '000000', newPassword: 'new-lock-pass' }), expect: { stranger: 400, viewer: 400, member: 400 } },
+  // Locking: notebook-level edit access (a member without a locked-notes password gets 409), never a page share.
+  { method: 'POST', route: '/pages/:id/lock', path: (f) => `/pages/${f.page}/lock`, expect: shared(inPrivate({ viewer: 403, member: 409 }), 403) },
+  // Removing a lock: its owner only (the fixture page isn't locked, so 404 for everyone).
+  { method: 'POST', route: '/pages/:id/lock/remove', path: (f) => `/pages/${f.page}/lock/remove`, body: () => ({ password: 'x' }), expect: { viewer: 404, member: 404 } },
 ];
 
 const tokenOf = (who: Who) =>

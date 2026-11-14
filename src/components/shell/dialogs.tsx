@@ -21,6 +21,9 @@ interface PromptOpts {
   initial?: string;
   placeholder?: string;
   confirmLabel?: string;
+  /** A password field: masked, and the value is returned as typed (not trimmed). */
+  password?: boolean;
+  autoComplete?: string;
 }
 
 type Pending =
@@ -52,7 +55,7 @@ export function DialogHost() {
   const finish = (v: boolean | null) => {
     useDialogs.setState({ current: null });
     if (current.type === 'confirm') current.resolve(v);
-    else current.resolve(v && value.trim() ? value.trim() : null);
+    else current.resolve(v && value.trim() ? (current.opts.password ? value : value.trim()) : null);
   };
 
   if (current.type === 'confirm') {
@@ -88,7 +91,16 @@ export function DialogHost() {
           finish(true);
         }}
       >
-        <Input label={o.label} value={value} placeholder={o.placeholder} onChange={(e) => setValue(e.target.value)} autoFocus onFocus={(e) => e.currentTarget.select()} />
+        <Input
+          label={o.label}
+          value={value}
+          placeholder={o.placeholder}
+          type={o.password ? 'password' : undefined}
+          autoComplete={o.autoComplete}
+          onChange={(e) => setValue(e.target.value)}
+          autoFocus
+          onFocus={(e) => e.currentTarget.select()}
+        />
         <div className="dialog-foot flush">
           <Button variant="ghost" onClick={() => finish(false)}>
             Cancel

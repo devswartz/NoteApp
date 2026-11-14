@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as Y from 'yjs';
 import { db, newId, now } from './db.ts';
-import { NOTEBOOK_VISIBLE, TASK_VISIBLE, HttpError } from './access.ts';
+import { NOTEBOOK_VISIBLE, TASK_VISIBLE, HttpError, lockOpen } from './access.ts';
 import { extractPage, newBoxId } from './collab.ts';
 import { convertPageDoc, pageFragments } from '../shared/pageDoc.ts';
 import { FILES_DIR, VERSION } from './config.ts';
@@ -71,9 +71,15 @@ export function exportWorkspace(workspaceId: string, userId: string): { zip: Buf
   );
   const secIds = new Set(sections.map((s) => s.id));
   const pages = (
-    db.prepare('SELECT id, section_id, title, icon, kind, position, ydoc, created_by, created_at, updated_at FROM pages WHERE deleted_at IS NULL ORDER BY position').all() as Row[]
-  ).filter((pg) => secIds.has(pg.section_id));
-  const tasks = db.prepare(`SELECT t.* FROM tasks t WHERE t.workspace_id = @workspaceId AND ${TASK_VISIBLE}`).all(p) as Row[];
+    db.prepare('SELECT id, section_id, title, icon, kind, position, ydoc, created_by, created_at, updated_at, locked_by FROM pages WHERE deleted_at IS NULL ORDER BY position').all() as Row[]
+  )
+    // Locked pages (server/locks.ts): someone else's never; the exporter's own only while this sign-in has them unlocked.
+    .filter((pg) => secIds.has(pg.section_id) && lockOpen(pg.locked_by, userId))
+    .map(({ locked_by: _locked, ...pg }) => pg as Row);
+  const lockedShut = new Set(
+    (db.prepare('SELECT id, locked_by FROM pages WHERE locked_by IS NOT NULL').all() as Row[]).filter((pg) => !lockOpen(pg.locked_by, userId)).map((pg) => pg.id as string),
+  );
+  const tasks = (db.prepare(`SELECT t.* FROM tasks t WHERE t.workspace_id = @workspaceId AND ${TASK_VISIBLE}`).all(p) as Row[]).filter((t) => !t.page_id || !lockedShut.has(t.page_id));
   // Tags, teams and the exporter's own and shared saved views (migration 014).
   const tags = db.prepare('SELECT id, name, color FROM tags WHERE workspace_id = ? ORDER BY name').all(workspaceId) as Row[];
   const exportedTasks = new Set(tasks.map((t) => t.id));

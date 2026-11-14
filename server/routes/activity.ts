@@ -12,7 +12,7 @@
 // tasks the reader can't see.
 import { Router, type Request, type RequestHandler } from 'express';
 import { db, now } from '../db.ts';
-import { NOTEBOOK_VISIBLE, TASK_VISIBLE, pageSharedSql, requireRole } from '../access.ts';
+import { NOTEBOOK_VISIBLE, TASK_VISIBLE, lockOpen, pageLockedBy, pageSharedSql, requireRole } from '../access.ts';
 import { publish } from '../events.ts';
 import { onPageSaved } from '../collab.ts';
 import { h, param } from '../http.ts';
@@ -461,10 +461,10 @@ activityRoutes.get(
     requireRole(workspaceId, req.user.id, 'viewer');
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     const before = Number(req.query.before) || null;
-    return db
+    const rows = db
       .prepare(
         `SELECT a.id, a.workspace_id AS workspaceId, a.actor_id AS actorId, a.verb, a.target_type AS targetType, a.target_id AS targetId,
-                a.summary, a.created_at AS createdAt
+                a.summary, a.created_at AS createdAt, (SELECT tk.page_id FROM tasks tk WHERE tk.id = a.task_id) AS taskPage
          FROM activity a
          WHERE a.workspace_id = @workspaceId AND (@before IS NULL OR a.id < @before)
            AND (a.actor_id = @userId OR (
@@ -477,8 +477,18 @@ activityRoutes.get(
                OR EXISTS (SELECT 1 FROM tasks t WHERE t.id = a.task_id AND ${TASK_VISIBLE})
                OR (a.private = 0 AND NOT EXISTS (SELECT 1 FROM tasks t2 WHERE t2.id = a.task_id)))
            ))
+           -- Nothing about a page someone else locked (server/locks.ts): not its edits, renames or comments.
+           AND NOT EXISTS (SELECT 1 FROM pages lkp WHERE lkp.locked_by IS NOT NULL AND lkp.locked_by != @userId AND (
+             (a.target_type = 'page' AND lkp.id = a.target_id)
+             OR (a.target_type = 'comment' AND (lkp.id = (SELECT th.page_id FROM comment_threads th WHERE th.id = a.target_id)
+               OR lkp.id = (SELECT th.page_id FROM comments c JOIN comment_threads th ON th.id = c.thread_id WHERE c.id = a.target_id)))
+             OR (a.task_id IS NOT NULL AND lkp.id = (SELECT tk.page_id FROM tasks tk WHERE tk.id = a.task_id))))
          ORDER BY a.id DESC LIMIT @limit`,
       )
-      .all({ workspaceId, userId: req.user.id, before, limit }) as ActivityItem[];
+      .all({ workspaceId, userId: req.user.id, before, limit }) as (ActivityItem & { taskPage: string | null })[];
+    // Entries about tasks on the caller's own locked page name the task: shown only while this sign-in has it unlocked.
+    return rows
+      .filter((r) => !r.taskPage || lockOpen(pageLockedBy(r.taskPage), req.user.id))
+      .map(({ taskPage: _p, ...r }) => r as ActivityItem);
   }),
 );

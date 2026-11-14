@@ -21,6 +21,7 @@ import { DATA_DIR, IS_PROD } from './config.ts';
 import type { AuthSession, User } from '../shared/types.ts';
 import { EMAIL_UNVERIFIED } from '../shared/config.ts';
 import { fileKeyExpiry, type FileKey } from '../shared/fileLinks.ts';
+import { runAsViewer } from './viewer.ts';
 
 // ACCESS_TOKEN_TTL_S is a testing knob (e.g. short tokens to exercise refresh); not part of the deploy contract.
 // Invalid, zero or negative values mean the default; production clamps it to 1–60 minutes.
@@ -61,8 +62,9 @@ const SECRET = loadSecret();
 
 const hash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
-export function signAccessToken(userId: string): string {
-  return jwt.sign({ sub: userId, typ: 'access' }, SECRET, { expiresIn: ACCESS_TTL_S });
+/** `sid` is the sign-in (refresh-token family) the token belongs to: locked-page unlock grants are per sign-in (server/locks.ts). */
+export function signAccessToken(userId: string, sid?: string): string {
+  return jwt.sign(sid ? { sub: userId, typ: 'access', sid } : { sub: userId, typ: 'access' }, SECRET, { expiresIn: ACCESS_TTL_S });
 }
 
 function insertRefreshToken(userId: string, familyId: string, userAgent: string | null): string {
@@ -75,8 +77,8 @@ function insertRefreshToken(userId: string, familyId: string, userAgent: string 
   return token;
 }
 
-function session(userId: string, refreshToken: string): Omit<AuthSession, 'user'> {
-  return { accessToken: signAccessToken(userId), refreshToken, expiresIn: ACCESS_TTL_S, fileKey: fileKeyFor(userId) };
+function session(userId: string, refreshToken: string, familyId: string): Omit<AuthSession, 'user'> {
+  return { accessToken: signAccessToken(userId, familyId), refreshToken, expiresIn: ACCESS_TTL_S, fileKey: fileKeyFor(userId) };
 }
 
 /**
@@ -95,7 +97,8 @@ export function fileKeyFor(userId: string, nowS = Math.floor(Date.now() / 1000))
 
 /** Start a new sign-in (new token family). */
 export function issueSession(userId: string, userAgent: string | null = null): Omit<AuthSession, 'user'> {
-  return session(userId, insertRefreshToken(userId, newId(), userAgent));
+  const familyId = newId();
+  return session(userId, insertRefreshToken(userId, familyId, userAgent), familyId);
 }
 
 interface RefreshRow {
@@ -145,11 +148,11 @@ export function rotateRefreshToken(token: unknown, userAgent: string | null = nu
         revokeFamily(row.family_id);
         return null;
       }
-      return { userId: row.user_id, ...session(row.user_id, head) };
+      return { userId: row.user_id, ...session(row.user_id, head, row.family_id) };
     }
     const next = insertRefreshToken(row.user_id, row.family_id, userAgent);
     db.prepare('UPDATE refresh_tokens SET used_at = ?, replacement_enc = ? WHERE id = ?').run(now(), sealReplacement(token, next), row.id);
-    return { userId: row.user_id, ...session(row.user_id, next) };
+    return { userId: row.user_id, ...session(row.user_id, next, row.family_id) };
   })();
 }
 
@@ -175,11 +178,13 @@ function chainHead(token: string, row: RefreshRow): string | null {
 
 export function revokeFamily(familyId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE family_id = ? AND revoked_at IS NULL').run(now(), familyId);
+  db.prepare('DELETE FROM lock_unlocks WHERE family_id = ?').run(familyId); // signing out locks that sign-in's locked pages
 }
 
 /** Revoke every sign-in of a user (after a password change or reset), including connected AI apps (server/oauth/). */
 export function revokeAllForUser(userId: string) {
   db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(now(), userId);
+  db.prepare('DELETE FROM lock_unlocks WHERE user_id = ?').run(userId);
   const ts = now();
   db.prepare('UPDATE oauth_tokens SET revoked_at = ? WHERE revoked_at IS NULL AND grant_id IN (SELECT id FROM oauth_grants WHERE user_id = ?)').run(ts, userId);
   db.prepare('UPDATE oauth_grants SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL').run(ts, userId);
@@ -223,13 +228,13 @@ export function pruneRefreshTokens() {
 }
 
 /** Verify an access token. `expiresAt` (ms) lets long-lived sockets close when it lapses. */
-export function verifyAccessToken(token: string | undefined | null): { user: User; expiresAt: number } | null {
+export function verifyAccessToken(token: string | undefined | null): { user: User; expiresAt: number; sid: string | null } | null {
   if (!token) return null;
   try {
-    const p = jwt.verify(token, SECRET) as { sub: string; typ?: string; exp: number };
+    const p = jwt.verify(token, SECRET) as { sub: string; typ?: string; exp: number; sid?: unknown };
     if (p.typ !== 'access') return null;
     const user = getUser(p.sub);
-    return user ? { user, expiresAt: p.exp * 1000 } : null;
+    return user ? { user, expiresAt: p.exp * 1000, sid: typeof p.sid === 'string' ? p.sid : null } : null;
   } catch {
     return null;
   }
@@ -271,6 +276,8 @@ export function handleProtocols(protocols: Set<string>): string | false {
 declare module 'express-serve-static-core' {
   interface Request {
     user: User;
+    /** The sign-in (refresh-token family) of the access token, for locked-page unlocks. null for older tokens. */
+    sid: string | null;
   }
 }
 
@@ -292,8 +299,10 @@ export function requireVerifiedEmail(req: Request, res: Response, next: NextFunc
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
-  const user = verifyToken(header?.startsWith('Bearer ') ? header.slice(7) : null);
-  if (!user) return res.status(401).json({ error: 'Not signed in' });
-  req.user = user;
-  next();
+  const auth = verifyAccessToken(header?.startsWith('Bearer ') ? header.slice(7) : null);
+  if (!auth) return res.status(401).json({ error: 'Not signed in' });
+  req.user = auth.user;
+  req.sid = auth.sid;
+  // Everything this request does runs as this user and sign-in: locked pages open only if this sign-in unlocked them.
+  runAsViewer({ userId: auth.user.id, sid: auth.sid }, next);
 }

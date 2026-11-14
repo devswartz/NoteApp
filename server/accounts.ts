@@ -126,7 +126,12 @@ export function deleteAccount(userId: string): boolean {
     const pagesOf = (notebooks: string[]) =>
       notebooks.length ? ids(`SELECT p.id FROM pages p JOIN sections s ON s.id = p.section_id WHERE s.notebook_id IN (${marks(notebooks.length)})`, ...notebooks) : [];
     const doomedNbIds = doomed.length ? ids(`SELECT id FROM notebooks WHERE workspace_id IN (${marks(doomed.length)})`, ...doomed) : [];
-    const privatePageIds = pagesOf(nbIds);
+    // Pages they locked (server/locks.ts) go with them wherever they are: nobody else may ever open them.
+    const lockedPages = db
+      .prepare('SELECT p.id, n.workspace_id FROM pages p JOIN sections s ON s.id = p.section_id JOIN notebooks n ON n.id = s.notebook_id WHERE p.locked_by = ?')
+      .all(userId) as { id: string; workspace_id: string }[];
+    for (const p of lockedPages) if (!doomed.includes(p.workspace_id)) treeWorkspaces.add(p.workspace_id);
+    const privatePageIds = [...new Set([...pagesOf(nbIds), ...lockedPages.map((p) => p.id)])];
     pageIds.push(...privatePageIds, ...pagesOf(doomedNbIds));
 
     // 2. Tasks: on those private pages, plus the user's own tasks that only they can see (with their subtasks).
@@ -167,6 +172,7 @@ export function deleteAccount(userId: string): boolean {
 
     // 5. Delete private templates, private notebooks (sections, pages, versions, threads, comments, shares cascade), then doomed workspaces.
     for (const id of privTemplates) db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+    for (const p of lockedPages) db.prepare('DELETE FROM pages WHERE id = ?').run(p.id);
     for (const id of nbIds) db.prepare('DELETE FROM notebooks WHERE id = ?').run(id);
     for (const id of doomed) db.prepare('DELETE FROM workspaces WHERE id = ?').run(id);
 

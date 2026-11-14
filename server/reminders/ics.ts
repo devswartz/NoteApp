@@ -5,7 +5,8 @@
 // shown once when created and can be reset (which kills the old URL).
 import crypto from 'node:crypto';
 import { db, now } from '../db.ts';
-import { TASK_VISIBLE } from '../access.ts';
+import { TASK_ON_LOCKED_PAGE, TASK_VISIBLE } from '../access.ts';
+import { LOCKED_TASK_TITLE } from '../../shared/config.ts';
 import { addDays } from '../../shared/recurrence.ts';
 import { APP_NAME } from '../../shared/config.ts';
 import { getSettings } from './settings.ts';
@@ -93,7 +94,9 @@ export function buildCalendar(userId: string, publicUrl = (process.env.PUBLIC_UR
   const tz = getSettings(userId).timeZone;
   const tasks = db
     .prepare(
-      `SELECT t.id, t.title, t.description, t.due_date, t.due_time, t.recurrence, t.workspace_id, t.page_id, t.updated_at,
+      // A task on a locked page goes into the calendar as "Locked task", without its text (server/locks.ts).
+      `SELECT t.id, CASE WHEN ${TASK_ON_LOCKED_PAGE} THEN '${LOCKED_TASK_TITLE}' ELSE t.title END AS title,
+         CASE WHEN ${TASK_ON_LOCKED_PAGE} THEN '' ELSE t.description END AS description, t.due_date, t.due_time, t.recurrence, t.workspace_id, t.page_id, t.updated_at,
          w.name AS workspace_name, (SELECT COUNT(*) FROM tasks o WHERE o.occurrence_of = t.id) AS done_count
        FROM tasks t JOIN workspaces w ON w.id = t.workspace_id
        WHERE t.status = 'open' AND t.due_date IS NOT NULL

@@ -55,7 +55,10 @@ pageRoutes.get(
   '/pages/:id',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id));
+    // A locked page (server/locks.ts) answers its owner with its title only until this sign-in unlocks: the client
+    // shows the lock screen. Everyone else gets 404, as for a page that doesn't exist.
+    const a = mustAccess(pageAccess(id, req.user.id, { ignoreLock: true }));
+    const open = !a.locked || !!pageAccess(id, req.user.id);
     const page = db
       .prepare(
         `SELECT p.id, p.section_id AS sectionId, p.title, p.icon, p.kind, p.position, p.updated_at AS updatedAt,
@@ -77,7 +80,10 @@ pageRoutes.get(
       // In the Trash: opened read-only by someone who could restore it (the client offers Restore).
       trashed: !!a.trashed,
       member: a.member,
-      pendingTemplate: !!pending && a.canEdit && a.member && !a.viaPageShare,
+      pendingTemplate: !!pending && a.canEdit && a.member && !a.viaPageShare && open,
+      // Locked by the caller; `open`: this sign-in has it unlocked (else only the title above is served).
+      locked: !!a.locked,
+      open,
     };
   }),
 );
@@ -172,7 +178,8 @@ pageRoutes.patch(
   '/pages/:id',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustAccess(pageAccess(id, req.user.id), true);
+    // Title, icon and place only: allowed on one's own locked page while it is locked (nothing of its content).
+    const a = mustAccess(pageAccess(id, req.user.id, { ignoreLock: true }), true);
     const b = req.body;
     // Moving and reordering change its notebook: not for page-share-only access (#98).
     if (b.sectionId !== undefined || b.position !== undefined) mustManage(a);
@@ -228,7 +235,7 @@ pageRoutes.post(
   '/pages/:id/move',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustManage(pageAccess(id, req.user.id));
+    const a = mustManage(pageAccess(id, req.user.id, { ignoreLock: true })); // moving one's own locked page reveals nothing
     const current = (db.prepare('SELECT section_id FROM pages WHERE id = ?').get(id) as { section_id: string }).section_id;
     const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : current;
     const index = typeof req.body.index === 'number' ? req.body.index : Infinity;
@@ -251,6 +258,7 @@ pageRoutes.post(
     const id = param(req, 'id');
     // A page share reaches this page only; copying it elsewhere in the workspace is for notebook-level access.
     const a = mustManage(pageAccess(id, req.user.id));
+    if (a.locked) throw new HttpError(400, 'Remove the lock to duplicate this page');
     const src = db.prepare('SELECT section_id, title, position FROM pages WHERE id = ?').get(id) as { section_id: string; title: string; position: number };
     const sectionId = typeof req.body.sectionId === 'string' ? req.body.sectionId : src.section_id;
     const t = mustAccess(sectionAccess(sectionId, req.user.id), true);
@@ -271,7 +279,7 @@ pageRoutes.delete(
   '/pages/:id',
   h((req) => {
     const id = param(req, 'id');
-    const a = mustManage(pageAccess(id, req.user.id));
+    const a = mustManage(pageAccess(id, req.user.id, { ignoreLock: true })); // its owner may trash a locked page; it stays locked there
     // To the Trash, not gone: it can be restored for 60 days (server/trash.ts).
     const t = trashPage(id, a.workspaceId, req.user.id);
     return { ok: true, ...t };
