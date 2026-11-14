@@ -2,7 +2,7 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
-## Unreleased
+## v0.5.3
 
 ### ChatGPT directory
 - **Domain verification for OpenAI.** The server answers `/.well-known/openai-apps-challenge` with the token in `OPENAI_APPS_CHALLENGE` (plain text, nothing else) on every host, and 404 while it's unset. Any other `/.well-known` path is now a plain 404 instead of the web app's page.
