@@ -110,3 +110,34 @@ test('API, CORS, well-known, OAuth metadata, uploads and sockets keep working on
   });
   ws.close();
 });
+
+test('OpenAI domain verification: exactly the OPENAI_APPS_CHALLENGE token as text/plain on every host, 404 when unset', async () => {
+  const saved = process.env.OPENAI_APPS_CHALLENGE;
+  try {
+    delete process.env.OPENAI_APPS_CHALLENGE;
+    for (const host of ['app.example.test', 'old.example.test']) {
+      const r = await request('GET', '/.well-known/openai-apps-challenge', host);
+      assert.equal(r.status, 404, host);
+      assert.match(String(r.headers['content-type']), /^text\/plain/);
+      assert.doesNotMatch(r.body, /<html/i);
+    }
+    process.env.OPENAI_APPS_CHALLENGE = '  tok_ABC-123.xyz \n';
+    for (const host of ['app.example.test', 'old.example.test']) {
+      const r = await request('GET', '/.well-known/openai-apps-challenge', host);
+      assert.equal(r.status, 200, host);
+      assert.equal(r.body, 'tok_ABC-123.xyz', 'only the token, trimmed, no newline');
+      assert.match(String(r.headers['content-type']), /^text\/plain/);
+      assert.equal(r.headers['cache-control'], 'no-store');
+      assert.equal(r.headers.location, undefined);
+    }
+    process.env.OPENAI_APPS_CHALLENGE = 'two words';
+    assert.equal((await request('GET', '/.well-known/openai-apps-challenge', 'app.example.test')).status, 404, 'not a single token');
+    // Unknown well-known paths are a plain 404 too, never the web app's HTML.
+    const other = await request('GET', '/.well-known/nothing-here', 'old.example.test');
+    assert.equal(other.status, 404);
+    assert.match(String(other.headers['content-type']), /^text\/plain/);
+  } finally {
+    if (saved === undefined) delete process.env.OPENAI_APPS_CHALLENGE;
+    else process.env.OPENAI_APPS_CHALLENGE = saved;
+  }
+});

@@ -10,6 +10,13 @@
 // Also the OAuth metadata for AI connectors (always public, CORS *):
 //   /.well-known/oauth-authorization-server            RFC 8414
 //   /.well-known/oauth-protected-resource[/mcp]        RFC 9728, resource = <origin>/mcp
+//
+// And OpenAI's domain verification for the ChatGPT plugin directory
+// (https://developers.openai.com/plugins/deploy/submission, "Connect the MCP server"):
+//   /.well-known/openai-apps-challenge   the token from OPENAI_APPS_CHALLENGE, as text/plain and nothing else
+//
+// Any other /.well-known path is a plain 404, never the web app's HTML. Served on every host,
+// REDIRECT_HOSTS included (server/redirectHosts.ts never redirects /.well-known).
 import { Router } from 'express';
 import { oauthWellKnownRoutes } from './oauth/routes.ts';
 
@@ -62,6 +69,12 @@ export function assetLinks(c: WellKnownConfig) {
   ];
 }
 
+/** OPENAI_APPS_CHALLENGE, trimmed; null when unset or not a single printable token (read per request). */
+export function openaiAppsChallenge(env: NodeJS.ProcessEnv = process.env): string | null {
+  const t = (env.OPENAI_APPS_CHALLENGE ?? '').trim();
+  return t && /^[\x21-\x7e]{1,512}$/.test(t) ? t : null;
+}
+
 export function wellKnownRoutes(config: () => WellKnownConfig = wellKnownConfig) {
   const r = Router();
   const send = (body: unknown, res: import('express').Response) => {
@@ -72,6 +85,14 @@ export function wellKnownRoutes(config: () => WellKnownConfig = wellKnownConfig)
   };
   r.get('/apple-app-site-association', (_req, res) => void send(appleAppSiteAssociation(config()), res));
   r.get('/assetlinks.json', (_req, res) => void send(assetLinks(config()), res));
+  r.get('/openai-apps-challenge', (_req, res) => {
+    const token = openaiAppsChallenge();
+    res.setHeader('Cache-Control', 'no-store');
+    if (!token) return void res.status(404).type('text/plain').send('Not configured');
+    res.type('text/plain').send(token); // exactly the token: no newline, no markup
+  });
   r.use(oauthWellKnownRoutes()); // oauth-authorization-server, oauth-protected-resource[/mcp] (server/oauth/routes.ts)
+  // Nothing else lives here: a 404, not the web app's index.html.
+  r.get(/.*/, (_req, res) => void res.status(404).type('text/plain').send('Not found'));
   return r;
 }
