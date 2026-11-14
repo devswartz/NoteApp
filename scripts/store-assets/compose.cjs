@@ -1,6 +1,7 @@
 // Composites the store graphics from the captured screenshots (see capture.cjs):
 // GitHub social preview, link-preview image, and the App Store screenshots.
-//   node scripts/store-assets/compose.cjs
+//   node scripts/store-assets/compose.cjs        (everything)
+//   node scripts/store-assets/compose.cjs mac    (only docs/store/mac, from the mac-* raw shots)
 // Then flatten.py removes the alpha channel and checks the exact sizes.
 const path = require('path');
 const fs = require('fs');
@@ -74,6 +75,46 @@ function padSlide(d, [, text, shot]) {
   return [W, H, page(W, H, `<div style="position:absolute;inset:0;background:${SOFT_BG}"></div>${body}`)];
 }
 
+/**
+ * A macOS-style window: rounded corners, a title bar with the three traffic-light dots and a
+ * centred title, hairline border and a soft shadow. `crop` cuts the screenshot to that height.
+ */
+const macWindow = (src, w, extra = '', { dark = false, crop = 0 } = {}) => {
+  const bar = Math.round(w * 0.026), dot = Math.round(bar * 0.42), r = Math.round(w * 0.0075);
+  return `
+  <div style="position:absolute;${extra};width:${w}px;border-radius:${r}px;overflow:hidden;
+    background:${dark ? '#1f1f24' : '#fff'};border:1px solid ${dark ? 'rgba(255,255,255,.14)' : 'rgba(0,0,0,.14)'};
+    box-shadow:0 ${r * 3}px ${r * 9}px rgba(49,46,129,.28),0 ${r}px ${r * 2}px rgba(0,0,0,.08)">
+    <div style="position:relative;height:${bar}px;background:${dark ? '#2a2a30' : '#ececef'};border-bottom:1px solid ${dark ? '#000' : '#d6d6da'};
+      display:flex;align-items:center;gap:${Math.round(dot * 0.7)}px;padding-left:${Math.round(dot * 1.1)}px">
+      ${['#ff5f57', '#febc2e', '#28c840'].map((c) => `<span style="width:${dot}px;height:${dot}px;border-radius:50%;background:${c};box-shadow:0 0 0 1px rgba(0,0,0,.12) inset"></span>`).join('')}
+      <span style="position:absolute;left:0;right:0;text-align:center;font-size:${Math.round(bar * 0.4)}px;font-weight:600;color:${dark ? '#c9c9d1' : '#4b4b55'}">Notivelo</span>
+    </div>
+    <div style="${crop ? `height:${crop}px;` : ''}overflow:hidden">
+      <img src="${url(src)}" style="display:block;width:${w}px">
+    </div>
+  </div>`;
+};
+
+/** Mac App Store, 2880x1800: one-line caption over a macOS window (raw shots are 2880x1800). */
+function macSlide(d, [, text, shot]) {
+  const W = 2880, H = 1800;
+  const raw = (n) => path.join(RAW, `mac-${n}.png`);
+  let body = caption(text.replace('<br>', ' '), 132, 96, 80);
+  if (shot === 'template-picker') {
+    // The picker cropped to its top part, behind; the filled-in meeting notes in front, lower right.
+    body += macWindow(raw('template-picker'), 1600, 'left:90px;top:330px', { crop: 620 });
+    body += macWindow(raw('page-kickoff'), 1600, 'left:1190px;top:690px');
+  } else if (shot) {
+    body += macWindow(raw(shot), 2200, 'left:340px;top:300px');
+  } else {
+    body += macWindow(raw('page-hybrid'), 1500, 'left:70px;top:700px', { dark: true });
+    body += macWindow(raw('page-dark'), 1500, 'left:1310px;top:700px', { dark: true });
+    body += macWindow(raw('page-brief'), 1860, 'left:510px;top:330px');
+  }
+  return [W, H, page(W, H, `<div style="position:absolute;inset:0;background:${SOFT_BG}"></div>${body}`)];
+}
+
 function social(W, H) {
   const k = W / 1280;
   const s = (n) => Math.round(n * k);
@@ -95,13 +136,20 @@ function social(W, H) {
 }
 
 (async () => {
-  for (const d of ['ios-6.9', 'ipad-13']) fs.mkdirSync(path.join(STORE, d), { recursive: true });
+  // node compose.cjs mac → only the Mac App Store slides (needs only the mac-* raw shots).
+  const only = process.argv[2];
+  for (const d of ['ios-6.9', 'ipad-13', 'mac']) fs.mkdirSync(path.join(STORE, d), { recursive: true });
   const jobs = [];
-  jobs.push([path.join(STORE, 'github-social-preview.png'), ...social(1280, 640)]);
-  jobs.push([path.join(STORE, 'og-image.png'), ...social(1200, 630)]);
+  if (only !== 'mac') {
+    jobs.push([path.join(STORE, 'github-social-preview.png'), ...social(1280, 640)]);
+    jobs.push([path.join(STORE, 'og-image.png'), ...social(1200, 630)]);
+  }
   for (const s of SLIDES) {
-    jobs.push([path.join(STORE, 'ios-6.9', s[0] + '.png'), ...phoneSlide('iphone', s)]);
-    jobs.push([path.join(STORE, 'ipad-13', s[0] + '.png'), ...padSlide('ipad', s)]);
+    if (only !== 'mac') {
+      jobs.push([path.join(STORE, 'ios-6.9', s[0] + '.png'), ...phoneSlide('iphone', s)]);
+      jobs.push([path.join(STORE, 'ipad-13', s[0] + '.png'), ...padSlide('ipad', s)]);
+    }
+    jobs.push([path.join(STORE, 'mac', s[0] + '.png'), ...macSlide('mac', s)]);
   }
   const b = await chromium.launch();
   for (const [out, W, H, html] of jobs) {

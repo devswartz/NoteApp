@@ -101,12 +101,60 @@ async function mobile(browser, I) {
   }
 }
 
+/**
+ * Mac App Store raw shots (mac-*.png): a desktop window, 1440x900 CSS at 2x, no touch.
+ * The Mac app is the same web UI in a Tauri window; the web build shows no install prompt or
+ * browser-only banner in these views, so only transient toasts (.toasts) are hidden.
+ */
+const MAC_HIDE = '.toasts { display: none !important; }';
+async function mac(browser, I) {
+  const d = { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 };
+  const shots = [
+    ['page-brief', 'light', `/p/${I.page('Project brief')}`],
+    ['page-kickoff', 'light', `/p/${I.page('Kickoff meeting')}`],
+    ['tasks-upcoming', 'light', '/tasks/upcoming'],
+    ['page-dark', 'dark', `/p/${I.page('Project brief')}`],
+    ['page-hybrid', 'hybrid', `/p/${I.page('Kickoff meeting')}`],
+  ];
+  const shot = async (page, n) => {
+    await page.addStyleTag({ content: MAC_HIDE });
+    await page.mouse.move(0, 899); // no hover state on whatever sits under the cursor
+    await page.screenshot({ path: path.join(RAW, `mac-${n}.png`) });
+  };
+  for (const theme of ['light', 'dark', 'hybrid']) {
+    const ctx = await newContext(browser, { ...d, theme, accent: theme === 'hybrid' ? 'teal' : 'blue' });
+    const page = await ctx.newPage();
+    await signIn(page);
+    if (theme === 'light') {
+      await page.goto(`${BASE}/w/${I.ws}/p/${I.page('Project brief')}`);
+      await settle(page);
+      await page.getByRole('button', { name: /^Share/ }).first().click();
+      await settle(page, 1200);
+      await shot(page, 'share');
+      const r = await fetch(`${BASE}/api/sections/${I.section('Design')}/pages`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${I.token}` }, body: '{"title":""}' });
+      const np = (await r.json()).id;
+      await page.goto(`${BASE}/w/${I.ws}/p/${np}`);
+      await settle(page);
+      await shot(page, 'template-picker');
+      await fetch(`${BASE}/api/pages/${np}`, { method: 'DELETE', headers: { Authorization: `Bearer ${I.token}` } });
+    }
+    for (const [n, t, url] of shots) {
+      if (t !== theme) continue;
+      await page.goto(BASE + `/w/${I.ws}` + url);
+      await settle(page);
+      await shot(page, n);
+    }
+    await ctx.close();
+  }
+}
+
 (async () => {
   const what = process.argv[2] || 'all';
   const I = await ids();
   const browser = await chromium.launch();
   if (what === 'desktop' || what === 'all') await desktop(browser, I);
   if (what === 'mobile' || what === 'all') await mobile(browser, I);
+  if (what === 'mac' || what === 'all') await mac(browser, I);
   if (what === 'readme-mobile' || what === 'all') await readmeMobile(browser, I);
   await browser.close();
 })().catch((e) => {
