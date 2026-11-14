@@ -12,7 +12,7 @@ import { APP_NAME } from '../../shared/config.ts';
 import { get } from '../api.ts';
 import { Markdown } from '../lib/markdown.tsx';
 
-export const LEGAL_DEFAULTS = { CONTACT_EMAIL: 'support@devswartz.com', OPERATOR_NAME: 'devswartz.com', APP_NAME };
+export const LEGAL_DEFAULTS = { CONTACT_EMAIL: 'support@notiveloapp.com', OPERATOR_NAME: 'Notivelo', APP_NAME };
 
 export function LegalPage({ doc }: { doc: keyof typeof DOCS }) {
   const [values, setValues] = useState<Record<string, string>>(LEGAL_DEFAULTS);

@@ -184,6 +184,8 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
+            // Locked builds: drop a server choice saved by an older version (before any window reads it).
+            config::migrate(&handle);
             let name = app.package_info().name.clone();
             if updater_configured(&handle) {
                 handle.plugin(tauri_plugin_updater::Builder::new().build())?;

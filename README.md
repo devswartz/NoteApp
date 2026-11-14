@@ -6,7 +6,7 @@
   <img src="docs/screens/readme-light.png" alt="Notivelo on the desktop: a project brief with a table and a numbered outline" width="900">
 </p>
 
-**[Open the web app](https://notes.devswartz.com)** · **[Download for Windows, Mac and Android](https://github.com/devswartz/NoteApp/releases/latest)** · iPhone and iPad: App Store, coming soon · [Privacy](https://notes.devswartz.com/privacy) · [Support](https://notes.devswartz.com/support)
+**[Open the web app](https://app.notiveloapp.com)** · **[Download for Windows, Mac and Android](https://github.com/devswartz/NoteApp/releases/latest)** · iPhone and iPad: App Store, coming soon · [Privacy](https://app.notiveloapp.com/privacy) · [Support](https://app.notiveloapp.com/support)
 
 ## Features
 
@@ -35,7 +35,7 @@
 - Import notebooks from Microsoft OneNote and keep their layout, box positions and tables.
 
 **Privacy**
-- Your notes live on a server you control. Files need sign-in, there is an Export my data button, and the iPhone app has Apple's privacy manifest. No ads and no tracking. See the [Privacy Policy](https://notes.devswartz.com/privacy).
+- Your notes live on a server you control. Files need sign-in, there is an Export my data button, and the iPhone app has Apple's privacy manifest. No ads and no tracking. See the [Privacy Policy](https://app.notiveloapp.com/privacy).
 
 Full detail by release is in the [changelog](CHANGELOG.md), and the [user guide](docs/USER_GUIDE.md) explains how to use it.
 
@@ -55,14 +55,14 @@ Full detail by release is in the [changelog](CHANGELOG.md), and the [user guide]
 
 ## Get it
 
-- **Web:** [notes.devswartz.com](https://notes.devswartz.com). It installs as an app from your browser.
+- **Web:** [app.notiveloapp.com](https://app.notiveloapp.com). It installs as an app from your browser.
 - **Windows and Mac:** download the latest installer from [Releases](https://github.com/devswartz/NoteApp/releases/latest). The app updates itself.
 - **iPhone and iPad:** on the App Store, coming soon.
 - **Android:** [download the APK](https://github.com/devswartz/NoteApp/releases/latest/download/Notivelo.apk). Android asks you to allow installs from your browser or file manager the first time.
 
 ## Self-hosting
 
-Notivelo can be self-hosted. Deployment notes (docs/DEPLOY.md) are available on request; ask through the [Support page](https://notes.devswartz.com/support).
+Notivelo can be self-hosted. Deployment notes (docs/DEPLOY.md) are available on request; ask through the [Support page](https://app.notiveloapp.com/support).
 
 ## Development
 

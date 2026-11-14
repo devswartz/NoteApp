@@ -109,12 +109,13 @@ function fakeBridge() {
   const captured: SharedItem[] = [];
   let userCb: (u: string | null) => void = () => {};
   let tasksCb: (t: Task[], u: string | null, ws: string | null) => void = () => {};
+  const commands: { id: string }[] = [];
   const bridge: AppBridge = {
     onUser: (cb) => void (userCb = cb),
     onTasks: (cb) => void (tasksCb = cb),
     post: async (path, body) => void posts.push([path, body]),
     del: async (path, body) => void posts.push([`DELETE ${path}`, body]),
-    registerCommands: () => {},
+    registerCommands: (cmds) => void commands.push(...cmds),
     signOut: async () => {},
     apiBase: () => 'https://notes.example.com',
     capture: async (item) => {
@@ -122,7 +123,7 @@ function fakeBridge() {
       return item.kind === 'note' ? '/w/ws/p/new-page' : '/w/ws/tasks/today';
     },
   };
-  return { bridge, posts, captured, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null, ws: string | null = 'ws') => tasksCb(t, u, ws) };
+  return { bridge, posts, captured, commands, setUser: (u: string | null) => userCb(u), setTasks: (t: Task[], u: string | null, ws: string | null = 'ws') => tasksCb(t, u, ws) };
 }
 
 test('mobile: notification payloads become safe in-app deep links', () => {
@@ -180,7 +181,7 @@ test('mobile: deep links — launch URL, queued before the router subscribes, th
   const got: string[] = [];
   const off = p.deepLinks.subscribe((u) => got.push(u));
   assert.deepEqual(got, ['notivelo://w/ws/tasks/today']);
-  f.fire('App.appUrlOpen', { url: 'https://notes.devswartz.com/w/ws/p/pg' });
+  f.fire('App.appUrlOpen', { url: 'https://app.notiveloapp.com/w/ws/p/pg' });
   assert.equal(got.length, 2);
   off();
 });
@@ -671,6 +672,102 @@ test('mobile: choosing a server probes /api/health before saving it', async () =
   const good = await chooseServer('good.example/', kv, fakeFetch);
   assert.deepEqual(good, { ok: true, url: 'https://good.example' });
   assert.equal(kv.get('noteapp.serverUrl'), 'https://good.example');
-  assert.equal(kv.get('noteapp.serverConfirmed'), '1');
   assert.ok(seen.includes('https://good.example/api/health'));
+});
+
+test('mobile: release builds are locked to the production server; debug / internal builds may switch', async () => {
+  const { PRODUCTION_SERVER_URL, mobileServerUrl, serverBuild } = await import('../src/platform/serverUrl.ts');
+  assert.equal(PRODUCTION_SERVER_URL, 'https://app.notiveloapp.com');
+  const stored = { getItem: () => 'https://staging.example.com' };
+  const nothing = { getItem: () => null };
+
+  const release = serverBuild({ VITE_API_URL: 'https://staging.example.com' });
+  assert.equal(release.allowSwitch, false);
+  assert.equal(mobileServerUrl(release, stored), PRODUCTION_SERVER_URL, 'a saved server is ignored');
+  assert.equal(mobileServerUrl(release, nothing), PRODUCTION_SERVER_URL, 'VITE_API_URL is ignored too');
+  assert.equal(mobileServerUrl(serverBuild(undefined), nothing), PRODUCTION_SERVER_URL);
+  assert.equal(serverBuild({ VITE_ALLOW_SERVER_SWITCH: '0' }).allowSwitch, false);
+
+  const internal = serverBuild({ VITE_ALLOW_SERVER_SWITCH: '1', VITE_API_URL: 'https://staging.example.com/' });
+  assert.equal(internal.allowSwitch, true);
+  assert.equal(mobileServerUrl(internal, nothing), 'https://staging.example.com', "the build's server by default");
+  assert.equal(mobileServerUrl(internal, { getItem: () => 'http://localhost:3001' }), 'http://localhost:3001', 'then the saved choice');
+  assert.equal(mobileServerUrl(internal, { getItem: () => 'http://evil.example' }), 'https://staging.example.com', 'never a plain-http one');
+  // The Vite dev server (live reload) is a debug build: same origin unless told otherwise.
+  assert.equal(mobileServerUrl(serverBuild({ DEV: true }), nothing), '');
+  assert.deepEqual(serverBuild({ VITE_LEGACY_PROD_HOSTS: ' Old.Example.com, https://older.example/ ' }).legacyProdHosts, ['old.example.com', 'older.example']);
+});
+
+test('mobile: a locked build forgets a stale saved server and signs out unless it was production', async () => {
+  const { forgetStaleServer } = await import('../src/platform/capacitor.ts');
+  const { serverBuild } = await import('../src/platform/serverUrl.ts');
+  const release = serverBuild({ VITE_LEGACY_PROD_HOSTS: 'old-prod.example.com' });
+  const setup = (saved: Record<string, string>) => {
+    const kv = memoryKv();
+    for (const [k, v] of Object.entries(saved)) kv.set(k, v);
+    const secret = new Map([['noteapp.refreshToken', 'rt-1']]);
+    const secure = { get: async (k: string) => secret.get(k) ?? null, remove: async (k: string) => void secret.delete(k) };
+    const calls: { url: string; body: string }[] = [];
+    const doFetch = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: String(init?.body) });
+      return new Response('{}');
+    }) as unknown as typeof fetch;
+    return { kv, secret, secure, calls, doFetch };
+  };
+  const confirmed = { 'noteapp.serverConfirmed': '1' };
+
+  // Nothing saved (a fresh install, or the new version's second launch): nothing happens.
+  let s = setup({});
+  assert.equal(await forgetStaleServer(s.kv, s.secure, release, s.doFetch), 'none');
+  assert.equal(s.secret.get('noteapp.refreshToken'), 'rt-1');
+
+  // The old production host (listed in LEGACY_PROD_HOSTS): the sign-in is kept, the choice forgotten.
+  s = setup({ 'noteapp.serverUrl': 'https://old-prod.example.com', ...confirmed });
+  assert.equal(await forgetStaleServer(s.kv, s.secure, release, s.doFetch), 'kept');
+  assert.equal(s.secret.get('noteapp.refreshToken'), 'rt-1');
+  assert.equal(s.kv.get('noteapp.serverUrl'), null);
+  assert.equal(s.kv.get('noteapp.serverConfirmed'), null);
+  assert.equal(s.calls.length, 0);
+
+  // The new production URL itself: kept.
+  s = setup({ 'noteapp.serverUrl': 'https://app.notiveloapp.com' });
+  assert.equal(await forgetStaleServer(s.kv, s.secure, release, s.doFetch), 'kept');
+
+  // Another server (staging, self-hosted): signed out here, revoked there, choice forgotten.
+  s = setup({ 'noteapp.serverUrl': 'https://staging.example.com', ...confirmed, 'noteapp.token': 'old' });
+  assert.equal(await forgetStaleServer(s.kv, s.secure, release, s.doFetch), 'signedOut');
+  assert.equal(s.secret.get('noteapp.refreshToken'), undefined);
+  assert.equal(s.kv.get('noteapp.serverUrl'), null);
+  assert.equal(s.kv.get('noteapp.token'), null);
+  assert.deepEqual(s.calls, [{ url: 'https://staging.example.com/api/auth/logout', body: JSON.stringify({ refreshToken: 'rt-1' }) }]);
+
+  // The old production host but no LEGACY_PROD_HOSTS in this build: treated as another server.
+  s = setup({ 'noteapp.serverUrl': 'https://old-prod.example.com' });
+  assert.equal(await forgetStaleServer(s.kv, s.secure, serverBuild({}), s.doFetch), 'signedOut');
+  assert.equal(s.secret.get('noteapp.refreshToken'), undefined);
+
+  // Tampered / plain-http value: signed out, and nothing is sent anywhere.
+  s = setup({ 'noteapp.serverUrl': 'http://old-prod.example.com' });
+  assert.equal(await forgetStaleServer(s.kv, s.secure, release, s.doFetch), 'signedOut');
+  assert.equal(s.calls.length, 0);
+
+  // Debug / internal builds keep their saved choice.
+  s = setup({ 'noteapp.serverUrl': 'https://staging.example.com' });
+  assert.equal(await forgetStaleServer(s.kv, s.secure, serverBuild({ VITE_ALLOW_SERVER_SWITCH: '1' }), s.doFetch), 'none');
+  assert.equal(s.kv.get('noteapp.serverUrl'), 'https://staging.example.com');
+  assert.equal(s.secret.get('noteapp.refreshToken'), 'rt-1');
+});
+
+test('mobile: "Change server…" is registered only in builds that may switch', async () => {
+  const { serverBuild } = await import('../src/platform/serverUrl.ts');
+  for (const allow of [false, true]) {
+    const f = fakes();
+    const b = fakeBridge();
+    const p = createCapacitorPlatform(f.native, async () => b.bridge, serverBuild(allow ? { VITE_ALLOW_SERVER_SWITCH: '1' } : {}));
+    await p.init();
+    await tick();
+    assert.equal(p.server.switchable, allow);
+    assert.equal(b.commands.some((c) => c.id === 'mobile.changeServer'), allow, `allowSwitch=${allow}`);
+    if (!allow) assert.equal(p.server.current(), 'https://app.notiveloapp.com');
+  }
 });

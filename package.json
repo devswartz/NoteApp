@@ -12,7 +12,7 @@
     "typecheck": "tsc -b",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
-    "mobile:build": "VITE_API_URL=${MOBILE_SERVER_URL:-https://notes.devswartz.com} npm run build",
+    "mobile:build": "VITE_API_URL=${MOBILE_SERVER_URL:-https://app.notiveloapp.com} VITE_ALLOW_SERVER_SWITCH=${MOBILE_ALLOW_SERVER_SWITCH:-} VITE_LEGACY_PROD_HOSTS=${LEGACY_PROD_HOSTS:-} npm run build",
     "mobile:sync": "npm run mobile:build && cd apps/mobile && cap sync && node scripts/identity.mjs",
     "mobile:ios": "npm run mobile:sync && cd apps/mobile && cap open ios",
     "mobile:android": "npm run mobile:sync && cd apps/mobile && cap open android",

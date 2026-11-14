@@ -46,12 +46,6 @@ export const tauriPlatform: Platform = {
   async init() {
     const win = getCurrentWindow();
 
-    // First run: ask which server to use (the default is pre-filled). Saving restarts the app.
-    if (!serverInfo().configured) {
-      await showServerSetup({ firstRun: true });
-      return new Promise<never>(() => {}); // never render the app; the restart reloads everything
-    }
-
     if (win.label === 'quick') {
       // The quick-capture window renders its own small UI instead of the app.
       const { mountQuickCapture } = await import('./tauri/quickCapture.tsx');
@@ -83,7 +77,7 @@ export const tauriPlatform: Platform = {
     void listen<string>('open-path', ({ payload }) => {
       if (payload.startsWith('/')) navigateTo(payload);
     });
-    void listen('change-server', () => void showServerSetup({ firstRun: false }));
+    if (serverInfo().switchable) void listen('change-server', () => void showServerSetup());
     void listen('check-updates', () => void import('./tauri/updates.ts').then((m) => m.checkForUpdates({ interactive: true })));
 
     // After the app has rendered: keep the dock badge / tray count in sync and check for updates.

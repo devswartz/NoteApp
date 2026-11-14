@@ -515,12 +515,12 @@ test('authz: nothing is mounted outside the audited /api router except uploads, 
   // /.well-known/* is public app-link and OAuth metadata with no user data, and /oauth/* is the public half of the
   // OAuth server (register, authorize, token, revoke): only a code the user approved through /api yields a token
   // (tests/oauth.test.ts). /mcp takes only OAuth access tokens, refuses unverified users and checks every tool
-  // through server/access.ts (tests/mcp.test.ts).
+  // through server/access.ts (tests/mcp.test.ts). redirectOldHosts only 301s page loads on REDIRECT_HOSTS (tests/redirect-hosts.test.ts).
   const { createServer } = await import('../server/app.ts');
   const { app: express, server } = createServer({ serveWeb: false });
   try {
     const names = (express as unknown as { router: { stack: { name: string }[] } }).router.stack.map((l) => l.name);
-    assert.deepEqual(names, ['securityHeaders', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads', 'requestLog', 'router']);
+    assert.deepEqual(names, ['securityHeaders', 'redirectOldHosts', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads', 'requestLog', 'router']);
   } finally {
     server.close();
   }

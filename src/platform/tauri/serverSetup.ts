@@ -1,19 +1,21 @@
-// Which server the desktop app talks to. The Rust side stores the choice and
-// injects it before the web app loads (apps/desktop/src-tauri/src/config.rs);
-// this is the UI: a first-run screen and "Change Server…" in the app menu.
+// Which server the desktop app talks to. The Rust side decides and injects it
+// before the web app loads (apps/desktop/src-tauri/src/config.rs). Release builds
+// are locked to the Notivelo server; debug / internal builds (`switchable`) get
+// this form behind "Change Server…" (app menu on macOS, command palette elsewhere).
 import { invoke } from '@tauri-apps/api/core';
 import { button, openDialog } from './dialogs.ts';
 import { APP_NAME } from '../../../shared/config.ts';
 
 export interface ServerInfo {
   url: string;
-  configured: boolean;
+  /** Debug / internal builds only: "Change Server…" is offered. */
+  switchable: boolean;
   defaultUrl: string;
 }
 
 export function serverInfo(): ServerInfo {
   const injected = (globalThis as { __NOTEAPP_SERVER__?: ServerInfo }).__NOTEAPP_SERVER__;
-  return injected ?? { url: '', configured: true, defaultUrl: '' };
+  return injected ?? { url: '', switchable: false, defaultUrl: '' };
 }
 
 /** Checks that a URL answers like our server (GET /api/health → {ok:true}). */
@@ -32,16 +34,15 @@ export async function probeServer(url: string, fetchImpl: typeof fetch = fetch):
   }
 }
 
-/** Shows the server form. Saving restarts the app (the promise never resolves then). */
-export function showServerSetup({ firstRun }: { firstRun: boolean }): Promise<void> {
+/** Shows the server form (switchable builds only). Saving restarts the app (the promise never resolves then). */
+export function showServerSetup(): Promise<void> {
   const info = serverInfo();
+  if (!info.switchable) return Promise.resolve();
   return new Promise((resolve) => {
-    const d = openDialog(firstRun ? 'Connect to a server' : 'Change server', { dismissable: !firstRun });
+    const d = openDialog('Change server', { dismissable: true });
     const intro = document.createElement('p');
     intro.style.margin = '0';
-    intro.textContent = firstRun
-      ? 'Use the default server, or enter the address of a staging or self-hosted one.'
-      : 'You sign in separately on each server. The app restarts to switch.';
+    intro.textContent = 'Internal build: point the app at staging or a local server. You sign in separately on each server. The app restarts to switch.';
     const input = document.createElement('input');
     input.type = 'url';
     input.value = info.url || info.defaultUrl;
@@ -71,14 +72,12 @@ export function showServerSetup({ firstRun }: { firstRun: boolean }): Promise<vo
       }
     };
     const connect = button('Connect', 'primary', () => void save());
-    if (!firstRun) {
-      d.actions.append(
-        button('Cancel', 'secondary', () => {
-          d.close();
-          resolve();
-        }),
-      );
-    }
+    d.actions.append(
+      button('Cancel', 'secondary', () => {
+        d.close();
+        resolve();
+      }),
+    );
     d.actions.append(connect);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') void save();

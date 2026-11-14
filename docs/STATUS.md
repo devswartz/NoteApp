@@ -2,7 +2,7 @@
 
 ## ▶ CURRENT STATE (2026-11-06 13:25 UTC) — read this first
 - **Product name:** Notivelo (`APP_NAME`); internal ids (image, DB file, storage keys) stay `noteapp`.
-- **Prod:** notes.devswartz.com runs `v0.1.2` (tag at 3d44a4b) with `SIGNUP_MODE=open`. **Staging** follows `main`.
+- **Prod:** app.notiveloapp.com runs `v0.1.2` (tag at 3d44a4b) with `SIGNUP_MODE=open`. **Staging** follows `main`.
 - **Next release: `v0.1.3`.** Everything below is on `main` and ready to tag.
   The owner/local agent pushes tags (manager sessions can't push tags).
 
@@ -86,7 +86,7 @@ Read this file, PLAN.md, docs/AGENT_GUIDE.md, DEPLOY_CONTRACT.md and LAUNCH_CHEC
 ## Decisions (settled with the user, 2026-11-05)
 - Scope and phases: see `PLAN.md` (approved).
 - Platforms: web + Tauri desktop + Capacitor mobile; no native SwiftUI.
-- Hosting: homelab, Proxmox LXC + Docker Compose, Cloudflare Tunnel, `notes.devswartz.com` (prod) and `notes-staging.devswartz.com` (staging).
+- Hosting: homelab, Proxmox LXC + Docker Compose, Cloudflare Tunnel, `app.notiveloapp.com` (prod) and `staging.notiveloapp.com` (staging).
 - Deploys are pull-based: CI → GHCR images, and the homelab pulls them. Contract: `docs/DEPLOY_CONTRACT.md`.
 - Email: AWS SES via SMTP. The user has an Apple Developer account (Phase 2/3).
 - App name: "NoteApp" for now; it will be renamed later, so keep the name in one constant/config.

@@ -30,7 +30,7 @@ One React codebase, packaged three ways:
 
 | Target | How | Why |
 |---|---|---|
-| **Web** (any browser, Android/Windows fallback) | Served from the homelab at `notes.devswartz.com`; installable as a PWA | Zero install; always the latest version |
+| **Web** (any browser, Android/Windows fallback) | Served from the homelab at `app.notiveloapp.com`; installable as a PWA | Zero install; always the latest version |
 | **macOS + Windows desktop** | **Tauri 2** shell around the web app | Real app: native menus, menu-bar icon, global quick-capture hotkey, native notifications, deep links (`noteapp://page/…`), auto-update; ~10 MB; uses Safari's engine on Mac |
 | **iPhone + Android** | **Capacitor** shell around the web app | App Store/TestFlight app: real APNs/FCM push for reminders, share-sheet capture, Face ID unlock, haptics, a mobile-specific layout; a small native WidgetKit "Today" widget |
 
@@ -68,7 +68,7 @@ Reminder worker (in-process scheduler) → Web Push / email (SMTP) / APNs+FCM (P
 ## 4. Hosting (homelab)
 
 - **Where:** a dedicated Proxmox LXC running Docker Compose with `app` (Node: API, collab server, static web build, reminder worker) and `backup` (Litestream or a nightly SQLite `.backup` plus a file-sync job).
-- **Ingress:** Cloudflare Tunnel → `notes.devswartz.com` (production) and `notes-staging.devswartz.com` (staging). WebSockets go through the tunnel. The app port is never exposed to the internet directly. Cloudflare Access stays **off** for these hostnames, because the mobile and desktop apps must reach the API directly; the app does its own auth.
+- **Ingress:** Cloudflare Tunnel → `app.notiveloapp.com` (production) and `staging.notiveloapp.com` (staging). WebSockets go through the tunnel. The app port is never exposed to the internet directly. Cloudflare Access stays **off** for these hostnames, because the mobile and desktop apps must reach the API directly; the app does its own auth.
 - **Environments:** `staging` deploys automatically from `main`; `prod` deploys from tagged releases.
 - **Backups:** continuous SQLite replication with Litestream, or a nightly snapshot, plus the attachments directory, copied off the box. Restore is tested once before launch.
 - **Email:** an SMTP provider for invites and reminder emails (to be decided — see §8).
@@ -123,7 +123,7 @@ Phase 1 runs agents 1–8 in parallel (8 sessions). Agents 9 and 10 start once P
 | Homelab outage | Offline cache for reading notes; backups copied off the box; documented restore |
 
 ## 8. Decisions (settled 2026-11-05)
-1. Domain: `notes.devswartz.com` (prod), `notes-staging.devswartz.com` (staging).
+1. Domain: `app.notiveloapp.com` (prod), `staging.notiveloapp.com` (staging).
 2. Email: AWS SES via SMTP.
 3. Apple Developer account: available (Phase 2/3).
 4. Name: "NoteApp" for now; it will be renamed, so keep the name in one config constant.

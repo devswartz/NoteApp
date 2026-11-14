@@ -1,7 +1,7 @@
 <!--
 Owner checklist (this comment is not shown to users):
 - [ ] Have a lawyer review this before outside users sign up and before App Store submission. It is a plain-English draft, not legal advice.
-- [ ] Confirm the contact inbox exists and is read: {{CONTACT_EMAIL}} defaults to support@devswartz.com and {{OPERATOR_NAME}} to "devswartz.com" (src/pages/Legal.tsx); LEGAL_CONTACT_EMAIL and LEGAL_OPERATOR_NAME on the server override them.
+- [ ] Confirm the contact inbox exists and is read: {{CONTACT_EMAIL}} defaults to support@notiveloapp.com and {{OPERATOR_NAME}} to "Notivelo" (src/pages/Legal.tsx); LEGAL_CONTACT_EMAIL and LEGAL_OPERATOR_NAME on the server override them.
 - [ ] Re-check this page, and docs/app-store-privacy.md, whenever a feature changes what is stored or sent (new third party, new upload type, analytics, sharing changes), then update "Last updated".
 - Edit freely: headings (#), paragraphs, lists (- or 1.), links [text](url), **bold**, *italic*. No HTML.
 -->

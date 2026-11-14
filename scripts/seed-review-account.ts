@@ -3,7 +3,7 @@
 // accounts. Safe to run twice: notebooks, sections, pages, tags and tasks are matched by name
 // and skipped if they exist, and a page's content is only written when the page is still empty.
 //
-//   BASE_URL=https://notes.devswartz.com REVIEW_EMAIL=... REVIEW_PASSWORD=... \
+//   BASE_URL=https://app.notiveloapp.com REVIEW_EMAIL=... REVIEW_PASSWORD=... \
 //     [SHARE_WITH_EMAIL=...] npx tsx scripts/seed-review-account.ts
 //
 // Content goes into the account's own (first owned) workspace: a "Projects" notebook with

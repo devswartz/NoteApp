@@ -4,6 +4,12 @@ All notable changes, by release. Pull request numbers refer to github.com/devswa
 
 ## Unreleased
 
+### New address: notiveloapp.com
+- Notivelo moves to its own domain. The app is at **https://app.notiveloapp.com** (staging: https://staging.notiveloapp.com), support is support@notiveloapp.com, and app emails come from no-reply@notiveloapp.com. The Privacy Policy and Terms name Notivelo as the operator.
+- **The apps always use Notivelo's server.** Release builds of the iPhone, Android and desktop apps talk only to https://app.notiveloapp.com: the first-run "Connect to a server" screen and **Change server…** are gone. A server picked in an older version is forgotten on the first start; if it was Notivelo's own server under its old address you stay signed in, otherwise you're signed out once. Debug and internal test builds keep a hidden **Change server…** for staging or a local server.
+- Universal links and Android app links now open `https://app.notiveloapp.com/w/…` (and staging) in the app.
+- Server: optional `REDIRECT_HOSTS` (old host names, comma-separated). Opening a page there redirects (301) to the same page on `PUBLIC_URL`, while the API, live updates, files, the AI connector and `/.well-known` keep answering on the old name for app versions already installed. AI connectors set up against the old address need to be connected again.
+
 ### Locked pages
 - **Lock a page.** Page menu → **Lock page**, for pages only you can see (in your private notebook, or a workspace nobody else is in, and not shared with anyone). While a page is locked it can't be shared, moved into a shared notebook, or have its notebook shared, and its icon in the sidebar is a lock. Changing or resetting the locked-notes password always sends you an email. A locked page opens only for you, with a locked-notes password that is separate from your sign-in password (you create it the first time you lock something). For everyone else in the workspace, admins included, the page is gone: not in the sidebar, search, links, tasks, activity, notifications, exports or connected AI apps.
 - **Unlock once, open them all.** The lock screen shows the page's title and asks for the password (at least 6 characters); unlocking opens all your locked pages on that device until they lock again: after 5 minutes without activity, when the app goes to the background, when you sign out, or with **Lock now**. After 5 wrong tries unlocking pauses for 15 minutes (doubling with each further wrong try, up to 24 hours), the lock screen says how long, and you get an email saying when and from which device.
@@ -324,7 +330,7 @@ The first version for day-to-day use by the team: web, desktop and mobile.
 - Deliberately not renamed: the repo, the Docker image, `/data/noteapp.db`, the systemd units, and the `noteapp.*` browser storage keys (so nobody loses local data).
 
 ### Privacy Policy and Terms
-- Public `/privacy` and `/terms` pages, linked from the sign-in screen, the sign-up form and Settings → About. The text is plain Markdown in `legal/privacy.md` and `legal/terms.md` (bundled at build time; edit the files, no code change). Contact email and operator default to support@devswartz.com and devswartz.com; `LEGAL_CONTACT_EMAIL` and `LEGAL_OPERATOR_NAME` override them on the server.
+- Public `/privacy` and `/terms` pages, linked from the sign-in screen, the sign-up form and Settings → About. The text is plain Markdown in `legal/privacy.md` and `legal/terms.md` (bundled at build time; edit the files, no code change). Contact email and operator default to support@notiveloapp.com and Notivelo; `LEGAL_CONTACT_EMAIL` and `LEGAL_OPERATOR_NAME` override them on the server.
 
 ### Email verification (for open sign-up)
 - New accounts must confirm their email before using the app when the server can send mail: a single-use, 24-hour link ("Confirm your email for Notivelo"), resend limited to one a minute and five an hour, and a **Check your email** screen until confirmed. This is what makes `SIGNUP_MODE=open` safe to switch on; production still defaults to `invite`. See `docs/LAUNCH_CHECKLIST.md` section 5b.

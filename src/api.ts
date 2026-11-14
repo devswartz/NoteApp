@@ -2,7 +2,7 @@
 // JSON fetch wrapper with one transparent refresh-and-retry on 401.
 //
 // - The API base is the server the desktop shell injects (__NOTEAPP_API_URL__)
-//   or the one picked in the mobile app, else VITE_API_URL (other shells, other origins), else the page's own
+//   or the mobile app's (src/platform/serverUrl.ts), else VITE_API_URL (other shells, other origins), else the page's own
 //   origin. WebSocket URLs are derived from it.
 // - The access token lives only in memory. The refresh token is persisted
 //   (tokenStore) and rotated on every refresh. Refreshes are single-flight per
@@ -11,16 +11,17 @@ import type { AuthSession } from '../shared/types.ts';
 import { EMAIL_UNVERIFIED } from '../shared/config.ts';
 import { signUploadPath, type FileKey } from '../shared/fileLinks.ts';
 import { detectPlatform, platform } from './platform/index.ts';
-import { storedServerUrl } from './platform/serverUrl.ts';
+import { mobileServerUrl, REFRESH_TOKEN_KEY, serverBuild } from './platform/serverUrl.ts';
 
 // The desktop shell injects its configured server before any script runs. Only
 // trusted inside Tauri and only as a string, so a DOM element with that id
 // (DOM clobbering) can't redirect the web build's API calls.
 const injectedApiUrl = (globalThis as { __NOTEAPP_API_URL__?: unknown }).__NOTEAPP_API_URL__;
-// The mobile shell keeps the server the user picked (src/platform/serverUrl.ts); re-validated here.
+// The mobile shell: the locked production server, or (debug / internal builds) the one picked there
+// (src/platform/serverUrl.ts).
 const kind = detectPlatform();
 const shellApiUrl =
-  kind === 'tauri' && typeof injectedApiUrl === 'string' ? injectedApiUrl : kind === 'capacitor' ? (storedServerUrl() ?? undefined) : undefined;
+  kind === 'tauri' && typeof injectedApiUrl === 'string' ? injectedApiUrl : kind === 'capacitor' ? mobileServerUrl(serverBuild()) : undefined;
 const API_BASE = (shellApiUrl ?? import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '');
 
 /** Absolute or same-origin URL for an API path ("/me" → ".../api/me"). */
@@ -76,7 +77,7 @@ export function wsProtocols(): string[] {
 
 // ───────────── Token storage ─────────────
 // The refresh token lives in platform secure storage (the OS keychain in the shells).
-const REFRESH_KEY = 'noteapp.refreshToken';
+const REFRESH_KEY = REFRESH_TOKEN_KEY;
 export const tokenStore = {
   get: (): Promise<string | null> => platform.secureStorage.get(REFRESH_KEY),
   async set(token: string | null): Promise<void> {

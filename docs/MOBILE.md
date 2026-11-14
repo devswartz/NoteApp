@@ -29,7 +29,7 @@ npm run mobile:ios       # …and open Xcode   (Run on a simulator or a device)
 npm run mobile:android   # …and open Android Studio
 ```
 
-- **Server URL.** The build has a default server: `MOBILE_SERVER_URL`, default `https://notes.devswartz.com` (`mobile:build` turns it into `VITE_API_URL`). On first launch the app shows a **Connect to a server** screen with that default filled in. **Change server…** is in ⌘K; Settings and the login screen can call `platform.server.change()`. The rules match the desktop app (`src/platform/serverUrl.ts`): https only, with plain http allowed only for `localhost`/`127.0.0.1`; an optional path prefix; no query string. The address is checked with `GET /api/health` before it is saved. Picking a different server signs out of the old one and restarts the app. The choice is stored in the web view's localStorage (`noteapp.serverUrl`), and `src/api.ts` re-validates it at startup. Builds that load the Vite dev server (`CAP_SERVER_URL`) skip all of this.
+- **Server URL** (`src/platform/serverUrl.ts`). Release builds always use `https://app.notiveloapp.com`: no first-run server screen, no **Change server…**. Internal builds made with `MOBILE_ALLOW_SERVER_SWITCH=1` (`mobile:build` turns it into `VITE_ALLOW_SERVER_SWITCH`; the Mobile workflow's **allow_server_switch** input, e.g. a TestFlight build for staging) start on `MOBILE_SERVER_URL` (→ `VITE_API_URL`) and have a hidden **Change server…** command in ⌘K. It accepts https only, plain http only for `localhost`/`127.0.0.1`, an optional path prefix, no query string; checks `GET /api/health` before saving; and signs out and restarts when the server changes. Builds that load the Vite dev server (`CAP_SERVER_URL`) count as debug builds (same origin). On start, a locked build forgets a server saved by an older version (`noteapp.serverUrl`): the sign-in is kept only if that was the production server (this URL, or a host in `LEGACY_PROD_HOSTS`, set at build time from the CI variable; see `docs/RELEASING.md`); otherwise the app signs out (the token is revoked there, best effort).
 - **Live reload while developing:** run `npm run dev` with `API_URL` pointing at a server, then `CAP_SERVER_URL=http://<your-LAN-IP>:5173 npx cap sync` in `apps/mobile` and run the app. The app then loads the Vite dev server instead of the bundled files. Don't ship a build made this way.
 - **App id:** `com.devswartz.notivelo` (`APP_ID` in `capacitor.config.ts`). Changing it creates a different app in the stores.
 - **App name:** `APP_NAME` in `shared/config.ts`. `npm run mobile:sync` copies it into the native projects, so a rename stays a one-line change.
@@ -47,7 +47,7 @@ npm run mobile:android   # …and open Android Studio
 | Tapping a reminder | The payload's `url` (an in-app path) becomes `notivelo://w/…` and goes through the normal deep-link router (`components/DeepLinks.tsx`). Only paths starting with `/` are accepted. |
 | Snooze | Reminder notifications have *Snooze 10 minutes / 1 hour / Tomorrow morning* actions, which call `POST /api/reminders/snooze` with the notification's one-time snooze token. **iOS:** category `REMINDER`; the action opens the app, which makes the request. **Android:** reminders arrive as FCM data messages, `NoteAppMessagingService` builds the notification with the actions, and `SnoozeReceiver` makes the request in the background without opening the app (the adapter gives it the server URL through `NoteAppNative.setConfig`). |
 | Local notifications | `platform.notifications.show()` (reminders for a task while the app is open) uses `@capacitor/local-notifications`, Android channel `reminders`. |
-| Deep links | `notivelo://page/<id>`, `notivelo://w/<ws>/…` and the universal / app links `https://notes.devswartz.com/w/…` (see "Server files" below). Links that arrive before the router mounts (cold start from a notification) are queued. |
+| Deep links | `notivelo://page/<id>`, `notivelo://w/<ws>/…` and the universal / app links `https://app.notiveloapp.com/w/…` (see "Server files" below). Links that arrive before the router mounts (cold start from a notification) are queued. |
 | App badge | The number of my open tasks due today or overdue in the current workspace, updated as tasks change (`@capawesome/capacitor-badge`). Cleared on sign-out. |
 | Haptics | A light tap whenever a checkbox (`input[type=checkbox]`, `[role=checkbox]`) or any `[data-haptic]` element is clicked. `platform.haptics.tap()` / `.success()` for app code (`'haptics' in platform`). |
 | Status bar / safe areas | The web view draws edge to edge on both platforms; the layout pads with `env(safe-area-inset-*)` (the `--safe-*` tokens in `src/styles.css`). Status bar text follows `<html data-theme>`. |
@@ -99,11 +99,11 @@ Firebase setup: create a Firebase project, add an Android app with package `com.
 
 ### Store listings
 
-App Store and Play listings need public policy URLs. Use exactly `https://notes.devswartz.com/privacy` (Privacy Policy URL) and `https://notes.devswartz.com/terms` (Terms of Use). Both must open without logging in, because App Store and Play reviewers check them signed out. The text is in `legal/*.md`; have a lawyer review it before submitting.
+App Store and Play listings need public policy URLs. Use exactly `https://app.notiveloapp.com/privacy` (Privacy Policy URL) and `https://app.notiveloapp.com/terms` (Terms of Use). Both must open without logging in, because App Store and Play reviewers check them signed out. The text is in `legal/*.md`; have a lawyer review it before submitting.
 
 ### Universal links / app links (what you fill in)
 
-`https://notes.devswartz.com/w/…` and `https://notes-staging.devswartz.com/w/…` links open the app instead of the browser. The app side is already set up: Associated Domains in `App.entitlements`, and an `autoVerify` intent filter in `AndroidManifest.xml`. The server (`server/wellKnown.ts`) serves the two verification files. They are public JSON with no redirect, and return 404 until you set these variables on **both** prod and staging:
+`https://app.notiveloapp.com/w/…` and `https://staging.notiveloapp.com/w/…` links open the app instead of the browser. The app side is already set up: Associated Domains in `App.entitlements`, and an `autoVerify` intent filter in `AndroidManifest.xml`. The server (`server/wellKnown.ts`) serves the two verification files. They are public JSON with no redirect, and return 404 until you set these variables on **both** prod and staging:
 
 | Server env | Value | Where to find it |
 |---|---|---|
@@ -111,7 +111,7 @@ App Store and Play listings need public policy URLs. Use exactly `https://notes.
 | `ANDROID_CERT_SHA256` | SHA-256 fingerprint(s) of the certificate(s) that sign the Android app, comma-separated (with or without colons) | Play Console → your app → Test and release → App integrity → **App signing key certificate** (and the upload key certificate, if you also install builds signed with your upload key). For a local keystore: `keytool -list -v -keystore upload.jks`. Debug builds are signed with `~/.android/debug.keystore`; add its fingerprint too if you want links to open debug builds. |
 | `APNS_BUNDLE_ID` / `ANDROID_PACKAGE` | Optional; default `com.devswartz.notivelo` | |
 
-Check it: `curl -i https://notes.devswartz.com/.well-known/apple-app-site-association` and `…/assetlinks.json` should return `200` with `application/json`. Apple caches the file through its CDN, so a new iOS install may take a while to pick it up. On Android, `adb shell pm get-app-links com.devswartz.notivelo` shows whether verification passed.
+Check it: `curl -i https://app.notiveloapp.com/.well-known/apple-app-site-association` and `…/assetlinks.json` should return `200` with `application/json`. Apple caches the file through its CDN, so a new iOS install may take a while to pick it up. On Android, `adb shell pm get-app-links com.devswartz.notivelo` shows whether verification passed.
 
 Only `/w/…` paths are claimed. Login links and the API always stay in the browser. Until the variables are set, `notivelo://` links work and https links open in the browser.
 

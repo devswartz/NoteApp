@@ -8,7 +8,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { registerCommands } from '../../hooks/useShortcuts.ts';
 import { runMenuCommand } from './commands.ts';
 import { DESKTOP_SHORTCUTS } from './shortcuts.ts';
-import { showServerSetup } from './serverSetup.ts';
+import { serverInfo, showServerSetup } from './serverSetup.ts';
 
 async function toggleFullscreen() {
   const win = getCurrentWindow();
@@ -26,7 +26,6 @@ export function registerMenulessCommands() {
       help: false,
       run: () => void runMenuCommand(command),
     })),
-    { id: 'app.changeServer', title: 'Change server…', group: 'General', keywords: 'url connect backend', run: () => void showServerSetup({ firstRun: false }) },
     {
       id: 'app.checkUpdates',
       title: 'Check for updates…',
@@ -36,6 +35,9 @@ export function registerMenulessCommands() {
     },
     { id: 'app.fullscreen', title: 'Toggle full screen', group: 'General', keys: 'f11', allowInInput: true, run: toggleFullscreen },
   ]);
+  // Debug / internal builds only (apps/desktop/src-tauri/src/config.rs): release builds are locked to one server.
+  if (serverInfo().switchable)
+    registerCommands([{ id: 'app.changeServer', title: 'Change server…', group: 'General', keywords: 'url connect backend', run: () => void showServerSetup() }]);
 }
 
 /** The CSS colour `--bg` resolves to, as [r, g, b] (any CSS colour syntax, not just hex). */
