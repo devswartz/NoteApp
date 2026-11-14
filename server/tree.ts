@@ -7,6 +7,7 @@ import { keepPrivateWhenDetaching, rowToTask } from './tasks.ts';
 import { closeRoom, flushAll } from './collab.ts';
 import { MAX_SECTION_DEPTH } from '../shared/sections.ts';
 import { pageFragments } from '../shared/pageDoc.ts';
+import { unwrapTaskElement } from './taskNotes.ts';
 
 type TaskRow = Parameters<typeof rowToTask>[0];
 
@@ -104,29 +105,33 @@ export function copyPage(pageId: string, sectionId: string, userId: string, opts
       `INSERT INTO pages (id, section_id, title, icon, kind, text, position, created_by, created_at, updated_at, updated_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(id, sectionId, title, src.icon, src.kind, src.text, position, userId, ts, ts, userId);
+    const copied = new Map<string, string>(); // old task id → its copy's id
+    // Dropped task blocks are unwrapped once every copy is made, innermost first (the list is in document order, a
+    // task before the subtasks in its notes), so the notes they leave behind carry the copies' ids.
+    const drop: Y.XmlElement[] = [];
     for (const el of taskRefsInDoc(doc)) {
       const oldId = el.getAttribute('taskId');
       // Only tasks this page owns are cloned. A reference to any other task (another page's,
       // another workspace's, or a deleted one) is dropped from the copy rather than cloned or
-      // left in place, where the copy's next save would claim that task.
+      // left in place, where the copy's next save would claim that task. The notes under it stay.
       const row =
         typeof oldId === 'string'
           ? (db.prepare('SELECT * FROM tasks WHERE id = ? AND page_id = ? AND occurrence_of IS NULL').get(oldId, pageId) as Record<string, unknown> | undefined)
           : undefined;
       if (!row) {
-        const parent = el.parent as Y.XmlElement | Y.XmlFragment | null;
-        if (parent) {
-          const idx = parent.toArray().indexOf(el);
-          if (idx >= 0) parent.delete(idx, 1);
-        }
+        drop.push(el);
         continue;
       }
-      const copy: Record<string, unknown> = { ...row, id: newId(), page_id: id, occurrence_of: null, created_by: userId, created_at: ts, updated_at: ts };
+      // A subtask in its task's notes is a subtask of that task's copy (or of nothing, when that wasn't copied).
+      const parent = typeof row.parent_id === 'string' ? (copied.get(row.parent_id) ?? null) : null;
+      const copy: Record<string, unknown> = { ...row, id: newId(), page_id: id, parent_id: parent, occurrence_of: null, created_by: userId, created_at: ts, updated_at: ts };
+      copied.set(oldId as string, copy.id as string);
       const cols = Object.keys(copy);
       db.prepare(`INSERT INTO tasks (${cols.join(', ')}) VALUES (${cols.map((c) => '@' + c).join(', ')})`).run(copy);
       el.setAttribute('taskId', copy.id as string);
       newTasks.push(copy.id as string);
     }
+    for (const el of drop.reverse()) unwrapTaskElement(el);
     db.prepare('UPDATE pages SET ydoc = ? WHERE id = ?').run(Buffer.from(Y.encodeStateAsUpdate(doc)), id);
     db.prepare('INSERT INTO pages_fts (page_id, title, text) VALUES (?, ?, ?)').run(id, title, src.text);
   })();

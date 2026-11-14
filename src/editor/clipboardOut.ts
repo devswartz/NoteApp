@@ -21,9 +21,12 @@ export function blocksToHtml(blocks: JSONContent[], schema: Schema): string {
     const fragment = Fragment.fromArray(blocks.map((b) => schema.nodeFromJSON(sanitizeContent(b))));
     const div = document.createElement('div');
     div.append(DOMSerializer.fromSchema(schema).serializeFragment(fragment));
-    // A task is an empty element in the editor; elsewhere it should read as its line.
+    // A task holds only its id (and the notes under it); elsewhere it should read as its line, then its notes.
+    // The line goes outside the notes element, so a paste back into Notivelo ignores it (TaskRef's parseHTML).
     div.querySelectorAll<HTMLElement>('[data-type="task-ref"]').forEach((el) => {
-      el.textContent = taskLine(el.getAttribute('data-task-id') ?? '');
+      const line = document.createElement('p');
+      line.textContent = taskLine(el.getAttribute('data-task-id') ?? '');
+      el.prepend(line);
     });
     div.firstElementChild?.setAttribute('data-pm-slice', '0 0 []'); // ProseMirror: a complete set of blocks, nothing open
     return div.innerHTML;

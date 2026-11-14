@@ -1188,9 +1188,10 @@ body.is-resizing .sidebar { transition: none; }
   border-radius: var(--radius);
   transition: background var(--dur-fast);
 }
-.task-ref:hover .task-ref-inner { background: var(--bg-subtle); }
-.task-ref.is-selected .task-ref-inner { background: var(--accent-soft); }
-.task-ref.flash .task-ref-inner { animation: flash 1.6s ease-out; }
+/* Row rules target a task's own row (`>`): a task can hold notes and subtasks, which have rows of their own. */
+.task-ref-inner:hover { background: var(--bg-subtle); }
+.task-ref.is-selected > .task-ref-inner { background: var(--accent-soft); }
+.task-ref.flash > .task-ref-inner { animation: flash 1.6s ease-out; }
 @keyframes flash { 0%, 40% { background: rgba(250, 204, 21, 0.35); } }
 .drag-handle {
   position: absolute;
@@ -1201,7 +1202,7 @@ body.is-resizing .sidebar { transition: none; }
   cursor: grab;
   padding: 2px;
 }
-.task-ref:hover .drag-handle { opacity: 0.7; }
+.task-ref-inner:hover > .drag-handle { opacity: 0.7; }
 .task-ref-title {
   flex: 1;
   min-width: 0;
@@ -1220,17 +1221,28 @@ body.is-resizing .sidebar { transition: none; }
   overflow-wrap: anywhere;
 }
 .task-ref-title::placeholder { color: var(--text-muted); opacity: 0.7; }
-.task-ref.is-done .task-ref-title { text-decoration: line-through; color: var(--text-muted); }
+.task-ref.is-done > .task-ref-inner .task-ref-title { text-decoration: line-through; color: var(--text-muted); }
 .task-ref-meta { display: flex; align-items: center; gap: 4px; flex: none; }
+/* Notes under a task: indented to the title, with a quiet guide line (OneNote's To Do with lines under it). */
+.task-ref-children { margin-left: 26px; padding-left: 10px; border-left: 2px solid var(--border); }
+/* No notes: nothing at all (an empty block's margins would leak out and push the lines below off the rule grid). */
+.task-ref:not(.has-notes) > .task-ref-children { display: none; }
+.task-ref.is-collapsed > .task-ref-children { display: none; }
+/* Done task: its notes stay as they are, a little quieter. */
+.task-ref.is-done > .task-ref-children { border-left-style: dashed; }
+.task-ref-fold { gap: 2px; color: var(--text-2); }
+.task-ref-checks { font-size: var(--text-xs, 12px); color: var(--text-2); font-variant-numeric: tabular-nums; }
+.task-ref-checks.is-complete { color: var(--success, var(--text-2)); }
+.task-ref-fold-count { font-size: var(--text-xs, 12px); color: var(--text-muted); }
 /* The row is top-aligned (long titles wrap), so centre the circle and chips on the title's
    first line: 2px padding + half of a 24px line = 14px down. */
 .task-ref-inner > .task-check { margin-top: 5px; }
 .task-ref-inner > .task-ref-meta { margin-top: 2px; }
-.task-ref:hover .chip-empty, .task-ref:focus-within .chip-empty,
-.task-ref:hover .avatar-btn-empty, .task-ref:focus-within .avatar-btn-empty { opacity: 1; }
+.task-ref-inner:hover .chip-empty, .task-ref-inner:focus-within .chip-empty,
+.task-ref-inner:hover .avatar-btn-empty, .task-ref-inner:focus-within .avatar-btn-empty { opacity: 1; }
 .task-ref-open { width: 24px; height: 24px; opacity: 0; }
-.task-ref:hover .task-ref-open { opacity: 1; }
-.task-ref.is-missing .task-ref-inner { color: var(--text-muted); }
+.task-ref-inner:hover .task-ref-open { opacity: 1; }
+.task-ref.is-missing > .task-ref-inner { color: var(--text-muted); }
 
 /* Task checkbox (Todoist-style priority ring) */
 .task-check {
@@ -1808,6 +1820,7 @@ body.is-resizing .sidebar { transition: none; }
   .page-title { font-size: 28px; }
   .ProseMirror { font-size: 16.5px; }
   .task-ref-inner { margin-left: 0; padding-left: 4px; flex-wrap: wrap; }
+  .task-ref-children { margin-left: 14px; padding-left: 8px; }
   .drag-handle { display: none; }
   .task-ref-open { opacity: 1; }
   .chip-empty, .avatar-btn-empty { opacity: 1; }

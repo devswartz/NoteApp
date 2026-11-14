@@ -23,6 +23,8 @@ interface TaskRow {
   parent_id: string | null;
   team_id?: string | null;
   assigned_by?: string | null;
+  checklist_done?: number | null;
+  checklist_total?: number | null;
   completed_at: string | null;
   completed_by: string | null;
   created_at: string;
@@ -53,6 +55,7 @@ export function rowToTask(r: TaskRow, tagIds?: string[]): Task {
     teamId: r.team_id ?? null,
     tagIds: tagIds ?? taskTagIds(r.id),
     assignedBy: r.assigned_by ?? null,
+    checklist: r.checklist_total ? { done: r.checklist_done ?? 0, total: r.checklist_total } : null,
     completedAt: r.completed_at,
     completedBy: r.completed_by,
     createdAt: r.created_at,
@@ -480,6 +483,68 @@ export function deleteTask(userId: string, id: string) {
     publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId });
     if (outsiders.length) publish({ type: 'task-deleted', id: c, workspaceId: task.workspaceId }, { userIds: outsiders });
   }
+}
+
+/**
+ * Called when a note is saved, after syncPageTasks, with the tasks whose place in the note changed since the last
+ * save (server/taskNotes.ts): a task block inside another task's notes is that task's subtask (one level: the
+ * outermost task block), and one that moved out to the top is a task of its own again. Only tasks living on this
+ * page are touched (whoever may edit a page may edit its tasks), and only where the usual rules allow: the parent
+ * is a top-level task on this page, and a task that has subtasks of its own stays top-level. Returns the ids that
+ * couldn't be decided yet (the task or its parent isn't created yet): the caller tries those again on its next save.
+ */
+export function placePageTasks(pageId: string, places: { id: string; parent: string | null; depth: number }[]): string[] {
+  const later: string[] = [];
+  const moved: string[] = [];
+  // Deepest first: a task's own subtasks move up to the new parent before the task itself becomes a subtask.
+  const ordered = [...places].sort((a, b) => b.depth - a.depth);
+  db.transaction(() => {
+    const ts = now();
+    for (const { id, parent } of ordered) {
+      const task = getTask(id);
+      if (!task) {
+        later.push(id);
+        continue;
+      }
+      if (task.pageId !== pageId || db.prepare('SELECT 1 FROM tasks WHERE id = ? AND occurrence_of IS NOT NULL').get(id)) continue;
+      if ((task.parentId ?? null) === parent) continue;
+      if (parent) {
+        const p = getTask(parent);
+        if (!p) {
+          later.push(id);
+          continue;
+        }
+        if (p.pageId !== pageId || p.parentId || p.workspaceId !== task.workspaceId || p.id === id || childIds(id).length) continue;
+      }
+      db.prepare('UPDATE tasks SET parent_id = ?, updated_at = ? WHERE id = ?').run(parent, ts, id);
+      moved.push(id);
+    }
+  })();
+  for (const id of moved) publish({ type: 'task', task: getTask(id)! });
+  return later;
+}
+
+/**
+ * Called when a note is saved: store the ticked / total count of the plain checklists under each of its tasks
+ * (server/taskNotes.ts), for the chip in the Tasks views. Only tasks living on this page; only changes are written.
+ */
+export function setChecklistCounts(pageId: string, places: { id: string; checklist: { done: number; total: number } }[]) {
+  const stored = new Map(
+    (db.prepare('SELECT id, checklist_done AS d, checklist_total AS t FROM tasks WHERE page_id = ?').all(pageId) as { id: string; d: number | null; t: number | null }[]).map((r) => [r.id, r]),
+  );
+  const changed: string[] = [];
+  db.transaction(() => {
+    for (const { id, checklist } of places) {
+      const row = stored.get(id);
+      if (!row) continue;
+      const done = checklist.total ? checklist.done : null;
+      const total = checklist.total || null;
+      if (row.d === done && row.t === total) continue;
+      db.prepare('UPDATE tasks SET checklist_done = ?, checklist_total = ? WHERE id = ?').run(done, total, id);
+      changed.push(id);
+    }
+  })();
+  for (const id of changed) publish({ type: 'task', task: getTask(id)! });
 }
 
 /**

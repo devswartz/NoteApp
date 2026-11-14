@@ -19,6 +19,7 @@ import type { TemplateMeta, TemplateUse } from '../../shared/types.ts';
 import { BOXES_KEY } from '../../shared/pageDoc.ts';
 import { editorDoc, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { fillMeta, insertTemplateUse } from './defaultTemplates.ts';
+import { editorIsEmpty } from './taskGate.ts';
 
 /** Where a template goes: the page's document editor, or its canvas. */
 export type TemplateTarget = { editor: Editor; canvas?: null } | { editor?: null; canvas: CanvasHandle };
@@ -70,10 +71,10 @@ function useCanvasEmpty(doc: Y.Doc | null) {
 
 /** True while the document has nothing in it but empty paragraphs. */
 function useIsEmpty(editor: Editor | null | undefined) {
-  const [empty, setEmpty] = useState(() => !!editor?.isEmpty);
+  const [empty, setEmpty] = useState(() => !!editor && editorIsEmpty(editor));
   useEffect(() => {
     if (!editor) return;
-    const on = () => setEmpty(editor.isEmpty);
+    const on = () => setEmpty(editorIsEmpty(editor));
     on();
     editor.on('update', on);
     editor.on('create', on);

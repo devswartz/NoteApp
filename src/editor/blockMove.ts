@@ -16,11 +16,14 @@ declare module '@tiptap/core' {
 
 const ITEMS = new Set(['listItem', 'taskItem']);
 
-/** The block to move: the innermost list item around the selection, else the top-level block. */
+/**
+ * The block to move: the innermost list item around the selection, or a line of the notes under a task (it moves
+ * among them), else the top-level block. A task moves with the notes under it.
+ */
 export function movableBlock(state: EditorState): { depth: number } | null {
   const { $from } = state.selection;
   if (state.selection instanceof NodeSelection && $from.depth === 0) return { depth: 1 };
-  for (let d = $from.depth; d > 0; d--) if (ITEMS.has($from.node(d).type.name)) return { depth: d };
+  for (let d = $from.depth; d > 0; d--) if (ITEMS.has($from.node(d).type.name) || $from.node(d - 1).type.name === 'taskRef') return { depth: d };
   return $from.depth >= 1 ? { depth: 1 } : state.selection instanceof NodeSelection ? { depth: 1 } : null;
 }
 
@@ -28,14 +31,14 @@ export function moveBlock(state: EditorState, dir: -1 | 1, dispatch?: (tr: Trans
   const sel = state.selection;
   const target = movableBlock(state);
   if (!target) return false;
-  // For a node selection at the top level, the node itself is the block.
-  const isTopNode = sel instanceof NodeSelection && sel.$from.depth === 0;
+  // For a node selection (a task, an image), the node itself is the block, wherever it is.
+  const isNode = sel instanceof NodeSelection;
   const $pos = sel.$from;
-  const depth = isTopNode ? 0 : target.depth;
-  const parent = isTopNode ? state.doc : $pos.node(depth - 1);
-  const index = isTopNode ? $pos.index(0) : $pos.index(depth - 1);
-  const node = isTopNode ? sel.node : $pos.node(depth);
-  const start = isTopNode ? sel.from : $pos.before(depth);
+  const depth = isNode ? $pos.depth + 1 : target.depth;
+  const parent = $pos.node(depth - 1);
+  const index = $pos.index(depth - 1);
+  const node = isNode ? sel.node : $pos.node(depth);
+  const start = isNode ? sel.from : $pos.before(depth);
   const swapIndex = index + dir;
   if (swapIndex < 0 || swapIndex >= parent.childCount) return false;
   const other = parent.child(swapIndex);

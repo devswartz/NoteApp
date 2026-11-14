@@ -9,6 +9,8 @@ import { subtaskIndex } from '../lib/taskViews.ts';
 import { parseQuickAdd } from '../../shared/quickadd.ts';
 import { resolveMember } from './TaskRow.tsx';
 import type { Task } from '../../shared/types.ts';
+import { get } from '../api.ts';
+import { renderInline } from '../lib/markdown.tsx';
 import { Avatar, Dropdown, Modal } from './ui.tsx';
 import { AssigneeMenu, DueMenu, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from './TaskControls.tsx';
 import { RecurrencePicker, ReminderPicker } from './notifications/index.ts';
@@ -226,6 +228,8 @@ export function TaskDetail() {
           onBlur={commitDesc}
         />
 
+        {task.pageId && <NoteNotes task={task} />}
+
         {!task.parentId && <Subtasks task={task} canEdit={canEdit} />}
 
         <div className="detail-foot muted small">
@@ -260,6 +264,50 @@ function ParentCrumb({ parentId }: { parentId: string }) {
     <button className="chip chip-link" onClick={() => ui.openTask(parentId)} title="Open the parent task">
       <CornerDownRight size={13} /> <span className="truncate">Subtask of {parent?.title || 'a task'}</span>
     </button>
+  );
+}
+
+/**
+ * "From the note": what's written under the task in its page (bullets, checklists, subtasks), read-only. Read from
+ * the page by the server (GET /tasks/:id/notes) when the panel opens and whenever the page or the task is saved:
+ * nothing is stored twice, and the task's own description is left alone.
+ */
+function NoteNotes({ task }: { task: Task }) {
+  const pageSaved = useStore((s) => s.tree.pages.find((p) => p.id === task.pageId)?.updatedAt);
+  const [markdown, setMarkdown] = useState('');
+  useEffect(() => {
+    let live = true;
+    get<{ markdown: string }>(`/tasks/${task.id}/notes`)
+      .then((r) => live && setMarkdown(r.markdown))
+      .catch(() => live && setMarkdown(''));
+    return () => {
+      live = false;
+    };
+  }, [task.id, task.updatedAt, pageSaved]);
+  if (!markdown.trim()) return null;
+  return (
+    <section className="note-notes" aria-label="From the note">
+      <div className="subtasks-head">
+        <FileText size={15} /> From the note
+      </div>
+      <div className="note-notes-body">
+        {markdown.split('\n').map((raw, i) => {
+          const indent = raw.length - raw.trimStart().length;
+          const line = raw.trim();
+          const check = /^- \[([ x])\] (.*)$/.exec(line);
+          const bullet = /^[-*] (.*)$/.exec(line);
+          const marker = check ? (check[1] === 'x' ? '☑' : '☐') : bullet ? '•' : '';
+          const text = check ? check[2] : bullet ? bullet[1] : line;
+          if (!line) return <div key={i} className="note-notes-gap" />;
+          return (
+            <div key={i} className={`note-notes-line ${check?.[1] === 'x' ? 'is-done' : ''}`} style={{ paddingLeft: `${Math.floor(indent / 2) * 18}px` }}>
+              {marker && <span className="note-notes-marker" aria-hidden="true">{marker}</span>}
+              <span>{renderInline(text, (href, children, key) => <a key={key} href={href} target="_blank" rel="noopener noreferrer">{children}</a>)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

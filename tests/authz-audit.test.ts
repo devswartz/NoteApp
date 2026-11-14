@@ -255,6 +255,7 @@ const ROWS: Row[] = [
   // The task lives on the shared page: an edit page share covers it, a view share sees it but can't change it (#98 follow-up).
   { method: 'PATCH', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, body: () => ({ title: 'Renamed' }), expect: shared(inPrivate(WRITE), 403, 200) },
   { method: 'DELETE', route: '/tasks/:id', path: (f) => `/tasks/${f.task}`, expect: shared(inPrivate(WRITE), 403, 200) },
+  { method: 'GET', route: '/tasks/:id/notes', path: (f) => `/tasks/${f.task}/notes`, expect: shared(inPrivate(READ), 200) }, // the notes under it in its (shared) page
   { method: 'POST', route: '/workspaces/:id/files', path: (f) => `/workspaces/${f.ws}/files?pageId=${f.page}`, raw: true, expect: shared(inPrivate(WRITE), 403, 200) },
   // ── Reminders & notification settings (#4). Reminders and settings are personal. ──
   { method: 'POST', route: '/reminders/snooze', path: () => '/reminders/snooze', body: () => ({ token: 'not-a-token', option: '1h' }), expect: { anon: 404, stranger: 404, viewer: 404, member: 404, private: 404 } }, // public: the token is the credential

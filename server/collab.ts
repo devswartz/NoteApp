@@ -13,7 +13,8 @@ import * as decoding from 'lib0/decoding';
 import { db, now } from './db.ts';
 import { tokenFromUpgrade, verifyAccessToken } from './auth.ts';
 import { onAccessChange, pageAccess, taskVisible } from './access.ts';
-import { canMoveTask, syncPageTasks } from './tasks.ts';
+import { canMoveTask, placePageTasks, setChecklistCounts, syncPageTasks } from './tasks.ts';
+import { taskPlaces } from './taskNotes.ts';
 import { publish } from './events.ts';
 import { log } from './log.ts';
 
@@ -176,6 +177,8 @@ interface Room {
   taskAuthors: Map<string, Set<string>>;
   /** A client update that put invalid nodes in the page: held back until its cleanup is ready (see getRoom). */
   held: Uint8Array | null;
+  /** Which task each task block sat under at the last save (server/taskNotes.ts): only changes since then set subtask parents. */
+  taskPlaces: Map<string, string | null>;
   sanitizing: boolean;
 }
 
@@ -389,6 +392,12 @@ function persistNow(room: Room, notifySaved = true) {
     (id) => [...(authors.get(id) ?? [])].some((u) => taskVisible(id, u) && !!pageAccess(room.pageId, u)?.canEdit && canMoveTask(id, u)),
     (id) => !held?.has(id), // removed by an outside editor: kept on the page until guardPageTasks decides
   );
+  // A task block moved into (or out of) another task's notes: it becomes (or stops being) that task's subtask.
+  const places = taskPlaces(room.doc);
+  const changed = places.filter((p) => !room.taskPlaces.has(p.id) || room.taskPlaces.get(p.id) !== p.parent);
+  const later = new Set(changed.length ? placePageTasks(room.pageId, changed) : []);
+  room.taskPlaces = new Map(places.filter((p) => !later.has(p.id)).map((p) => [p.id, p.parent]));
+  setChecklistCounts(room.pageId, places); // the "12/25" chip of a task's checklist, in the Tasks views
   const added = [...mentionIds].filter((id) => !room.mentioned.has(id));
   room.mentioned = mentionIds;
   const byActor = new Map<string | null, string[]>();
@@ -447,6 +456,8 @@ function getRoom(pageId: string, workspaceId: string): Room {
     taskAuthors: new Map(),
     held: null,
     sanitizing: false,
+    // As stored: a page saved before this existed (or one whose tasks were arranged in the task panel) isn't rearranged on load.
+    taskPlaces: new Map(taskPlaces(doc).map((p) => [p.id, p.parent])),
   };
 
   // Attribute new @mentions to whoever's update inserted them (not just the last editor).

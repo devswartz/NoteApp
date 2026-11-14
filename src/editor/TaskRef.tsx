@@ -1,13 +1,14 @@
 // "taskRef" — a block node that embeds a live task inside a note.
 // The node stores only the task id; the task itself lives in the database and
 // the app store, so it stays in sync with the Tasks dashboard everywhere.
-import { Node, mergeAttributes, type Editor } from '@tiptap/core';
-import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
-import { Selection, TextSelection } from '@tiptap/pm/state';
+import { Extension, Node, mergeAttributes, type Editor } from '@tiptap/core';
+import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from '@tiptap/react';
+import { Selection, TextSelection, type EditorState, type Transaction } from '@tiptap/pm/state';
+import type { EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { GripVertical, Maximize2, FileX2, Flag } from 'lucide-react';
-import { deletedHere, UNDO_WINDOW_MS } from '../store/tasks.ts';
+import { ChevronDown, ChevronRight, GripVertical, ListChecks, Maximize2, FileX2, Flag } from 'lucide-react';
+import { deletedHere, deletedTitles, UNDO_WINDOW_MS } from '../store/tasks.ts';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
 import { useAnyTask } from '../components/sharing/sharedPages.ts';
 import { AssigneeChip, DueChip, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from '../components/TaskControls.tsx';
@@ -17,6 +18,18 @@ import { resolveMember } from '../components/TaskRow.tsx';
 import type { Priority, Task, TaskPatch } from '../../shared/types.ts';
 import { markCreatedHere } from './undoTasks.ts';
 import { canInsertTask, pageIdOf, tasksAllowedOn } from './taskGate.ts';
+import { listItemAt } from './smartLists.ts';
+import {
+  addChecklistToTask,
+  convertTransaction,
+  exitEmptyLastChild,
+  firstLineOfTask,
+  indentIntoTask,
+  liftOutOfTask,
+  shiftTabBlock,
+  tabBlock,
+  unwrapTask,
+} from './taskChildren.ts';
 
 export interface TaskRefOptions {
   pageId: string;
@@ -71,7 +84,12 @@ export function cloneTask(pageId: string, taskId: string): string | null {
 export const TaskRef = Node.create<TaskRefOptions>({
   name: 'taskRef',
   group: 'block',
-  atom: true,
+  // The task's notes: bullets, numbered lists, paragraphs and nested task blocks (its subtasks), indented under it
+  // like the lines under a OneNote To Do tag (./taskChildren.ts). Optional, so a page saved before notes existed
+  // loads as it was; an older app that doesn't know about them keeps them in the shared doc (it only hides them).
+  content: 'block*',
+  // Typing, Backspace and Delete never merge a line into or out of a task by accident: Tab / Shift+Tab move lines.
+  isolating: true,
   draggable: true,
   selectable: true,
 
@@ -90,34 +108,44 @@ export const TaskRef = Node.create<TaskRefOptions>({
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-type="task-ref"]' }];
+    // The notes are in their own element; anything else inside (a copied task's "[ ] title" line) is not content.
+    return [
+      {
+        tag: 'div[data-type="task-ref"]',
+        contentElement: (dom: HTMLElement) => dom.querySelector(':scope > [data-task-children]') ?? dom.ownerDocument.createElement('div'),
+      },
+    ];
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'task-ref' })];
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-type': 'task-ref' }), ['div', { 'data-task-children': '' }, 0]];
   },
 
-  // Markdown export: a checklist line with the live task's state, due date and priority.
-  renderMarkdown(node) {
+  // Markdown export: a checklist line with the live task's state, due date and priority; its notes indented under it.
+  renderMarkdown(node, h) {
     const t = useStore.getState().tasks[node.attrs?.taskId as string];
-    if (!t) return '';
+    const kids = (node.content ?? []).map((c) => h.renderChildren([c])).join('\n').trim();
+    if (!t) return kids; // never lose the notes, even when the task can't be shown
     const extras = [t.dueDate ? `📅 ${t.dueDate}${t.dueTime ? ` ${t.dueTime}` : ''}` : '', t.priority < 4 ? `p${t.priority}` : ''].filter(Boolean).join(' ');
-    return `- [${t.status === 'done' ? 'x' : ' '}] ${t.title}${extras ? ` ${extras}` : ''}`;
+    const line = `- [${t.status === 'done' ? 'x' : ' '}] ${t.title}${extras ? ` ${extras}` : ''}`;
+    return kids ? `${line}\n${kids.replace(/^(?=.)/gm, '  ')}` : line;
   },
 
-  // Plain-text clipboard / export representation.
-  renderText({ node }) {
-    const t = useStore.getState().tasks[node.attrs.taskId as string];
-    return `[${t?.status === 'done' ? 'x' : ' '}] ${t?.title ?? ''}`;
+  // Plain-text clipboard / export: the task's line (when the range starts at or before it), then its notes in the range.
+  renderText(props) {
+    // Tiptap passes the range being serialised (getTextBetween), though its type doesn't say so.
+    const { node, pos, range } = props as typeof props & { range?: { from: number; to: number } };
+    return taskText(node, pos, range);
   },
 
   addNodeView() {
     return ReactNodeViewRenderer(TaskRefView, {
-      // Let the embedded inputs/buttons handle their own events.
+      // The task line's own inputs and buttons handle their events; the notes under it are ordinary editor content.
       stopEvent: ({ event }) => {
         const el = event.target as HTMLElement | null;
         if (!el || event.type === 'dragstart') return false;
-        return !!el.closest('input, textarea, button, a, .popover');
+        if (el.closest('.popover')) return true;
+        return !!el.closest('.task-ref-inner') && !!el.closest('input, textarea, button, a');
       },
     });
   },
@@ -157,6 +185,82 @@ export const TaskRef = Node.create<TaskRefOptions>({
     };
   },
 
+  addExtensions() {
+    return [TaskChildrenKeys];
+  },
+});
+
+/** "[ ] title" / "[x] title" of a task id, from the live task. */
+const taskLineText = (id: string) => {
+  const t = useStore.getState().tasks[id];
+  return `[${t?.status === 'done' ? 'x' : ' '}] ${t?.title ?? ''}`;
+};
+
+/** Plain text of a task block within `range` (document positions; the whole block without one): its line, then its notes. */
+export function taskText(node: PMNode, pos: number, range?: { from: number; to: number }): string {
+  const from = range ? range.from : pos;
+  const to = range ? range.to : pos + node.nodeSize;
+  const lines: string[] = [];
+  const walk = (n: PMNode, at: number, depth: number) => {
+    if (at + n.nodeSize <= from || at >= to) return;
+    if (n.type.name === 'taskRef') {
+      if (from <= at) lines.push('  '.repeat(depth) + taskLineText(n.attrs.taskId as string));
+      n.forEach((c, offset) => walk(c, at + 1 + offset, depth + 1));
+    } else if (n.isTextblock) {
+      const start = Math.max(0, Math.max(from, at + 1) - (at + 1));
+      const end = Math.max(start, Math.min(to, at + n.nodeSize - 1) - (at + 1));
+      lines.push('  '.repeat(depth) + n.textBetween(start, end, '\n', (leaf) => (leaf.type.name === 'hardBreak' ? '\n' : '')));
+    } else if (!n.isLeaf) n.forEach((c, offset) => walk(c, at + 1 + offset, depth));
+  };
+  walk(node, pos, 0);
+  return lines.join('\n');
+}
+
+/** Focus a task's title (caret at the end), e.g. going up out of its first note line. */
+export function focusTaskTitle(view: EditorView, taskPos: number): boolean {
+  const dom = view.nodeDOM(taskPos) as HTMLElement | null;
+  const input = dom?.querySelector<HTMLTextAreaElement>('textarea.task-ref-title');
+  if (!input) return false;
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  return true;
+}
+
+/**
+ * Keys for the notes under tasks (./taskChildren.ts). Ahead of smartLists (priority 200), which keeps Tab and
+ * Shift+Tab inside lists: Tab on the first line of a list right below a task moves the list in.
+ */
+const TaskChildrenKeys = Extension.create({
+  name: 'taskChildrenKeys',
+  priority: 300,
+  addKeyboardShortcuts() {
+    const run = (fn: (state: EditorState, dispatch: (tr: Transaction) => void) => boolean) => () =>
+      this.editor.isEditable && fn(this.editor.state, this.editor.view.dispatch);
+    return {
+      Tab: run((state, dispatch) => indentIntoTask(state, tabBlock(state), dispatch)),
+      'Shift-Tab': run((state, dispatch) => !listItemAt(this.editor) && liftOutOfTask(state, shiftTabBlock(state), dispatch)),
+      Enter: run((state, dispatch) => exitEmptyLastChild(state, dispatch)),
+      // Backspace at the start of a task's first note line: an empty line goes; either way the caret goes up to the title.
+      Backspace: () => {
+        const { state, view } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty || !this.editor.isEditable || $from.parentOffset !== 0 || $from.depth < 2) return false;
+        const t = $from.depth - 1;
+        if ($from.node(t).type.name !== 'taskRef' || $from.index(t) !== 0) return false;
+        const taskPos = $from.before(t);
+        if (!$from.parent.content.size && $from.parent.type.name === 'paragraph') view.dispatch(state.tr.delete($from.before(), $from.after()));
+        focusTaskTitle(view, taskPos);
+        return true;
+      },
+      ArrowUp: () => {
+        const { state, view } = this.editor;
+        const { $from, empty } = state.selection;
+        if (!empty || !$from.parent.isTextblock || !view.endOfTextblock('up')) return false;
+        const t = firstLineOfTask($from);
+        return t > 0 && focusTaskTitle(view, $from.before(t));
+      },
+    };
+  },
 });
 
 function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
@@ -203,10 +307,20 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
     return () => clearTimeout(t);
   }, [title]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [collapsed, setCollapsedState] = useState(() => isCollapsed(id));
+  const setCollapsed = (v: boolean) => {
+    setCollapsedState(v);
+    rememberCollapsed(id, v);
+  };
+  const hasNotes = node.childCount > 0;
+
   // A task deleted here (task panel, bulk bar) leaves its line in the page; it goes once the Undo window has passed.
+  // Its notes stay on the page, where the task was: deleting a task never deletes what was written under it.
   const removeLine = () => {
     const p = (typeof getPos === 'function' ? getPos() : undefined);
-    if (p !== undefined && editor.isEditable) editor.chain().deleteRange({ from: p, to: p + node.nodeSize }).run();
+    if (p === undefined || !editor.isEditable || editor.state.doc.nodeAt(p)?.attrs.taskId !== id) return;
+    const gone = (tid: string) => (useStore.getState().tasks[tid] ? undefined : deletedTitles.get(tid));
+    editor.view.dispatch(unwrapTask(editor.state.tr, p, [], gone));
   };
   useEffect(() => {
     if (task || !loaded || !editor.isEditable || !deletedHere.has(id)) return;
@@ -226,16 +340,26 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           <FileX2 size={15} className="muted" />
           <span className="muted small">{loaded ? 'This task was deleted or is not visible to you.' : 'Loading task…'}</span>
           {loaded && editor.isEditable && (
-            <button type="button" className="btn-ghost btn-sm" onClick={removeLine}>
+            <button type="button" className="btn-ghost btn-sm" onClick={removeLine} title={hasNotes ? 'The notes under it stay on the page' : undefined}>
               Remove from page
             </button>
           )}
         </div>
+        <NodeViewContent className="task-ref-children" />
       </NodeViewWrapper>
     );
   }
 
   const pos = () => (typeof getPos === 'function' ? getPos() : undefined);
+
+  /** The (empty) task becomes an ordinary empty line in its place; the notes under it stay, below that line. */
+  const toPlainLine = (p: number) => {
+    void deleteTask(id);
+    const tr = unwrapTask(editor.state.tr, p, [editor.state.schema.nodes.paragraph.create()]);
+    tr.setSelection(TextSelection.create(tr.doc, p + 1));
+    editor.view.dispatch(tr.scrollIntoView());
+    editor.view.focus();
+  };
 
   const commit = () => {
     const trimmed = titleRef.current.trim();
@@ -260,7 +384,8 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   const focusEditorAt = (dir: 1 | -1) => {
     const p = pos();
     if (p === undefined) return;
-    const target = dir === 1 ? p + node.nodeSize : p;
+    // Down goes to the first note line under the task (when they show), else past it.
+    const target = dir === 1 ? (hasNotes && !collapsed ? p + 1 : p + node.nodeSize) : p;
     const { state, view } = editor;
     const sel = Selection.near(state.doc.resolve(Math.min(target, state.doc.content.size)), dir);
     view.dispatch(state.tr.setSelection(sel).scrollIntoView());
@@ -275,17 +400,25 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
       commit();
       if (p === undefined) return;
       if (!title.trim()) {
-        // Empty task + Enter = leave task mode (like a checklist).
-        void deleteTask(id);
-        editor
-          .chain()
-          .insertContentAt({ from: p, to: p + node.nodeSize }, { type: 'paragraph' })
-          .command(({ tr }) => {
-            tr.setSelection(TextSelection.create(tr.doc, p + 1));
-            return true;
-          })
-          .focus()
-          .run();
+        // Empty task + Enter = leave task mode (like a checklist); its notes stay, under the new line.
+        toPlainLine(p);
+        return;
+      }
+      if (hasNotes) {
+        // A task with notes: Enter starts a new first note line (a new point when they start with a list).
+        if (collapsed) setCollapsed(false);
+        const first = node.firstChild!;
+        const { schema } = editor.state;
+        const tr = editor.state.tr;
+        if ((first.type.name === 'bulletList' || first.type.name === 'orderedList') && schema.nodes.listItem) {
+          tr.insert(p + 2, schema.nodes.listItem.create(null, schema.nodes.paragraph.create()));
+          tr.setSelection(TextSelection.create(tr.doc, p + 4));
+        } else {
+          tr.insert(p + 1, schema.nodes.paragraph.create());
+          tr.setSelection(TextSelection.create(tr.doc, p + 2));
+        }
+        editor.view.dispatch(tr.scrollIntoView());
+        editor.view.focus();
         return;
       }
       const newId = newTask(editor.extensionManager.extensions.find((x) => x.name === 'taskRef')!.options.pageId);
@@ -295,13 +428,18 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
       e.preventDefault();
       // Backspace in an empty task turns it into an ordinary empty line in its place (like a
       // checklist item), so you can switch between tasks and text without leaving the spot.
-      void deleteTask(id);
-      editor
-        .chain()
-        .insertContentAt({ from: p, to: p + node.nodeSize }, { type: 'paragraph' })
-        .setTextSelection(p + 1)
-        .focus()
-        .run();
+      toPlainLine(p);
+    } else if (e.key === 'Tab' && editable && p !== undefined && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // Tab makes this task a subtask of the task just above it; Shift+Tab takes it back out.
+      const { state } = editor;
+      const block = { pos: p, node: state.doc.nodeAt(p)!, $pos: state.doc.resolve(p) };
+      const ok = e.shiftKey ? liftOutOfTask(state, block) : indentIntoTask(state, block);
+      e.preventDefault(); // stays in the title even when there's nothing to do (no jump out of the page)
+      if (!ok) return;
+      commit();
+      pendingFocus = id;
+      if (e.shiftKey) liftOutOfTask(state, block, editor.view.dispatch);
+      else indentIntoTask(state, block, editor.view.dispatch);
     } else if (e.key === 'ArrowDown' || (e.key === 'Escape' && !e.defaultPrevented)) {
       e.preventDefault();
       commit();
@@ -324,7 +462,7 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
   const done = task.status === 'done';
   return (
     <NodeViewWrapper
-      className={`task-ref ${done ? 'is-done' : ''} ${selected ? 'is-selected' : ''}`}
+      className={`task-ref ${done ? 'is-done' : ''} ${selected ? 'is-selected' : ''} ${hasNotes ? 'has-notes' : ''} ${hasNotes && collapsed ? 'is-collapsed' : ''}`}
       data-task-id={id}
     >
       <div contentEditable={false} className="task-ref-inner" role="group" aria-label={`Task: ${task.title || 'untitled'}${done ? ', done' : ''}`}>
@@ -367,16 +505,105 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
           }}
         />
         <div className="task-ref-meta">
+          {hasNotes && (
+            // Fold the notes under the task away (remembered in this browser; collaborators keep their own view).
+            <button
+              type="button"
+              className="chip chip-btn task-ref-fold"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? 'Show the notes under this task' : 'Hide the notes under this task'}
+              title={collapsed ? 'Show notes' : 'Hide notes'}
+              onClick={() => setCollapsed(!collapsed)}
+            >
+              {collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+              {collapsed && <span className="task-ref-fold-count">{noteCount(node)}</span>}
+            </button>
+          )}
+          {(() => {
+            const c = checklistCount(node);
+            return c.total > 0 ? (
+              <span className={`chip task-ref-checks ${c.done === c.total ? 'is-complete' : ''}`} title={`${c.done} of ${c.total} checklist items ticked`} aria-label={`Checklist ${c.done} of ${c.total} ticked`}>
+                {c.done}/{c.total}
+              </span>
+            ) : null;
+          })()}
           <PriorityChip task={task} readOnly={!editable} onChange={(priority) => void updateTask(id, { priority })} />
           <DueChip task={task} readOnly={!editable} onChange={(dueDate) => void updateTask(id, { dueDate })} />
           <AssigneeChip task={task} readOnly={!editable} onChange={(assigneeId) => void updateTask(id, { assigneeId })} />
+          {editable && (
+            <button
+              type="button"
+              className="icon-btn btn-ghost task-ref-open task-ref-add-checklist"
+              title="Add checklist (its items are not tasks)"
+              aria-label="Add checklist under this task"
+              onClick={() => {
+                const p = pos();
+                if (p === undefined) return;
+                if (collapsed) setCollapsed(false);
+                const tr = editor.state.tr;
+                if (addChecklistToTask(tr, p)) editor.view.dispatch(tr.scrollIntoView());
+                editor.view.focus();
+              }}
+            >
+              <ListChecks size={13} />
+            </button>
+          )}
           <button className="icon-btn btn-ghost task-ref-open" title="Open task details" aria-label="Open task details" onClick={() => ui.openTask(id)}>
             <Maximize2 size={13} />
           </button>
         </div>
       </div>
+      <NodeViewContent className="task-ref-children" />
     </NodeViewWrapper>
   );
+}
+
+/** Ticked / all checklist items (plain checklists, not tasks) in a task's own notes (not in its subtasks' notes). */
+export function checklistCount(node: PMNode): { done: number; total: number } {
+  let done = 0;
+  let total = 0;
+  node.forEach(function visit(c: PMNode) {
+    if (c.type.name === 'taskRef') return;
+    if (c.type.name === 'taskItem') {
+      total++;
+      if (c.attrs.checked) done++;
+    }
+    if (!c.isTextblock) c.forEach(visit);
+  });
+  return { done, total };
+}
+
+/** "3 notes": the lines under a folded task (text lines and nested tasks, not the lists around them). */
+function noteCount(node: PMNode): string {
+  let n = 0;
+  node.descendants((c) => {
+    if (c.isTextblock || c.type.name === 'taskRef' || (c.isLeaf && c.isBlock)) n++;
+    return !c.isTextblock;
+  });
+  return n === 1 ? '1 note' : `${n} notes`;
+}
+
+/** Which tasks' notes are folded away: per browser (like a section's open/closed state), not shared with collaborators. */
+const COLLAPSED_KEY = 'notivelo.taskNotesCollapsed';
+function collapsedIds(): Set<string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]') as unknown;
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+const isCollapsed = (id: string) => collapsedIds().has(id);
+function rememberCollapsed(id: string, collapsed: boolean) {
+  const ids = collapsedIds();
+  if (collapsed) ids.add(id);
+  else ids.delete(id);
+  try {
+    // The most recent few hundred are plenty; a folded task that's gone simply drops off the end.
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...ids].slice(-500)));
+  } catch {
+    // storage full or blocked: folding just isn't remembered
+  }
 }
 
 /** Append a new, focused task at the end of the note. */
@@ -395,100 +622,34 @@ export function canConvert(editor: Editor): boolean {
   return true;
 }
 
-const LISTS = new Set(['bulletList', 'orderedList', 'taskList']);
-
-/** Turn the line at the cursor into a task (lifting it out of lists first). Returns the new task id. */
+/** Turn the line at the cursor into a task, keeping the points nested under it as the task's notes. Returns the new task id. */
 export function convertLine(editor: Editor): string | null {
-  if (!canConvert(editor)) return null;
-  const done = editor.isActive('taskItem', { checked: true });
-  // Lift out of lists first so the task becomes a top-level block. Each lift is its own transaction.
-  for (let guard = 0; guard < 5 && (editor.isActive('listItem') || editor.isActive('taskItem')); guard++) {
-    const ok = editor.isActive('taskItem') ? editor.commands.liftListItem('taskItem') : editor.commands.liftListItem('listItem');
-    if (!ok) break;
-  }
-  const $f = editor.state.selection.$from;
-  if (!$f.parent.isTextblock || $f.depth < 1) return null;
-  const title = $f.parent.textContent.trim();
-  const id = newTask(pageIdOf(editor), title, done ? { status: 'done' } : {});
-  if (!title) pendingFocus = id;
-  editor.chain().insertContentAt({ from: $f.before(), to: $f.after() }, { type: 'taskRef', attrs: { taskId: id } }).run();
-  return id;
+  const sel = editor.state.selection;
+  if (!sel.empty && !sel.$from.sameParent(sel.$to)) return null;
+  return convertToTasks(editor)[0] ?? null;
 }
 
 /**
- * Convert the current line or the selected lines to tasks (see the `convertToTask` command).
+ * Convert the current line or the selected lines to tasks (see the `convertToTask` command and
+ * convertTransaction in ./taskChildren.ts): a line's sub-points stay under its task, and a line inside a task's
+ * notes becomes a subtask of that task where it is (the server sets the parent on save).
  * Returns the ids of the tasks created, in document order. For agents/other areas:
  *   import { convertToTasks } from '../editor/TaskRef.tsx';
  *   const ids = convertToTasks(editor);
  */
 export function convertToTasks(editor: Editor): string[] {
-  const { state } = editor;
-  const { selection } = state;
+  if (!canConvert(editor) || !editor.state.schema.nodes.taskRef) return [];
   const pageId = pageIdOf(editor);
-  const taskType = state.schema.nodes.taskRef;
-  if (!editor.isEditable || !taskType || !canInsertTask(editor)) return [];
-
-  // A cursor or a selection inside one line: convert that line.
-  if (selection.empty || selection.$from.sameParent(selection.$to)) {
-    const id = convertLine(editor);
-    return id ? [id] : [];
-  }
-
-  // Several blocks: rebuild the top-level blocks the selection touches. Inside lists,
-  // only the items the selection overlaps become tasks; the others stay list items
-  // (a list is split around the converted items).
-  const selFrom = selection.from;
-  const selTo = selection.to;
-  const overlaps = (pos: number, node: PMNode) => pos < selTo && pos + node.nodeSize > selFrom;
-  const from = selection.$from.before(1);
-  const to = selection.$to.after(1);
-  const ids: string[] = [];
-  const out: PMNode[] = [];
-  const task = (text: string, done = false) => {
-    const title = text.trim();
-    if (!title) return false;
+  let empty: string | null = null;
+  const res = convertTransaction(editor.state, (title, done) => {
     const id = newTask(pageId, title, done ? { status: 'done' } : {});
-    ids.push(id);
-    out.push(taskType.create({ taskId: id }));
-    return true;
-  };
-  /** Walk a list at `pos`; unselected runs of items are re-emitted as lists of the same type. */
-  const fromList = (list: PMNode, pos: number) => {
-    let keep: PMNode[] = [];
-    const flush = () => {
-      if (keep.length) out.push(list.type.create(list.attrs, keep));
-      keep = [];
-    };
-    list.forEach((item, offset) => {
-      const itemPos = pos + 1 + offset;
-      if (!overlaps(itemPos, item)) {
-        keep.push(item);
-        return;
-      }
-      flush();
-      const done = item.type.name === 'taskItem' && !!item.attrs.checked;
-      item.forEach((child, childOffset) => {
-        const childPos = itemPos + 1 + childOffset;
-        if (LISTS.has(child.type.name)) fromList(child, childPos);
-        else if (child.isTextblock) {
-          if (!overlaps(childPos, child) || !task(child.textContent, done)) out.push(child);
-        } else out.push(child);
-      });
-    });
-    flush();
-  };
-  state.doc.nodesBetween(from, to, (node, pos) => {
-    if (pos < from || pos >= to) return false;
-    if (node.type.name === 'taskRef') out.push(node);
-    else if (LISTS.has(node.type.name)) fromList(node, pos);
-    else if (node.isTextblock && node.type.name !== 'codeBlock') {
-      if (!task(node.textContent)) out.push(node);
-    } else out.push(node);
-    return false; // top-level only; lists are walked by fromList
+    if (!title) empty = id;
+    return id;
   });
-  if (!ids.length) return [];
-  editor.view.dispatch(state.tr.replaceWith(from, to, out).scrollIntoView());
-  return ids;
+  if (!res) return [];
+  if (empty) pendingFocus = empty;
+  editor.view.dispatch(res.tr);
+  return res.ids;
 }
 
 /** Priority flag: shown when set (p1–p3), and on hover to set one. */

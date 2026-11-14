@@ -26,7 +26,7 @@ function inline(t: Y.XmlText): string {
 const kids = (n: Y.XmlElement | Y.XmlFragment) => n.toArray() as Node[];
 const textOf = (n: Y.XmlElement): string => kids(n).map((c) => (c instanceof Y.XmlText ? inline(c) : textOf(c))).join('');
 
-function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
+export function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
   if (n instanceof Y.XmlText) return [indent + inline(n)];
   const attr = (k: string) => n.getAttribute(k) as unknown;
   switch (n.nodeName) {
@@ -52,8 +52,10 @@ function block(n: Node, tasks: TaskLookup, indent = ''): string[] {
         return [`${indent}${marker} ${(first ?? '').trimStart()}`, ...rest];
       });
     case 'taskRef': {
+      // The task's line, then the notes under it indented one level (they're kept even when the task can't be shown).
       const t = tasks(String(attr('taskId') ?? ''));
-      return t ? [`${indent}- [${t.done ? 'x' : ' '}] ${t.title}${t.due ? ` (due ${t.due})` : ''}`] : [];
+      const notes = kids(n).flatMap((c) => block(c, tasks, t ? indent + '  ' : indent));
+      return t ? [`${indent}- [${t.done ? 'x' : ' '}] ${t.title}${t.due ? ` (due ${t.due})` : ''}`, ...notes] : notes;
     }
     case 'table': {
       const rows = kids(n).map((r) => kids(r as Y.XmlElement).map((c) => textOf(c as Y.XmlElement).replace(/\|/g, '\\|')));
