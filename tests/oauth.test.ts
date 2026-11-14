@@ -226,6 +226,10 @@ test('redirect URIs: https or loopback only at registration, exact match at auth
   }
   assert.equal((await register({ redirect_uris: ['http://127.0.0.1:33418/cb', 'http://localhost/cb'] })).status, 201);
   assert.equal((await register({ grant_types: ['client_credentials'] })).data.error, 'invalid_client_metadata');
+  // Extra grant types are ignored, not refused; the registration only grants what the server does.
+  const extra = await register({ grant_types: ['authorization_code', 'refresh_token', 'urn:ietf:params:oauth:grant-type:jwt-bearer'] });
+  assert.equal(extra.status, 201);
+  assert.deepEqual(extra.data.grant_types, ['authorization_code', 'refresh_token']);
 
   const clientId = (await register()).data.client_id;
   const { challenge } = pkce();
@@ -338,7 +342,15 @@ test('Client ID Metadata Documents: fetched, validated and cached', async () => 
   const u = await app.signUp('Cim');
   const url = 'https://assistant.example/oauth/client.json';
   let fetches = 0;
-  let doc: Record<string, unknown> = { client_id: url, client_name: 'Metadata Assistant', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' };
+  // Shaped like Claude's real document, which also lists the jwt-bearer grant.
+  let doc: Record<string, unknown> = {
+    client_id: url,
+    client_name: 'Metadata Assistant',
+    redirect_uris: [REDIRECT],
+    grant_types: ['authorization_code', 'refresh_token', 'urn:ietf:params:oauth:grant-type:jwt-bearer'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+  };
   clients.setMetadataFetcher(async (u2) => {
     fetches++;
     assert.equal(u2, url);

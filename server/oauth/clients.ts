@@ -80,13 +80,17 @@ function validRedirectList(v: unknown): string[] {
   return [...new Set(v as string[])];
 }
 
-/** Public clients only: refuse grant and response types we don't do. */
+/**
+ * The client must be able to use the authorization code flow. Other grant and response types it lists
+ * (e.g. Claude's metadata document also lists urn:ietf:params:oauth:grant-type:jwt-bearer) are ignored, not
+ * refused: this server only ever issues codes and refresh tokens, and the registration response says so.
+ */
 function checkTypes(meta: Record<string, unknown>) {
   const grants = meta.grant_types ?? ['authorization_code'];
-  if (!Array.isArray(grants) || grants.some((g) => g !== 'authorization_code' && g !== 'refresh_token'))
-    throw new OAuthError('invalid_client_metadata', 'Only the authorization_code and refresh_token grant types are supported');
+  if (!Array.isArray(grants) || !grants.includes('authorization_code'))
+    throw new OAuthError('invalid_client_metadata', 'The client must support the authorization_code grant type');
   const responses = meta.response_types ?? ['code'];
-  if (!Array.isArray(responses) || responses.some((r) => r !== 'code')) throw new OAuthError('invalid_client_metadata', 'Only response_type "code" is supported');
+  if (!Array.isArray(responses) || !responses.includes('code')) throw new OAuthError('invalid_client_metadata', 'The client must support response_type "code"');
 }
 
 /** RFC 7591 registration. Any requested auth method is answered with "none": every client here is public. */

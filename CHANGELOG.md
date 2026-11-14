@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## Unreleased
+
+### Fixes
+- **AI connector: Claude can connect.** Connecting from Claude stopped at "Can't connect this app" because Claude's registration also lists a sign-in method Notivelo doesn't use (`jwt-bearer`), and Notivelo refused the whole registration. Extra methods an app lists are now ignored; Notivelo still only uses the authorization code flow with refresh tokens.
+
 ## v0.5.1
 
 ### New address: notiveloapp.com
