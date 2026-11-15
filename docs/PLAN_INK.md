@@ -1,0 +1,185 @@
+# Plan: handwriting and drawing (ink)
+
+Status: planned 2026-11-14 with Devon. The quality bar is **Notability or better**, even if it takes a redesign. It is the first project of the long-term architecture (`docs/ARCHITECTURE.md`, phases 0–2). Ink and drawing were out of scope for canvas pages (`docs/PLAN_CANVAS.md`); this plan brings them in.
+
+## What the user gets
+
+- Write and draw anywhere on a canvas page with a pen (Apple Pencil, Surface/Windows pens, Android styluses), a finger (when finger drawing is on) or a mouse.
+- **Feel:** the line stays glued to the pen tip. Pressure and tilt shape the stroke, a resting palm is ignored, and Pencil double-tap/squeeze and hover preview work.
+- **Tools:** pen (a few styles: fountain, ballpoint, fineliner), highlighter (drawn under ink and text), stroke eraser, partial eraser, lasso (move, resize, rotate, recolour, copy, delete), and shapes that snap when you hold at the end of a stroke (line, arrow, rectangle, ellipse, triangle).
+- **Paper:** pinch zoom, pageless by default (endless) or fixed paper sizes (A4, Letter) per page, and paper styles (plain, lined, grid, dotted; the rule lines and grid exist today).
+- Ink and text boxes live together. Write next to, over and around boxes, and lasso can select both.
+- Live collaboration (see each other's strokes as they finish), offline drawing, version history, undo/redo, and sharing work like everything else.
+- **Later phases:** PDF markup (import a PDF as page backgrounds and write on it), searching handwriting, converting handwriting to text, audio recording synced to ink.
+
+## Quality bar and how we test it
+
+"Notability or better" is judged on a real device, side by side:
+
+| Check | How |
+|---|---|
+| Latency | Slow-motion video (240 fps) of a fast scribble: gap between Pencil tip and line in Notivelo vs Notability, same iPad. Must not be visibly worse. |
+| Stroke quality | Write the same sentence in both apps at several speeds and pressures. Notivelo's strokes look at least as good: smooth curves, no corners at speed, pressure taper. |
+| Palm rejection | Write a full page with the palm resting. Zero stray marks. |
+| Pan/zoom | Pan and zoom a page with 5,000 strokes and 50 text boxes. 120 fps on ProMotion, and ink and text never visibly separate. |
+| Sync | A stroke appears on a second device within 300 ms (p50) online, and after reconnecting when offline. |
+| Durability | Kill the app mid-stroke, go offline and online, and run concurrent erasing on two devices. Nothing is lost or duplicated. |
+
+Devon runs this checklist on his iPad and Pencil at each gate. Automated tests cover everything except feel.
+
+## Architecture
+
+```
+          pen input                                 other devices
+              │                                           ▲
+┌─────────────▼──────────────┐   finished strokes   ┌─────┴──────────────┐
+│ Pen layer (per platform)   │ ───────────────────▶ │ Page doc (Yjs/yrs) │
+│ iPad: native Metal layer   │ ◀─────────────────── │ "ink" map          │
+│ Windows: delegated ink     │   remote strokes     └────────────────────┘
+│ Web/Android: canvas+predict│
+└─────────────┬──────────────┘
+              │ uses
+┌─────────────▼──────────────────────────────────────────────────────┐
+│ nv-ink (Rust): encode/decode, smoothing, pressure outline,         │
+│ tessellation, hit testing, erase split, lasso, shapes              │
+│ → WASM (web, server print via napi) and native library (iOS)       │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- **One ink engine** (`crates/nv-ink`). Every platform turns the same stroke data into the same shape, so a page looks identical on iPad, Windows and the web, and print/PDF match the screen.
+- **Per-platform drawing only:** each platform has its own drawing code, sized for that platform's latency.
+- **Committing a stroke:** the pen layer draws the live stroke itself, so nothing waits on the network or on JS. When the pen lifts, the finished stroke goes to the page doc in one transaction. Remote strokes come back the same way. On iPad this crosses the native↔web bridge once per stroke, not once per point.
+
+### iPad: native pen layer
+
+- A **Metal-backed view** drawing with `nv-ink` geometry, fed by UIKit touches with **coalesced and predicted touches** (Apple's own low-latency path). It handles force, altitude/azimuth, Pencil hover (`UIHoverGestureRecognizer`), double-tap/squeeze (`UIPencilInteraction`), and palm rejection (`touch.type == .pencil` while the pen is in use; finger drawing optional).
+- **PencilKit vs our own Metal renderer** is decided in the prototype (I2). PencilKit gives Apple's latency for free, but its stroke look is fixed and differs from what the web would draw. Our own renderer gives identical strokes everywhere, but we must match Apple's latency ourselves. The default expectation is our own renderer, with PencilKit as the fallback if we can't match its latency.
+- **Lockstep pan and zoom:** native code owns scrolling and zooming. The WKWebView with the page sits inside a native `UIScrollView`-style container together with the pen layer, and both get one transform per frame. The web page doesn't scroll itself on iPad, and zoom is a transform plus a re-render at rest. The web editor still handles typing and text selection inside a box.
+- **Fallback if lockstep can't be made smooth:** on iPad, draw the whole page natively (text boxes as rendered snapshots) and switch only the box being typed in to the web editor. This is bigger, but contained, and decided at the I2 gate.
+
+### Windows
+
+- WebView2/Edge **delegated ink trail** (`navigator.ink.requestPresenter()`): the OS draws the newest part of the stroke ahead of the page, and we draw the rest with `nv-ink` geometry. Pointer events give pressure and tilt, and the eraser end of the pen (`buttons`) switches tools.
+
+### Web, Mac, Android
+
+- A canvas renderer (Canvas2D first, WebGL when budgets need it) with `getCoalescedEvents()` and `getPredictedEvents()` where supported, drawing `nv-ink` geometry.
+- **Tiled caching:** finished strokes are drawn into tiles at the current zoom, and only tiles that change are redrawn.
+
+## Storage
+
+Strokes live in the page's existing Y.Doc (`shared/pageDoc.ts` today, `nv-model` later), next to `boxes`:
+
+- `ink` (Y.Map): stroke id → `Uint8Array` blob. Strokes are **immutable**: moving or recolouring writes a new blob under the same id, and erasing part of a stroke deletes it and adds the pieces with new ids, all in one transaction.
+- **Blob format** (versioned, little-endian):
+  - header: format version, tool, colour (RGBA), base width, z-order key (fractional index string), flags, bounding box (for culling and hit tests), point count, creation time
+  - points: delta-encoded, varint-packed x/y at 1/8 page pixel, pressure (8 bit), tilt (8+8 bit, optional), time delta (ms)
+
+  Roughly 4–6 bytes per point, so a typical handwritten word is a few hundred bytes. A page with 5,000 strokes is about 1–2 MB, comparable to a page with images.
+- **Coordinates** are page pixels, the same space as `boxes` (`{x, y, w, z}`), so ink and boxes move together and zoom is a view transform only.
+- **Ordering:** a fractional-index z key per stroke. Highlighters render in their own layer below text boxes, and pens above. Per-stroke "send behind text" can come later.
+- **Recognised text** (I7) goes into a separate `inkText` Y.Map (cluster id → text + stroke ids) and is read by search, never shown as content.
+- **Schema version** bump with an upgrade step (no-op for old pages). Older app versions that don't know `ink` leave it untouched. Yjs keeps unknown keys, so an old app can't destroy ink, and it shows a "this page has handwriting, update the app" note.
+- **Locked pages:** ink is page content, so the existing lock rules apply unchanged.
+
+### Server and everything that reads a page
+
+Every place that reads page content (the `pageFragments(doc)` users in `server/collab.ts`, `export.ts`, `links.ts`, `tree.ts`, versions, print, the MCP connector) gets ink-aware:
+
+| Reader | With ink |
+|---|---|
+| Version history | Previews render ink (shared renderer), and restore includes it. |
+| Print / PDF | Ink drawn as vector paths from `nv-ink` geometry, the same as on screen. |
+| Export (zip/Markdown) | Ink saved as an SVG per page, linked from the Markdown, plus the raw blobs in the full backup. |
+| Search | Recognised text from `inkText` (I7). |
+| AI connector | Reports "this page has handwriting", plus recognised text when available. It never writes ink. |
+| OneNote import | OneNote ink usually arrives as images (unchanged). Real ink import is a later investigation. |
+| Templates | Copy ink with the page. |
+
+## Undo
+
+- Ink changes are tracked by a `Y.UndoManager` on `ink` with an `INK_ORIGIN`, combined with the canvas geometry undo (`GEOM_ORIGIN` in `src/editor/canvasDoc.ts`) into one page-level undo stack outside text boxes.
+- On iPad the native layer asks the web side to undo or redo (two-finger tap, three-finger swipe), so there is one stack, not two.
+- Only your own changes are undone; collaborators' strokes are untouched (Yjs undo per origin).
+
+## Phases
+
+Each phase is one or more PRs and ships behind the `ink` feature flag until I3 passes its gate.
+
+### I0: canvas prep (TypeScript, part of architecture phase 0)
+
+- One **screen↔page coordinate transform** in `canvasGeom.ts`, used everywhere (box drag, resize, caret placement, hit tests), with zoom fixed at 1 for now.
+- One **pointer router** for the canvas: pen, touch and mouse are told apart, and later the active tool decides who gets the event.
+- **Reserve `ink`** in the page format with a schema version step, and give every page reader a hook that is a no-op for now.
+- Test corpus entries for pages with an empty `ink` map.
+
+### I1: `nv-ink` and the web renderer
+
+- The Cargo workspace (`crates/`) and CI (architecture phase 1).
+- `nv-ink`: blob encode/decode (with fuzzing), smoothing (a "one-euro" filter on input plus a curve fit), a pressure-to-width outline, tessellation into triangles (GPU) and paths (Canvas2D/SVG/PDF), hit testing (point, segment, lasso polygon), and erase-split.
+- The WASM build, and the web canvas renderer with tiles, coalesced and predicted events, and Windows delegated ink.
+- **Exit:** the web and Windows draw, save, sync and print ink. Property tests: encode∘decode is the identity, erase-split covers exactly the original minus the eraser, hit tests agree with rendering.
+
+### I2: iPad prototype (go/no-go)
+
+- The native pen layer in the Capacitor iOS app, using `nv-ink` through `uniffi`.
+- Lockstep pan and zoom with the web page.
+- Strokes commit to the page doc and appear live on the web.
+- A quick comparison spike: our Metal renderer vs PencilKit for latency.
+- **Gate (Devon, on device):** latency and quality match Notability side by side, and ink never visibly separates from text while panning or zooming. If either fails, choose the PencilKit or native-page-view fallback before I3.
+
+### I3: ink v1
+
+- Pen (styles), highlighter, stroke eraser, partial eraser, colours and widths with a pen toolbar, undo/redo, collaboration, offline, version previews, print/PDF, export (SVG).
+- Pen settings remembered per device.
+- **Gate:** the full quality-bar checklist on iPad, Windows pen if available, and the web. Then the flag goes to Devon's workspace, then everyone.
+
+### I4: zoom and paper
+
+- Pinch zoom on every platform: text re-renders sharp at rest, ink re-tessellates per zoom level.
+- Paper: pageless (the default) or fixed sizes with page breaks, and paper styles. Print respects fixed sizes.
+
+### I5: lasso and shapes
+
+- Lasso over strokes and boxes: move, resize, rotate, recolour, copy/paste (including between pages), delete.
+- Hold-to-snap shapes.
+
+### I6: PDF markup
+
+- Import a PDF as page backgrounds (rendered with PDF.js on the web, PDFKit on iOS; the original stored as an attachment), write on top, and export the marked-up PDF.
+
+### I7: handwriting search and conversion
+
+- On-device recognition on iPad (Vision), clustered into words and lines, stored in `inkText`, indexed by server search and the local search (architecture phase 5).
+- Convert selected handwriting to a text box.
+- Check that Scribble (Apple's handwriting-to-text in text fields) works in web text boxes.
+- Windows recognition (Windows.Globalization/ink analysis) later.
+
+### I8: audio synced to ink
+
+- Record while writing, with timestamps per stroke. Tapping a stroke plays from that moment, and playback replays strokes appearing.
+- Audio is stored as an attachment, with permission prompts on each platform.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| Our renderer can't match Apple's latency | Compare it with PencilKit in I2, keep PencilKit as a fallback, and use predicted touches. |
+| Lockstep scrolling between native and web | Native owns pan and zoom. Defined fallback (native page view) at the I2 gate. |
+| Large pages get heavy (doc size, redraw cost) | Compact blobs, bounding-box culling, tiles, budgets in CI (5,000 strokes at 60/120 fps). |
+| Concurrent erase and move conflicts | Immutable strokes and one transaction per operation. Last writer wins per stroke id, which reads naturally. Property tests. |
+| Old app versions open pages with ink | Yjs keeps the unknown key, and old apps show an "update to see handwriting" note. |
+| Feel can't be tested by agents | Devon's device checks at every gate, with a written checklist. Slow-motion video for latency. |
+
+## Decided (Devon, 2026-11-14)
+
+- **Reference device:** Devon's iPad Pro with an Apple Pencil (2nd generation). All quality-bar checks run on it, and it is the device for the I2 gate.
+  - Pencil 2 supports pressure, tilt and double-tap. Squeeze is Pencil Pro only.
+  - Hover preview needs an M2 iPad Pro or later, so check the model year, and treat hover as a bonus that is skipped where unsupported.
+  - All iPad Pros have ProMotion, so the 120 fps budgets apply.
+- **No Windows pen device for now.** Windows ink (delegated ink trail) is still built in I1, but tested only with mouse and touch plus automated tests. Pen feel on Windows stays unverified until a device is available, and the release notes say so. Revisit before I3 ships: borrow or buy a Surface pen, or keep Windows pen support marked as beta.
+- **PDF markup is "nice to have":** it stays phase I6, after ink v1, zoom/paper and lasso. It isn't a launch requirement.
+
+- **The iPad Pro is the 2020 model** (A12Z, ProMotion, Pencil 2). It has no Pencil hover, so hover preview isn't testable on it. **Everything must work on every iPad that supports a Pencil**, not just new ones: hover and squeeze are extras where the hardware has them, never required, and the 2020 iPad Pro sets the performance floor for the budgets.
+- **Finger drawing is off by default,** with a toggle in the pen toolbar and in Settings, like Notability. With it off, a finger scrolls and zooms, and only the pen draws.
+- **Pages are pageless by default** (endless, like Notability's pageless mode and OneNote). Fixed paper sizes (A4, Letter) with page breaks are a per-page option, mainly for printing and PDF markup.
