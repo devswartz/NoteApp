@@ -7,7 +7,7 @@ Status: planned 2026-11-14 with Devon. The quality bar is **Notability or better
 - Write and draw anywhere on a canvas page with a pen (Apple Pencil, Surface/Windows pens, Android styluses), a finger (when finger drawing is on) or a mouse.
 - **Feel:** the line stays glued to the pen tip. Pressure and tilt shape the stroke, a resting palm is ignored, and Pencil double-tap/squeeze and hover preview work.
 - **Tools:** pen (a few styles: fountain, ballpoint, fineliner), highlighter (drawn under ink and text), stroke eraser, partial eraser, lasso (move, resize, rotate, recolour, copy, delete), and shapes that snap when you hold at the end of a stroke (line, arrow, rectangle, ellipse, triangle).
-- **Paper:** pinch zoom, an endless page or fixed paper sizes (A4, Letter), and paper styles (plain, lined, grid, dotted; the rule lines and grid exist today).
+- **Paper:** pinch zoom, pageless by default (endless) or fixed paper sizes (A4, Letter) per page, and paper styles (plain, lined, grid, dotted; the rule lines and grid exist today).
 - Ink and text boxes live together. Write next to, over and around boxes, and lasso can select both.
 - Live collaboration (see each other's strokes as they finish), offline drawing, version history, undo/redo, and sharing work like everything else.
 - **Later phases:** PDF markup (import a PDF as page backgrounds and write on it), searching handwriting, converting handwriting to text, audio recording synced to ink.
@@ -137,7 +137,7 @@ Each phase is one or more PRs and ships behind the `ink` feature flag until I3 p
 ### I4: zoom and paper
 
 - Pinch zoom on every platform: text re-renders sharp at rest, ink re-tessellates per zoom level.
-- Paper: endless or fixed sizes with page breaks, and paper styles. Print respects fixed sizes.
+- Paper: pageless (the default) or fixed sizes with page breaks, and paper styles. Print respects fixed sizes.
 
 ### I5: lasso and shapes
 
@@ -180,8 +180,6 @@ Each phase is one or more PRs and ships behind the `ink` feature flag until I3 p
 - **No Windows pen device for now.** Windows ink (delegated ink trail) is still built in I1, but tested only with mouse and touch plus automated tests. Pen feel on Windows stays unverified until a device is available, and the release notes say so. Revisit before I3 ships: borrow or buy a Surface pen, or keep Windows pen support marked as beta.
 - **PDF markup is "nice to have":** it stays phase I6, after ink v1, zoom/paper and lasso. It isn't a launch requirement.
 
-## Open questions for Devon
-
-1. Finger drawing: off by default with a toggle, like Notability? (Recommended.)
-2. Paper default: endless (OneNote) or fixed pages (Notability/GoodNotes)? Recommended: endless by default, fixed as a per-page option.
-3. Which iPad Pro year (M2 or later has Pencil hover)?
+- **The iPad Pro is the 2020 model** (A12Z, ProMotion, Pencil 2). It has no Pencil hover, so hover preview isn't testable on it. **Everything must work on every iPad that supports a Pencil**, not just new ones: hover and squeeze are extras where the hardware has them, never required, and the 2020 iPad Pro sets the performance floor for the budgets.
+- **Finger drawing is off by default,** with a toggle in the pen toolbar and in Settings, like Notability. With it off, a finger scrolls and zooms, and only the pen draws.
+- **Pages are pageless by default** (endless, like Notability's pageless mode and OneNote). Fixed paper sizes (A4, Letter) with page breaks are a per-page option, mainly for printing and PDF markup.
