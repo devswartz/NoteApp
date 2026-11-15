@@ -5,9 +5,9 @@
 // whatever the share says (rights = min(share, role)). Open with openPageShareDialog(pageId, title);
 // <PageShareDialogHost /> is mounted once in PageView. Owner: Collaboration & Access.
 import { useEffect, useMemo, useState } from 'react';
-import { Copy, Lock, Search, X } from 'lucide-react';
+import { Copy, ExternalLink, Globe, Lock, Search, X } from 'lucide-react';
 import { create } from 'zustand';
-import { del, get, patch, post } from '../../api.ts';
+import { api, del, get, patch, post } from '../../api.ts';
 import { errorToast, toast, useStore } from '../../store.ts';
 import { Avatar, Modal } from '../ui.tsx';
 import type { PageShares } from '../../../shared/types.ts';
@@ -218,11 +218,81 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
         ))}
       </div>
 
+      <PublicLinkSection pageId={pageId} />
+
       <div className="row gap-8" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
         <button className="btn btn-secondary" onClick={close}>
           Done
         </button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * "Anyone with the link can view" (server/routes/pageLinks.ts): a read-only web page at /s/<token> that opens
+ * in any browser with no account. Turning it off ends the link at once; turning it on again makes a new one.
+ */
+function PublicLinkSection({ pageId }: { pageId: string }) {
+  const [url, setUrl] = useState<string | null | undefined>(undefined); // undefined = loading
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    get<{ url: string | null }>(`/pages/${pageId}/link`)
+      .then((r) => setUrl(r.url))
+      .catch(() => setUrl(null));
+  }, [pageId]);
+  const copy = (u: string) =>
+    navigator.clipboard?.writeText(u).then(
+      () => toast('Link copied'),
+      () => {},
+    );
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (url) {
+        await del(`/pages/${pageId}/link`);
+        setUrl(null);
+        toast('Link turned off. The old link no longer works.');
+      } else {
+        const r = await api<{ url: string }>(`/pages/${pageId}/link`, { method: 'PUT' });
+        setUrl(r.url);
+        void copy(r.url);
+      }
+    } catch (e) {
+      errorToast(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (url === undefined) return null;
+  return (
+    <div className="public-link" data-testid="public-link">
+      <div className="row gap-8">
+        <Globe size={18} aria-hidden className="public-link-icon" />
+        <div className="grow">
+          <div>Anyone with the link can view</div>
+          <div className="muted small">
+            {url
+              ? 'A read-only web page that opens in any browser, no account needed. It always shows the latest version.'
+              : 'Off. Turn it on to send this page to someone who doesn’t use Notivelo.'}
+          </div>
+        </div>
+        <label className="switch">
+          <input type="checkbox" role="switch" aria-label="Anyone with the link can view" checked={!!url} disabled={busy} onChange={() => void toggle()} />
+          <span className="switch-track" />
+        </label>
+      </div>
+      {url && (
+        <div className="invite-link">
+          <code>{url}</code>
+          <a className="btn-ghost icon-btn" href={url} target="_blank" rel="noopener noreferrer" title="Open the page as others see it">
+            <ExternalLink size={15} />
+          </a>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copy(url)}>
+            <Copy size={14} /> Copy link
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

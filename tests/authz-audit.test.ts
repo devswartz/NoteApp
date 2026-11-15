@@ -313,6 +313,10 @@ const ROWS: Row[] = [
   { method: 'POST', route: '/pages/:id/shares', path: (f) => `/pages/${f.page}/shares`, body: (f) => ({ userId: f.target, canEdit: false }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'PATCH', route: '/pages/:id/shares/:userId', path: (f) => `/pages/${f.page}/shares/${f.target}`, body: () => ({ canEdit: false }), expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id/shares/:userId', path: (f) => `/pages/${f.page}/shares/${f.target}`, expect: shared(inPrivate(WRITE), 403) },
+  // Share links ("anyone with the link can view"): the same people who may share the page with others.
+  { method: 'GET', route: '/pages/:id/link', path: (f) => `/pages/${f.page}/link`, expect: shared(inPrivate(WRITE), 403) },
+  { method: 'PUT', route: '/pages/:id/link', path: (f) => `/pages/${f.page}/link`, expect: shared(inPrivate(WRITE), 403) },
+  { method: 'DELETE', route: '/pages/:id/link', path: (f) => `/pages/${f.page}/link`, expect: shared(inPrivate(WRITE), 403) },
   { method: 'DELETE', route: '/pages/:id/invites/:email', path: (f) => `/pages/${f.page}/invites/${encodeURIComponent(f.email)}`, expect: shared(inPrivate(WRITE), 403) },
   { method: 'GET', route: '/pages/:id/tasks', path: (f) => `/pages/${f.page}/tasks`, expect: shared(inPrivate(READ), 200) },
   { method: 'GET', route: '/shared-pages', path: () => '/shared-pages', expect: { stranger: 200, ...READ, pageshare: 200 } },
@@ -509,18 +513,19 @@ test('authz: sockets refuse an unverified user (4403), including for a page they
   assert.equal((await app.fetchFile(`/uploads/${shared.file}${ext}`, unv)).status, 403, 'uploads');
 });
 
-test('authz: nothing is mounted outside the audited /api router except uploads, /.well-known, /oauth and /mcp', async () => {
+test('authz: nothing is mounted outside the audited /api router except uploads, /.well-known, /oauth, /mcp and /s', async () => {
   // Express layers on the app itself. A new top-level mount fails here, so it has to be looked at: unverified
   // users must not reach it. /uploads/* checks its own signed links (tests/file-access.test.ts),
   // /.well-known/* is public app-link and OAuth metadata with no user data, and /oauth/* is the public half of the
   // OAuth server (register, authorize, token, revoke): only a code the user approved through /api yields a token
   // (tests/oauth.test.ts). /mcp takes only OAuth access tokens, refuses unverified users and checks every tool
-  // through server/access.ts (tests/mcp.test.ts). redirectOldHosts only 301s page loads on REDIRECT_HOSTS (tests/redirect-hosts.test.ts).
+  // through server/access.ts (tests/mcp.test.ts). /s/<token> serves only a page whose share link is live and whose
+  // link creator can still open it, read-only and with no scripts (tests/page-links.test.ts). redirectOldHosts only 301s page loads on REDIRECT_HOSTS (tests/redirect-hosts.test.ts).
   const { createServer } = await import('../server/app.ts');
   const { app: express, server } = createServer({ serveWeb: false });
   try {
     const names = (express as unknown as { router: { stack: { name: string }[] } }).router.stack.map((l) => l.name);
-    assert.deepEqual(names, ['securityHeaders', 'redirectOldHosts', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads', 'requestLog', 'router']);
+    assert.deepEqual(names, ['securityHeaders', 'redirectOldHosts', 'requestLog', '<anonymous>', 'router', 'router', 'requestLog', 'router', 'errorHandler', 'serveUploads', 'requestLog', 'router', 'requestLog', 'router']);
   } finally {
     server.close();
   }

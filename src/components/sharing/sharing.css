@@ -47,3 +47,10 @@
 .sb-shared-page:hover .sb-shared-remove, .sb-shared-remove:focus-visible { opacity: 1; }
 .sb-shared-page .sb-shared-ws + .sb-shared-remove { margin-left: 4px; }
 .sb-shared-page > .truncate:nth-child(2) + .sb-shared-remove { margin-left: auto; }
+
+/* Share link ("Anyone with the link can view"), in the page share dialog. */
+.public-link { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.public-link .row { align-items: center; }
+.public-link-icon { color: var(--text-muted); flex: none; }
+.public-link .invite-link { border-style: solid; }
+.public-link .invite-link .btn { flex: none; white-space: nowrap; }

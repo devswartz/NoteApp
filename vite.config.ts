@@ -85,6 +85,7 @@ export default defineConfig({
       '/oauth': { target: api, changeOrigin: true, bypass: (req) => (req.url?.startsWith('/oauth/consent') ? req.url : undefined) },
       '/.well-known': { target: api, changeOrigin: true },
       '/mcp': { target: api, changeOrigin: true },
+      '/s/': { target: api, changeOrigin: true }, // share links (server/publicPage.ts)
     },
   },
 });

@@ -743,8 +743,11 @@ function PageMenuItems({ pageId, wsId, onHistory, canManage, canShare, canEdit, 
           <MenuItem icon={<FileDown size={15} />} onSelect={() => source && void exportMarkdown(source, pageId).catch(errorToast)}>
             Export as Markdown
           </MenuItem>
+          <MenuItem icon={<FileDown size={15} />} onSelect={() => printPage()}>
+            Export as PDF…
+          </MenuItem>
           <MenuItem icon={<Printer size={15} />} hint={keyLabel(MOD, 'P')} onSelect={() => printPage()}>
-            Print / save as PDF
+            Print
           </MenuItem>
           {printable && (
             <MenuItem icon={<Printer size={15} />} onSelect={() => printSelectionOnly()}>
