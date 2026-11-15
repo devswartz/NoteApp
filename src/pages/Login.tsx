@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { signIn } from '../store.ts';
 import { get, post } from '../api.ts';
 import { hasPendingInvite } from '../components/sharing/InvitePage.tsx';
@@ -9,10 +9,32 @@ import { APP_NAME } from '../../shared/config.ts';
 import { Button } from '../components/ui.tsx';
 import { LegalLinks } from './Legal.tsx';
 
+type Mode = 'login' | 'register' | 'forgot';
+
+/** Links from the marketing site (notiveloapp.com) can open a form directly: /login?mode=register&email=… */
+function modeFromUrl(v: string | null): Mode {
+  return v === 'register' || v === 'forgot' ? v : 'login';
+}
+/** Prefill only, never auto-submit. Anything that doesn't look like an address is ignored. */
+function emailFromUrl(v: string | null): string {
+  const e = (v ?? '').trim();
+  return e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : '';
+}
+
 export function Login() {
-  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [params, setParams] = useSearchParams();
+  const [urlMode] = useState(() => modeFromUrl(params.get('mode')));
+  const [mode, setMode] = useState<Mode>(urlMode);
   const [sent, setSent] = useState(false);
-  const [form, setForm] = useState({ name: '', email: '', password: '' });
+  const [form, setForm] = useState(() => ({ name: '', email: emailFromUrl(params.get('email')), password: '' }));
+  // Take the email out of the address bar (and history) once it's in the form.
+  useEffect(() => {
+    if (!params.has('mode') && !params.has('email')) return;
+    const next = new URLSearchParams(params);
+    next.delete('mode');
+    next.delete('email');
+    setParams(next, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(syncThemePref, []); // the shell's storage is ready now (see store/ui.ts)
@@ -21,7 +43,11 @@ export function Login() {
   useEffect(() => {
     if (hasPendingInvite()) return;
     get<{ signupOpen: boolean }>('/auth/config')
-      .then((c) => setSignupOpen(c.signupOpen))
+      .then((c) => {
+        setSignupOpen(c.signupOpen);
+        // A sign-up link to a server with invite-only sign-up: show sign-in, as the register form would be refused.
+        if (!c.signupOpen && urlMode === 'register') setMode((m) => (m === 'register' ? 'login' : m));
+      })
       .catch(() => {});
   }, []);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
