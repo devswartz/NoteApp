@@ -13,6 +13,7 @@ public class NoteAppNativePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "writeWidgetSnapshot", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setConfig", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "print", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openStore", returnType: CAPPluginReturnPromise),
     ]
 
     /// Prints the web view (WKWebView ignores window.print()). Its print formatter lays the
@@ -56,5 +57,21 @@ public class NoteAppNativePlugin: CAPPlugin, CAPBridgedPlugin {
     /// Settings the native side may need without the web view. iOS snooze actions open the app, so nothing is stored yet.
     @objc func setConfig(_ call: CAPPluginCall) {
         call.resolve()
+    }
+
+    /// Opens an App Store link in the App Store app (the update prompt, src/platform/storeUpdates.ts).
+    /// Only apps.apple.com links: the web side can't use this to open arbitrary URLs.
+    @objc func openStore(_ call: CAPPluginCall) {
+        guard let raw = call.getString("url"), let url = URL(string: raw),
+              url.scheme == "https", url.host == "apps.apple.com" else { return call.reject("Not an App Store link") }
+        // itms-apps:// goes straight to the App Store app; the https link is the fallback.
+        var store = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        store?.scheme = "itms-apps"
+        DispatchQueue.main.async {
+            UIApplication.shared.open(store?.url ?? url, options: [:]) { ok in
+                if ok { return call.resolve() }
+                UIApplication.shared.open(url, options: [:]) { ok2 in ok2 ? call.resolve() : call.reject("Couldn't open the App Store") }
+            }
+        }
     }
 }

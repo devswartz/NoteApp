@@ -113,6 +113,7 @@ function fakeBridge() {
   const bridge: AppBridge = {
     onUser: (cb) => void (userCb = cb),
     onTasks: (cb) => void (tasksCb = cb),
+    get: async () => null, // GET /app/version: no store info, so no update prompt in these tests
     post: async (path, body) => void posts.push([path, body]),
     del: async (path, body) => void posts.push([`DELETE ${path}`, body]),
     registerCommands: (cmds) => void commands.push(...cmds),

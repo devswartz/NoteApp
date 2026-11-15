@@ -71,6 +71,11 @@ export interface Platform {
    */
   appUpdates: {
     subscribe(onAvailable: (apply: () => void) => void): () => void;
+    /**
+     * iOS only: this version is below the server's minimum and must update first. The callback gets
+     * `open()` (the App Store page). Platforms without a minimum leave it out.
+     */
+    subscribeRequired?(onRequired: (open: () => void) => void): () => void;
   };
 
   /** Run fn while holding a named lock shared by every window/tab of the app. */

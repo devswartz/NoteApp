@@ -709,6 +709,10 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
   box-shadow: var(--shadow);
 }
 .auth-card h1 { margin: 20px 0 4px; font-size: 22px; letter-spacing: -0.02em; }
+/* iPhone/iPad: this version is below the server's minimum (src/components/AppUpdates.tsx). Covers everything. */
+.update-required { position: fixed; inset: 0; z-index: 10000; padding-top: max(24px, env(safe-area-inset-top)); }
+.update-required .auth-card p { margin: 8px 0 20px; line-height: 1.5; }
+.update-required .auth-card button { width: 100%; }
 .auth-card form { display: grid; gap: 14px; margin: 24px 0 18px; }
 .auth-card label { display: grid; gap: 6px; font-weight: 500; font-size: 13px; }
 .auth-card .input { height: 40px; }

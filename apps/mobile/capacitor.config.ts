@@ -8,9 +8,10 @@
 // Live reload during development: CAP_SERVER_URL=http://<your-lan-ip>:5173 npm run mobile:sync
 import type { CapacitorConfig } from '@capacitor/cli';
 import { APP_NAME } from '../../shared/config.ts';
+import { MOBILE_APP_ID } from '../../shared/appVersion.ts';
 
 /** Bundle id / application id. Changing it makes a new app in the stores. */
-export const APP_ID = 'com.devswartz.notivelo';
+export const APP_ID = MOBILE_APP_ID;
 
 const devServer = process.env.CAP_SERVER_URL;
 

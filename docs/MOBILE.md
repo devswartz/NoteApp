@@ -59,6 +59,15 @@ npm run mobile:android   # …and open Android Studio
 | Splash screen | Native splash (light and dark) until React's first render. |
 | `<html>` classes | `native`, plus `native-ios` or `native-android`, for any shell-only CSS. |
 
+## Update prompt (iPhone/iPad)
+
+The app asks `GET /api/app/version?os=ios` (server/routes/appVersion.ts) about 3 seconds after start-up and when it comes back to the foreground (at most every 6 hours):
+
+- **Newer version on the App Store:** a notice, "A new version of Notivelo is on the App Store", with **Update**. Update opens the App Store page (`NoteAppNative.openStore`). Each version is offered once per app run.
+- **Below the minimum:** a full-screen "Update required" with **Open the App Store**. Set `MIN_APP_VERSION_IOS` on the server (e.g. `0.6.0`), and raise it only after that version is live on the App Store. Unset means no minimum.
+
+The server reads the store version from Apple's public lookup (`itunes.apple.com/lookup?bundleId=com.devswartz.notivelo`, country `APP_STORE_COUNTRY`, default `us`) and caches it for an hour. Apple's answer itself lags a release by a few hours. TestFlight builds newer than the store version are never prompted. Android (sideloaded APK) gets no prompt yet. The feature needs a native build that includes `openStore` (from 0.5.4 on).
+
 ## Secrets and accounts
 
 Nothing below is needed to build or run debug builds. CI skips the steps whose secrets are missing.

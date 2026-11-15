@@ -47,12 +47,14 @@ import {
   type ServerBuild,
 } from './serverUrl.ts';
 import { APP_NAME } from '../../shared/config.ts';
+import type { AppVersionInfo } from '../../shared/appVersion.ts';
+import { createStoreUpdates } from './storeUpdates.ts';
 
 export type MobileOS = 'ios' | 'android';
 
 export interface NativePlugins {
   os: MobileOS;
-  App: Pick<AppPlugin, 'addListener' | 'getLaunchUrl' | 'minimizeApp'>;
+  App: Pick<AppPlugin, 'addListener' | 'getLaunchUrl' | 'minimizeApp' | 'getInfo'>;
   Browser: Pick<BrowserPlugin, 'open'>;
   Haptics: Pick<HapticsPlugin, 'impact' | 'selectionChanged' | 'notification'>;
   Keyboard: Pick<KeyboardPlugin, 'addListener' | 'setAccessoryBarVisible'>;
@@ -77,6 +79,8 @@ export interface NativePlugins {
     setConfig(options: { apiBase: string | null }): Promise<void>;
     /** Opens the system print dialog for the web view (print stylesheet applied). */
     print(options: { jobName: string }): Promise<void>;
+    /** iOS: opens an App Store link in the App Store app (UIApplication.open). */
+    openStore(options: { url: string }): Promise<void>;
     addListener(event: 'shareReceived', fn: () => void): Promise<unknown>;
   };
   BiometricAuth: {
@@ -97,6 +101,7 @@ export interface AppBridge {
   onUser(cb: (userId: string | null) => void): void;
   /** Calls back with the loaded tasks (of the current workspace) whenever they change. */
   onTasks(cb: (tasks: Task[], userId: string | null, workspaceId: string | null) => void): void;
+  get(path: string): Promise<unknown>;
   post(path: string, body: unknown): Promise<unknown>;
   del(path: string, body: unknown): Promise<unknown>;
   /** Handles a shared item once someone is signed in. Resolves to an in-app path to open, if any. */
@@ -722,6 +727,16 @@ export function createCapacitorPlatform(
   const appBridge = () => (bridgePromise ??= bridge());
   const appLock = createAppLock(native, kv, undefined, async () => (await appBridge()).signOut());
 
+  // iOS: offer App Store updates (src/platform/storeUpdates.ts). Android installs APKs by hand, so nothing yet.
+  const storeUpdates =
+    native.os === 'ios'
+      ? createStoreUpdates({
+          installed: async () => (await native.App.getInfo()).version,
+          fetchInfo: async () => (await (await appBridge()).get('/app/version?os=ios')) as AppVersionInfo,
+          openStore: (url) => void native.NoteAppNative.openStore({ url }).catch(() => native.Browser.open({ url })),
+        })
+      : null;
+
   const haptics: MobileExtras['haptics'] = {
     tap: () => void native.Haptics.selectionChanged().catch(() => {}),
     success: () => void native.Haptics.impact({ style: 'LIGHT' as ImpactStyle }).catch(() => {}),
@@ -864,9 +879,11 @@ export function createCapacitorPlatform(
     appLock: appLock.api,
     lockedNotesBio: createLockedNotesBiometrics(native, kv),
 
-    // The native app updates through the App Store / Play Store; the web
-    // bundle inside it ships with each native release, so nothing to prompt.
-    appUpdates: { subscribe: () => () => {} },
+    // The web bundle ships inside each native release, so an update means a new store version.
+    // iOS asks the server what's on the App Store (storeUpdates above); Android has nothing to offer yet.
+    appUpdates: storeUpdates
+      ? { subscribe: storeUpdates.subscribe, subscribeRequired: storeUpdates.subscribeRequired }
+      : { subscribe: () => () => {} },
 
     // TODO(Mobile): save via @capacitor/filesystem + share sheet; the web download is a stopgap.
     saveFile: (name, data) => webPlatform.saveFile(name, data),
@@ -895,10 +912,13 @@ export function createCapacitorPlatform(
 
       // Deep links: custom scheme + universal/app links.
       void native.App.addListener('appUrlOpen', ({ url }) => emitLink(url));
+      // First update check a little after start-up, so it never competes with the first screen.
+      if (storeUpdates) setTimeout(() => void storeUpdates.check(), 3000);
       void native.App.addListener('appStateChange', ({ isActive }) => {
         hidden = !isActive;
         if (isActive) {
           appLock.foreground();
+          void storeUpdates?.check();
           void refreshPermission();
           void drainShares();
           if (lastTasks) scheduleBadge(...lastTasks); // the date may have changed overnight
@@ -1112,6 +1132,7 @@ async function loadAppBridge(): Promise<AppBridge> {
         if (s.tasks !== prev.tasks || s.user !== prev.user || s.wsId !== prev.wsId) emit();
       });
     },
+    get: (path) => api.get(path),
     post: (path, body) => api.post(path, body),
     del: (path, body) => api.api(path, { method: 'DELETE', json: body }),
     registerCommands: (cmds) => void shortcuts.registerCommands(cmds),

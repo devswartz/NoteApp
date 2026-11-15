@@ -6,6 +6,7 @@ import { errorHandler } from '../http.ts';
 import { authRateLimit } from '../ratelimit.ts';
 import { authRoutes, publicAuthRoutes } from './auth.ts';
 import { healthRoutes } from './health.ts';
+import { appVersionRoutes } from './appVersion.ts';
 import { clientErrorRoutes } from './clientErrors.ts';
 import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
@@ -37,6 +38,7 @@ api.use((req, res, next) => (req.path === '/uploads' || req.path === '/workspace
 
 // No token needed.
 api.use(healthRoutes);
+api.use(appVersionRoutes); // GET /app/version: App Store version + minimum for the iOS update prompt
 api.use(clientErrorRoutes); // POST /client-errors: browser error reports, logged only
 api.use(authRateLimit); // 429 + Retry-After on login/sign-up/refresh/invite endpoints
 api.use(publicAuthRoutes);
