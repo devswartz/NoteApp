@@ -171,9 +171,17 @@ Each phase is one or more PRs and ships behind the `ink` feature flag until I3 p
 | Old app versions open pages with ink | Yjs keeps the unknown key, and old apps show an "update to see handwriting" note. |
 | Feel can't be tested by agents | Devon's device checks at every gate, with a written checklist. Slow-motion video for latency. |
 
+## Decided (Devon, 2026-11-14)
+
+- **Reference device:** Devon's iPad Pro with an Apple Pencil (2nd generation). All quality-bar checks run on it, and it is the device for the I2 gate.
+  - Pencil 2 supports pressure, tilt and double-tap. Squeeze is Pencil Pro only.
+  - Hover preview needs an M2 iPad Pro or later, so check the model year, and treat hover as a bonus that is skipped where unsupported.
+  - All iPad Pros have ProMotion, so the 120 fps budgets apply.
+- **No Windows pen device for now.** Windows ink (delegated ink trail) is still built in I1, but tested only with mouse and touch plus automated tests. Pen feel on Windows stays unverified until a device is available, and the release notes say so. Revisit before I3 ships: borrow or buy a Surface pen, or keep Windows pen support marked as beta.
+- **PDF markup is "nice to have":** it stays phase I6, after ink v1, zoom/paper and lasso. It isn't a launch requirement.
+
 ## Open questions for Devon
 
-1. Which iPad and Pencil model(s) will be the reference? Is a Windows pen device (Surface) available for testing?
-2. Finger drawing: off by default with a toggle, like Notability? (Recommended.)
-3. Paper default: endless (OneNote) or fixed pages (Notability/GoodNotes)? Recommended: endless by default, fixed as a per-page option.
-4. Is PDF markup (I6) a priority for launch? It's what students rely on most.
+1. Finger drawing: off by default with a toggle, like Notability? (Recommended.)
+2. Paper default: endless (OneNote) or fixed pages (Notability/GoodNotes)? Recommended: endless by default, fixed as a per-page option.
+3. Which iPad Pro year (M2 or later has Pencil hover)?

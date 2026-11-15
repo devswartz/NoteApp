@@ -222,7 +222,7 @@ The desktop (Tauri) and mobile (Capacitor) apps run the core natively instead of
 
 ## 9. Open questions for Devon
 
-1. **Reference devices** for the budgets and the pen lab (which iPad and Pencil, which Windows pen device, which Android).
+1. **Reference devices:** the iPad is decided (Devon's iPad Pro with Apple Pencil 2nd gen, see `PLAN_INK.md`). There's no Windows pen device yet. Still needed: the Windows laptop, older iPhone and Android phone for the other budgets.
 2. **Self-hosting:** keep supporting it? It affects how the server addon is packaged.
 3. **End-to-end encryption:** ever? It's no for now, but it changes design choices if it's "eventually".
 4. **Order after ink:** offline tasks (phase 4) may matter more to users than local search (phase 5).
