@@ -27,6 +27,7 @@ import { requestLog } from './requests.ts';
 import { testHookRoutes } from './testHooks.ts';
 import { testHooksEnabled } from './verification.ts';
 import { mcpRoutes } from './mcp/index.ts';
+import { publicPageRoutes } from './publicPage.ts';
 
 export function createServer(opts: { serveWeb?: boolean } = {}) {
   const app = express();
@@ -53,6 +54,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
   app.use('/oauth', requestLog, oauthRoutes(), errorHandler); // AI connector authorization server (server/oauth/routes.ts); /oauth/consent is a web app page
   app.use('/uploads', serveUploads); // nosniff + sandbox CSP + attachment disposition (routes/files.ts)
   app.use('/mcp', requestLog, mcpRoutes); // AI connector: OAuth bearer tokens only (server/mcp/index.ts)
+  app.use('/s', requestLog, publicPageRoutes); // share links: the read-only page for anyone with the link (server/publicPage.ts)
 
   // In production the server also serves the built web app.
   const dist = path.resolve('dist');
@@ -60,7 +62,7 @@ export function createServer(opts: { serveWeb?: boolean } = {}) {
     // Hashed assets can be cached forever; index.html and sw.js must revalidate.
     app.use('/assets', express.static(path.join(dist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(dist, { index: false, maxAge: 0 }));
-    app.get(/^(?!\/api\/|\/uploads\/|\/collab\/|\/mcp(\/|$)).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
+    app.get(/^(?!\/api\/|\/uploads\/|\/collab\/|\/s\/|\/mcp(\/|$)).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
   }
 
   const server = http.createServer(app);

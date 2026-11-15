@@ -2,6 +2,16 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.5.4
+
+### Sharing outside the app
+- **Share link: "Anyone with the link can view".** In a page's Share dialog, turn on a link that opens a clean, read-only web page in any browser, with no account. It always shows the latest version, has no scripts, is hidden from search engines, and turning it off ends it at once (turning it on again makes a new link). Only people who may share the page can make one. Locked pages can't have one, and a link stops working if the page goes to Trash or its creator loses access. Images are included; links to other Notivelo pages show as plain text.
+- **Better PDFs.** Links in a printed or exported PDF are just clickable text (no more web address in brackets after each one), and links to other Notivelo pages print as plain text. The page menu has **Export as PDF…** next to **Print**.
+
+### Also
+- **Sign-up links from notiveloapp.com:** `/login?mode=register&email=…` opens "Create your account" with the email filled in (#178).
+- `mobile-web-app-capable` meta tag added (the `apple-` one is deprecated) (#178).
+
 ## v0.5.3
 
 ### ChatGPT directory

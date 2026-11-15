@@ -87,10 +87,10 @@
   .print-box-content thead { display: table-header-group; }
   .print-box-content col { width: auto !important; }
 
-  /* Links: the text, with the address in small print after web links. */
-  .print-box-content a { color: inherit; text-decoration: underline; text-decoration-color: #999; }
-  .print-box-content a[href^='http']::after { content: ' (' attr(href) ')'; font-size: 0.8em; color: var(--text-muted); text-decoration: none; overflow-wrap: anywhere; }
-  .print-box-content a.page-link::after, .print-box-content .file-card a::after { content: none; }
+  /* Links: clickable in the PDF, so just the text, in a quiet link colour (no address after it). Links to other
+     Notivelo pages only open for people with the app, so they print as plain text. */
+  .print-box-content a { color: #1d4ed8; text-decoration: underline; text-decoration-color: #93a4c8; text-underline-offset: 0.15em; }
+  .print-box-content a.page-link { color: inherit; text-decoration: none; font-weight: 500; }
   .print-box-content .mention { background: none; color: inherit; padding: 0; font-weight: 600; }
 
   /* Callouts: emoji then content, lightly boxed. */

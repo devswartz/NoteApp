@@ -10,6 +10,7 @@ import { clientErrorRoutes } from './clientErrors.ts';
 import { publicWorkspaceRoutes, workspaceRoutes } from './workspaces.ts';
 import { treeRoutes } from './tree.ts';
 import { pageRoutes } from './pages.ts';
+import { pageLinkRoutes } from './pageLinks.ts';
 import { trashRoutes } from './trash.ts';
 import { lockRoutes } from './locks.ts';
 import { taskRoutes } from './tasks.ts';
@@ -57,6 +58,7 @@ api.use(exportRoutes); // before workspaceRoutes: /workspaces/import must not hi
 api.use(workspaceRoutes);
 api.use(treeRoutes);
 api.use(pageRoutes);
+api.use(pageLinkRoutes); // share links: /pages/:id/link
 api.use(lockRoutes); // locked pages: password, unlock/relock, lock a page (server/locks.ts)
 api.use(trashRoutes);
 api.use(taskRoutes);
