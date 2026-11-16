@@ -9,17 +9,24 @@ name: Rust
 #             When it fails because the files differ, the job's `ink-wasm` artifact holds the right
 #             ones: copy them into src/ink/generated/ and commit.
 # Fuzzing (crates/nv-ink/fuzz, cargo +nightly fuzz run decode) runs by hand, not here.
+# Pull requests, and any push (a branch before it has a PR, main after a merge) that touches the Rust core or its build.
 on:
   pull_request:
   push:
-    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/ink/generated/**'
+      - 'scripts/build-ink-wasm.sh'
+      - '.github/workflows/rust.yml'
 
 permissions:
   contents: read
 
 concurrency:
-  group: rust-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: rust-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   # Pinned: the committed WASM must be reproducible. Change both together with a rebuild of src/ink/generated.

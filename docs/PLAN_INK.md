@@ -119,6 +119,12 @@ Each phase is one or more PRs and ships behind the `ink` feature flag until I3 p
 - `nv-ink`: blob encode/decode (with fuzzing), smoothing (a "one-euro" filter on input plus a curve fit), a pressure-to-width outline, tessellation into triangles (GPU) and paths (Canvas2D/SVG/PDF), hit testing (point, segment, lasso polygon), and erase-split.
 - The WASM build, and the web canvas renderer with tiles, coalesced and predicted events, and Windows delegated ink.
 - **Exit:** the web and Windows draw, save, sync and print ink. Property tests: encode∘decode is the identity, erase-split covers exactly the original minus the eraser, hit tests agree with rendering.
+- **Built (2026-11-16, branch `feat/ink-i1`):**
+  - `crates/nv-ink`: the blob format above; a stroke's shape is the union of discs along a centripetal Catmull-Rom fit of its points (radius from pressure), drawn as quads plus discs, so hit tests ask the same question as rendering. The partial eraser cuts where the eraser's disc touches the ink. Property tests run in `cargo test`; `crates/nv-ink/fuzz` is a `cargo fuzz` target for decoding (run by hand).
+  - WASM: `scripts/build-ink-wasm.sh` writes `src/ink/generated/` (committed; the Rust workflow checks it matches the source and its size). App builds need no Rust. The page CSP allows `'wasm-unsafe-eval'` (WebAssembly only, no JS eval).
+  - Web: `src/ink/` (renderer with 256 px tiles, pen input with coalesced/predicted events and the delegated ink trail where offered, pen toolbar). Behind the `ink` flag (`src/lib/flags.ts`: `localStorage['noteapp.flags.ink'] = '1'`, or `VITE_FLAG_INK=1` at build time). Ink shows for everyone on pages that have it; only the flag offers the tools. Not shown in the stacked phone layout.
+  - Print: ink prints as SVG paths after the boxes, at its size on the page (placing it over the flowed boxes waits for fixed paper sizes, I4).
+  - The server drops `ink` entries that aren't byte blobs of at most 512 KB from live edits; it doesn't decode blobs (a newer app's format must survive).
 
 ### I2: iPad prototype (go/no-go)
 
