@@ -52,7 +52,10 @@ public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
 
     @objc func attach(_ call: CAPPluginCall) {
         guard let layout = InkLayout(call.options as? [String: Any] ?? [:]) else { return call.reject("layout is required") }
-        onMain(call) { c in call.resolve(["attached": c.attach(layout)]) }
+        onMain(call) { c in
+            let ok = c.attach(layout)
+            call.resolve(["attached": ok, "detail": c.attachDetail])
+        }
     }
 
     @objc func layout(_ call: CAPPluginCall) {

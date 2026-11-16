@@ -82,6 +82,7 @@ import { flag } from '../lib/flags.ts';
 import { InkSurface, type InkHandle } from '../ink/InkSurface.tsx';
 import { useInkAvailable, useInkTool } from '../ink/inkTool.ts';
 import { nativeInkPlugin, type NativeInkPlugin } from '../ink/nativeInk.ts';
+import { InkStatus } from '../ink/InkStatus.tsx';
 
 /** Read once: the flag changes with a reload (src/lib/flags.ts). */
 const INK_FLAG = flag('ink');
@@ -976,7 +977,9 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   // Empty canvas around the picker still takes a click to start a box there.
   const firstH = heights[FIRST_BOX_ID] ?? UNMEASURED_H;
   const boxSize = surfaceSize(drawn, heights, pageView.w, ready ? Math.max(firstH + BLANK_SLOT_H, pageView.h - BLANK_TRIM) : pageView.h);
-  const size = { w: Math.max(boxSize.w, inkExtent.w ? inkExtent.w + SURFACE_PAD_X : 0), h: Math.max(boxSize.h, inkExtent.h ? inkExtent.h + SURFACE_PAD_Y : 0) };
+  // The iPad's native pen layer lives in WebKit's scroll view for the page, which exists only when the page can scroll: always room below.
+  const minNativeH = native ? Math.ceil(window.innerHeight * 1.5) : 0;
+  const size = { w: Math.max(boxSize.w, inkExtent.w ? inkExtent.w + SURFACE_PAD_X : 0), h: Math.max(boxSize.h, inkExtent.h ? inkExtent.h + SURFACE_PAD_Y : 0, minNativeH) };
   const stacked = isMobile;
   const list = stacked ? readingOrder(drawn) : drawn;
   const single = stacked && list.length === 1;
@@ -1064,6 +1067,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
           <Plus size={15} /> Add a task to this page
         </button>
       )}
+      {INK_FLAG && <InkStatus />}
       {!isMobile && <PrintSelectionMenu pageId={pageId} />}
       <EditorMenus />
       {boxMenu.menu}

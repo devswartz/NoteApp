@@ -80,11 +80,41 @@ test('start attaches, sends the tool and every stroke once; stop detaches', asyn
 test('when native cannot attach, the session does nothing (the web pen stays)', async () => {
   const doc = new Y.Doc();
   const f = fakePlugin({ attached: false });
-  const s = new NativeInkSession(f.plugin, doc);
-  assert.equal(await s.start(LAYOUT, TOOL_STATE), false);
+  const statuses: string[] = [];
+  const s = new NativeInkSession(f.plugin, doc, { onStatus: (x) => statuses.push(x) });
+  assert.equal(await s.start(LAYOUT, TOOL_STATE, [0, 0, 0]), false);
+  assert.equal(f.named('attach').length, 3, 'tried each time');
+  assert.match(statuses.at(-1)!, /web pen: native layer didn't attach/);
   assert.equal(f.named('setStrokes').length, 0);
   doc.getMap(INK_KEY).set('x', blob(1));
   assert.equal(f.named('updateStrokes').length, 0);
+});
+
+test("attach is retried until WebKit has made the page's scroll view, measuring the page each time", async () => {
+  const doc = new Y.Doc();
+  const f = fakePlugin();
+  let tries = 0;
+  f.plugin.attach = async (l) => (f.calls.push(['attach', l]), ++tries < 3 ? { attached: false, detail: 'wanted 0,48 1000x700; scroll views: 0,0 1194x834' } : { attached: true });
+  const statuses: string[] = [];
+  let measured = 0;
+  const s = new NativeInkSession(f.plugin, doc, { onStatus: (x) => statuses.push(x) });
+  const ok = await s.start(() => (measured++, { ...LAYOUT, zoom: measured }), TOOL_STATE, [0, 1, 1, 1]);
+  assert.equal(ok, true);
+  assert.equal(tries, 3);
+  assert.deepEqual((f.named('attach') as NativeInkLayout[]).map((l) => l.zoom), [1, 2, 3], 'measured again for each try');
+  assert.equal(statuses.at(-1), 'native layer attached');
+  assert.equal(f.named('setStrokes').length, 1);
+  await s.stop();
+});
+
+test('a failed attach reports what native saw', async () => {
+  const doc = new Y.Doc();
+  const f = fakePlugin();
+  f.plugin.attach = async () => ({ attached: false, detail: 'wanted 0,48 1000x700; scroll views: 0,0 1194x834' });
+  const statuses: string[] = [];
+  const s = new NativeInkSession(f.plugin, doc, { onStatus: (x) => statuses.push(x) });
+  assert.equal(await s.start(LAYOUT, TOOL_STATE, [0]), false);
+  assert.equal(statuses.at(-1), "web pen: native layer didn't attach (wanted 0,48 1000x700; scroll views: 0,0 1194x834)");
 });
 
 test('remote strokes, deletions and undo reach native as updates', async () => {

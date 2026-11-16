@@ -101,6 +101,23 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
 
     public var isAttached: Bool { content?.window != nil && scrollView != nil }
 
+    /// Why the last attach failed: the scroll views in the web view and the box wanted (status readout).
+    public private(set) var attachDetail = ""
+
+    static func describe(in wv: WKWebView, wanted: CGRect) -> String {
+        var rects: [CGRect] = []
+        func walk(_ v: UIView) {
+            for s in v.subviews where !(s is InkContentView) {
+                if let sv = s as? UIScrollView { rects.append(sv.convert(sv.bounds, to: wv)) }
+                walk(s)
+            }
+        }
+        rects.append(wv.scrollView.convert(wv.scrollView.bounds, to: wv))
+        walk(wv.scrollView)
+        let f = { (r: CGRect) in "\(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height))" }
+        return "wanted \(f(wanted)); scroll views: " + rects.prefix(6).map(f).joined(separator: " | ")
+    }
+
     // MARK: - Attaching to the page
 
     /// Finds the page's scroll view (WebKit makes a native UIScrollView for each scrolling element)
@@ -125,7 +142,12 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     }
 
     private func reattach() -> Bool {
-        guard let wv = webView, let l = layout, let sv = NativeInkController.findScrollView(in: wv, matching: l.scroller) else { return false }
+        guard let wv = webView, let l = layout else { return false }
+        guard let sv = NativeInkController.findScrollView(in: wv, matching: l.scroller) else {
+            attachDetail = NativeInkController.describe(in: wv, wanted: l.scroller)
+            return false
+        }
+        attachDetail = ""
         let c = content ?? InkContentView(store: store)
         content = c
         c.dark = tool.dark

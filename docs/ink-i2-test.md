@@ -12,6 +12,10 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
    - **Fill with test strokes**: adds text boxes up to 50 and 3,000 test strokes (press twice for 6,000).
 4. Gestures: the Pencil draws; one finger scrolls; two fingers pinch-zoom (0.5× to 4×); a two-finger tap undoes and a three-finger tap redoes (as in Notability, whatever tool is picked); Pencil double-tap switches between the eraser and the last pen. In draw mode the text boxes rest (no typing, caret, moving or resizing); turn Draw off to type.
 
+**Status readout (bottom left of a canvas page, iOS app with the ink flag):** it says which part of the ink path works: the flag, the native pen layer (`native layer attached`, or `web pen: …` with the reason, e.g. the scroll views it saw), the mode, and the Pencil switch. If anything in this list misbehaves, photograph the readout first. Tap it to hide it.
+
+- [ ] Open a short, new canvas page and a long one: both say **native layer attached** within a second or two. (Before this build, a page too short to scroll had no native scroll view for the layer to live in, so it silently used the web pen: no double-tap, no undo taps, no Pencil switch, and Scribble fired.)
+
 ## 1. Latency (slow motion against Notability)
 
 - [ ] Film the screen with an iPhone in **240 fps slow motion**, from the side, so the Pencil tip and the line are both in shot.

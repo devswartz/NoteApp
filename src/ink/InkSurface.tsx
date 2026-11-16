@@ -190,7 +190,9 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       onTool: (tool, enterDraw) => (enterDraw ? setInkTool({ drawMode: true, tool }) : useInkTool.getState().drawMode && setInkTool({ tool })),
       onUndo: () => cb.current.onUndo?.(),
       onRedo: () => cb.current.onRedo?.(),
+      onStatus: (status) => useNativeInkDebug.setState({ status }),
       onDetached: () => {
+        useNativeInkDebug.setState({ status: 'web pen: the native layer lost the page' });
         setNativeOn(false);
         void session.stop();
       },
@@ -214,7 +216,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     const theme = new MutationObserver(() => session.setTool(nativeTool(useInkTool.getState())));
     const poll = window.setInterval(report, 1000);
     const unTool = useInkTool.subscribe((st) => session.setTool(nativeTool(st)));
-    void session.start(first, nativeTool(useInkTool.getState())).then((ok) => {
+    void session.start(measure, nativeTool(useInkTool.getState())).then((ok) => {
       if (!alive) return;
       if (!ok) return void session.stop();
       setNativeOn(true);

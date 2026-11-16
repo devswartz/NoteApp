@@ -44,4 +44,12 @@
 .ribbon.is-collapsed .rb-draw-compact { height: 26px; margin-left: auto; margin-right: 6px; padding: 0 8px; }
 .ribbon.is-collapsed .rb-draw-compact svg { width: 15px; height: 15px; }
 
+/* The iPad prototype's ink status readout (src/ink/InkStatus.tsx). */
+.ink-status {
+  position: fixed; left: 8px; bottom: calc(8px + var(--safe-bottom, 0px)); z-index: 50; max-width: calc(100vw - 16px);
+  padding: 3px 8px; font-size: 11px; line-height: 1.4; text-align: left; white-space: normal;
+  color: var(--text-2); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-sm); opacity: 0.9;
+}
+
+@media print { .ink-status { display: none !important; } }
 @media print { .ink-toolbar, .ink-layer { display: none !important; } }

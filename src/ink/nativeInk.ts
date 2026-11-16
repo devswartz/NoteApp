@@ -85,7 +85,8 @@ export interface Listener {
 /** The NoteAppInk plugin (registerPlugin('NoteAppInk')), or a fake in tests. */
 export interface NativeInkPlugin {
   available(): Promise<{ available: boolean; pencilKit?: boolean }>;
-  attach(l: NativeInkLayout): Promise<{ attached: boolean }>;
+  /** `detail`: why it didn't attach (the scroll views it saw), for the status readout. */
+  attach(l: NativeInkLayout): Promise<{ attached: boolean; detail?: string }>;
   layout(l: NativeInkLayout): Promise<{ attached: boolean }>;
   detach(): Promise<void>;
   setTool(t: NativeInkTool): Promise<void>;
@@ -125,14 +126,22 @@ export function nativeInkPlugin(load?: () => Promise<NativeInkPlugin | null>): P
 }
 
 async function check(p: NativeInkPlugin | null): Promise<NativeInkPlugin | null> {
-  if (!p) return null;
-  const a = await p.available().catch(() => ({ available: false }));
-  return a.available ? p : null;
+  if (!p) {
+    setStatus('web pen (not the iOS app)');
+    return null;
+  }
+  const a = await p.available().then(
+    (r) => r,
+    () => null,
+  );
+  if (!a) setStatus('web pen (the app has no NoteAppInk plugin)');
+  else if (!a.available) setStatus('web pen (not an iPad)');
+  return a?.available ? p : null;
 }
 
 async function realPlugin(): Promise<NativeInkPlugin | null> {
   const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string; isPluginAvailable?: (n: string) => boolean } }).Capacitor;
-  if (!cap?.isNativePlatform?.() || cap.getPlatform?.() !== 'ios' || cap.isPluginAvailable?.('NoteAppInk') === false) return null;
+  if (!cap?.isNativePlatform?.() || cap.getPlatform?.() !== 'ios') return null;
   const core = await import('@capacitor/core');
   return core.registerPlugin<NativeInkPlugin>('NoteAppInk');
 }
@@ -142,6 +151,8 @@ async function realPlugin(): Promise<NativeInkPlugin | null> {
 export interface NativeInkDebug {
   /** The native pen layer is in use on this page. */
   active: boolean;
+  /** What the native pen layer is doing, in words (the status readout on the iPad). */
+  status: string;
   renderer: 'notivelo' | 'pencilkit';
   /** Also draw the web's own ink (faint) under the native ink: they should line up exactly. */
   webOverlay: boolean;
@@ -151,7 +162,12 @@ export interface NativeInkDebug {
   fill: (() => void) | null;
 }
 
-export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, renderer: 'notivelo', webOverlay: false, setRenderer: null, fill: null }));
+export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', renderer: 'notivelo', webOverlay: false, setRenderer: null, fill: null }));
+
+const setStatus = (status: string) => useNativeInkDebug.setState({ status });
+
+/** Waits between attempts to attach (ms): WebKit makes the page's scroll view a moment after layout. */
+export const ATTACH_RETRY_MS = [0, 100, 250, 500, 1000, 2000, 4000];
 
 // ───────────── the session ─────────────
 
@@ -164,6 +180,8 @@ export interface NativeInkSessionOptions {
   onUndo?: () => void;
   /** Three-finger tap: redo. */
   onRedo?: () => void;
+  /** What the session is doing, in words (the status readout). */
+  onStatus?: (status: string) => void;
   /** Native lost the page (its scroll view): the caller falls back to the web pen. */
   onDetached?: () => void;
 }
@@ -184,10 +202,28 @@ export class NativeInkSession {
     this.map = doc.getMap<unknown>(INK_KEY);
   }
 
-  /** Attach to the page at `layout` and send it every stroke. False when native can't (the web pen stays). */
-  async start(layout: NativeInkLayout, tool: NativeInkTool): Promise<boolean> {
-    const { attached } = await this.plugin.attach(layout).catch(() => ({ attached: false }));
+  /**
+   * Attach to the page and send it every stroke. WebKit makes its native scroll view for the page
+   * a moment after layout, so this tries a few times (ATTACH_RETRY_MS), measuring the page again
+   * each time. False when native can't attach (the web pen stays).
+   */
+  async start(layout: NativeInkLayout | (() => NativeInkLayout | null), tool: NativeInkTool, waits: number[] = ATTACH_RETRY_MS): Promise<boolean> {
+    let attached = false;
+    let detail = '';
+    for (const [i, ms] of waits.entries()) {
+      if (ms) await new Promise((r) => setTimeout(r, ms));
+      if (this.stopped) return false;
+      const l = typeof layout === 'function' ? layout() : layout;
+      if (!l) continue;
+      this.opts.onStatus?.(`attaching (try ${i + 1})`);
+      const r = await this.plugin.attach(l).catch((e: unknown) => ({ attached: false, detail: String(e) }));
+      attached = r.attached;
+      detail = r.detail ?? '';
+      if (attached) break;
+    }
+    if (!attached) this.opts.onStatus?.(`web pen: native layer didn't attach${detail ? ` (${detail})` : ''}`);
     if (!attached || this.stopped) return false;
+    this.opts.onStatus?.('native layer attached');
     const on = async <K extends keyof NativeInkEvents>(k: K, fn: (e: NativeInkEvents[K]) => void) => {
       const l = await this.plugin.addListener(k, (e) => {
         if (!this.stopped) fn(e);
