@@ -2,9 +2,10 @@
 // notifications, the workspace switcher and the user menu at the bottom.
 // Each view button reopens the last place visited in that view (navState.ts).
 import { useNavigate } from 'react-router-dom';
-import { Activity, BookOpen, CalendarDays, ChevronDown, Contrast, Keyboard, ListChecks, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trash2 } from 'lucide-react';
+import { Activity, BookOpen, CalendarDays, ChevronDown, Contrast, Download, Keyboard, ListChecks, LogOut, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Trash2 } from 'lucide-react';
 import { post } from '../../api.ts';
 import { errorToast, loadWorkspaces, signOut, ui, useStore } from '../../store.ts';
+import { platform } from '../../platform/index.ts';
 import { setThemePref, useTheme, type ThemePref } from '../../store/ui.ts';
 import { Avatar, Dropdown, MenuItem, MenuLabel, MenuSeparator, MOD } from '../ui.tsx';
 import { NotificationBell } from '../sharing/NotificationBell.tsx';
@@ -191,6 +192,11 @@ export function UserMenu({ wsId, full }: { wsId: string; full?: boolean }) {
         <MenuItem icon={<Keyboard size={15} />} hint="?" onSelect={() => ui.setShortcuts(true)}>
           Keyboard shortcuts
         </MenuItem>
+        {platform.kind === 'web' && (
+          <MenuItem icon={<Download size={15} />} onSelect={() => navigate(`/w/${wsId}/settings?scope=personal&s=apps`)}>
+            Get the apps
+          </MenuItem>
+        )}
         <MenuSeparator />
         <MenuItem icon={<LogOut size={15} />} onSelect={() => void signOut().then(() => navigate('/login'))}>
           Sign out
