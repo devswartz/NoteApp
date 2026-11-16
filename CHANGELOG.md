@@ -2,6 +2,15 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.5.5
+
+### Fixes
+- **Invites: the invite link is always shown.** After inviting someone (or resending an invite) from Settings → Members, or inviting someone to a page from the Share dialog, the link now appears with **Copy link** even when the email was sent. Email can land in spam or never arrive, and the link couldn't be retrieved afterwards (#184).
+
+### Behind the scenes
+- **Handwriting groundwork (off for everyone).** The canvas has one screen↔page coordinate transform and one pointer router, and pages reserve room for ink (page format v2) (#181). A Rust ink engine (`crates/nv-ink`, 41 KB WebAssembly, loaded only when needed) and a web pen on canvas pages ship behind the `ink` flag, which is off by default (#182). The security policy now allows WebAssembly compilation (`'wasm-unsafe-eval'`), not script eval.
+- **Claude Code plugin** in the repo (`plugins/notivelo`, installable with `claude plugin marketplace add devswartz/NoteApp`). No app change (#183).
+
 ## v0.5.4
 
 ### Sharing outside the app
