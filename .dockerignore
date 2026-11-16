@@ -20,3 +20,6 @@ apps/desktop/src-tauri/target
 # The Rust core: the image uses the committed WASM build in src/ink/generated, never the Rust sources or their build output.
 target
 crates
+
+# The marketing site has its own image (site/Dockerfile).
+site

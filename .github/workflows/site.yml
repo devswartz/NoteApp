@@ -1,0 +1,70 @@
+name: Marketing site
+
+# site/ -> ghcr.io/devswartz/notivelo-site (see site/README.md)
+#   pull request touching site/   -> build + checks only
+#   push to main touching site/   -> :staging + :sha-<short>
+#   tag site-vX.Y.Z               -> :site-vX.Y.Z + :prod
+on:
+  pull_request:
+    paths: ['site/**', '.github/workflows/site.yml']
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/site.yml']
+    tags: ['site-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: site-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/devswartz/notivelo-site
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the pages
+        run: python3 site/src/build.py
+
+      - name: Check the output
+        run: python3 site/check.py site/dist
+
+      - name: Build the image (runs nginx -t)
+        run: docker build -f site/Dockerfile -t site-test site
+
+      - name: Smoke-test the container
+        run: |
+          set -euo pipefail
+          docker run -d --name s -p 8088:80 site-test
+          for i in $(seq 1 20); do curl -fs http://127.0.0.1:8088/healthz && break; sleep 1; done
+          code() { curl -s -o /dev/null -w '%{http_code}' -H "$2" "http://127.0.0.1:8088$1"; }
+          loc() { curl -s -o /dev/null -w '%{redirect_url}' -H "$2" "http://127.0.0.1:8088$1"; }
+          test "$(code / 'X-Forwarded-Proto: https')" = 200
+          test "$(code /features 'X-Forwarded-Proto: https')" = 200
+          test "$(code /no-such-page 'X-Forwarded-Proto: https')" = 404
+          test "$(code /404 'X-Forwarded-Proto: https')" = 404
+          test "$(code / 'X-Forwarded-Proto: http')" = 301
+          test "$(code / 'Host: www.notiveloapp.com')" = 301
+          case "$(loc /guide 'X-Forwarded-Proto: https')" in http://*) echo "absolute http redirect"; exit 1;; esac
+          curl -sI -H 'X-Forwarded-Proto: https' http://127.0.0.1:8088/ | grep -qi "content-security-policy"
+          docker rm -f s
+
+      - name: Publish
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            tags="${{ github.ref_name }} prod"
+          else
+            tags="staging sha-${GITHUB_SHA::7}"
+          fi
+          for t in $tags; do docker tag site-test "$IMAGE:$t"; docker push "$IMAGE:$t"; done
