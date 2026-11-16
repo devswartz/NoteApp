@@ -9,7 +9,7 @@
 import * as Y from 'yjs';
 import { safeFileUrl, safeImageUrl, safeLinkUrl } from '../shared/urls.ts';
 import { isColorName } from '../shared/colors.ts';
-import { pageFragments } from '../shared/pageDoc.ts';
+import { dropInvalidInk, pageFragments } from '../shared/pageDoc.ts';
 
 export interface SanitizeOptions {
   /** Called for every element that is kept, before its children (e.g. to rewrite a taskRef's id). */
@@ -84,6 +84,8 @@ export function sanitizeYDoc(doc: Y.Doc, opts: SanitizeOptions = {}, field?: str
   doc.transact(() => {
     // Without a field: every content fragment of the page (all canvas boxes).
     for (const frag of field ? [doc.getXmlFragment(field)] : pageFragments(doc)) removed += cleanChildren(frag, opts);
+    // A whole page (imports): its ink entries must be stroke blobs (docs/PLAN_INK.md).
+    if (!field) removed += dropInvalidInk(doc);
   });
   return removed;
 }

@@ -20,7 +20,7 @@ import * as Y from 'yjs';
 import { db, newId, now } from './db.ts';
 import { NOTEBOOK_VISIBLE, TASK_VISIBLE, HttpError, lockOpen } from './access.ts';
 import { extractPage, newBoxId } from './collab.ts';
-import { convertPageDoc, pageFragments } from '../shared/pageDoc.ts';
+import { convertPageDoc, hasInk, pageFragments } from '../shared/pageDoc.ts';
 import { FILES_DIR, VERSION } from './config.ts';
 import { toMarkdown, type TaskLookup } from './markdown.ts';
 import { SAFE_TYPES } from './routes/files.ts';
@@ -53,7 +53,10 @@ export const safeName = (s: string) => (s || 'Untitled').replace(/[\\/:*?"<>|\x0
 export function pageMarkdown(title: string, ydoc: Buffer | Uint8Array | null, tasks: TaskLookup): string {
   const doc = new Y.Doc();
   if (ydoc) Y.applyUpdate(doc, new Uint8Array(ydoc));
-  return toMarkdown(title, pageFragments(doc), tasks);
+  const md = toMarkdown(title, pageFragments(doc), tasks);
+  // Handwriting isn't Markdown: from PLAN_INK phase I3 it is exported as an SVG per page, linked from here. The
+  // full backup keeps the page's Yjs state, ink included.
+  return hasInk(doc) ? `${md}\n\n_This page has handwriting, which isn't in the Markdown yet._\n` : md;
 }
 
 export function exportWorkspace(workspaceId: string, userId: string): { zip: Buffer; filename: string } {

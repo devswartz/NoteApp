@@ -38,6 +38,7 @@ export function linksInDoc(doc: Y.Doc): Set<string> {
     }
   };
   for (const frag of pageFragments(doc)) walk(frag);
+  // Ink (docs/PLAN_INK.md) holds no page links, so it is deliberately not read here.
   return out;
 }
 

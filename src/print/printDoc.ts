@@ -157,6 +157,7 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
     h: input.heights?.[b.id] ?? estimateBoxHeight(b.json.content ?? []),
     json: b.json,
   }));
+  // Handwriting (shared/pageDoc.ts pageInk) prints as vector paths over the boxes from PLAN_INK phase I3; nothing to draw yet.
   // A legacy document page (content in `default`): one wide box above everything.
   const def = input.doc.getXmlFragment(DEFAULT_FIELD);
   if (input.blocks) boxes.push({ id: 'selection', x: 0, y: 0, w: 1, wide: true, h: 0, json: { type: 'doc', content: input.blocks } });

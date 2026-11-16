@@ -12,7 +12,7 @@ import * as Y from 'yjs';
 import { marked } from 'marked';
 import { convertOneNotePage, jsonToYFragment, TODO_PREFIX, type PMNode, type Todo } from '../onenoteHtml.ts';
 import { sanitizeContent } from '../../shared/urls.ts';
-import { DEFAULT_FIELD, boxField, boxGeoms, fragmentIsEmpty, readingOrder } from '../../shared/pageDoc.ts';
+import { DEFAULT_FIELD, boxField, boxGeoms, fragmentIsEmpty, hasInk, inkSearchText, readingOrder } from '../../shared/pageDoc.ts';
 import { markdownBody, type TaskLookup } from '../markdown.ts';
 import { HttpError } from '../http.ts';
 import { MAX_NODE_DEPTH } from '../collab.ts';
@@ -119,6 +119,12 @@ export function pageBoxes(doc: Y.Doc, tasks: TaskLookup): BoxText[] {
     const frag = doc.getXmlFragment(boxField(b.id));
     if (fragmentIsEmpty(frag)) continue;
     out.push({ id: b.id, markdown: markdownBody(frag, tasks) });
+  }
+  // Handwriting (docs/PLAN_INK.md): the assistant is told it's there, with its recognised text once there is any
+  // (PLAN_INK phase I7). The connector never writes ink.
+  if (hasInk(doc)) {
+    const text = inkSearchText(doc);
+    out.push({ id: 'ink', markdown: text ? `Handwriting (recognised text):\n\n${text}` : '_This page has handwriting, which can only be seen in Notivelo._' });
   }
   return out;
 }
