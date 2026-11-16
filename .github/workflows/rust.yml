@@ -121,9 +121,11 @@ jobs:
         run: bash scripts/build-ink-ios.sh
       - name: Swift tests (pen layer model and engine binding)
         working-directory: apps/mobile/ios/App/NvInk
+        shell: bash # -o pipefail: a failing test fails the step despite the tail
         run: swift test 2>&1 | tail -n 60
       - name: Build the pen layer for the iOS simulator (its UIKit and Metal code)
         working-directory: apps/mobile/ios/App/NvInk
+        shell: bash
         run: |
           xcodebuild -scheme NvInk -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error|warning: .*NvInk|BUILD" | head -n 80
