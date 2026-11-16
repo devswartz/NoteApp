@@ -60,6 +60,7 @@ import { canInsertTask } from './taskGate.ts';
 import { useActiveEditor } from './activeEditor.ts';
 import { pageUndoFor, pageUndoOf, type PageUndo } from './pageUndo.ts';
 import { DrawToggle, InkRibbonGroups, useDrawing } from '../ink/InkRibbon.tsx';
+import { useInkAvailable } from '../ink/inkTool.ts';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
 import { printPage, printSelectionOnly } from './exportPage.ts';
@@ -430,9 +431,12 @@ export function RibbonFrame({
   idle = false,
   section = false,
   context = false,
+  collapsedExtra,
   children,
 }: {
   strip: string;
+  /** Controls that stay usable while the ribbon is collapsed (the Draw toggle), before "Show ribbon". */
+  collapsedExtra?: ReactNode;
   editor?: Editor | null;
   idle?: boolean;
   /** A contextual group (Table) is showing: the other groups give up their text sooner. */
@@ -460,6 +464,7 @@ export function RibbonFrame({
         <span className="rb-strip-groups" aria-hidden onClick={() => setRibbonCollapsed(false)}>
           {strip}
         </span>
+        {collapsedExtra}
         <button
           type="button"
           data-tb-item
@@ -632,6 +637,7 @@ export function Ribbon() {
   const settings = usePageSettings(page?.doc);
   // Draw mode (src/ink/InkRibbon.tsx): the pen groups take the text groups' place.
   const drawing = useDrawing() && !!page?.canEdit;
+  const inkHere = useInkAvailable((a) => a.available) && !!page?.canEdit;
   const off = drawing ? locked : !editor || !s || locked;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
@@ -665,7 +671,14 @@ export function Ribbon() {
   const block = s?.block ?? 'p';
   const blockLabel = BLOCKS.find((b) => b.id === block)!.label;
   return (
-    <RibbonFrame strip={drawing ? 'Draw · Page · View' : `Text · Lists · Insert${table ? ' · Table' : ''} · Page · View`} editor={editor} idle={off} context={!drawing && !!table}>
+    <RibbonFrame
+      strip={drawing ? 'Draw · Page · View' : `${inkHere ? 'Draw · ' : ''}Text · Lists · Insert${table ? ' · Table' : ''} · Page · View`}
+      editor={editor}
+      idle={off}
+      context={!drawing && !!table}
+      // The Draw toggle works with the ribbon collapsed too (it is the only way in and out of draw mode).
+      collapsedExtra={inkHere ? <DrawToggle compact /> : undefined}
+    >
       {drawing && (
         <>
           <DrawToggle separator />

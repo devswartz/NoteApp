@@ -68,6 +68,8 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 ## 7. Draw mode in the ribbon
 
 - [ ] The ribbon has a **Draw** toggle on canvas pages, first in the ribbon. Turning it on swaps the Text, Lists and Insert groups (and Table, when the caret is in a table) for Tools, Colour, Width and Touch; Draw, Page, View and History stay where they are, and the ribbon doesn't change height. There is no pen toolbar on the canvas any more.
+- [ ] The ribbon starts below the iPad's status bar (time, battery), and every button in it responds to a tap.
+- [ ] Collapse the ribbon (the chevron at its right end): the strip still has a **Draw** button, which turns draw mode on and off without opening the ribbon; tapping the strip's text opens the ribbon again.
 - [ ] In draw mode, try to tap into a box, drag a box's top edge, or drag its right edge with a finger: nothing happens (fingers scroll). The Pencil draws straight across boxes.
 - [ ] Leave the page in draw mode, open another page and come back, and close and reopen the app: draw mode is still on (it is remembered on this iPad). Turn it off: it stays off.
 - [ ] On the PC (browser with the ink flag): the same Draw toggle; with it off the mouse selects text and moves boxes as before; with it on the mouse draws and the boxes rest.

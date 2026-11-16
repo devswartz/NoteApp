@@ -108,6 +108,11 @@ test('ink: draw with the pen, another client sees it, it prints as vector paths,
   await expect.poll(() => inkPixels(pa, 'ink-under')).toBe(0);
   await expect.poll(() => inkPixels(pb)).toBe(0);
 
+  // The ribbon collapsed: the Draw toggle is still there (the only way in and out of draw mode).
+  await tools.getByRole('button', { name: 'Collapse the ribbon' }).click();
+  await expect(tools.getByRole('button', { name: 'Draw', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await tools.getByRole('button', { name: 'Show the ribbon' }).click();
+
   // Draw mode off: the text groups and editable boxes are back.
   await drawToggle.click();
   await expect(surface(pa)).not.toHaveClass(/ink-active/);

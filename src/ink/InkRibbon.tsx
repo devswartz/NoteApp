@@ -44,10 +44,18 @@ export function useDrawing(): boolean {
 }
 
 /** The Draw toggle (a group of its own), only where ink works. */
-export function DrawToggle({ separator = false }: { separator?: boolean }) {
+export function DrawToggle({ separator = false, compact = false }: { separator?: boolean; compact?: boolean }) {
   const available = useInkAvailable((s) => s.available);
   const on = useInkTool((s) => s.drawMode);
   if (!available) return null;
+  if (compact)
+    // In the collapsed ribbon's strip: a small toggle of its own (a tap doesn't expand the ribbon).
+    return (
+      <RbButton label="Draw" title={on ? 'Draw mode is on. Tap to type again.' : 'Draw'} active={on} className="rb-text rb-draw-compact" onClick={() => setDrawMode(!on)}>
+        <PenLine />
+        <span className="rb-btn-label">Draw</span>
+      </RbButton>
+    );
   return (
     <>
     <Group label="Mode">

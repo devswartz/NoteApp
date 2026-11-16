@@ -40,5 +40,8 @@
 /* Debug: the web's own ink, faint, under the native ink (they should coincide). */
 .ink-layer.is-native.is-overlay { display: block; opacity: 0.35; }
 .ink-debug { font-size: 12px; }
+/* The Draw toggle in the collapsed ribbon's strip: small, next to "Show ribbon". */
+.ribbon.is-collapsed .rb-draw-compact { height: 26px; margin-left: auto; margin-right: 6px; padding: 0 8px; }
+.ribbon.is-collapsed .rb-draw-compact svg { width: 15px; height: 15px; }
 
 @media print { .ink-toolbar, .ink-layer { display: none !important; } }
