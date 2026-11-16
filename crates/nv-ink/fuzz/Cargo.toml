@@ -1,0 +1,23 @@
+# cargo fuzz targets for nv-ink (needs nightly: `cargo +nightly fuzz run decode` from crates/nv-ink).
+# Not part of the workspace (the root Cargo.toml excludes it).
+[package]
+name = "nv-ink-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+nv-ink = { path = ".." }
+
+[[bin]]
+name = "decode"
+path = "fuzz_targets/decode.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

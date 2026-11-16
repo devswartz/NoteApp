@@ -1,0 +1,19 @@
+# The Rust core (docs/ARCHITECTURE.md, section 3.3): one crate per area under crates/.
+# The Tauri desktop shell (apps/desktop/src-tauri) is a separate Cargo project and stays out of
+# this workspace; so does the fuzz crate (it needs nightly and cargo-fuzz).
+[workspace]
+members = ["crates/nv-ink"]
+exclude = ["apps/desktop/src-tauri", "crates/nv-ink/fuzz"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+# Release builds are what ship as WASM (scripts/build-ink-wasm.sh): small and fast.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
