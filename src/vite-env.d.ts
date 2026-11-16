@@ -15,4 +15,6 @@ interface ImportMetaEnv {
   readonly VITE_ALLOW_SERVER_SWITCH?: string;
   /** Old host names of the production server, comma-separated (CI variable LEGACY_PROD_HOSTS). */
   readonly VITE_LEGACY_PROD_HOSTS?: string;
+  /** "1" turns the ink feature flag on for everyone using this build (src/lib/flags.ts). */
+  readonly VITE_FLAG_INK?: string;
 }

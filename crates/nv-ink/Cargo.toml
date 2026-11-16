@@ -1,0 +1,21 @@
+[package]
+name = "nv-ink"
+version = "0.1.0"
+description = "Notivelo ink engine: stroke format, smoothing, outlines, tessellation, hit testing, erasing (docs/PLAN_INK.md)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# The wasm-bindgen API (src/wasm.rs) used by the web app (src/ink/).
+wasm = ["dep:wasm-bindgen"]
+
+[dependencies]
+# Pinned exactly: the generated JS glue in src/ink/generated must come from the same version of wasm-bindgen-cli.
+wasm-bindgen = { version = "=0.2.130", optional = true }
+
+[dev-dependencies]
+proptest = "1"

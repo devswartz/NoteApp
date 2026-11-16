@@ -6,7 +6,9 @@
 import { getSchema, type JSONContent } from '@tiptap/core';
 import { DOMSerializer, Node as PMNode, type Schema } from '@tiptap/pm/model';
 import * as Y from 'yjs';
-import { DEFAULT_FIELD, fragmentIsEmpty, readPageSettings } from '../../shared/pageDoc.ts';
+import { DEFAULT_FIELD, fragmentIsEmpty, pageInk, readPageSettings } from '../../shared/pageDoc.ts';
+import type { InkEngine } from '../ink/engine.ts';
+import { inkSvg } from '../ink/svg.ts';
 import { parseISODate } from '../../shared/dates.ts';
 import { sectionAncestry } from '../../shared/sections.ts';
 import type { Member, Task, Tree } from '../../shared/types.ts';
@@ -43,6 +45,8 @@ export interface PrintContext {
   members: Pick<Member, 'id' | 'name'>[];
   /** Print the page colour as a background (off by default: rule lines never print). */
   pageColour: boolean;
+  /** The ink engine, to print handwriting (loaded by print.ts when a page has ink). */
+  ink?: InkEngine | null;
 }
 
 let schema: Schema | null = null;
@@ -157,7 +161,6 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
     h: input.heights?.[b.id] ?? estimateBoxHeight(b.json.content ?? []),
     json: b.json,
   }));
-  // Handwriting (shared/pageDoc.ts pageInk) prints as vector paths over the boxes from PLAN_INK phase I3; nothing to draw yet.
   // A legacy document page (content in `default`): one wide box above everything.
   const def = input.doc.getXmlFragment(DEFAULT_FIELD);
   if (input.blocks) boxes.push({ id: 'selection', x: 0, y: 0, w: 1, wide: true, h: 0, json: { type: 'doc', content: input.blocks } });
@@ -187,7 +190,15 @@ export function renderPrintPage(input: PrintPageInput, ctx: PrintContext): HTMLE
     });
     body.append(r);
   }
-  if (!boxes.length) body.append(el('p', 'print-muted', 'This page is empty.'));
+  // Handwriting prints as vector paths (the same geometry as on screen), at its size on the page, after the boxes.
+  // Placing it over the flowed boxes waits for fixed paper sizes (PLAN_INK phase I4). A selection prints no ink.
+  const svg = !selection && ctx.ink ? inkSvg(ctx.ink, pageInk(input.doc), { maxWidth: PAPER_WIDTH_PX }) : null;
+  if (svg) {
+    const fig = el('figure', 'print-ink');
+    fig.innerHTML = svg; // built from numbers and colours only (src/ink/svg.ts)
+    body.append(fig);
+  }
+  if (!boxes.length && !svg) body.append(el('p', 'print-muted', 'This page is empty.'));
   page.append(body);
   return page;
 }
