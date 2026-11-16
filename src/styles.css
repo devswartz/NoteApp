@@ -2012,3 +2012,10 @@ body.is-resizing .sidebar { transition: none; }
 .menu-item[aria-disabled] .menu-note { opacity: 1; }
 .menu-item.has-note { height: auto; min-height: 32px; padding-top: 7px; padding-bottom: 7px; white-space: normal; }
 .menu-item.has-note .menu-icon { padding-top: 1px; }
+
+/* Settings > Get the apps (src/components/GetTheApps.tsx). */
+.get-apps-list { list-style: none; margin: var(--space-4) 0; padding: 0; display: grid; gap: var(--space-4); }
+.get-apps-icon { color: var(--text-muted); display: inline-flex; }
+.get-apps-here { color: var(--accent); font-weight: 500; }
+.get-apps-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+@media (max-width: 560px) { .get-apps-actions { align-items: flex-start; width: 100%; padding-left: 30px; } }

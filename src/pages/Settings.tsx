@@ -9,7 +9,7 @@
 //   Members       → Collaboration & Access (MembersPanel)
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Bell, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Plug, Tag, Trash2, User, Users, UsersRound, Building2 } from 'lucide-react';
+import { Bell, Download, Lock, ChevronLeft, ChevronRight, Info, Keyboard, LogOut, Palette, Plug, Tag, Trash2, User, Users, UsersRound, Building2 } from 'lucide-react';
 import { TagsPanel, TeamsPanel } from '../components/TeamsSettings.tsx';
 import { del, get, patch } from '../api.ts';
 import { errorToast, loadWorkspaces, signOut, toast, useStore } from '../store.ts';
@@ -28,6 +28,7 @@ import { OneNoteImport, useOneNoteEnabled } from '../components/OneNoteImport.ts
 import { DeleteAccountCard } from '../components/DeleteAccount.tsx';
 import { ConnectedApps } from '../components/ConnectedApps.tsx';
 import { LockedNotesSettings } from '../components/LockedNotes.tsx';
+import { GetTheApps } from '../components/GetTheApps.tsx';
 
 
 interface SectionDef {
@@ -64,6 +65,8 @@ const SECTIONS: SectionDef[] = [
   { id: 'members', title: 'Members', description: 'Who can open this workspace, and what they can do.', icon: <Users size={16} />, group: 'Workspace', render: () => <MembersPanel /> },
   { id: 'teams', title: 'Teams', description: 'Groups of people that tasks can belong to, with subteams.', icon: <UsersRound size={16} />, group: 'Workspace', render: () => <TeamsPanel /> },
   { id: 'tags', title: 'Tags', description: 'Labels for tasks, shared across the workspace.', icon: <Tag size={16} />, group: 'Workspace', render: () => <TagsPanel /> },
+  // The browser only: the desktop and mobile apps are already an app.
+  { id: 'apps', title: 'Get the apps', description: 'Notivelo for Mac, Windows, iPhone, iPad and Android.', icon: <Download size={16} />, group: 'App', when: () => platform.kind === 'web', render: () => <GetTheApps /> },
   { id: 'shortcuts', title: 'Keyboard shortcuts', description: 'Press ? anywhere to see these.', icon: <Keyboard size={16} />, group: 'App', render: () => <Card><ShortcutList columns={false} /></Card> },
   { id: 'about', title: 'About', icon: <Info size={16} />, group: 'App', render: () => <AboutSection /> },
 ];

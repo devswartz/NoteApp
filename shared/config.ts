@@ -11,3 +11,8 @@ export const LOCKED_REMINDER_TITLE = 'Reminder from a locked note';
 /** Palette for avatars, notebooks and sections. */
 export const COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#14b8a6'];
 export const APP_DESCRIPTION = 'Collaborative notes with built-in task management';
+/** The marketing site (site/), and its mirror of the latest desktop installers under stable names. */
+export const SITE_URL = 'https://notiveloapp.com';
+export const DOWNLOADS_URL = `${SITE_URL}/download`;
+/** Notivelo on the App Store (iPhone and iPad). */
+export const APP_STORE_URL = 'https://apps.apple.com/app/id6831184261';

@@ -2,6 +2,14 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.5.6
+
+### New
+- **Get the apps.** In the browser, **Settings → Get the apps** (also in the account menu) links to the Mac and Windows installers, the iPhone and iPad app on the App Store, and how to install on Android. Your own device is listed first. The desktop links always point at the latest release (#186).
+
+### Behind the scenes
+- **The marketing site lives in this repo** (`site/`), published as its own image (`notivelo-site`) and served at notiveloapp.com. It adds **Sign in** to its menu, opens the sign-up form from every "Create your account" link, and drops OneNote as its tagline (#185). Site releases use `site-vX.Y.Z` tags.
+
 ## v0.5.5
 
 ### Fixes
