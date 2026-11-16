@@ -1,9 +1,11 @@
 // The pen toolbar on canvas pages (behind the `ink` flag, src/lib/flags.ts): select (type and move
 // boxes), pen, highlighter, stroke eraser, partial eraser, a few colours and widths, and finger
 // drawing (off by default).
-import { Eraser, Hand, Highlighter, MousePointer2, Pen, Slice } from 'lucide-react';
+import { Bug, Eraser, Hand, Highlighter, MousePointer2, Pen, Slice } from 'lucide-react';
+import { useState } from 'react';
 import { packColor } from './engine.ts';
 import { HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS, setInkTool, useInkTool, type InkToolName } from './inkTool.ts';
+import { useNativeInkDebug } from './nativeInk.ts';
 import '../styles/ink.css';
 
 const TOOLS: { id: InkToolName; label: string; Icon: typeof Pen }[] = [
@@ -22,6 +24,8 @@ export function InkToolbar() {
   const color = hl ? s.highlighterColor : s.penColor;
   const width = hl ? s.highlighterWidth : s.penWidth;
   const drawing = s.tool === 'pen' || hl;
+  const debug = useNativeInkDebug();
+  const [debugOpen, setDebugOpen] = useState(false);
   return (
     <div className="ink-toolbar" role="toolbar" aria-label="Pen tools" data-testid="ink-toolbar">
       {TOOLS.map(({ id, label, Icon }) => (
@@ -74,6 +78,27 @@ export function InkToolbar() {
       >
         <Hand size={16} />
       </button>
+      {debug.active && (
+        // The iPad prototype's debug menu (docs/ink-i2-test.md): hidden behind the bug button.
+        <>
+          <button type="button" className={`btn-ghost icon-btn ${debugOpen ? 'is-active' : ''}`} title="Pen layer debug" aria-label="Pen layer debug" aria-pressed={debugOpen} onClick={() => setDebugOpen(!debugOpen)}>
+            <Bug size={16} />
+          </button>
+          {debugOpen && (
+            <span className="ink-debug" data-ink-exclude>
+              <button type="button" className={`btn-ghost ${debug.renderer === 'pencilkit' ? 'is-active' : ''}`} onClick={() => debug.setRenderer?.(debug.renderer === 'pencilkit' ? 'notivelo' : 'pencilkit')}>
+                {debug.renderer === 'pencilkit' ? 'PencilKit (not saved)' : 'Notivelo renderer'}
+              </button>
+              <button type="button" className={`btn-ghost ${debug.webOverlay ? 'is-active' : ''}`} onClick={() => useNativeInkDebug.setState({ webOverlay: !debug.webOverlay })}>
+                Web ink overlay
+              </button>
+              <button type="button" className="btn-ghost" onClick={() => debug.fill?.()}>
+                Fill with test strokes
+              </button>
+            </span>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -9,13 +9,16 @@
 // A stroke is drawn locally while the pen is down and written to the page doc in one transaction
 // when it lifts; an erase gesture likewise.
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
+import { flushSync } from 'react-dom';
 import type * as Y from 'yjs';
 import { INK_KEY } from '../../shared/pageDoc.ts';
 import { canvasView, toPage } from '../editor/canvasGeom.ts';
 import { FLAG, loadInk, type InkEngine, type StrokeBuilder } from './engine.ts';
-import { ERASER_RADIUS, strokeStyle, useInkTool, type InkToolName } from './inkTool.ts';
+import { ERASER_RADIUS, setInkTool, strokeStyle, useInkTool, type InkToolName, type InkToolState } from './inkTool.ts';
+import { NativeInkSession, measureLayout, painted, useNativeInkDebug, type NativeInkPlugin, type NativeInkTool, type NativeView } from './nativeInk.ts';
 import { InkRenderer } from './render.ts';
 import { EraseSession, commitStroke, topZ, zAfter } from './strokes.ts';
+import { fillTestPage, type TestBox } from './testFill.ts';
 
 /** What CanvasEditor calls when its router hands a pointer to ink. */
 export interface InkHandle {
@@ -33,7 +36,28 @@ interface Props {
   onWrite?: () => void;
   /** How far the ink reaches, right and down (page px), whenever it changes. */
   onExtent?: (e: { w: number; h: number }) => void;
+  /**
+   * The iPad's native pen layer (src/ink/nativeInk.ts), when there is one: it draws all the ink
+   * and owns pan and zoom; this component then only links it to the doc and reports the layout.
+   */
+  native?: NativeInkPlugin | null;
+  /** The surface's size in page px (native mode). */
+  pageSize?: { w: number; h: number };
+  /** The zoom native code chose (native mode): the caller lays the surface out at it. */
+  onZoom?: (zoom: number) => void;
+  /** Two-finger tap on the iPad: the page's undo. */
+  onUndo?: () => void;
+  /** Adds text boxes (the debug "fill with test strokes" adds 50). */
+  addBoxes?: (boxes: TestBox[]) => void;
   ref?: Ref<InkHandle>;
+}
+
+const isDarkTheme = () => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark';
+
+/** The pen toolbar's state as the native layer wants it. */
+function nativeTool(s: InkToolState): NativeInkTool {
+  const style = strokeStyle(s);
+  return { tool: s.tool, color: style?.color ?? s.penColor, width: style?.width ?? s.penWidth, fingerDrawing: s.fingerDrawing, eraserRadius: ERASER_RADIUS, dark: isDarkTheme() };
 }
 
 // Delegated ink trail (Edge/WebView2): typed loosely, it isn't in TypeScript's DOM types.
@@ -53,7 +77,7 @@ function sample(e: PointerEvent, rect: DOMRect): [number, number, number, number
   return [p.x, p.y, pressure, alt, az, e.timeStamp];
 }
 
-export function InkSurface({ doc, surface, wanted, onWrite, onExtent, ref }: Props) {
+export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pageSize, onZoom, onUndo, addBoxes, ref }: Props) {
   const under = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
   const live = useRef<HTMLCanvasElement>(null);
@@ -62,6 +86,12 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, ref }: Pro
   const presenter = useRef<Promise<InkPresenter | null> | null>(null);
   const onWriteRef = useRef(onWrite);
   onWriteRef.current = onWrite;
+  const cb = useRef({ onZoom, onUndo, pageSize: pageSize ?? { w: 0, h: 0 }, addBoxes, zoom: 1 });
+  Object.assign(cb.current, { onZoom, onUndo, pageSize: pageSize ?? { w: 0, h: 0 }, addBoxes });
+  // The native pen layer is drawing this page (its ink, its pan and zoom).
+  const [nativeOn, setNativeOn] = useState(false);
+  const webOverlay = useNativeInkDebug((d) => d.webOverlay);
+  const webDraws = !nativeOn || webOverlay;
 
   // Load the engine when the page has ink or a pen tool is picked; until then nothing is downloaded.
   const [hasInk, setHasInk] = useState(() => doc.getMap(INK_KEY).size > 0);
@@ -112,14 +142,100 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, ref }: Pro
 
   useEffect(() => {
     const s = surface.current;
-    if (!engine || !s || !under.current || !over.current || !live.current) return;
+    if (!webDraws || !engine || !s || !under.current || !over.current || !live.current) return;
     const r = new InkRenderer(engine, doc, s, { under: under.current, over: over.current, live: live.current });
     renderer.current = r;
     return () => {
       r.destroy();
       renderer.current = null;
     };
-  }, [engine, doc, surface]);
+  }, [engine, doc, surface, webDraws]);
+
+  // ── The iPad's native pen layer ──
+  useEffect(() => {
+    const el = surface.current;
+    if (!native || !el) return;
+    const scroller = el.closest<HTMLElement>('.page-scroll');
+    const measure = () => measureLayout(el, cb.current.pageSize, cb.current.zoom);
+    const first = measure();
+    if (!scroller || !first) return;
+    let alive = true;
+    const applyView = async (v: NativeView) => {
+      if (!v.final) return; // a report after scrolling: the scroller already knows its offset
+      cb.current.zoom = v.zoom;
+      flushSync(() => cb.current.onZoom?.(v.zoom));
+      scroller.scrollLeft = v.x;
+      scroller.scrollTop = v.y;
+      await painted();
+      const l = measure();
+      if (l) session.layout(l);
+    };
+    const session = new NativeInkSession(native, doc, {
+      onWrite: () => onWriteRef.current?.(),
+      onView: applyView,
+      onTool: (tool) => setInkTool({ tool }),
+      onUndo: () => cb.current.onUndo?.(),
+      onDetached: () => {
+        setNativeOn(false);
+        void session.stop();
+      },
+    });
+    // Tell native where the page is whenever that may have changed.
+    let last = '';
+    const report = () => {
+      const l = measure();
+      const key = JSON.stringify(l);
+      if (l && key !== last) {
+        last = key;
+        session.layout(l);
+      }
+    };
+    let timer = 0;
+    const onScroll = () => {
+      clearTimeout(timer);
+      timer = window.setTimeout(report, 150);
+    };
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(report);
+    const theme = new MutationObserver(() => session.setTool(nativeTool(useInkTool.getState())));
+    const poll = window.setInterval(report, 1000);
+    const unTool = useInkTool.subscribe((st) => session.setTool(nativeTool(st)));
+    void session.start(first, nativeTool(useInkTool.getState())).then((ok) => {
+      if (!alive) return;
+      if (!ok) return void session.stop();
+      setNativeOn(true);
+      useNativeInkDebug.setState({
+        active: true,
+        setRenderer: (r) => void native.setRenderer({ renderer: r }).then((x) => useNativeInkDebug.setState({ renderer: x.renderer === 'pencilkit' ? 'pencilkit' : 'notivelo' })),
+        fill: () => {
+          const add = cb.current.addBoxes;
+          if (!add) return;
+          void loadInk().then((e) => {
+            onWriteRef.current?.();
+            fillTestPage(doc, e, add);
+            onWriteRef.current?.();
+          });
+        },
+      });
+    });
+    ro?.observe(el);
+    ro?.observe(scroller);
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', report);
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      clearInterval(poll);
+      ro?.disconnect();
+      theme.disconnect();
+      unTool();
+      scroller.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', report);
+      useNativeInkDebug.setState({ active: false, renderer: 'notivelo', setRenderer: null, fill: null });
+      setNativeOn(false);
+      void session.stop();
+    };
+  }, [native, doc, surface]);
 
   useImperativeHandle(
     ref,
@@ -127,7 +243,8 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, ref }: Pro
       pointerDown(e: PointerEvent, tool: InkToolName) {
         const r = renderer.current;
         const el = surface.current;
-        if (!engine || !r || !el || tool === 'select') return false;
+        // Native mode: the native layer takes the pen (and a drawing finger) before the web sees it.
+        if (nativeOn || !engine || !r || !el || tool === 'select') return false;
         e.preventDefault(); // no text selection, no box created, no mouse events after it
         e.stopPropagation();
         try {
@@ -140,14 +257,15 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, ref }: Pro
         return true;
       },
     }),
-    [engine, doc, surface],
+    [engine, doc, surface, nativeOn],
   );
 
+  const mode = nativeOn ? (webOverlay ? ' is-native is-overlay' : ' is-native') : '';
   return (
     <>
-      <canvas ref={under} className="ink-layer ink-under" aria-hidden data-testid="ink-under" />
-      <canvas ref={over} className="ink-layer ink-over" aria-hidden data-testid="ink-over" />
-      <canvas ref={live} className="ink-layer ink-live" aria-hidden />
+      <canvas ref={under} className={`ink-layer ink-under${mode}`} aria-hidden data-testid="ink-under" />
+      <canvas ref={over} className={`ink-layer ink-over${mode}`} aria-hidden data-testid="ink-over" />
+      <canvas ref={live} className={`ink-layer ink-live${mode}`} aria-hidden />
     </>
   );
 }

@@ -30,4 +30,13 @@
 .ink-swatch.is-active { box-shadow: 0 0 0 2px var(--accent); }
 .ink-width span { display: block; border-radius: 50%; background: currentColor; }
 
+/* The iPad's native pen layer (src/ink/nativeInk.ts) draws the ink inside WebKit's scroll view for
+   the page, so the page must scroll in one place: the page scroller, both ways. */
+.page-scroll:has(.canvas-wrap.is-native-ink) { overflow: auto; }
+.canvas-wrap.is-native-ink .canvas-viewport { overflow: visible; }
+.ink-layer.is-native { display: none; }
+/* Debug: the web's own ink, faint, under the native ink (they should coincide). */
+.ink-layer.is-native.is-overlay { display: block; opacity: 0.35; }
+.ink-debug { font-size: 12px; }
+
 @media print { .ink-toolbar, .ink-layer { display: none !important; } }

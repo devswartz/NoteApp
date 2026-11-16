@@ -128,7 +128,7 @@ final class NvInkTests: XCTestCase {
     }
 
     func testZKeysMatchTheWeb() {
-        // Same cases as tests/inkStrokes.test.ts (zAfter).
+        // The same keys as the web (src/ink/strokes.ts zAfter; pinned in tests/nativeInk.test.ts).
         XCTAssertEqual(ZKeys.after(nil), "a0")
         XCTAssertEqual(ZKeys.after("a0"), "a1")
         XCTAssertEqual(ZKeys.after("a9"), "aA")

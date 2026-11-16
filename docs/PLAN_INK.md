@@ -128,11 +128,19 @@ Each phase is one or more PRs and ships behind the `ink` feature flag until I3 p
 
 ### I2: iPad prototype (go/no-go)
 
-- The native pen layer in the Capacitor iOS app, using `nv-ink` through `uniffi`.
+- The native pen layer in the Capacitor iOS app, using `nv-ink` through a C ABI (decided in I2, see below).
 - Lockstep pan and zoom with the web page.
 - Strokes commit to the page doc and appear live on the web.
 - A quick comparison spike: our Metal renderer vs PencilKit for latency.
 - **Gate (Devon, on device):** latency and quality match Notability side by side, and ink never visibly separates from text while panning or zooming. If either fails, choose the PencilKit or native-page-view fallback before I3.
+- **Built (2026-11-16, branch `claude/ink-i2-61c006`), behind the `ink` flag, iPad only:**
+  - **Rust to iOS: a hand-written C ABI, not uniffi.** `crates/nv-ink/src/ffi.rs` (`ffi` feature) and `crates/nv-ink/include/nv_ink.h`: a dozen functions over flat floats and byte buffers. The hot path (a pen sample, a preview per frame) passes pointers with no serialisation, and there is no code generator, extra crates or generated Swift to keep in step; uniffi would add all three for an API this small. `scripts/build-ink-ios.sh` builds `NvInkFFI.xcframework` (device, simulator arm64+x86_64, and macOS for tests); it isn't committed, CI builds it on macOS.
+  - **The pen layer:** a Swift package, `apps/mobile/ios/App/NvInk` (`NativeInkController`), and a plugin, `App/NoteAppInkPlugin.swift`; the web side is `src/ink/nativeInk.ts`. Pencil input comes from a gesture recogniser on the web view that takes only Pencil touches (fingers too with finger drawing on), with coalesced and predicted touches, force, altitude and azimuth. The live stroke is drawn with Metal (nv-ink triangles, 4x MSAA) the moment touches arrive. Pencil double-tap toggles the eraser; a two-finger tap is undo (the page's one undo stack, on the web side).
+  - **Lockstep pan:** finished strokes are vector layers (nv-ink paths, as the web draws them) inside WebKit's own `UIScrollView` for the page scroller, found by matching its box to the one the web measures. Panning moves ink and text in the same Core Animation frame, so they can't drift. With the native layer on, the page scrolls in one place (`.page-scroll`, both ways), and scrolling is locked while the pen is down.
+  - **Zoom (true, 0.5x to 4x):** native code owns the pinch. A snapshot of the page (text and ink as one picture) follows the fingers; when they lift, native computes the new zoom and scroll offset and sends them to the web (the transform goes native to web), the web lays the surface out at that zoom (CSS `zoom`, so text is sharp) and scrolls, answers `viewApplied`, and the snapshot fades. Known: a possible one-frame jump when the snapshot goes, blank edges while zooming out during the gesture, and box dragging and click-to-place at zoom != 1 are only roughly scaled (CanvasView gets the zoom, untested on device).
+  - **Strokes cross the bridge once each:** pen-up sends the blob; the web writes it with `commitStroke` (INK_ORIGIN, the canvas undo), and every change to the `ink` map (remote, undo, ours) goes back to native. Native changes carry a token that comes back with the update that applies them, so the provisional drawing is swapped for the real stroke in the same frame. Erasing (stroke and partial) runs natively with nv-ink hit tests and is sent once per gesture.
+  - **Comparison:** a debug menu in the pen toolbar (bug button) swaps our renderer for PencilKit (not saved), overlays the web's own ink to check alignment, and fills the page with 50 boxes and 3,000 test strokes.
+  - **Prototype limits:** highlighters draw over text (not under it), no hover (the reference iPad has none), PencilKit mode turns scrolling off. The device checklist is `docs/ink-i2-test.md`.
 
 ### I3: ink v1
 

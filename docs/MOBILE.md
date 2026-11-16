@@ -126,6 +126,13 @@ Only `/w/…` paths are claimed. Login links and the API always stay in the brow
 
 To ship a TestFlight build: push a tag `mobile-v0.1.0` (or `v0.1.0`, which also releases the server), or run the workflow by hand with *TestFlight* ticked.
 
+**A test build of a branch** (e.g. the ink prototype): Actions → Mobile → Run workflow, pick the branch, tick *TestFlight*, and fill in:
+- *ink*: ticked turns the `ink` flag on for the whole build (`VITE_FLAG_INK=1`), since a device can't easily set the flag in localStorage.
+- *version*: a version that is above the live App Store version and that you won't tag, e.g. `0.5.90` (the default, `package.json`'s 0.1.0, is refused by App Store Connect; and Store submit picks "the newest build of the tag's version", so don't reuse a version you will release). Expire the build in TestFlight when you're done with it.
+Or from a terminal: `gh workflow run mobile.yml --ref <branch> -f testflight=true -f ink=true -f version=0.5.90`. It uploads to TestFlight only; nothing is submitted for review. Every internal tester in TestFlight gets it.
+
+The iOS job also builds the ink engine for iOS (`scripts/build-ink-ios.sh`, Rust targets for iOS) before the app: the `NvInk` Swift package links `NvInkFFI.xcframework`, which isn't committed. To build in Xcode on a Mac, run that script first.
+
 Submitting to App Review is a separate workflow: on `v*.*.*` tags, **Store submit** submits the TestFlight build of that version when `docs/store/whats-new.md` has a section for the tag (`docs/STORE_RELEASES.md`). `mobile-v*` tags are not submitted.
 
 ## Verified so far / known gaps

@@ -82,6 +82,7 @@ import { flag } from '../lib/flags.ts';
 import { InkSurface, type InkHandle } from '../ink/InkSurface.tsx';
 import { InkToolbar } from '../ink/InkToolbar.tsx';
 import { useInkTool } from '../ink/inkTool.ts';
+import { nativeInkPlugin, type NativeInkPlugin } from '../ink/nativeInk.ts';
 
 /** Read once: the flag changes with a reload (src/lib/flags.ts). */
 const INK_FLAG = flag('ink');
@@ -257,6 +258,23 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const inkOn = INK_FLAG && canEdit && !isMobile;
   const canvasTool: CanvasTool = inkOn && inkTool !== 'select' ? 'ink' : 'select';
   const inkRef = useRef<InkHandle>(null);
+  // The iPad app: a native pen layer draws the ink and owns pan and zoom (docs/PLAN_INK.md, I2).
+  const [nativeInk, setNativeInk] = useState<NativeInkPlugin | null>(null);
+  useEffect(() => {
+    if (!inkOn) return;
+    let live = true;
+    void nativeInkPlugin().then((p) => live && setNativeInk(p));
+    return () => {
+      live = false;
+    };
+  }, [inkOn]);
+  const native = inkOn ? nativeInk : null;
+  // The zoom native code chose (1 everywhere else until PLAN_INK I4): the surface is laid out at it.
+  const [nativeZoom, setNativeZoom] = useState(1);
+  const viewScale = native ? nativeZoom : CANVAS_SCALE;
+  const viewScaleRef = useRef(viewScale);
+  viewScaleRef.current = viewScale;
+  const schema = useMemo(() => pageSchema(pageId), [pageId]);
   const [penNear, setPenNear] = useState(false);
   /** How far the ink reaches (page px): the surface grows to hold it, as it does for boxes. */
   const [inkExtent, setInkExtent] = useState({ w: 0, h: 0 });
@@ -745,7 +763,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   };
   const onSurfaceMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canEdit || isMobile || e.target !== e.currentTarget) return;
-    menuAt.current = toPage(canvasView(e.currentTarget.getBoundingClientRect()), e.clientX, e.clientY);
+    menuAt.current = toPage(canvasView(e.currentTarget.getBoundingClientRect(), viewScaleRef.current), e.clientX, e.clientY);
     surfaceMenu.bind.onContextMenu(e);
   };
 
@@ -822,7 +840,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     handle.setPointerCapture?.(e.pointerId);
     // A wide box is resized from the width it is drawn at, and keeps the width you give it.
     const start = { px: e.clientX, py: e.clientY, x: b.x, y: b.y, w: b.wide ? (elements.current.get(id)?.offsetWidth ?? b.w) : b.w };
-    const view = { scale: CANVAS_SCALE }; // a drag only needs the scale
+    const view = { scale: viewScaleRef.current }; // a drag only needs the scale
     // The whole drag is one undo step, however long it takes.
     undo.stopCapturing();
     undo.captureTimeout = Number.MAX_SAFE_INTEGER;
@@ -872,7 +890,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const onSurfaceDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canEdit || isMobile || e.button !== 0 || e.target !== e.currentTarget) return;
     e.preventDefault(); // keep focus where it is until the new box takes it
-    const at = toPage(canvasView(e.currentTarget.getBoundingClientRect()), e.clientX, e.clientY);
+    const at = toPage(canvasView(e.currentTarget.getBoundingClientRect(), viewScaleRef.current), e.clientX, e.clientY);
     createBox(boxAtClick(boxesRef.current, at.x, at.y), 'focus');
   };
 
@@ -942,13 +960,14 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const single = stacked && list.length === 1;
 
   return (
-    <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''} ${single ? 'is-single' : ''} ${ready ? 'is-blank' : ''}`}>
+    <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''} ${single ? 'is-single' : ''} ${ready ? 'is-blank' : ''} ${native ? 'is-native-ink' : ''}`}>
       {inkOn && <InkToolbar />}
       <div className="canvas-viewport">
         <div
           ref={surfaceRef}
           className={`canvas-surface ${canEdit ? 'can-edit' : ''} ${canvasTool === 'ink' ? 'ink-active' : ''} ${canvasTool === 'ink' && fingerDrawing ? 'ink-finger' : ''} ${penNear ? 'pen-near' : ''}`}
-          style={stacked ? undefined : { width: lengthToScreen({ scale: CANVAS_SCALE }, size.w), height: lengthToScreen({ scale: CANVAS_SCALE }, size.h) }}
+          // The size is in page px; native zoom (iPad) scales the whole surface with CSS zoom, so text re-lays out sharp.
+          style={stacked ? undefined : { width: lengthToScreen({ scale: CANVAS_SCALE }, size.w), height: lengthToScreen({ scale: CANVAS_SCALE }, size.h), zoom: viewScale !== 1 ? viewScale : undefined }}
           onPointerDownCapture={onSurfacePointer}
           onPointerOver={onSurfaceHover}
           onMouseDown={onSurfaceDown}
@@ -990,7 +1009,21 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               onHandleMenu={onHandleMenu}
             />
           ))}
-          {!stacked && <InkSurface ref={inkRef} doc={doc} surface={surfaceRef} wanted={canvasTool === 'ink'} onWrite={() => undo.stopCapturing()} onExtent={setInkExtent} />}
+          {!stacked && (
+            <InkSurface
+              ref={inkRef}
+              doc={doc}
+              surface={surfaceRef}
+              wanted={canvasTool === 'ink'}
+              onWrite={() => undo.stopCapturing()}
+              onExtent={setInkExtent}
+              native={native}
+              pageSize={size}
+              onZoom={setNativeZoom}
+              onUndo={() => pageUndo.undo()}
+              addBoxes={(b) => writeBoxes(doc, schema, b)}
+            />
+          )}
           {ready && blankSlot && !stacked && (
             <div className="canvas-blank-slot" style={{ top: firstH + 4 }}>
               {blankSlot}
