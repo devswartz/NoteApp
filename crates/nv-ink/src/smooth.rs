@@ -1,6 +1,12 @@
-//! Input smoothing: a one-euro filter (Casiez, Roussel, Vogel 2012) on the pen's position, and
-//! the builder that turns pen samples into a stroke. The filter smooths jitter when the pen
-//! moves slowly and gets out of the way when it moves fast, so the line stays close to the tip.
+//! Input smoothing and the builder that turns pen samples into a stroke.
+//!
+//! - A one-euro filter (Casiez, Roussel, Vogel 2012) on the pen's position: it smooths jitter when
+//!   the pen moves slowly and gets out of the way when it moves fast, so the line stays close to the tip.
+//! - The same filter on pressure: a Pencil's pressure flickers from sample to sample, and since the
+//!   width follows pressure, unfiltered pressure gives a wobbly edge (Devon's first iPad round).
+//! - A light pass over the kept points (`relax`), like Notability's stroke smoothing: the same in the
+//!   preview and in the stored stroke, so nothing moves when the pen lifts.
+//!
 //! What the builder keeps is what's stored; the curve fit (`geom.rs`) happens when drawing.
 
 use crate::blob::{flags, Point, Stroke};
@@ -17,13 +23,43 @@ pub struct OneEuroConfig {
 }
 
 impl Default for OneEuroConfig {
-    /// Tuned for a pen at 120-240 Hz: light smoothing when slow, almost none when fast.
+    /// Tuned for a pen at 120-240 Hz: firm smoothing when slow, little when fast.
     /// Feel is judged on the device (PLAN_INK quality bar); these are the knobs.
     fn default() -> Self {
         OneEuroConfig {
-            min_cutoff: 4.0,
-            beta: 0.04,
+            min_cutoff: 1.5,
+            beta: 0.03,
             d_cutoff: 1.0,
+        }
+    }
+}
+
+/// The pressure filter: pressure changes slowly in real writing, so a steady low cutoff.
+pub const PRESSURE_FILTER: OneEuroConfig = OneEuroConfig {
+    min_cutoff: 2.5,
+    beta: 0.0,
+    d_cutoff: 1.0,
+};
+
+/// Passes of `relax` over the kept points.
+pub const RELAX_PASSES: usize = 2;
+
+/// Smooths the interior points of a stroke in place: each pass moves every point a quarter of the
+/// way towards the midpoint of its neighbours (x, y and pressure). The ends stay put, so a stroke
+/// starts and finishes where the pen did.
+pub fn relax(points: &mut [Point], passes: usize) {
+    if points.len() < 3 {
+        return;
+    }
+    for _ in 0..passes {
+        let mut prev = points[0];
+        for i in 1..points.len() - 1 {
+            let (a, cur, b) = (prev, points[i], points[i + 1]);
+            prev = cur;
+            let p = &mut points[i];
+            p.x = 0.25 * a.x + 0.5 * cur.x + 0.25 * b.x;
+            p.y = 0.25 * a.y + 0.5 * cur.y + 0.25 * b.y;
+            p.pressure = 0.25 * a.pressure + 0.5 * cur.pressure + 0.25 * b.pressure;
         }
     }
 }
@@ -75,6 +111,7 @@ pub struct StrokeBuilder {
     pub stroke: Stroke,
     fx: OneEuro,
     fy: OneEuro,
+    fp: OneEuro,
     start: Option<f64>,
     last_t: f64,
     /// The newest filtered sample when it was too close to keep: it ends the stroke if nothing follows.
@@ -104,6 +141,7 @@ impl StrokeBuilder {
             },
             fx: OneEuro::new(cfg),
             fy: OneEuro::new(cfg),
+            fp: OneEuro::new(PRESSURE_FILTER),
             start: None,
             last_t: 0.0,
             pending: None,
@@ -124,8 +162,8 @@ impl StrokeBuilder {
         let first = self.stroke.points.is_empty() && self.pending.is_none();
         self.last_t = self.last_t.max(t_ms);
         let (fx, fy) = (self.fx.filter(x, dt), self.fy.filter(y, dt));
-        let pressure = if self.stroke.flags & flags::PRESSURE != 0 {
-            pressure
+        let pressure = if self.stroke.flags & flags::PRESSURE != 0 && pressure.is_finite() {
+            self.fp.filter(pressure.clamp(0.0, 1.0), dt)
         } else {
             0.5
         };
@@ -152,10 +190,12 @@ impl StrokeBuilder {
         }
     }
 
-    /// The stroke so far plus `predicted` points (x, y, pressure), unfiltered, for drawing ahead of the pen.
+    /// The stroke so far (relaxed, as it will be stored) plus `predicted` points (x, y, pressure),
+    /// unfiltered, for drawing ahead of the pen.
     pub fn preview(&self, predicted: &[[f32; 3]]) -> Vec<Point> {
         let mut pts = self.stroke.points.clone();
         pts.extend(self.pending);
+        relax(&mut pts, RELAX_PASSES);
         let t = pts.last().map_or(0, |p| p.t);
         pts.extend(
             predicted
@@ -169,11 +209,12 @@ impl StrokeBuilder {
         pts
     }
 
-    /// The finished stroke (the last sample included even when it was close).
+    /// The finished stroke (the last sample included even when it was close), relaxed.
     pub fn finish(mut self) -> Stroke {
         if let Some(p) = self.pending.take() {
             self.stroke.points.push(p);
         }
+        relax(&mut self.stroke.points, RELAX_PASSES);
         self.stroke
     }
 }
@@ -233,6 +274,82 @@ mod tests {
         assert!(n < 10);
         assert_eq!(s.points.len(), n + 1);
         assert_eq!(s.points.last().unwrap().t, 196);
+    }
+
+    #[test]
+    fn pressure_flicker_is_smoothed() {
+        let mut b = StrokeBuilder::new(
+            0,
+            [0; 4],
+            2.0,
+            "a".into(),
+            flags::PRESSURE,
+            0,
+            OneEuroConfig::default(),
+        );
+        // A steady line with pressure flickering 0.4 / 0.6 every sample (a Pencil at 240 Hz).
+        for i in 0..240 {
+            let p = if i % 2 == 0 { 0.4 } else { 0.6 };
+            b.push(i as f32 * 2.0, 0.0, p, 1.0, 0.0, i as f64 * 1000.0 / 240.0);
+        }
+        let s = b.finish();
+        let late: Vec<f32> = s.points[60..].iter().map(|p| p.pressure).collect();
+        let (lo, hi) = late
+            .iter()
+            .fold((1.0f32, 0.0f32), |(l, h), &p| (l.min(p), h.max(p)));
+        assert!(hi - lo < 0.05, "pressure still flickers: {lo}..{hi}");
+    }
+
+    #[test]
+    fn position_jitter_is_smoothed_and_ends_stay() {
+        let mut b = StrokeBuilder::new(0, [0; 4], 2.0, "a".into(), 0, 0, OneEuroConfig::default());
+        // A slow horizontal line with 0.6 px up/down jitter.
+        for i in 0..240 {
+            let y = if i % 2 == 0 { 0.6 } else { -0.6 };
+            b.push(i as f32 * 0.8, y, 0.5, 1.0, 0.0, i as f64 * 1000.0 / 240.0);
+        }
+        let s = b.finish();
+        let mid = &s.points[80..s.points.len() - 10]; // after the filter settles from the first sample
+        let worst = mid.iter().map(|p| p.y.abs()).fold(0.0f32, f32::max);
+        assert!(worst < 0.15, "jitter left: {worst}");
+        assert_eq!(
+            s.points.first().unwrap().x,
+            0.0,
+            "the start stays where the pen went down"
+        );
+    }
+
+    #[test]
+    fn preview_matches_the_stored_stroke() {
+        let mut b = StrokeBuilder::new(
+            0,
+            [0; 4],
+            2.0,
+            "a".into(),
+            flags::PRESSURE,
+            0,
+            OneEuroConfig::default(),
+        );
+        for i in 0..60 {
+            let f = i as f32;
+            b.push(
+                f * 3.0,
+                (f * 0.2).sin() * 20.0,
+                0.5,
+                1.0,
+                0.0,
+                i as f64 * 8.0,
+            );
+        }
+        let preview = b.preview(&[]);
+        let stored = b.finish().points;
+        assert_eq!(preview.len(), stored.len());
+        for (a, s) in preview.iter().zip(&stored) {
+            assert!(
+                (a.x - s.x).abs() < 1e-4 && (a.y - s.y).abs() < 1e-4,
+                "the line moves when the pen lifts"
+            );
+        }
     }
 
     #[test]

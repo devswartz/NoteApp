@@ -11,6 +11,8 @@
 /* Draw mode (an ink tool is active): the pen draws everywhere on the page, over boxes too, and the
    boxes are inert: no caret, picking, moving or resizing, and links don't open (type mode for that). */
 .canvas-surface.ink-active .canvas-box, .canvas-surface.ink-active .canvas-blank-slot { pointer-events: none; }
+/* …and so does the page title (PageView): no caret, selection or keyboard from the Pencil. */
+.page-title.is-drawing { pointer-events: none; -webkit-user-select: none; user-select: none; }
 .canvas-surface.ink-active, .canvas-surface.ink-active * { cursor: crosshair; }
 .canvas-surface.ink-active { -webkit-user-select: none; user-select: none; }
 /* Finger drawing on: a finger draws instead of scrolling (off by default). */

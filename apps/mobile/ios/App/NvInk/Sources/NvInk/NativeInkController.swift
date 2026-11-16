@@ -29,6 +29,8 @@ public protocol NativeInkDelegate: AnyObject {
     func nativeInkUndo()
     /// Three-finger tap: redo.
     func nativeInkRedo()
+    /// What the pen layer just recognised, in words (the status readout).
+    func nativeInkDebug(_ text: String)
     /// The page's scroll view couldn't be found (the web falls back to its own pen).
     func nativeInkDetached()
 }
@@ -50,9 +52,8 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     public private(set) var zoom: CGFloat = 1
     private let live = LiveStrokeView(frame: .zero)
     private let pen = PenInputRecognizer(target: nil, action: nil)
-    private lazy var pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
-    private lazy var undoTap = UITapGestureRecognizer(target: self, action: #selector(onUndoTap(_:)))
-    private lazy var redoTap = UITapGestureRecognizer(target: self, action: #selector(onRedoTap(_:)))
+    /// Two-finger tap (undo), three-finger tap (redo) and pinch (zoom): see MultiTouchObserver.
+    private let fingers = MultiTouchObserver(target: nil, action: nil)
     private var scribbleBlockers: [(UIView, UIScribbleInteraction)] = []
     private var pencilInteraction: UIPencilInteraction?
     private var seq = 0
@@ -82,19 +83,18 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         pen.onBegan = { [weak self] t, e in self?.began(t, e) }
         pen.onMoved = { [weak self] t, e in self?.moved(t, e) }
         pen.onEnded = { [weak self] t, e, cancelled in self?.ended(t, e, cancelled) }
-        pinch.delegate = self
-        pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        // Notability's gestures: a two-finger tap undoes, a three-finger tap redoes. They don't hold
-        // touches back from the page (cancelsTouchesInView off) and recognise alongside everything else,
-        // so the page's own two-finger pan can't swallow a tap that doesn't move.
-        for (tap, fingers) in [(undoTap, 2), (redoTap, 3)] {
-            tap.numberOfTouchesRequired = fingers
-            tap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-            tap.cancelsTouchesInView = false
-            tap.delaysTouchesEnded = false
-            tap.delegate = self
+        // Notability's gestures: a two-finger tap undoes, a three-finger tap redoes; a pinch zooms.
+        fingers.delegate = self
+        fingers.onTap = { [weak self] n in
+            guard let self, self.isAttached else { return }
+            self.delegate?.nativeInkDebug("\(n)-finger tap")
+            if n == 2 { self.delegate?.nativeInkUndo() } else if n == 3 { self.delegate?.nativeInkRedo() }
         }
-        undoTap.require(toFail: redoTap)
+        fingers.onPinch = { [weak self] state, scale, centre in self?.pinch(state, scale, centre) }
+        fingers.pinchAllowed = { [weak self] centre in
+            guard let self, let l = self.layout, self.isAttached else { return false }
+            return self.pencilKit == nil && self.builder == nil && self.eraseToken == nil && l.scroller.contains(centre)
+        }
         live.isHidden = true
         applyTouchTypes()
     }
@@ -129,8 +129,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         guard let wv = webView else { return false }
         if pen.view == nil {
             wv.addGestureRecognizer(pen)
-            wv.addGestureRecognizer(undoTap)
-            wv.addGestureRecognizer(redoTap)
+            wv.addGestureRecognizer(fingers)
             blockScribble(in: wv)
             let pi = UIPencilInteraction()
             pi.delegate = self
@@ -159,9 +158,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
             c.onDetached = { [weak self] in self?.lostScrollView() }
         }
         if scrollView !== sv {
-            scrollView?.removeGestureRecognizer(pinch)
             scrollView = sv
-            sv.addGestureRecognizer(pinch)
             offsetObservation = sv.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in self?.scrolled() }
         }
         c.place(origin: l.surfaceOrigin, size: l.surfaceSize, zoom: zoom)
@@ -201,12 +198,10 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         content?.onDetached = nil
         content?.removeFromSuperview()
         content = nil
-        scrollView?.removeGestureRecognizer(pinch)
         scrollView = nil
         offsetObservation = nil
         pen.view?.removeGestureRecognizer(pen)
-        undoTap.view?.removeGestureRecognizer(undoTap)
-        redoTap.view?.removeGestureRecognizer(redoTap)
+        fingers.view?.removeGestureRecognizer(fingers)
         for (v, i) in scribbleBlockers { v.removeInteraction(i) }
         scribbleBlockers = []
         if counted {
@@ -279,8 +274,6 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         if tool.fingerDrawing { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
         pen.allowedTouchTypes = types
         pen.isEnabled = (tool.active || tool.pencilSwitches) && pencilKit == nil
-        undoTap.isEnabled = true // anywhere on the page, whatever tool is picked
-        redoTap.isEnabled = true
         // Finger drawing on: one finger draws, so scrolling takes two.
         scrollView?.panGestureRecognizer.minimumNumberOfTouches = tool.fingerDrawing && tool.active ? 2 : 1
     }
@@ -292,14 +285,6 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         tool.tool = next
         applyTouchTypes()
         delegate?.nativeInk(toolChanged: next, enterDraw: false)
-    }
-
-    @objc private func onUndoTap(_ g: UITapGestureRecognizer) {
-        if g.state == .ended { delegate?.nativeInkUndo() }
-    }
-
-    @objc private func onRedoTap(_ g: UITapGestureRecognizer) {
-        if g.state == .ended { delegate?.nativeInkRedo() }
     }
 
     // MARK: - Scribble
@@ -325,7 +310,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     // MARK: - Gesture rules
 
     public func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        guard g === pen else { return pinchHolder == nil || g === pinch }
+        guard g === pen else { return true }
         guard pencilKit == nil, pinchHolder == nil, !awaitingView, let wv = webView, let l = layout, let c = content, isAttached else { return false }
         guard InkRules.touchStartsInk(isPencil: touch.type == .pencil, toolActive: tool.active, fingerDrawing: tool.fingerDrawing, pencilSwitches: tool.pencilSwitches) else { return false }
         let p = touch.location(in: wv)
@@ -478,38 +463,51 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
 
     // MARK: - Pinch zoom
 
-    @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
+    /// A pinch from the finger observer: `centre` in web view coordinates. Native owns zoom: a picture
+    /// of the page follows the fingers, and the web lays the page out at the new zoom when they lift.
+    /// If the scroll view can't be snapshotted, the scroll view itself (ink inside it) is transformed.
+    private func pinch(_ state: UIGestureRecognizer.State, _ scale: CGFloat, _ centre: CGPoint) {
         guard let sv = scrollView, let wv = webView, let l = layout else { return }
-        switch g.state {
+        let frame = sv.convert(sv.bounds, to: wv)
+        let f = CGPoint(x: centre.x - frame.minX, y: centre.y - frame.minY) // in the page's visible box
+        switch state {
         case .began:
-            guard builder == nil, eraseToken == nil, !awaitingView, let snap = sv.snapshotView(afterScreenUpdates: false) else { return }
-            let holder = UIView(frame: sv.convert(sv.bounds, to: wv))
+            guard builder == nil, eraseToken == nil, !awaitingView, pinchStart == nil else { return }
+            let holder = UIView(frame: frame)
             holder.clipsToBounds = true
+            holder.isUserInteractionEnabled = false
             holder.backgroundColor = wv.underPageBackgroundColor
-            snap.frame = holder.bounds
-            holder.addSubview(snap)
-            wv.addSubview(holder)
-            pinchHolder = holder
-            pinchSnapshot = snap
-            pinchStart = (g.location(in: holder), sv.contentOffset, zoom)
+            if let snap = sv.snapshotView(afterScreenUpdates: false) {
+                snap.frame = holder.bounds
+                holder.addSubview(snap)
+                wv.addSubview(holder)
+                pinchHolder = holder
+                pinchSnapshot = snap
+                delegate?.nativeInkDebug("pinch: zooming a picture of the page")
+            } else {
+                pinchSnapshot = nil
+                pinchHolder = nil
+                delegate?.nativeInkDebug("pinch: no snapshot; zooming the scroll view itself")
+            }
+            pinchStart = (f, sv.contentOffset, zoom)
             scrollWasEnabled = sv.isScrollEnabled
             sv.isScrollEnabled = false
         case .changed:
-            guard let start = pinchStart, let snap = pinchSnapshot, let holder = pinchHolder else { return }
-            let s = InkRules.clampZoom(start.zoom * g.scale) / start.zoom
-            let f = g.location(in: holder)
-            let c = CGPoint(x: snap.bounds.midX, y: snap.bounds.midY)
-            snap.transform = CGAffineTransform(translationX: f.x - c.x, y: f.y - c.y).scaledBy(x: s, y: s).translatedBy(x: c.x - start.focal.x, y: c.y - start.focal.y)
+            guard let start = pinchStart else { return }
+            let s = InkRules.clampZoom(start.zoom * scale) / start.zoom
+            let c = CGPoint(x: frame.width / 2, y: frame.height / 2)
+            let t = CGAffineTransform(translationX: f.x - c.x, y: f.y - c.y).scaledBy(x: s, y: s).translatedBy(x: c.x - start.focal.x, y: c.y - start.focal.y)
+            if let snap = pinchSnapshot { snap.transform = t } else { sv.transform = t }
         case .ended, .cancelled, .failed:
-            guard let start = pinchStart, let holder = pinchHolder else { return }
-            pinchStart = nil
-            let s = InkRules.clampZoom(start.zoom * g.scale) / start.zoom
-            let f = g.state == .ended ? g.location(in: holder) : start.focal
+            guard let start = pinchStart else { return }
+            let s = InkRules.clampZoom(start.zoom * scale) / start.zoom
+            let fEnd = state == .ended ? f : start.focal
             let z1 = start.zoom * s
-            let offset = InkRules.offsetAfterPinch(offset: start.offset, surface: l.surfaceOrigin, scale: s, focalStart: start.focal, focalEnd: f)
+            let offset = InkRules.offsetAfterPinch(offset: start.offset, surface: l.surfaceOrigin, scale: s, focalStart: start.focal, focalEnd: fEnd)
             awaitingView = true
+            delegate?.nativeInkDebug(String(format: "pinch: zoom %.2f", z1))
             delegate?.nativeInk(viewChanged: z1, offset: offset, final: true)
-            // The web answers with viewApplied; if it never does, don't leave the snapshot up.
+            // The web answers with viewApplied; if it never does, don't leave the picture up.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 if self?.awaitingView == true { self?.viewApplied(zoom: z1) }
             }
@@ -529,11 +527,13 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     }
 
     private func endPinch(animated: Bool = false) {
+        let wasPinching = pinchStart != nil || pinchHolder != nil || awaitingView
+        pinchStart = nil
+        pinchSnapshot = nil
+        if wasPinching { scrollView?.isScrollEnabled = scrollWasEnabled }
+        scrollView?.transform = .identity // the no-snapshot pinch
         guard let holder = pinchHolder else { return }
         pinchHolder = nil
-        pinchSnapshot = nil
-        pinchStart = nil
-        scrollView?.isScrollEnabled = scrollWasEnabled
         if animated {
             UIView.animate(withDuration: 0.1, animations: { holder.alpha = 0 }, completion: { _ in holder.removeFromSuperview() })
         } else {

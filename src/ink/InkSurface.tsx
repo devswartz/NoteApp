@@ -19,6 +19,7 @@ import { NativeInkSession, measureLayout, painted, useNativeInkDebug, type Nativ
 import { InkRenderer } from './render.ts';
 import { EraseSession, commitStroke, topZ, zAfter } from './strokes.ts';
 import { fillTestPage, type TestBox } from './testFill.ts';
+import { listenFingerTaps } from './fingerTaps.ts';
 
 /** What CanvasEditor calls when its router hands a pointer to ink. */
 export interface InkHandle {
@@ -191,6 +192,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       onUndo: () => cb.current.onUndo?.(),
       onRedo: () => cb.current.onRedo?.(),
       onStatus: (status) => useNativeInkDebug.setState({ status }),
+      onDebug: (text) => useNativeInkDebug.setState({ gesture: `native: ${text}` }),
       onDetached: () => {
         useNativeInkDebug.setState({ status: 'web pen: the native layer lost the page' });
         setNativeOn(false);
@@ -253,6 +255,18 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       void session.stop();
     };
   }, [native, doc, surface]);
+
+  // Touch screens without the native layer (or before it attaches): the web's own two- and
+  // three-finger taps for undo and redo.
+  useEffect(() => {
+    const el = surface.current;
+    if (!el || nativeOn || typeof window === 'undefined' || !('ontouchstart' in window)) return;
+    return listenFingerTaps(el, (n) => {
+      useNativeInkDebug.setState({ gesture: `web: ${n}-finger tap` });
+      if (n === 2) cb.current.onUndo?.();
+      else cb.current.onRedo?.();
+    });
+  }, [surface, nativeOn]);
 
   useImperativeHandle(
     ref,

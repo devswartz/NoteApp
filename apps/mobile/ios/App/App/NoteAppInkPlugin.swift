@@ -143,6 +143,10 @@ public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
         notifyListeners("redo", data: [:])
     }
 
+    public func nativeInkDebug(_ text: String) {
+        notifyListeners("debug", data: ["text": text])
+    }
+
     public func nativeInkDetached() {
         notifyListeners("detached", data: [:])
     }

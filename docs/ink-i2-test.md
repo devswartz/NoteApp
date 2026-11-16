@@ -82,6 +82,13 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 - [ ] On the PC, the setting isn't shown and the mouse never turns Draw on.
 - **Pass:** the ribbon is the only way out of draw mode, each mode behaves wholly one way, and nothing about the pen gets in the way of typing in type mode.
 
+## 8. Round 3 fixes (build after 0.5.90 (106))
+
+- [ ] **Title:** in draw mode, touching the page title with the Pencil or a finger neither selects it nor brings up the keyboard (turn Draw off to rename the page).
+- [ ] **Undo/redo taps:** two-finger tap undoes, three-finger tap redoes, in both modes. The readout's *last gesture* says `native: 2-finger tap` (or `web: …` if the native layer isn't attached). If a tap does nothing and the readout doesn't change, the tap never reached the app: note where on the page you tapped.
+- [ ] **Pinch zoom:** pinch on the page in draw mode and in type mode. The readout says `native: pinch: zooming a picture of the page`, then `pinch: zoom 1.80` (or similar) when you lift, and the page settles at that zoom with ink on the text.
+- [ ] **Smoothing:** write the same words slowly and quickly, with light and heavy pressure. Edges should be smooth (no flicker in width along a steady line) and slow strokes free of small wobbles; fast strokes should still follow the Pencil. Compare with Notability.
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |

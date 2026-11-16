@@ -75,6 +75,8 @@ export interface NativeInkEvents {
   tool: { tool: InkToolName; enterDraw?: boolean };
   undo: Record<string, never>;
   redo: Record<string, never>;
+  /** What the native layer just recognised, in words (the status readout). */
+  debug: { text: string };
   detached: Record<string, never>;
 }
 
@@ -153,6 +155,8 @@ export interface NativeInkDebug {
   active: boolean;
   /** What the native pen layer is doing, in words (the status readout on the iPad). */
   status: string;
+  /** The last finger gesture seen (native, or the web's own detector), and how many undo/redo taps. */
+  gesture: string;
   renderer: 'notivelo' | 'pencilkit';
   /** Also draw the web's own ink (faint) under the native ink: they should line up exactly. */
   webOverlay: boolean;
@@ -162,7 +166,7 @@ export interface NativeInkDebug {
   fill: (() => void) | null;
 }
 
-export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', renderer: 'notivelo', webOverlay: false, setRenderer: null, fill: null }));
+export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', gesture: 'none yet', renderer: 'notivelo', webOverlay: false, setRenderer: null, fill: null }));
 
 const setStatus = (status: string) => useNativeInkDebug.setState({ status });
 
@@ -182,6 +186,8 @@ export interface NativeInkSessionOptions {
   onRedo?: () => void;
   /** What the session is doing, in words (the status readout). */
   onStatus?: (status: string) => void;
+  /** What the native layer just recognised (a tap, a pinch), in words. */
+  onDebug?: (text: string) => void;
   /** Native lost the page (its scroll view): the caller falls back to the web pen. */
   onDetached?: () => void;
 }
@@ -238,6 +244,7 @@ export class NativeInkSession {
       on('tool', (e) => this.opts.onTool?.(e.tool, !!e.enterDraw)),
       on('undo', () => this.opts.onUndo?.()),
       on('redo', () => this.opts.onRedo?.()),
+      on('debug', (e) => this.opts.onDebug?.(e.text)),
       on('detached', () => this.opts.onDetached?.()),
     ]);
     await this.plugin.setTool(tool);

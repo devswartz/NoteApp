@@ -28,7 +28,7 @@ final class NvInkTests: XCTestCase {
         XCTAssertEqual(info.z, "a3")
         XCTAssertEqual(info.tool, InkToolID.pen)
         XCTAssertLessThan(info.minX, 0)
-        XCTAssertGreaterThan(info.maxX, 10, "reaches toward the second point (smoothing pulls a two-point stroke short)")
+        XCTAssertGreaterThan(info.maxX, 2, "reaches toward the second point (smoothing pulls a two-point stroke short)")
         XCTAssertEqual(InkEngine.formatVersion, 1)
     }
 
@@ -136,6 +136,39 @@ final class NvInkTests: XCTestCase {
             XCTAssertEqual(shown.x, now.x, accuracy: 0.001)
             XCTAssertEqual(shown.y, now.y, accuracy: 0.001)
         }
+    }
+
+    func testFingerTapsAndPinch() {
+        let a = CGPoint(x: 100, y: 100), b = CGPoint(x: 200, y: 100), c = CGPoint(x: 150, y: 200)
+        // Two fingers down and up quickly without moving: a two-finger tap (undo).
+        var g = FingerGestures()
+        g.down(count: 1, points: [a], time: 0)
+        g.down(count: 2, points: [a, b], time: 0.02)
+        XCTAssertEqual(g.moved(points: [CGPoint(x: 102, y: 101), CGPoint(x: 201, y: 99)], allowPinch: true), .none, "a wobble is still a tap")
+        XCTAssertEqual(g.up(time: 0.15, cancelled: false), 2)
+        // Three fingers: redo.
+        g.down(count: 3, points: [a, b, c], time: 1)
+        XCTAssertEqual(g.up(time: 1.2, cancelled: false), 3)
+        // Too slow, one finger, moved, or cancelled: no tap.
+        g.down(count: 2, points: [a, b], time: 2)
+        XCTAssertNil(g.up(time: 2.9, cancelled: false))
+        g.down(count: 1, points: [a], time: 3)
+        XCTAssertNil(g.up(time: 3.1, cancelled: false))
+        g.down(count: 2, points: [a, b], time: 4)
+        _ = g.moved(points: [CGPoint(x: 100, y: 140), CGPoint(x: 200, y: 140)], allowPinch: true)
+        XCTAssertNil(g.up(time: 4.1, cancelled: false), "a two-finger scroll isn't a tap")
+        g.down(count: 2, points: [a, b], time: 5)
+        XCTAssertNil(g.up(time: 5.1, cancelled: true))
+        // Pinch: begins once the distance changes enough, then reports the scale.
+        g.down(count: 2, points: [a, b], time: 6)
+        XCTAssertEqual(g.moved(points: [CGPoint(x: 99, y: 100), CGPoint(x: 202, y: 100)], allowPinch: true), .none)
+        XCTAssertEqual(g.moved(points: [CGPoint(x: 90, y: 100), CGPoint(x: 210, y: 100)], allowPinch: true), .pinchBegan(1.2))
+        XCTAssertEqual(g.moved(points: [CGPoint(x: 50, y: 100), CGPoint(x: 250, y: 100)], allowPinch: true), .pinchChanged(2))
+        g.endPinch()
+        XCTAssertNil(g.up(time: 6.2, cancelled: false), "a pinch isn't a tap")
+        // Where a pinch isn't allowed (outside the page, while drawing), it never starts.
+        g.down(count: 2, points: [a, b], time: 7)
+        XCTAssertEqual(g.moved(points: [CGPoint(x: 50, y: 100), CGPoint(x: 250, y: 100)], allowPinch: false), .none)
     }
 
     func testZKeysMatchTheWeb() {

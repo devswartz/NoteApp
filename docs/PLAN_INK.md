@@ -132,6 +132,7 @@ Each phase is one or more PRs and ships behind the `ink` feature flag until I3 p
 - Lockstep pan and zoom with the web page.
 - Strokes commit to the page doc and appear live on the web.
 - A quick comparison spike: our Metal renderer vs PencilKit for latency.
+- **Devon's wants from the iPad rounds (2026-11-16):** Notability-like stroke smoothing (done in I2: pressure filtered, firmer slow-speed smoothing, a relax pass; tune on the device), pinch zoom while drawing (I2), and **lasso select and hold-to-snap shapes and lines are a definite want**: they are I5 below; consider pulling I5 ahead of I4 (zoom/paper on other platforms) when planning I3+.
 - **Gate (Devon, on device):** latency and quality match Notability side by side, and ink never visibly separates from text while panning or zooming. If either fails, choose the PencilKit or native-page-view fallback before I3.
 - **Built (2026-11-16, branch `claude/ink-i2-61c006`), behind the `ink` flag, iPad only:**
   - **Rust to iOS: a hand-written C ABI, not uniffi.** `crates/nv-ink/src/ffi.rs` (`ffi` feature) and `crates/nv-ink/include/nv_ink.h`: a dozen functions over flat floats and byte buffers. The hot path (a pen sample, a preview per frame) passes pointers with no serialisation, and there is no code generator, extra crates or generated Swift to keep in step; uniffi would add all three for an API this small. `scripts/build-ink-ios.sh` builds `NvInkFFI.xcframework` (device, simulator arm64+x86_64, and macOS for tests); it isn't committed, CI builds it on macOS.

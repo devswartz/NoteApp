@@ -207,6 +207,77 @@ public enum InkRules {
     }
 }
 
+/// Finger gestures from raw touches (MultiTouchObserver): a tap with two or three fingers that
+/// don't move and lift quickly, and a two-finger pinch once the fingers' distance changes enough.
+public struct FingerGestures {
+    public enum Event: Equatable {
+        case none
+        case pinchBegan(CGFloat)
+        case pinchChanged(CGFloat)
+    }
+
+    public static let tapMaxDuration: TimeInterval = 0.4
+    public static let tapSlop: CGFloat = 14
+    /// A pinch starts when the fingers' distance changes by this share.
+    public static let pinchThreshold: CGFloat = 0.06
+
+    private var startTime: TimeInterval?
+    private var maxCount = 0
+    private var starts: [CGPoint] = []
+    private var movedTooFar = false
+    private var everPinched = false
+    private var pinchStartDistance: CGFloat?
+    public private(set) var pinching = false
+    public private(set) var scale: CGFloat = 1
+
+    public init() {}
+
+    static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
+
+    /// A finger went down; `points` are all fingers now down.
+    public mutating func down(count: Int, points: [CGPoint], time: TimeInterval) {
+        if startTime == nil { startTime = time }
+        maxCount = max(maxCount, count)
+        starts = points
+        pinchStartDistance = points.count == 2 ? FingerGestures.distance(points[0], points[1]) : nil
+    }
+
+    public mutating func moved(points: [CGPoint], allowPinch: Bool) -> Event {
+        if starts.count == points.count, zip(starts, points).contains(where: { FingerGestures.distance($0, $1) > FingerGestures.tapSlop }) {
+            movedTooFar = true
+        }
+        guard points.count == 2 else { return .none }
+        let d = FingerGestures.distance(points[0], points[1])
+        guard d > 1 else { return .none }
+        let d0 = pinchStartDistance ?? d
+        pinchStartDistance = d0
+        let s = d / d0
+        if pinching {
+            scale = s
+            return .pinchChanged(s)
+        }
+        if allowPinch, abs(s - 1) > FingerGestures.pinchThreshold {
+            pinching = true
+            everPinched = true
+            scale = s
+            return .pinchBegan(s)
+        }
+        return .none
+    }
+
+    public mutating func endPinch() {
+        pinching = false
+        pinchStartDistance = nil
+    }
+
+    /// All fingers are up: the number of fingers of a tap (2 or 3), or nil. Starts afresh.
+    public mutating func up(time: TimeInterval, cancelled: Bool) -> Int? {
+        defer { self = FingerGestures() }
+        guard !cancelled, let t0 = startTime, !movedTooFar, !everPinched, time - t0 <= FingerGestures.tapMaxDuration, (2...3).contains(maxCount) else { return nil }
+        return maxCount
+    }
+}
+
 /// The pen toolbar's state as the web sends it.
 public struct InkToolState: Equatable {
     /// select, pen, highlighter, eraser, partialEraser

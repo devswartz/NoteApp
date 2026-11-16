@@ -10,6 +10,7 @@ const isIosApp = () => (globalThis as { Capacitor?: { getPlatform?: () => string
 export function InkStatus() {
   const [hidden, setHidden] = useState(false);
   const status = useNativeInkDebug((d) => d.status);
+  const gesture = useNativeInkDebug((d) => d.gesture);
   const available = useInkAvailable((a) => a.available);
   const drawMode = useInkTool((s) => s.drawMode);
   const tool = useInkTool((s) => s.tool);
@@ -20,6 +21,7 @@ export function InkStatus() {
     available ? status : 'ink not offered on this page (read-only, or the phone layout)',
     drawMode ? `Draw mode (${tool})` : 'Type mode',
     `Pencil switch ${pencilSwitches ? 'on' : 'off'}`,
+    `last gesture: ${gesture}`,
   ].join(' · ');
   return (
     <button type="button" className="ink-status" onClick={() => setHidden(true)} title="Ink status (tap to hide)" data-ink-exclude>

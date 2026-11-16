@@ -1,3 +1,4 @@
+import { useInkAvailable, useInkTool } from '../ink/inkTool.ts';
 import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
@@ -521,6 +522,10 @@ function PageIcon({ pageId, icon, canEdit }: { pageId: string; icon: string | nu
 }
 
 function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; initial: string; canEdit: boolean; onEnter: () => void }) {
+  // Draw mode (the ribbon's Draw toggle): the title rests like the text boxes.
+  const inkHere = useInkAvailable((x) => x.available);
+  const drawMode = useInkTool((x) => x.drawMode);
+  const drawing = inkHere && drawMode;
   const [title, setTitle] = useState(initial);
   const treeTitle = useStore((s) => s.tree.pages.find((p) => p.id === pageId)?.title);
   const sharedTitle = useShared((s) => s.pages.find((p) => p.id === pageId)?.title);
@@ -596,11 +601,12 @@ function TitleInput({ pageId, initial, canEdit, onEnter }: { pageId: string; ini
   return (
     <textarea
       ref={ref}
-      className="page-title"
+      className={`page-title ${drawing ? 'is-drawing' : ''}`}
       rows={1}
       value={title}
       placeholder="Untitled"
-      readOnly={!canEdit}
+      readOnly={!canEdit || drawing}
+      tabIndex={drawing ? -1 : undefined}
       onFocus={() => (focused.current = true)}
       onBlur={() => (focused.current = false)}
       onChange={(e) => {
