@@ -22,7 +22,9 @@ SRC = os.path.join(ROOT, "src")
 OUT = os.environ.get("SITE_OUT") or os.path.join(ROOT, "dist")  # build output (git-ignored); the Docker image sets SITE_OUT
 
 APP = "https://app.notiveloapp.com"
-SIGNUP = APP + "/login"
+SIGNIN = APP + "/login"
+# Opens "Create your account" directly (the app reads ?mode=register; ?email= prefills).
+SIGNUP = APP + "/login?mode=register"
 SITE = "https://notiveloapp.com"
 # Confirmed against the iTunes lookup API by bundle id com.devswartz.notivelo.
 APPSTORE = "https://apps.apple.com/app/id6831184261"
@@ -95,6 +97,7 @@ def nav_html(path):
     for href, label in NAV:
         cur = ' aria-current="page"' if path.startswith(href) and href != "/" else ""
         out.append(f'<a href="{href}"{cur}>{label}</a>')
+    out.append(f'<a class="nav-signin" href="{SIGNIN}">Sign in</a>')
     out.append(f'<a class="btn btn-primary nav-cta" href="{SIGNUP}">Create your account</a>')
     return "\n          ".join(out)
 
@@ -166,7 +169,7 @@ def shell(path, title, desc, body, og_title=None, noindex=False, extra_head=""):
           <li><a href="/features">Features</a></li>
           <li><a href="/download">Download</a></li>
           <li><a href="{SIGNUP}">Create an account</a></li>
-          <li><a href="{APP}">Open Notivelo</a></li>
+          <li><a href="{SIGNIN}">Sign in</a></li>
         </ul>
       </div>
       <div>
@@ -205,7 +208,7 @@ def signup_band(heading, sub, ident="signup"):
   <div class="wrap narrow">
     <h2>{heading}</h2>
     <p>{sub}</p>
-    <form class="signup-form" action="{SIGNUP}" method="get">
+    <form class="signup-form" action="{SIGNIN}" method="get">
       <input type="hidden" name="mode" value="register">
       <label class="skip" for="{ident}-email">Email address</label>
       <input id="{ident}-email" type="email" name="email" placeholder="you@example.com"
@@ -696,8 +699,8 @@ GUIDE_BODIES["getting-started"] = f"""
 <ol class="steps">
   <li>
     <h3>Sign up</h3>
-    <p>Go to <a href="{SIGNUP}">{SIGNUP.replace('https://','')}</a> and choose <strong>Create
-       account</strong>. You need a name, an email address and a password of at least eight
+    <p>Go to <a href="{SIGNUP}">{SIGNIN.replace('https://','')}</a> and fill in the <strong>Create
+       your account</strong> form. You need a name, an email address and a password of at least eight
        characters.</p>
   </li>
   <li>
