@@ -44,6 +44,10 @@ export interface NativeInkTool {
   color: number;
   width: number;
   fingerDrawing: boolean;
+  /** The pen tool draw mode uses: a Pencil touch in type mode switches to it (with pencilSwitches). */
+  penTool: InkToolName;
+  /** In type mode a Pencil touch turns draw mode on, and that stroke draws. */
+  pencilSwitches: boolean;
   eraserRadius: number;
   dark: boolean;
 }
@@ -67,7 +71,8 @@ export interface NativeInkEvents {
   stroke: { token: string; data: string };
   erase: { token: string; removed: string[]; added: string[] };
   view: NativeView;
-  tool: { tool: InkToolName };
+  /** The Pencil changed the tool: double-tap (eraser), or `enterDraw` when a Pencil touch in type mode turned draw mode on. */
+  tool: { tool: InkToolName; enterDraw?: boolean };
   undo: Record<string, never>;
   redo: Record<string, never>;
   detached: Record<string, never>;
@@ -155,7 +160,7 @@ export interface NativeInkSessionOptions {
   onWrite?: () => void;
   /** Apply a view from native (zoom and scroll). For a final one, resolve once it's laid out. */
   onView?: (v: NativeView) => Promise<void> | void;
-  onTool?: (tool: InkToolName) => void;
+  onTool?: (tool: InkToolName, enterDraw: boolean) => void;
   onUndo?: () => void;
   /** Three-finger tap: redo. */
   onRedo?: () => void;
@@ -194,7 +199,7 @@ export class NativeInkSession {
       on('stroke', (e) => this.stroke(e)),
       on('erase', (e) => this.erase(e)),
       on('view', (e) => void this.view(e)),
-      on('tool', (e) => this.opts.onTool?.(e.tool)),
+      on('tool', (e) => this.opts.onTool?.(e.tool, !!e.enterDraw)),
       on('undo', () => this.opts.onUndo?.()),
       on('redo', () => this.opts.onRedo?.()),
       on('detached', () => this.opts.onDetached?.()),

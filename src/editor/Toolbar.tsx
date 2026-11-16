@@ -668,13 +668,13 @@ export function Ribbon() {
     <RibbonFrame strip={drawing ? 'Draw · Page · View' : `Text · Lists · Insert${table ? ' · Table' : ''} · Page · View`} editor={editor} idle={off} context={!drawing && !!table}>
       {drawing && (
         <>
-          <DrawToggle />
-          <Sep />
+          <DrawToggle separator />
           <InkRibbonGroups />
         </>
       )}
       {!drawing && (
       <>
+      <DrawToggle separator />
       <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
@@ -806,7 +806,6 @@ export function Ribbon() {
         </>
       )}
       <Sep />
-      <DrawToggle separator />
       </>
       )}
       {drawing && <Sep />}

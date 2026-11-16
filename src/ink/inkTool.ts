@@ -50,6 +50,8 @@ export interface InkToolState {
   highlighterWidth: number;
   /** A finger draws too (off by default: it scrolls; docs/PLAN_INK.md "Decided"). */
   fingerDrawing: boolean;
+  /** iPad: in type mode, a Pencil touch on the page turns draw mode on (and draws), as in OneNote. On by default. */
+  pencilSwitches: boolean;
 }
 
 const KEY = 'noteapp.ink.tool';
@@ -62,6 +64,7 @@ const DEFAULTS: InkToolState = {
   highlighterColor: packColor(HIGHLIGHTER_COLORS[0]!.hex, HIGHLIGHTER_ALPHA),
   highlighterWidth: HIGHLIGHTER_WIDTHS[1]!,
   fingerDrawing: false,
+  pencilSwitches: true,
 };
 
 function load(): InkToolState {

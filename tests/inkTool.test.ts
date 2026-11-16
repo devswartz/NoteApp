@@ -18,6 +18,7 @@ test('the mode and the pen tool are remembered on the device', () => {
   assert.equal(s.drawMode, true);
   assert.equal(s.tool, 'highlighter', 'draw mode opens with the last pen tool');
   assert.equal(s.fingerDrawing, true);
+  assert.equal(s.pencilSwitches, true, 'the Pencil auto-switch is on by default');
 });
 
 test('the Draw toggle switches between typing and the last pen tool', () => {
@@ -41,6 +42,14 @@ test('picking a pen tool in type mode never switches to drawing', () => {
   assert.equal(useInkTool.getState().penTool, 'pen', 'remembered for the next time draw mode is on');
   setDrawMode(true);
   assert.equal(useInkTool.getState().tool, 'pen');
+});
+
+test('a Pencil touch in type mode turns draw mode on with the last pen tool (what the bridge does for enterDraw)', () => {
+  setDrawMode(false);
+  setInkTool({ drawMode: true, tool: 'eraser' });
+  assert.equal(useInkTool.getState().drawMode, true);
+  assert.equal(useInkTool.getState().tool, 'eraser');
+  assert.equal(JSON.parse(ls.get('noteapp.ink.tool')!).drawMode, true);
 });
 
 test('ink is offered only where the page says so', () => {

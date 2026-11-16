@@ -110,6 +110,13 @@ final class NvInkTests: XCTestCase {
         XCTAssertTrue(InkRules.touchDraws(isPencil: false, fingerDrawing: true))
         XCTAssertFalse(InkRules.scribbleAllowed(toolActive: true), "a pen or eraser: the Pencil draws, never writes text")
         XCTAssertTrue(InkRules.scribbleAllowed(toolActive: false))
+        XCTAssertFalse(InkRules.scribbleAllowed(toolActive: false, pencilSwitches: true), "the Pencil will switch to Draw and draw instead")
+        // Type mode: only the Pencil, and only with the auto-switch, starts ink (and switches to draw mode).
+        XCTAssertTrue(InkRules.touchStartsInk(isPencil: true, toolActive: false, fingerDrawing: false, pencilSwitches: true))
+        XCTAssertFalse(InkRules.touchStartsInk(isPencil: true, toolActive: false, fingerDrawing: false, pencilSwitches: false), "setting off: the Pencil acts like a finger")
+        XCTAssertFalse(InkRules.touchStartsInk(isPencil: false, toolActive: false, fingerDrawing: true, pencilSwitches: true), "a finger never switches modes")
+        XCTAssertTrue(InkRules.touchStartsInk(isPencil: false, toolActive: true, fingerDrawing: true, pencilSwitches: false))
+        XCTAssertFalse(InkRules.touchStartsInk(isPencil: false, toolActive: true, fingerDrawing: false, pencilSwitches: true))
         XCTAssertEqual(InkRules.displayColor(0x1F2328FF, dark: true), 0xE6E6E6FF)
         XCTAssertEqual(InkRules.displayColor(0x1F2328FF, dark: false), 0x1F2328FF)
         XCTAssertEqual(InkRules.displayColor(0xDC2626FF, dark: true), 0xDC2626FF)
@@ -160,6 +167,11 @@ final class NvInkTests: XCTestCase {
         XCTAssertEqual(t.strokeTool, InkToolID.highlighter)
         XCTAssertEqual(t.color, 0xFACC1559)
         XCTAssertTrue(InkToolState(["tool": "partialEraser"]).erases)
+        let typing = InkToolState(["tool": "select", "penTool": "highlighter", "pencilSwitches": false])
+        XCTAssertEqual(typing.penTool, "highlighter")
+        XCTAssertFalse(typing.pencilSwitches)
+        XCTAssertTrue(InkToolState().pencilSwitches, "on by default")
+        XCTAssertEqual(InkToolState(["penTool": "select"]).penTool, "pen", "only pen tools")
         XCTAssertFalse(InkToolState().active)
     }
 }

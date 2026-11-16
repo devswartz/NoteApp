@@ -23,8 +23,8 @@ public protocol NativeInkDelegate: AnyObject {
     /// The view changed: `final` after a pinch (the web must apply it, then call viewApplied),
     /// otherwise a report after scrolling stops.
     func nativeInk(viewChanged zoom: CGFloat, offset: CGPoint, final: Bool)
-    /// Pencil double-tap switched the tool.
-    func nativeInk(toolChanged tool: String)
+    /// The Pencil switched the tool: double-tap, or (`enterDraw`) a Pencil touch in type mode turned draw mode on.
+    func nativeInk(toolChanged tool: String, enterDraw: Bool)
     /// Two-finger tap: undo.
     func nativeInkUndo()
     /// Three-finger tap: redo.
@@ -256,7 +256,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         if tool.fingerDrawing { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
         pen.allowedTouchTypes = types
-        pen.isEnabled = tool.active && pencilKit == nil
+        pen.isEnabled = (tool.active || tool.pencilSwitches) && pencilKit == nil
         undoTap.isEnabled = true // anywhere on the page, whatever tool is picked
         redoTap.isEnabled = true
         // Finger drawing on: one finger draws, so scrolling takes two.
@@ -269,7 +269,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         if !tool.erases { previousTool = tool.tool }
         tool.tool = next
         applyTouchTypes()
-        delegate?.nativeInk(toolChanged: next)
+        delegate?.nativeInk(toolChanged: next, enterDraw: false)
     }
 
     @objc private func onUndoTap(_ g: UITapGestureRecognizer) {
@@ -297,15 +297,15 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     }
 
     public func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool {
-        InkRules.scribbleAllowed(toolActive: tool.active)
+        InkRules.scribbleAllowed(toolActive: tool.active, pencilSwitches: tool.pencilSwitches)
     }
 
     // MARK: - Gesture rules
 
     public func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard g === pen else { return pinchHolder == nil || g === pinch }
-        guard tool.active, pencilKit == nil, pinchHolder == nil, !awaitingView, let wv = webView, let l = layout, let c = content, isAttached else { return false }
-        guard InkRules.touchDraws(isPencil: touch.type == .pencil, fingerDrawing: tool.fingerDrawing) else { return false }
+        guard pencilKit == nil, pinchHolder == nil, !awaitingView, let wv = webView, let l = layout, let c = content, isAttached else { return false }
+        guard InkRules.touchStartsInk(isPencil: touch.type == .pencil, toolActive: tool.active, fingerDrawing: tool.fingerDrawing, pencilSwitches: tool.pencilSwitches) else { return false }
         let p = touch.location(in: wv)
         guard l.scroller.contains(p), !l.exclusions.contains(where: { $0.contains(p) }) else { return false }
         return c.bounds.contains(touch.location(in: c))
@@ -327,6 +327,12 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
 
     private func began(_ t: UITouch, _ e: UIEvent) {
         guard let sv = scrollView, let wv = webView, let c = content else { return }
+        if !tool.active {
+            // Type mode with the auto-switch on: this Pencil touch turns draw mode on, and draws.
+            tool.tool = tool.penTool
+            applyTouchTypes()
+            delegate?.nativeInk(toolChanged: tool.tool, enterDraw: true)
+        }
         scrollWasEnabled = sv.isScrollEnabled
         sv.isScrollEnabled = false
         if tool.erases {

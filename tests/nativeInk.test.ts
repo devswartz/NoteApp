@@ -21,7 +21,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const blob = (n: number) => new Uint8Array([1, n, n, 200]);
 
 const LAYOUT: NativeInkLayout = { scroller: { x: 0, y: 48, w: 1000, h: 700 }, surface: { x: 40, y: 14, w: 1200, h: 2000 }, zoom: 1, exclusions: [] };
-const TOOL_STATE: NativeInkTool = { tool: 'pen', color: 0x1f2328ff, width: 2.5, fingerDrawing: false, eraserRadius: 8, dark: false };
+const TOOL_STATE: NativeInkTool = { tool: 'pen', color: 0x1f2328ff, width: 2.5, fingerDrawing: false, penTool: 'pen', pencilSwitches: true, eraserRadius: 8, dark: false };
 
 /** A fake NoteAppInk plugin: records calls, lets the test fire native events. */
 function fakePlugin(opts: { attached?: boolean; available?: boolean } = {}) {
@@ -192,13 +192,14 @@ test('Pencil double-tap, two-finger tap (undo) and three-finger tap (redo) reach
   const doc = new Y.Doc();
   const f = fakePlugin();
   const got: string[] = [];
-  const s = new NativeInkSession(f.plugin, doc, { onTool: (t) => got.push(`tool ${t}`), onUndo: () => got.push('undo'), onRedo: () => got.push('redo'), onDetached: () => got.push('detached') });
+  const s = new NativeInkSession(f.plugin, doc, { onTool: (t, enter) => got.push(`tool ${t}${enter ? ' (enter draw)' : ''}`), onUndo: () => got.push('undo'), onRedo: () => got.push('redo'), onDetached: () => got.push('detached') });
   await s.start(LAYOUT, TOOL_STATE);
   f.fire('tool', { tool: 'eraser' });
+  f.fire('tool', { tool: 'pen', enterDraw: true });
   f.fire('undo', {});
   f.fire('redo', {});
   f.fire('detached', {});
-  assert.deepEqual(got, ['tool eraser', 'undo', 'redo', 'detached']);
+  assert.deepEqual(got, ['tool eraser', 'tool pen (enter draw)', 'undo', 'redo', 'detached']);
   s.setTool({ ...TOOL_STATE, tool: 'highlighter' });
   s.layout({ ...LAYOUT, zoom: 1.5 });
   await tick();

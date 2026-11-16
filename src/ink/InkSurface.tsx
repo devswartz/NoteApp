@@ -59,7 +59,18 @@ const isDarkTheme = () => typeof document !== 'undefined' && document.documentEl
 /** The pen toolbar's state as the native layer wants it. */
 function nativeTool(s: InkToolState): NativeInkTool {
   const style = strokeStyle(s);
-  return { tool: s.tool, color: style?.color ?? s.penColor, width: style?.width ?? s.penWidth, fingerDrawing: s.fingerDrawing, eraserRadius: ERASER_RADIUS, dark: isDarkTheme() };
+  // In type mode the colour and width are those of the pen tool a Pencil touch would switch to.
+  const st = strokeStyle(s.tool === 'select' ? { ...s, tool: s.penTool } : s);
+  return {
+    tool: s.tool,
+    color: st?.color ?? style?.color ?? s.penColor,
+    width: st?.width ?? style?.width ?? s.penWidth,
+    fingerDrawing: s.fingerDrawing,
+    penTool: s.penTool,
+    pencilSwitches: s.pencilSwitches,
+    eraserRadius: ERASER_RADIUS,
+    dark: isDarkTheme(),
+  };
 }
 
 // Delegated ink trail (Edge/WebView2): typed loosely, it isn't in TypeScript's DOM types.
@@ -175,7 +186,8 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     const session = new NativeInkSession(native, doc, {
       onWrite: () => onWriteRef.current?.(),
       onView: applyView,
-      onTool: (tool) => useInkTool.getState().drawMode && setInkTool({ tool }), // Pencil double-tap: draw mode only
+      // A Pencil touch in type mode turned draw mode on (setting on); double-tap only acts in draw mode.
+      onTool: (tool, enterDraw) => (enterDraw ? setInkTool({ drawMode: true, tool }) : useInkTool.getState().drawMode && setInkTool({ tool })),
       onUndo: () => cb.current.onUndo?.(),
       onRedo: () => cb.current.onRedo?.(),
       onDetached: () => {

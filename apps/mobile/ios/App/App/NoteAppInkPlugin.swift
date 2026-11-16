@@ -128,8 +128,8 @@ public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
         notifyListeners("view", data: ["zoom": zoom, "x": offset.x, "y": offset.y, "final": final])
     }
 
-    public func nativeInk(toolChanged tool: String) {
-        notifyListeners("tool", data: ["tool": tool])
+    public func nativeInk(toolChanged tool: String, enterDraw: Bool) {
+        notifyListeners("tool", data: ["tool": tool, "enterDraw": enterDraw])
     }
 
     public func nativeInkUndo() {

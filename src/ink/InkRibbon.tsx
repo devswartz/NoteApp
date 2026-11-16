@@ -3,7 +3,7 @@
 // finger drawing, and on the iPad the pen layer's debug menu. Behind the `ink` flag; shown only
 // where CanvasEditor says ink works (useInkAvailable). Buttons use the ribbon's own markup
 // (data-tb-item, roving focus), so keyboard use is the same as for the text groups.
-import { Bug, Eraser, Hand, Highlighter, Pen, PenLine, Slice } from 'lucide-react';
+import { Bug, Eraser, Hand, Highlighter, Pen, PenLine, Pencil, Slice } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Group, Sep } from '../editor/Toolbar.tsx';
 import { packColor } from './engine.ts';
@@ -120,6 +120,17 @@ export function InkRibbonGroups() {
         >
           <Hand />
         </RbButton>
+        {debug.active && (
+          // iPad only (the native pen layer): in type mode a Pencil touch turns Draw on and draws, as OneNote does.
+          <RbButton
+            label="Apple Pencil switches to Draw mode"
+            title={s.pencilSwitches ? 'On: touching the page with the Pencil turns Draw on (and draws)' : 'Off: in type mode the Pencil acts like a finger'}
+            active={s.pencilSwitches}
+            onClick={() => setInkTool({ pencilSwitches: !s.pencilSwitches })}
+          >
+            <Pencil />
+          </RbButton>
+        )}
         {debug.active && (
           // The iPad prototype's debug menu (docs/ink-i2-test.md), behind the bug button.
           <RbButton label="Pen layer debug" active={debugOpen} onClick={() => setDebugOpen(!debugOpen)}>

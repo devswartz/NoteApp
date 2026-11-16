@@ -172,8 +172,15 @@ public enum InkRules {
     /// Whether a touch draws: the Pencil always; a finger only with finger drawing on (palm rejection).
     public static func touchDraws(isPencil: Bool, fingerDrawing: Bool) -> Bool { isPencil || fingerDrawing }
 
-    /// Scribble (handwriting into text fields) only while no pen tool is picked: with one, the Pencil draws.
-    public static func scribbleAllowed(toolActive: Bool) -> Bool { !toolActive }
+    /// Scribble (handwriting into text fields) only while the Pencil can't draw: not in draw mode, and
+    /// not in type mode when a Pencil touch switches to draw mode.
+    public static func scribbleAllowed(toolActive: Bool, pencilSwitches: Bool = false) -> Bool { !toolActive && !pencilSwitches }
+
+    /// Whether a touch starts ink: in draw mode as touchDraws says; in type mode only the Pencil, and
+    /// only with the auto-switch on (it turns draw mode on). A finger never switches modes.
+    public static func touchStartsInk(isPencil: Bool, toolActive: Bool, fingerDrawing: Bool, pencilSwitches: Bool) -> Bool {
+        toolActive ? touchDraws(isPencil: isPencil, fingerDrawing: fingerDrawing) : isPencil && pencilSwitches
+    }
 
     /// The colour a stroke is drawn in: in the dark theme near-black ink is drawn near-white, as
     /// on the web (src/ink/render.ts displayColor). 0xRRGGBBAA in and out.
@@ -207,6 +214,10 @@ public struct InkToolState: Equatable {
     public var color: UInt32 = 0x1F2328FF
     public var width: Float = 2.5
     public var fingerDrawing = false
+    /// The pen tool draw mode uses (a Pencil touch in type mode switches to it).
+    public var penTool = "pen"
+    /// In type mode a Pencil touch turns draw mode on and draws.
+    public var pencilSwitches = true
     public var eraserRadius: Float = 8
     public var dark = false
 
@@ -217,6 +228,8 @@ public struct InkToolState: Equatable {
         if let c = (d["color"] as? NSNumber)?.uint32Value { color = c }
         if let w = (d["width"] as? NSNumber)?.floatValue { width = w }
         if let f = d["fingerDrawing"] as? Bool { fingerDrawing = f }
+        if let p = d["penTool"] as? String, ["pen", "highlighter", "eraser", "partialEraser"].contains(p) { penTool = p }
+        if let a = d["pencilSwitches"] as? Bool { pencilSwitches = a }
         if let r = (d["eraserRadius"] as? NSNumber)?.floatValue { eraserRadius = r }
         if let k = d["dark"] as? Bool { dark = k }
     }
