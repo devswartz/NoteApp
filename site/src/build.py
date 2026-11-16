@@ -161,7 +161,7 @@ def shell(path, title, desc, body, og_title=None, noindex=False, extra_head=""):
     <div class="foot-grid">
       <div>
         <a class="brand" href="/"><img src="/assets/icon.svg" alt="" width="27" height="27">Notivelo</a>
-        <p class="lede foot-tag">Notes and tasks, the OneNote way.</p>
+        <p class="lede foot-tag">Notes and tasks, beautifully together.</p>
       </div>
       <div>
         <h4>Product</h4>
@@ -305,7 +305,7 @@ HOME = f"""
 <section class="hero">
   <div class="wrap">
     <div>
-      <h1>Notes and tasks, the OneNote way</h1>
+      <h1>Notes and tasks, beautifully together</h1>
       <p class="lede">Notebooks, sections and pages &mdash; the structure you already think in &mdash;
          with real tasks that live inside your notes instead of in a separate app.</p>
       <div class="hero-actions">
@@ -335,7 +335,7 @@ HOME = f"""
       <div class="card">
         <div class="ico">{I_BOOK}</div>
         <h3>Notebooks, sections, pages</h3>
-        <p>The hierarchy OneNote taught everyone, with colour-coded section tabs and pages nested
+        <p>A simple, familiar hierarchy, with colour-coded section tabs and pages nested
            as deep as you need. Start from a Meeting notes, Project or Daily journal template.</p>
       </div>
       <div class="card">
@@ -776,7 +776,7 @@ GUIDE_BODIES["getting-started"] = f"""
 """
 
 GUIDE_BODIES["notebooks-sections-pages"] = f"""
-<p class="lede">Notivelo uses the structure OneNote made familiar: notebooks hold sections,
+<p class="lede">Notivelo uses a simple structure: notebooks hold sections,
    sections hold pages. Here's how to use it without it becoming a filing project.</p>
 
 <h2>The three levels</h2>
@@ -1362,10 +1362,10 @@ def main():
 
     written = []
     written.append(write("index.html", shell(
-        "/", "Notivelo &mdash; notes and tasks, the OneNote way",
+        "/", "Notivelo &mdash; notes and tasks, beautifully together",
         "Notebooks, sections and pages, with tasks that live inside your notes, a calendar "
         "and live sharing built in. Import your OneNote notebooks and work offline.",
-        HOME, og_title="Notivelo: notes and tasks, the OneNote way",
+        HOME, og_title="Notivelo: notes and tasks, beautifully together",
         extra_head=HOME_JSONLD)))
 
     written.append(write("features.html", shell(
