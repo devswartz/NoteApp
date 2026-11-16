@@ -24,8 +24,8 @@ import { newBoxId } from './canvasGeom.ts';
 import { sanitizeContent } from './urls.ts';
 import { resolveListStarts } from '../../shared/listMarker.ts';
 
-/** Transaction origin of box geometry changes the canvas undo (Ctrl+Z outside a box) tracks. */
-export const GEOM_ORIGIN = { canvas: 'geometry' };
+export { GEOM_ORIGIN, canvasUndoManager } from './canvasUndo.ts';
+import { GEOM_ORIGIN } from './canvasUndo.ts';
 
 /** What PageView needs from an open canvas: its doc, and a way to add a box below the others. */
 export interface CanvasHandle {
