@@ -1,0 +1,33 @@
+/* Ink on canvas pages (src/ink/). The canvases sit in the canvas surface at page coordinates
+   (render.ts places them over the visible part): highlighters under the text boxes, pens over
+   them, and the stroke being drawn over everything (a highlighter's under the boxes). Box z-indexes
+   grow from 1 as boxes come to the front, so "over" is far above any of them; the surface's
+   isolation keeps all of it under the app's own chrome. */
+.ink-layer { position: absolute; left: 0; top: 0; pointer-events: none; }
+.ink-under { z-index: 0; }
+.ink-over, .ink-live { z-index: 2000000000; }
+.ink-live[data-tool='highlighter'] { z-index: 0; }
+
+/* An ink tool is active: the pen draws everywhere on the page, over boxes too. */
+.canvas-surface.ink-active, .canvas-surface.ink-active * { cursor: crosshair; }
+.canvas-surface.ink-active { -webkit-user-select: none; user-select: none; }
+/* Finger drawing on: a finger draws instead of scrolling (off by default). */
+.canvas-surface.ink-finger { touch-action: none; }
+/* A pen is near (it hovers, as Windows pens do): it must draw, not scroll. */
+.canvas-surface.ink-active.pen-near { touch-action: none; }
+
+.ink-toolbar {
+  position: sticky; top: 6px; z-index: 30;
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap;
+  width: max-content; max-width: 100%; margin: 0 0 6px auto; padding: 3px;
+  background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm);
+}
+.ink-sep { width: 1px; height: 20px; margin: 0 4px; background: var(--border); }
+.ink-swatch {
+  width: 22px; height: 22px; margin: 0 2px; padding: 0; border-radius: 50%;
+  border: 2px solid var(--bg-elevated); box-shadow: 0 0 0 1px var(--border);
+}
+.ink-swatch.is-active { box-shadow: 0 0 0 2px var(--accent); }
+.ink-width span { display: block; border-radius: 50%; background: currentColor; }
+
+@media print { .ink-toolbar, .ink-layer { display: none !important; } }

@@ -290,7 +290,7 @@ export function pageSettingsAttrs(doc: Y.Doc): Partial<PageSettings> | null {
   return Object.keys(out).length ? out : null;
 }
 
-// ───────────── Ink (docs/PLAN_INK.md, phase I0: reserved, nothing writes it yet) ─────────────
+// ───────────── Ink (docs/PLAN_INK.md; written by src/ink/ from phase I1, behind the `ink` flag) ─────────────
 // Handwriting strokes in the `ink` Y.Map: stroke id → an immutable Uint8Array blob (the
 // format is defined by the ink engine, PLAN_INK "Storage"). It is not a content field, so
 // pageFragments() and every text reader skip it; the hooks below are where each reader will
@@ -298,17 +298,25 @@ export function pageSettingsAttrs(doc: Y.Doc): Partial<PageSettings> | null {
 // doesn't read, so older apps can't damage handwriting.
 
 export const INK_KEY = 'ink';
+/**
+ * The largest stroke blob accepted (bytes). nv-ink caps a stroke at 65,536 points of at most
+ * ~7 bytes; anything bigger isn't a stroke this format can produce.
+ */
+export const MAX_STROKE_BYTES = 512 * 1024;
+
+/** Whether a value can be an ink entry: a byte blob of a sane size. The blob itself is checked by whoever draws it. */
+export const isStrokeValue = (v: unknown): v is Uint8Array => v instanceof Uint8Array && v.byteLength > 0 && v.byteLength <= MAX_STROKE_BYTES;
 
 export interface InkStroke {
   id: string;
   data: Uint8Array;
 }
 
-/** The page's strokes (values that aren't byte blobs are skipped), ordered by id for now; the blob's z key orders them later. */
+/** The page's strokes (values that aren't stroke blobs are skipped), by id; drawing order comes from each blob's z key (src/ink/strokes.ts). */
 export function pageInk(doc: Y.Doc): InkStroke[] {
   const out: InkStroke[] = [];
   doc.getMap<unknown>(INK_KEY).forEach((data, id) => {
-    if (data instanceof Uint8Array) out.push({ id, data });
+    if (isStrokeValue(data)) out.push({ id, data });
   });
   return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
@@ -327,7 +335,7 @@ export function inkSearchText(_doc: Y.Doc): string {
 /** Remove `ink` entries that aren't stroke blobs (from a hand-built update); returns how many. */
 export function dropInvalidInk(doc: Y.Doc, origin: unknown = null): number {
   const ink = doc.getMap<unknown>(INK_KEY);
-  const bad = [...ink.entries()].filter(([, v]) => !(v instanceof Uint8Array)).map(([k]) => k);
+  const bad = [...ink.entries()].filter(([, v]) => !isStrokeValue(v)).map(([k]) => k);
   if (bad.length) doc.transact(() => bad.forEach((k) => ink.delete(k)), origin);
   return bad.length;
 }

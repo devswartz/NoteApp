@@ -42,7 +42,9 @@ test('API responses get a deny-all CSP; the web app gets the strict app CSP; COR
   const host = new URL(origin).host;
   for (const d of ["script-src 'self'", "object-src 'none'", "frame-ancestors 'none'", "base-uri 'self'", `wss://${host}`, `ws://${host}`])
     assert.ok(csp.includes(d), `CSP has ${d}: ${csp}`);
-  assert.ok(!/script-src[^;]*unsafe/.test(csp), 'no unsafe script sources');
+  // 'wasm-unsafe-eval' (WebAssembly from 'self': the ink engine) is the one exception; no JS eval or inline scripts.
+  assert.ok(!/script-src[^;]*'unsafe-(inline|eval|hashes)'/.test(csp), 'no unsafe script sources');
+  assert.ok(/script-src 'self' 'wasm-unsafe-eval'(;|$)/.test(csp), csp);
 });
 
 test('uploads keep their own sandbox CSP', async () => {

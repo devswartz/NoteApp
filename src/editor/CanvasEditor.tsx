@@ -21,6 +21,10 @@
 // (yours only; pageUndo.ts).
 // Phones (≤760px) get the boxes stacked in reading order, edited normally (no placing); a page
 // with one box is just one full-width editor.
+// Ink (docs/PLAN_INK.md, behind the `ink` flag): with a pen tool picked in the pen toolbar, the pointer
+// router hands pen and mouse input (a finger only with finger drawing on) to the ink layer
+// (src/ink/InkSurface.tsx); strokes sit above the boxes, highlighters under them, and undo takes
+// back strokes and erases with the box changes. Ink isn't shown in the stacked phone layout.
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { EditorContent, type Editor } from '@tiptap/react';
 import { Extension, type JSONContent } from '@tiptap/core';
@@ -53,6 +57,8 @@ import {
   pointerKind,
   routePointer,
   snapY,
+  SURFACE_PAD_X,
+  SURFACE_PAD_Y,
   surfaceSize,
   toPage,
   UNMEASURED_H,
@@ -65,13 +71,20 @@ import { LinePicks, linePicks } from './linePicks.ts';
 import { PrintSelectionMenu } from './PrintSelectionMenu.tsx';
 import { toast } from '../store.ts';
 import { pageUndoFor, pageUndoOf } from './pageUndo.ts';
-import { GEOM_ORIGIN, boxJSON, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
+import { GEOM_ORIGIN, boxJSON, canvasUndoManager, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
 import { MOD, MenuItem, MenuSeparator, keyLabel, useContextMenu, useIsMobile } from '../components/ui.tsx';
 import { boxSelection, useBoxSelection } from './boxSelection.ts';
 import { editorIsEmpty } from './taskGate.ts';
 import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
+import { flag } from '../lib/flags.ts';
+import { InkSurface, type InkHandle } from '../ink/InkSurface.tsx';
+import { InkToolbar } from '../ink/InkToolbar.tsx';
+import { useInkTool } from '../ink/inkTool.ts';
+
+/** Read once: the flag changes with a reload (src/lib/flags.ts). */
+const INK_FLAG = flag('ink');
 
 interface Props {
   pageId: string;
@@ -204,12 +217,14 @@ function revealHeadingIn(editor: Editor, index: number) {
 const CAPTURE_MS = 500;
 
 /**
- * Undo for box geometry: one Y.UndoManager over the boxes map (and each box's content, so
- * undoing a delete brings the text back), tracking only this client's GEOM_ORIGIN changes.
- * Text typed in a box has its own history, kept by the page (PageUndo.textUndo) so it outlives the box's editor.
+ * Undo for box geometry and ink: one Y.UndoManager over the boxes map (and each box's content, so
+ * undoing a delete brings the text back) and the ink map, tracking only this client's GEOM_ORIGIN
+ * and INK_ORIGIN changes. Each stroke or erase is its own step (the ink layer ends the capture
+ * around its writes). Text typed in a box has its own history, kept by the page (PageUndo.textUndo)
+ * so it outlives the box's editor.
  */
 function useGeometryUndo(doc: Y.Doc) {
-  const um = useMemo(() => new Y.UndoManager(doc.getMap<unknown>(BOXES_KEY), { trackedOrigins: new Set([GEOM_ORIGIN]), captureTimeout: CAPTURE_MS }), [doc]);
+  const um = useMemo(() => canvasUndoManager(doc, CAPTURE_MS), [doc]);
   useEffect(() => {
     const map = doc.getMap<unknown>(BOXES_KEY);
     const scope = () => map.forEach((_v, id) => um.addToScope(doc.getXmlFragment(boxField(id))));
@@ -235,8 +250,16 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isMobile = useIsMobile();
-  /** The active canvas tool (docs/PLAN_INK.md): only 'select' until the ink tool exists. */
-  const canvasTool: CanvasTool = 'select';
+  // The active canvas tool (docs/PLAN_INK.md): 'ink' while a pen tool is picked in the pen toolbar.
+  // Ink needs the placed layout: none in the stacked phone layout.
+  const inkTool = useInkTool((s) => s.tool);
+  const fingerDrawing = useInkTool((s) => s.fingerDrawing);
+  const inkOn = INK_FLAG && canEdit && !isMobile;
+  const canvasTool: CanvasTool = inkOn && inkTool !== 'select' ? 'ink' : 'select';
+  const inkRef = useRef<InkHandle>(null);
+  const [penNear, setPenNear] = useState(false);
+  /** How far the ink reaches (page px): the surface grows to hold it, as it does for boxes. */
+  const [inkExtent, setInkExtent] = useState({ w: 0, h: 0 });
   // Rule lines on: boxes sit on the line grid (new and moved boxes are saved on it; older
   // boxes are drawn on it), so their text lines up with the lines.
   const ruled = usePageSettings(doc).rules !== 'none';
@@ -860,9 +883,32 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
    * input here; claiming a pointerdown with preventDefault also stops the mouse events after it.
    */
   const onSurfacePointer = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (routePointer(pointerKind(e), { tool: canvasTool, canEdit, fingerDrawing: false }) === 'ui') return;
-    // 'ink': nothing claims it yet (there is no ink tool until PLAN_INK phase I3).
+    const kind = pointerKind(e);
+    // The pen's eraser end (buttons bit 32) erases whole strokes whatever tool is picked.
+    const eraserEnd = inkOn && kind === 'pen' && (e.buttons & 32) !== 0;
+    if (!eraserEnd && routePointer(kind, { tool: canvasTool, canEdit, fingerDrawing }) === 'ui') return;
+    // Not taken (the ink engine is still loading): still no box, caret or selection from a pen gesture.
+    if (!inkRef.current?.pointerDown(e.nativeEvent, eraserEnd ? 'eraser' : inkTool)) e.preventDefault();
   };
+  // A pen hovering over the page (Windows pens hover) must draw, not scroll: see .pen-near in ink.css.
+  const onSurfaceHover = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const pen = e.pointerType === 'pen';
+    if (pen !== penNear) setPenNear(pen);
+  };
+  // WebKit (iPad): a Pencil touch must not scroll the page while an ink tool is picked; fingers still scroll.
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el || canvasTool !== 'ink') return;
+    const onTouch = (e: TouchEvent) => {
+      if ([...e.changedTouches].some((t) => (t as Touch & { touchType?: string }).touchType === 'stylus')) e.preventDefault();
+    };
+    el.addEventListener('touchstart', onTouch, { passive: false });
+    el.addEventListener('touchmove', onTouch, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouch);
+      el.removeEventListener('touchmove', onTouch);
+    };
+  }, [canvasTool]);
 
   /** Where a box added "below the others" goes; on a blank page that's its main, wide box. */
   const below = () => (boxesRef.current.length ? boxBelow(boxesRef.current, heights) : { ...FIRST_BOX, z: 1 });
@@ -889,19 +935,22 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   // surface stops short of the window's bottom so "Add a task" is in view and nothing scrolls.
   // Empty canvas around the picker still takes a click to start a box there.
   const firstH = heights[FIRST_BOX_ID] ?? UNMEASURED_H;
-  const size = surfaceSize(drawn, heights, pageView.w, ready ? Math.max(firstH + BLANK_SLOT_H, pageView.h - BLANK_TRIM) : pageView.h);
+  const boxSize = surfaceSize(drawn, heights, pageView.w, ready ? Math.max(firstH + BLANK_SLOT_H, pageView.h - BLANK_TRIM) : pageView.h);
+  const size = { w: Math.max(boxSize.w, inkExtent.w ? inkExtent.w + SURFACE_PAD_X : 0), h: Math.max(boxSize.h, inkExtent.h ? inkExtent.h + SURFACE_PAD_Y : 0) };
   const stacked = isMobile;
   const list = stacked ? readingOrder(drawn) : drawn;
   const single = stacked && list.length === 1;
 
   return (
     <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''} ${single ? 'is-single' : ''} ${ready ? 'is-blank' : ''}`}>
+      {inkOn && <InkToolbar />}
       <div className="canvas-viewport">
         <div
           ref={surfaceRef}
-          className={`canvas-surface ${canEdit ? 'can-edit' : ''}`}
+          className={`canvas-surface ${canEdit ? 'can-edit' : ''} ${canvasTool === 'ink' ? 'ink-active' : ''} ${canvasTool === 'ink' && fingerDrawing ? 'ink-finger' : ''} ${penNear ? 'pen-near' : ''}`}
           style={stacked ? undefined : { width: lengthToScreen({ scale: CANVAS_SCALE }, size.w), height: lengthToScreen({ scale: CANVAS_SCALE }, size.h) }}
           onPointerDownCapture={onSurfacePointer}
+          onPointerOver={onSurfaceHover}
           onMouseDown={onSurfaceDown}
           onContextMenu={onSurfaceMenu}
           onMouseDownCapture={(e) => {
@@ -941,6 +990,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               onHandleMenu={onHandleMenu}
             />
           ))}
+          {!stacked && <InkSurface ref={inkRef} doc={doc} surface={surfaceRef} wanted={canvasTool === 'ink'} onWrite={() => undo.stopCapturing()} onExtent={setInkExtent} />}
           {ready && blankSlot && !stacked && (
             <div className="canvas-blank-slot" style={{ top: firstH + 4 }}>
               {blankSlot}

@@ -28,7 +28,9 @@ function socketOrigins(host: string | undefined): string {
 export function appCsp(host: string | undefined): string {
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    // 'wasm-unsafe-eval' lets the page compile WebAssembly it loaded from 'self' (the ink engine, src/ink/); it
+    // allows no JavaScript eval.
+    "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     // Notes may embed images by URL; uploads are same-origin.
     "img-src 'self' data: blob: https:",

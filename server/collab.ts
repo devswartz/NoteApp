@@ -4,7 +4,7 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
-import { DEFAULT_FIELD, convertPageDoc, dropInvalidInk, inkSearchText, isContentField, mainFragment, observePageContent, pageFragments, upgradePageDoc } from '../shared/pageDoc.ts';
+import { DEFAULT_FIELD, INK_KEY, convertPageDoc, dropInvalidInk, inkSearchText, isStrokeValue, isContentField, mainFragment, observePageContent, pageFragments, upgradePageDoc } from '../shared/pageDoc.ts';
 import crypto from 'node:crypto';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -124,7 +124,7 @@ export function sanitizePageDoc(doc: Y.Doc): number {
   const stack: [AnyType, number][] = [];
   for (const root of contentRoots(doc)) stack.push([root, 0]);
   drain(stack, bad);
-  // Ink entries must be stroke blobs (docs/PLAN_INK.md). Live edits to `ink` get checked from PLAN_INK phase I1, when strokes exist.
+  // Ink entries must be stroke blobs (docs/PLAN_INK.md); live edits are checked in findOffenders.
   return removeBad(doc, bad) + dropInvalidInk(doc, SANITIZE_ORIGIN);
 }
 
@@ -151,6 +151,15 @@ function findOffenders(doc: Y.Doc, tr: Y.Transaction): Y.Item[] {
   const added = (i: Y.Item) => i.id.clock >= (tr.beforeState.get(i.id.client) ?? 0);
   for (const [type, keys] of tr.changed) {
     if (type instanceof Y.XmlText) continue;
+    // Ink entries a client set must be stroke blobs of a sane size (a newer app's blob format is kept: its
+    // version is the blob's business). Deleting strokes is always fine.
+    if (type === doc.share.get(INK_KEY)) {
+      for (const k of keys) {
+        const i = k === null ? undefined : (type as AnyType)._map.get(k);
+        if (i && !i.deleted && added(i) && !isStrokeValue((i.content as { getContent(): unknown[] }).getContent()[0])) bad.push(i);
+      }
+      continue;
+    }
     roots ??= contentRoots(doc);
     const depth = depthIn(type as AnyType, roots);
     if (depth < 0) continue;
