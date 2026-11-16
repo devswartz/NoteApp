@@ -43,7 +43,7 @@ jobs:
       - name: Smoke-test the container
         run: |
           set -euo pipefail
-          docker run -d --name s -p 8088:80 site-test
+          docker run -d --name site-smoke -p 8088:80 site-test
           for i in $(seq 1 20); do curl -fs http://127.0.0.1:8088/healthz && break; sleep 1; done
           code() { curl -s -o /dev/null -w '%{http_code}' -H "$2" "http://127.0.0.1:8088$1"; }
           loc() { curl -s -o /dev/null -w '%{redirect_url}' -H "$2" "http://127.0.0.1:8088$1"; }
@@ -55,7 +55,7 @@ jobs:
           test "$(code / 'Host: www.notiveloapp.com')" = 301
           case "$(loc /guide 'X-Forwarded-Proto: https')" in http://*) echo "absolute http redirect"; exit 1;; esac
           curl -sI -H 'X-Forwarded-Proto: https' http://127.0.0.1:8088/ | grep -qi "content-security-policy"
-          docker rm -f s
+          docker rm -f site-smoke
 
       - name: Publish
         if: github.event_name == 'push'
