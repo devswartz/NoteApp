@@ -738,6 +738,8 @@ textarea.feedback-text { height: auto; min-height: 120px; padding: 8px 10px; res
 
 /* ───────────────────────── App layout ───────────────────────── */
 .app { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+/* Tablets (the iPad app; viewport-fit=cover): the ribbon starts below the status bar. Phones pad their own top bar. */
+.app:not(.is-mobile) { padding-top: var(--safe-top); }
 /* Under the ribbon (desktop/tablet): rail, panels and the note side by side. Phones have no ribbon and lay these out themselves. */
 .app-body { flex: 1; min-height: 0; min-width: 0; display: flex; }
 .main { flex: 1; min-width: 0; position: relative; overflow: hidden; display: flex; flex-direction: column; }
