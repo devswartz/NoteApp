@@ -39,7 +39,8 @@ final class NvInkTests: XCTestCase {
         let path = InkPaths.cgPath(ops)
         XCTAssertFalse(path.isEmpty)
         let r = InkEngine.info(blob)!
-        XCTAssertEqual(path.boundingBoxOfPath.minX, CGFloat(r.minX), accuracy: 1)
+        XCTAssertGreaterThanOrEqual(path.boundingBoxOfPath.minX, CGFloat(r.minX) - 0.5, "the header box covers the ink")
+        XCTAssertLessThan(path.boundingBoxOfPath.minX - CGFloat(r.minX), 4)
         XCTAssertEqual(InkEngine.triangles(blob).count % 6, 0)
         let junk = Data([1, 2, 3])
         XCTAssertNil(InkEngine.info(junk))

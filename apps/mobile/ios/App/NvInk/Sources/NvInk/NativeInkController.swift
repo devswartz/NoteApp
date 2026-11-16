@@ -324,7 +324,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         if let token = eraseToken {
             eraseToken = nil
             let removed = eraseRemoved.filter { !$0.contains("#") } // a stroke still on its way to the web stays
-            let added = erasePieces.map(\.blob)
+            let added = erasePieces.map { $0.blob }
             if cancelled || (removed.isEmpty && added.isEmpty) {
                 content?.redraw(store.clearOverlay(token))
             } else {
@@ -380,7 +380,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
                 changed = true
             }
         }
-        if changed { content?.redraw(store.setOverlay(token, removed: eraseRemoved, added: erasePieces.map(\.blob))) }
+        if changed { content?.redraw(store.setOverlay(token, removed: eraseRemoved, added: erasePieces.map { $0.blob })) }
     }
 
     private func replace(_ id: String, _ pieces: [Data]) {
