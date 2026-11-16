@@ -69,6 +69,9 @@
   .print-row + .print-row { margin-top: 4mm; }
   .print-row.is-columns { display: flex; gap: 24px; align-items: flex-start; }
   .print-box { min-width: 0; }
+  /* Handwriting (src/ink/svg.ts): vector paths at their size on the page, colours as drawn. */
+  .print-ink { margin: 3mm 0 0; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .print-ink svg { display: block; max-width: 100%; height: auto; }
   .print-row.is-columns > .print-box { break-inside: auto; }
 
   /* Editor content, statically rendered (no editor): the .ProseMirror rules apply; these adjust for paper. */

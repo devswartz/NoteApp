@@ -10,7 +10,8 @@ import { get } from '../api.ts';
 import { errorToast, toast, useStore } from '../store.ts';
 import { platform } from '../platform/index.ts';
 import { sectionsInOrder, sectionDescendants } from '../../shared/sections.ts';
-import { boxGeoms, isContentField } from '../../shared/pageDoc.ts';
+import { boxGeoms, hasInk, isContentField } from '../../shared/pageDoc.ts';
+import { inkEngine, loadInk } from '../ink/engine.ts';
 import type { Task } from '../../shared/types.ts';
 import { useRibbon } from '../editor/ribbonState.ts';
 import { useBoxSelection, selectionEditor } from '../editor/boxSelection.ts';
@@ -42,7 +43,7 @@ export function setPrintPageColour(on: boolean) {
 
 function context(extraTasks: Record<string, Task> = {}): PrintContext {
   const s = useStore.getState();
-  return { tree: s.tree, tasks: { ...extraTasks, ...s.tasks }, members: s.members, pageColour: printPageColour() };
+  return { tree: s.tree, tasks: { ...extraTasks, ...s.tasks }, members: s.members, pageColour: printPageColour(), ink: inkEngine() };
 }
 
 /** Canvas heights of the open page's boxes, so side-by-side boxes are recognised as on screen. */
@@ -103,6 +104,8 @@ export async function printView(): Promise<void> {
 
 async function run(pages: (PrintPageInput | HTMLElement)[], title: string, ctx: PrintContext) {
   installPrintHandlers();
+  // Handwriting needs the ink engine (loaded on demand); a page printed from beforeprint uses it if it's already there.
+  if (!ctx.ink && pages.some((p) => !(p instanceof HTMLElement) && hasInk(p.doc))) ctx = { ...ctx, ink: await loadInk().catch(() => null) };
   const root = mountPrintRoot(pages.map((p) => (p instanceof HTMLElement ? p : renderPrintPage(p, ctx))));
   prepared = true;
   await imagesReady(root);
