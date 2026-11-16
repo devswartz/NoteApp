@@ -1,0 +1,2 @@
+# The ink engine build (scripts/build-ink-wasm.sh) is committed byte for byte: CI compares it with a fresh build.
+src/ink/generated/** -text

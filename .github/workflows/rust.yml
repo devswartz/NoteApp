@@ -1,0 +1,89 @@
+name: Rust
+
+# The Rust core (crates/, docs/ARCHITECTURE.md 3.3). Runs beside CI's check/docker/e2e jobs, not
+# before them, so it adds no wall-clock time to a pull request.
+#   rust      cargo fmt --check, clippy -D warnings, cargo test (unit + property tests).
+#   ink wasm  rebuilds the ink engine's WASM and JS glue (scripts/build-ink-wasm.sh) and fails if the
+#             committed files in src/ink/generated/ differ from the source, or if it outgrows its
+#             size budget. The web, Docker and app builds use the committed files and need no Rust.
+#             When it fails because the files differ, the job's `ink-wasm` artifact holds the right
+#             ones: copy them into src/ink/generated/ and commit.
+# Fuzzing (crates/nv-ink/fuzz, cargo +nightly fuzz run decode) runs by hand, not here.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned: the committed WASM must be reproducible. Change both together with a rebuild of src/ink/generated.
+  RUST_TOOLCHAIN: '1.99.1'
+  WASM_BINDGEN_VERSION: '0.2.130'
+  # The whole core's WASM (gzipped) must stay under 1.5 MB (PLAN_INK); the ink engine alone gets 300 KB.
+  INK_WASM_GZ_BUDGET: '307200'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  ink-wasm:
+    name: ink wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ env.WASM_BINDGEN_VERSION }}
+
+      - name: Build the ink engine to WASM
+        run: bash scripts/build-ink-wasm.sh
+
+      - name: Size budget
+        run: |
+          gz=$(gzip -9 -n -c src/ink/generated/nv_ink_bg.wasm | wc -c)
+          echo "nv_ink_bg.wasm: $(wc -c < src/ink/generated/nv_ink_bg.wasm) bytes, $gz gzipped (budget $INK_WASM_GZ_BUDGET)"
+          echo "### Ink WASM: $gz bytes gzipped (budget $INK_WASM_GZ_BUDGET)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$gz" -gt "$INK_WASM_GZ_BUDGET" ]; then echo "::error::The ink WASM is $gz bytes gzipped, over its $INK_WASM_GZ_BUDGET budget"; exit 1; fi
+
+      - name: Committed build matches the source
+        run: |
+          if [ -n "$(git status --porcelain -- src/ink/generated)" ]; then
+            git status --short -- src/ink/generated
+            echo "::error::src/ink/generated is out of date with crates/nv-ink. Take the files from this run's ink-wasm artifact (or run scripts/build-ink-wasm.sh on Linux) and commit them."
+            exit 1
+          fi
+
+      - name: Upload the built files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ink-wasm
+          path: src/ink/generated/
+          retention-days: 7
