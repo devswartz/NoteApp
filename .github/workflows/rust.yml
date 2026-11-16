@@ -128,5 +128,6 @@ jobs:
         shell: bash
         run: |
           xcodebuild -scheme NvInk -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error|warning: .*NvInk|BUILD" | head -n 80
-          test "${PIPESTATUS[0]}" -eq 0
+            CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/nvink-build.log" 2>&1 && ok=1 || ok=0
+          grep -E "error|warning: .*NvInk|BUILD" "$RUNNER_TEMP/nvink-build.log" | head -n 80 || true
+          test "$ok" -eq 1
