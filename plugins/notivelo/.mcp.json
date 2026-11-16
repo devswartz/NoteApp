@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "notivelo": {
+      "type": "http",
+      "url": "https://app.notiveloapp.com/mcp",
+      "oauth": {
+        "scopes": "notes:read notes:write"
+      }
+    }
+  }
+}

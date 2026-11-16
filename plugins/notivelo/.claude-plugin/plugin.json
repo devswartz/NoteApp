@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "notivelo",
+  "displayName": "Notivelo",
+  "version": "1.0.0",
+  "description": "Find, read and write your Notivelo notes and tasks from Claude.",
+  "author": {
+    "name": "Notivelo",
+    "email": "support@notiveloapp.com",
+    "url": "https://notiveloapp.com"
+  },
+  "homepage": "https://notiveloapp.com",
+  "repository": "https://github.com/devswartz/NoteApp",
+  "license": "MIT",
+  "keywords": ["notes", "tasks", "to-do", "notebook", "meeting notes", "project planning", "productivity"],
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://app.notiveloapp.com/support",
+  "supportUrl": "https://app.notiveloapp.com/support",
+  "privacyPolicyUrl": "https://app.notiveloapp.com/privacy",
+  "termsOfServiceUrl": "https://app.notiveloapp.com/terms"
+}
