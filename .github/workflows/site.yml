@@ -46,14 +46,14 @@ jobs:
           docker run -d --name site-smoke -p 8088:80 site-test
           for i in $(seq 1 20); do curl -fs http://127.0.0.1:8088/healthz && break; sleep 1; done
           code() { curl -s -o /dev/null -w '%{http_code}' -H "$2" "http://127.0.0.1:8088$1"; }
-          loc() { curl -s -o /dev/null -w '%{redirect_url}' -H "$2" "http://127.0.0.1:8088$1"; }
           test "$(code / 'X-Forwarded-Proto: https')" = 200
           test "$(code /features 'X-Forwarded-Proto: https')" = 200
           test "$(code /no-such-page 'X-Forwarded-Proto: https')" = 404
           test "$(code /404 'X-Forwarded-Proto: https')" = 404
           test "$(code / 'X-Forwarded-Proto: http')" = 301
           test "$(code / 'Host: www.notiveloapp.com')" = 301
-          case "$(loc /guide 'X-Forwarded-Proto: https')" in http://*) echo "absolute http redirect"; exit 1;; esac
+          # nginx must redirect /guide -> /guide/ with a RELATIVE Location (absolute_redirect off), never http://
+          test "$(curl -sI -H 'X-Forwarded-Proto: https' http://127.0.0.1:8088/guide | tr -d '\r' | sed -n 's/^[Ll]ocation: //p')" = "/guide/"
           curl -sI -H 'X-Forwarded-Proto: https' http://127.0.0.1:8088/ | grep -qi "content-security-policy"
           docker rm -f site-smoke
 
