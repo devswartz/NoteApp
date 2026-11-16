@@ -4,7 +4,7 @@
 import type { IncomingMessage } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import * as Y from 'yjs';
-import { DEFAULT_FIELD, convertPageDoc, isContentField, mainFragment, observePageContent, pageFragments } from '../shared/pageDoc.ts';
+import { DEFAULT_FIELD, convertPageDoc, dropInvalidInk, inkSearchText, isContentField, mainFragment, observePageContent, pageFragments, upgradePageDoc } from '../shared/pageDoc.ts';
 import crypto from 'node:crypto';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -124,7 +124,8 @@ export function sanitizePageDoc(doc: Y.Doc): number {
   const stack: [AnyType, number][] = [];
   for (const root of contentRoots(doc)) stack.push([root, 0]);
   drain(stack, bad);
-  return removeBad(doc, bad);
+  // Ink entries must be stroke blobs (docs/PLAN_INK.md). Live edits to `ink` get checked from PLAN_INK phase I1, when strokes exist.
+  return removeBad(doc, bad) + dropInvalidInk(doc, SANITIZE_ORIGIN);
 }
 
 /** How many XmlElements `type` is nested in inside a content fragment (0 for the fragment itself); -1 if it is not in one. */
@@ -315,6 +316,9 @@ export function extractPage(doc: Y.Doc): { text: string; taskIds: Set<string>; m
     r.mentionIds.forEach((id) => mentionIds.add(id));
     if (r.text) texts.push(r.text);
   }
+  // Handwriting is searchable through its recognised text (empty until PLAN_INK phase I7). Ink holds no tasks or mentions.
+  const ink = inkSearchText(doc);
+  if (ink) texts.push(ink);
   return { text: texts.join('\n\n'), taskIds, mentionIds };
 }
 
@@ -451,6 +455,7 @@ function getRoom(pageId: string, workspaceId: string): Room {
     syncMetrics.nodesRemoved += stored;
     log.warn('removed invalid nodes from a stored page', { pageId, count: stored });
   }
+  upgradePageDoc(doc); // page format steps (shared/pageDoc.ts); a no-op for every page today
   const awareness = new awarenessProtocol.Awareness(doc);
   awareness.setLocalState(null);
   const r: Room = {

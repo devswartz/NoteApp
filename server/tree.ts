@@ -78,6 +78,7 @@ export function taskRefsInDoc(doc: Y.Doc): Y.XmlElement[] {
     }
   };
   for (const frag of pageFragments(doc)) walk(frag);
+  // Ink (docs/PLAN_INK.md) holds no tasks. copyPage copies the whole Y.Doc, so strokes come with a copied page.
   return out;
 }
 

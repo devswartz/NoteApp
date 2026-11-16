@@ -50,6 +50,7 @@ export function taskPlaces(doc: Y.Doc): TaskPlace[] {
     }
   };
   for (const frag of pageFragments(doc)) walk(frag, null, 0);
+  // Ink (docs/PLAN_INK.md) holds no tasks, so it is deliberately not read here.
   return out;
 }
 

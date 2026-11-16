@@ -116,3 +116,76 @@ export function newBoxId(): string {
   crypto.getRandomValues(a);
   return [...a].map((n) => n.toString(36).padStart(2, '0').slice(-2)).join('');
 }
+
+// ───────────── Screen ↔ page coordinates (docs/PLAN_INK.md, phase I0) ─────────────
+// Every conversion between where the pointer is on screen (client pixels) and where that is on
+// the page (page pixels: the space `boxes` and, later, ink strokes are stored in) goes through
+// a CanvasView. The scale is fixed at 1 today; pinch zoom (PLAN_INK, phase I4) only has to
+// change the scale here and draw the surface with the same transform.
+
+/** How the page is shown: page (0, 0) is at client (originX, originY), and one page pixel is `scale` screen pixels. */
+export interface CanvasView {
+  scale: number;
+  originX: number;
+  originY: number;
+}
+
+/** The only zoom there is for now. */
+export const CANVAS_SCALE = 1;
+
+/** The view of a surface whose top-left corner is at `rect` on screen (its getBoundingClientRect()). */
+export function canvasView(rect: { left: number; top: number }, scale = CANVAS_SCALE): CanvasView {
+  return { scale, originX: rect.left, originY: rect.top };
+}
+
+/** A client (screen) point → page pixels. */
+export function toPage(v: CanvasView, clientX: number, clientY: number): { x: number; y: number } {
+  return { x: (clientX - v.originX) / v.scale, y: (clientY - v.originY) / v.scale };
+}
+
+/** A page point → client (screen) pixels. */
+export function toScreen(v: CanvasView, x: number, y: number): { x: number; y: number } {
+  return { x: v.originX + x * v.scale, y: v.originY + y * v.scale };
+}
+
+/** A pointer movement on screen → the same movement on the page (a drag). */
+export function deltaToPage(v: Pick<CanvasView, 'scale'>, dx: number, dy: number): { dx: number; dy: number } {
+  return { dx: dx / v.scale, dy: dy / v.scale };
+}
+
+/** A length on screen (the visible width or height of the viewport) → page pixels. */
+export const lengthToPage = (v: Pick<CanvasView, 'scale'>, len: number) => len / v.scale;
+/** A length on the page (the surface's size) → screen pixels. */
+export const lengthToScreen = (v: Pick<CanvasView, 'scale'>, len: number) => len * v.scale;
+
+// ───────────── Pointer routing (docs/PLAN_INK.md, phase I0) ─────────────
+// Every pointer that goes down on the canvas is classified here, and the router decides who
+// handles it. Today there is only the select tool, so everything goes to the existing UI
+// handlers (click to create a box, drag, resize, type). The ink tool (PLAN_INK, phase I3) will
+// claim pen input, and finger input only when finger drawing is on (off by default).
+
+export type PointerKind = 'pen' | 'touch' | 'mouse';
+/** The active canvas tool. Only 'select' exists so far. */
+export type CanvasTool = 'select' | 'ink';
+/** Who handles a pointer: the existing box UI, or the ink layer. */
+export type PointerRoute = 'ui' | 'ink';
+
+/** pen / touch / mouse from a pointer event's pointerType ('' or unknown, and plain mouse events, count as mouse). */
+export function pointerKind(e: { pointerType?: string }): PointerKind {
+  return e.pointerType === 'pen' ? 'pen' : e.pointerType === 'touch' ? 'touch' : 'mouse';
+}
+
+export interface PointerRouting {
+  tool: CanvasTool;
+  /** Draw with a finger too (a setting, off by default like Notability). */
+  fingerDrawing?: boolean;
+  /** Only people who can edit the page may draw on it. */
+  canEdit: boolean;
+}
+
+/** Who gets a pointer that goes down on the canvas. */
+export function routePointer(kind: PointerKind, r: PointerRouting): PointerRoute {
+  if (r.tool !== 'ink' || !r.canEdit) return 'ui';
+  if (kind === 'pen' || kind === 'mouse') return 'ink';
+  return r.fingerDrawing ? 'ink' : 'ui'; // a finger scrolls and zooms unless finger drawing is on
+}

@@ -35,7 +35,30 @@ import { useCommentBinding } from './collabComments.ts';
 import { cloneTask, insertTaskAtEnd, RELAYOUT_EVENT } from './TaskRef.tsx';
 import { clipText, mapTaskRefs, placeBoxes, textBlocks, useBoxClipboard, type Clip, type ClipBox } from './boxClipboard.ts';
 import { htmlToBlocks, taskLine, writeBlocks } from './clipboardOut.ts';
-import { adjacentBox, boxAtClick, boxBelow, clampPos, clampWidth, frontZ, newBoxId, nudge, nudgeOnGrid, snapY, surfaceSize, UNMEASURED_H, wideWidth } from './canvasGeom.ts';
+import {
+  adjacentBox,
+  boxAtClick,
+  boxBelow,
+  CANVAS_SCALE,
+  canvasView,
+  clampPos,
+  clampWidth,
+  deltaToPage,
+  frontZ,
+  lengthToPage,
+  lengthToScreen,
+  newBoxId,
+  nudge,
+  nudgeOnGrid,
+  pointerKind,
+  routePointer,
+  snapY,
+  surfaceSize,
+  toPage,
+  UNMEASURED_H,
+  wideWidth,
+  type CanvasTool,
+} from './canvasGeom.ts';
 import { RuleGrid } from './ruleGrid.ts';
 import { usePageSettings } from './ribbonState.ts';
 import { LinePicks, linePicks } from './linePicks.ts';
@@ -212,6 +235,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   }, [session.serverSynced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isMobile = useIsMobile();
+  /** The active canvas tool (docs/PLAN_INK.md): only 'select' until the ink tool exists. */
+  const canvasTool: CanvasTool = 'select';
   // Rule lines on: boxes sit on the line grid (new and moved boxes are saved on it; older
   // boxes are drawn on it), so their text lines up with the lines.
   const ruled = usePageSettings(doc).rules !== 'none';
@@ -697,8 +722,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   };
   const onSurfaceMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canEdit || isMobile || e.target !== e.currentTarget) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    menuAt.current = { x: e.clientX - r.left, y: e.clientY - r.top };
+    menuAt.current = toPage(canvasView(e.currentTarget.getBoundingClientRect()), e.clientX, e.clientY);
     surfaceMenu.bind.onContextMenu(e);
   };
 
@@ -775,6 +799,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     handle.setPointerCapture?.(e.pointerId);
     // A wide box is resized from the width it is drawn at, and keeps the width you give it.
     const start = { px: e.clientX, py: e.clientY, x: b.x, y: b.y, w: b.wide ? (elements.current.get(id)?.offsetWidth ?? b.w) : b.w };
+    const view = { scale: CANVAS_SCALE }; // a drag only needs the scale
     // The whole drag is one undo step, however long it takes.
     undo.stopCapturing();
     undo.captureTimeout = Number.MAX_SAFE_INTEGER;
@@ -788,8 +813,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
       next = null;
     };
     const move = (ev: PointerEvent) => {
-      const dx = ev.clientX - start.px;
-      const dy = ev.clientY - start.py;
+      const { dx, dy } = deltaToPage(view, ev.clientX - start.px, ev.clientY - start.py);
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       next = mode === 'move' ? onGrid(clampPos(start.x + dx, start.y + dy)) :{ w: clampWidth(start.w + dx), wide: undefined };
       if (!frame) frame = requestAnimationFrame(flush);
@@ -825,8 +849,19 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const onSurfaceDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canEdit || isMobile || e.button !== 0 || e.target !== e.currentTarget) return;
     e.preventDefault(); // keep focus where it is until the new box takes it
-    const r = e.currentTarget.getBoundingClientRect();
-    createBox(boxAtClick(boxesRef.current, e.clientX - r.left, e.clientY - r.top), 'focus');
+    const at = toPage(canvasView(e.currentTarget.getBoundingClientRect()), e.clientX, e.clientY);
+    createBox(boxAtClick(boxesRef.current, at.x, at.y), 'focus');
+  };
+
+  /**
+   * Every pointer that goes down on the canvas passes here first (capture phase), so pen, touch
+   * and mouse can be told apart in one place. With the select tool (the only one so far) it
+   * goes on to the handlers above unchanged. The ink tool (docs/PLAN_INK.md) will claim pen
+   * input here; claiming a pointerdown with preventDefault also stops the mouse events after it.
+   */
+  const onSurfacePointer = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (routePointer(pointerKind(e), { tool: canvasTool, canEdit, fingerDrawing: false }) === 'ui') return;
+    // 'ink': nothing claims it yet (there is no ink tool until PLAN_INK phase I3).
   };
 
   /** Where a box added "below the others" goes; on a blank page that's its main, wide box. */
@@ -839,20 +874,22 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   };
   const addBoxBelow = () => createBox(below(), 'focus');
 
+  // The visible area in page pixels (the viewport is measured on screen).
+  const pageView = { w: lengthToPage({ scale: CANVAS_SCALE }, viewport.w), h: lengthToPage({ scale: CANVAS_SCALE }, viewport.h) };
   // Wide boxes as drawn: the page's full width, right of where they start.
   const drawn = useMemo(
     () =>
       (ready ? [FIRST_BOX] : boxes).map((b) => {
-        const g = b.wide ? { ...b, w: wideWidth(b.x, viewport.w, READABLE_BOX_W) } : b;
+        const g = b.wide ? { ...b, w: wideWidth(b.x, pageView.w, READABLE_BOX_W) } : b;
         return ruled && g.y !== snapY(g.y) ? { ...g, y: snapY(g.y) } : g;
       }),
-    [ready, boxes, viewport.w, ruled],
+    [ready, boxes, pageView.w, ruled],
   );
   // A blank page: the template picker sits on the surface right under the first box, and the
   // surface stops short of the window's bottom so "Add a task" is in view and nothing scrolls.
   // Empty canvas around the picker still takes a click to start a box there.
   const firstH = heights[FIRST_BOX_ID] ?? UNMEASURED_H;
-  const size = surfaceSize(drawn, heights, viewport.w, ready ? Math.max(firstH + BLANK_SLOT_H, viewport.h - BLANK_TRIM) : viewport.h);
+  const size = surfaceSize(drawn, heights, pageView.w, ready ? Math.max(firstH + BLANK_SLOT_H, pageView.h - BLANK_TRIM) : pageView.h);
   const stacked = isMobile;
   const list = stacked ? readingOrder(drawn) : drawn;
   const single = stacked && list.length === 1;
@@ -863,7 +900,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         <div
           ref={surfaceRef}
           className={`canvas-surface ${canEdit ? 'can-edit' : ''}`}
-          style={stacked ? undefined : { width: size.w, height: size.h }}
+          style={stacked ? undefined : { width: lengthToScreen({ scale: CANVAS_SCALE }, size.w), height: lengthToScreen({ scale: CANVAS_SCALE }, size.h) }}
+          onPointerDownCapture={onSurfacePointer}
           onMouseDown={onSurfaceDown}
           onContextMenu={onSurfaceMenu}
           onMouseDownCapture={(e) => {

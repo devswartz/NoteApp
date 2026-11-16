@@ -2,7 +2,9 @@
 //   Document pages: one fragment, `default`.
 //   Canvas pages:   `boxes` (Y.Map: box id → Y.Map { x, y, w, z }) and one fragment per box,
 //                   `box:<id>`. `default` stays empty.
-//   Every page:     `pageSettings` (Y.Map: page colour, rule lines; see the end of this file).
+//   Every page:     `pageSettings` (Y.Map: page colour, rule lines; see below),
+//                   `ink` (Y.Map: stroke id → Uint8Array; reserved, see the end of this file) and
+//                   `pageFormat` (Y.Map: { version }, written only when a format change needs it).
 // Anything that reads a page's text, tasks, mentions or links goes through
 // pageFragments() so it sees every box, in reading order.
 import * as Y from 'yjs';
@@ -178,6 +180,8 @@ export function replacePageContent(target: Y.Doc, source: Y.Doc, kind: 'canvas' 
     convertPageDoc(target, kind, newBoxId);
     // A version saved with page settings brings them back; one from before settings existed keeps the current ones.
     if (source.getMap(PAGE_SETTINGS_KEY).size > 0) setPageSettings(target, readPageSettings(source));
+    // Handwriting is part of what a version restores (nothing to copy until there is ink).
+    replaceInk(target, source);
   }, origin);
 }
 
@@ -284,4 +288,102 @@ export function pageSettingsAttrs(doc: Y.Doc): Partial<PageSettings> | null {
   if (s.color !== 'none') out.color = s.color;
   if (s.rules !== 'none') out.rules = s.rules;
   return Object.keys(out).length ? out : null;
+}
+
+// ───────────── Ink (docs/PLAN_INK.md, phase I0: reserved, nothing writes it yet) ─────────────
+// Handwriting strokes in the `ink` Y.Map: stroke id → an immutable Uint8Array blob (the
+// format is defined by the ink engine, PLAN_INK "Storage"). It is not a content field, so
+// pageFragments() and every text reader skip it; the hooks below are where each reader will
+// learn about ink. An app that doesn't know `ink` leaves it alone: Yjs keeps root types it
+// doesn't read, so older apps can't damage handwriting.
+
+export const INK_KEY = 'ink';
+
+export interface InkStroke {
+  id: string;
+  data: Uint8Array;
+}
+
+/** The page's strokes (values that aren't byte blobs are skipped), ordered by id for now; the blob's z key orders them later. */
+export function pageInk(doc: Y.Doc): InkStroke[] {
+  const out: InkStroke[] = [];
+  doc.getMap<unknown>(INK_KEY).forEach((data, id) => {
+    if (data instanceof Uint8Array) out.push({ id, data });
+  });
+  return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** Does the page have any handwriting? */
+export const hasInk = (doc: Y.Doc): boolean => pageInk(doc).length > 0;
+
+/**
+ * Text recognised from the page's handwriting, for search and the AI connector. Always empty
+ * for now: recognition stores its results in an `inkText` map (PLAN_INK, phase I7).
+ */
+export function inkSearchText(_doc: Y.Doc): string {
+  return '';
+}
+
+/** Remove `ink` entries that aren't stroke blobs (from a hand-built update); returns how many. */
+export function dropInvalidInk(doc: Y.Doc, origin: unknown = null): number {
+  const ink = doc.getMap<unknown>(INK_KEY);
+  const bad = [...ink.entries()].filter(([, v]) => !(v instanceof Uint8Array)).map(([k]) => k);
+  if (bad.length) doc.transact(() => bad.forEach((k) => ink.delete(k)), origin);
+  return bad.length;
+}
+
+/** Make `target`'s strokes the same as `source`'s (a version restore). Changes nothing when both have none. */
+export function replaceInk(target: Y.Doc, source: Y.Doc) {
+  const to = target.getMap<unknown>(INK_KEY);
+  const from = new Map(pageInk(source).map((s) => [s.id, s.data]));
+  for (const id of [...to.keys()]) if (!from.has(id)) to.delete(id);
+  for (const [id, data] of from) {
+    const cur = to.get(id);
+    if (!(cur instanceof Uint8Array) || !bytesEqual(cur, data)) to.set(id, data);
+  }
+}
+
+const bytesEqual = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+// ───────────── Page format version ─────────────
+// A page's format version lives in `pageFormat` and is written only when a format change has to
+// change a stored page, or when a feature first writes data an older app must know about (the
+// first ink stroke will). A page without it is version 1 (boxes and page settings). An app
+// seeing a version newer than PAGE_FORMAT_VERSION knows the page holds something it can't show.
+
+export const PAGE_FORMAT_KEY = 'pageFormat';
+/** 2: reserves `ink` (PLAN_INK). */
+export const PAGE_FORMAT_VERSION = 2;
+
+/** The version stored in a page (1 when none is). */
+export function pageFormatVersion(doc: Y.Doc): number {
+  const v = doc.getMap<unknown>(PAGE_FORMAT_KEY).get('version');
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : 1;
+}
+
+/** Was the page written by a newer app, in a format this one doesn't fully understand? */
+export const isNewerPageFormat = (doc: Y.Doc): boolean => pageFormatVersion(doc) > PAGE_FORMAT_VERSION;
+
+/**
+ * Upgrade steps, by the version they lead to. Each changes the doc only if it must and says
+ * whether it did. 2 (ink reserved) needs nothing: a page without `ink` simply has no strokes.
+ */
+const UPGRADES: Record<number, (doc: Y.Doc) => boolean> = {
+  2: () => false,
+};
+
+/**
+ * Bring a loaded page up to PAGE_FORMAT_VERSION. Writes the version only when a step changed
+ * something, so pages that need nothing are left byte-for-byte as they were. Returns whether
+ * the doc changed. A page from a newer app is left alone.
+ */
+export function upgradePageDoc(doc: Y.Doc, origin: unknown = null): boolean {
+  const from = pageFormatVersion(doc);
+  if (from >= PAGE_FORMAT_VERSION) return false;
+  let changed = false;
+  doc.transact(() => {
+    for (let v = from + 1; v <= PAGE_FORMAT_VERSION; v++) changed = (UPGRADES[v]?.(doc) ?? false) || changed;
+    if (changed) doc.getMap<unknown>(PAGE_FORMAT_KEY).set('version', PAGE_FORMAT_VERSION);
+  }, origin);
+  return changed;
 }
