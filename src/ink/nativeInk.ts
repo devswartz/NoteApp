@@ -7,7 +7,8 @@
 // pen (strokes.ts commitStroke / commitErase, INK_ORIGIN), so sync, undo and print just work:
 //   native → web: a finished stroke (once per stroke, never per point), an erase gesture, a new
 //                 view after a pinch (zoom + scroll: the web applies it, then says viewApplied),
-//                 Pencil double-tap's tool, two-finger-tap undo.
+//                 Pencil double-tap's tool, two-finger-tap undo and three-finger-tap redo (as in
+//                 Notability; anywhere on the page, whatever tool is picked).
 //   web → native: every stroke on the page at start, then each change to the `ink` map (remote
 //                 strokes, undo, our own commits), the tool, and where the page is (layout).
 // A change made natively carries a token; the update that writes it carries the token back, so the
@@ -68,6 +69,7 @@ export interface NativeInkEvents {
   view: NativeView;
   tool: { tool: InkToolName };
   undo: Record<string, never>;
+  redo: Record<string, never>;
   detached: Record<string, never>;
 }
 
@@ -155,6 +157,8 @@ export interface NativeInkSessionOptions {
   onView?: (v: NativeView) => Promise<void> | void;
   onTool?: (tool: InkToolName) => void;
   onUndo?: () => void;
+  /** Three-finger tap: redo. */
+  onRedo?: () => void;
   /** Native lost the page (its scroll view): the caller falls back to the web pen. */
   onDetached?: () => void;
 }
@@ -192,6 +196,7 @@ export class NativeInkSession {
       on('view', (e) => void this.view(e)),
       on('tool', (e) => this.opts.onTool?.(e.tool)),
       on('undo', () => this.opts.onUndo?.()),
+      on('redo', () => this.opts.onRedo?.()),
       on('detached', () => this.opts.onDetached?.()),
     ]);
     await this.plugin.setTool(tool);

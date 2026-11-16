@@ -47,6 +47,8 @@ interface Props {
   onZoom?: (zoom: number) => void;
   /** Two-finger tap on the iPad: the page's undo. */
   onUndo?: () => void;
+  /** Three-finger tap on the iPad: the page's redo. */
+  onRedo?: () => void;
   /** Adds text boxes (the debug "fill with test strokes" adds 50). */
   addBoxes?: (boxes: TestBox[]) => void;
   ref?: Ref<InkHandle>;
@@ -77,7 +79,7 @@ function sample(e: PointerEvent, rect: DOMRect): [number, number, number, number
   return [p.x, p.y, pressure, alt, az, e.timeStamp];
 }
 
-export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pageSize, onZoom, onUndo, addBoxes, ref }: Props) {
+export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pageSize, onZoom, onUndo, onRedo, addBoxes, ref }: Props) {
   const under = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
   const live = useRef<HTMLCanvasElement>(null);
@@ -86,8 +88,8 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
   const presenter = useRef<Promise<InkPresenter | null> | null>(null);
   const onWriteRef = useRef(onWrite);
   onWriteRef.current = onWrite;
-  const cb = useRef({ onZoom, onUndo, pageSize: pageSize ?? { w: 0, h: 0 }, addBoxes, zoom: 1 });
-  Object.assign(cb.current, { onZoom, onUndo, pageSize: pageSize ?? { w: 0, h: 0 }, addBoxes });
+  const cb = useRef({ onZoom, onUndo, onRedo, pageSize: pageSize ?? { w: 0, h: 0 }, addBoxes, zoom: 1 });
+  Object.assign(cb.current, { onZoom, onUndo, onRedo, pageSize: pageSize ?? { w: 0, h: 0 }, addBoxes });
   // The native pen layer is drawing this page (its ink, its pan and zoom).
   const [nativeOn, setNativeOn] = useState(false);
   const webOverlay = useNativeInkDebug((d) => d.webOverlay);
@@ -175,6 +177,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       onView: applyView,
       onTool: (tool) => setInkTool({ tool }),
       onUndo: () => cb.current.onUndo?.(),
+      onRedo: () => cb.current.onRedo?.(),
       onDetached: () => {
         setNativeOn(false);
         void session.stop();

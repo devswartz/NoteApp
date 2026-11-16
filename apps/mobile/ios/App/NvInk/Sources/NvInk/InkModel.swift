@@ -172,6 +172,9 @@ public enum InkRules {
     /// Whether a touch draws: the Pencil always; a finger only with finger drawing on (palm rejection).
     public static func touchDraws(isPencil: Bool, fingerDrawing: Bool) -> Bool { isPencil || fingerDrawing }
 
+    /// Scribble (handwriting into text fields) only while no pen tool is picked: with one, the Pencil draws.
+    public static func scribbleAllowed(toolActive: Bool) -> Bool { !toolActive }
+
     /// The colour a stroke is drawn in: in the dark theme near-black ink is drawn near-white, as
     /// on the web (src/ink/render.ts displayColor). 0xRRGGBBAA in and out.
     public static func displayColor(_ c: UInt32, dark: Bool) -> UInt32 {

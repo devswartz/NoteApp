@@ -10,7 +10,7 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
    - **Notivelo renderer / PencilKit (not saved)**: swaps our renderer for Apple's PencilKit on the same page. PencilKit strokes vanish when you switch back, and scrolling is off while it's on.
    - **Web ink overlay**: also draws the web's own ink, faint, under the native ink. They should coincide exactly; a visible double line means the two are misaligned (note where, and at what zoom).
    - **Fill with test strokes**: adds text boxes up to 50 and 3,000 test strokes (press twice for 6,000).
-4. Gestures: the Pencil draws; one finger scrolls; two fingers pinch-zoom (0.5× to 4×); two-finger tap undoes; Pencil double-tap switches between the eraser and the last pen.
+4. Gestures: the Pencil draws; one finger scrolls; two fingers pinch-zoom (0.5× to 4×); a two-finger tap undoes and a three-finger tap redoes (as in Notability, whatever tool is picked); Pencil double-tap switches between the eraser and the last pen. While a pen or eraser is picked, the text boxes can't be typed in (pick **Select and type** to type).
 
 ## 1. Latency (slow motion against Notability)
 
@@ -54,6 +54,17 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 - [ ] Airplane mode on the iPad, draw a few strokes, airplane mode off: they reach the browser.
 - **Pass:** every stroke arrives once, nothing is lost or doubled.
 
+## 6. Scribble, undo and redo (fixes after the first TestFlight build)
+
+- [ ] With the **pen**, write and draw right over the text of a box (several words, a scribble across a line). Nothing turns into typed text, no caret or keyboard appears, and the box's text is unchanged.
+- [ ] With the **eraser** and the **partial eraser**, scrub back and forth over strokes that sit on a box's text (Scribble's scratch-out gesture). Only ink goes; the text is untouched.
+- [ ] Pick **Select and type**: tapping a box puts the caret there again, and Scribble (writing into the box with the Pencil) works again there, as before.
+- [ ] Draw three strokes, then **two-finger tap** three times: they go one by one, newest first. Then **three-finger tap** three times: they come back in order. No iPadOS undo/redo banner or copy/paste bar appears.
+- [ ] The same taps with the **select** tool picked and with the **eraser** picked (undo brings an erased stroke back).
+- [ ] Two-finger tap after typing in a box (select tool): undoes the typing, then the strokes before it (one undo history for the page).
+- [ ] A two-finger tap that doesn't move never scrolls or zooms the page; a two-finger drag still scrolls and a pinch still zooms.
+- **Pass:** no handwriting or erasing ever changes text while a pen tool is picked, and the taps undo and redo every time.
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |
@@ -64,5 +75,6 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 | Pan drift, 6,000 strokes | | — | — | | |
 | Pinch zoom settle | | — | — | | |
 | Sync to web | | — | — | | |
+| Scribble off, undo/redo taps | | — | — | | |
 
 **Gate decision:** go with our Metal renderer / switch to PencilKit (latency or quality) / switch to the native page view (drift). See `docs/PLAN_INK.md`, I2.

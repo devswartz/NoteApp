@@ -27,11 +27,18 @@ public protocol NativeInkDelegate: AnyObject {
     func nativeInk(toolChanged tool: String)
     /// Two-finger tap: undo.
     func nativeInkUndo()
+    /// Three-finger tap: redo.
+    func nativeInkRedo()
     /// The page's scroll view couldn't be found (the web falls back to its own pen).
     func nativeInkDetached()
 }
 
-public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, UIPencilInteractionDelegate {
+public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, UIPencilInteractionDelegate, UIScribbleInteractionDelegate {
+    /// How many pages have the pen layer attached: the app's view controller turns the system's
+    /// three-finger editing gestures off meanwhile, so the three-finger tap is ours (redo).
+    public private(set) static var attachedCount = 0
+    private var counted = false
+
     public weak var delegate: NativeInkDelegate?
     private weak var webView: WKWebView?
     public let store = InkStore()
@@ -45,6 +52,8 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     private let pen = PenInputRecognizer(target: nil, action: nil)
     private lazy var pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
     private lazy var undoTap = UITapGestureRecognizer(target: self, action: #selector(onUndoTap(_:)))
+    private lazy var redoTap = UITapGestureRecognizer(target: self, action: #selector(onRedoTap(_:)))
+    private var scribbleBlockers: [(UIView, UIScribbleInteraction)] = []
     private var pencilInteraction: UIPencilInteraction?
     private var seq = 0
     private var offsetObservation: NSKeyValueObservation?
@@ -75,9 +84,17 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         pen.onEnded = { [weak self] t, e, cancelled in self?.ended(t, e, cancelled) }
         pinch.delegate = self
         pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        undoTap.numberOfTouchesRequired = 2
-        undoTap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
-        undoTap.delegate = self
+        // Notability's gestures: a two-finger tap undoes, a three-finger tap redoes. They don't hold
+        // touches back from the page (cancelsTouchesInView off) and recognise alongside everything else,
+        // so the page's own two-finger pan can't swallow a tap that doesn't move.
+        for (tap, fingers) in [(undoTap, 2), (redoTap, 3)] {
+            tap.numberOfTouchesRequired = fingers
+            tap.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+            tap.cancelsTouchesInView = false
+            tap.delaysTouchesEnded = false
+            tap.delegate = self
+        }
+        undoTap.require(toFail: redoTap)
         live.isHidden = true
         applyTouchTypes()
     }
@@ -96,6 +113,8 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         if pen.view == nil {
             wv.addGestureRecognizer(pen)
             wv.addGestureRecognizer(undoTap)
+            wv.addGestureRecognizer(redoTap)
+            blockScribble(in: wv)
             let pi = UIPencilInteraction()
             pi.delegate = self
             wv.addInteraction(pi)
@@ -126,6 +145,10 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         c.place(origin: l.surfaceOrigin, size: l.surfaceSize, zoom: zoom)
         c.redrawAll()
         reattachTries = 0
+        if !counted {
+            counted = true
+            NativeInkController.attachedCount += 1
+        }
         return true
     }
 
@@ -161,6 +184,13 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         offsetObservation = nil
         pen.view?.removeGestureRecognizer(pen)
         undoTap.view?.removeGestureRecognizer(undoTap)
+        redoTap.view?.removeGestureRecognizer(redoTap)
+        for (v, i) in scribbleBlockers { v.removeInteraction(i) }
+        scribbleBlockers = []
+        if counted {
+            counted = false
+            NativeInkController.attachedCount -= 1
+        }
         if let pi = pencilInteraction { pi.view?.removeInteraction(pi) }
         pencilInteraction = nil
         live.removeFromSuperview()
@@ -227,7 +257,8 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         if tool.fingerDrawing { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
         pen.allowedTouchTypes = types
         pen.isEnabled = tool.active && pencilKit == nil
-        undoTap.isEnabled = tool.active
+        undoTap.isEnabled = true // anywhere on the page, whatever tool is picked
+        redoTap.isEnabled = true
         // Finger drawing on: one finger draws, so scrolling takes two.
         scrollView?.panGestureRecognizer.minimumNumberOfTouches = tool.fingerDrawing && tool.active ? 2 : 1
     }
@@ -242,6 +273,30 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
 
     @objc private func onUndoTap(_ g: UITapGestureRecognizer) {
         if g.state == .ended { delegate?.nativeInkUndo() }
+    }
+
+    @objc private func onRedoTap(_ g: UITapGestureRecognizer) {
+        if g.state == .ended { delegate?.nativeInkRedo() }
+    }
+
+    // MARK: - Scribble
+
+    /// iPadOS Scribble turns Pencil writing over a text field into text (and scratch-out deletes
+    /// text). While a pen tool is picked the Pencil draws, so Scribble must not start: an opt-out
+    /// Scribble interaction on the web view and on WebKit's content view (the web side also makes
+    /// the boxes non-editable meanwhile, which leaves Scribble nothing to write into).
+    private func blockScribble(in wv: WKWebView) {
+        var views: [UIView] = [wv]
+        if let content = wv.scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContentView") }) { views.append(content) }
+        for v in views {
+            let i = UIScribbleInteraction(delegate: self)
+            v.addInteraction(i)
+            scribbleBlockers.append((v, i))
+        }
+    }
+
+    public func scribbleInteraction(_ interaction: UIScribbleInteraction, shouldBeginAt location: CGPoint) -> Bool {
+        InkRules.scribbleAllowed(toolActive: tool.active)
     }
 
     // MARK: - Gesture rules

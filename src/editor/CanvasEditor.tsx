@@ -257,6 +257,12 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const fingerDrawing = useInkTool((s) => s.fingerDrawing);
   const inkOn = INK_FLAG && canEdit && !isMobile;
   const canvasTool: CanvasTool = inkOn && inkTool !== 'select' ? 'ink' : 'select';
+  // A pen tool is picked: the boxes' text isn't editable meanwhile, so the Pencil can't set off
+  // iPadOS Scribble (handwriting turned into text, scratch-out deleting it), place a caret or open
+  // the keyboard. Picking the select tool makes them editable again.
+  const inkLock = canvasTool === 'ink';
+  const inkLockRef = useRef(inkLock);
+  inkLockRef.current = inkLock;
   const inkRef = useRef<InkHandle>(null);
   // The iPad app: a native pen layer draws the ink and owns pan and zoom (docs/PLAN_INK.md, I2).
   const [nativeInk, setNativeInk] = useState<NativeInkPlugin | null>(null);
@@ -316,6 +322,16 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   heightsRef.current = heights;
 
   useCommentBinding(active);
+  useEffect(() => {
+    for (const e of editors.current.values()) {
+      const want = canEdit && !inkLock;
+      if (!e.isDestroyed && e.isEditable !== want) e.setEditable(want, false);
+    }
+    if (inkLock) {
+      const a = document.activeElement;
+      if (a instanceof HTMLElement && a.closest('.canvas-surface')) a.blur(); // the keyboard goes too
+    }
+  }, [inkLock, canEdit]);
   // Picked boxes and the box whose text selection "Print selection" prints.
   const picked = useBoxSelection((s) => (s.pageId === pageId ? s.ids : NO_IDS));
   useEffect(() => boxSelection.setEditor(pageId, active), [pageId, active]);
@@ -433,6 +449,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         return;
       }
       editors.current.set(id, editor);
+      if (inkLockRef.current && editor.isEditable) editor.setEditable(false, false);
       // Until a box is focused, the ribbon acts on the page's first box (so it is live as soon
       // as the page opens, and while the caret is in the title).
       if (id === (readingOrder(boxesRef.current)[0]?.id ?? FIRST_BOX_ID)) setActive((a) => a ?? editor);
@@ -1021,6 +1038,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               pageSize={size}
               onZoom={setNativeZoom}
               onUndo={() => pageUndo.undo()}
+              onRedo={() => pageUndo.redo()}
               addBoxes={(b) => writeBoxes(doc, schema, b)}
             />
           )}

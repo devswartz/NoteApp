@@ -9,7 +9,7 @@ import WebKit
 ///
 /// Methods: available, attach, layout, detach, setTool, setStrokes, updateStrokes, viewApplied, setRenderer.
 /// Events: stroke {token, data}, erase {token, removed, added}, view {zoom, x, y, final},
-///         tool {tool}, undo, detached. Strokes travel as base64 blobs, one bridge crossing per stroke.
+///         tool {tool}, undo (two-finger tap), redo (three-finger tap), detached. Strokes travel as base64 blobs, one bridge crossing per stroke.
 @objc(NoteAppInkPlugin)
 public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
     public let identifier = "NoteAppInkPlugin"
@@ -134,6 +134,10 @@ public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
 
     public func nativeInkUndo() {
         notifyListeners("undo", data: [:])
+    }
+
+    public func nativeInkRedo() {
+        notifyListeners("redo", data: [:])
     }
 
     public func nativeInkDetached() {

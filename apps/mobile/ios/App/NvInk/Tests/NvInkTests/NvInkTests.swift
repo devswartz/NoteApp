@@ -89,6 +89,7 @@ final class NvInkTests: XCTestCase {
         XCTAssertEqual(s.visible().map(\.id), ["b", "c"])
 
         // Remote changes: removed and replaced strokes.
+        // Undo on the web removes a stroke drawn here (it arrived through the ack above).
         s.apply(added: [("b", stroke(x: 50, y: 50, z: "a1"))], removed: ["c"])
         XCTAssertEqual(s.visible().map(\.id), ["b"])
         XCTAssertEqual(s.visible(in: TileKey(x: 0, y: 0)).map(\.id), ["b"])
@@ -107,6 +108,8 @@ final class NvInkTests: XCTestCase {
         XCTAssertTrue(InkRules.touchDraws(isPencil: true, fingerDrawing: false))
         XCTAssertFalse(InkRules.touchDraws(isPencil: false, fingerDrawing: false), "palm and fingers don't draw")
         XCTAssertTrue(InkRules.touchDraws(isPencil: false, fingerDrawing: true))
+        XCTAssertFalse(InkRules.scribbleAllowed(toolActive: true), "a pen or eraser: the Pencil draws, never writes text")
+        XCTAssertTrue(InkRules.scribbleAllowed(toolActive: false))
         XCTAssertEqual(InkRules.displayColor(0x1F2328FF, dark: true), 0xE6E6E6FF)
         XCTAssertEqual(InkRules.displayColor(0x1F2328FF, dark: false), 0x1F2328FF)
         XCTAssertEqual(InkRules.displayColor(0xDC2626FF, dark: true), 0xDC2626FF)

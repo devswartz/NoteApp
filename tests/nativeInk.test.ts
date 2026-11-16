@@ -71,7 +71,7 @@ test('start attaches, sends the tool and every stroke once; stop detaches', asyn
   assert.deepEqual(fromBase64(sent!.strokes.find((x) => x.id === 'b')!.data), blob(2));
   await s.stop();
   assert.equal(f.named('detach').length, 1);
-  assert.equal(f.removedCount(), 6, 'every listener removed');
+  assert.equal(f.removedCount(), 7, 'every listener removed');
   // After stop, changes no longer cross.
   ink.set('c', blob(3));
   assert.equal(f.named('updateStrokes').length, 0);
@@ -188,16 +188,17 @@ test('a pinch view is applied before native is told; scroll reports are not', as
   await s.stop();
 });
 
-test('Pencil double-tap and two-finger tap reach the page; tool and layout go to native', async () => {
+test('Pencil double-tap, two-finger tap (undo) and three-finger tap (redo) reach the page; tool and layout go to native', async () => {
   const doc = new Y.Doc();
   const f = fakePlugin();
   const got: string[] = [];
-  const s = new NativeInkSession(f.plugin, doc, { onTool: (t) => got.push(`tool ${t}`), onUndo: () => got.push('undo'), onDetached: () => got.push('detached') });
+  const s = new NativeInkSession(f.plugin, doc, { onTool: (t) => got.push(`tool ${t}`), onUndo: () => got.push('undo'), onRedo: () => got.push('redo'), onDetached: () => got.push('detached') });
   await s.start(LAYOUT, TOOL_STATE);
   f.fire('tool', { tool: 'eraser' });
   f.fire('undo', {});
+  f.fire('redo', {});
   f.fire('detached', {});
-  assert.deepEqual(got, ['tool eraser', 'undo', 'detached']);
+  assert.deepEqual(got, ['tool eraser', 'undo', 'redo', 'detached']);
   s.setTool({ ...TOOL_STATE, tool: 'highlighter' });
   s.layout({ ...LAYOUT, zoom: 1.5 });
   await tick();
