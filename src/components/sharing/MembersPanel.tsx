@@ -48,9 +48,11 @@ export function MembersPanel() {
 
   const reportInvite = (to: string, r: InviteResult) => {
     if (r.status === 'added') toast(`${to} added to ${ws.name}${r.emailed ? ' — we emailed them' : ''}`);
-    else if (r.emailed) toast(`Invite emailed to ${to}`);
-    else toast(`Invite created for ${to}. Email isn’t set up, so copy the link and send it yourself.`);
-    setLastLink(r.inviteUrl && !r.emailed ? { email: to, url: r.inviteUrl } : null);
+    else if (r.emailed) toast(`Invite emailed to ${to}. You can also copy the link below and send it yourself.`);
+    else toast(`Invite created for ${to}. The email couldn’t be sent, so copy the link below and send it yourself.`);
+    // Always offer the link: email can land in spam or never arrive. It's shown once (only its hash is stored);
+    // Resend makes a new one.
+    setLastLink(r.inviteUrl ? { email: to, url: r.inviteUrl } : null);
   };
 
   return (
@@ -100,6 +102,7 @@ export function MembersPanel() {
       {isAdmin && <p className="muted small">{ROLE_HELP[role]}.</p>}
       {lastLink && (
         <div className="invite-link">
+          <span className="muted small">Invite link for {lastLink.email}:</span>
           <code title={lastLink.url}>{lastLink.url}</code>
           <button className="btn btn-secondary btn-sm" onClick={() => void copy(lastLink.url)}>
             <Copy size={14} /> Copy link

@@ -67,8 +67,8 @@ function PageShareDialog({ pageId, title }: { pageId: string; title: string }) {
       setData(r);
       setQ('');
       if (r.status === 'invited') {
-        setInviteUrl(r.emailed ? null : (r.inviteUrl ?? null));
-        toast(r.emailed ? `Invite sent to ${label}` : `Invite created for ${label}: copy the link below`);
+        setInviteUrl(r.inviteUrl ?? null); // always offered, in case the email lands in spam or never arrives
+        toast(r.emailed ? `Invite sent to ${label}. You can also copy the link below.` : `Invite created for ${label}: copy the link below`);
       } else toast(`Shared with ${label}`);
     } catch (e) {
       errorToast(e);
