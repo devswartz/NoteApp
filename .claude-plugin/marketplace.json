@@ -1,0 +1,15 @@
+{
+  "name": "notivelo",
+  "description": "Notivelo's plugin for Claude Code: your notes and tasks in chat.",
+  "owner": {
+    "name": "Notivelo",
+    "email": "support@notiveloapp.com"
+  },
+  "plugins": [
+    {
+      "name": "notivelo",
+      "source": "./plugins/notivelo",
+      "description": "Find, read and write your Notivelo notes and tasks from Claude."
+    }
+  ]
+}
