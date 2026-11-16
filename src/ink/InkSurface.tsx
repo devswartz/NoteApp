@@ -175,7 +175,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     const session = new NativeInkSession(native, doc, {
       onWrite: () => onWriteRef.current?.(),
       onView: applyView,
-      onTool: (tool) => setInkTool({ tool }),
+      onTool: (tool) => useInkTool.getState().drawMode && setInkTool({ tool }), // Pencil double-tap: draw mode only
       onUndo: () => cb.current.onUndo?.(),
       onRedo: () => cb.current.onRedo?.(),
       onDetached: () => {

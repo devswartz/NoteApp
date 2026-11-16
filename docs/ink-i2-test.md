@@ -6,11 +6,11 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 
 1. Install the TestFlight build of the I2 branch (made with the Mobile workflow's **ink** option on, see "Getting the build" in the I2 report). Ink is on in that build without any setting.
 2. Sign in, open a notebook, and make a new **canvas page** (pages are canvas pages by default). Make a second one for the heavy-page test.
-3. Pick the **pen** in the pen toolbar (top right of the page). The **bug** button at the end of the toolbar opens the debug menu:
+3. Turn on **Draw** in the ribbon: the text groups give way to the pen groups (Tools, Colour, Width, Touch). Turning Draw off goes back to typing. The **bug** button in the Touch group opens the debug menu:
    - **Notivelo renderer / PencilKit (not saved)**: swaps our renderer for Apple's PencilKit on the same page. PencilKit strokes vanish when you switch back, and scrolling is off while it's on.
    - **Web ink overlay**: also draws the web's own ink, faint, under the native ink. They should coincide exactly; a visible double line means the two are misaligned (note where, and at what zoom).
    - **Fill with test strokes**: adds text boxes up to 50 and 3,000 test strokes (press twice for 6,000).
-4. Gestures: the Pencil draws; one finger scrolls; two fingers pinch-zoom (0.5× to 4×); a two-finger tap undoes and a three-finger tap redoes (as in Notability, whatever tool is picked); Pencil double-tap switches between the eraser and the last pen. While a pen or eraser is picked, the text boxes can't be typed in (pick **Select and type** to type).
+4. Gestures: the Pencil draws; one finger scrolls; two fingers pinch-zoom (0.5× to 4×); a two-finger tap undoes and a three-finger tap redoes (as in Notability, whatever tool is picked); Pencil double-tap switches between the eraser and the last pen. In draw mode the text boxes rest (no typing, caret, moving or resizing); turn Draw off to type.
 
 ## 1. Latency (slow motion against Notability)
 
@@ -58,12 +58,20 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 
 - [ ] With the **pen**, write and draw right over the text of a box (several words, a scribble across a line). Nothing turns into typed text, no caret or keyboard appears, and the box's text is unchanged.
 - [ ] With the **eraser** and the **partial eraser**, scrub back and forth over strokes that sit on a box's text (Scribble's scratch-out gesture). Only ink goes; the text is untouched.
-- [ ] Pick **Select and type**: tapping a box puts the caret there again, and Scribble (writing into the box with the Pencil) works again there, as before.
+- [ ] Turn **Draw** off: tapping a box with a finger or the Pencil puts the caret there, Scribble (writing into the box with the Pencil) works as before, and the Pencil never draws or erases. Pencil double-tap does nothing.
 - [ ] Draw three strokes, then **two-finger tap** three times: they go one by one, newest first. Then **three-finger tap** three times: they come back in order. No iPadOS undo/redo banner or copy/paste bar appears.
-- [ ] The same taps with the **select** tool picked and with the **eraser** picked (undo brings an erased stroke back).
-- [ ] Two-finger tap after typing in a box (select tool): undoes the typing, then the strokes before it (one undo history for the page).
+- [ ] The same taps in type mode and with the **eraser** picked (undo brings an erased stroke back). The ribbon's Undo and Redo buttons do the same in both modes.
+- [ ] Two-finger tap after typing in a box (type mode): undoes the typing, then the strokes before it (one undo history for the page).
 - [ ] A two-finger tap that doesn't move never scrolls or zooms the page; a two-finger drag still scrolls and a pinch still zooms.
 - **Pass:** no handwriting or erasing ever changes text while a pen tool is picked, and the taps undo and redo every time.
+
+## 7. Draw mode in the ribbon
+
+- [ ] The ribbon has a **Draw** toggle on canvas pages. Turning it on swaps the Text, Lists and Insert groups for Tools, Colour, Width and Touch; Page, View and History stay. There is no pen toolbar on the canvas any more.
+- [ ] In draw mode, try to tap into a box, drag a box's top edge, or drag its right edge with a finger: nothing happens (fingers scroll). The Pencil draws straight across boxes.
+- [ ] Leave the page in draw mode, open another page and come back, and close and reopen the app: draw mode is still on (it is remembered on this iPad). Turn it off: it stays off.
+- [ ] On the PC (browser with the ink flag): the same Draw toggle; with it off the mouse selects text and moves boxes as before; with it on the mouse draws and the boxes rest.
+- **Pass:** the ribbon is the only switch, each mode behaves wholly one way, and nothing about the pen gets in the way of typing in type mode.
 
 ## Results
 
@@ -76,5 +84,6 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 | Pinch zoom settle | | — | — | | |
 | Sync to web | | — | — | | |
 | Scribble off, undo/redo taps | | — | — | | |
+| Draw mode in the ribbon | | — | — | | |
 
 **Gate decision:** go with our Metal renderer / switch to PencilKit (latency or quality) / switch to the native page view (drift). See `docs/PLAN_INK.md`, I2.

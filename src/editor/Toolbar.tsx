@@ -7,6 +7,7 @@
 // controls, Escape returns to the text. Alt+F10 in the text and F6 focus it.
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useEditorState, type Editor } from '@tiptap/react';
+import type * as Y from 'yjs';
 import {
   Baseline,
   BetweenHorizontalEnd,
@@ -57,7 +58,8 @@ import { listItemAt } from './smartLists.ts';
 import { indentIntoTask, liftOutOfTask, shiftTabBlock, tabBlock } from './taskChildren.ts';
 import { canInsertTask } from './taskGate.ts';
 import { useActiveEditor } from './activeEditor.ts';
-import { pageUndoOf, type PageUndo } from './pageUndo.ts';
+import { pageUndoFor, pageUndoOf, type PageUndo } from './pageUndo.ts';
+import { DrawToggle, InkRibbonGroups, useDrawing } from '../ink/InkRibbon.tsx';
 import { openLinkEditor } from './LinkEditor.tsx';
 import { slashHooks } from './SlashMenu.tsx';
 import { printPage, printSelectionOnly } from './exportPage.ts';
@@ -327,8 +329,9 @@ const noVersion = () => 0;
  * Undo / Redo: on a canvas page, the page's most recent change (a box moved or typed in,
  * wherever focus is; pageUndo.ts); otherwise the editor's own history.
  */
-function useHistory(editor: Editor | null, s: { canUndo: boolean; canRedo: boolean } | null) {
-  const page: PageUndo | null = pageUndoOf(editor);
+function useHistory(editor: Editor | null, s: { canUndo: boolean; canRedo: boolean } | null, doc: Y.Doc | null = null) {
+  // Draw mode: no box is editable, so no editor; the page's undo comes from its doc.
+  const page: PageUndo | null = pageUndoOf(editor) ?? (doc ? pageUndoFor(doc) : null);
   useSyncExternalStore(page?.subscribe ?? noSubscribe, page?.getVersion ?? noVersion);
   if (!page) {
     return {
@@ -627,10 +630,12 @@ export function Ribbon() {
   const outlineHidden = useRibbon((r) => r.outlineHidden);
   const printable = usePrintSelection(page?.pageId);
   const settings = usePageSettings(page?.doc);
-  const off = !editor || !s || locked;
+  // Draw mode (src/ink/InkRibbon.tsx): the pen groups take the text groups' place.
+  const drawing = useDrawing() && !!page?.canEdit;
+  const off = drawing ? locked : !editor || !s || locked;
   const pageOff = !page || !page.canEdit;
   const chain = () => editor!.chain().focus();
-  const history = useHistory(editor, s);
+  const history = useHistory(editor, s, drawing ? page!.doc : null);
   const button = (title: string, icon: ReactNode, run: () => void, opts: BtnOpts & { always?: boolean } = {}) => {
     const idle = (!opts.always && off) || locked;
     const disabled = idle || !!opts.disabled;
@@ -660,7 +665,16 @@ export function Ribbon() {
   const block = s?.block ?? 'p';
   const blockLabel = BLOCKS.find((b) => b.id === block)!.label;
   return (
-    <RibbonFrame strip={`Text · Lists · Insert${table ? ' · Table' : ''} · Page · View`} editor={editor} idle={off} context={!!table}>
+    <RibbonFrame strip={drawing ? 'Draw · Page · View' : `Text · Lists · Insert${table ? ' · Table' : ''} · Page · View`} editor={editor} idle={off} context={!drawing && !!table}>
+      {drawing && (
+        <>
+          <DrawToggle />
+          <Sep />
+          <InkRibbonGroups />
+        </>
+      )}
+      {!drawing && (
+      <>
       <Group label="Text">
         <ToolbarMenu
           label={`Block type: ${blockLabel}`}
@@ -792,6 +806,10 @@ export function Ribbon() {
         </>
       )}
       <Sep />
+      <DrawToggle separator />
+      </>
+      )}
+      {drawing && <Sep />}
       <Group label="Page">
         <ToolbarMenu
           label="Page colour"

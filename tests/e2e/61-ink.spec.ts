@@ -1,7 +1,8 @@
 // Ink on canvas pages (docs/PLAN_INK.md, phase I1), behind the `ink` flag (localStorage
 // noteapp.flags.ink = 1): draw a stroke with the pen tool, see it on a second client (which has
 // the flag off: it shows ink but offers no pen tools), print it as vector paths, undo and redo it,
-// and erase it. The mouse draws when a pen tool is picked; pen-specific input (pressure, tilt,
+// and erase it. The ribbon's Draw toggle switches the canvas to draw mode, where the mouse draws and
+// the text boxes are inert; pen-specific input (pressure, tilt,
 // coalesced and predicted events, Windows delegated ink) needs a real pen and isn't covered here.
 import { expect, test, type Page } from '@playwright/test';
 import { createPage, createUser, pageUrl, signInContext } from './helpers.ts';
@@ -51,15 +52,21 @@ test('ink: draw with the pen, another client sees it, it prints as vector paths,
     await expect(p.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
   }
 
-  // The flag shows the pen toolbar; without it there's none.
-  const tools = pa.getByTestId('ink-toolbar');
-  await expect(tools).toBeVisible();
-  await expect(pb.getByTestId('ink-toolbar')).toHaveCount(0);
+  // The flag puts a Draw toggle in the ribbon; without it there's none.
+  const tools = pa.getByRole('toolbar', { name: 'Ribbon' });
+  const drawToggle = tools.getByRole('button', { name: 'Draw', exact: true });
+  await expect(drawToggle).toBeVisible();
+  await expect(pb.getByRole('toolbar', { name: 'Ribbon' }).getByRole('button', { name: 'Draw', exact: true })).toHaveCount(0);
 
-  // Draw a stroke with the pen (the mouse draws while a pen tool is picked).
+  // Draw mode: the ribbon's text groups give way to the pen tools, and the mouse draws.
+  await drawToggle.click();
+  await expect(drawToggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(tools.getByRole('group', { name: 'Text' })).toHaveCount(0);
   await tools.getByRole('button', { name: 'Pen', exact: true }).click();
   await tools.getByRole('button', { name: 'Blue' }).click();
   await expect(surface(pa)).toHaveClass(/ink-active/);
+  // The text boxes rest: not editable.
+  await expect(pa.locator('.canvas-box [contenteditable="true"]')).toHaveCount(0);
   const boxesBefore = await pa.locator('.canvas-box:not(.is-ready)').count();
   await draw(pa, [420, 380], [640, 420]);
   await expect.poll(() => inkPixels(pa), { timeout: 10_000 }).toBeGreaterThan(200);
@@ -101,9 +108,11 @@ test('ink: draw with the pen, another client sees it, it prints as vector paths,
   await expect.poll(() => inkPixels(pa, 'ink-under')).toBe(0);
   await expect.poll(() => inkPixels(pb)).toBe(0);
 
-  // Back to select: clicking the page starts a text box again.
-  await tools.getByRole('button', { name: 'Select and type' }).click();
+  // Draw mode off: the text groups and editable boxes are back.
+  await drawToggle.click();
   await expect(surface(pa)).not.toHaveClass(/ink-active/);
+  await expect(tools.getByRole('group', { name: 'Text' })).toBeVisible();
+  await expect(pa.locator('.canvas-box [contenteditable="true"]').first()).toBeVisible();
 
   await a.close();
   await b.close();

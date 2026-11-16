@@ -264,6 +264,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     }
 
     public func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+        guard tool.active else { return } // type mode: the Pencil is just a pointer
         let next = tool.erases ? (previousTool == "eraser" || previousTool == "partialEraser" ? "pen" : previousTool) : "eraser"
         if !tool.erases { previousTool = tool.tool }
         tool.tool = next

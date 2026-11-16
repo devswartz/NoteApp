@@ -80,8 +80,7 @@ import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
 import { flag } from '../lib/flags.ts';
 import { InkSurface, type InkHandle } from '../ink/InkSurface.tsx';
-import { InkToolbar } from '../ink/InkToolbar.tsx';
-import { useInkTool } from '../ink/inkTool.ts';
+import { useInkAvailable, useInkTool } from '../ink/inkTool.ts';
 import { nativeInkPlugin, type NativeInkPlugin } from '../ink/nativeInk.ts';
 
 /** Read once: the flag changes with a reload (src/lib/flags.ts). */
@@ -256,11 +255,17 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   const inkTool = useInkTool((s) => s.tool);
   const fingerDrawing = useInkTool((s) => s.fingerDrawing);
   const inkOn = INK_FLAG && canEdit && !isMobile;
+  // Draw mode (the ribbon's Draw toggle, src/ink/InkRibbon.tsx) makes the whole canvas ink; type mode is the normal canvas.
   const canvasTool: CanvasTool = inkOn && inkTool !== 'select' ? 'ink' : 'select';
+  useEffect(() => {
+    useInkAvailable.setState({ available: inkOn });
+    return () => useInkAvailable.setState({ available: false });
+  }, [inkOn]);
   // A pen tool is picked: the boxes' text isn't editable meanwhile, so the Pencil can't set off
   // iPadOS Scribble (handwriting turned into text, scratch-out deleting it), place a caret or open
   // the keyboard. Picking the select tool makes them editable again.
   const inkLock = canvasTool === 'ink';
+  // (In draw mode the boxes also take no pointer input at all: see .ink-active in ink.css.)
   const inkLockRef = useRef(inkLock);
   inkLockRef.current = inkLock;
   const inkRef = useRef<InkHandle>(null);
@@ -905,7 +910,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   /** Click on empty space: a new box there. */
   const onSurfaceDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!canEdit || isMobile || e.button !== 0 || e.target !== e.currentTarget) return;
+    if (!canEdit || isMobile || inkLockRef.current || e.button !== 0 || e.target !== e.currentTarget) return;
     e.preventDefault(); // keep focus where it is until the new box takes it
     const at = toPage(canvasView(e.currentTarget.getBoundingClientRect(), viewScaleRef.current), e.clientX, e.clientY);
     createBox(boxAtClick(boxesRef.current, at.x, at.y), 'focus');
@@ -919,8 +924,8 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
    */
   const onSurfacePointer = (e: ReactPointerEvent<HTMLDivElement>) => {
     const kind = pointerKind(e);
-    // The pen's eraser end (buttons bit 32) erases whole strokes whatever tool is picked.
-    const eraserEnd = inkOn && kind === 'pen' && (e.buttons & 32) !== 0;
+    // The pen's eraser end (buttons bit 32) erases whole strokes whatever pen tool is picked (draw mode only).
+    const eraserEnd = canvasTool === 'ink' && kind === 'pen' && (e.buttons & 32) !== 0;
     if (!eraserEnd && routePointer(kind, { tool: canvasTool, canEdit, fingerDrawing }) === 'ui') return;
     // Not taken (the ink engine is still loading): still no box, caret or selection from a pen gesture.
     if (!inkRef.current?.pointerDown(e.nativeEvent, eraserEnd ? 'eraser' : inkTool)) e.preventDefault();
@@ -978,7 +983,6 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
 
   return (
     <div className={`editor-wrap canvas-wrap ${session.synced ? '' : 'is-loading'} ${stacked ? 'is-stacked' : ''} ${single ? 'is-single' : ''} ${ready ? 'is-blank' : ''} ${native ? 'is-native-ink' : ''}`}>
-      {inkOn && <InkToolbar />}
       <div className="canvas-viewport">
         <div
           ref={surfaceRef}
