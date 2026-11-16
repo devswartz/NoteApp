@@ -18,6 +18,13 @@ on:
       server_url:
         description: Default server of an internal build (only used with allow_server_switch)
         default: https://staging.notiveloapp.com
+      ink:
+        description: Turn the ink flag on in this build (handwriting and the iPad pen layer, docs/PLAN_INK.md; for testing a branch)
+        type: boolean
+        default: false
+      version:
+        description: Version (CFBundleShortVersionString) for this build instead of package.json's, e.g. 0.6.0 when that one is already released
+        default: ''
   push:
     tags: ['v*.*.*', 'mobile-v*']
   pull_request:
@@ -26,6 +33,9 @@ on:
       - 'src/platform/capacitor.ts'
       - 'src/platform/serverUrl.ts'
       - 'src/platform/index.ts'
+      - 'src/ink/nativeInk.ts'
+      - 'crates/nv-ink/**'
+      - 'scripts/build-ink-ios.sh'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/mobile.yml'
@@ -49,6 +59,8 @@ env:
   MOBILE_ALLOW_SERVER_SWITCH: ${{ inputs.allow_server_switch && '1' || '' }}
   # Old host names of the production server: a sign-in saved for one of them is kept on upgrade (docs/RELEASING.md).
   LEGACY_PROD_HOSTS: ${{ vars.LEGACY_PROD_HOSTS || secrets.LEGACY_PROD_HOSTS }}
+  # A manual run may turn feature flags on for the whole build (src/lib/flags.ts).
+  VITE_FLAG_INK: ${{ inputs.ink && '1' || '' }}
   BUILD_NUMBER: ${{ github.run_number }}
 
 jobs:
@@ -175,8 +187,21 @@ jobs:
 
       - name: Version
         run: |
-          v=$(node -p "process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME.replace(/^(mobile-)?v/, '') : require('./package.json').version")
+          v=$(node -p "process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME.replace(/^(mobile-)?v/, '') : (process.env.VERSION_INPUT || require('./package.json').version)")
           echo "VERSION_NAME=$v" >> "$GITHUB_ENV"
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+
+      # The ink engine (crates/nv-ink) for the iPad pen layer: the NvInk Swift package links it.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1' # as in rust.yml
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios, aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+      - name: Build the ink engine for iOS
+        run: bash scripts/build-ink-ios.sh
 
       - name: Build web app and sync
         run: |

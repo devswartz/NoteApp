@@ -12,6 +12,8 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # The wasm-bindgen API (src/wasm.rs) used by the web app (src/ink/).
 wasm = ["dep:wasm-bindgen"]
+# The C ABI (src/ffi.rs, include/nv_ink.h) used by the iPad app; built by scripts/build-ink-ios.sh.
+ffi = []
 
 [dependencies]
 # Pinned exactly: the generated JS glue in src/ink/generated must come from the same version of wasm-bindgen-cli.

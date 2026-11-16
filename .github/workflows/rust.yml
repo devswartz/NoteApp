@@ -8,6 +8,9 @@ name: Rust
 #             size budget. The web, Docker and app builds use the committed files and need no Rust.
 #             When it fails because the files differ, the job's `ink-wasm` artifact holds the right
 #             ones: copy them into src/ink/generated/ and commit.
+#   ink ios   (macOS) builds the engine's C ABI for iOS as an XCFramework (scripts/build-ink-ios.sh)
+#             and runs the iPad pen layer's Swift tests (apps/mobile/ios/App/NvInk, `swift test`).
+#             The Mobile workflow builds the same framework before building the app.
 # Fuzzing (crates/nv-ink/fuzz, cargo +nightly fuzz run decode) runs by hand, not here.
 # Pull requests, and any push (a branch before it has a PR, main after a merge) that touches the Rust core or its build.
 on:
@@ -19,6 +22,8 @@ on:
       - 'Cargo.lock'
       - 'src/ink/generated/**'
       - 'scripts/build-ink-wasm.sh'
+      - 'scripts/build-ink-ios.sh'
+      - 'apps/mobile/ios/App/NvInk/**'
       - '.github/workflows/rust.yml'
 
 permissions:
@@ -50,7 +55,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - run: cargo test --workspace --locked
+      - run: cargo test --workspace --all-features --locked
 
   ink-wasm:
     name: ink wasm
@@ -94,3 +99,32 @@ jobs:
           name: ink-wasm
           path: src/ink/generated/
           retention-days: 7
+
+  ink-ios:
+    name: ink ios
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios, aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ios
+      - name: Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -1)"
+          xcodebuild -version
+      - name: Build the ink engine for iOS
+        run: bash scripts/build-ink-ios.sh
+      - name: Swift tests (pen layer model and engine binding)
+        working-directory: apps/mobile/ios/App/NvInk
+        run: swift test 2>&1 | tail -n 60
+      - name: Build the pen layer for the iOS simulator (its UIKit and Metal code)
+        working-directory: apps/mobile/ios/App/NvInk
+        run: |
+          xcodebuild -scheme NvInk -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -E "error|warning: .*NvInk|BUILD" | head -n 80
+          test "${PIPESTATUS[0]}" -eq 0

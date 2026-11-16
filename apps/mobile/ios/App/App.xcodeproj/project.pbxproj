@@ -14,6 +14,8 @@
 		3787B9DEEC89412EA6F4347B /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 01D45C8F180A0D8A20D6A31F /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4872A59CF9FA5BC1E0A2B99B /* NoteAppNativePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE70B37FEB546404AD4A4722 /* NoteAppNativePlugin.swift */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
+		A1C0FFEE00000000000000A2 /* NvInk in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0FFEE00000000000000A4 /* NvInk */; };
+		A1C0FFEE00000000000000A5 /* NoteAppInkPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0FFEE00000000000000A6 /* NoteAppInkPlugin.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -96,6 +98,7 @@
 		CF3F71292E0419AD647260E8 /* MainViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		E1D6D4BECF1968F5F9F9625D /* TodayWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TodayWidget.swift; sourceTree = "<group>"; };
 		EA75931978F9705D5E225813 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = DEVELOPER_DIR; };
+		A1C0FFEE00000000000000A6 /* NoteAppInkPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteAppInkPlugin.swift; sourceTree = "<group>"; };
 		EE70B37FEB546404AD4A4722 /* NoteAppNativePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NoteAppNativePlugin.swift; sourceTree = "<group>"; };
 		F879B50E59359B8B1056F230 /* ShareExtension.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -106,6 +109,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				A1C0FFEE00000000000000A2 /* NvInk in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -189,6 +193,7 @@
 				592CEF9C8042702E418C22E8 /* App.entitlements */,
 				CF3F71292E0419AD647260E8 /* MainViewController.swift */,
 				EE70B37FEB546404AD4A4722 /* NoteAppNativePlugin.swift */,
+				A1C0FFEE00000000000000A6 /* NoteAppInkPlugin.swift */,
 				7E1A90C1B2D3E4F5A6B7C8D1 /* PrivacyInfo.xcprivacy */,
 			);
 			path = App;
@@ -281,6 +286,7 @@
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				A1C0FFEE00000000000000A4 /* NvInk */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -313,6 +319,7 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				A1C0FFEE00000000000000A3 /* XCLocalSwiftPackageReference "NvInk" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -367,6 +374,7 @@
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				A548353EC0181453C2F3D105 /* MainViewController.swift in Sources */,
 				4872A59CF9FA5BC1E0A2B99B /* NoteAppNativePlugin.swift in Sources */,
+				A1C0FFEE00000000000000A5 /* NoteAppInkPlugin.swift in Sources */,
 				A4A3260F5FB051A5CFAEFA9B /* SharedStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -729,6 +737,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "CapApp-SPM";
 		};
+		A1C0FFEE00000000000000A3 /* XCLocalSwiftPackageReference "NvInk" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = NvInk;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -736,6 +748,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
+		};
+		A1C0FFEE00000000000000A4 /* NvInk */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1C0FFEE00000000000000A3 /* XCLocalSwiftPackageReference "NvInk" */;
+			productName = NvInk;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

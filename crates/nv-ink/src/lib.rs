@@ -1,6 +1,6 @@
 //! nv-ink: Notivelo's ink engine (docs/PLAN_INK.md). One implementation of the stroke format and
 //! stroke geometry for every platform: WASM on the web (`wasm` feature, src/ink/ in the app),
-//! later a native library on iPad (uniffi) and a Node addon for the server.
+//! a C ABI for the iPad app (`ffi` feature, include/nv_ink.h), and later a Node addon for the server.
 //!
 //! - [`blob`]: the stored stroke format (versioned, compact) and its decoder.
 //! - [`smooth`]: one-euro input smoothing and the stroke builder.
@@ -10,6 +10,8 @@
 
 pub mod blob;
 pub mod erase;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 pub mod geom;
 pub mod hit;
 pub mod smooth;
