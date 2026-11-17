@@ -70,6 +70,8 @@ import { usePageSettings } from './ribbonState.ts';
 import { LinePicks, linePicks } from './linePicks.ts';
 import { PrintSelectionMenu } from './PrintSelectionMenu.tsx';
 import { toast } from '../store.ts';
+import { deleteTasksRemovedFromPage } from '../store/tasks.ts';
+import { taskRefIds } from './taskRefIds.ts';
 import { pageUndoFor, pageUndoOf } from './pageUndo.ts';
 import { GEOM_ORIGIN, boxJSON, canvasUndoManager, pageSchema, writeBoxes, type CanvasHandle } from './canvasDoc.ts';
 import { headingsOf } from './Outline.tsx';
@@ -497,12 +499,16 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
   /**
    * Remove a box and its content. `undoable`: an undo step (Ctrl+Z), and a toast offers to
    * bring it back. Otherwise (an empty box you left) its creation stops being an undo step too.
+   * Its tasks are deleted with it, as deleting their lines would (undo brings them back, see
+   * undoTasks.ts), except on Cut (`cut`), where they're on their way to be pasted.
    */
   const removeBox = useCallback(
-    (id: string, undoable: boolean, quiet = false) => {
+    (id: string, undoable: boolean, quiet = false, cut = false) => {
       const map = doc.getMap<unknown>(BOXES_KEY);
       if (!map.has(id)) return;
       const frag = doc.getXmlFragment(boxField(id));
+      const ed = editors.current.get(id);
+      const tasks = !cut && ed && !ed.isDestroyed ? taskRefIds(ed.state.doc) : null;
       // `quiet`: one of several boxes removed as one step (Cut): the caller groups the undo step and says nothing.
       if (undoable && !quiet) undo.stopCapturing();
       doc.transact(
@@ -512,6 +518,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         },
         undoable ? GEOM_ORIGIN : DROP_ORIGIN,
       );
+      if (tasks?.size) deleteTasksRemovedFromPage(tasks);
       if (!undoable) {
         const i = undo.undoStack.findIndex((s) => s.meta.get('created') === id);
         if (i >= 0) undo.undoStack.splice(i, 1);
@@ -596,7 +603,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
     // Cut: the boxes go as one undo step (their text and tasks come back with Ctrl+Z, or paste them elsewhere).
     undo.stopCapturing();
     undo.captureTimeout = Number.MAX_SAFE_INTEGER;
-    for (const id of ids) removeBox(id, true, true);
+    for (const id of ids) removeBox(id, true, true, true);
     undo.captureTimeout = CAPTURE_MS;
     undo.stopCapturing();
     boxSelection.clear();

@@ -8,7 +8,7 @@ import type { EditorView } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, GripVertical, ListPlus, Maximize2, FileX2, Flag, SquareCheck } from 'lucide-react';
-import { deletedHere, deletedTitles, UNDO_WINDOW_MS } from '../store/tasks.ts';
+import { canRestoreDeletedFromPage, deletedHere, deletedTitles, restoreDeletedFromPage, UNDO_WINDOW_MS } from '../store/tasks.ts';
 import { deleteTask, newTaskId, toggleTask, ui, updateTask, useStore, createTask } from '../store.ts';
 import { useAnyTask } from '../components/sharing/sharedPages.ts';
 import { AssigneeChip, DueChip, PRIORITY_COLORS, PriorityMenu, TaskCheckbox } from '../components/TaskControls.tsx';
@@ -322,6 +322,10 @@ function TaskRefView({ node, editor, getPos, selected }: ReactNodeViewProps) {
     const gone = (tid: string) => (useStore.getState().tasks[tid] ? undefined : deletedTitles.get(tid));
     editor.view.dispatch(unwrapTask(editor.state.tr, p, [], gone));
   };
+  // Its line was deleted (which deleted the task) and has come back (Ctrl+Z, a text box's Undo): so does the task.
+  useEffect(() => {
+    if (!task && editor.isEditable && canRestoreDeletedFromPage(id)) restoreDeletedFromPage(id);
+  }, [task, id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (task || !loaded || !editor.isEditable || !deletedHere.has(id)) return;
     const t = setTimeout(() => {

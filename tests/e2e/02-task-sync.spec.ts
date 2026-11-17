@@ -127,25 +127,45 @@ test.describe('inline tasks ↔ dashboard', () => {
     await expect(taskRef(page, 'Final Q4 budget')).toBeVisible();
   });
 
-  test('removing a task from the note keeps it as a standalone task', async ({ page, context, request }) => {
-    const user = await createUser(request, 'Sam Standalone');
+  test('deleting task lines from the note deletes the tasks; Ctrl+Z brings them back', async ({ page, context, request }) => {
+    const user = await createUser(request, 'Della Delete');
     const { pageId } = await createPage(request, user);
     await signInContext(context, user);
 
     await openPage(page, user.wsId, pageId);
-    await addInlineTask(page, 'Keep me around');
-    await eventually(() => listTasks(request, user), (ts) => ts.some((t) => t.title === 'Keep me around' && t.pageId === pageId), 'linked');
+    await addInlineTask(page, 'First to go');
+    await addInlineTask(page, 'Second to go');
+    await eventually(() => listTasks(request, user), (ts) => ['First to go', 'Second to go'].every((n) => ts.some((t) => t.title === n && t.pageId === pageId)), 'linked');
 
-    // Remove everything from the document (select all in the editor, delete).
-    await page.locator('.ProseMirror').click();
+    // Select everything in the editor and Backspace, as you would a run of bullets.
+    await page.locator('.ProseMirror').first().click();
     await page.keyboard.press('ControlOrMeta+a');
-    await page.keyboard.press('Delete');
-    await expect(taskRef(page, 'Keep me around')).toHaveCount(0);
-    await eventually(
-      () => listTasks(request, user),
-      (ts) => ts.some((t) => t.title === 'Keep me around' && t.pageId === null),
-      'task detached, not deleted',
-    );
+    await page.keyboard.press('Backspace');
+    await expect(page.locator('.task-ref')).toHaveCount(0);
+    await eventually(() => listTasks(request, user), (ts) => !ts.some((t) => t.title === 'First to go' || t.title === 'Second to go'), 'tasks deleted');
+
+    // Undo puts the lines back, and the tasks with them (same ids, still on the page).
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(taskRef(page, 'First to go')).toBeVisible();
+    await expect(taskRef(page, 'Second to go')).toBeVisible();
+    await eventually(() => listTasks(request, user), (ts) => ['First to go', 'Second to go'].every((n) => ts.some((t) => t.title === n && t.pageId === pageId)), 'tasks back');
+  });
+
+  test('cutting a task line keeps the task, so it can be pasted', async ({ page, context, request }) => {
+    const user = await createUser(request, 'Kit Cutter');
+    const { pageId } = await createPage(request, user);
+    await signInContext(context, user);
+
+    await openPage(page, user.wsId, pageId);
+    await addInlineTask(page, 'Moving soon');
+    await eventually(() => listTasks(request, user), (ts) => ts.some((t) => t.title === 'Moving soon' && t.pageId === pageId), 'linked');
+
+    await page.locator('.ProseMirror').first().click();
+    await page.keyboard.press('ControlOrMeta+a');
+    await page.keyboard.press('ControlOrMeta+x');
+    await expect(taskRef(page, 'Moving soon')).toHaveCount(0);
+    // Not pasted anywhere: the task is kept, as a standalone task, once the note is saved.
+    await eventually(() => listTasks(request, user), (ts) => ts.some((t) => t.title === 'Moving soon' && t.pageId === null), 'kept, standalone');
   });
 
   test('Backspace in a new empty task leaves a normal line under the task', async ({ page, context, request }) => {
