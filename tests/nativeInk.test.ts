@@ -71,7 +71,7 @@ test('start attaches, sends the tool and every stroke once; stop detaches', asyn
   assert.deepEqual(fromBase64(sent!.strokes.find((x) => x.id === 'b')!.data), blob(2));
   await s.stop();
   assert.equal(f.named('detach').length, 1);
-  assert.equal(f.removedCount(), 7, 'every listener removed');
+  assert.equal(f.removedCount(), 8, 'every listener removed');
   // After stop, changes no longer cross.
   ink.set('c', blob(3));
   assert.equal(f.named('updateStrokes').length, 0);
