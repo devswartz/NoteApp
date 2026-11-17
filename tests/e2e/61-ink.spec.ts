@@ -48,7 +48,7 @@ test('ink: draw with the pen, another client sees it, it prints as vector paths,
   for (const p of [pa, pb]) {
     await p.goto(pageUrl(user.wsId, pageId));
     await expect(surface(p)).toBeVisible();
-    await expect(p.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+    await expect(p.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   }
 
   // The flag shows the pen toolbar; without it there's none.

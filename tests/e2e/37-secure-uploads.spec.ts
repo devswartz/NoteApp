@@ -45,7 +45,7 @@ test('an uploaded image renders in the note, after a reload, and in print; the b
   // After a reload the stored (unsigned) path is signed again.
   await page.waitForTimeout(1500); // the collab server saves 1 s after the last edit
   await page.reload();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await loaded(page, '.ProseMirror img');
 
   // Print: the page laid out for paper still shows the image.

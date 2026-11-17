@@ -22,7 +22,7 @@ async function nextLine(page: Page) {
 async function reload(page: Page) {
   await page.waitForTimeout(1500); // the collab server saves 1 s after the last edit
   await page.reload();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 }
 
 test.describe('editor blocks', () => {

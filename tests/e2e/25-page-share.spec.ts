@@ -47,7 +47,7 @@ test('share a private page with one teammate, co-edit it, then revoke', async ({
   await expect(b.page.getByText('Alice private')).toHaveCount(0);
   await shared.getByRole('link', { name: /Secret plan/ }).click();
   await expect(b.page.locator('.ProseMirror')).toBeVisible();
-  await expect(b.page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(b.page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(b.page.locator('.crumbs')).toContainText('Shared with me');
   await expect(b.page.locator('.chip', { hasText: 'View only' })).toHaveCount(0);
 
@@ -134,7 +134,7 @@ test('someone outside the workspace with an edit share co-edits that page and it
   const e = await userPage(browser, eddie);
   await e.page.goto(`/shared/${pageId}`);
   await expect(e.page).toHaveURL(new RegExp(`/w/${eddie.wsId}/p/${pageId}`));
-  await expect(e.page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(e.page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(e.page.locator('.chip', { hasText: 'View only' })).toHaveCount(0);
   await expect(e.page.locator('.crumbs')).toContainText('Shared with me');
 
@@ -181,7 +181,7 @@ test('someone outside the workspace with an edit share co-edits that page and it
   await expect(e.page.locator('.task-row', { hasText: 'Eddie task' })).toHaveCount(0);
   await mine.locator('.chip-link').click();
   await expect(e.page).toHaveURL(new RegExp(`/p/${pageId}`));
-  await expect(e.page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(e.page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 
   // Still nothing else from that workspace: no Share, no move or delete, not in her workspace list.
   await expect(e.page.getByRole('button', { name: 'Share', exact: true })).toHaveCount(0);

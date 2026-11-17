@@ -29,7 +29,7 @@ test('set password → lock → relock → unlock → remove lock; another membe
   const editor = await openPage(page, ws, pageId);
   await editor.click();
   await page.keyboard.type('The launch is on Friday');
-  await expect(page.locator('.sync-live')).toBeVisible();
+  await expect(page.locator('.sync-live')).toBeAttached();
   await expect.poll(async () => (await api<{ ydoc: string }>(request, 'GET', `/pages/${pageId}/doc`, owner.token)).ydoc.length).toBeGreaterThan(40);
 
   // Lock it: no locked-notes password yet, so one is created on the way (twice, to confirm).

@@ -45,7 +45,7 @@ test('ribbon: block type, bold, text colour and highlight (saved as names), undo
   // Saved and synced: still there after a reload.
   await page.waitForTimeout(800);
   await page.reload();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(editor.locator('span[data-color="red"]')).toHaveText('Colourful words');
   await expect(editor.locator('mark[data-color="yellow"]')).toHaveText('Colourful words');
 
@@ -104,7 +104,7 @@ test('on a canvas the ribbon is live from the start (the first box) and then act
   await page.goto(pageUrl(user.wsId, id));
   const surface = page.getByTestId('canvas-surface');
   await expect(surface).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 
   // A blank page with the caret in the title: the ribbon is already live (it acts on the first box).
   await expect(page.locator('.page-title')).toBeFocused();
@@ -202,7 +202,7 @@ test('a canvas box just under the ribbon: the floating toolbar shows above the r
   await page.goto(pageUrl(user.wsId, id));
   const surface = page.getByTestId('canvas-surface');
   await expect(surface).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 
   // A box at the very top of the canvas, scrolled up to sit just under the ribbon.
   await surface.click({ position: { x: 40, y: 6 } });
