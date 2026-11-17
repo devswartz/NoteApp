@@ -192,7 +192,7 @@ test('pasting onto the empty canvas makes a new box with the lists: from HTML, a
   const { id } = await api<{ id: string }>(request, 'POST', `/sections/${sectionId}/pages`, user.token, { title: 'Paste here', kind: 'canvas' });
   await page.goto(`/w/${user.wsId}/p/${id}`);
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   // A box to select by its edge, so the paste goes to the canvas and not into a text.
   await page.getByTestId('canvas-surface').click({ position: { x: 40, y: 240 } });
   await expect(page.locator('.canvas-box .ProseMirror:focus')).toHaveText('');

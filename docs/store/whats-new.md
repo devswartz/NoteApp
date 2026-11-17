@@ -16,6 +16,11 @@ Only a manual **Store submit** run (an older tag) falls back, when a section is 
 
 Newest version first.
 
+## v1.5.8
+
+- Fixed: task lines no longer overlap on iPhone and iPad.
+- The save checkmark no longer clutters the toolbar on iPhone.
+
 ## v1.5.7
 
 - Hybrid is now the default look: a dark toolbar around a light, paper-like page. You can switch to Light, Dark or System any time in Settings › Appearance.

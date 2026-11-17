@@ -18,7 +18,7 @@ test('mobile: a new page is a canvas, stacked full width with "Add a text box" a
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   const surface = page.getByTestId('canvas-surface');
   await expect(surface).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 
   // A blank page is simply one full-width editor, ready for typing.
   await expect(page.locator('.canvas-wrap.is-single .canvas-box.is-ready .ProseMirror')).toBeVisible();

@@ -48,7 +48,7 @@ test('edits made offline sync when the connection comes back', async ({ browser,
   offline = false;
   await ctx.setOffline(false);
   await expect(page.locator('.offline-banner')).toHaveCount(0);
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 20_000 });
   await expect(otherEditor).toContainText('Written while offline.');
 
   // And it reached the server: a fresh load shows it.

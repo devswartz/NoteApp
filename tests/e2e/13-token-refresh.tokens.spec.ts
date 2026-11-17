@@ -33,7 +33,7 @@ test('editing and live updates keep working across access-token expiries', async
   await outliveToken();
   await focusEnd(page);
   await page.keyboard.type(' After second expiry.');
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 10_000 });
 
   // REST still works from the app (401 → refresh → retry): add a task with quick add.
   await page.goto(tasksUrl(user.wsId, 'today'));

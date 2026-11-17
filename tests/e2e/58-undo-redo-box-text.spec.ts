@@ -7,7 +7,7 @@ import { api, createPage, pageUrl, signInContext, createUser } from './helpers.t
 async function openCanvas(page: Page, wsId: string, pageId: string) {
   await page.goto(pageUrl(wsId, pageId));
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 }
 
 /** Click empty canvas space at (x, y) and type into the new box. */

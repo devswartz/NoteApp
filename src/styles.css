@@ -1273,12 +1273,17 @@ body.is-resizing .sidebar { transition: none; }
 /* A checklist under a task lines its text up with the bullets beside it (bullets sit in a wider marker column). */
 .task-ref-children ul[data-type='taskList'] { padding-left: 0; margin-left: -0.3em; }
 .task-ref-wide { display: contents; }
-.task-ref-add-checklist { width: auto; padding: 0 4px; gap: 4px; }
-.task-ref-add-label { display: none; font-size: var(--text-xs); }
-/* Touch: no hover, so "Add checklist" is always there, with its words. */
+/* Also a .task-ref-open (24px square, below), so this needs the extra class to stay wide enough for its words. */
+.task-ref-open.task-ref-add-checklist { width: auto; padding: 0 4px; gap: 4px; }
+.task-ref-add-label { display: none; font-size: var(--text-xs); white-space: nowrap; }
+/* Touch: no hover, so "Add checklist" is always there, with its words, except on a phone,
+   where the title needs the room (the icon stays, and the slash menu has it too). */
 @media (hover: none) {
   .task-ref-add-checklist { opacity: 1; }
   .task-ref-add-label { display: inline; }
+}
+@media (hover: none) and (max-width: 600px) {
+  .task-ref-add-label { display: none; }
 }
 .task-ref-checks.is-complete { color: var(--success, var(--text-2)); }
 .task-ref-fold-count { font-size: var(--text-xs, 12px); color: var(--text-muted); }
@@ -1864,6 +1869,8 @@ body.is-resizing .sidebar { transition: none; }
 
   .page-topbar { padding: 0 8px 0 16px; height: 44px; }
   .sync-label, .crumbs { display: none; }
+  /* Without its word, a lone tick looks like a button: show the indicator only while saving, connecting or offline. */
+  .sync.save-saved { display: none; }
   .page-article { padding: 12px 20px 40vh; }
   .page-title { font-size: 28px; }
   .ProseMirror { font-size: 16.5px; }

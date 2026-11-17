@@ -63,7 +63,7 @@ test('collapse shrinks the ribbon to a strip, remembered across a reload; a clic
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toHaveCount(0);
 
   await page.reload();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(ribbon.getByRole('button', { name: 'Show the ribbon' })).toBeVisible();
   await expect(ribbon.getByRole('button', { name: /^Bold/ })).toHaveCount(0);
 
@@ -193,7 +193,7 @@ test('page colour and rule lines apply, sync to a second person, and persist', a
   await expect(scroller(b.page)).toHaveAttribute('data-rules', 'grid');
   await a.page.waitForTimeout(800);
   await a.page.reload();
-  await expect(a.page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(a.page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(scroller(a.page)).toHaveAttribute('data-page-color', 'green');
   await expect(scroller(a.page)).toHaveAttribute('data-rules', 'grid');
 

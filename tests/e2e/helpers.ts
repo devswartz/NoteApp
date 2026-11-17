@@ -123,7 +123,7 @@ export async function openPage(page: Page, wsId: string, pageId: string) {
   await page.goto(pageUrl(wsId, pageId));
   const editor = firstEditor(page);
   await expect(editor).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   return editor;
 }
 

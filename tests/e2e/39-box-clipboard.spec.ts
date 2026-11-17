@@ -13,7 +13,7 @@ const shot = async (page: Page, name: string) => {
 async function openCanvas(page: Page, wsId: string, pageId: string) {
   await page.goto(pageUrl(wsId, pageId));
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 }
 
 /** Click empty canvas space at (x, y) and type into the new box. */
@@ -101,7 +101,7 @@ test('click a box edge to select it, copy and paste it; right-click for options;
   // It all persists.
   await page.waitForTimeout(1500);
   await page.reload();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(boxes(page, 'Beta')).toHaveCount(2);
   await expect(boxes(page, 'Alpha')).toHaveCount(0);
 });

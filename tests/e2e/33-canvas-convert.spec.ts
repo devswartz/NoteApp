@@ -7,7 +7,7 @@ import { api, createPage, createUser, eventually, listTasks, openPage, pageUrl, 
 async function openCanvas(page: Page, wsId: string, pageId: string) {
   await page.goto(pageUrl(wsId, pageId));
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 }
 
 const pos = (box: ReturnType<Page['locator']>) => box.evaluate((el: HTMLElement) => ({ x: parseFloat(el.style.left), y: parseFloat(el.style.top) }));
@@ -32,7 +32,7 @@ test('a blank page: type at once into its first box, which is stored only then, 
   await expect(ready.locator('.ProseMirror')).toBeFocused();
   await expect(page.locator('.template-picker')).toBeVisible();
   await page.reload();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
   await expect(ready).toHaveCount(1); // still unstored: opening a page leaves it empty
   await expect(ready.locator('.ProseMirror')).toBeFocused();
 

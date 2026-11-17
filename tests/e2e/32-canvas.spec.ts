@@ -13,7 +13,7 @@ async function userPage(browser: Browser, user: TestUser) {
 async function openCanvas(page: Page, wsId: string, pageId: string) {
   await page.goto(pageUrl(wsId, pageId));
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 }
 
 /** Click empty canvas space at (x, y) and type into the new box (a blank page's ready first box isn't counted: it isn't stored). */
@@ -49,7 +49,7 @@ test('canvas page: click to make boxes, type, move one; it all persists; a task 
   const { pageId: docId } = await createPage(request, user, { notebook: 'Boards', page: 'A document' });
   await signInContext(context, user);
   await page.goto(pageUrl(user.wsId, docId));
-  await expect(page.locator('.sync-live')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.sync-live')).toBeAttached({ timeout: 15_000 });
 
   // "New page" from the section's menu (every page is a canvas).
   const sidebarTree = page.getByRole('navigation', { name: 'Sidebar' }).getByRole('tree', { name: 'Sections' });
