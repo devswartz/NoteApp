@@ -118,34 +118,69 @@ export function fromBase64(s: string): Uint8Array {
 
 let found: Promise<NativeInkPlugin | null> | null = null;
 
+/** A plugin in a box: see wrap(). */
+export interface PluginBox {
+  plugin: NativeInkPlugin;
+}
+
+/**
+ * The plugin as a plain object. A Capacitor plugin is a Proxy that answers every property with a
+ * native method, `then` included, so it looks like a promise: resolving a promise with it (returning
+ * it from an async function, `.then(() => plugin)`) calls a native "then" that never answers, and
+ * the promise hangs. That is what kept the iPad on "checking" and the native layer off in every
+ * TestFlight round up to 0.5.90 (108). So the plugin only ever travels boxed, and callers get this
+ * wrapper, which has no `then`.
+ */
+export function wrap(p: NativeInkPlugin): NativeInkPlugin {
+  return {
+    available: () => p.available(),
+    attach: (l) => p.attach(l),
+    layout: (l) => p.layout(l),
+    detach: () => p.detach(),
+    setTool: (t) => p.setTool(t),
+    setStrokes: (o) => p.setStrokes(o),
+    updateStrokes: (o) => p.updateStrokes(o),
+    viewApplied: (o) => p.viewApplied(o),
+    setRenderer: (o) => p.setRenderer(o),
+    addListener: (event, fn) => p.addListener(event, fn),
+  };
+}
+
 /**
  * The native pen layer when this is the iPad app (null everywhere else: web, desktop, iPhone,
  * Android, or an app build without the plugin). `load` is for tests.
  */
-export function nativeInkPlugin(load?: () => Promise<NativeInkPlugin | null>): Promise<NativeInkPlugin | null> {
-  if (load) return (found = load().then(check, () => null));
-  return (found ??= realPlugin().then(check, () => null));
+export function nativeInkPlugin(load?: () => Promise<PluginBox | null>): Promise<NativeInkPlugin | null> {
+  const failed = (e: unknown) => {
+    setStatus(`web pen (finding the native layer failed: ${String(e)})`);
+    return null;
+  };
+  if (load) return (found = load().then(check, failed));
+  return (found ??= realPlugin().then(check, failed));
 }
 
-async function check(p: NativeInkPlugin | null): Promise<NativeInkPlugin | null> {
-  if (!p) {
+async function check(box: PluginBox | null): Promise<NativeInkPlugin | null> {
+  if (!box) {
     setStatus('web pen (not the iOS app)');
     return null;
   }
+  const p = wrap(box.plugin);
+  setStatus('native layer found, asking it');
   const a = await p.available().then(
     (r) => r,
     () => null,
   );
   if (!a) setStatus('web pen (the app has no NoteAppInk plugin)');
   else if (!a.available) setStatus('web pen (not an iPad)');
+  else setStatus('native layer ready');
   return a?.available ? p : null;
 }
 
-async function realPlugin(): Promise<NativeInkPlugin | null> {
-  const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string; isPluginAvailable?: (n: string) => boolean } }).Capacitor;
+async function realPlugin(): Promise<PluginBox | null> {
+  const cap = (globalThis as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor;
   if (!cap?.isNativePlatform?.() || cap.getPlatform?.() !== 'ios') return null;
   const core = await import('@capacitor/core');
-  return core.registerPlugin<NativeInkPlugin>('NoteAppInk');
+  return { plugin: core.registerPlugin<NativeInkPlugin>('NoteAppInk') }; // boxed: never resolve a promise with the plugin itself
 }
 
 // ───────────── debug switches (the pen toolbar's hidden debug menu) ─────────────

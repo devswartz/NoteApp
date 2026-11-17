@@ -239,10 +239,22 @@ test('Pencil double-tap, two-finger tap (undo) and three-finger tap (redo) reach
 });
 
 test('the plugin is used only where native says it is available (iPad)', async () => {
-  assert.equal(await nativeInkPlugin(async () => fakePlugin({ available: false }).plugin), null);
-  assert.ok(await nativeInkPlugin(async () => fakePlugin().plugin));
+  assert.equal(await nativeInkPlugin(async () => ({ plugin: fakePlugin({ available: false }).plugin })), null);
+  assert.ok(await nativeInkPlugin(async () => ({ plugin: fakePlugin().plugin })));
   assert.equal(await nativeInkPlugin(async () => null), null);
   assert.equal(await nativeInkPlugin(async () => Promise.reject(new Error('no plugin'))), null);
+});
+
+test('a Capacitor-style plugin (a Proxy that answers `then` too) is found, not hung on', async () => {
+  // Like registerPlugin(): every property is a method that calls native; `then` included, whose
+  // native call never answers. Resolving a promise with this object hangs forever.
+  const fake = fakePlugin().plugin as unknown as Record<string, unknown>;
+  const proxy = new Proxy({}, { get: (_t, k) => (k === 'then' ? () => new Promise(() => {}) : fake[k as string]) }) as NativeInkPlugin;
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('hung on the plugin')), 1000));
+  const p = await Promise.race([nativeInkPlugin(async () => ({ plugin: proxy })), timeout]);
+  assert.ok(p, 'found');
+  assert.equal(typeof (p as { then?: unknown }).then, 'undefined', 'what callers get is not thenable');
+  assert.deepEqual(await (p as NativeInkPlugin).available(), { available: true });
 });
 
 test('z keys: the native layer makes the same ones (pinned for NvInkTests.testZKeysMatchTheWeb)', () => {

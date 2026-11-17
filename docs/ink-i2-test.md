@@ -96,6 +96,10 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 - [ ] **What native sees:** after a two-finger touch the readout may also briefly show `native: saw 2 fingers` / `native: 2-finger tap`. Note whether it ever does: it tells whether the native layer gets finger touches (pinch depends on it).
 - [ ] **Pinch zoom:** as in section 8; if it still does nothing, note what the readout says during the pinch.
 
+## 10. The native layer, for real (build after 0.5.90 (108))
+
+Up to 0.5.90 (108) the native pen layer never started: finding the plugin hung (the readout stayed on **checking**), so every round so far tested the web pen. From this build the readout should go *native layer found* → *native layer ready* → *attaching (try 1)* → **native layer attached**. Then everything native is being tried for the first time: rerun sections 1–9, starting with drawing, the Pencil switch in type mode, drawing beside the title, pinch zoom and the double-tap eraser.
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |
