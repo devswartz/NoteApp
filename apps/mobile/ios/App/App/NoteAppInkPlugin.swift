@@ -7,7 +7,8 @@ import WebKit
 /// Only on iPad, and only while the web asks for it (the `ink` flag on a canvas page). The pen
 /// layer itself is NativeInkController in the NvInk package.
 ///
-/// Methods: available, attach, layout, detach, setTool, setStrokes, updateStrokes, viewApplied, setRenderer.
+/// Methods: available, attach, layout, detach, setTool, setStrokes, updateStrokes, viewApplied, setRenderer,
+///          openDrawing (the native drawing page prototype, PLAN_INK Stage 1).
 /// Events: stroke {token, data}, erase {token, removed, added}, view {zoom, x, y, final},
 ///         tool {tool}, undo (two-finger tap), redo (three-finger tap), detached. Strokes travel as base64 blobs, one bridge crossing per stroke.
 @objc(NoteAppInkPlugin)
@@ -24,6 +25,7 @@ public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
         CAPPluginMethod(name: "updateStrokes", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "viewApplied", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setRenderer", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openDrawing", returnType: CAPPluginReturnPromise),
     ]
 
     private var ink: NativeInkController?
@@ -114,6 +116,15 @@ public class NoteAppInkPlugin: CAPPlugin, CAPBridgedPlugin, NativeInkDelegate {
         onMain(call) { c in
             c.setPencilKit(pk)
             call.resolve(["renderer": c.usesPencilKit ? "pencilkit" : "notivelo"])
+        }
+    }
+
+    /// PLAN_INK Stage 1: the native drawing page, full screen over the app, saved on the device only.
+    @objc func openDrawing(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in
+            guard let host = self?.bridge?.viewController else { return call.reject("No view controller") }
+            let vc = DrawingPageViewController(saveURL: DrawingPageViewController.defaultSaveURL())
+            host.present(vc, animated: true) { call.resolve() }
         }
     }
 

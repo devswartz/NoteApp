@@ -105,7 +105,7 @@ Small, stable pieces per platform, each with a reason:
 
 | Platform | Native pieces |
 |---|---|
-| iPad / iPhone | **Pen layer** (low-latency ink, see PLAN_INK), widgets, share extension, push, Face ID, keychain, handwriting recognition (Vision). Most already exist as Capacitor plugins. |
+| iPad / iPhone | **Native drawing pages** (UIKit page with Metal ink over nv-ink's C ABI, see PLAN_INK), widgets, share extension, push, Face ID, keychain, handwriting recognition (Vision). Most already exist as Capacitor plugins. |
 | Windows | Pen via WebView2 **delegated ink** (`navigator.ink`), tray, quick capture, updater (Tauri). |
 | Mac | Menu bar, Dock badge, quick capture, updater (Tauri). |
 | Android | Push, widgets, share target. Stylus via web pointer events at first. |
@@ -169,15 +169,15 @@ Gate: the boundary covers all data access, the corpus and benchmarks run in CI, 
 
 ### Phase 1: Rust core starts with ink
 
-- Cargo workspace (`crates/`), CI for `cargo test`, WASM builds, `uniffi` iOS builds and size checks.
+- Cargo workspace (`crates/`), CI for `cargo test`, WASM builds, iOS builds (a C ABI, `NvInkFFI.xcframework`) and size checks.
 - `nv-ink` with its WASM build, the web ink renderer, and Windows delegated ink.
-- **The iPad prototype:** the native pen layer kept in lockstep with the web page (PLAN_INK, phase I2).
+- **The iPad prototype:** a native drawing page (PLAN_INK, Stage 1). Native ink over the web page was tried in I2 (2026-11-16/17) and didn't feel like Notability, so handwriting moved to a page kind of its own.
 
-Gate: **the iPad prototype passes Devon's pen test.** If lockstep scrolling and zooming can't be made smooth, we take the fallback in PLAN_INK (native page view on iPad with web editing per box) before going further.
+Gate: **the native drawing page passes Devon's feel test** against Notability.
 
 ### Phase 2: ink v1 ships
 
-PLAN_INK phases I3–I5: pen, highlighter, erasers, zoom, paper, lasso, shapes, print. It ships behind a flag, then to everyone.
+PLAN_INK Stages 2–5: the synced drawing page kind (native on iPad, web canvas elsewhere), text boxes, paper, print, lasso and shapes. It ships behind a flag, then to everyone.
 
 ### Phase 3: page model in the core
 

@@ -127,6 +127,19 @@ On (111) zooming moved the text around and the eraser hit off to the side of the
 - [ ] At 2x and at 0.6x, after scrolling: draw a stroke: it lands under the Pencil tip. Erase it (both erasers): the eraser takes it where it is drawn, not beside it.
 - [ ] Type in a box at 2x (turn Draw off): the caret is where you tap.
 
+## 14. Native drawing page (Stage 1 of the new plan, 0.5.90 (113))
+
+A bare native page with no web view, to answer one question: **does this feel like Notability?** Open it on a canvas page by turning **Draw** on, then tapping **Drawing page** (a square with a pen) in the ribbon's Touch group. It opens full screen; **✕** closes it. It is saved on this iPad only (no sync yet), and reopening shows the same page.
+
+- [ ] **Write:** fast and slow, with the palm resting. The line stays on the Pencil tip, curves are smooth, and pressure shows.
+- [ ] **Pan:** flick with one finger. It glides and slows like Notability, bounces at the ends, and the Pencil stops a flick dead when it touches.
+- [ ] **Zoom:** pinch from 50% to 400% (the zoom shows in the toolbar). The title, the paper's lines and the ink scale together, and after the fingers lift the ink and title are sharp. Draw at 300% and at 60%: strokes land under the tip.
+- [ ] **Erase:** with the eraser (whole strokes) and the partial eraser (the dashed one). A grey ring shows the eraser under the tip. Pencil double-tap toggles the eraser and back.
+- [ ] **Undo/redo:** a two-finger tap undoes and a three-finger tap redoes, and so do the toolbar arrows. A whole erase gesture is one undo step.
+- [ ] **Heavy page:** ⋯ ▸ Fill with test strokes (3,000), then pan and zoom. It stays smooth. ⋯ ▸ Clear page (undoable) tidies up.
+- [ ] **Finger drawing** (the hand button): one finger draws and two fingers pan and zoom.
+- [ ] **Side by side with Notability:** write the same lines in both. Which feels better, and where?
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |

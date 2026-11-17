@@ -3,12 +3,12 @@
 // finger drawing, and on the iPad the pen layer's debug menu. Behind the `ink` flag; shown only
 // where CanvasEditor says ink works (useInkAvailable). Buttons use the ribbon's own markup
 // (data-tb-item, roving focus), so keyboard use is the same as for the text groups.
-import { Bug, Eraser, Hand, Highlighter, Pen, PenLine, Pencil, Slice } from 'lucide-react';
+import { Bug, Eraser, Hand, Highlighter, Pen, PenLine, Pencil, Slice, SquarePen } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Group, Sep } from '../editor/Toolbar.tsx';
 import { packColor } from './engine.ts';
 import { HIGHLIGHTER_ALPHA, HIGHLIGHTER_COLORS, HIGHLIGHTER_WIDTHS, PEN_COLORS, PEN_WIDTHS, setDrawMode, setInkTool, useInkAvailable, useInkTool, type PenToolName } from './inkTool.ts';
-import { useNativeInkDebug } from './nativeInk.ts';
+import { nativeInkPlugin, useNativeInkDebug } from './nativeInk.ts';
 import '../styles/ink.css';
 
 const TOOLS: { id: PenToolName; label: string; Icon: typeof Pen }[] = [
@@ -137,6 +137,12 @@ export function InkRibbonGroups() {
             onClick={() => setInkTool({ pencilSwitches: !s.pencilSwitches })}
           >
             <Pencil />
+          </RbButton>
+        )}
+        {debug.active && (
+          // PLAN_INK Stage 1: the native drawing page prototype (iPad), full screen; saved on the device only.
+          <RbButton label="Drawing page (native prototype)" onClick={() => void nativeInkPlugin().then((p) => p?.openDrawing?.())}>
+            <SquarePen />
           </RbButton>
         )}
         {debug.active && (

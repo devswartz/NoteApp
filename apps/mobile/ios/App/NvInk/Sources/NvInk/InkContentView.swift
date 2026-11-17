@@ -33,11 +33,23 @@ final class InkContentView: UIView {
         bounds = CGRect(origin: .zero, size: size)
         layer.position = origin
         transform = CGAffineTransform(scaleX: zoom, y: zoom)
-        let scale = (window?.screen.scale ?? UIScreen.main.scale) * zoom
-        if abs(layer.contentsScale - scale) > 0.01 {
-            layer.contentsScale = scale
-            for t in tileLayers.values { for s in t.sublayers ?? [] { s.contentsScale = scale } }
-        }
+        setRenderScale((window?.screen.scale ?? UIScreen.main.scale) * zoom)
+    }
+
+    /// The pixels per page px the ink is drawn at (screen scale × zoom), so it stays sharp when a
+    /// scroll view zooms it.
+    func setRenderScale(_ scale: CGFloat) {
+        guard abs(layer.contentsScale - scale) > 0.01 else { return }
+        layer.contentsScale = scale
+        for t in tileLayers.values { for s in t.sublayers ?? [] { s.contentsScale = scale } }
+    }
+
+    /// Lays out at `size` page px with no transform (inside a view that a scroll view zooms).
+    func place(size: CGSize) {
+        transform = .identity
+        bounds = CGRect(origin: .zero, size: size)
+        layer.position = .zero
+        for t in tileLayers.values { t.frame = bounds }
     }
 
     override func didMoveToWindow() {

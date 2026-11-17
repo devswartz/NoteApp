@@ -100,6 +100,8 @@ export interface NativeInkPlugin {
   updateStrokes(o: { added: WireStroke[]; removed: string[]; ack?: string }): Promise<void>;
   viewApplied(o: { zoom: number }): Promise<void>;
   setRenderer(o: { renderer: 'notivelo' | 'pencilkit' }): Promise<{ renderer: string }>;
+  /** The native drawing page prototype (docs/PLAN_INK.md, Stage 1), full screen. */
+  openDrawing?(): Promise<void>;
   addListener<K extends keyof NativeInkEvents>(event: K, fn: (e: NativeInkEvents[K]) => void): Promise<Listener> | Listener;
 }
 
@@ -146,6 +148,7 @@ export function wrap(p: NativeInkPlugin): NativeInkPlugin {
     updateStrokes: (o) => p.updateStrokes(o),
     viewApplied: (o) => p.viewApplied(o),
     setRenderer: (o) => p.setRenderer(o),
+    openDrawing: () => (p.openDrawing ? p.openDrawing() : Promise.resolve()),
     addListener: (event, fn) => p.addListener(event, fn),
   };
 }
