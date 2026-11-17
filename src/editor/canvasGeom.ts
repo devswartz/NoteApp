@@ -148,6 +148,19 @@ export function toScreen(v: CanvasView, x: number, y: number): { x: number; y: n
   return { x: v.originX + x * v.scale, y: v.originY + y * v.scale };
 }
 
+/**
+ * The canvas surface's box: `size` in page px, shown at `zoom` (the iPad's pinch zoom) with a
+ * transform about its top-left, so boxes and ink scale as one layer and nothing re-lays out. The
+ * margins make the space it takes up (the scroll area) the zoomed size. The view of such a surface
+ * is canvasView(its getBoundingClientRect(), zoom).
+ */
+export function surfaceStyle(size: { w: number; h: number }, zoom: number): Record<string, string | number> {
+  const w = lengthToScreen({ scale: CANVAS_SCALE }, size.w);
+  const h = lengthToScreen({ scale: CANVAS_SCALE }, size.h);
+  if (zoom === 1) return { width: w, height: h };
+  return { width: w, height: h, transform: `scale(${zoom})`, transformOrigin: '0 0', marginRight: w * (zoom - 1), marginBottom: h * (zoom - 1) };
+}
+
 /** A pointer movement on screen → the same movement on the page (a drag). */
 export function deltaToPage(v: Pick<CanvasView, 'scale'>, dx: number, dy: number): { dx: number; dy: number } {
   return { dx: dx / v.scale, dy: dy / v.scale };

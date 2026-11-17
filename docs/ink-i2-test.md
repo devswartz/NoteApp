@@ -119,6 +119,14 @@ Devon's finding: when the native layer detached, the **web pen** drew "great", a
 - [ ] **Beside the title:** in draw mode, write right of the title and over it.
 - [ ] **Double-tap:** Pencil double-tap switches to the eraser and back (draw mode).
 
+## 13. Zoom as one layer (build after 0.5.90 (111))
+
+On (111) zooming moved the text around and the eraser hit off to the side of the ink: the zoom was CSS `zoom`, which re-lays out text and which WebKit measures inconsistently. Now the canvas is scaled with a transform: boxes and ink are one layer, text never reflows, and every screen ↔ page conversion uses the same view (unit-tested at zoom with the page scrolled).
+
+- [ ] Write a few words over and next to a text box, then pinch to about 2x and to about 0.6x: the box's text keeps its line breaks, and the ink stays exactly on the same letters, during the pinch and after.
+- [ ] At 2x and at 0.6x, after scrolling: draw a stroke: it lands under the Pencil tip. Erase it (both erasers): the eraser takes it where it is drawn, not beside it.
+- [ ] Type in a box at 2x (turn Draw off): the caret is where you tap.
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |

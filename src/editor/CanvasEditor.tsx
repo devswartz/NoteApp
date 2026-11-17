@@ -44,13 +44,13 @@ import {
   boxAtClick,
   boxBelow,
   CANVAS_SCALE,
+  surfaceStyle,
   canvasView,
   clampPos,
   clampWidth,
   deltaToPage,
   frontZ,
   lengthToPage,
-  lengthToScreen,
   newBoxId,
   nudge,
   nudgeOnGrid,
@@ -1034,8 +1034,10 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
         <div
           ref={surfaceRef}
           className={`canvas-surface ${canEdit ? 'can-edit' : ''} ${canvasTool === 'ink' ? 'ink-active' : ''} ${canvasTool === 'ink' && fingerDrawing ? 'ink-finger' : ''} ${penNear ? 'pen-near' : ''}`}
-          // The size is in page px; native zoom (iPad) scales the whole surface with CSS zoom, so text re-lays out sharp.
-          style={stacked ? undefined : { width: lengthToScreen({ scale: CANVAS_SCALE }, size.w), height: lengthToScreen({ scale: CANVAS_SCALE }, size.h), zoom: viewScale !== 1 ? viewScale : undefined }}
+          // The size is in page px. Zoom (iPad pinch) scales the whole surface, boxes and ink as one layer, with a
+          // transform: layout doesn't change (no reflow), and screen ↔ page is exact (canvasGeom's CanvasView). The
+          // margins make the scroll area the zoomed size. (CSS zoom reflowed text and disagreed with hit positions.)
+          style={stacked ? undefined : surfaceStyle(size, viewScale)}
           onPointerDownCapture={onSurfacePointer}
           onPointerOver={onSurfaceHover}
           onMouseDown={onSurfaceDown}
