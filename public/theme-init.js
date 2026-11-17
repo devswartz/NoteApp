@@ -5,8 +5,10 @@
 try {
   var t = localStorage.getItem('noteapp.theme');
   var root = document.documentElement;
-  if (t === 'hybrid') root.dataset.theme = 'hybrid';
-  else root.dataset.theme = t === 'dark' || (t !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  // Nothing stored yet: Hybrid is the default (DEFAULT_THEME in src/store/ui.ts).
+  if (t === 'light' || t === 'dark') root.dataset.theme = t;
+  else if (t === 'system') root.dataset.theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  else root.dataset.theme = 'hybrid';
   var a = localStorage.getItem('noteapp.accent');
   if (a && a !== 'blue' && /^[a-z]+$/.test(a)) root.dataset.accent = a;
 } catch (e) {

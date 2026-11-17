@@ -39,9 +39,10 @@ test('palette runs commands; "g" shortcuts navigate; "?" lists the shortcuts', a
   await expect(page).toHaveURL(/\/p\/[^/]+$/);
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
 
-  // Palette → theme switch command (preference starts at "system"; with a dark OS, the next step "light" is visible).
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  // Palette → theme switch command (preference starts at the default, "hybrid"; the next
+  // step is "system", which with a light OS is visibly light).
+  await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'hybrid');
   await page.keyboard.press('Escape');
   await page.keyboard.press('ControlOrMeta+k');
   await palette.getByPlaceholder(/Search pages and tasks/).fill('dark mode');

@@ -2,6 +2,14 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v0.5.7
+
+### Changed
+- **Hybrid is the default theme.** New devices start in Hybrid (dark toolbar and panels around a light, paper-like page) until you pick a theme. Anyone who already chose Light, Dark, Hybrid or System keeps their choice; devices that never chose one switch to Hybrid.
+
+### Fixed
+- **iPad:** the ribbon starts below the status bar instead of underneath it (#187).
+
 ## v0.5.6
 
 ### New
