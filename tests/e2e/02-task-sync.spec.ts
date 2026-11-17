@@ -137,6 +137,9 @@ test.describe('inline tasks ↔ dashboard', () => {
     await addInlineTask(page, 'Second to go');
     await eventually(() => listTasks(request, user), (ts) => ['First to go', 'Second to go'].every((n) => ts.some((t) => t.title === n && t.pageId === pageId)), 'linked');
 
+    // Past the undo grouping window (CAPTURE_MS, 500 ms), so the delete is an undo step of its own and Ctrl+Z
+    // undoes just that, not the typing of the tasks too.
+    await page.waitForTimeout(800);
     // Select everything in the editor and Backspace, as you would a run of bullets.
     await page.locator('.ProseMirror').first().click();
     await page.keyboard.press('ControlOrMeta+a');
