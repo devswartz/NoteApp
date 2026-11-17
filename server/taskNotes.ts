@@ -81,13 +81,48 @@ export function notesMarkdown(el: Y.XmlElement, tasks: TaskLookup): string {
     .trim();
 }
 
-/** Replace a task block with copies of its children (nothing when it has none): the task goes, its notes stay. */
-export function unwrapTaskElement(el: Y.XmlElement) {
+type YNode = Y.XmlElement | Y.XmlText;
+
+/** A plain line (paragraph) with `text`. */
+function plainLine(text: string): Y.XmlElement {
+  const p = new Y.XmlElement('paragraph');
+  const t = new Y.XmlText();
+  t.insert(0, text);
+  p.insert(0, [t]);
+  return p;
+}
+
+/**
+ * Copies of `nodes`, where each task block `goneTitle` gives a title for (a subtask deleted with its task) becomes a
+ * plain line with that title followed by its own notes. Mirrors plainGoneTasks in src/editor/taskChildren.ts.
+ */
+function copyPlainGone(nodes: YNode[], goneTitle: (id: string) => string | undefined): YNode[] {
+  return nodes.flatMap((n): YNode[] => {
+    if (n instanceof Y.XmlText) return [n.clone()];
+    const id = n.nodeName === 'taskRef' ? n.getAttribute('taskId') : undefined;
+    const title = typeof id === 'string' ? goneTitle(id) : undefined;
+    const kids = copyPlainGone(n.toArray() as YNode[], goneTitle);
+    if (title !== undefined) return [...(title ? [plainLine(title)] : []), ...kids];
+    const e = new Y.XmlElement(n.nodeName);
+    for (const [k, v] of Object.entries(n.getAttributes())) e.setAttribute(k, v as never);
+    if (kids.length) e.insert(0, kids);
+    return [e];
+  });
+}
+
+/**
+ * Replace a task block with copies of its children (nothing when it has none): the task goes, its notes stay.
+ * Like unwrapTask in src/editor/taskChildren.ts: with `title`, a plain line with it comes first (the task turned into
+ * a note); with `goneTitle`, subtasks in the notes that went with the task become plain lines with their titles.
+ */
+export function unwrapTaskElement(el: Y.XmlElement, opts: { title?: string; goneTitle?: (id: string) => string | undefined } = {}) {
   const parent = el.parent as Y.XmlElement | Y.XmlFragment | null;
   if (!parent) return;
   const idx = parent.toArray().indexOf(el);
   if (idx < 0) return;
-  const kids = (el.toArray() as (Y.XmlElement | Y.XmlText)[]).map((c) => c.clone());
+  const children = el.toArray() as YNode[];
+  const kids = opts.goneTitle ? copyPlainGone(children, opts.goneTitle) : children.map((c) => c.clone());
+  if (opts.title) kids.unshift(plainLine(opts.title));
   parent.delete(idx, 1);
   if (kids.length) parent.insert(idx, kids);
 }
