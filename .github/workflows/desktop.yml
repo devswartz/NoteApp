@@ -45,7 +45,9 @@ jobs:
       matrix:
         include:
           - name: macOS (universal)
-            os: macos-latest
+            # Pinned, like mac-app-store.yml and mobile.yml: on 2026-11-17 macos-latest jobs sat queued with no runner
+            # until cancelled (v1.5.9, twice) while macos-15 jobs ran.
+            os: macos-15
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
             args: --target universal-apple-darwin
           - name: Windows (x64)
