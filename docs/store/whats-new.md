@@ -16,6 +16,10 @@ Only a manual **Store submit** run (an older tag) falls back, when a section is 
 
 Newest version first.
 
+## v1.5.9
+
+- Deleting task lines from a note now deletes the tasks: select as many as you like and press Delete, just like bullets. Undo brings them back.
+
 ## v1.5.8
 
 - Fixed: task lines no longer overlap on iPhone and iPad.

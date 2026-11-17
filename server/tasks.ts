@@ -552,7 +552,9 @@ export function setChecklistCounts(pageId: string, places: { id: string; checkli
  * - tasks referenced in the doc are linked to the page (e.g. after being moved
  *   or pasted from another note),
  * - tasks that claim the page but are no longer in it become standalone tasks
- *   (they are never deleted silently).
+ *   (the server never deletes them; deleting a task's line in the editor deletes the
+ *   task from the client, see src/editor/undoTasks.ts, so what's left here is a task
+ *   cut and not pasted, or removed by an older client).
  */
 export function syncPageTasks(
   pageId: string,

@@ -33,7 +33,7 @@ A short tour of Notivelo for the team. Shortcuts use ⌘ (Mac). On Windows and L
 - A task in a note is **the real task**. Its due date, assignee, priority and done state are the same wherever it appears: in the note, on Today, on the calendar. Check it off anywhere and it's done everywhere.
 - Click a task's chips (date, flag, avatar) to change them, or open it for details: description, reminders and recurrence.
 - The **Tasks on this page** panel (the icon at the top right of a page) lists the page's tasks.
-- Deleting a task line from a note doesn't delete the task. It becomes a standalone task. Deleting a page does the same for its tasks.
+- Deleting a task line from a note deletes the task: select any number of lines and press Backspace or Delete, as with bullets. Deleting a text box deletes its tasks too. Undo (Ctrl+Z / ⌘Z) brings them back. Cutting a task line keeps the task, so you can paste it into another note. Deleting a page doesn't delete its tasks: they become standalone tasks.
 
 ## Quick add
 

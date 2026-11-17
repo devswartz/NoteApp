@@ -248,9 +248,84 @@ export async function deleteTasksWithUndo(ids: string[]) {
   });
 }
 
+/**
+ * Tasks deleted in this tab because their line was deleted from a page (a selection deleted, Backspace, a
+ * deleted text box), with their subtasks, by id: kept so that bringing the line back (Ctrl+Z, a box's
+ * Undo) brings the task back too, with the same id and fields (restoreDeletedFromPage).
+ */
+const deletedFromPage = new Map<string, Task>();
+/** Tasks brought back that way: a redo that removes their line again deletes them again. */
+const restoredFromPage = new Set<string>();
+
+/** The task, and everything under it (subtasks of subtasks too) that this workspace's store holds. */
+function withDescendants(id: string): Task[] {
+  const all = Object.values(st().tasks);
+  const out: Task[] = [];
+  const add = (tid: string) => {
+    const t = lookup(tid).t;
+    if (!t || out.some((x) => x.id === tid)) return;
+    out.push(t);
+    for (const c of all) if (c.parentId === tid) add(c.id);
+  };
+  add(id);
+  return out;
+}
+
+/**
+ * A page edit deleted these tasks' lines: delete the tasks (deleting a task's line from a note deletes the task).
+ * Ids this tab doesn't know (already deleted, or never loaded) are skipped, and a subtask whose parent goes too
+ * goes with it (the server deletes subtasks with their parent).
+ */
+export function deleteTasksRemovedFromPage(ids: Iterable<string>) {
+  const gone = new Set([...ids].filter((id) => lookup(id).t));
+  for (const id of gone) {
+    let parent = lookup(id).t?.parentId;
+    let underGone = false;
+    while (parent) {
+      if (gone.has(parent)) {
+        underGone = true;
+        break;
+      }
+      parent = lookup(parent).t?.parentId;
+    }
+    if (underGone) continue;
+    for (const t of withDescendants(id)) deletedFromPage.set(t.id, t);
+    restoredFromPage.delete(id);
+    void deleteTask(id);
+  }
+}
+
+/** Whether a page edit deleted this task in this tab and it can be brought back. */
+export const canRestoreDeletedFromPage = (id: string) => deletedFromPage.has(id) && !lookup(id).t;
+
+/** A deleted task's line is back in its page (undo): recreate the task, and its subtasks, as they were. */
+export function restoreDeletedFromPage(id: string): boolean {
+  if (!canRestoreDeletedFromPage(id)) return false;
+  const group: Task[] = [];
+  const add = (tid: string) => {
+    const t = deletedFromPage.get(tid);
+    if (!t) return;
+    deletedFromPage.delete(tid);
+    group.push(t);
+    for (const c of [...deletedFromPage.values()]) if (c.parentId === tid) add(c.id);
+  };
+  add(id);
+  restoredFromPage.add(id);
+  void restoreTasks(group, { quiet: true });
+  return true;
+}
+
+/** Whether this task came back with its line by undo (so a redo that removes the line again deletes it again). */
+export const wasRestoredFromPage = (id: string) => restoredFromPage.has(id);
+
 /** Put deleted tasks back with their old ids (parents first), including done ones. */
-async function restoreTasks(tasks: Task[]) {
-  for (const t of [...tasks].sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId))) {
+async function restoreTasks(tasks: Task[], opts: { quiet?: boolean } = {}) {
+  const depth = (t: Task) => {
+    let d = 0;
+    for (let p: string | null | undefined = t.parentId; p; p = tasks.find((x) => x.id === p)?.parentId) d++;
+    return d;
+  };
+  for (const t of [...tasks].sort((a, b) => depth(a) - depth(b))) {
     const back = await createTask({
       id: t.id,
       title: t.title,
@@ -266,9 +341,12 @@ async function restoreTasks(tasks: Task[]) {
       teamId: t.teamId,
       tagIds: t.tagIds,
     });
-    if (back && t.status === 'done') await toggleTask(t.id);
+    if (back && t.status === 'done') {
+      if (opts.quiet) await updateTask(t.id, { status: 'done' }, { silent: true });
+      else await toggleTask(t.id);
+    }
   }
-  toast('Restored');
+  if (!opts.quiet) toast('Restored');
 }
 
 export async function bulkDelete(ids: string[]) {
