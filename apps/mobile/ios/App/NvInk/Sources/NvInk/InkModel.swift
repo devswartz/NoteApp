@@ -190,6 +190,10 @@ public enum InkRules {
         return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.25 ? (0xE6E6E6 << 8) | (c & 255) : c
     }
 
+    /// How far above the canvas the Pencil draws in draw mode (page px): the band beside the title.
+    /// The same as INK_ABOVE in src/ink/render.ts, which draws it on the web.
+    public static let maxAbove: CGFloat = 240
+
     public static let minZoom: CGFloat = 0.5
     public static let maxZoom: CGFloat = 4
 

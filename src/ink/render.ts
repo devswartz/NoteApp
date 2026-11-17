@@ -54,6 +54,9 @@ export function displayColor(color: number, dark = isDark()): string {
   return cssColor(color);
 }
 
+/** How far above the canvas surface ink can be (page px): the iPad's pen draws beside the title (NvInk InkRules.maxAbove). */
+export const INK_ABOVE = 240;
+
 const intersects = (a: Bounds, b: Bounds) => a.minX <= b.maxX && b.minX <= a.maxX && a.minY <= b.maxY && b.minY <= a.maxY;
 
 interface Entry {
@@ -253,13 +256,13 @@ export class InkRenderer {
     this.schedule();
   }
 
-  /** The visible part of the surface (page px, whole tiles), or null when none of it is. */
+  /** The visible part of the surface (page px, whole tiles), or null when none of it is. Ink may sit up to INK_ABOVE above it (beside the title). */
   private visible(): Window | null {
     const r = this.surface.getBoundingClientRect();
     const w = this.surface.clientWidth;
     const h = this.surface.clientHeight;
     const x0 = Math.max(0, -r.left - OVERSCAN);
-    const y0 = Math.max(0, -r.top - OVERSCAN);
+    const y0 = Math.max(-INK_ABOVE, -r.top - OVERSCAN);
     const x1 = Math.min(w, window.innerWidth - r.left + OVERSCAN);
     const y1 = Math.min(h, window.innerHeight - r.top + OVERSCAN);
     if (x1 <= x0 || y1 <= y0) return null;

@@ -12,6 +12,8 @@ final class MultiTouchObserver: UIGestureRecognizer {
     var onTap: ((Int) -> Void)?
     /// Pinch: began / changed / ended, the scale since it began, the centre of the two fingers (in `view`).
     var onPinch: ((UIGestureRecognizer.State, CGFloat, CGPoint) -> Void)?
+    /// How many fingers are down, each time a finger goes down (for the status readout).
+    var onFingers: ((Int) -> Void)?
     /// Whether a pinch may start with its centre here (in `view`).
     var pinchAllowed: ((CGPoint) -> Bool)?
 
@@ -40,6 +42,7 @@ final class MultiTouchObserver: UIGestureRecognizer {
     override func touchesBegan(_ t: Set<UITouch>, with event: UIEvent) {
         for x in t where !touches.contains(x) { touches.append(x) }
         gesture.down(count: touches.count, points: points(), time: event.timestamp)
+        onFingers?(touches.count)
     }
 
     override func touchesMoved(_ t: Set<UITouch>, with event: UIEvent) {

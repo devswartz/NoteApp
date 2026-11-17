@@ -1,70 +1,75 @@
-// Two- and three-finger taps (undo / redo, as in Notability) from DOM touch events: the web's own
-// detector, used on touch screens when the iPad's native pen layer isn't attached (it has its own,
-// MultiTouchObserver). A tap: two or three fingers that go down together, barely move, and all
-// lift within TAP_MS. No DOM here (it takes touch points), so it is unit-tested.
+// Two- and three-finger taps (undo / redo, as in Notability), from pointer events. This is what
+// undoes and redoes on touch screens, the iPad included. Touch events can't be used there: an iPad
+// web view presents itself as a desktop browser, which hides them (Devon's 0.5.90 (107) round:
+// no gesture was ever seen). A tap: two or three fingers down together that barely move and all
+// lift within TAP_MS. No DOM in FingerTaps (it takes pointer ids and points), so it is unit-tested.
 
 export const TAP_MS = 400;
 export const TAP_SLOP = 14;
-
-interface Pt {
-  id: number;
-  x: number;
-  y: number;
-}
 
 export class FingerTaps {
   private down = new Map<number, { x: number; y: number }>();
   private max = 0;
   private t0 = 0;
-  private moved = false;
+  private spoiled = false;
 
-  /** Touches went down (`all`: every touch now on the screen). */
-  start(all: Pt[], time: number) {
+  /** A finger went down. */
+  start(id: number, x: number, y: number, time: number) {
     if (this.down.size === 0) {
       this.max = 0;
-      this.moved = false;
+      this.spoiled = false;
       this.t0 = time;
     }
-    for (const p of all) if (!this.down.has(p.id)) this.down.set(p.id, { x: p.x, y: p.y });
+    this.down.set(id, { x, y });
     this.max = Math.max(this.max, this.down.size);
   }
 
-  move(changed: Pt[]) {
-    for (const p of changed) {
-      const s = this.down.get(p.id);
-      if (s && Math.hypot(p.x - s.x, p.y - s.y) > TAP_SLOP) this.moved = true;
-    }
+  move(id: number, x: number, y: number) {
+    const s = this.down.get(id);
+    if (s && Math.hypot(x - s.x, y - s.y) > TAP_SLOP) this.spoiled = true;
   }
 
-  /** Touches lifted (or were cancelled). Returns 2 or 3 when that ended a tap, else null. */
-  end(changed: Pt[], time: number, cancelled = false): 2 | 3 | null {
-    for (const p of changed) this.down.delete(p.id);
-    if (cancelled) this.moved = true;
+  /** A finger lifted (or was cancelled: the page started scrolling or zooming). Returns 2 or 3 when that ended a tap, else null. */
+  end(id: number, time: number, cancelled = false): 2 | 3 | null {
+    if (!this.down.delete(id)) return null;
+    if (cancelled) this.spoiled = true;
     if (this.down.size > 0) return null;
     const n = this.max;
-    if (this.moved || time - this.t0 > TAP_MS || (n !== 2 && n !== 3)) return null;
+    if (this.spoiled || time - this.t0 > TAP_MS || (n !== 2 && n !== 3)) return null;
     return n;
   }
 }
 
-/** Listen for the taps on `el` (passive: scrolling and zooming are untouched). Returns the cleanup. */
-export function listenFingerTaps(el: HTMLElement, onTap: (fingers: 2 | 3) => void): () => void {
+/**
+ * Listen for the taps anywhere in `root` (capture, passive: nothing else is affected).
+ * `onTouch(fingers)` reports each finger count seen, for the status readout.
+ */
+export function listenFingerTaps(root: Document | HTMLElement, onTap: (fingers: 2 | 3) => void, onTouch?: (fingers: number) => void): () => void {
   const taps = new FingerTaps();
-  const pts = (l: TouchList) => [...l].filter((t) => (t as Touch & { touchType?: string }).touchType !== 'stylus').map((t) => ({ id: t.identifier, x: t.clientX, y: t.clientY }));
-  const start = (e: TouchEvent) => taps.start(pts(e.touches), e.timeStamp);
-  const move = (e: TouchEvent) => taps.move(pts(e.changedTouches));
-  const end = (e: TouchEvent) => {
-    const n = taps.end(pts(e.changedTouches), e.timeStamp, e.type === 'touchcancel');
+  let seen = 0;
+  const touch = (e: Event): e is PointerEvent => (e as PointerEvent).pointerType === 'touch';
+  const down = (e: Event) => {
+    if (!touch(e)) return;
+    taps.start(e.pointerId, e.clientX, e.clientY, e.timeStamp);
+    seen++;
+    onTouch?.(seen);
+  };
+  const move = (e: Event) => touch(e) && taps.move(e.pointerId, e.clientX, e.clientY);
+  const up = (e: Event) => {
+    if (!touch(e)) return;
+    seen = Math.max(0, seen - 1);
+    const n = taps.end(e.pointerId, e.timeStamp, e.type === 'pointercancel');
     if (n) onTap(n);
   };
-  el.addEventListener('touchstart', start, { passive: true });
-  el.addEventListener('touchmove', move, { passive: true });
-  el.addEventListener('touchend', end, { passive: true });
-  el.addEventListener('touchcancel', end, { passive: true });
+  const opts = { capture: true, passive: true } as const;
+  root.addEventListener('pointerdown', down, opts);
+  root.addEventListener('pointermove', move, opts);
+  root.addEventListener('pointerup', up, opts);
+  root.addEventListener('pointercancel', up, opts);
   return () => {
-    el.removeEventListener('touchstart', start);
-    el.removeEventListener('touchmove', move);
-    el.removeEventListener('touchend', end);
-    el.removeEventListener('touchcancel', end);
+    root.removeEventListener('pointerdown', down, opts);
+    root.removeEventListener('pointermove', move, opts);
+    root.removeEventListener('pointerup', up, opts);
+    root.removeEventListener('pointercancel', up, opts);
   };
 }

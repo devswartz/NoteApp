@@ -86,9 +86,11 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         // Notability's gestures: a two-finger tap undoes, a three-finger tap redoes; a pinch zooms.
         fingers.delegate = self
         fingers.onTap = { [weak self] n in
-            guard let self, self.isAttached else { return }
-            self.delegate?.nativeInkDebug("\(n)-finger tap")
-            if n == 2 { self.delegate?.nativeInkUndo() } else if n == 3 { self.delegate?.nativeInkRedo() }
+            // Reported only: the web's pointer-event detector does the undo/redo (one source of taps).
+            self?.delegate?.nativeInkDebug("\(n)-finger tap\(self?.isAttached == true ? "" : " (layer not attached)")")
+        }
+        fingers.onFingers = { [weak self] n in
+            if n >= 2 { self?.delegate?.nativeInkDebug("saw \(n) fingers") }
         }
         fingers.onPinch = { [weak self] state, scale, centre in self?.pinch(state, scale, centre) }
         fingers.pinchAllowed = { [weak self] centre in
@@ -315,7 +317,9 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         guard InkRules.touchStartsInk(isPencil: touch.type == .pencil, toolActive: tool.active, fingerDrawing: tool.fingerDrawing, pencilSwitches: tool.pencilSwitches) else { return false }
         let p = touch.location(in: wv)
         guard l.scroller.contains(p), !l.exclusions.contains(where: { $0.contains(p) }) else { return false }
-        return c.bounds.contains(touch.location(in: c))
+        let at = touch.location(in: c)
+        let above = tool.active ? min(InkRules.maxAbove, l.surfaceOrigin.y) : 0 // type mode: the title is for typing
+        return at.x >= 0 && at.x <= c.bounds.width && at.y >= -above && at.y <= c.bounds.height
     }
 
     public func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {

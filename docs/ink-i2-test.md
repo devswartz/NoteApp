@@ -89,6 +89,13 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 - [ ] **Pinch zoom:** pinch on the page in draw mode and in type mode. The readout says `native: pinch: zooming a picture of the page`, then `pinch: zoom 1.80` (or similar) when you lift, and the page settles at that zoom with ink on the text.
 - [ ] **Smoothing:** write the same words slowly and quickly, with light and heavy pressure. Edges should be smooth (no flicker in width along a steady line) and slow strokes free of small wobbles; fast strokes should still follow the Pencil. Compare with Notability.
 
+## 9. Round 4 fixes (build after 0.5.90 (107))
+
+- [ ] **Draw beside the title:** in draw mode, write in the empty space right of the page title (and over the title). It draws and stays; nothing scrolls. In type mode the Pencil there still edits the title. (On the web, ink above the canvas is cut off at the canvas's top edge for now; on the iPad it shows in full.)
+- [ ] **Undo/redo taps:** a two-finger tap anywhere on the page undoes, a three-finger tap redoes. The readout's last gesture shows `web: 2-finger tap → undo`. While fingers are down it shows `web: 2 fingers down`; if it shows nothing at all, the page gets no finger touches.
+- [ ] **What native sees:** after a two-finger touch the readout may also briefly show `native: saw 2 fingers` / `native: 2-finger tap`. Note whether it ever does: it tells whether the native layer gets finger touches (pinch depends on it).
+- [ ] **Pinch zoom:** as in section 8; if it still does nothing, note what the readout says during the pinch.
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |

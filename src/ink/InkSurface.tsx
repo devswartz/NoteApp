@@ -189,8 +189,9 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       onView: applyView,
       // A Pencil touch in type mode turned draw mode on (setting on); double-tap only acts in draw mode.
       onTool: (tool, enterDraw) => (enterDraw ? setInkTool({ drawMode: true, tool }) : useInkTool.getState().drawMode && setInkTool({ tool })),
-      onUndo: () => cb.current.onUndo?.(),
-      onRedo: () => cb.current.onRedo?.(),
+      // Undo and redo come from the web's own tap detector (above); native taps are only reported.
+      onUndo: () => {},
+      onRedo: () => {},
       onStatus: (status) => useNativeInkDebug.setState({ status }),
       onDebug: (text) => useNativeInkDebug.setState({ gesture: `native: ${text}` }),
       onDetached: () => {
@@ -256,17 +257,21 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     };
   }, [native, doc, surface]);
 
-  // Touch screens without the native layer (or before it attaches): the web's own two- and
-  // three-finger taps for undo and redo.
+  // Two- and three-finger taps (undo, redo) on touch screens, the iPad included: from pointer
+  // events anywhere on the page, whether or not the native layer is attached (it only reports what
+  // it sees, for the readout).
   useEffect(() => {
-    const el = surface.current;
-    if (!el || nativeOn || typeof window === 'undefined' || !('ontouchstart' in window)) return;
-    return listenFingerTaps(el, (n) => {
-      useNativeInkDebug.setState({ gesture: `web: ${n}-finger tap` });
-      if (n === 2) cb.current.onUndo?.();
-      else cb.current.onRedo?.();
-    });
-  }, [surface, nativeOn]);
+    if (typeof document === 'undefined') return;
+    return listenFingerTaps(
+      document,
+      (n) => {
+        useNativeInkDebug.setState({ gesture: `web: ${n}-finger tap → ${n === 2 ? 'undo' : 'redo'}` });
+        if (n === 2) cb.current.onUndo?.();
+        else cb.current.onRedo?.();
+      },
+      (fingers) => fingers >= 2 && useNativeInkDebug.setState({ gesture: `web: ${fingers} fingers down` }),
+    );
+  }, []);
 
   useImperativeHandle(
     ref,
