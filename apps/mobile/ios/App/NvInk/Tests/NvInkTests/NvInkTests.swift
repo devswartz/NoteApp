@@ -204,6 +204,8 @@ final class NvInkTests: XCTestCase {
         XCTAssertEqual(typing.penTool, "highlighter")
         XCTAssertFalse(typing.pencilSwitches)
         XCTAssertTrue(InkToolState().pencilSwitches, "on by default")
+        XCTAssertFalse(InkToolState().nativeCapture, "the web pen draws unless the native pen is switched on")
+        XCTAssertTrue(InkToolState(["nativeCapture": true]).nativeCapture)
         XCTAssertEqual(InkToolState(["penTool": "select"]).penTool, "pen", "only pen tools")
         XCTAssertFalse(InkToolState().active)
     }

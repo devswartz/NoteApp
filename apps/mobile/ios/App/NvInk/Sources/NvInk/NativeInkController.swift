@@ -98,7 +98,8 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         fingers.onPinch = { [weak self] state, scale, centre in self?.pinch(state, scale, centre) }
         fingers.pinchAllowed = { [weak self] centre in
             guard let self, let l = self.layout, self.isAttached else { return false }
-            return self.pencilKit == nil && self.builder == nil && self.eraseToken == nil && l.scroller.contains(centre)
+            // Pinch is the web page's (gesture events) unless the native pen is on (debug).
+            return self.tool.nativeCapture && self.pencilKit == nil && self.builder == nil && self.eraseToken == nil && l.scroller.contains(centre)
         }
         live.isHidden = true
         applyTouchTypes()
@@ -142,7 +143,10 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
             pencilInteraction = pi
         }
         if live.superview == nil { wv.addSubview(live) }
-        return reattach()
+        if reattach() { return true }
+        // Without the page's scroll view the native pen can't draw, but double-tap and the Scribble
+        // block work anyway: attached, unless the native pen is in use.
+        return !tool.nativeCapture
     }
 
     private func reattach() -> Bool {
@@ -181,6 +185,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     private func lostScrollView() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self, self.layout != nil, !self.isAttached else { return }
+            guard self.tool.nativeCapture else { return } // only the native pen needs the scroll view
             if self.reattach() { return }
             self.reattachTries += 1
             if self.reattachTries < 20 { self.lostScrollView() } else { self.delegate?.nativeInkDetached() }
@@ -305,7 +310,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         var types = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         if tool.fingerDrawing { types.append(NSNumber(value: UITouch.TouchType.direct.rawValue)) }
         pen.allowedTouchTypes = types
-        pen.isEnabled = (tool.active || tool.pencilSwitches) && pencilKit == nil
+        pen.isEnabled = tool.nativeCapture && (tool.active || tool.pencilSwitches) && pencilKit == nil
         // Finger drawing on: one finger draws, so scrolling takes two.
         scrollView?.panGestureRecognizer.minimumNumberOfTouches = tool.fingerDrawing && tool.active ? 2 : 1
     }
@@ -369,7 +374,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     private func began(_ t: UITouch, _ e: UIEvent) {
         guard let sv = scrollView, webView != nil, content != nil else { return }
         if !tool.active {
-            // Type mode with the auto-switch on: this Pencil touch turns draw mode on, and draws.
+            // Type mode with the auto-switch on (native pen only; the web pen does this itself): this Pencil touch turns draw mode on, and draws.
             tool.tool = tool.penTool
             applyTouchTypes()
             delegate?.nativeInk(toolChanged: tool.tool, enterDraw: true)

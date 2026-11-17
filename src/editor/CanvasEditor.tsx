@@ -80,8 +80,11 @@ import type { User } from '../../shared/types.ts';
 import '../styles/canvas.css';
 import { flag } from '../lib/flags.ts';
 import { InkSurface, type InkHandle } from '../ink/InkSurface.tsx';
-import { useInkAvailable, useInkTool } from '../ink/inkTool.ts';
-import { nativeInkPlugin, type NativeInkPlugin } from '../ink/nativeInk.ts';
+import { setInkTool, useInkAvailable, useInkTool } from '../ink/inkTool.ts';
+import { nativeInkPlugin, useNativeInkDebug, type NativeInkPlugin } from '../ink/nativeInk.ts';
+import { listenPinchZoom } from '../ink/pinchZoom.ts';
+import { INK_ABOVE } from '../ink/render.ts';
+import { flushSync } from 'react-dom';
 import { InkStatus } from '../ink/InkStatus.tsx';
 
 /** Read once: the flag changes with a reload (src/lib/flags.ts). */
@@ -925,12 +928,53 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
    */
   const onSurfacePointer = (e: ReactPointerEvent<HTMLDivElement>) => {
     const kind = pointerKind(e);
+    // iPad, type mode, "Apple Pencil switches to Draw mode" on: this Pencil touch turns draw mode on, and draws.
+    if (kind === 'pen' && canvasTool === 'select' && native && canEdit && useInkTool.getState().pencilSwitches) {
+      const s = useInkTool.getState();
+      setInkTool({ drawMode: true, tool: s.penTool });
+      if (!inkRef.current?.pointerDown(e.nativeEvent, s.penTool)) e.preventDefault();
+      return;
+    }
     // The pen's eraser end (buttons bit 32) erases whole strokes whatever pen tool is picked (draw mode only).
     const eraserEnd = canvasTool === 'ink' && kind === 'pen' && (e.buttons & 32) !== 0;
     if (!eraserEnd && routePointer(kind, { tool: canvasTool, canEdit, fingerDrawing }) === 'ui') return;
     // Not taken (the ink engine is still loading): still no box, caret or selection from a pen gesture.
     if (!inkRef.current?.pointerDown(e.nativeEvent, eraserEnd ? 'eraser' : inkTool)) e.preventDefault();
   };
+  // Draw mode on the iPad: the Pencil draws in the band above the canvas too (beside the title).
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    const scroller = surface?.closest<HTMLElement>('.page-scroll');
+    if (!surface || !scroller || !native || canvasTool !== 'ink') return;
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'pen' || surface.contains(e.target as Node)) return;
+      const r = surface.getBoundingClientRect();
+      const z = viewScaleRef.current;
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY >= r.top || e.clientY < r.top - INK_ABOVE * z) return;
+      if ((e.target as HTMLElement).closest?.('.page-topbar, .ribbon, [data-ink-exclude]')) return;
+      if (inkRef.current?.pointerDown(e, useInkTool.getState().tool)) e.preventDefault();
+    };
+    scroller.addEventListener('pointerdown', onDown, { capture: true });
+    return () => scroller.removeEventListener('pointerdown', onDown, { capture: true });
+  }, [native, canvasTool]);
+
+  // iPad: pinch zoom, done by the page (WebKit gesture events): the canvas scales as one picture
+  // during the pinch and is laid out sharp at the new zoom when the fingers lift.
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    const scroller = surface?.closest<HTMLElement>('.page-scroll');
+    const viewport = surface?.parentElement;
+    if (!surface || !scroller || !viewport || !native) return;
+    return listenPinchZoom({
+      scroller,
+      viewport,
+      surface,
+      zoom: () => viewScaleRef.current,
+      apply: (z) => flushSync(() => setNativeZoom(z)),
+      onDebug: (text) => useNativeInkDebug.setState({ gesture: `web: ${text}` }),
+    });
+  }, [native]);
+
   // A pen hovering over the page (Windows pens hover) must draw, not scroll: see .pen-near in ink.css.
   const onSurfaceHover = (e: ReactPointerEvent<HTMLDivElement>) => {
     const pen = e.pointerType === 'pen';
@@ -1043,6 +1087,7 @@ export function CanvasEditor({ pageId, workspaceId, user, canEdit, onStatus, onP
               onExtent={setInkExtent}
               native={native}
               pageSize={size}
+              zoom={viewScale}
               onZoom={setNativeZoom}
               onUndo={() => pageUndo.undo()}
               onRedo={() => pageUndo.redo()}

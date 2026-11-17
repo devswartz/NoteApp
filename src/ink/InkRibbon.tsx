@@ -152,6 +152,14 @@ export function InkRibbonGroups() {
             <span className="rb-btn-label">{debug.renderer === 'pencilkit' ? 'PencilKit' : 'Notivelo'}</span>
           </RbButton>
           <RbButton
+            label={debug.nativeCapture ? 'Pencil: native Metal pen' : 'Pencil: web pen'}
+            active={debug.nativeCapture}
+            className="rb-text"
+            onClick={() => useNativeInkDebug.setState({ nativeCapture: !debug.nativeCapture })}
+          >
+            <span className="rb-btn-label">{debug.nativeCapture ? 'Pen: native' : 'Pen: web'}</span>
+          </RbButton>
+          <RbButton
             label={debug.nativeFinished ? 'Finished ink: native layer' : 'Finished ink: web page'}
             active={debug.nativeFinished}
             className="rb-text"

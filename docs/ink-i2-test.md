@@ -108,6 +108,17 @@ With the native layer finally running (0.5.90 (109)), strokes vanished on liftin
 - [ ] Pan and pinch-zoom with ink on the page: the ink moves with the text (it is drawn by the page now), and is sharp after the zoom settles.
 - [ ] Debug (bug button): **Ink: web / Ink: native** switches who draws finished ink; *native* is the old way (for comparison only).
 
+## 12. Web pen (build after 0.5.90 (110))
+
+Devon's finding: when the native layer detached, the **web pen** drew "great", and the native pen was what broke drawing. So the web pen draws now; the native layer only does Pencil double-tap and keeps Scribble off in draw mode (debug **Pen: web / native** brings the native Metal pen back for comparison). The readout says `pen: web`.
+
+- [ ] **Drawing:** write a page quickly with the palm resting: every stroke stays, none cut short.
+- [ ] **Latency (the deciding check):** 240 fps slow motion of fast scribbles, Notivelo vs Notability (section 1). If Notivelo is visibly behind, native drawing comes back as its own project.
+- [ ] **Pinch zoom:** two-finger pinch on the page: the page (text and ink together) follows the fingers, and when they lift it settles sharp at the new zoom with what was under the fingers still under them. 0.5x to 4x. The readout says `web: pinch started`, then `web: pinch: zoom 1.80`. Draw at 2x and at 0.6x: strokes land under the Pencil.
+- [ ] **Pencil switch:** in type mode, touch the page with the Pencil: draw mode turns on and that stroke draws.
+- [ ] **Beside the title:** in draw mode, write right of the title and over it.
+- [ ] **Double-tap:** Pencil double-tap switches to the eraser and back (draw mode).
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |

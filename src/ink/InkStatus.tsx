@@ -15,10 +15,12 @@ export function InkStatus() {
   const drawMode = useInkTool((s) => s.drawMode);
   const tool = useInkTool((s) => s.tool);
   const pencilSwitches = useInkTool((s) => s.pencilSwitches);
+  const nativeCapture = useNativeInkDebug((d) => d.nativeCapture);
   if (hidden || !isIosApp()) return null;
   const text = [
     'ink flag on',
     available ? status : 'ink not offered on this page (read-only, or the phone layout)',
+    nativeCapture ? 'pen: native' : 'pen: web',
     drawMode ? `Draw mode (${tool})` : 'Type mode',
     `Pencil switch ${pencilSwitches ? 'on' : 'off'}`,
     `last gesture: ${gesture}`,

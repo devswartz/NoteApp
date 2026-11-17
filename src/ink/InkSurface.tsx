@@ -46,6 +46,8 @@ interface Props {
   pageSize?: { w: number; h: number };
   /** The zoom native code chose (native mode): the caller lays the surface out at it. */
   onZoom?: (zoom: number) => void;
+  /** The surface's zoom (the iPad's pinch zoom): pen input and tiles follow it. */
+  zoom?: number;
   /** Two-finger tap on the iPad: the page's undo. */
   onUndo?: () => void;
   /** Three-finger tap on the iPad: the page's redo. */
@@ -72,6 +74,7 @@ function nativeTool(s: InkToolState): NativeInkTool {
     eraserRadius: ERASER_RADIUS,
     dark: isDarkTheme(),
     nativeFinished: useNativeInkDebug.getState().nativeFinished,
+    nativeCapture: useNativeInkDebug.getState().nativeCapture,
   };
 }
 
@@ -82,8 +85,11 @@ interface InkPresenter {
 type InkNavigator = Navigator & { ink?: { requestPresenter(opts?: { presentationArea?: Element }): Promise<InkPresenter> } };
 
 /** A pointer sample: page px plus pressure and tilt. */
+/** The surface's zoom for pen input (CSS zoom on the iPad; 1 elsewhere). */
+let inputZoom = 1;
+
 function sample(e: PointerEvent, rect: DOMRect): [number, number, number, number, number, number] {
-  const p = toPage(canvasView(rect), e.clientX, e.clientY);
+  const p = toPage(canvasView(rect, inputZoom), e.clientX, e.clientY);
   const pen = e.pointerType === 'pen';
   const alt = typeof e.altitudeAngle === 'number' ? e.altitudeAngle : Math.PI / 2;
   const az = typeof e.azimuthAngle === 'number' ? e.azimuthAngle : 0;
@@ -92,7 +98,7 @@ function sample(e: PointerEvent, rect: DOMRect): [number, number, number, number
   return [p.x, p.y, pressure, alt, az, e.timeStamp];
 }
 
-export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pageSize, onZoom, onUndo, onRedo, addBoxes, ref }: Props) {
+export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pageSize, onZoom, zoom = 1, onUndo, onRedo, addBoxes, ref }: Props) {
   const under = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
   const live = useRef<HTMLCanvasElement>(null);
@@ -107,6 +113,14 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
   const [nativeOn, setNativeOn] = useState(false);
   const webOverlay = useNativeInkDebug((d) => d.webOverlay);
   const nativeFinished = useNativeInkDebug((d) => d.nativeFinished);
+  // The native layer takes the Pencil only when set to (debug): normally the web pen draws.
+  const nativeCapture = useNativeInkDebug((d) => d.nativeCapture);
+  const nativeCaptures = nativeOn && nativeCapture;
+  useEffect(() => {
+    inputZoom = zoom;
+    cb.current.zoom = zoom;
+    renderer.current?.setZoom(zoom);
+  }, [zoom]);
   // The web draws finished ink unless the native layer is set to (debug): then only as the alignment overlay.
   const nativeDraws = nativeOn && nativeFinished;
   const webDraws = !nativeDraws || webOverlay;
@@ -227,7 +241,9 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     const theme = new MutationObserver(() => session.setTool(nativeTool(useInkTool.getState())));
     const poll = window.setInterval(report, 1000);
     const unTool = useInkTool.subscribe((st) => session.setTool(nativeTool(st)));
-    const unDebug = useNativeInkDebug.subscribe((d, prev) => d.nativeFinished !== prev.nativeFinished && session.setTool(nativeTool(useInkTool.getState())));
+    const unDebug = useNativeInkDebug.subscribe(
+      (d, prev) => (d.nativeFinished !== prev.nativeFinished || d.nativeCapture !== prev.nativeCapture) && session.setTool(nativeTool(useInkTool.getState())),
+    );
     void session.start(measure, nativeTool(useInkTool.getState())).then((ok) => {
       if (!alive) return;
       if (!ok) return void session.stop();
@@ -290,7 +306,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
         const r = renderer.current;
         const el = surface.current;
         // Native mode: the native layer takes the pen (and a drawing finger) before the web sees it.
-        if (nativeOn || !engine || !r || !el || tool === 'select') return false;
+        if (nativeCaptures || !engine || !r || !el || tool === 'select') return false;
         e.preventDefault(); // no text selection, no box created, no mouse events after it
         e.stopPropagation();
         try {
@@ -303,7 +319,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
         return true;
       },
     }),
-    [engine, doc, surface, nativeOn],
+    [engine, doc, surface, nativeCaptures],
   );
 
   const mode = nativeDraws ? (webOverlay ? ' is-native is-overlay' : ' is-native') : '';

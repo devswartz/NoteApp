@@ -52,6 +52,8 @@ export interface NativeInkTool {
   dark: boolean;
   /** The native layer draws finished ink too (debug; normally the web does). */
   nativeFinished?: boolean;
+  /** The native layer takes the Pencil (debug; normally the web pen draws). */
+  nativeCapture?: boolean;
 }
 
 export interface WireStroke {
@@ -202,13 +204,15 @@ export interface NativeInkDebug {
    * and zooms with the text by itself) or the native layer (inside WebKit's scroll view; debug).
    */
   nativeFinished: boolean;
+  /** The native layer takes the Pencil (debug: the native Metal pen). Normally the web pen draws. */
+  nativeCapture: boolean;
   /** Set by the page while the native layer is in use. */
   setRenderer: ((r: 'notivelo' | 'pencilkit') => void) | null;
   /** Fill the page with test strokes and boxes. */
   fill: (() => void) | null;
 }
 
-export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', gesture: 'none yet', renderer: 'notivelo', webOverlay: false, nativeFinished: false, setRenderer: null, fill: null }));
+export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', gesture: 'none yet', renderer: 'notivelo', webOverlay: false, nativeFinished: false, nativeCapture: false, setRenderer: null, fill: null }));
 
 const setStatus = (status: string) => useNativeInkDebug.setState({ status });
 
