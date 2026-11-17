@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.9
+
+### Changed
+- **Deleting a task's line from a note deletes the task.** Select any number of task lines and press Backspace or Delete, as with bullets; deleting a text box deletes its tasks too. Undo brings the lines and the tasks back, with their dates, assignees and subtasks. Cutting a task line still keeps the task, so it can be pasted into another note. Before, a deleted line left its task behind as a standalone task (#192).
+
 ## v1.5.8
 
 ### Fixed
