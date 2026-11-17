@@ -167,7 +167,7 @@ test('a native stroke is written like the web pen, as its own undo step, and ack
   await s.stop();
 });
 
-test('with the web drawing finished ink, a stroke's token goes back only once it is painted', async () => {
+test("with the web drawing finished ink, a stroke's token goes back only once it is painted", async () => {
   const doc = new Y.Doc();
   const f = fakePlugin();
   let paint!: () => void;
