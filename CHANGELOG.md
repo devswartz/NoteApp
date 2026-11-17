@@ -2,6 +2,13 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.10
+
+The desktop release of v1.5.9 (no app changes since). v1.5.9's Mac build never got a GitHub runner, so the desktop apps skipped it; the App Store versions stay at 1.5.9.
+
+### Behind the scenes
+- **Desktop CI builds the Mac app on `macos-15`**, like the App Store builds, instead of `macos-latest` (#193).
+
 ## v1.5.9
 
 ### Changed
