@@ -2,6 +2,13 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.11
+
+A server-only release (the AI connector); the desktop and App Store apps are unchanged.
+
+### Added
+- **AI connector: delete a task, or turn a subtask into a note.** Connected AI apps (Claude, ChatGPT) can now delete a task you name (`delete_task`) and turn a subtask written on a page into a plain note line under its task (`turn_into_note`), the same way the app does: a deleted task's notes stay on the page, and its subtasks there become plain lines. Both are marked destructive and tell the AI to confirm with you first, and the page keeps a version from before the change. Pages, sections and notebooks still can't be deleted through the connector. The Claude Code plugin's skill (1.1.0) describes them (#191).
+
 ## v1.5.10
 
 The desktop release of v1.5.9 (no app changes since). v1.5.9's Mac build never got a GitHub runner, so the desktop apps skipped it; the App Store versions stay at 1.5.9.
