@@ -30,12 +30,15 @@ export type ResolvedTheme = 'light' | 'dark' | 'hybrid';
 
 const THEME_KEY = 'noteapp.theme';
 
+/** Used until the person picks a theme on this device. */
+export const DEFAULT_THEME: ThemePref = 'hybrid';
+
 function readPref(): ThemePref {
   try {
     const v = platform.kv.get(THEME_KEY);
-    return v === 'light' || v === 'dark' || v === 'hybrid' ? v : 'system';
+    return v === 'light' || v === 'dark' || v === 'hybrid' || v === 'system' ? v : DEFAULT_THEME;
   } catch {
-    return 'system';
+    return DEFAULT_THEME;
   }
 }
 
