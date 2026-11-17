@@ -16,7 +16,7 @@ Only a manual **Store submit** run (an older tag) falls back, when a section is 
 
 Newest version first.
 
-## v0.5.7
+## v1.5.7
 
 - Hybrid is now the default look: a dark toolbar around a light, paper-like page. You can switch to Light, Dark or System any time in Settings › Appearance.
 - Fixed on iPad: the toolbar now sits below the status bar instead of underneath it.

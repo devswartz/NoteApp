@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.7
+
+### Changed
+- **Version numbers jump to 1.x.** The iPhone app went live on the App Store as 1.0, and App Store Connect only accepts higher versions, so web, desktop and both App Stores now share 1.x numbers. No other changes from v0.5.7; this release puts v0.5.7 on the App Store.
+
 ## v0.5.7
 
 ### Changed
