@@ -2,6 +2,12 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.8
+
+### Fixed
+- **Task lines on iPhone and iPad:** "Add checklist" no longer draws over the due date and open-details buttons. Phones show just its icon so the title has room; iPad keeps the words (#190).
+- **Save indicator on phones:** the lone ✓ in the page toolbar is hidden while everything is saved; Saving…, Connecting… and Offline still show (#190).
+
 ## v1.5.7
 
 ### Changed
