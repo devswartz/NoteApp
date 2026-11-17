@@ -1,5 +1,20 @@
 # Plan: handwriting and drawing (ink)
 
+## On hold (2026-11-17)
+
+Devon put ink on hold. The plan below is kept for reference, not as the next step.
+
+- **Drawing pages were rejected.** Devon found two page kinds, text pages and drawing pages, clunky.
+- **The intended revisit:** full native pages built on the Rust core (`docs/ARCHITECTURE.md`) for every platform, so that ink and text live on one native page everywhere, not a web page with ink added on top.
+- **What I2 taught us** (branch `claude/ink-i2-61c006`, TestFlight 0.5.90 builds 104–113):
+  - **The Capacitor plugin proxy is thenable.** It answers every property, `then` included, so resolving a promise with it hangs forever. The native layer looked missing until build 109. Keep the plugin in a box and never return it from an async function (`src/ink/nativeInk.ts`, `wrap()`).
+  - **WebKit's inner `UIScrollView` only exists while the page scrolls.** On a short page there is nothing for native ink to attach to, so lockstep between native and web is fragile. WebKit also rebuilds the scroll view whenever it likes.
+  - **Zoom with a transform, not CSS `zoom`.** CSS zoom re-flows text and WebKit measures it inconsistently, so the eraser missed the ink. Scaling the surface with `transform: scale()` about its top-left keeps the boxes and the ink as one layer (`surfaceStyle` in `canvasGeom.ts`).
+  - **The iPad's WKWebView runs in desktop mode,** so touch events don't arrive. Use pointer events for taps and WebKit's `gesture*` events for pinch.
+  - **The web pen beat the native overlay on feel.** A native Metal layer over the web page captured the Pencil but fought WebKit's gestures. Drawing became intermittent, and strokes were lost. The plain web pen, with nv-ink smoothing, drew well. The overlay's problem was coordinating two layers, not latency.
+  - **The native drawing page prototype (113)** showed that a single native UIKit page, with a UIScrollView for pan and zoom, a Metal live stroke over nv-ink's C ABI, and vector finished ink, builds and runs from the shared Rust engine with little code (`NvInk/DrawingPageViewController.swift`). Devon decided against a separate page kind before giving a feel verdict on it. That verdict is the first thing to get when the revisit starts.
+  - **Still useful for the revisit:** nv-ink's C ABI (`crates/nv-ink/src/ffi.rs`), the iOS xcframework build and its CI job, the `NvInk` Swift package (stroke builder, Metal live stroke, vector tiles, pen recogniser), and the smoothing tuned in I2.
+
 Status: re-planned 2026-11-17 with Devon. The quality bar is still **Notability or better**. The change is that handwriting moves to a **page kind of its own, the drawing page**, which is fully native on the iPad. Text pages keep the light web ink built in I1/I2 for annotation, but no more work goes into it.
 
 **Why the change:** I2 tried to put native ink over the web canvas page. After eight TestFlight rounds (0.5.90 builds 104–112), the web pen drew well, but zoom and pan never felt like Notability. The title didn't scale with the page, elements moved clunkily, and it was "obviously not a full canvas". A page that mixes a web rich-text editor with native ink always has two things to keep in step. A drawing page has only one.
