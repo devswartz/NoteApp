@@ -71,6 +71,7 @@ function nativeTool(s: InkToolState): NativeInkTool {
     pencilSwitches: s.pencilSwitches,
     eraserRadius: ERASER_RADIUS,
     dark: isDarkTheme(),
+    nativeFinished: useNativeInkDebug.getState().nativeFinished,
   };
 }
 
@@ -105,7 +106,10 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
   // The native pen layer is drawing this page (its ink, its pan and zoom).
   const [nativeOn, setNativeOn] = useState(false);
   const webOverlay = useNativeInkDebug((d) => d.webOverlay);
-  const webDraws = !nativeOn || webOverlay;
+  const nativeFinished = useNativeInkDebug((d) => d.nativeFinished);
+  // The web draws finished ink unless the native layer is set to (debug): then only as the alignment overlay.
+  const nativeDraws = nativeOn && nativeFinished;
+  const webDraws = !nativeDraws || webOverlay;
 
   // Load the engine when the page has ink or a pen tool is picked; until then nothing is downloaded.
   const [hasInk, setHasInk] = useState(() => doc.getMap(INK_KEY).size > 0);
@@ -158,6 +162,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     const s = surface.current;
     if (!webDraws || !engine || !s || !under.current || !over.current || !live.current) return;
     const r = new InkRenderer(engine, doc, s, { under: under.current, over: over.current, live: live.current });
+    r.setZoom(cb.current.zoom);
     renderer.current = r;
     return () => {
       r.destroy();
@@ -178,6 +183,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       if (!v.final) return; // a report after scrolling: the scroller already knows its offset
       cb.current.zoom = v.zoom;
       flushSync(() => cb.current.onZoom?.(v.zoom));
+      renderer.current?.setZoom(v.zoom);
       scroller.scrollLeft = v.x;
       scroller.scrollTop = v.y;
       await painted();
@@ -194,6 +200,8 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       onRedo: () => {},
       onStatus: (status) => useNativeInkDebug.setState({ status }),
       onDebug: (text) => useNativeInkDebug.setState({ gesture: `native: ${text}` }),
+      // The web draws finished ink: native holds each stroke until it is painted here.
+      ackAfterPaint: () => (useNativeInkDebug.getState().nativeFinished ? Promise.resolve() : painted()),
       onDetached: () => {
         useNativeInkDebug.setState({ status: 'web pen: the native layer lost the page' });
         setNativeOn(false);
@@ -219,6 +227,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     const theme = new MutationObserver(() => session.setTool(nativeTool(useInkTool.getState())));
     const poll = window.setInterval(report, 1000);
     const unTool = useInkTool.subscribe((st) => session.setTool(nativeTool(st)));
+    const unDebug = useNativeInkDebug.subscribe((d, prev) => d.nativeFinished !== prev.nativeFinished && session.setTool(nativeTool(useInkTool.getState())));
     void session.start(measure, nativeTool(useInkTool.getState())).then((ok) => {
       if (!alive) return;
       if (!ok) return void session.stop();
@@ -249,6 +258,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
       ro?.disconnect();
       theme.disconnect();
       unTool();
+      unDebug();
       scroller.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', report);
       useNativeInkDebug.setState({ active: false, renderer: 'notivelo', setRenderer: null, fill: null });
@@ -296,7 +306,7 @@ export function InkSurface({ doc, surface, wanted, onWrite, onExtent, native, pa
     [engine, doc, surface, nativeOn],
   );
 
-  const mode = nativeOn ? (webOverlay ? ' is-native is-overlay' : ' is-native') : '';
+  const mode = nativeDraws ? (webOverlay ? ' is-native is-overlay' : ' is-native') : '';
   return (
     <>
       <canvas ref={under} className={`ink-layer ink-under${mode}`} aria-hidden data-testid="ink-under" />

@@ -1,8 +1,10 @@
 #if canImport(UIKit)
 // The stroke being drawn, on a Metal layer over the page: nv-ink triangles of the stroke so far
 // plus the predicted touches, drawn the moment a touch arrives (not on the next display tick) and
-// presented straight away. Triangles are filled opaque with 4x MSAA; a see-through tool (the
-// highlighter) takes its alpha from the layer, so overlapping triangles never darken.
+// presented straight away, with 4x MSAA. It also holds strokes just finished until the web page
+// has painted them (the web draws finished ink), so nothing blinks between the two. Each stroke is
+// drawn in its colour with alpha blending (a highlighter's overlapping triangles darken a little
+// while it is live; the painted stroke doesn't).
 import Metal
 import QuartzCore
 import UIKit
@@ -67,6 +69,12 @@ final class LiveStrokeView: UIView {
         d.fragmentFunction = lib.makeFunction(name: "fmain")
         d.colorAttachments[0].pixelFormat = .bgra8Unorm
         d.rasterSampleCount = LiveStrokeView.samples
+        let c = d.colorAttachments[0]!
+        c.isBlendingEnabled = true
+        c.sourceRGBBlendFactor = .sourceAlpha
+        c.destinationRGBBlendFactor = .oneMinusSourceAlpha
+        c.sourceAlphaBlendFactor = .one
+        c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         return try? device.makeRenderPipelineState(descriptor: d)
     }
 
@@ -87,8 +95,11 @@ final class LiveStrokeView: UIView {
         return msaa
     }
 
-    /// Draws `triangles` (page px, x y per vertex) in `color` (0xRRGGBBAA). Empty: clears.
-    func draw(triangles: [Float], color: UInt32) {
+    /// Draws one stroke's `triangles` (page px, x y per vertex) in `color` (0xRRGGBBAA). Empty: clears.
+    func draw(triangles: [Float], color: UInt32) { draw([(triangles, color)]) }
+
+    /// Draws several strokes, in order. None: clears.
+    func draw(_ items: [(triangles: [Float], color: UInt32)]) {
         guard let queue, let pipeline, bounds.width > 0, bounds.height > 0, let drawable = metalLayer.nextDrawable(),
               let target = msaaTexture(for: metalLayer.drawableSize), let cmd = queue.makeCommandBuffer() else { return }
         let pass = MTLRenderPassDescriptor()
@@ -98,10 +109,11 @@ final class LiveStrokeView: UIView {
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .multisampleResolve
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
-        if triangles.count >= 6, let device {
+        for (triangles, color) in items where triangles.count >= 6 {
+            guard let device else { break }
             var u = Uniforms(scale: SIMD2(Float(pageScale), Float(pageScale)), offset: SIMD2(Float(pageOffset.x), Float(pageOffset.y)),
                              size: SIMD2(Float(bounds.width), Float(bounds.height)),
-                             color: SIMD4(Float((color >> 24) & 255) / 255, Float((color >> 16) & 255) / 255, Float((color >> 8) & 255) / 255, 1))
+                             color: SIMD4(Float((color >> 24) & 255) / 255, Float((color >> 16) & 255) / 255, Float((color >> 8) & 255) / 255, Float(color & 255) / 255))
             let bytes = triangles.count * MemoryLayout<Float>.stride
             let buf = bytes <= 4096 ? nil : triangles.withUnsafeBytes { device.makeBuffer(bytes: $0.baseAddress!, length: bytes, options: .storageModeShared) }
             enc.setRenderPipelineState(pipeline)
@@ -113,9 +125,8 @@ final class LiveStrokeView: UIView {
         enc.endEncoding()
         cmd.present(drawable)
         cmd.commit()
-        metalLayer.opacity = Float(color & 255) / 255
     }
 
-    func clear() { draw(triangles: [], color: 0) }
+    func clear() { draw([]) }
 }
 #endif

@@ -64,6 +64,9 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
 
     // A stroke in progress.
     private var builder: StrokeBuilder?
+    /// Finished strokes the web hasn't painted yet (it draws finished ink): held on the live layer until their ack.
+    private var heldStrokes: [(token: String, triangles: [Float], color: UInt32)] = []
+    private var strokeCount = 0
     private var scrollWasEnabled = true
     // An erase gesture in progress.
     private var eraseToken: String?
@@ -164,6 +167,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
             offsetObservation = sv.observe(\.contentOffset, options: [.new]) { [weak self] _, _ in self?.scrolled() }
         }
         c.place(origin: l.surfaceOrigin, size: l.surfaceSize, zoom: zoom)
+        c.isHidden = !tool.nativeFinished // normally the web draws finished ink
         c.redrawAll()
         reattachTries = 0
         if !counted {
@@ -238,6 +242,11 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     }
 
     private func scrolled() {
+        // Held strokes follow the page until the web has painted them.
+        if !heldStrokes.isEmpty, builder == nil {
+            mapLive()
+            drawLive(nil)
+        }
         scrollReport?.cancel()
         let w = DispatchWorkItem { [weak self] in
             guard let self, let sv = self.scrollView, !self.awaitingView else { return }
@@ -258,6 +267,26 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     public func updateStrokes(added: [(String, Data)], removed: [String], ack: String?) {
         content?.forget(removed + added.map(\.0))
         content?.redraw(store.apply(added: added, removed: removed, ack: ack))
+        if let ack, heldStrokes.contains(where: { $0.token == ack }) {
+            heldStrokes.removeAll { $0.token == ack } // painted by the web now
+            if builder == nil { drawLive(nil) }
+        }
+    }
+
+    /// The live layer: held strokes, then the stroke being drawn.
+    private func drawLive(_ current: (triangles: [Float], color: UInt32)?) {
+        var items = heldStrokes.map { (triangles: $0.triangles, color: $0.color) }
+        if let current { items.append(current) }
+        if items.isEmpty { live.clear() } else { live.draw(items) }
+    }
+
+    /// Page px → live layer points, for the page as it is now.
+    private func mapLive() {
+        guard let sv = scrollView, let wv = webView, let c = content else { return }
+        live.frame = sv.convert(sv.bounds, to: wv)
+        wv.bringSubviewToFront(live)
+        live.pageScale = zoom
+        live.pageOffset = c.convert(CGPoint.zero, to: live)
     }
 
     // MARK: - Tools
@@ -266,6 +295,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         let darkChanged = t.dark != tool.dark
         if !t.erases, t.tool != tool.tool { previousTool = t.tool }
         tool = t
+        content?.isHidden = !t.nativeFinished
         applyTouchTypes()
         if darkChanged { content?.dark = t.dark }
         if let pk = pencilKit { pk.tool = pencilKitTool() }
@@ -337,7 +367,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
     }
 
     private func began(_ t: UITouch, _ e: UIEvent) {
-        guard let sv = scrollView, let wv = webView, let c = content else { return }
+        guard let sv = scrollView, webView != nil, content != nil else { return }
         if !tool.active {
             // Type mode with the auto-switch on: this Pencil touch turns draw mode on, and draws.
             tool.tool = tool.penTool
@@ -355,10 +385,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
             moved(t, e)
             return
         }
-        live.frame = sv.convert(sv.bounds, to: wv)
-        wv.bringSubviewToFront(live)
-        live.pageScale = zoom
-        live.pageOffset = c.convert(CGPoint.zero, to: live)
+        mapLive()
         live.isHidden = false
         let pencil = t.type == .pencil
         let top = store.page.values.map(\.info.z).max()
@@ -389,7 +416,7 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
             let s = sample(p)
             return [s.x, s.y, s.pressure]
         }
-        live.draw(triangles: b.previewTriangles(predicted: predicted), color: InkRules.displayColor(b.color, dark: tool.dark))
+        drawLive((b.previewTriangles(predicted: predicted), InkRules.displayColor(b.color, dark: tool.dark)))
     }
 
     private func ended(_ t: UITouch, _ e: UIEvent?, _ cancelled: Bool) {
@@ -408,18 +435,32 @@ public final class NativeInkController: NSObject, UIGestureRecognizerDelegate, U
         guard let b = builder else { return }
         builder = nil
         if cancelled {
+            delegate?.nativeInkDebug("stroke cancelled after \(b.count) points")
             b.cancel()
-            live.clear()
-            live.isHidden = true
+            drawLive(nil)
             return
         }
-        guard let blob = b.finish() else { live.clear(); return }
+        let color = InkRules.displayColor(b.color, dark: tool.dark)
+        let points = b.count
+        guard let blob = b.finish() else { drawLive(nil); return }
         seq += 1
+        strokeCount += 1
         let token = "s\(seq)"
-        // Shown as a finished stroke in this frame; the live layer clears on the next one, so it never blinks.
+        delegate?.nativeInkDebug("stroke \(strokeCount): \(points) points")
         content?.redraw(store.setOverlay(token, removed: [], added: [blob]))
-        DispatchQueue.main.async { [weak self] in
-            self?.live.clear()
+        if tool.nativeFinished {
+            // Shown as a finished stroke in this frame; the live layer clears on the next one, so it never blinks.
+            DispatchQueue.main.async { [weak self] in self?.drawLive(nil) }
+        } else {
+            // The web draws it: hold it on the live layer until the web says it's painted (the ack).
+            heldStrokes.append((token: token, triangles: InkEngine.triangles(blob), color: color))
+            drawLive(nil)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                // Never hold one for ever (an ack lost on the way).
+                guard let self, self.heldStrokes.contains(where: { $0.token == token }) else { return }
+                self.heldStrokes.removeAll { $0.token == token }
+                if self.builder == nil { self.drawLive(nil) }
+            }
         }
         delegate?.nativeInk(strokeFinished: blob, token: token)
     }

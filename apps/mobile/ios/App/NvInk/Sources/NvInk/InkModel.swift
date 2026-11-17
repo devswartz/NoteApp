@@ -295,6 +295,9 @@ public struct InkToolState: Equatable {
     public var pencilSwitches = true
     public var eraserRadius: Float = 8
     public var dark = false
+    /// The native layer draws finished ink (debug). Normally the web page does, and the native layer
+    /// draws only the live stroke and holds finished ones until the web has painted them.
+    public var nativeFinished = false
 
     public init() {}
 
@@ -307,6 +310,7 @@ public struct InkToolState: Equatable {
         if let a = d["pencilSwitches"] as? Bool { pencilSwitches = a }
         if let r = (d["eraserRadius"] as? NSNumber)?.floatValue { eraserRadius = r }
         if let k = d["dark"] as? Bool { dark = k }
+        if let n = d["nativeFinished"] as? Bool { nativeFinished = n }
     }
 
     public var draws: Bool { tool == "pen" || tool == "highlighter" }

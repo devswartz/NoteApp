@@ -50,6 +50,8 @@ export interface NativeInkTool {
   pencilSwitches: boolean;
   eraserRadius: number;
   dark: boolean;
+  /** The native layer draws finished ink too (debug; normally the web does). */
+  nativeFinished?: boolean;
 }
 
 export interface WireStroke {
@@ -195,13 +197,18 @@ export interface NativeInkDebug {
   renderer: 'notivelo' | 'pencilkit';
   /** Also draw the web's own ink (faint) under the native ink: they should line up exactly. */
   webOverlay: boolean;
+  /**
+   * Who draws finished ink on the iPad: the web page (the default: it is page content, so it pans
+   * and zooms with the text by itself) or the native layer (inside WebKit's scroll view; debug).
+   */
+  nativeFinished: boolean;
   /** Set by the page while the native layer is in use. */
   setRenderer: ((r: 'notivelo' | 'pencilkit') => void) | null;
   /** Fill the page with test strokes and boxes. */
   fill: (() => void) | null;
 }
 
-export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', gesture: 'none yet', renderer: 'notivelo', webOverlay: false, setRenderer: null, fill: null }));
+export const useNativeInkDebug = create<NativeInkDebug>(() => ({ active: false, status: 'checking', gesture: 'none yet', renderer: 'notivelo', webOverlay: false, nativeFinished: false, setRenderer: null, fill: null }));
 
 const setStatus = (status: string) => useNativeInkDebug.setState({ status });
 
@@ -223,6 +230,11 @@ export interface NativeInkSessionOptions {
   onStatus?: (status: string) => void;
   /** What the native layer just recognised (a tap, a pinch), in words. */
   onDebug?: (text: string) => void;
+  /**
+   * The web draws finished ink (the default): a native change's token goes back only once this
+   * resolves (the stroke is on screen), so the native layer can hold the stroke until then.
+   */
+  ackAfterPaint?: () => Promise<void>;
   /** Native lost the page (its scroll view): the caller falls back to the web pen. */
   onDetached?: () => void;
 }
@@ -335,26 +347,31 @@ export class NativeInkSession {
     if (ack) void this.plugin.updateStrokes({ added: [], removed: [], ack }).catch(() => {});
   }
 
-  private stroke(e: NativeInkEvents['stroke']) {
-    this.pendingAck = e.token;
+  /** Write a native change; its token goes back with the update (native draws finished ink) or once painted (the web does). */
+  private write(token: string, apply: () => void) {
+    const later = this.opts.ackAfterPaint;
+    this.pendingAck = later ? null : token;
     try {
       this.opts.onWrite?.();
-      commitStroke(this.doc, fromBase64(e.data));
+      apply();
       this.opts.onWrite?.();
     } finally {
-      this.flushAck();
+      if (later) {
+        void later()
+          .catch(() => {})
+          .then(() => {
+            if (!this.stopped) void this.plugin.updateStrokes({ added: [], removed: [], ack: token }).catch(() => {});
+          });
+      } else this.flushAck();
     }
   }
 
+  private stroke(e: NativeInkEvents['stroke']) {
+    this.write(e.token, () => commitStroke(this.doc, fromBase64(e.data)));
+  }
+
   private erase(e: NativeInkEvents['erase']) {
-    this.pendingAck = e.token;
-    try {
-      this.opts.onWrite?.();
-      commitErase(this.doc, e.removed, e.added.map(fromBase64));
-      this.opts.onWrite?.();
-    } finally {
-      this.flushAck();
-    }
+    this.write(e.token, () => commitErase(this.doc, e.removed, e.added.map(fromBase64)));
   }
 
   private async view(v: NativeView) {

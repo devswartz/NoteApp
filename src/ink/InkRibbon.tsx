@@ -151,9 +151,19 @@ export function InkRibbonGroups() {
           <RbButton label={debug.renderer === 'pencilkit' ? 'PencilKit (not saved)' : 'Notivelo renderer'} active={debug.renderer === 'pencilkit'} className="rb-text" onClick={() => debug.setRenderer?.(debug.renderer === 'pencilkit' ? 'notivelo' : 'pencilkit')}>
             <span className="rb-btn-label">{debug.renderer === 'pencilkit' ? 'PencilKit' : 'Notivelo'}</span>
           </RbButton>
-          <RbButton label="Web ink overlay" active={debug.webOverlay} className="rb-text" onClick={() => useNativeInkDebug.setState({ webOverlay: !debug.webOverlay })}>
-            <span className="rb-btn-label">Overlay</span>
+          <RbButton
+            label={debug.nativeFinished ? 'Finished ink: native layer' : 'Finished ink: web page'}
+            active={debug.nativeFinished}
+            className="rb-text"
+            onClick={() => useNativeInkDebug.setState({ nativeFinished: !debug.nativeFinished })}
+          >
+            <span className="rb-btn-label">{debug.nativeFinished ? 'Ink: native' : 'Ink: web'}</span>
           </RbButton>
+          {debug.nativeFinished && (
+            <RbButton label="Web ink overlay" active={debug.webOverlay} className="rb-text" onClick={() => useNativeInkDebug.setState({ webOverlay: !debug.webOverlay })}>
+              <span className="rb-btn-label">Overlay</span>
+            </RbButton>
+          )}
           <RbButton label="Fill with test strokes" className="rb-text" onClick={() => debug.fill?.()}>
             <span className="rb-btn-label">Fill test page</span>
           </RbButton>

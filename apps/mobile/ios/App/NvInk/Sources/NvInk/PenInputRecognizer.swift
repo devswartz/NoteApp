@@ -20,7 +20,9 @@ final class PenInputRecognizer: UIGestureRecognizer {
         cancelsTouchesInView = true
         delaysTouchesBegan = false
         delaysTouchesEnded = false
-        requiresExclusiveTouchType = true
+        // A resting palm (a finger touch) must not interrupt a Pencil stroke (Devon's first native round:
+        // strokes cut short). Only the Pencil is allowed here anyway (allowedTouchTypes).
+        requiresExclusiveTouchType = false
     }
 
     override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { true }

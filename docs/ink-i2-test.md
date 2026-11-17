@@ -100,6 +100,14 @@ The I2 gate in `docs/PLAN_INK.md`: does our native pen layer match Notability fo
 
 Up to 0.5.90 (108) the native pen layer never started: finding the plugin hung (the readout stayed on **checking**), so every round so far tested the web pen. From this build the readout should go *native layer found* → *native layer ready* → *attaching (try 1)* → **native layer attached**. Then everything native is being tried for the first time: rerun sections 1–9, starting with drawing, the Pencil switch in type mode, drawing beside the title, pinch zoom and the double-tap eraser.
 
+## 11. Finished ink drawn by the page (build after 0.5.90 (109))
+
+With the native layer finally running (0.5.90 (109)), strokes vanished on lifting and were cut short. Now the web page draws finished ink (it is page content, so it pans and zooms with the text by itself); the native layer draws the live stroke with Metal and holds each finished stroke until the page has painted it. A resting palm no longer interrupts a stroke.
+
+- [ ] Write a full line of words quickly: every stroke stays, none blink or vanish, none is cut short with the palm resting. The readout shows `native: stroke N: … points` per stroke (and `stroke cancelled …` if one was cut short: note when).
+- [ ] Pan and pinch-zoom with ink on the page: the ink moves with the text (it is drawn by the page now), and is sharp after the zoom settles.
+- [ ] Debug (bug button): **Ink: web / Ink: native** switches who draws finished ink; *native* is the old way (for comparison only).
+
 ## Results
 
 | Check | Notivelo | PencilKit | Notability | Pass? | Notes |

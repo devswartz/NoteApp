@@ -167,6 +167,23 @@ test('a native stroke is written like the web pen, as its own undo step, and ack
   await s.stop();
 });
 
+test('with the web drawing finished ink, a stroke's token goes back only once it is painted', async () => {
+  const doc = new Y.Doc();
+  const f = fakePlugin();
+  let paint!: () => void;
+  const s = new NativeInkSession(f.plugin, doc, { ackAfterPaint: () => new Promise<void>((r) => (paint = r)) });
+  await s.start(LAYOUT, TOOL_STATE);
+  f.fire('stroke', { token: 's1', data: toBase64(blob(5)) });
+  const updates = () => f.named('updateStrokes') as { added: unknown[]; ack?: string }[];
+  assert.equal(updates().length, 1, 'the stroke reaches native as a page change');
+  assert.equal(updates()[0]!.ack, undefined, 'but not acknowledged yet: native keeps holding it');
+  paint();
+  await tick();
+  await tick();
+  assert.deepEqual(updates().at(-1), { added: [], removed: [], ack: 's1' });
+  await s.stop();
+});
+
 test('a native erase is one transaction and acknowledged, even when it changes nothing', async () => {
   const doc = new Y.Doc();
   const ink = doc.getMap<unknown>(INK_KEY);

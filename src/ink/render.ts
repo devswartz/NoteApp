@@ -167,6 +167,17 @@ export class InkRenderer {
   }
 
   /** Show an erase gesture's work in progress: these strokes hidden, these pieces added. */
+  /** The surface's CSS zoom (the iPad's native pinch zoom): tiles are drawn at that resolution, so ink stays sharp. */
+  private zoom = 1;
+  setZoom(z: number) {
+    if (!(z > 0) || z === this.zoom) return;
+    this.zoom = z;
+    this.tiles.under.clear();
+    this.tiles.over.clear();
+    this.dirty = true;
+    this.schedule();
+  }
+
   setOverlay(hidden: Set<string>, extra: Map<string, Uint8Array>) {
     const touched: Entry[] = [];
     for (const id of new Set([...this.hidden, ...hidden])) {
@@ -261,16 +272,17 @@ export class InkRenderer {
     const r = this.surface.getBoundingClientRect();
     const w = this.surface.clientWidth;
     const h = this.surface.clientHeight;
-    const x0 = Math.max(0, -r.left - OVERSCAN);
-    const y0 = Math.max(-INK_ABOVE, -r.top - OVERSCAN);
-    const x1 = Math.min(w, window.innerWidth - r.left + OVERSCAN);
-    const y1 = Math.min(h, window.innerHeight - r.top + OVERSCAN);
+    const z = this.zoom; // screen px per page px: distances on screen → page px
+    const x0 = Math.max(0, -r.left / z - OVERSCAN);
+    const y0 = Math.max(-INK_ABOVE, -r.top / z - OVERSCAN);
+    const x1 = Math.min(w, (window.innerWidth - r.left) / z + OVERSCAN);
+    const y1 = Math.min(h, (window.innerHeight - r.top) / z + OVERSCAN);
     if (x1 <= x0 || y1 <= y0) return null;
     return { x0: Math.floor(x0 / TILE) * TILE, y0: Math.floor(y0 / TILE) * TILE, x1: Math.min(w, Math.ceil(x1 / TILE) * TILE), y1: Math.min(h, Math.ceil(y1 / TILE) * TILE) };
   }
 
   private paint() {
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const dpr = Math.min(6, (window.devicePixelRatio || 1) * this.zoom);
     if (dpr !== this.dpr) {
       this.dpr = dpr;
       this.tiles.under.clear();
