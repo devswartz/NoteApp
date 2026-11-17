@@ -1869,6 +1869,8 @@ body.is-resizing .sidebar { transition: none; }
 
   .page-topbar { padding: 0 8px 0 16px; height: 44px; }
   .sync-label, .crumbs { display: none; }
+  /* Without its word, a lone tick looks like a button: show the indicator only while saving, connecting or offline. */
+  .sync.save-saved { display: none; }
   .page-article { padding: 12px 20px 40vh; }
   .page-title { font-size: 28px; }
   .ProseMirror { font-size: 16.5px; }
