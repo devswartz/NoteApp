@@ -101,7 +101,7 @@ test('the official MCP client connects, and tools/list has every tool with the r
   const { tools } = await client.listTools();
   const byName = new Map(tools.map((x) => [x.name, x]));
   const read = ['list_workspaces', 'list_sections', 'list_pages', 'search_pages', 'read_page', 'list_tasks', 'get_task'];
-  const write = ['create_page', 'append_box', 'replace_box_content', 'create_task', 'update_task'];
+  const write = ['create_page', 'append_box', 'replace_box_content', 'create_task', 'update_task', 'delete_task', 'turn_into_note'];
   assert.deepEqual([...byName.keys()].sort(), [...read, ...write].sort());
   for (const n of read) {
     assert.equal(byName.get(n)!.annotations?.readOnlyHint, true, n);
@@ -111,7 +111,9 @@ test('the official MCP client connects, and tools/list has every tool with the r
   assert.equal(byName.get('replace_box_content')!.annotations?.destructiveHint, true);
   assert.equal(byName.get('update_task')!.annotations?.destructiveHint, true);
   assert.equal(byName.get('append_box')!.annotations?.destructiveHint, false);
-  assert.ok(!byName.has('delete_page') && ![...byName.keys()].some((n) => n.includes('delete')), 'no delete tools');
+  assert.equal(byName.get('delete_task')!.annotations?.destructiveHint, true);
+  assert.equal(byName.get('turn_into_note')!.annotations?.destructiveHint, true);
+  assert.deepEqual([...byName.keys()].filter((n) => n.includes('delete')), ['delete_task'], 'tasks are the only thing that can be deleted');
   const res = await client.callTool({ name: 'list_workspaces', arguments: {} });
   assert.match((res.content as { text: string }[])[0].text, /Clienty|workspaces/);
   await client.close();
@@ -215,6 +217,8 @@ test('access: another user’s pages, sections, tasks and search results stay in
     ['create_task', { workspace_id: alice.wsId, title: 'intrusion' }],
     ['create_task', { page_id: page.page_id, title: 'intrusion' }],
     ['update_task', { task_id: task.id, done: true }],
+    ['delete_task', { task_id: task.id }],
+    ['turn_into_note', { task_id: task.id }],
   ] as const) {
     const r = await call(tb, name, args);
     assert.equal(r.isError, true, `${name} must fail for Bob`);
@@ -247,6 +251,9 @@ test('access: a viewer reads but cannot write', async () => {
   assert.equal(r.isError, true);
   assert.match(r.text, /view-only/);
   assert.equal((await call(tv, 'create_page', { section_id: await firstSection(owner), title: 'nope' })).isError, true);
+  const task = await json(tokenFor(owner), 'create_task', { workspace_id: owner.wsId, title: 'Keep me' });
+  assert.equal((await call(tv, 'delete_task', { task_id: task.id })).isError, true);
+  assert.equal((await json(tokenFor(owner), 'get_task', { task_id: task.id })).title, 'Keep me');
 });
 
 test('trash: a trashed page is invisible to every tool, though its owner could restore it', async () => {
@@ -434,6 +441,78 @@ test('create_task and update_task: on a page (live), standalone and as a subtask
   const feed = (await app.call('GET', `/workspaces/${u.wsId}/activity`, u.token)).data as ActivityItem[];
   assert.ok(feed.some((a) => a.summary === 'added task “Standalone” via Claude'));
   assert.ok(feed.some((a) => a.summary === 'completed “Call the plumber today” via Claude'));
+  editor.destroy();
+});
+
+test('delete_task and turn_into_note: live in an open editor, notes kept, versioned, attributed', async () => {
+  const u = await app.signUp('Deleter');
+  const t = tokenFor(u, ['notes:read', 'notes:write'], 'Claude');
+  const page = await json(t, 'create_page', { section_id: await firstSection(u), title: 'Errands', content: ['- [ ] Pack', '  - pack light', '- [ ] Other'].join('\n') });
+  const top = (await json(t, 'list_tasks', { page_id: page.page_id })).tasks as { id: string; title: string }[];
+  const packId = top.find((x) => x.title === 'Pack')!.id;
+  // Two real subtasks of "Pack", written in its notes as the editor makes them.
+  const taxi = await json(t, 'create_task', { parent_task_id: packId, title: 'Book taxi' });
+  const adapter = await json(t, 'create_task', { parent_task_id: packId, title: 'Buy adapter' });
+  const { editPageDoc } = await import('../server/collab.ts');
+  const { findTaskElement } = await import('../server/taskNotes.ts');
+  editPageDoc(page.page_id, (d) => {
+    for (const id of [taxi.id, adapter.id]) {
+      const ref = new Y.XmlElement('taskRef');
+      ref.setAttribute('taskId', id);
+      findTaskElement(d, packId)!.push([ref]);
+    }
+  });
+
+  const editor = collabClient(app, page.page_id, u.token);
+  await synced(editor);
+  const box = () => editor.doc.getXmlFragment('box:first').toString();
+
+  // Only a subtask written on a page can become a note.
+  assert.match((await call(t, 'turn_into_note', { task_id: packId })).text, /Only a subtask/);
+  const errand = await json(t, 'create_task', { workspace_id: u.wsId, title: 'Errand' });
+  const loose = await json(t, 'create_task', { parent_task_id: errand.id, title: 'Loose' });
+  assert.match((await call(t, 'turn_into_note', { task_id: loose.id })).text, /nowhere to put the note/);
+
+  // "Book taxi" becomes a plain line with its title, still under "Pack"; the task is gone.
+  const note = await json(t, 'turn_into_note', { task_id: taxi.id });
+  assert.equal(note.text, 'Book taxi');
+  await waitFor(() => !box().includes(taxi.id) && box().includes('Book taxi'), 3000, 'live convert');
+  assert.equal((await call(t, 'get_task', { task_id: taxi.id })).isError, true);
+  const afterConvert = await pageDoc(page.page_id);
+  const packEl = findTaskElement(afterConvert, packId)!.toString();
+  assert.ok(packEl.includes('<paragraph>Book taxi</paragraph>') && packEl.includes('pack light') && packEl.includes(adapter.id), 'the note stays under its task');
+
+  // Deleting "Pack" deletes its subtask too; its line goes, its notes stay, the subtask line becomes a plain line.
+  const del = await json(t, 'delete_task', { task_id: packId });
+  assert.equal(del.deleted.title, 'Pack');
+  assert.deepEqual(del.deleted.subtasks.map((x: { title: string }) => x.title), ['Buy adapter']);
+  assert.equal(del.removed_from_page, true);
+  await waitFor(() => !box().includes(packId), 3000, 'live delete');
+  for (const text of ['pack light', 'Book taxi', '<paragraph>Buy adapter</paragraph>']) assert.ok(box().includes(text), text);
+  assert.ok(!box().includes(adapter.id));
+  assert.equal((await call(t, 'get_task', { task_id: adapter.id })).isError, true);
+  assert.deepEqual((await json(t, 'list_tasks', { page_id: page.page_id, status: 'all' })).tasks.map((x: { title: string }) => x.title), ['Other']);
+  assert.match((await call(t, 'delete_task', { task_id: packId })).text, /not found/i);
+
+  // A task that is not on a page.
+  const std = await json(t, 'delete_task', { task_id: errand.id });
+  assert.equal(std.removed_from_page, false);
+  assert.equal((await call(t, 'get_task', { task_id: loose.id })).isError, true, 'subtasks go with their task');
+
+  // Version history has the page from before, with the task lines.
+  const versions = (await app.call('GET', `/pages/${page.page_id}/versions`, u.token)).data as { id: string }[];
+  const texts = await Promise.all(
+    versions.map(async (v) => {
+      const d = new Y.Doc();
+      Y.applyUpdate(d, new Uint8Array(Buffer.from((await app.call('GET', `/pages/${page.page_id}/versions/${v.id}`, u.token)).data.ydoc, 'base64')));
+      return d.getXmlFragment('box:first').toString();
+    }),
+  );
+  assert.ok(texts.some((x) => x.includes(packId)), 'a version from before the delete');
+
+  const feed = (await app.call('GET', `/workspaces/${u.wsId}/activity`, u.token)).data as ActivityItem[];
+  assert.ok(feed.some((a) => a.summary === 'deleted task “Pack” via Claude'));
+  assert.ok(feed.some((a) => a.summary === 'turned task “Book taxi” into a note via Claude'));
   editor.destroy();
 });
 

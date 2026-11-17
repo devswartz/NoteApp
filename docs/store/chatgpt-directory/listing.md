@@ -42,7 +42,7 @@ What you can ask ChatGPT to do
 - Find notes: search page titles and text across your workspaces, or browse your notebooks, sections and pages.
 - Read a page: get a page's text box by box, with the tasks on it and their notes.
 - Write notes: create a page in a section, add text to the end of a page or of one text box, or rewrite one text box. Headings, lists, tables and "- [ ]" to-do lines become Notivelo formatting and real tasks.
-- Manage tasks: list open or completed tasks, see one task with its subtasks, create a task (on a page, in a workspace, or as a subtask), and tick, reopen, rename, reschedule, reprioritise or reassign it.
+- Manage tasks: list open or completed tasks, see one task with its subtasks, create a task (on a page, in a workspace, or as a subtask), tick, reopen, rename, reschedule, reprioritise or reassign it, delete it, or turn a subtask into a plain note line.
 
 Who it is for
 People and small teams who keep meeting notes, project plans and to-do lists in Notivelo and want ChatGPT to summarise them, draft new pages, tidy up a page or turn a conversation into tasks.
@@ -50,7 +50,7 @@ People and small teams who keep meeting notes, project plans and to-do lists in 
 You stay in control
 - You sign in to Notivelo and choose what ChatGPT may do: read only, or read and edit. You can disconnect at any time in Notivelo, Settings > Connected apps.
 - ChatGPT acts as you and sees only what you can see in Notivelo.
-- It cannot delete anything: no pages, sections, notebooks or tasks.
+- It cannot delete pages, sections or notebooks. It can delete a task, or turn a subtask into a note line, when you ask it to.
 - Locked pages are never shown to ChatGPT, not even their titles.
 - Every change shows in the page's activity as made through ChatGPT, and the page keeps a version from before the change, so you can restore it from Version history.
 

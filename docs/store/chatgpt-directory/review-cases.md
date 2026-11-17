@@ -45,14 +45,21 @@ Automated tests that back each case are named by file and test title; run them w
 - **Expected:** a new task on the Supplier shortlist page with that title, next Friday's date and high priority (2); "Book the photographer" is ticked (done). Both show in Notivelo's task views.
 - **Tests:** tests/mcp.test.ts, "create_task and update_task: on a page (live), standalone and as a subtask; activity via the app".
 
+### P6. Delete a task
+
+- **Prompt:** `In Notivelo, add a task "Temporary reminder" to my workspace. Then delete it.`
+- **Tools:** `list_workspaces`, `create_task`, `delete_task`
+- **Expected:** the task is created; ChatGPT names it and, once the user confirms, deletes it (`delete_task` is marked destructive). It no longer shows in Notivelo's task views, and the activity says it was deleted through ChatGPT. Self-contained, so it leaves the reviewer account as it was.
+- **Tests:** tests/mcp.test.ts, "delete_task and turn_into_note: live in an open editor, notes kept, versioned, attributed".
+
 ## Negative cases
 
-### N1. Delete a page (no delete tool)
+### N1. Delete a page (pages can't be deleted)
 
 - **Prompt:** `Delete my Notivelo page "Launch checklist".`
-- **Why it should not act:** the connector has no delete tools on purpose; deleting is only possible in the Notivelo app, where it goes to the Trash.
+- **Why it should not act:** the only thing the connector can delete is a task (`delete_task`); pages, sections and notebooks are deleted only in the Notivelo app, where they go to the Trash.
 - **Expected:** ChatGPT may look the page up (`search_pages`) but calls no write tool. It says it can't delete pages through Notivelo and suggests deleting it in the app. The page is still there.
-- **Tests:** tests/mcp.test.ts, "the official MCP client connects, and tools/list has every tool with the right annotations" (asserts the exact tool list and that no tool name contains "delete").
+- **Tests:** tests/mcp.test.ts, "the official MCP client connects, and tools/list has every tool with the right annotations" (asserts the exact tool list and that `delete_task` is the only tool with "delete" in its name).
 
 ### N2. Ask for a locked page
 

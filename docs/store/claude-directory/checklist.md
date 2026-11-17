@@ -12,7 +12,7 @@ The Claude version of the ChatGPT package in [`../chatgpt-directory/`](../chatgp
 |---|---|
 | `plugins/notivelo/.claude-plugin/plugin.json` | Manifest: name `notivelo`, display name, version, author, links, and the directory listing fields (`icon`, `supportUrl`, `privacyPolicyUrl`, `termsOfServiceUrl`, `documentationUrl`). |
 | `plugins/notivelo/.mcp.json` | The hosted server, `type: http`, asking for `notes:read notes:write`. The user can still untick "edit" on the consent page. |
-| `plugins/notivelo/skills/notivelo/SKILL.md` | How Claude should use the tools: search, read, then write; append rather than overwrite; real due dates; what can't be done (delete, locked pages). |
+| `plugins/notivelo/skills/notivelo/SKILL.md` | How Claude should use the tools: search, read, then write; append rather than overwrite; real due dates; deleting tasks only when asked; what can't be done (deleting pages, locked pages). |
 | `plugins/notivelo/README.md` | Listing text, install steps, limits, support links. |
 | `plugins/notivelo/assets/logo.png` | `logo-512.png` from the ChatGPT folder. |
 | `.claude-plugin/marketplace.json` | Makes this repo a marketplace named `notivelo`, so people can install from GitHub. |

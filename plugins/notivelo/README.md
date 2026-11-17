@@ -27,7 +27,7 @@ Then, in a Claude Code session, run `/mcp`, choose **notivelo** and sign in. A N
 ## You stay in control
 
 - Claude acts as you and sees only what you can see in Notivelo.
-- It cannot delete anything: no pages, sections, notebooks or tasks.
+- It cannot delete pages, sections or notebooks. It can delete a task, or turn a subtask into a plain note line, when you ask it to. A deleted task can't be brought back; the page it was on can be restored from Version history.
 - Locked pages are never shown to Claude, not even their titles.
 - Every change shows in the page's activity under the connected app's name, and the page keeps a version from before the change, so you can restore it from Version history.
 - You can disconnect at any time in Notivelo, under Settings > Connected apps.

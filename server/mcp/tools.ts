@@ -2,8 +2,8 @@
 //
 // Every function runs as the token's user and goes through the same access rules as the REST API
 // (server/access.ts): workspace roles, private notebooks, page shares. Pages in Trash are invisible
-// here (pageAccess lets restorers read them; this connector does not). Nothing here deletes
-// anything. Page writes:
+// here (pageAccess lets restorers read them; this connector does not). The only deletes are of tasks
+// (delete_task, turn_into_note; see the end of this file). Page writes:
 //   - are made with editPageDoc, so editors that have the page open get them live;
 //   - snapshot the page first (Version history), so an AI edit can be undone like a restore;
 //   - mark the page as edited by the user, and add an Activity entry "… via <app name>".
@@ -26,7 +26,8 @@ import {
 import { editPageDoc, flushAll, pageDocState, newBoxId } from '../collab.ts';
 import { snapshot } from '../versions.ts';
 import { publish } from '../events.ts';
-import { createTask, getTask, updateTask } from '../tasks.ts';
+import { createTask, deleteTask, getTask, updateTask } from '../tasks.ts';
+import { findTaskElement, unwrapTaskElement } from '../taskNotes.ts';
 import { ftsQuery } from '../routes/search.ts';
 import { nextPos, sectionPathNames } from '../tree.ts';
 import { pageActivityCtx, recordActivity, taskActivityCtx } from '../routes/activity.ts';
@@ -696,4 +697,72 @@ export function updateTaskTool(ctx: McpCtx, taskId: string, c: TaskChange) {
   const summary = verb === 'updated' ? `updated task ${q(after.title)}` : `${verb} ${q(after.title)}`;
   recordVia(ctx, taskActivityCtx(taskId), verb, 'task', taskId, summary);
   return taskOut(after, ctx.userId);
+}
+
+// ───────── Delete and convert tools ─────────
+// The same as the app: deleting a task deletes it for good with its subtasks (tasks have no Trash; the app's Undo is
+// a toast in that browser only). When it is written on a page, its line goes and the notes under it stay on the page,
+// where its subtasks' lines become plain lines with their titles (src/store/tasks.ts deleteTasksWithUndo and
+// src/editor/taskChildren.ts unwrapTask). The page keeps a version from before the change.
+
+/** The task's page, when it is there to edit (not in Trash, edit access); null otherwise. */
+function pageToEdit(t: Task, userId: string): Access | null {
+  if (!t.pageId) return null;
+  const a = pageAccess(t.pageId, userId);
+  return a && !a.trashed && a.canEdit ? a : null;
+}
+
+export function deleteTaskTool(ctx: McpCtx, taskId: string) {
+  const t = taskVisible(taskId, ctx.userId) ? getTask(taskId) : null;
+  if (!t) throw new HttpError(404, 'Task not found');
+  const deleted = getTaskDetails(ctx, taskId); // for the result: what was deleted, so the conversation keeps it
+  const subtaskTitles = new Map(
+    (db.prepare('SELECT id, title FROM tasks WHERE parent_id = ?').all(taskId) as { id: string; title: string }[]).map((r) => [r.id, r.title]),
+  );
+  const page = pageToEdit(t, ctx.userId);
+  const activity = taskActivityCtx(taskId); // read before the task is gone
+  if (page) beforeEdit(t.pageId!);
+  deleteTask(ctx.userId, taskId); // checks the user may change it; throws before anything is deleted
+  let removedFromPage = false;
+  if (page) {
+    editPageDoc(t.pageId!, (doc) => {
+      const el = findTaskElement(doc, taskId);
+      if (!el) return;
+      unwrapTaskElement(el, { goneTitle: (id) => subtaskTitles.get(id) });
+      removedFromPage = true;
+    }, QUIET);
+    afterEdit(ctx, t.pageId!, page, `edited ${q(pageTitle(t.pageId!))}`);
+  }
+  recordVia(ctx, activity, 'deleted', 'task', taskId, `deleted task ${q(t.title)}`);
+  return {
+    deleted,
+    removed_from_page: removedFromPage,
+    note: removedFromPage
+      ? 'The task line was removed from its page; the notes under it stay there. The page can be restored from Version history, but the task itself cannot be brought back.'
+      : 'The task cannot be brought back.',
+  };
+}
+
+export function turnIntoNote(ctx: McpCtx, taskId: string) {
+  const t = taskVisible(taskId, ctx.userId) ? getTask(taskId) : null;
+  if (!t) throw new HttpError(404, 'Task not found');
+  if (!t.parentId) throw new HttpError(400, 'Only a subtask can be turned into a note (this task has no parent task)');
+  if (!t.pageId) throw new HttpError(400, 'This subtask is not written on a page, so there is nowhere to put the note');
+  const page = editablePage(t.pageId, ctx.userId);
+  const cur = currentDoc(t.pageId);
+  try {
+    if (!findTaskElement(cur, taskId)) throw new HttpError(400, 'This subtask is not written on its page, so there is nowhere to put the note');
+  } finally {
+    cur.destroy();
+  }
+  const activity = taskActivityCtx(taskId);
+  beforeEdit(t.pageId);
+  deleteTask(ctx.userId, taskId);
+  editPageDoc(t.pageId, (doc) => {
+    const el = findTaskElement(doc, taskId);
+    if (el) unwrapTaskElement(el, { title: t.title });
+  }, QUIET);
+  afterEdit(ctx, t.pageId, page, `edited ${q(pageTitle(t.pageId))}`);
+  recordVia(ctx, activity, 'deleted', 'task', taskId, `turned task ${q(t.title)} into a note`);
+  return { page_id: t.pageId, parent_task_id: t.parentId, text: t.title, was_done: t.status === 'done' };
 }

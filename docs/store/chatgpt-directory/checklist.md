@@ -22,7 +22,7 @@ OpenAI now calls these "plugins". A submission is a **ZIP package** (`plugin.jso
 - [x] Demo video script: demo-video.md.
 - [x] Reviewer account steps and seed script (tested locally, not on production): reviewer-account.md, scripts/seed-review-account.ts.
 - [x] Publisher facts and monetisation (none; `commerce: false`): publisher.md.
-- [x] Tool annotations: every tool sets `readOnlyHint`, `destructiveHint` and `openWorldHint` explicitly (server/mcp/index.ts). `replace_box_content` and `update_task` are `destructiveHint: true` (they overwrite), the other writes `false`, all `openWorldHint: false`. Checked by tests/mcp.test.ts.
+- [x] Tool annotations: every tool sets `readOnlyHint`, `destructiveHint` and `openWorldHint` explicitly (server/mcp/index.ts). `replace_box_content` and `update_task` (they overwrite), `delete_task` and `turn_into_note` (they delete a task) are `destructiveHint: true`, the other writes `false`, all `openWorldHint: false`. Checked by tests/mcp.test.ts.
 - [x] Privacy policy: new section "Connected apps and AI assistants" (legal/privacy.md). **Needs lawyer review**, and a release to reach production (the live /privacy page does not have it yet).
 - [x] Sign-up is open on production (`/api/auth/config` says `signupMode: open`), so directory users can create an account.
 
@@ -37,12 +37,12 @@ OpenAI now calls these "plugins". A submission is a **ZIP package** (`plugin.jso
 2. **Decide the open items** in publisher.md: legal name (individual or company), countries (proposed: no restriction), `developerName`.
 3. **Fix blocker 1 and 2** above and release.
 4. **Reviewer account.** Create it, verify its email, run the seed script with your own credentials (reviewer-account.md). Do not commit or paste the credentials anywhere but the Review details form.
-5. **Run the 8 cases** in ChatGPT against the reviewer account (review-cases.md), on desktop **and** on the ChatGPT mobile app (the guidelines ask for both). Tidy the account afterwards.
+5. **Run the 9 cases** in ChatGPT against the reviewer account (review-cases.md), on desktop **and** on the ChatGPT mobile app (the guidelines ask for both). Tidy the account afterwards.
 6. **Record the demo** (demo-video.md), upload it unlisted, check the link in a private window.
 7. **Finish the package:** add `"demo_recording_url": "<link>"` inside `extensions.com.openai.review` in package/plugin.json. Build the ZIP from the **contents** of `package/` (plugin.json, mcp.json and assets/ at the top level of the ZIP, not inside a folder). No secrets in it.
 8. **Upload.** At https://platform.openai.com/plugins choose **Upload new or existing plugin**, then **Upload plugin**. Fix anything under **Metadata & Skills > Issues** (Copy issues, fix, **Upload plugin to fix issues**). The negative test case field names in our draft (`description`, `prompt`, `expected_behavior`) are a best guess; OpenAI's page names only the positive ones. If the upload flags them, rename to what it asks for.
 9. **Hosted connection.** Open **MCPs**, select the server, **Connect**. Check: URL `https://app.notiveloapp.com/mcp`, authentication OAuth, client registration CIMD, no extra headers. Do the domain verification: copy the token to the homelab session, which sets `OPENAI_APPS_CHALLENGE` on production and restarts (blocker 1), then verify. Connect and sign in (your own account is fine here, or the reviewer account).
-10. **Automated tool scan.** Wait for it, review the discovered tools (12: 7 read, 5 write; no delete tools) and any **Issues**. Use **Rescan** after fixes.
+10. **Automated tool scan.** Wait for it, review the discovered tools (14: 7 read, 7 write; the only deletes are `delete_task` and `turn_into_note`, both `destructiveHint: true`) and any **Issues**. Use **Rescan** after fixes.
 11. **Test the saved version.** Before submitting, use the connected draft in ChatGPT and run the review cases once more, so what reviewers get is what you tested.
 12. **Review details.** In **Metadata & Skills > Review information > Review details**, check the imported test cases, enter the reviewer email and password, login URL, workspace and sign-in steps (reviewer-account.md, section 4), and **Save details**.
 13. **Submit.** Select the draft, **Submit for review**, and complete the policy attestations (OpenAI does not publish their wording; read each one, they cover usage policies, privacy and data use). Only one review can be active at a time.

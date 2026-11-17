@@ -15,7 +15,7 @@
       "interface": {
         "displayName": "Notivelo",
         "shortDescription": "Your notes and tasks in chat",
-        "longDescription": "Notivelo is a notes and tasks app: workspaces, notebooks, sections and pages, with tasks that live inside your notes. Connect your Notivelo account to ChatGPT to find, read and write your notes from a conversation.\n\nWhat you can ask ChatGPT to do\n- Find notes: search page titles and text across your workspaces, or browse your notebooks, sections and pages.\n- Read a page: get a page's text box by box, with the tasks on it and their notes.\n- Write notes: create a page in a section, add text to the end of a page or of one text box, or rewrite one text box. Headings, lists, tables and \"- [ ]\" to-do lines become Notivelo formatting and real tasks.\n- Manage tasks: list open or completed tasks, see one task with its subtasks, create a task (on a page, in a workspace, or as a subtask), and tick, reopen, rename, reschedule, reprioritise or reassign it.\n\nWho it is for\nPeople and small teams who keep meeting notes, project plans and to-do lists in Notivelo and want ChatGPT to summarise them, draft new pages, tidy up a page or turn a conversation into tasks.\n\nYou stay in control\n- You sign in to Notivelo and choose what ChatGPT may do: read only, or read and edit. You can disconnect at any time in Notivelo, Settings > Connected apps.\n- ChatGPT acts as you and sees only what you can see in Notivelo.\n- It cannot delete anything: no pages, sections, notebooks or tasks.\n- Locked pages are never shown to ChatGPT, not even their titles.\n- Every change shows in the page's activity as made through ChatGPT, and the page keeps a version from before the change, so you can restore it from Version history.\n\nLimitations\n- Images and file attachments are not read or written.\n- Very long pages are cut off, with a notice saying so.\n- There are limits on how much text can be written at once and how many changes can be made in a short time.\n- You need a Notivelo account. You can create one at app.notiveloapp.com.",
+        "longDescription": "Notivelo is a notes and tasks app: workspaces, notebooks, sections and pages, with tasks that live inside your notes. Connect your Notivelo account to ChatGPT to find, read and write your notes from a conversation.\n\nWhat you can ask ChatGPT to do\n- Find notes: search page titles and text across your workspaces, or browse your notebooks, sections and pages.\n- Read a page: get a page's text box by box, with the tasks on it and their notes.\n- Write notes: create a page in a section, add text to the end of a page or of one text box, or rewrite one text box. Headings, lists, tables and \"- [ ]\" to-do lines become Notivelo formatting and real tasks.\n- Manage tasks: list open or completed tasks, see one task with its subtasks, create a task (on a page, in a workspace, or as a subtask), tick, reopen, rename, reschedule, reprioritise or reassign it, delete it, or turn a subtask into a plain note line.\n\nWho it is for\nPeople and small teams who keep meeting notes, project plans and to-do lists in Notivelo and want ChatGPT to summarise them, draft new pages, tidy up a page or turn a conversation into tasks.\n\nYou stay in control\n- You sign in to Notivelo and choose what ChatGPT may do: read only, or read and edit. You can disconnect at any time in Notivelo, Settings > Connected apps.\n- ChatGPT acts as you and sees only what you can see in Notivelo.\n- It cannot delete pages, sections or notebooks. It can delete a task, or turn a subtask into a note line, when you ask it to.\n- Locked pages are never shown to ChatGPT, not even their titles.\n- Every change shows in the page's activity as made through ChatGPT, and the page keeps a version from before the change, so you can restore it from Version history.\n\nLimitations\n- Images and file attachments are not read or written.\n- Very long pages are cut off, with a notice saying so.\n- There are limits on how much text can be written at once and how many changes can be made in a short time.\n- You need a Notivelo account. You can create one at app.notiveloapp.com.",
         "developerName": "Notivelo",
         "category": "Productivity",
         "capabilities": ["Read", "Write"],
@@ -63,11 +63,17 @@
             "prompt": "In Notivelo, add a task \"Order launch flyers from Harbor Print Co.\" to the Supplier shortlist page, due next Friday, high priority. Then mark \"Book the photographer\" as done.",
             "tools_triggered": ["search_pages", "create_task", "list_tasks", "update_task"],
             "expected_behavior": "A new task with that title appears on the Supplier shortlist page, due next Friday, priority high. The task \"Book the photographer\" is marked done. Both show in Notivelo's task views."
+          },
+          {
+            "description": "Delete a task the user names (tasks are the only thing the connector can delete).",
+            "prompt": "In Notivelo, add a task \"Temporary reminder\" to my workspace. Then delete it.",
+            "tools_triggered": ["list_workspaces", "create_task", "delete_task"],
+            "expected_behavior": "The task is created, then ChatGPT names it and deletes it after the user confirms. It no longer shows in Notivelo's task views, and the workspace activity says it was deleted through ChatGPT."
           }
         ],
         "negative_test_cases": [
           {
-            "description": "Deleting is not offered: the connector has no delete tools on purpose (deleting is only done in the Notivelo app, where it goes to the Trash).",
+            "description": "Pages cannot be deleted: the only delete tool is delete_task, for tasks (pages, sections and notebooks are deleted only in the Notivelo app, where they go to the Trash).",
             "prompt": "Delete my Notivelo page \"Launch checklist\".",
             "expected_behavior": "No write tool is called (search_pages to find the page is fine). ChatGPT explains it cannot delete pages through Notivelo and suggests deleting it in the app. The page still exists."
           },
@@ -85,7 +91,7 @@
         "commerce": false
       },
       "publication": {
-        "release_notes": "First release: search, read and write Notivelo pages and tasks from ChatGPT. No delete tools; locked pages are never visible."
+        "release_notes": "First release: search, read and write Notivelo pages and tasks from ChatGPT. Tasks can be deleted; pages, sections and notebooks cannot. Locked pages are never visible."
       }
     }
   }
