@@ -325,8 +325,14 @@ const COLUMNS: Record<keyof TaskPatch, string> = {
 export function canMoveTask(taskId: string, userId: string): boolean {
   const task = getTask(taskId);
   if (!task || !atLeast(roleIn(task.workspaceId, userId), 'member')) return false;
-  return !task.pageId || !!pageAccess(task.pageId, userId)?.canEdit;
+  return !task.pageId || editsTasksOn(pageAccess(task.pageId, userId));
 }
+
+/**
+ * May whoever has this access to a page edit the tasks living on it? Its editors, and, while the page is in Trash
+ * (read-only), the members who could restore it: its tasks stay in the task views, so they must stay workable.
+ */
+const editsTasksOn = (a: ReturnType<typeof pageAccess>) => !!a && (a.canEdit || !!a.trashed);
 
 /**
  * Throws unless `userId` may change (or delete) the task. Returns whether they're a workspace member.
@@ -341,7 +347,7 @@ function mustEditTask(task: Task, userId: string, patch?: TaskPatch): boolean {
     return true;
   }
   const a = pageAccess(task.pageId, userId);
-  if (a?.canEdit) return !!role;
+  if (editsTasksOn(a)) return !!role;
   const statusOnly = !!patch && Object.keys(patch).every((k) => k === 'status');
   if (statusOnly && task.assigneeId === userId && (role || a)) return !!role;
   if (!role && !a) throw new HttpError(404, 'Task not found');

@@ -278,3 +278,19 @@ test('tasks on a trashed page or notebook stay visible to workspace members (not
   assert.ok((await tasks(t.member, t.ws)).some((x) => x.id === task2.id), 'still listed for another member');
   assert.ok((await tasks(t.admin, t.ws)).some((x) => x.id === task2.id));
 });
+
+test('tasks on a trashed page can still be completed, edited and deleted by members; viewers still cannot', async () => {
+  const t = await team();
+  const p = await newPage(t.owner, t.general, 'Workable in Trash');
+  const make = async (title: string) => (await app.call('POST', `/workspaces/${t.ws}/tasks`, t.owner.token, { title, pageId: p })).data.id as string;
+  const a = await make('Tick me');
+  const b = await make('Delete me');
+  const c = await make('Viewer cannot');
+  await app.call('DELETE', `/pages/${p}`, t.owner.token);
+  const done = await app.call('PATCH', `/tasks/${a}`, t.member.token, { status: 'done', title: 'Ticked' });
+  assert.equal(done.status, 200, 'a member (not the assignee) completes and renames it');
+  assert.equal(done.data.status, 'done');
+  assert.equal((await app.call('DELETE', `/tasks/${b}`, t.member.token)).status, 200, 'a member deletes it');
+  assert.ok(!(await tasks(t.owner, t.ws)).some((x) => x.id === b), 'deleted');
+  assert.equal((await app.call('PATCH', `/tasks/${c}`, t.viewer.token, { status: 'done' })).status, 403, 'viewers stay read-only');
+});
