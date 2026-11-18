@@ -2,6 +2,13 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.12
+
+A server-only release; the desktop and App Store apps are unchanged.
+
+### Fixed
+- **Tasks on a note in Trash can be completed, edited and deleted again.** The note stays in Trash read-only, but its tasks stay in the task list, and changing them failed with "You have view-only access". Members who could restore the note can now work its tasks; viewers still can't.
+
 ## v1.5.11
 
 A server-only release (the AI connector); the desktop and App Store apps are unchanged.
