@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type TouchEvent as ReactTouchEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Editor } from '@tiptap/react';
-import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate } from 'lucide-react';
+import { ChevronRight, CircleCheck, MoreHorizontal, Trash2, CloudOff, Check, Loader, FolderInput, ListTodo, MessageSquare, Copy, SmilePlus, FileText, History, FileDown, FileUp, Printer, LayoutTemplate, Undo2, Redo2 } from 'lucide-react';
+import type * as Y from 'yjs';
+import { pageUndoFor } from '../editor/pageUndo.ts';
 import { api, get, patch, post, ApiError } from '../api.ts';
 import { errorToast, loadTree, toast, useStore } from '../store.ts';
 import { moveToTrash } from '../lib/trash.ts';
@@ -323,6 +325,7 @@ export function PageView() {
           </div>
           <div className="topbar-right">
             <PresenceStack users={presence} following={follow.id} onFollow={follow.start} />
+            {canvas && canEdit && <PhoneHistory doc={canvas.doc} />}
             <SaveIndicator status={status} save={save} />
             {!canEdit && <span className="chip">View only</span>}
             <button
@@ -458,6 +461,27 @@ function useRuleArea(scroller: HTMLElement | null, article: HTMLElement | null) 
     return () => ro.disconnect();
   }, [scroller, article]);
   return area;
+}
+
+/**
+ * Undo / Redo for phones, which have no ribbon (CSS shows these only at phone widths). They act on the page's
+ * history (pageUndo.ts), like the ribbon's: the most recent change, whichever box it was in. Pressing them keeps
+ * the keyboard and the selection where they are (mousedown is prevented).
+ */
+function PhoneHistory({ doc }: { doc: Y.Doc }) {
+  const page = pageUndoFor(doc);
+  useSyncExternalStore(page.subscribe, page.getVersion);
+  const keep = (e: { preventDefault(): void }) => e.preventDefault();
+  return (
+    <span className="phone-history">
+      <button type="button" className="btn-ghost icon-btn" aria-label="Undo" title="Undo" disabled={!page.canUndo()} onMouseDown={keep} onClick={() => void page.undo()}>
+        <Undo2 size={18} aria-hidden />
+      </button>
+      <button type="button" className="btn-ghost icon-btn" aria-label="Redo" title="Redo" disabled={!page.canRedo()} onMouseDown={keep} onClick={() => void page.redo()}>
+        <Redo2 size={18} aria-hidden />
+      </button>
+    </span>
+  );
 }
 
 /** "Saved" / "Saving…" / "Offline": everything typed is in IndexedDB at once and on the server shortly after. */

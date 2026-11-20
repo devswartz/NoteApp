@@ -1042,6 +1042,8 @@ body.is-resizing .sidebar { transition: none; }
 .crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: 13px; }
 .crumb { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+/* Undo / Redo in the page bar: phones only (wider screens have them in the ribbon). */
+.phone-history { display: none; }
 .presence { display: flex; }
 .presence .avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--bg); }
 .sync { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); padding: 0 6px; }
@@ -1871,6 +1873,8 @@ body.is-resizing .sidebar { transition: none; }
   .sync-label, .crumbs { display: none; }
   /* Without its word, a lone tick looks like a button: show the indicator only while saving, connecting or offline. */
   .sync.save-saved { display: none; }
+  .phone-history { display: inline-flex; gap: 2px; }
+  .phone-history .icon-btn:disabled { opacity: 0.35; }
   .page-article { padding: 12px 20px 40vh; }
   .page-title { font-size: 28px; }
   .ProseMirror { font-size: 16.5px; }
