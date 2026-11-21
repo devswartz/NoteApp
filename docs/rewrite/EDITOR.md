@@ -5,7 +5,7 @@ The design of `crates/nv-editor`, the text editing engine every native app drive
 ## 1. What it is, and what it isn't
 
 - **It is**: one text box's editing state (document, selection, focus, history), the commands that change it, input rules, the keymap, the clipboard, and the binding to that box's fragment in the page's yrs document. Plus the page-level undo that spans boxes.
-- **It isn't**: layout, drawing, text input protocols, the canvas (box geometry, pan, zoom), ink, the network or the task store. The view (TextKit 2, Android `Layout`, DirectWrite, DOM) lays out and draws; the core owns sync and tasks. The engine reaches tasks through a small trait (5).
+- **It isn't**: layout, drawing, text input protocols (how they map onto the engine: 10), the canvas (box geometry, pan, zoom), ink, the network or the task store. The view (TextKit 2, Android `Layout`, DirectWrite, DOM) lays out and draws; the core owns sync and tasks. The engine reaches tasks through a small trait (5).
 
 ## 2. Document model
 
@@ -78,7 +78,7 @@ Recorded difference: in today's editor, type, undo, type something else, then re
 
 ## 8. Testing
 
-- `crates/nv-editor/tests/suite.rs` reads every `tests/editor/scenarios/*.json` file, builds the state from `doc` (the notation, parsed in `notation.rs`), plays the steps through the same API the views use (`type` → `insert_text` per character; `key` → `key(chord)`; `command` → the command; `paste`/`copy`), with a fake `TaskHost` and a manual clock, and compares the serialised result. Scenarios skipped for `rust` are listed with their reasons; the test prints a pass count per file and fails on any regression.
+- `crates/nv-editor/tests/suite.rs` reads every `tests/editor/scenarios/*.json` file, builds the state from `doc` (the notation, parsed in `notation.rs`), plays the steps through the same API the views use (`type` → `insert_text` per character; `key` → `key(chord)`; `command` → the command; `paste`/`copy`; `compose` / `commitComposition` / `cancelComposition` → the composition calls; `replace` → `replace_range`), with a fake `TaskHost` and a manual clock, and compares the serialised result. Scenarios skipped for `rust` are listed with their reasons; the test prints a pass count per file and fails on any regression.
 - Unit tests next to each module for positions, steps and the yrs diff (round trips: tree → fragment → tree).
 - Later: two engines on one yrs doc (concurrent edits merge, carets survive), and the same scenarios run on the web through WASM.
 
@@ -91,3 +91,109 @@ Recorded difference: in today's editor, type, undo, type something else, then re
 5. Tables, callouts, toggles, page links, mentions.
 6. Clipboard.
 7. Page-wide undo across boxes; Core API (`nv-core`) editor sessions for the apps.
+
+## 10. Native text input
+
+How each platform's text input protocol maps onto engine calls. The view owns the protocol object (it has to: the OS calls it, and geometry questions need the view's layout); the engine owns the text, the selection and the composition. Code: `crates/nv-editor/src/input.rs` (the view's text, `replace_range`), `compose.rs` (marked text); in the Core API, `EditorSession` (`crates/nv-core/src/editor_session.rs`). Suite: `tests/editor/scenarios/input.json`.
+
+### 10.1 The view's text
+
+**One string for the whole box**, from `Editor::text_for_view() -> ViewText`: each text block is a line, lines joined by `\n`; inside a line a hard break is `\n` and any other inline atom (mention, page link, inline image) is U+FFFC; a block with no text of its own (rule, image, file, a task line, whose title has its own field) is a line holding one U+FFFC; a task's notes follow its line as lines of their own.
+
+Why one string and not one per block: every protocol here models one editable text (UITextInput's document, `NSTextInputClient`'s character indexes, Android's `Editable`, `CoreTextEditContext`'s text); selections can span blocks (select all, then type or dictate over it); IMEs and autocorrect read context across line breaks (capitalisation after a new paragraph); and a per-block model would make the view re-target the input client whenever the caret crosses a block. The cost is building the string for large boxes: the view caches it per state, and Android can be given a window of it (`getExtractedText` takes a start offset).
+
+**Offsets are UTF-16 code units**, the unit of `NSString`, Java `String`, WinRT `HSTRING`, DOM strings and engine positions. Inside a line an offset moves exactly as a position does (text 1:1, an atom 1 unit as U+FFFC or `\n`), so mapping is a lookup of the line, then addition:
+
+- `ViewText::to_pos(offset)` / `Editor::view_offset_to_pos`: the end of a line is the end of its block's content, the start of the next line the start of the next block's; on an object line, offset 0 is the position before the node and 1 the position after it.
+- `ViewText::to_offset(pos)` / `Editor::pos_to_view_offset`: a position between blocks (entering a list, an item) goes to the start of the next line.
+- `ViewText::slice(from, to)` for `textInRange`, `getTextBeforeCursor` and the like.
+- The selection the view reports: a text selection maps its anchor and head; a node selection is its U+FFFC (`offset..offset+1`); select-all is `0..len`. A selection the platform sets that covers exactly one object line's U+FFFC becomes `select_node`.
+- The composition the view reports (`markedTextRange`, the composing span) is `EditorState.composing` mapped the same way.
+
+In the Core API: `EditorSession::text_for_view()`, `view_offset_to_pos(u32)`, `pos_to_view_offset(u32)`.
+
+### 10.2 Engine calls
+
+| Engine call | What it does | Comes from |
+|---|---|---|
+| `insert_text(s)` | Typed text over the selection; input rules run. While composing (session), it commits the composition with `s`. | Keyboard text, an IME commit with no range |
+| `replace_range(from, to, s)` | Replaces positions `from..to` without moving the selection there first. The new text takes the marks of the first character it replaces (the caret's marks at `from` for an empty range); **no input rules** (autocorrect shouldn't turn `- ` into a list); its own undo step; the selection is mapped (before the range it stays, after it it shifts, inside it it goes after the new text). A range whose ends aren't in text is refused (false); one spanning blocks joins them, and task lines it removes are deleted as with any edit. In a task title, `from..to` are offsets in the title. | Autocorrect, spell-check, the predictive bar, dictation results, reconversion, accent menus, handwriting gestures |
+| `set_composition(s, sel)` | Shows marked text in place of the selection the composition began on; `sel` is the selection inside it. Nothing is written to the page and no rules run until it ends. | `setMarkedText`, `setComposingText`, `TextUpdating` while composing |
+| `commit_composition(s)` | Ends it with `s`: back to the state before it, then `insert_text(s)` once (rules run, one change, one undo step). Empty `s` deletes the selection it replaced. | `insertText` while marked, `commitText` while composing |
+| `finish_composition()` (engine: `end_composition`) | Commits the marked text as it stands. | `unmarkText`, `finishComposingText`, `CompositionCompleted`, focus loss |
+| `cancel_composition()` | The marked text goes, and so does the selection it replaced (as in Chromium and Android). | Escape in an IME, an emptied composition |
+| `key(chord)` | Keys: `Enter`, `Shift+Enter`, `Backspace`, `Delete`, `Tab`, `Mod+b`, ... | Key events, and protocol calls that are keys in disguise (below) |
+| `set_selection(anchor, head)` / `select_node(pos)` | The platform moves the caret or selection. | Taps, handles, IME cursor moves |
+| `undo()` / `redo()` | | The platform's undo (`UndoManager`, `historyUndo`) |
+
+**Keys and text take separate paths.** A view sends chords (anything with Mod, Ctrl or Alt; Enter, Tab, Backspace, Delete, Escape; the arrows the engine handles, such as Alt+Shift+ArrowUp) to `key()`, and lets text arrive through the input protocol, never as chords, so dead keys, IMEs, dictation and software keyboards all take one road. While a composition is open, keys go to the input method first (AppKit `inputContext.handleEvent`; the IME's own handling on the others), not to `key()`. Three protocol calls are keys in disguise and go to `key()`, so list, task and table rules apply:
+
+- a newline inserted as text (`insertText("\n")` from the iOS Return key, `commitText("\n")`, `TextUpdating` with `\r`) is `key("Enter")`;
+- deleting exactly the one character before an empty selection (`deleteBackward`, `deleteSurroundingText(1, 0)`, a one-character `TextUpdating` deletion) is `key("Backspace")`;
+- a tab inserted as text is `key("Tab")`.
+
+**After the engine changes text or selection** for any reason other than the protocol call being handled (a remote edit, a ribbon command, undo, a hardware key the engine took), the view tells the platform, so the keyboard drops stale autocorrect state and recomputes capitalisation: UIKit `inputDelegate.selectionWillChange` / `textWillChange` before and `textDidChange` / `selectionDidChange` after; AppKit `inputContext.invalidateCharacterCoordinates` (and `discardMarkedText` if a composition was dropped); Android `InputMethodManager.updateSelection` (and `restartInput` if text under an open composition changed); Windows `NotifyTextChanged(range, newLength, selection)` / `NotifySelectionChanged`. They are not sent from inside the protocol's own calls (UIKit and Android IMEs misbehave when told about their own edits), except Android's `updateSelection`, which follows every change.
+
+### 10.3 UIKit (UITextInput, TextKit 2)
+
+The box view adopts `UITextInput`, with `UITextPosition` / `UITextRange` subclasses holding view offsets (10.1) and `UITextInputStringTokenizer` as the tokenizer.
+
+- `insertText(_:)` → `insert_text` (commits while marked); `"\n"` → `key("Enter")`.
+- `deleteBackward()` → `key("Backspace")`.
+- `setMarkedText(_:selectedRange:)` → `set_composition(text, sel.location, sel.location + sel.length)`; nil text is an empty composition. `unmarkText()` → `finish_composition()`. `markedTextRange` from `composing`; `markedTextStyle` is ignored (the view draws the underline).
+- `replace(_:withText:)` → `replace_range(to_pos(start), to_pos(end), text)`: autocorrect, the predictive bar, spell-check suggestions and dictation results arrive here.
+- `selectedTextRange`: get maps the selection; set → `set_selection` (or `select_node` for one object line's U+FFFC).
+- `text(in:)` → `ViewText::slice`; `position(from:offset:)` and `offset(from:to:)` are offset arithmetic clamped to `0...len`; `position(from:in:offset:)` is offset arithmetic left and right and asks the layout up and down; `beginningOfDocument` is 0, `endOfDocument` is `len`.
+- `firstRect(for:)`, `caretRect(for:)`, `selectionRects(for:)`, `closestPosition(to:)`, `characterRange(at:)`: TextKit 2 layout, never the engine.
+- `baseWritingDirection(for:in:)` → `.natural`; `setBaseWritingDirection(_:for:)` does nothing (the schema has no direction attribute yet).
+- `UITextInteraction(for: .editable)` on the view gives the caret, handles, loupe and tap gestures; they reach the engine through `selectedTextRange`.
+- **Scribble**: a `UITextInput` view gets Scribble on iPad through the plain text-input path (writing arrives as `insertText` / `replace`, scratch-out as `replace` with `""`). `UIIndirectScribbleInteraction` on the canvas lets people write where there is no box yet (`focusElementIfNeeded` makes a box and returns its view). Scribble is off while an ink tool is chosen (`UIScribbleInteractionDelegate` `shouldBeginAt` → false).
+- **Undo**: the view's `undoManager` is a small `UndoManager` subclass whose `undo()` / `redo()` call the engine and whose `canUndo` / `canRedo` ask it, so shake, the three-finger swipe and the iPad shortcut bar undo engine steps. Hardware Cmd+Z goes to `key("Mod+z")` and must not also reach the `UndoManager`.
+- `inputDelegate` notifications as in 10.2.
+
+### 10.4 AppKit (NSTextInputClient)
+
+- `insertText(_:replacementRange:)`: `replacementRange.location == NSNotFound` → `insert_text` (commits while marked); a range (press-and-hold accents, the character viewer, reconversion) → `replace_range`.
+- `setMarkedText(_:selectedRange:replacementRange:)`: with a replacement range and no composition open, `set_selection` to it first; then `set_composition(text, sel)`. `unmarkText()` → `finish_composition()`. `hasMarkedText`, `markedRange` and `selectedRange` from the state, mapped.
+- `attributedSubstring(forProposedRange:actualRange:)` → `ViewText::slice` (with the font, for the candidate window); `validAttributesForMarkedText` → `[]`.
+- `firstRect(forCharacterRange:actualRange:)` and `characterIndex(for:)`: the view's TextKit 2 layout, in screen coordinates.
+- Keys: in `keyDown`, an open composition sends the event to `inputContext.handleEvent` first; otherwise chords go to `key()`, and what it doesn't take to `interpretKeyEvents`, whose `doCommand(by:)` selectors map to keys (`insertNewline:` → Enter, `insertLineBreak:` → Shift+Enter, `deleteBackward:` → Backspace, `deleteForward:` → Delete, `insertTab:` / `insertBacktab:` → Tab / Shift+Tab) or to the view's caret movement (`moveLeft:`, `moveWordRight:`, ...: layout, then `set_selection`).
+
+### 10.5 Android (InputConnection)
+
+The view returns its own `InputConnection` (no `Editable` mirror) from `onCreateInputConnection`, with `EditorInfo.initialSelStart` / `initialSelEnd` set.
+
+- `commitText(text, newCursorPosition)`: while composing → `commit_composition(text)`; over a composing region the view holds (below) → `replace_range(region, text)`; else `insert_text`. `"\n"` → `key("Enter")`. A `newCursorPosition` other than 1 is applied with `set_selection` afterwards.
+- `setComposingText(text, newCursorPosition)` → `set_composition` (caret at the end, or where `newCursorPosition` puts it); over a region the view holds, `set_selection(region)` first.
+- `setComposingRegion(start, end)` (Gboard going back into a word): the view remembers the region and tells the engine nothing; the next `setComposingText` or `commitText` uses it; `finishComposingText` forgets it.
+- `finishComposingText()` → `finish_composition()`.
+- `deleteSurroundingText(before, after)`: `(1, 0)` with an empty selection → `key("Backspace")`; otherwise `replace_range(…, "")` after the selection first, then before it (so offsets hold); `deleteSurroundingTextInCodePoints` the same, counted in code points.
+- `sendKeyEvent` → `key()` (DEL, ENTER, hardware keys); printable characters from hardware keys come through `commitText`.
+- `getTextBeforeCursor(n)`, `getTextAfterCursor(n)`, `getSelectedText` → `ViewText::slice`; `getCursorCapsMode` from the text before the caret.
+- `setSelection(start, end)` → `set_selection`.
+- `getExtractedText(request, flags)` → the string (or a window of it, with `startOffset`), the selection and `partialStartOffset = -1`; with `GET_EXTRACTED_TEXT_MONITOR` the view sends `updateExtractedText` after changes.
+- `beginBatchEdit` / `endBatchEdit`: the engine applies each call at once; the view holds its `updateSelection` until the batch ends.
+- After every change, the IME's included: `InputMethodManager.updateSelection(view, selStart, selEnd, composingStart, composingEnd)` (-1 when not composing). `requestCursorUpdates` → `CursorAnchorInfo` from the layout. `performContextMenuAction` (select all, cut, copy, paste) → the engine's. Stylus handwriting gestures (`performHandwritingGesture`, Android 14) → `set_selection` / `replace_range`.
+
+### 10.6 Windows (CoreTextEditContext)
+
+- `TextRequested` → `Request.Text = slice(Request.Range)`; `SelectionRequested` → the selection, mapped.
+- `TextUpdating(Range, Text, NewSelection)`: between `CompositionStarted` and `CompositionCompleted` it edits the marked text: the view applies `Range` / `Text` to the composition string it holds and calls `set_composition(that string, NewSelection relative to the composition's start)`. When not composing, a `Range` equal to the selection → `insert_text(Text)` (with the key cases of 10.2 going to `key()`); any other `Range` → `replace_range`. Then `set_selection(NewSelection)` if the engine left the caret elsewhere. `Result = Succeeded`.
+- `SelectionUpdating` → `set_selection`.
+- `FormatUpdating` (the IME's segment underlines and colours) → the view's drawing of the marked text only.
+- `CompositionStarted` → nothing (the engine's composition starts with the first `TextUpdating`); `CompositionCompleted` and `FocusRemoved` → `finish_composition()`.
+- `LayoutRequested` → text and control bounds from the view's DirectWrite layout.
+- Keys: `KeyDown` chords and editing keys → `key()`; characters come through `TextUpdating`, so `CharacterReceived` isn't used for text.
+- After engine changes: `NotifyTextChanged(modifiedRange, newLength, newSelection)`, `NotifySelectionChanged`, `NotifyLayoutChanged`; `NotifyFocusEnter` / `NotifyFocusLeave` with the box's focus.
+
+### 10.7 Web (later, when the web runs the engine through WASM)
+
+`beforeinput` carries the same intents: `insertText` → `insert_text`; `insertReplacementText` (with `getTargetRanges()`) → `replace_range`; `insertCompositionText` with `compositionstart` / `compositionupdate` / `compositionend` → `set_composition` / `commit_composition`; `deleteContentBackward` → `key("Backspace")`; `insertParagraph` → `key("Enter")`; `insertLineBreak` → `key("Shift+Enter")`; `historyUndo` / `historyRedo` → `undo` / `redo`; `insertFromPaste` → `paste`. Chromium's `EditContext` is modelled on `CoreTextEditContext` and maps as 10.6 does.
+
+### 10.8 Recorded behaviour (today's editor, `input.json`)
+
+- Composition commits run input rules: `- ` committed through an IME makes a list, in one composition or two.
+- Cancelling a composition that replaced a selection leaves the selection deleted (Chromium deletes it when the composition starts); committing empty text does the same.
+- Undo after a committed composition takes the whole commit away in one step.
+- A replacement keeps the marks of the first replaced character (`I saw *teh*` → `*the*`; replacing `b**c**` gives plain text).
+- Difference, on purpose: today's editor reads a replacement as typed text (ProseMirror's `handleTextInput`), so input rules run on autocorrect and dictation corrections; the engine's `replace_range` doesn't (`input/replacement doesn't run input rules`, skipped on TipTap).
