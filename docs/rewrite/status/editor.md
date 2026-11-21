@@ -2,6 +2,20 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-21: what the session offers a native view, step 3 (branch `rewrite/editor-native-view`)
+
+Branched from `origin/rewrite/native`. Fills the gaps an iPad `UITextInput` / TextKit 2 box view hits (EDITOR.md 10.1, 10.3 updated where the API changed).
+
+- **Apple's requests**: `origin/rewrite/apple-edit` has `docs/rewrite/status/apple.md`, but it lists no requests to the editor (only core: non-blocking `openPage`, `LivePage` reconnect, locked pages). Nothing to answer; the API below is what its editing step will need.
+- **View offsets** (`EditorSession`): `view_state() -> ViewState` (text, len, line table `[ViewLine]`: offset, len, pos, `is_text`, `kind`, heading `level`, `containers`, list `marker` as exports number it, checklist `checked`, `task_id`; the selection as `ViewRange`; `marked: ViewMarked` with the selection inside it), `view_selection()`, `set_view_selection(anchor, head)` (one object line's U+FFFC selects the node, the whole string is select-all, a caret on an object line goes to the nearest text), `replace_view_range(from, to, text)`. Rects stay the view's.
+- **Slash menu**: `EditorSuggestion` gains `view_from` / `view_to` (popup anchor), `items: [SuggestionItem]` (id = title, label, description, Lucide icon name; from `SlashMenu.tsx`) and `highlighted`. `key()` takes ArrowUp/ArrowDown (highlight, wrapping) and Enter/Tab (the highlighted row, first by default; was always the first) while a slash menu is open; `move_suggestion_highlight(delta)`, `pick_suggestion()`, `dismiss_suggestion()`; engine commands `moveHighlight {delta}`, `pickHighlighted`. Typing resets the highlight.
+- **Undo**: `can_undo()` / `can_redo()` (and in `EditorState`); the engine's `Clock` is now monotonic (`Instant`, not `SystemTime`). `EditorSession::open_with_clock(.., Clock)` (Rust only, not exported) for tests.
+- **Clipboard**: already complete (paste text/plain + text/html, copy/cut return both); now tested through view selections. No internal format added (the HTML already carries task refs, mentions and page links).
+- **Engine** (`crates/nv-editor`): `ViewLine` fields above; `Editor::view_selection`, `set_view_selection`, `view_composition`, `slash_highlight`, `move_slash_highlight`, `pick_highlighted_slash`, `can_undo`, `can_redo`; `suggest::SLASH_DETAILS` / `slash_details`. 2 new unit tests (19).
+- **Tests**: `crates/nv-core/tests/editor_session.rs` 8 → 14 (line table and selections, marked text, slash rows/highlight/anchor, clipboard, undo grouping on a manual clock, a real-clock smoke test). Suite 147/147, ratchet unchanged. `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` green.
+- **Requests to core**: none.
+- **Left**: task titles in view offsets (a focused title is its own field; the view edits it through the same calls with title offsets, untested on a view); `[[` / `@` highlight is the view's; the line table is rebuilt per `view_state()` call (fine for boxes, worth caching for huge ones); the TipTap suite doesn't know the slash highlight keys (no scenario added).
+
 ## 2026-11-21: TipTap suite flake on CI fixed (branch `rewrite/editor-input`)
 
 - **Cause**: Rewrite run 44920734045 failed `tasks/Backspace in an empty task title makes a plain line` (tasks want `{}`, got `{"t1":{"title":"A"}}`). Not focus timing: the previous scenario's task create / title save (title "A") was still in flight on the slower runner, and its reply landed after the next scenario's `nv.load`, putting that task back in the store.

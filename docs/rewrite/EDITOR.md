@@ -110,7 +110,7 @@ Why one string and not one per block: every protocol here models one editable te
 - The selection the view reports: a text selection maps its anchor and head; a node selection is its U+FFFC (`offset..offset+1`); select-all is `0..len`. A selection the platform sets that covers exactly one object line's U+FFFC becomes `select_node`.
 - The composition the view reports (`markedTextRange`, the composing span) is `EditorState.composing` mapped the same way.
 
-In the Core API: `EditorSession::text_for_view()`, `view_offset_to_pos(u32)`, `pos_to_view_offset(u32)`.
+In the Core API: `EditorSession::text_for_view()`, `view_offset_to_pos(u32)`, `pos_to_view_offset(u32)`; and in view offsets throughout, `view_state() -> ViewState` (the string, its length, the **line table** `lines: [ViewLine]` with each line's offset, length, position, `is_text`, block `kind`, heading `level`, `containers` from the box down, list `marker` (`•`, `1.`, `b)`), checklist `checked` and a task line's `task_id`; the `selection` as anchor/head; the `marked` range and the selection inside it), `view_selection()`, `set_view_selection(anchor, head)` (the select-node and select-all rules above; a caret on an object line goes to the nearest text), `replace_view_range(from, to, text)`. Rects are the view's layout of the lines; the core only gives offsets. The open menu's `EditorSuggestion` has `view_from` / `view_to` to anchor the popup.
 
 ### 10.2 Engine calls
 
@@ -140,16 +140,17 @@ The box view adopts `UITextInput`, with `UITextPosition` / `UITextRange` subclas
 
 - `insertText(_:)` → `insert_text` (commits while marked); `"\n"` → `key("Enter")`.
 - `deleteBackward()` → `key("Backspace")`.
-- `setMarkedText(_:selectedRange:)` → `set_composition(text, sel.location, sel.location + sel.length)`; nil text is an empty composition. `unmarkText()` → `finish_composition()`. `markedTextRange` from `composing`; `markedTextStyle` is ignored (the view draws the underline).
-- `replace(_:withText:)` → `replace_range(to_pos(start), to_pos(end), text)`: autocorrect, the predictive bar, spell-check suggestions and dictation results arrive here.
-- `selectedTextRange`: get maps the selection; set → `set_selection` (or `select_node` for one object line's U+FFFC).
+- `setMarkedText(_:selectedRange:)` → `set_composition(text, sel.location, sel.location + sel.length)`; nil text is an empty composition. `unmarkText()` → `finish_composition()`. `markedTextRange` from `view_state().marked`; `markedTextStyle` is ignored (the view draws the underline).
+- `replace(_:withText:)` → `replace_view_range(start, end, text)` (= `replace_range(to_pos(start), to_pos(end), text)`): autocorrect, the predictive bar, spell-check suggestions and dictation results arrive here.
+- `selectedTextRange`: get → `view_selection()`; set → `set_view_selection` (which selects the node for one object line's U+FFFC).
 - `text(in:)` → `ViewText::slice`; `position(from:offset:)` and `offset(from:to:)` are offset arithmetic clamped to `0...len`; `position(from:in:offset:)` is offset arithmetic left and right and asks the layout up and down; `beginningOfDocument` is 0, `endOfDocument` is `len`.
 - `firstRect(for:)`, `caretRect(for:)`, `selectionRects(for:)`, `closestPosition(to:)`, `characterRange(at:)`: TextKit 2 layout, never the engine.
 - `baseWritingDirection(for:in:)` → `.natural`; `setBaseWritingDirection(_:for:)` does nothing (the schema has no direction attribute yet).
 - `UITextInteraction(for: .editable)` on the view gives the caret, handles, loupe and tap gestures; they reach the engine through `selectedTextRange`.
 - **Scribble**: a `UITextInput` view gets Scribble on iPad through the plain text-input path (writing arrives as `insertText` / `replace`, scratch-out as `replace` with `""`). `UIIndirectScribbleInteraction` on the canvas lets people write where there is no box yet (`focusElementIfNeeded` makes a box and returns its view). Scribble is off while an ink tool is chosen (`UIScribbleInteractionDelegate` `shouldBeginAt` → false).
-- **Undo**: the view's `undoManager` is a small `UndoManager` subclass whose `undo()` / `redo()` call the engine and whose `canUndo` / `canRedo` ask it, so shake, the three-finger swipe and the iPad shortcut bar undo engine steps. Hardware Cmd+Z goes to `key("Mod+z")` and must not also reach the `UndoManager`.
+- **Undo**: the view's `undoManager` is a small `UndoManager` subclass whose `undo()` / `redo()` call the engine and whose `canUndo` / `canRedo` ask it (`can_undo()` / `can_redo()`, also in `state()`; typing groups in 500 ms windows on a monotonic clock), so shake, the three-finger swipe and the iPad shortcut bar undo engine steps. Hardware Cmd+Z goes to `key("Mod+z")` and must not also reach the `UndoManager`.
 - `inputDelegate` notifications as in 10.2.
+- **Slash menu**: `state().suggestion` gives the rows (`items`: id, label, description, Lucide `icon` name) and the `highlighted` row; while it is open, ArrowUp / ArrowDown / Enter / Tab / Escape sent to `key()` move the highlight, pick it and close the menu (or `move_suggestion_highlight`, `pick_suggestion`, `dismiss_suggestion` from taps). For `[[` and `@` the view lists pages or people itself and picks with `pickPage` / `pickMention`.
 
 ### 10.4 AppKit (NSTextInputClient)
 
