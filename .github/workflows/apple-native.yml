@@ -13,7 +13,7 @@ on:
         default: false
   push:
     branches: ['rewrite/**']
-    paths: ['apps/apple/**', '.github/workflows/apple-native.yml']
+    paths: ['apps/apple/**', 'crates/**', 'Cargo.*', '.github/workflows/apple-native.yml']
 
 permissions:
   contents: read
@@ -29,6 +29,7 @@ defaults:
 
 env:
   MARKETING_VERSION_BASE: '1.99'
+  RUST_TOOLCHAIN: '1.99.1' # as rust.yml
 
 jobs:
   apple:
@@ -45,6 +46,18 @@ jobs:
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -1)"
           xcodebuild -version
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: apple-native
+
+      # The NotiveloCore Swift package (target/apple/NotiveloCore), linked by apps/apple/project.yml.
+      - name: Build the core
+        run: bash crates/nv-core/build-xcframework.sh
 
       - name: XcodeGen
         run: |
