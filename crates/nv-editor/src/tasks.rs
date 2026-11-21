@@ -10,7 +10,7 @@ use serde_json::json;
 pub const TASK: &str = "taskRef";
 
 /// The task store, as the editor sees it (the core implements it over `nv-store`).
-pub trait TaskHost {
+pub trait TaskHost: Send {
     /// A new task id (tasks get their ids on the client, as today).
     fn new_id(&mut self) -> String;
     fn create(&mut self, id: &str, title: &str, done: bool);
