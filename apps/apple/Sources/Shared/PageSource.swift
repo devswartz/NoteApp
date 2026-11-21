@@ -78,9 +78,10 @@ extension SessionModel {
     }
 }
 
-/// A page open live, read-only: `Core.openPage` with a listener; every change (anyone's edit,
-/// e.g. in the web app) replaces `info` and the view redraws. Reconnects with a growing delay
-/// when the connection drops; on 4401 (token expired) it reopens at once.
+/// A page open live: `Core.openPage` with a listener; every change (anyone's edit, e.g. in the
+/// web app) replaces `info` and the view redraws. Reconnects with a growing delay when the
+/// connection drops; on 4401 (token expired) it reopens at once. As a `PageEditHost` it gives box
+/// editors the page document and sends their edits (`LivePage.applyUpdate`, on `editQueue`).
 @Observable
 final class LivePageModel: PageSource {
     enum State: Equatable {
@@ -100,6 +101,12 @@ final class LivePageModel: PageSource {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var attempts = 0
     @ObservationIgnored private var isClosed = false
+    /// Moves bytes between box editors and the live page, off the main thread: `LivePage` calls
+    /// take the page's lock, which `close()` holds while it waits for the socket thread.
+    @ObservationIgnored private let editQueue = DispatchQueue(label: "com.devswartz.notivelo.page-edits", qos: .userInitiated)
+    @ObservationIgnored private let tasksStore = LocalTaskCallbacks()
+    @ObservationIgnored var onRemoteChange: (() -> Void)?
+    @ObservationIgnored var onSynced: (() -> Void)?
 
     init(pageId: String, title: String, session: SessionModel) {
         self.pageId = pageId
@@ -109,12 +116,14 @@ final class LivePageModel: PageSource {
 
     var snapshot: PageSnapshot? {
         guard let info else { return nil }
+        let lines = session?.taskLines ?? [:]
+        tasksStore.update(from: lines)
         #if os(macOS)
         let document = live?.document()
         #else
         let document: Data? = nil
         #endif
-        return PageSnapshot(id: pageId, title: title, info: info, tasks: session?.taskLines ?? [:],
+        return PageSnapshot(id: pageId, title: title, info: info, tasks: lines,
                             pageTitles: session?.pageTitles ?? [:], document: document)
     }
 
@@ -183,6 +192,7 @@ final class LivePageModel: PageSource {
             attempts = 0
             state = .live
             if info == nil, let live { info = live.info() }
+            onSynced?()
         case let .closed(code, reason):
             dropConnection()
             switch code {
@@ -207,6 +217,33 @@ final class LivePageModel: PageSource {
         guard gen == generation, !isClosed else { return }
         info = page
         if state == .connecting { state = .live }
+        onRemoteChange?()
+    }
+}
+
+extension LivePageModel: PageEditHost {
+    var taskCallbacks: TaskCallbacks { tasksStore }
+
+    func fetchDocument(_ done: @escaping (Data?) -> Void) {
+        guard let live, !isClosed else {
+            done(nil)
+            return
+        }
+        editQueue.async {
+            let document = live.document()
+            DispatchQueue.main.async { done(document) }
+        }
+    }
+
+    func send(_ update: Data, _ done: @escaping (Bool) -> Void) {
+        guard let live, !isClosed else {
+            done(false)
+            return
+        }
+        editQueue.async {
+            let ok = (try? live.applyUpdate(update: update)) != nil
+            DispatchQueue.main.async { done(ok) }
+        }
     }
 }
 

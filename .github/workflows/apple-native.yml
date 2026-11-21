@@ -102,6 +102,13 @@ jobs:
             xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/$page.png"
             xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
           done
+          # Typing evidence: -demoEdit focuses the first box and types through the same UITextInput calls as the keyboard
+          # (a "- " list rule, Return, and an open IME composition), on a corpus page edited locally (nothing is sent).
+          for page in canvas-boxes lists; do
+            xcrun simctl launch "$UDID" com.devswartz.notivelo -previewSignedIn YES -page "$page" -demoEdit YES > /dev/null && sleep 8
+            xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/edit-$page.png"
+            xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
+          done
           xcrun simctl shutdown "$UDID" || true
       - uses: actions/upload-artifact@v4
         if: always()
