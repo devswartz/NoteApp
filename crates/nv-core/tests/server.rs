@@ -29,6 +29,17 @@ impl PageListener for Events {
     }
 }
 
+#[derive(Default)]
+struct LiveEvents {
+    statuses: Mutex<Vec<LiveStatus>>,
+}
+impl LivePageListener for LiveEvents {
+    fn on_status(&self, s: LiveStatus) {
+        self.statuses.lock().unwrap().push(s);
+    }
+    fn on_change(&self, _: PageInfo) {}
+}
+
 fn wait_for(what: &str, secs: u64, f: impl Fn() -> bool) {
     let start = Instant::now();
     while !f() {
@@ -127,11 +138,15 @@ fn core_against_a_running_server() {
         .unwrap();
     assert!(live.info().text.contains(&marker));
 
-    // A second sign-in sees it live, and sees the first one's presence.
+    // A second sign-in (opening the page the newer, non-blocking way) sees it live, and sees
+    // the first one's presence.
     let other = Core::new(url.clone());
     other.sign_in(email.clone(), password.into()).unwrap();
-    let ev2 = Arc::new(Events::default());
-    let live2 = other.open_page(page.id.clone(), ev2.clone()).unwrap();
+    let ev2 = Arc::new(LiveEvents::default());
+    let live2 = other.open_live_page(page.id.clone(), ev2.clone()).unwrap();
+    wait_for("the second sign-in to sync", 10, || {
+        ev2.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
     wait_for("the second sign-in to see the edit", 10, || {
         live2.info().text.contains(&marker)
     });
@@ -144,6 +159,7 @@ fn core_against_a_running_server() {
     live2
         .apply_update(add_paragraph(&live2.document(), &main, &reply))
         .unwrap();
+    wait_for("the server's receipt", 10, || live2.unsent_updates() == 0);
     wait_for("the first sign-in to see the reply", 10, || {
         ev.changes
             .lock()
@@ -160,6 +176,13 @@ fn core_against_a_running_server() {
     });
     live.close();
     live2.close();
+    assert!(matches!(
+        ev2.statuses.lock().unwrap().last(),
+        Some(LiveStatus::Ended {
+            reason: LiveEnd::Closed,
+            ..
+        })
+    ));
     assert_eq!(
         ev.statuses.lock().unwrap().last(),
         Some(&SyncStatus::Closed {

@@ -9,7 +9,9 @@ let package = Package(
     products: [.library(name: "NotiveloCore", targets: ["NotiveloCore"])],
     targets: [
         .binaryTarget(name: "nv_coreFFI", path: "nv_coreFFI.xcframework"),
-        .target(name: "NotiveloCore", dependencies: ["nv_coreFFI"], path: "Sources/NotiveloCore"),
+        // Security: the core checks TLS certificates with the system's verifier (rustls-platform-verifier).
+        .target(name: "NotiveloCore", dependencies: ["nv_coreFFI"], path: "Sources/NotiveloCore",
+                linkerSettings: [.linkedFramework("Security"), .linkedFramework("CoreFoundation")]),
         .testTarget(name: "NotiveloCoreTests", dependencies: ["NotiveloCore"], path: "Tests/NotiveloCoreTests"),
     ]
 )

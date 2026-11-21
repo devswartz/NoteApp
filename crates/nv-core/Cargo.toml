@@ -27,3 +27,7 @@ nv-sync = { path = "../nv-sync" }
 nv-store = { path = "../nv-store" }
 serde_json = "1"
 uniffi = "0.32"
+
+[dev-dependencies]
+# For the stand-in collab server (crates/nv-sync/tests/support) in tests/live.rs.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }

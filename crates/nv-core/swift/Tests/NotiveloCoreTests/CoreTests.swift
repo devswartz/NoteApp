@@ -75,4 +75,26 @@ final class CoreTests: XCTestCase {
         let runs = info.content[0].nodes.flatMap(\.children).flatMap(\.runs)
         XCTAssertTrue(runs.contains { $0.text == "bold" && $0.marks == [.bold] })
     }
+
+    func testALivePageWithoutASessionEnds() throws {
+        final class Heard: LivePageListener, @unchecked Sendable {
+            let ended = XCTestExpectation(description: "ended")
+            private let lock = NSLock()
+            private(set) var statuses: [LiveStatus] = []
+            func onStatus(status: LiveStatus) {
+                lock.lock(); statuses.append(status); lock.unlock()
+                if case .ended = status { ended.fulfill() }
+            }
+            func onChange(page: PageInfo) {}
+        }
+        let core = Core(serverUrl: "http://127.0.0.1:9")
+        let heard = Heard()
+        let page = try core.openLivePage(pageId: "p1", listener: heard)
+        wait(for: [heard.ended], timeout: 10)
+        XCTAssertEqual(heard.statuses.first, .connecting(attempt: 0))
+        XCTAssertEqual(heard.statuses.last, .ended(reason: .signedOut, message: "signed out"))
+        XCTAssertEqual(page.unsentUpdates(), 0)
+        page.close()
+        XCTAssertEqual(core.unsentPages(), [])
+    }
 }
