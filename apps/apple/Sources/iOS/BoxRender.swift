@@ -5,8 +5,10 @@ import UIKit
 /// exactly the view's text, EDITOR.md 10.1). `x` is where the line's text starts (container coordinates).
 struct BoxMarker {
     enum Kind {
-        /// A list marker ("•", "1.", "b)"), right-aligned just before the text.
+        /// A list marker ("1.", "b)"), right-aligned just before the text.
         case text(NSAttributedString)
+        /// A bullet by depth: disc, circle, square.
+        case bullet(Int)
         /// A checklist box (15×15, accent when checked), 8 pt before the text.
         case checkbox(Bool)
         /// A task line's fold arrow, in the 26 pt gutter left of its circle.
@@ -28,7 +30,8 @@ struct BoxDecoration {
         case quote
         /// The guide line left of a task's notes (dashed when the task is done).
         case guide(done: Bool)
-        case tableCell(header: Bool)
+        /// A table, drawn in the space above its (hidden) cell lines: rows of (text, header).
+        case table(rows: [[(String, Bool)]])
     }
 
     let kind: Kind
@@ -37,6 +40,9 @@ struct BoxDecoration {
     /// The block's outer left and right edges in the container.
     let left: CGFloat
     let right: CGFloat
+    /// Space between the block's edge and its first / last line's text.
+    var topPad: CGFloat = 0
+    var bottomPad: CGFloat = 0
 }
 
 struct BoxRendering {
@@ -49,6 +55,8 @@ struct BoxRendering {
     let length: Int
     /// The first block's top margin (CSS keeps it inside the box): added to the text's top inset.
     let topMargin: CGFloat
+    /// The last line's half-leading: added to the bottom inset.
+    var bottomMargin: CGFloat = 0
 
     static let empty = BoxRendering(string: NSAttributedString(), markers: [], decorations: [], length: 0, topMargin: 0)
 }
@@ -69,6 +77,8 @@ struct BoxTextRenderer {
     var decor: [String: TaskDecor] = [:]
 
     static let object = "\u{FFFC}"
+    /// Mention ids that are the signed-in person (drawn yellow, as "yourself").
+    static var selfMentionIds: Set<String> = []
     /// List indent: 1.6 em.
     static let listIndent: CGFloat = 25.6
     /// CSS puts half the leading above the text; TextKit puts it all above. The baseline is raised
@@ -98,7 +108,23 @@ struct BoxTextRenderer {
         /// Padding of closed blocks (added below the last line) and of opened ones (added above the next).
         var addAfter: CGFloat = 0
         var addBefore: CGFloat = 0
+        /// Spacing already settled (padding of an opened callout, a table's height): added as is.
+        var base: CGFloat = 0
+        /// The previous line's half-leading (CSS puts it below the text).
+        var prevHalf: CGFloat = 0
         var topMargin: CGFloat = 0
+        /// The spacing above the next line, inside a just-opened padded block (for its background).
+        var capture = false
+        var captured: CGFloat = 0
+
+        /// Settle the collapsed margins so far and add `pad` (a block's own padding starts here).
+        func flush(pad: CGFloat) {
+            base += addAfter + max(pendingTop, pendingBottom) + addBefore + pad
+            addAfter = 0
+            pendingTop = 0
+            pendingBottom = 0
+            addBefore = 0
+        }
     }
 
     func render(_ doc: BoxNode) -> BoxRendering {
@@ -110,7 +136,8 @@ struct BoxTextRenderer {
             if let style = out.lastStyle { attrs[.paragraphStyle] = style }
             out.string.append(NSAttributedString(string: "\u{200B}", attributes: attrs))
         }
-        return BoxRendering(string: out.string, markers: out.markers, decorations: out.decorations, length: length, topMargin: out.topMargin)
+        return BoxRendering(string: out.string, markers: out.markers, decorations: out.decorations, length: length, topMargin: out.topMargin,
+                            bottomMargin: out.prevHalf + max(out.pendingBottom, 0) + out.addAfter)
     }
 
     // MARK: Blocks (the same walk as nv-editor's `ViewText::blocks`)
@@ -169,8 +196,8 @@ struct BoxTextRenderer {
         case "bulletList":
             var cx = ctx
             cx.bulletDepth += 1
-            let bullet = ["•", "◦", "▪"][(cx.bulletDepth - 1) % 3]
-            for item in c.content { block(item, with(cx, marker: .text(markerText(bullet))), out) }
+            let bullet = (cx.bulletDepth - 1) % 3
+            for item in c.content { block(item, with(cx, marker: .bullet(bullet)), out) }
         case "orderedList":
             let start = Int(c.number("start") ?? 1)
             var cx = ctx
@@ -209,17 +236,30 @@ struct BoxTextRenderer {
             cx.color = palette.text2
             let from = out.string.length + (out.lines > 0 ? 1 : 0)
             blocks(c, cx, out)
-            out.decorations.append(BoxDecoration(kind: .quote, from: from, to: out.string.length, left: ctx.left, right: ctx.right))
+            out.decorations.append(BoxDecoration(kind: .quote, from: from, to: out.string.length, left: ctx.left, right: ctx.right,
+                                                 topPad: 5.6, bottomPad: 5.6))
         case "callout":
             var cx = inner
             cx.left += 1 + 12 + 28 + 10
             cx.right += 1 + 14
             let from = out.string.length + (out.lines > 0 ? 1 : 0)
-            if !ctx.hidden { out.addBefore += 13 }
+            if !ctx.hidden {
+                out.flush(pad: 13)
+                out.capture = true
+            }
             blocks(c, cx, out)
-            if !ctx.hidden { out.addAfter += 13 }
-            out.decorations.append(BoxDecoration(kind: .callout(emoji: c.string("emoji").flatMap { $0.isEmpty ? nil : $0 } ?? "💡"),
-                                                 from: from, to: out.string.length, left: ctx.left, right: ctx.right))
+            var bottomPad: CGFloat = 13
+            if !ctx.hidden {
+                let tail = out.pendingBottom + out.addAfter
+                bottomPad = 13 + tail + out.prevHalf
+                out.addAfter = tail + 13
+                out.pendingBottom = 0
+            }
+            var d = BoxDecoration(kind: .callout(emoji: c.string("emoji").flatMap { $0.isEmpty ? nil : $0 } ?? "💡"),
+                                  from: from, to: out.string.length, left: ctx.left, right: ctx.right)
+            d.topPad = 13 + out.captured
+            d.bottomPad = bottomPad
+            out.decorations.append(d)
         case "details":
             let isOpen = c.bool("open") ?? false
             for part in c.content {
@@ -235,17 +275,28 @@ struct BoxTextRenderer {
             }
         case "detailsContent":
             blocks(c, inner, out)
-        case "tableCell", "tableHeader":
+        case "table" where !ctx.hidden:
+            // TextKit 2 can't set paragraphs side by side: the table is drawn in the space above
+            // its cell lines, which are kept (for the view text's offsets) but hidden.
+            let rows = c.content.map { row in row.content.map { cell in (plainText(cell), cell.type == "tableHeader") } }
+            let height = CGFloat(rows.count) * 40.2 + 1
+            out.flush(pad: height)
             var cx = inner
-            cx.left += 10
+            cx.hidden = true
             let from = out.string.length + (out.lines > 0 ? 1 : 0)
             blocks(c, cx, out)
-            out.decorations.append(BoxDecoration(kind: .tableCell(header: c.type == "tableHeader"), from: from, to: out.string.length,
-                                                 left: ctx.left, right: ctx.right))
+            var d = BoxDecoration(kind: .table(rows: rows), from: from, to: out.string.length, left: ctx.left, right: ctx.right)
+            d.topPad = height
+            out.decorations.append(d)
         default:
             // table, rows, unknown nodes: their blocks, one line each.
             blocks(c, inner, out)
         }
+    }
+
+    private func plainText(_ n: BoxNode) -> String {
+        if n.type == "text" { return n.text }
+        return n.content.map(plainText).joined(separator: n.content.first.map { BoxNode.textblocks.contains($0.type) } == true ? " " : "")
     }
 
     private func markerText(_ s: String) -> NSAttributedString {
@@ -297,6 +348,7 @@ struct BoxTextRenderer {
         var notes = ctx
         notes.marker = nil
         notes.left += 38
+        if tasks[id] == nil || tasks[id] == .hidden { notes.hidden = true }
         let from = out.string.length + 1
         blocks(c, notes, out)
         out.decorations.append(BoxDecoration(kind: .guide(done: done), from: from, to: out.string.length, left: ctx.left + 26, right: ctx.right))
@@ -317,11 +369,14 @@ struct BoxTextRenderer {
             let from = out.string.length + (out.lines > 0 ? 1 : 0)
             cx.left += 15
             cx.right += 15
-            if !ctx.hidden { out.addBefore += 35 }
+            if !ctx.hidden { out.flush(pad: 35) }
             line(inline(c.content, size: 13.5, mono: true, ctx: cx), cx, out, lineHeight: 13.5 * 1.7, font: WebType.mono(13.5))
             if !ctx.hidden { out.addAfter += 13 }
-            out.decorations.append(BoxDecoration(kind: .code(language: c.string("language") ?? ""), from: from, to: out.string.length,
-                                                 left: ctx.left, right: ctx.right))
+            var d = BoxDecoration(kind: .code(language: c.string("language") ?? ""), from: from, to: out.string.length,
+                                  left: ctx.left, right: ctx.right)
+            d.topPad = 35 + out.prevHalf
+            d.bottomPad = 13 + out.prevHalf
+            out.decorations.append(d)
         case "detailsSummary":
             line(inline(c.content, size: bodySize, weight: 500, ctx: ctx), ctx, out, lineHeight: bodySize * 1.7)
         default:
@@ -341,19 +396,36 @@ struct BoxTextRenderer {
     /// paragraph style (fixed line height, indents, the collapsed spacing above it).
     private func line(_ text: NSAttributedString, _ ctx: Context, _ out: Output, lineHeight: CGFloat, font lineFont: UIFont? = nil, raise: Bool = true) {
         let style = NSMutableParagraphStyle()
-        var spacing = out.addAfter + max(out.pendingTop, out.pendingBottom) + out.addBefore
+        let f = lineFont ?? font(bodySize)
+        // CSS line-height: the leading is split above and below the text. TextKit gets the natural
+        // line height, the half-leading as spacing before/after, and the full leading between wrapped lines.
+        let half: CGFloat = (raise && !ctx.hidden) ? max(lineHeight - f.lineHeight, 0) / 2 : 0
+        let inner = out.addAfter + max(out.pendingTop, out.pendingBottom) + out.addBefore
+        if out.capture {
+            out.captured = inner + half
+            out.capture = false
+        }
+        var spacing = out.base + inner
         if out.lines == 0 {
-            out.topMargin = out.pendingTop + out.addBefore
+            out.topMargin = spacing + half
             spacing = 0
+        } else {
+            spacing += out.prevHalf + half
         }
         out.pendingTop = 0
         out.pendingBottom = 0
         out.addAfter = 0
         out.addBefore = 0
-        let height = ctx.hidden ? 0.01 : lineHeight
-        style.minimumLineHeight = height
-        style.maximumLineHeight = height
-        style.paragraphSpacingBefore = ctx.hidden ? 0 : spacing
+        out.base = 0
+        if ctx.hidden {
+            style.minimumLineHeight = 0.01
+            style.maximumLineHeight = 0.01
+        } else if !raise {
+            style.minimumLineHeight = lineHeight
+            style.maximumLineHeight = lineHeight
+        }
+        style.lineSpacing = half * 2
+        style.paragraphSpacingBefore = spacing
         style.firstLineHeadIndent = ctx.left
         style.headIndent = ctx.left
         if ctx.right > 0 { style.tailIndent = -ctx.right }
@@ -369,14 +441,13 @@ struct BoxTextRenderer {
         if ctx.hidden {
             line.addAttribute(.foregroundColor, value: UIColor.clear, range: all)
             line.addAttribute(.font, value: font(1), range: all)
-        } else if raise && line.length > 0 {
-            let f = lineFont ?? font(bodySize)
-            line.addAttribute(.baselineOffset, value: max(lineHeight - f.lineHeight, 0) / Self.baselineDivisor, range: all)
+            line.removeAttribute(.attachment, range: all)
         }
         out.string.append(line)
         if let marker = ctx.marker, !ctx.hidden {
             out.markers.append(BoxMarker(offset: start, kind: marker, x: ctx.left))
         }
+        out.prevHalf = half
         out.lastStyle = style
         out.lastLineEmpty = line.length == 0
         out.lines += 1
@@ -568,7 +639,10 @@ struct BoxTextRenderer {
                 out.append(NSAttributedString(string: "\u{2028}", attributes: [.font: font(size)]))
             case "mention":
                 let label = node.string("label") ?? ""
-                out.append(inlineAttachment(pill("@" + (label.isEmpty ? "" : label), size: size, fg: palette.accent, bg: palette.accentSoft, underline: false), size: size))
+                let mine = Self.selfMentionIds.contains(node.string("id") ?? "")
+                out.append(inlineAttachment(pill("@" + label, size: size, fg: mine ? palette.text : palette.accent,
+                                                 bg: mine ? UIColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: 0.35) : palette.accentSoft,
+                                                 underline: false), size: size))
             case "pageLink":
                 let id = node.string("pageId") ?? ""
                 out.append(inlineAttachment(pill(pageTitles[id] ?? "Page", size: size, fg: palette.text, bg: .clear, underline: true, icon: "file-text"), size: size))

@@ -292,7 +292,7 @@ struct TasksPanel: View {
         let counts = TaskBuckets(tasks: session.shownTasks, session: session)
         VStack(alignment: .leading, spacing: 0) {
             Text("Tasks").font(.web(15, 650)).foregroundStyle(p.text.color)
-                .padding(.horizontal, 16).frame(height: 52, alignment: .center)
+                .padding(.horizontal, 16).frame(height: 52, alignment: .center).padding(.bottom, 4)
             VStack(alignment: .leading, spacing: 2) {
                 Button { shell.notYet("Adding tasks") } label: {
                     HStack(spacing: 10) {

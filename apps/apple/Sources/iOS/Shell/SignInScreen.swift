@@ -81,12 +81,15 @@ struct SignInScreen: View {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(UIColor(hex: 0x5B5BD6).color)
                     .frame(width: 34, height: 34)
-                    .overlay(Icon("square-check", 20, .white))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Color.white).frame(width: 16, height: 16)
+                            .overlay(Icon("check", 12, UIColor(hex: 0x5B5BD6).color))
+                    )
                     .shadowSm(p)
                 Text("Notivelo").font(.web(17, 700)).foregroundStyle(p.text.color)
             }
             Text("Welcome back").font(.web(22, 700)).tracking(-0.44).foregroundStyle(p.text.color).padding(.top, 20)
-            Text("Notes and tasks, connected — for you and your team.").font(.web(14)).foregroundStyle(p.textMuted.color).padding(.top, 4)
+            Text("Notes and tasks, connected — for you and your team.").font(.web(13.5)).lineLimit(1).minimumScaleFactor(0.85).foregroundStyle(p.textMuted.color).padding(.top, 4)
             if session.phase == .restoring {
                 Text("Signing in…").font(.web(14)).foregroundStyle(p.textMuted.color).padding(.vertical, 40)
             } else {
@@ -215,8 +218,13 @@ struct PhoneShell: View {
         let p = theme.chrome
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Button { drawer = true } label: { Icon("menu", 21, p.text2.color).frame(width: 44, height: 44) }
-                    .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+                if case .page = shell.route {
+                    Button { shell.route = .notes } label: { Icon("chevron-left", 22, p.text2.color).frame(width: 44, height: 44) }
+                        .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+                } else {
+                    Button { drawer = true } label: { Icon("menu", 21, p.text2.color).frame(width: 44, height: 44) }
+                        .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+                }
                 Spacer(minLength: 0)
                 Text(title).font(.web(15, 600)).foregroundStyle(p.text.color).lineLimit(1)
                 Spacer(minLength: 0)
@@ -231,6 +239,7 @@ struct PhoneShell: View {
             .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
             MainArea(width: width)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environment(\.phoneLayout, true)
             HStack(spacing: 0) {
                 tab("Notes", "book-open", active: !isTasks) { shell.route = .notes }
                 tab("Tasks", "list-checks", active: isTasks) { shell.route = .tasks(.today) }
@@ -262,7 +271,6 @@ struct PhoneShell: View {
 
     private var title: String {
         switch shell.route {
-        case let .page(id): return session.shownTree?.pages.first(where: { $0.id == id })?.title ?? ""
         case let .tasks(list): return list.title
         default: return session.shownWorkspace?.name ?? "Notes"
         }

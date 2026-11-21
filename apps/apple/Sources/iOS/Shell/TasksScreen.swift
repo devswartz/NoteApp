@@ -112,7 +112,7 @@ struct TaskBuckets {
             case let (x?, y?) where x != y: return x < y
             case (_?, nil): return true
             case (nil, _?): return false
-            default: return (a.priority, a.title) < (b.priority, b.title)
+            default: return a.priority < b.priority
             }
         }
         var out: [(title: String, overdue: Bool, tasks: [CoreTask])] = []
@@ -153,8 +153,8 @@ struct TasksScreen: View {
         let groups = buckets.groups(list)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(list.title).font(.web(26, 700)).tracking(-0.52).foregroundStyle(p.text.color)
-                Text(list.subtitle).font(.web(14)).foregroundStyle(p.textMuted.color).padding(.top, 4)
+                Text(list.title).font(.web(26, 700)).tracking(-0.52).foregroundStyle(p.text.color).frame(height: 34)
+                Text(list.subtitle).font(.web(14)).foregroundStyle(p.textMuted.color).frame(height: 21).padding(.top, 4)
                 if list == .today {
                     StatsCard(done: buckets.doneToday, left: buckets.list(.today).count)
                         .padding(.top, 20)
@@ -231,11 +231,11 @@ struct StatsCard: View {
             stat(done > 0 ? "1" : "0", "day streak", p)
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 6) {
-                let today = (Calendar.current.component(.weekday, from: Date()) + 6) % 7 // Monday 0
+                let today = Calendar.current.component(.weekday, from: Date()) - 1 // Sunday 0
                 ForEach(0..<7, id: \.self) { i in
                     VStack(spacing: 3) {
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(i == (today + 1) % 7 ? p.accent.color : p.bgHover.color)
+                            .fill(i == today ? p.accent.color : p.bgHover.color)
                             .frame(width: 10, height: 32)
                         Text(["S", "M", "T", "W", "T", "F", "S"][i]).font(.web(10.5)).foregroundStyle(p.textMuted.color)
                     }
@@ -280,9 +280,10 @@ struct TaskRowView: View {
             .disabled(task.locked)
             VStack(alignment: .leading, spacing: 3) {
                 Text(task.locked ? "Locked task" : task.title)
-                    .font(.web(14)).lineSpacing(14 * 0.4 / 2)
+                    .font(.web(14))
                     .strikethrough(done)
                     .foregroundStyle(done ? p.textMuted.color : p.text.color)
+                    .frame(minHeight: 19.6)
                 meta(p)
             }
             Spacer(minLength: 0)
@@ -290,7 +291,7 @@ struct TaskRowView: View {
                 AvatarView(name: me.name, color: UIColor(css: me.color), size: 20)
             }
         }
-        .padding(.vertical, 12).padding(.horizontal, 6)
+        .padding(.vertical, 13).padding(.horizontal, 6)
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
     }
 
@@ -302,6 +303,7 @@ struct TaskRowView: View {
         }
         if due != nil || task.priority < 4 || pageTitle != nil {
             HStack(spacing: 6) {
+                Color.clear.frame(width: 0, height: 18)
                 if let due {
                     let tone = Due.tone(task.dueDate, p).color
                     HStack(spacing: 4) {

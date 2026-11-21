@@ -58,7 +58,7 @@ final class BoxTextView: UIView, UITextInput {
     static let pad = UIEdgeInsets(top: 7, left: 11, bottom: 7, right: 11)
     /// Where the text starts: the padding plus the first block's own top margin.
     private var inset: UIEdgeInsets {
-        UIEdgeInsets(top: Self.pad.top + rendering.topMargin, left: Self.pad.left, bottom: Self.pad.bottom, right: Self.pad.right)
+        UIEdgeInsets(top: Self.pad.top + rendering.topMargin, left: Self.pad.left, bottom: Self.pad.bottom + rendering.bottomMargin, right: Self.pad.right)
     }
 
     var tasks: [String: TaskLine] = [:]
@@ -261,6 +261,19 @@ final class BoxTextView: UIView, UITextInput {
                     path.lineWidth = 1
                     path.stroke()
                 }
+            case let .bullet(depth):
+                let cx = x - 12.5, cy = line.baseline - 4.6
+                let r = CGRect(x: cx - 2.75, y: cy - 2.75, width: 5.5, height: 5.5)
+                p.text.setFill()
+                p.text.setStroke()
+                switch depth {
+                case 0: UIBezierPath(ovalIn: r).fill()
+                case 1:
+                    let c = UIBezierPath(ovalIn: r.insetBy(dx: 0.5, dy: 0.5))
+                    c.lineWidth = 1
+                    c.stroke()
+                default: UIRectFill(r.insetBy(dx: 0.25, dy: 0.25))
+                }
             case .fold:
                 UIImage.lucide("chevron-down", size: 14, color: p.textMuted)?.draw(at: CGPoint(x: x - 21, y: line.top + 10))
             case let .toggle(open):
@@ -306,7 +319,7 @@ final class BoxTextView: UIView, UITextInput {
         let right = inset.left + layoutWidth - d.right
         switch d.kind {
         case let .callout(emoji):
-            let r = CGRect(x: left, y: first.top - 13, width: right - left, height: bottom - first.top + 26)
+            let r = CGRect(x: left, y: first.top - d.topPad, width: right - left, height: bottom - first.top + d.topPad + d.bottomPad)
             let path = UIBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 8)
             p.bgSubtle.setFill()
             path.fill()
@@ -315,9 +328,9 @@ final class BoxTextView: UIView, UITextInput {
             path.stroke()
             let e = NSAttributedString(string: emoji, attributes: [.font: UIFont.systemFont(ofSize: 19)])
             let s = e.size()
-            e.draw(at: CGPoint(x: left + 13 + (28 - s.width) / 2, y: first.top - 1 + (28 - s.height) / 2))
+            e.draw(at: CGPoint(x: left + 13 + (28 - s.width) / 2, y: r.minY + 13 + (28 - s.height) / 2))
         case let .code(language):
-            let r = CGRect(x: left, y: first.top - 35, width: right - left, height: bottom - first.top + 48)
+            let r = CGRect(x: left, y: first.top - d.topPad, width: right - left, height: bottom - first.top + d.topPad + d.bottomPad)
             let path = UIBezierPath(roundedRect: r.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 8)
             p.bgSubtle.setFill()
             path.fill()
@@ -333,25 +346,38 @@ final class BoxTextView: UIView, UITextInput {
             copy.draw(at: CGPoint(x: right - 14 - copy.size().width, y: r.minY + 9))
         case .quote:
             p.borderStrong.setFill()
-            UIRectFill(CGRect(x: left, y: first.top, width: 3, height: bottom - first.top))
+            UIRectFill(CGRect(x: left, y: first.top - d.topPad, width: 3, height: bottom - first.top + d.topPad + d.bottomPad))
         case let .guide(done):
             let path = UIBezierPath()
-            path.move(to: CGPoint(x: left + 1, y: first.top - 2))
-            path.addLine(to: CGPoint(x: left + 1, y: bottom + 2))
+            path.move(to: CGPoint(x: left + 1, y: first.top - 4))
+            path.addLine(to: CGPoint(x: left + 1, y: bottom + 4))
             path.lineWidth = 2
             if done { path.setLineDash([4, 3], count: 2, phase: 0) }
             p.border.setStroke()
             path.stroke()
-        case let .tableCell(header):
-            let r = CGRect(x: left, y: first.top - 6, width: right - left, height: bottom - first.top + 12)
-            if header {
-                p.bgSubtle.setFill()
-                UIRectFill(r)
+        case let .table(rows):
+            let top = first.top - d.topPad
+            let width = right - left
+            let cols = max(rows.map(\.count).max() ?? 1, 1)
+            let colW = width / CGFloat(cols)
+            for (i, row) in rows.enumerated() {
+                let y = top + CGFloat(i) * 40.2
+                for (j, cell) in row.enumerated() {
+                    let r = CGRect(x: left + CGFloat(j) * colW, y: y, width: colW, height: 40.2)
+                    if cell.1 {
+                        p.bgSubtle.setFill()
+                        UIRectFill(r)
+                    }
+                    let style = NSMutableParagraphStyle()
+                    style.lineBreakMode = .byTruncatingTail
+                    let f = WebType.ui(16, cell.1 ? 600 : 400)
+                    NSAttributedString(string: cell.0, attributes: [.font: f, .foregroundColor: p.text, .paragraphStyle: style])
+                        .draw(in: CGRect(x: r.minX + 10, y: r.minY + (40.2 - f.lineHeight) / 2, width: colW - 20, height: f.lineHeight + 2))
+                }
             }
-            p.border.setStroke()
-            let path = UIBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5))
-            path.lineWidth = 1
-            path.stroke()
+            p.border.setFill()
+            for i in 0...rows.count { UIRectFill(CGRect(x: left, y: top + CGFloat(i) * 40.2, width: width, height: 1)) }
+            for j in 0...cols { UIRectFill(CGRect(x: min(left + CGFloat(j) * colW, right - 1), y: top, width: 1, height: CGFloat(rows.count) * 40.2 + 1)) }
         }
     }
 
@@ -367,8 +393,16 @@ final class BoxTextView: UIView, UITextInput {
 
     override var canBecomeFirstResponder: Bool { editor != nil }
 
+    /// Look mode (CI screenshots): an empty input view instead of the software keyboard.
+    private lazy var lookInputView: UIView? = LookData.state == nil ? nil : UIView(frame: .zero)
+    override var inputView: UIView? { lookInputView }
+
     override func becomeFirstResponder() -> Bool {
         guard editor != nil else { return false }
+        if LookData.state != nil {
+            inputAssistantItem.leadingBarButtonGroups = []
+            inputAssistantItem.trailingBarButtonGroups = []
+        }
         if interaction == nil {
             let i = UITextInteraction(for: .editable)
             i.textInput = self

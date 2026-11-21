@@ -19,6 +19,7 @@ struct PageScreen: View {
     let pageId: String
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
+    @Environment(\.phoneLayout) private var phone
     @State var live: LivePageModel?
     @State var sample: SamplePageScreen.Sample?
     let theme = Theme.shared
@@ -28,10 +29,10 @@ struct PageScreen: View {
     var body: some View {
         let snapshot = currentSnapshot
         let palette = theme.page.tinted(snapshot?.info.settings.color ?? "none")
-        let hybrid = theme.isHybrid
+        let hybrid = theme.isHybrid && !phone
         let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: hybrid ? 12 : 0, bottomLeading: 0, bottomTrailing: 0, topTrailing: hybrid ? 12 : 0), style: .continuous)
         VStack(spacing: 0) {
-            PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount)
+            PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone)
             ZStack(alignment: .topTrailing) {
                 content(snapshot, palette)
                 if let snapshot, !snapshot.info.headings.isEmpty {
@@ -56,7 +57,10 @@ struct PageScreen: View {
     }
 
     private var currentSnapshot: PageSnapshot? {
-        if let sample, case let .success(page) = sample.page { return page.snapshot }
+        if let sample, case let .success(page) = sample.page, let s = page.snapshot {
+            // The look seed points the corpus page link at the first page ("Canvas").
+            return PageSnapshot(id: s.id, title: s.title, info: s.info, tasks: s.tasks, pageTitles: ["page-2": "Canvas"], document: s.document)
+        }
         return live?.snapshot
     }
 
@@ -66,7 +70,12 @@ struct PageScreen: View {
     }
 
     private var taskCount: Int {
-        if let s = currentSnapshot { return s.info.taskIds.count }
+        if let s = currentSnapshot {
+            return s.tasks.values.filter { line in
+                if case let .shown(_, done, _) = line { return !done }
+                return false
+            }.count
+        }
         return session.openTaskCount(page: pageId)
     }
 
@@ -81,6 +90,7 @@ struct PageScreen: View {
     }
 
     private func openPage() {
+        BoxTextRenderer.selfMentionIds = session.preview ? ["u1"] : Set([session.shownUser?.id ?? ""])
         if let name = LookData.caseName(pageId) {
             if sample == nil { sample = SamplePageScreen.Sample(name: name) }
             return
@@ -106,7 +116,7 @@ struct PageScreen: View {
         }
         if session.preview {
             // Corpus task ids (t1, tb …) aren't the demo tasks: the look seed assigns them all to the demo user.
-            for id in ["t1", "t2", "t3", "tb"] where out[id] == nil {
+            for id in ["t1", "t2", "t3", "tb"] {
                 out[id] = TaskDecor(priority: 4, assignee: me?.name, assigneeColor: me.map { UIColor(css: $0.color) },
                                     checklist: id == "t1" ? (done: UInt32(1), total: UInt32(2)) : nil)
             }
@@ -122,7 +132,7 @@ struct PageScreen: View {
             let title = meta?.title ?? snapshot.title
             let edited = meta.map { "Edited \(Due.ago($0.updatedAt))" + (session.preview ? " by you" : "") } ?? "Edited just now by you"
             PageCanvasView(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
-                           decor: decor, showAddIcon: LookData.state?.hasPrefix("edit") ?? false)
+                           decor: decor, showAddIcon: phone || (LookData.state?.hasPrefix("edit") ?? false), stacked: phone)
                 .ignoresSafeArea(.container, edges: .bottom)
                 .ignoresSafeArea(.keyboard)
         } else if let sample, case let .failure(error) = sample.page {
@@ -154,6 +164,7 @@ struct PageTopBar: View {
     let palette: Palette
     let status: String
     let taskCount: Int
+    var phone = false
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
 
@@ -163,6 +174,15 @@ struct PageTopBar: View {
         let section = meta.flatMap { m in tree?.sections.first { $0.id == m.sectionId } }
         let notebook = section.flatMap { s in tree?.notebooks.first { $0.id == s.notebookId } }
         HStack(spacing: 12) {
+            if phone {
+                Spacer(minLength: 0)
+                Group {
+                    Icon("undo-2", 18, p.text2.color).opacity(EditorFocus.shared.canUndo ? 1 : 0.4)
+                        .frame(width: 32, height: 32).onTapGesture { EditorFocus.shared.undo() }
+                    Icon("redo-2", 18, p.text2.color).opacity(EditorFocus.shared.canRedo ? 1 : 0.4)
+                        .frame(width: 32, height: 32).onTapGesture { EditorFocus.shared.redo() }
+                }
+            } else {
             HStack(spacing: 6) {
                 if let notebook {
                     Circle().fill(UIColor(css: notebook.color).color).frame(width: 8, height: 8)
@@ -174,13 +194,16 @@ struct PageTopBar: View {
             .font(.web(13))
             .foregroundStyle(p.text2.color)
             Spacer(minLength: 0)
+            }
             HStack(spacing: 6) {
+                if !phone {
                 HStack(spacing: 5) {
                     Icon(status == "Saved" ? "check" : status == "Offline" ? "cloud-off" : "loader", 14, statusColor.color)
                     Text(status).font(.web(12))
                 }
                 .foregroundStyle(statusColor.color)
                 .padding(.horizontal, 6)
+                }
                 iconButton("list-todo", badge: taskCount) { shell.notYet("Tasks on this page") }
                 iconButton("message-square", badge: 0) { shell.notYet("Comments") }
                 Button { shell.notYet("Sharing") } label: {
@@ -201,8 +224,8 @@ struct PageTopBar: View {
                 .anchor("page-options", shell)
             }
         }
-        .padding(.leading, 20).padding(.trailing, 16)
-        .frame(height: 48)
+        .padding(.leading, phone ? 16 : 20).padding(.trailing, phone ? 8 : 16)
+        .frame(height: phone ? 44 : 48)
         .background(p.bg.withAlphaComponent(0.88).color)
     }
 

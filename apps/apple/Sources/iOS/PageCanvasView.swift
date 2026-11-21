@@ -18,12 +18,15 @@ struct PageCanvasView: UIViewRepresentable {
     let palette: Palette
     var decor: [String: TaskDecor] = [:]
     var showAddIcon = false
+    /// Phones: boxes stacked in reading order, full width (LOOK.md 3.2).
+    var stacked = false
 
     func makeUIView(context: Context) -> PageScrollView {
         PageScrollView()
     }
 
     func updateUIView(_ view: PageScrollView, context: Context) {
+        view.stacked = stacked
         view.setHeader(title: title, subline: subline, palette: palette, showAddIcon: showAddIcon)
         view.decor = decor
         view.show(page, host: host)
@@ -42,6 +45,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private var palette = Palette.light
     private var paletteKey = ""
     var decor: [String: TaskDecor] = [:]
+    var stacked = false
+    /// Phones: the article's padding is 12 20, the title 28 pt.
+    static let phoneOriginY: CGFloat = 12 + 28 + 4 + 33.6 + 6 + 18.75 + 22
     private var shownID: String?
     private var shownTasks: [String: TaskLine] = [:]
     private var shownTitles: [String: String] = [:]
@@ -117,14 +123,16 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             surface.ruleColor = palette.pageRule
             surface.setNeedsDisplay()
         }
-        let titleFont = WebType.ui(36, 700)
+        let titleSize: CGFloat = stacked ? 28 : 36
+        let titleLine = titleSize * 1.2
+        let titleFont = WebType.ui(titleSize, 700)
         let style = NSMutableParagraphStyle()
-        style.minimumLineHeight = 43.2
-        style.maximumLineHeight = 43.2
+        style.minimumLineHeight = titleLine
+        style.maximumLineHeight = titleLine
         titleLabel.attributedText = NSAttributedString(string: title.isEmpty ? "Untitled" : title, attributes: [
-            .font: titleFont, .kern: -0.025 * 36, .paragraphStyle: style,
+            .font: titleFont, .kern: -0.025 * titleSize, .paragraphStyle: style,
             .foregroundColor: title.isEmpty ? palette.borderStrong : palette.text,
-            .baselineOffset: (43.2 - titleFont.lineHeight) / BoxTextRenderer.baselineDivisor,
+            .baselineOffset: (titleLine - titleFont.lineHeight) / BoxTextRenderer.baselineDivisor,
         ])
         subLabel.attributedText = NSAttributedString(string: subline, attributes: [.font: WebType.ui(12.5), .foregroundColor: palette.textMuted])
         if showAddIcon {
@@ -144,13 +152,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     private func layoutHeader() {
-        let left = Self.originX + BoxTextView.pad.left
-        let width = max(bounds.width / max(zoomScale, 0.01) - left - 40, 100)
+        let left = stacked ? 20 : Self.originX + BoxTextView.pad.left
+        let width = max(bounds.width / max(zoomScale, 0.01) - left - (stacked ? 20 : 40), 100)
         let titleSize = titleLabel.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        let titleTop: CGFloat = 32 + 28 + 4
-        titleLabel.frame = CGRect(x: left, y: titleTop, width: width, height: max(titleSize.height, 43.2))
+        let top: CGFloat = stacked ? 12 : 32
+        titleLabel.frame = CGRect(x: left, y: top + 28 + 4, width: width, height: max(titleSize.height, stacked ? 33.6 : 43.2))
         subLabel.frame = CGRect(x: left, y: titleLabel.frame.maxY + 6, width: width, height: 18.75)
-        addIcon.frame = CGRect(x: left - 8, y: 32, width: 160, height: 28)
+        addIcon.frame = CGRect(x: left - 8, y: top, width: 160, height: 28)
     }
 
     func show(_ page: PageSnapshot, host: PageEditHost?) {
@@ -206,6 +214,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     /// A box's drawn width: wide boxes span the visible note area minus 40 pt on each side.
     private func width(of box: PageBox) -> CGFloat {
+        if stacked { return max((bounds.width > 0 ? bounds.width : 390) - 18, 120) }
         guard box.wide else { return CGFloat(box.w) }
         let visible = (bounds.width > 0 ? bounds.width : 900) / max(zoomScale, 0.01)
         return max(visible - Self.originX - 40, 120)
@@ -235,15 +244,28 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         let ox = Self.originX, oy = Self.originY
         var maxX: CGFloat = 0, maxY: CGFloat = 0
         var frames: [(String, CGRect, Double)] = []
+        var separators: [CGFloat] = []
+        // Phones: one under the other, padding 12 0, a hairline between (text 20 pt in).
+        var y = Self.phoneOriginY - BoxTextView.pad.top
         for box in boxes {
             guard let view = boxViews[box.id] else { continue }
             let w = width(of: box)
             view.setWidth(w)
-            let frame = CGRect(x: ox + CGFloat(box.x), y: oy + CGFloat(box.y), width: w, height: view.contentHeight)
-            frames.append((box.id, frame, box.z))
+            let frame: CGRect
+            if stacked {
+                frame = CGRect(x: 20 - BoxTextView.pad.left, y: y, width: w, height: view.contentHeight)
+                separators.append(frame.maxY + 5)
+                y = frame.maxY + 5 + 1 + 5
+            } else {
+                frame = CGRect(x: ox + CGFloat(box.x), y: oy + CGFloat(box.y), width: w, height: view.contentHeight)
+            }
+            frames.append((box.id, frame, stacked ? 0 : box.z))
             maxX = max(maxX, frame.maxX)
             maxY = max(maxY, frame.maxY)
         }
+        surface.separators = separators
+        surface.separatorColor = palette.border
+        surface.separatorInset = 20
         for (id, frame, _) in frames.sorted(by: { $0.2 < $1.2 }) { // stacking order: higher z in front
             guard let view = boxViews[id] else { continue }
             view.frame = frame
@@ -251,7 +273,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
         if let editing { surface.bringSubviewToFront(editing) }
         let visible = CGSize(width: max(bounds.width, 1) / max(zoomScale, 0.01), height: max(bounds.height, 1) / max(zoomScale, 0.01))
-        let size = CGSize(width: max(maxX + 240, visible.width), height: max(maxY + 320, oy + 320, visible.height))
+        let size = stacked
+            ? CGSize(width: visible.width, height: max(maxY + visible.height * 0.4, visible.height))
+            : CGSize(width: max(maxX + 240, visible.width), height: max(maxY + 320, oy + 320, visible.height))
         surface.bounds = CGRect(origin: .zero, size: size)
         surface.center = CGPoint(x: size.width * zoomScale / 2, y: size.height * zoomScale / 2)
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
@@ -408,6 +432,11 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 final class PageSurfaceView: UIView {
     static let rule: CGFloat = 28
     var ruleColor = Palette.light.pageRule
+    var separators: [CGFloat] = [] {
+        didSet { if separators != oldValue { setNeedsDisplay() } }
+    }
+    var separatorColor = Palette.light.border
+    var separatorInset: CGFloat = 20
     private var rules = "none"
     private var originY: CGFloat = 0
 
@@ -419,6 +448,8 @@ final class PageSurfaceView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
+        separatorColor.setFill()
+        for y in separators { UIRectFill(CGRect(x: separatorInset, y: y, width: bounds.width - separatorInset * 2, height: 1)) }
         guard rules == "lines" || rules == "grid" else { return }
         ruleColor.setFill()
         let step = Self.rule

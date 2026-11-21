@@ -148,6 +148,18 @@ extension SessionModel {
     }
 }
 
+private struct PhoneLayoutKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// The phone shell (≤ 760 pt wide): stacked boxes, no Hybrid inset, the phone's page bar.
+    var phoneLayout: Bool {
+        get { self[PhoneLayoutKey.self] }
+        set { self[PhoneLayoutKey.self] = newValue }
+    }
+}
+
 extension View {
     /// Remember this view's frame in the shell's coordinate space (menus open from it).
     func anchor(_ id: String, _ shell: Shell) -> some View {
@@ -201,6 +213,9 @@ struct AppShell: View {
             .coordinateSpace(name: "shell")
         }
         .environment(shell)
+        .background(GeometryReader { g in
+            Color.clear.onAppear { if shell.sidebarOpen == nil { shell.sidebarOpen = g.size.width >= 900 } }
+        })
         .onAppear {
             theme.systemDark = scheme == .dark
             openLookMenu()
