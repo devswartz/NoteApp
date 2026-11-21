@@ -6,7 +6,8 @@
 //! there, and no input rules run on it. Every update starts again from the state before the
 //! composition began, so the tree never holds two drafts. `commit_composition` goes back to that
 //! state and types the final text once with `insert_text` (input rules included), so the page
-//! sees one change; `cancel_composition` goes back without typing.
+//! sees one change; `cancel_composition` goes back without typing (deleting the selection the
+//! composition replaced).
 
 use crate::editor::{Editor, Focus};
 use crate::node::{u16_len, Mark, Node};
@@ -95,15 +96,21 @@ impl Editor {
         if let Some(c) = self.composition.take() {
             self.restore(c.base_doc, c.base_sel, c.base_marks);
         }
-        if !text.is_empty() {
+        if text.is_empty() {
+            // Nothing chosen: the selection the composition replaced still goes.
+            self.delete_selection();
+        } else {
             self.insert_text(text);
         }
     }
 
-    /// End the composition without typing anything: back to the state before it.
+    /// End the composition without typing anything: the marked text goes, and so does the
+    /// selection it replaced (as in browsers and Android: the composition already took it). The
+    /// caller runs `finish()`.
     pub fn cancel_composition(&mut self) {
         if let Some(c) = self.composition.take() {
             self.restore(c.base_doc, c.base_sel, c.base_marks);
+            self.delete_selection();
         }
     }
 
@@ -194,11 +201,17 @@ mod tests {
 
     #[test]
     fn cancel_goes_back() {
+        let mut ed = editor("<paragraph>ab|</paragraph>");
+        ed.set_composition("x", None);
+        ed.cancel_composition();
+        assert_eq!(show(&ed), "<paragraph>ab|</paragraph>");
+        // The selection the composition replaced stays deleted.
         let mut ed = editor("<paragraph>a[b]c</paragraph>");
         ed.set_composition("x", None);
         assert_eq!(show(&ed), "<paragraph>ax|c</paragraph>");
         ed.cancel_composition();
-        assert_eq!(show(&ed), "<paragraph>a[b]c</paragraph>");
+        ed.finish();
+        assert_eq!(show(&ed), "<paragraph>a|c</paragraph>");
     }
 
     #[test]
