@@ -23,18 +23,18 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Sign in (email + password) | ● | ● | ● | ● | ● | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
+| Sign in (email + password) | ● ✓ | ● | ● | ● | ● | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
 | Create account (open sign-up) | ● | ● | ● | ● | ● | ● | `/auth/register`; `/login?mode=register&email=…` prefill (web) |
 | Email confirmation screen (Check your email, Resend, I've verified, Sign out) | ● | ● | ● | ● | ● | ● | `CheckEmail.tsx`, `VerifyEmail.tsx`; unconfirmed accounts deleted after 7 days |
 | Forgot / reset password | ● | ● | ● | ● | ● | ● | email link opens web `ResetPassword` |
-| Sign-in kept securely | ● | ● | ● | ● | ● | ◐ | mobile: secure storage plugin (Keychain/Keystore); desktop: system keychain (`secure.rs`); web: browser storage |
+| Sign-in kept securely | ● ✓ | ● | ● | ● | ● | ◐ | mobile: secure storage plugin (Keychain/Keystore); desktop: system keychain (`secure.rs`); web: browser storage |
 | Release builds locked to app.notiveloapp.com; internal builds have hidden "Change server…" | ● | ● | ● | ● | ● | — | `src/platform/serverUrl.ts`, desktop `config.rs` |
 | Profile: name, avatar colour | ● | ● | ● | ● | ● | ● | Settings → Profile |
 | Change password | ● | ● | ● | ● | ● | ● | `POST /me/password` |
 | Delete account (preview of consequences, password) | ● | ● | ● | ● | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● | ● | ● | ● | ● | ● | sign-in screen and Settings → About |
-| Sign out | ● | ● | ● | ● | ● | ● | |
+| Sign out | ● ✓ | ● | ● | ● | ● | ● | |
 | Invite link: open, accept, join workspace | ● | ● | ● | ● | ● | ● | `/invites/:token`; universal links on iOS |
 
 ## 2. Navigation and shell
@@ -43,7 +43,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 |---|---|---|---|---|---|---|---|
 | Rail: Notes, Tasks, Calendar | ● | — | ● | ● | — | ● | `Rail.tsx`; phones use the tab bar |
 | Bottom tab bar (Notes, Today, +, My Tasks, Search) | — | ● | — | — | ● | ◐ | `MobileChrome.tsx`; web on narrow screens |
-| Workspace switcher (top of sidebar) | ● | ● | ● | ● | ● | ● | |
+| Workspace switcher (top of sidebar) | ● ✓ | ● | ● | ● | ● | ● | |
 | Create workspace | ● | ● | ● | ● | ● | ● | `POST /workspaces` |
 | Notes panel: notebook picker, section tree, pages list | ● | ● | ● | ● | ● | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
 | Section ribbons / colour tabs | ● | ◐ | ● | ● | ◐ | ● | `SectionRibbons.tsx` *(verify phone form)* |

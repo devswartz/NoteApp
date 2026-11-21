@@ -4,39 +4,28 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 
 ## Now
 
-- **M5 (iPad app on the online Core API)**: branch `rewrite/apple-m5`, cut from `rewrite/native` at f9ba1df. Not started: this file is the handover for a fresh session (the previous one's context ran large).
+- **M5 basics done** on branch `rewrite/apple-m5` (not merged): the iPad app signs in through the core, shows the workspace tree, opens pages live and read-only, and lists tasks with ticks. Built and screenshotted in CI; **real sign-in and live updates are untested** (no credentials in CI): Devon's TestFlight check below is the first real test. Next: whatever that check finds, then editing (nv-editor) and the rest of the iPad PARITY column.
 
 ## Requests
 
-- **apple → core** (open, core is on it): typed **box content** for a page (what's in each box), so the page view stops reading `tests/corpus/cases/*/expected.json`. Core will say when in `docs/rewrite/status/core.md`.
-- **apple → core** (open, low priority): `x86_64` slices (simulator, macOS) in the XCFramework; apple excludes x86_64 for now (`EXCLUDED_ARCHS` in `apps/apple/project.yml`).
+- **apple → core** (open, low priority): `Core.openPage` blocks while it connects, and apple runs every core call on one serial queue, so a slow connect holds up a task tick. Either an async/non-blocking connect, or a note on which `Core` calls are safe to run concurrently (apple would then use a concurrent queue).
+- **apple → core** (open): reconnect inside `LivePage` (nv-sync robustness, already planned). Until then apple reopens the page itself after `Failed` / `Closed` (2 s doubling to 30 s; 4401 reopens at once, up to 3 times; 4403 stops).
+- **apple → core** (open, low priority): unlocking locked pages in the Core API; apple shows "Locked pages open in the web app for now".
+- Done: typed box content (core M4 step 1) is what the page view draws now, for live and corpus pages; x86_64 slices exist (apple still sets `EXCLUDED_ARCHS` for x86_64; harmless, can go).
 
-## Handover for a fresh session (2026-11-21)
+## What exists (all in `apps/apple/`)
 
-### The task (from the overseeing session)
-
-On `rewrite/apple-m5`, make the iPad app real against the online Core API (see "core → apple: online Core API (M3)" in `docs/rewrite/STATUS.md`):
-
-1. **Sign-in**: `Core(serverUrl:)`, `signIn(email:password:)`. Keep the refresh token in the keychain and store `core.refreshToken()` again after calls (it rotates). `restoreSession(refreshToken:)` on launch; sign-out. Server `https://app.notiveloapp.com` by default, with a hidden staging setting (`https://staging.notiveloapp.com`). Run core calls off the main thread (they block).
-2. **Sidebar**: workspaces, then notebooks, sections (nest up to 3 levels) and pages from `tree(workspaceId:)`, in today's order, in the NavigationSplitView.
-3. **Open a page live, read-only**: `openPage(pageId:listener:)` returns a `LivePage`; implement `PageListener` (`onStatus`, `onChange(page:)`, called on the core's thread: hop to the main actor) and redraw the TextKit 2 view so web edits show up live. Keep the corpus-JSON content path behind a protocol until core's typed box content lands.
-4. **Tasks list**: `tasks(workspaceId:)`; tick with `setTaskDone`.
-
-Upload to TestFlight as 1.99.x after each working step (commit message with `[testflight]`), and add a "How Devon tests this build" note below (what to tap, what should happen). Don't edit `docs/rewrite/STATUS.md`; write here. Don't merge to `rewrite/native` or `main`.
-
-### What exists (all in `apps/apple/`)
-
-- `project.yml` (XcodeGen; the `.xcodeproj` is generated, not committed): targets `Notivelo` (iPad + iPhone, iOS 17, bundle ID `com.devswartz.notivelo`, App Group `group.com.devswartz.notivelo`) and `NotiveloMac` (macOS 14, sandbox + network client). Both depend on the local package `NotiveloCore` at `../../target/apple/NotiveloCore` (built by `crates/nv-core/build-xcframework.sh`; CI does it) and bundle `tests/corpus/cases` as the folder `cases`. arm64 only.
+- `project.yml` (XcodeGen; the `.xcodeproj` is generated, not committed): targets `Notivelo` (iPad + iPhone, iOS 17, bundle ID `com.devswartz.notivelo`, App Group) and `NotiveloMac` (macOS 14, sandbox + network client). Both depend on the local package `NotiveloCore` at `../../target/apple/NotiveloCore` (CI builds it) and bundle `tests/corpus/cases` as `cases`.
 - `Sources/Shared/`:
-  - `NotiveloApp.swift` (@main), `RootView.swift` (sign-in vs main), `SessionModel.swift` (**placeholder** sign-in: replace with the Core session; `-previewSignedIn YES` launch argument skips sign-in, CI screenshots use it).
-  - `SignInView.swift`: placeholder form; shows `1.99.x (build) · core <version> · page format <n>`.
-  - `MainView.swift`: NavigationSplitView; sidebar has task views (placeholders) and "Sample pages (corpus)"; `-page <case>` launch argument opens a corpus page. `PageScreen` loads a page: iOS draws `PageCanvasView`, Mac shows `pageMarkdown`.
-  - `CorpusPage.swift`: loads a corpus case: `readPage(update:)` for kind, settings and boxes in reading order; box content and task lines from the case's JSON. **This is the path to put behind a protocol** (e.g. `PageSource` giving `PageInfo` + per-box content + task lines), with a live implementation on `LivePage`.
-  - `PageNode.swift`: box content tree (element/text runs with marks), same shape as the corpus fragments; `TaskLine` (shown/hidden).
-  - `PageText.swift`: `PageTextRenderer`, nodes → `NSAttributedString` (every block and mark in the corpus; list markers via core `listMarker`; tasks with title/done/due; unknown task: notes only; hidden: left out).
-  - `CoreBridge.swift`: `statusLine` (coreVersion, pageFormatVersion).
-- `Sources/iOS/PageCanvasView.swift`: `UIViewRepresentable` → `PageScrollView` (UIScrollView, zoom 0.25–4, double-tap zoom) with `PageSurfaceView` (page colour, rule lines/grid every 28 pt from the page origin). One `UITextView(usingTextLayoutManager: true)` per box at its x/y/w, z order respected, surface grows to fit negative positions. `show(_:)` skips redraw when the page id is unchanged: **for live updates, redraw on change** (e.g. key on a revision, or update text views in place).
-- `scripts/testflight-builds.mjs`: lists recent App Store Connect builds and processing state (read-only; CI runs it).
+  - `SessionModel.swift`: owns a `Core` for the server (production, or staging via a hidden switch stored in UserDefaults `useStaging`). Sign-in, `restoreSession` at launch, sign-out; the refresh token lives in the keychain (`Keychain.swift`: generic password, service `com.devswartz.notivelo.native`, account = server URL) and is stored again after every call. All core calls run on one serial queue, results on the main thread; a `SignedOut` from any call ends the session. Also workspaces (last choice per server in UserDefaults), tree, tasks, optimistic ticks (`setDone`). `-previewSignedIn YES` = corpus mode, no network.
+  - `SignInView.swift`: form with errors; long-press (1.5 s) the version line to switch production/staging; the host shows in orange when not production; "Try again" when a kept sign-in couldn't be resumed (offline).
+  - `MainView.swift`: NavigationSplitView. Sidebar: workspace picker (when there's more than one), Tasks, notebooks → sections (nested) → pages in `position` order (`TreeIndex`), pull to refresh; "Sample pages (corpus)" in corpus mode only. Detail: `LivePageScreen` (live page, read-only, sync badge), `SamplePageScreen`, `TasksView`.
+  - `PageSource.swift`: `PageSnapshot` (what the view draws: `PageInfo` incl. typed box content, task lines, page titles), `PageSource` protocol, `LivePageModel` (opens with `Core.openPage`, a coalescing `PageListener` that hops to the main thread, reconnects, closes on leaving the page).
+  - `CorpusPage.swift`: corpus pages through `readPage` (typed content too); task lines/title from `input.json`.
+  - `PageText.swift`: `PageTextRenderer`, `ContentNode`s → `NSAttributedString` (blocks, marks, core's list markers, task lines, page links by title, unknown nodes).
+  - `TasksView.swift`: open tasks (due, priority, checklist count; subtasks under their parent), Completed folded.
+- `Sources/iOS/PageCanvasView.swift`: boxes as TextKit 2 text views on the page surface in a zooming scroll view; redraws when the page's content or task lines change, keeping zoom and scroll position.
+- Mac: same shell; pages show the core's Markdown (`pageMarkdown` of `LivePage.document()`).
 
 ### CI (`.github/workflows/apple-native.yml`, macos-15)
 
@@ -46,22 +35,24 @@ Upload to TestFlight as 1.99.x after each working step (commit message with `[te
 - A full run with upload takes about 8–12 minutes; `gh run watch <id> --exit-status` then `gh run view <id> --log | grep -E 'notice\]Uploaded|IOS 1.99'`.
 - Risk: the cert-revoke script could revoke a concurrently running `mobile.yml` release's certificate; avoid `[testflight]` while a real release runs.
 
-### TestFlight so far (all VALID)
+### TestFlight so far (all VALID unless noted)
 
-1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix.
-
-### Notes for M5
-
-- Keychain: a small `Keychain` helper (generic password, service `com.devswartz.notivelo.native`, account = server URL) is enough; access group not needed yet. Today's Capacitor app stores its token via the secure-storage plugin under its own keys; don't share or migrate them now.
-- Staging switch: hidden, e.g. a long-press on the version line on the sign-in screen, stored in UserDefaults; show the server host on the sign-in screen when it isn't production.
-- Mac target must keep building (it shares `Sources/Shared`); keep UIKit-only code in `Sources/iOS` or behind `#if os(iOS)`.
-- Release builds talk only to app.notiveloapp.com today (`src/platform/serverUrl.ts`); staging is a tester convenience, not shown to normal users.
-- PARITY.md: add ✓ to the iPad cells of rows that become native (sign-in, sidebar tree, live page read-only is partial, tasks list partial).
+1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · **1.99.20 (130.20) M5 basics** (run 44920271305; upload not confirmed when this was written).
 
 ## How Devon tests this build
 
-- **1.99.8 (130.8)**: open the app from TestFlight. Sign-in screen shows "Native preview" and the version line with `core 0.1.0 · page format 2`. Tap **Sign in** (nothing is sent anywhere). The sidebar lists "Sample pages (corpus)": tap **canvas-boxes** (boxes at their positions; pan, pinch to zoom, double-tap to zoom in/out), **tasks** (task circles, due date, notes and subtask indented), **settings-and-ink** (blue page with a grid).
+- **1.99.20 (130.20)**, on the iPad from TestFlight:
+  1. The sign-in screen shows "Native preview" and `1.99.20 (130.20) · core 0.1.0 · page format 2`. Sign in with your Notivelo email and password. A wrong password should say "Wrong email or password." under the button.
+  2. The sidebar (tap the sidebar button in portrait) shows **Tasks** and your notebooks, open, with their sections folded; open a section (subsections nest) to see its pages in the web app's order. With more than one workspace, a **Workspace** picker sits at the top; switching reloads the tree. Pull down on the sidebar to refresh.
+  3. Tap a page: "Opening…", then its boxes at their positions (read-only; pinch to zoom, double-tap). Task lines show title, done and due date from your task list.
+  4. With the page open on the iPad, edit that page in the web app (type in a box, add a line, tick a checkbox). The iPad should show each change within a second or so, without jumping back to the top or losing the zoom.
+  5. Tap **Tasks**: open tasks by due date, subtasks indented under their parent, "Completed (n)" folded at the bottom. Tap a circle: it ticks at once and moves to Completed; the web app should show it done. Tap it again in Completed to reopen.
+  6. Quit the app (swipe it away) and reopen: it should go straight back in (kept sign-in). The person icon at the top of the sidebar → **Sign out** returns to the sign-in screen; reopening the app then asks to sign in again.
+  7. Staging: on the sign-in screen, press and hold the version line for 1.5 s: "Server: staging.notiveloapp.com" appears in orange and sign-in now goes to staging. Hold again to go back to production.
+  - Not there yet: editing, locked pages ("open in the web app"), images (shown as a placeholder line), comments, search, the task views beyond the one list. Please note anything that fails, especially at steps 1, 4 and 6 (never run against the real server before).
+- In corpus mode (CI screenshots only, `-previewSignedIn YES`), the sidebar still lists the corpus sample pages.
 
 ## Done
 
+- 2026-11-21, M5 basics (`rewrite/apple-m5`): real sign-in with the keychain and staging switch, workspace tree, live read-only pages from the core's typed box content (corpus pages through the same renderer), task list with optimistic ticks. CI green (simulator, screenshots, Mac); TestFlight 1.99.20 (130.20) sent by run 44920271305 (upload not yet confirmed).
 - 2026-11-21: page view merged into `rewrite/native` (41c64bc); see `docs/rewrite/STATUS.md` Done for M1 and the M4 groundwork.
