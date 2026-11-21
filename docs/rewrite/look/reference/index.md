@@ -1,0 +1,194 @@
+# Reference screenshots
+
+Today's web app, captured by `docs/rewrite/look/capture.mjs` (see `../README.md`). Light theme unless the file starts with `dark-` or `hybrid-` (Hybrid is the web app's default theme: dark chrome, light page). Described in `docs/rewrite/LOOK.md`.
+
+## ipad-landscape (1180×820 CSS px @1x)
+
+| File | What |
+|---|---|
+| [`ipad-landscape/sign-in.png`](ipad-landscape/sign-in.png) | Sign-in screen (Login.tsx) |
+| [`ipad-landscape/page-canvas-boxes.png`](ipad-landscape/page-canvas-boxes.png) | Corpus canvas-boxes: boxes placed on the canvas (phones: stacked) |
+| [`ipad-landscape/page-canvas-boxes-2.png`](ipad-landscape/page-canvas-boxes-2.png) | Corpus canvas-boxes: boxes placed on the canvas (phones: stacked) (scrolled down) |
+| [`ipad-landscape/page-blocks.png`](ipad-landscape/page-blocks.png) | Corpus blocks: callout, toggle, table, image, file card, mentions, page link |
+| [`ipad-landscape/page-blocks-2.png`](ipad-landscape/page-blocks-2.png) | Corpus blocks: callout, toggle, table, image, file card, mentions, page link (scrolled down) |
+| [`ipad-landscape/page-lists.png`](ipad-landscape/page-lists.png) | Corpus lists: bullets, numbered (letters, roman, ")"), checklists |
+| [`ipad-landscape/page-lists-2.png`](ipad-landscape/page-lists-2.png) | Corpus lists: bullets, numbered (letters, roman, ")"), checklists (scrolled down) |
+| [`ipad-landscape/page-tasks.png`](ipad-landscape/page-tasks.png) | Corpus tasks: task lines with notes, checklist, subtask, done task |
+| [`ipad-landscape/page-tasks-2.png`](ipad-landscape/page-tasks-2.png) | Corpus tasks: task lines with notes, checklist, subtask, done task (scrolled down) |
+| [`ipad-landscape/page-settings-and-ink.png`](ipad-landscape/page-settings-and-ink.png) | Corpus settings-and-ink: blue page colour, grid rule lines, ink |
+| [`ipad-landscape/page-meeting.png`](ipad-landscape/page-meeting.png) | Demo "Weekly sync": tasks with priority, due, assignee, recurrence |
+| [`ipad-landscape/page-meeting-2.png`](ipad-landscape/page-meeting-2.png) | Demo "Weekly sync": tasks with priority, due, assignee, recurrence (scrolled down) |
+| [`ipad-landscape/page-roadmap.png`](ipad-landscape/page-roadmap.png) | Demo "Q4 roadmap": callout, headings, table, toggle |
+| [`ipad-landscape/page-roadmap-2.png`](ipad-landscape/page-roadmap-2.png) | Demo "Q4 roadmap": callout, headings, table, toggle (scrolled down) |
+| [`ipad-landscape/sidebar.png`](ipad-landscape/sidebar.png) | Sidebar open with notebook picker, sections and pages (tree expanded) |
+| [`ipad-landscape/edit-caret.png`](ipad-landscape/edit-caret.png) | A box being edited: caret at the end of "Box c", box chrome (border, move bar, width handle) |
+| [`ipad-landscape/ribbon-page-active.png`](ipad-landscape/ribbon-page-active.png) | Note ribbon while editing (controls enabled) |
+| [`ipad-landscape/edit-selection.png`](ipad-landscape/edit-selection.png) | Text selected ("Box c"): selection colour and the floating formatting toolbar |
+| [`ipad-landscape/slash-menu.png`](ipad-landscape/slash-menu.png) | Slash menu ("/" on an empty line) |
+| [`ipad-landscape/ribbon-page-idle.png`](ipad-landscape/ribbon-page-idle.png) | Note ribbon with no box focused (editing controls disabled) |
+| [`ipad-landscape/ribbon-menu-block.png`](ipad-landscape/ribbon-menu-block.png) | Ribbon: block type menu |
+| [`ipad-landscape/ribbon-menu-text-colour.png`](ipad-landscape/ribbon-menu-text-colour.png) | Ribbon: text colour menu |
+| [`ipad-landscape/ribbon-menu-highlight.png`](ipad-landscape/ribbon-menu-highlight.png) | Ribbon: highlight menu |
+| [`ipad-landscape/ribbon-menu-task.png`](ipad-landscape/ribbon-menu-task.png) | Ribbon: Task split button menu |
+| [`ipad-landscape/ribbon-menu-page-colour.png`](ipad-landscape/ribbon-menu-page-colour.png) | Ribbon: page colour menu |
+| [`ipad-landscape/ribbon-menu-rule-lines.png`](ipad-landscape/ribbon-menu-rule-lines.png) | Ribbon: rule lines menu |
+| [`ipad-landscape/ribbon-collapsed.png`](ipad-landscape/ribbon-collapsed.png) | Ribbon collapsed to its strip |
+| [`ipad-landscape/ribbon-tasks.png`](ipad-landscape/ribbon-tasks.png) | Tasks ribbon |
+| [`ipad-landscape/ribbon-calendar.png`](ipad-landscape/ribbon-calendar.png) | Calendar ribbon |
+| [`ipad-landscape/ribbon-notes.png`](ipad-landscape/ribbon-notes.png) | Notes overview ribbon |
+| [`ipad-landscape/ribbon-settings.png`](ipad-landscape/ribbon-settings.png) | Settings ribbon |
+| [`ipad-landscape/settings.png`](ipad-landscape/settings.png) | Settings screen (personal) |
+| [`ipad-landscape/tasks-today.png`](ipad-landscape/tasks-today.png) | Tasks: Today |
+| [`ipad-landscape/tasks-upcoming.png`](ipad-landscape/tasks-upcoming.png) | Tasks: Upcoming |
+| [`ipad-landscape/tasks-my.png`](ipad-landscape/tasks-my.png) | Tasks: My Tasks |
+| [`ipad-landscape/tasks-all.png`](ipad-landscape/tasks-all.png) | Tasks: All tasks |
+| [`ipad-landscape/tasks-calendar.png`](ipad-landscape/tasks-calendar.png) | Tasks: Calendar |
+| [`ipad-landscape/task-detail.png`](ipad-landscape/task-detail.png) | Task detail sheet (click a task) |
+| [`ipad-landscape/page-tasks-panel.png`](ipad-landscape/page-tasks-panel.png) | Page with its "Tasks on this page" panel open |
+| [`ipad-landscape/menu-page-options.png`](ipad-landscape/menu-page-options.png) | Page "⋯" menu (top bar) |
+| [`ipad-landscape/menu-section.png`](ipad-landscape/menu-section.png) | Section menu (right-click / long-press a section) |
+| [`ipad-landscape/menu-page-row.png`](ipad-landscape/menu-page-row.png) | Page row menu (right-click / long-press a page in the tree) |
+| [`ipad-landscape/menu-notebook.png`](ipad-landscape/menu-notebook.png) | Notebook options menu |
+| [`ipad-landscape/menu-notebook-picker.png`](ipad-landscape/menu-notebook-picker.png) | Notebook picker |
+| [`ipad-landscape/menu-workspace.png`](ipad-landscape/menu-workspace.png) | Workspace switcher (rail) |
+| [`ipad-landscape/menu-account.png`](ipad-landscape/menu-account.png) | Account and settings menu (rail; theme toggle) |
+| [`ipad-landscape/menu-text-box.png`](ipad-landscape/menu-text-box.png) | Text box menu (right-click a box's top bar) |
+| [`ipad-landscape/search.png`](ipad-landscape/search.png) | Search / command palette with results for "plan" |
+| [`ipad-landscape/quick-add.png`](ipad-landscape/quick-add.png) | Quick add task dialog |
+| [`ipad-landscape/empty-no-page.png`](ipad-landscape/empty-no-page.png) | No page selected: the Notes overview (recently edited, all notebooks) |
+| [`ipad-landscape/empty-section.png`](ipad-landscape/empty-section.png) | An empty section |
+| [`ipad-landscape/empty-workspace-notes.png`](ipad-landscape/empty-workspace-notes.png) | A workspace with no notebooks |
+| [`ipad-landscape/empty-tasks-today.png`](ipad-landscape/empty-tasks-today.png) | Tasks: Today with nothing due |
+| [`ipad-landscape/empty-tasks-all.png`](ipad-landscape/empty-tasks-all.png) | Tasks: All tasks with no tasks |
+| [`ipad-landscape/dark-sign-in.png`](ipad-landscape/dark-sign-in.png) | Sign-in (dark) |
+| [`ipad-landscape/dark-page-canvas-boxes.png`](ipad-landscape/dark-page-canvas-boxes.png) | Canvas page with sidebar (dark) |
+| [`ipad-landscape/dark-page-meeting.png`](ipad-landscape/dark-page-meeting.png) | Meeting page with tasks (dark) |
+| [`ipad-landscape/dark-page-settings-and-ink.png`](ipad-landscape/dark-page-settings-and-ink.png) | Blue page colour + grid (dark) |
+| [`ipad-landscape/dark-edit-caret.png`](ipad-landscape/dark-edit-caret.png) | Editing a box (dark) |
+| [`ipad-landscape/dark-menu-account.png`](ipad-landscape/dark-menu-account.png) | Account menu (dark) |
+| [`ipad-landscape/dark-tasks-today.png`](ipad-landscape/dark-tasks-today.png) | Tasks: Today (dark) |
+| [`ipad-landscape/hybrid-sign-in.png`](ipad-landscape/hybrid-sign-in.png) | Sign-in (hybrid) |
+| [`ipad-landscape/hybrid-page-canvas-boxes.png`](ipad-landscape/hybrid-page-canvas-boxes.png) | Canvas page with sidebar (hybrid) |
+| [`ipad-landscape/hybrid-page-meeting.png`](ipad-landscape/hybrid-page-meeting.png) | Meeting page with tasks (hybrid) |
+| [`ipad-landscape/hybrid-page-settings-and-ink.png`](ipad-landscape/hybrid-page-settings-and-ink.png) | Blue page colour + grid (hybrid) |
+| [`ipad-landscape/hybrid-edit-caret.png`](ipad-landscape/hybrid-edit-caret.png) | Editing a box (hybrid) |
+| [`ipad-landscape/hybrid-menu-account.png`](ipad-landscape/hybrid-menu-account.png) | Account menu (hybrid) |
+| [`ipad-landscape/hybrid-tasks-today.png`](ipad-landscape/hybrid-tasks-today.png) | Tasks: Today (hybrid) |
+
+## ipad-portrait (820×1180 CSS px @1x)
+
+| File | What |
+|---|---|
+| [`ipad-portrait/sign-in.png`](ipad-portrait/sign-in.png) | Sign-in screen (Login.tsx) |
+| [`ipad-portrait/page-canvas-boxes.png`](ipad-portrait/page-canvas-boxes.png) | Corpus canvas-boxes: boxes placed on the canvas (phones: stacked) |
+| [`ipad-portrait/page-canvas-boxes-2.png`](ipad-portrait/page-canvas-boxes-2.png) | Corpus canvas-boxes: boxes placed on the canvas (phones: stacked) (scrolled down) |
+| [`ipad-portrait/page-blocks.png`](ipad-portrait/page-blocks.png) | Corpus blocks: callout, toggle, table, image, file card, mentions, page link |
+| [`ipad-portrait/page-lists.png`](ipad-portrait/page-lists.png) | Corpus lists: bullets, numbered (letters, roman, ")"), checklists |
+| [`ipad-portrait/page-lists-2.png`](ipad-portrait/page-lists-2.png) | Corpus lists: bullets, numbered (letters, roman, ")"), checklists (scrolled down) |
+| [`ipad-portrait/page-tasks.png`](ipad-portrait/page-tasks.png) | Corpus tasks: task lines with notes, checklist, subtask, done task |
+| [`ipad-portrait/page-settings-and-ink.png`](ipad-portrait/page-settings-and-ink.png) | Corpus settings-and-ink: blue page colour, grid rule lines, ink |
+| [`ipad-portrait/page-meeting.png`](ipad-portrait/page-meeting.png) | Demo "Weekly sync": tasks with priority, due, assignee, recurrence |
+| [`ipad-portrait/page-meeting-2.png`](ipad-portrait/page-meeting-2.png) | Demo "Weekly sync": tasks with priority, due, assignee, recurrence (scrolled down) |
+| [`ipad-portrait/page-roadmap.png`](ipad-portrait/page-roadmap.png) | Demo "Q4 roadmap": callout, headings, table, toggle |
+| [`ipad-portrait/page-roadmap-2.png`](ipad-portrait/page-roadmap-2.png) | Demo "Q4 roadmap": callout, headings, table, toggle (scrolled down) |
+| [`ipad-portrait/page-canvas-boxes-sidebar-open.png`](ipad-portrait/page-canvas-boxes-sidebar-open.png) | Canvas page after "Show sidebar" (the sidebar starts closed below 900 px wide) |
+| [`ipad-portrait/sidebar.png`](ipad-portrait/sidebar.png) | Sidebar open with notebook picker, sections and pages (tree expanded) |
+| [`ipad-portrait/edit-caret.png`](ipad-portrait/edit-caret.png) | A box being edited: caret at the end of "Box c", box chrome (border, move bar, width handle) |
+| [`ipad-portrait/ribbon-page-active.png`](ipad-portrait/ribbon-page-active.png) | Note ribbon while editing (controls enabled) |
+| [`ipad-portrait/edit-selection.png`](ipad-portrait/edit-selection.png) | Text selected ("Box c"): selection colour and the floating formatting toolbar |
+| [`ipad-portrait/slash-menu.png`](ipad-portrait/slash-menu.png) | Slash menu ("/" on an empty line) |
+| [`ipad-portrait/ribbon-page-idle.png`](ipad-portrait/ribbon-page-idle.png) | Note ribbon with no box focused (editing controls disabled) |
+| [`ipad-portrait/ribbon-menu-block.png`](ipad-portrait/ribbon-menu-block.png) | Ribbon: block type menu |
+| [`ipad-portrait/ribbon-menu-text-colour.png`](ipad-portrait/ribbon-menu-text-colour.png) | Ribbon: text colour menu |
+| [`ipad-portrait/ribbon-menu-highlight.png`](ipad-portrait/ribbon-menu-highlight.png) | Ribbon: highlight menu |
+| [`ipad-portrait/ribbon-menu-task.png`](ipad-portrait/ribbon-menu-task.png) | Ribbon: Task split button menu |
+| [`ipad-portrait/ribbon-menu-page-colour.png`](ipad-portrait/ribbon-menu-page-colour.png) | Ribbon: page colour menu |
+| [`ipad-portrait/ribbon-menu-rule-lines.png`](ipad-portrait/ribbon-menu-rule-lines.png) | Ribbon: rule lines menu |
+| [`ipad-portrait/ribbon-collapsed.png`](ipad-portrait/ribbon-collapsed.png) | Ribbon collapsed to its strip |
+| [`ipad-portrait/ribbon-tasks.png`](ipad-portrait/ribbon-tasks.png) | Tasks ribbon |
+| [`ipad-portrait/ribbon-calendar.png`](ipad-portrait/ribbon-calendar.png) | Calendar ribbon |
+| [`ipad-portrait/ribbon-notes.png`](ipad-portrait/ribbon-notes.png) | Notes overview ribbon |
+| [`ipad-portrait/ribbon-settings.png`](ipad-portrait/ribbon-settings.png) | Settings ribbon |
+| [`ipad-portrait/settings.png`](ipad-portrait/settings.png) | Settings screen (personal) |
+| [`ipad-portrait/tasks-today.png`](ipad-portrait/tasks-today.png) | Tasks: Today |
+| [`ipad-portrait/tasks-upcoming.png`](ipad-portrait/tasks-upcoming.png) | Tasks: Upcoming |
+| [`ipad-portrait/tasks-my.png`](ipad-portrait/tasks-my.png) | Tasks: My Tasks |
+| [`ipad-portrait/tasks-all.png`](ipad-portrait/tasks-all.png) | Tasks: All tasks |
+| [`ipad-portrait/tasks-calendar.png`](ipad-portrait/tasks-calendar.png) | Tasks: Calendar |
+| [`ipad-portrait/task-detail.png`](ipad-portrait/task-detail.png) | Task detail sheet (click a task) |
+| [`ipad-portrait/page-tasks-panel.png`](ipad-portrait/page-tasks-panel.png) | Page with its "Tasks on this page" panel open |
+| [`ipad-portrait/menu-page-options.png`](ipad-portrait/menu-page-options.png) | Page "⋯" menu (top bar) |
+| [`ipad-portrait/menu-section.png`](ipad-portrait/menu-section.png) | Section menu (right-click / long-press a section) |
+| [`ipad-portrait/menu-page-row.png`](ipad-portrait/menu-page-row.png) | Page row menu (right-click / long-press a page in the tree) |
+| [`ipad-portrait/menu-notebook.png`](ipad-portrait/menu-notebook.png) | Notebook options menu |
+| [`ipad-portrait/menu-notebook-picker.png`](ipad-portrait/menu-notebook-picker.png) | Notebook picker |
+| [`ipad-portrait/menu-workspace.png`](ipad-portrait/menu-workspace.png) | Workspace switcher (rail) |
+| [`ipad-portrait/menu-account.png`](ipad-portrait/menu-account.png) | Account and settings menu (rail; theme toggle) |
+| [`ipad-portrait/menu-text-box.png`](ipad-portrait/menu-text-box.png) | Text box menu (right-click a box's top bar) |
+| [`ipad-portrait/search.png`](ipad-portrait/search.png) | Search / command palette with results for "plan" |
+| [`ipad-portrait/quick-add.png`](ipad-portrait/quick-add.png) | Quick add task dialog |
+| [`ipad-portrait/empty-no-page.png`](ipad-portrait/empty-no-page.png) | No page selected: the Notes overview (recently edited, all notebooks) |
+| [`ipad-portrait/empty-section.png`](ipad-portrait/empty-section.png) | An empty section |
+| [`ipad-portrait/empty-workspace-notes.png`](ipad-portrait/empty-workspace-notes.png) | A workspace with no notebooks |
+| [`ipad-portrait/empty-tasks-today.png`](ipad-portrait/empty-tasks-today.png) | Tasks: Today with nothing due |
+| [`ipad-portrait/empty-tasks-all.png`](ipad-portrait/empty-tasks-all.png) | Tasks: All tasks with no tasks |
+
+## iphone (390×844 CSS px @2x)
+
+| File | What |
+|---|---|
+| [`iphone/sign-in.png`](iphone/sign-in.png) | Sign-in screen (Login.tsx) |
+| [`iphone/page-canvas-boxes.png`](iphone/page-canvas-boxes.png) | Corpus canvas-boxes: boxes placed on the canvas (phones: stacked) |
+| [`iphone/page-canvas-boxes-2.png`](iphone/page-canvas-boxes-2.png) | Corpus canvas-boxes: boxes placed on the canvas (phones: stacked) (scrolled down) |
+| [`iphone/page-blocks.png`](iphone/page-blocks.png) | Corpus blocks: callout, toggle, table, image, file card, mentions, page link |
+| [`iphone/page-blocks-2.png`](iphone/page-blocks-2.png) | Corpus blocks: callout, toggle, table, image, file card, mentions, page link (scrolled down) |
+| [`iphone/page-lists.png`](iphone/page-lists.png) | Corpus lists: bullets, numbered (letters, roman, ")"), checklists |
+| [`iphone/page-lists-2.png`](iphone/page-lists-2.png) | Corpus lists: bullets, numbered (letters, roman, ")"), checklists (scrolled down) |
+| [`iphone/page-tasks.png`](iphone/page-tasks.png) | Corpus tasks: task lines with notes, checklist, subtask, done task |
+| [`iphone/page-tasks-2.png`](iphone/page-tasks-2.png) | Corpus tasks: task lines with notes, checklist, subtask, done task (scrolled down) |
+| [`iphone/page-settings-and-ink.png`](iphone/page-settings-and-ink.png) | Corpus settings-and-ink: blue page colour, grid rule lines, ink |
+| [`iphone/page-meeting.png`](iphone/page-meeting.png) | Demo "Weekly sync": tasks with priority, due, assignee, recurrence |
+| [`iphone/page-meeting-2.png`](iphone/page-meeting-2.png) | Demo "Weekly sync": tasks with priority, due, assignee, recurrence (scrolled down) |
+| [`iphone/page-roadmap.png`](iphone/page-roadmap.png) | Demo "Q4 roadmap": callout, headings, table, toggle |
+| [`iphone/page-roadmap-2.png`](iphone/page-roadmap-2.png) | Demo "Q4 roadmap": callout, headings, table, toggle (scrolled down) |
+| [`iphone/notes-home.png`](iphone/notes-home.png) | Phone Notes screen: notebooks list (NotesHome NotebooksScreen) |
+| [`iphone/sidebar-drawer.png`](iphone/sidebar-drawer.png) | Phone drawer: workspace switcher, notebook picker, section tree, user row |
+| [`iphone/edit-caret.png`](iphone/edit-caret.png) | A box being edited: caret at the end of "Box c", box chrome (border, move bar, width handle) |
+| [`iphone/edit-selection.png`](iphone/edit-selection.png) | Text selected ("Box c"): selection colour and the floating formatting toolbar |
+| [`iphone/slash-menu.png`](iphone/slash-menu.png) | Slash menu ("/" on an empty line) |
+| [`iphone/tasks-today.png`](iphone/tasks-today.png) | Tasks: Today |
+| [`iphone/tasks-upcoming.png`](iphone/tasks-upcoming.png) | Tasks: Upcoming |
+| [`iphone/tasks-my.png`](iphone/tasks-my.png) | Tasks: My Tasks |
+| [`iphone/tasks-all.png`](iphone/tasks-all.png) | Tasks: All tasks |
+| [`iphone/tasks-calendar.png`](iphone/tasks-calendar.png) | Tasks: Calendar |
+| [`iphone/task-detail.png`](iphone/task-detail.png) | Task detail sheet (click a task) |
+| [`iphone/page-tasks-panel.png`](iphone/page-tasks-panel.png) | Page with its "Tasks on this page" panel open |
+| [`iphone/menu-page-options.png`](iphone/menu-page-options.png) | Page "⋯" menu (top bar) |
+| [`iphone/menu-section.png`](iphone/menu-section.png) | Section menu (right-click / long-press a section) |
+| [`iphone/menu-page-row.png`](iphone/menu-page-row.png) | Page row menu (right-click / long-press a page in the tree) |
+| [`iphone/menu-notebook.png`](iphone/menu-notebook.png) | Notebook options menu |
+| [`iphone/menu-notebook-picker.png`](iphone/menu-notebook-picker.png) | Notebook picker |
+| [`iphone/menu-workspace.png`](iphone/menu-workspace.png) | Workspace switcher |
+| [`iphone/menu-account.png`](iphone/menu-account.png) | Account and settings menu (theme toggle) |
+| [`iphone/search.png`](iphone/search.png) | Search / command palette with results for "plan" |
+| [`iphone/quick-add.png`](iphone/quick-add.png) | Quick add task dialog |
+| [`iphone/empty-section.png`](iphone/empty-section.png) | An empty section |
+| [`iphone/empty-workspace-notes.png`](iphone/empty-workspace-notes.png) | A workspace with no notebooks |
+| [`iphone/empty-workspace-drawer.png`](iphone/empty-workspace-drawer.png) | Drawer of a workspace with no notebooks |
+| [`iphone/empty-tasks-today.png`](iphone/empty-tasks-today.png) | Tasks: Today with nothing due |
+| [`iphone/empty-tasks-all.png`](iphone/empty-tasks-all.png) | Tasks: All tasks with no tasks |
+| [`iphone/dark-sign-in.png`](iphone/dark-sign-in.png) | Sign-in (dark) |
+| [`iphone/dark-page-canvas-boxes.png`](iphone/dark-page-canvas-boxes.png) | Canvas page with sidebar (dark) |
+| [`iphone/dark-page-meeting.png`](iphone/dark-page-meeting.png) | Meeting page with tasks (dark) |
+| [`iphone/dark-page-settings-and-ink.png`](iphone/dark-page-settings-and-ink.png) | Blue page colour + grid (dark) |
+| [`iphone/dark-edit-caret.png`](iphone/dark-edit-caret.png) | Editing a box (dark) |
+| [`iphone/dark-sidebar-drawer.png`](iphone/dark-sidebar-drawer.png) | Drawer (dark) |
+| [`iphone/dark-tasks-today.png`](iphone/dark-tasks-today.png) | Tasks: Today (dark) |
+| [`iphone/hybrid-sign-in.png`](iphone/hybrid-sign-in.png) | Sign-in (hybrid) |
+| [`iphone/hybrid-page-canvas-boxes.png`](iphone/hybrid-page-canvas-boxes.png) | Canvas page with sidebar (hybrid) |
+| [`iphone/hybrid-page-meeting.png`](iphone/hybrid-page-meeting.png) | Meeting page with tasks (hybrid) |
+| [`iphone/hybrid-page-settings-and-ink.png`](iphone/hybrid-page-settings-and-ink.png) | Blue page colour + grid (hybrid) |
+| [`iphone/hybrid-edit-caret.png`](iphone/hybrid-edit-caret.png) | Editing a box (hybrid) |
+| [`iphone/hybrid-sidebar-drawer.png`](iphone/hybrid-sidebar-drawer.png) | Drawer (hybrid) |
+| [`iphone/hybrid-tasks-today.png`](iphone/hybrid-tasks-today.png) | Tasks: Today (hybrid) |
+
