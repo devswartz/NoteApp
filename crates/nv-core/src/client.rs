@@ -857,6 +857,14 @@ pub struct LivePage {
     live: Mutex<Option<LiveDoc>>,
 }
 
+impl LivePage {
+    /// The page's yrs doc, for `EditorSession::open_live` (editor stream): local writes to it
+    /// are sent like `apply_update`'s, and the sync thread applies others' changes to it.
+    pub(crate) fn doc(&self) -> &nv_model::yrs::Doc {
+        &self.doc
+    }
+}
+
 #[uniffi::export]
 impl LivePage {
     pub fn page_id(&self) -> String {
