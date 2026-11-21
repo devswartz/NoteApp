@@ -158,6 +158,15 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: node scripts/ios-revoke-ci-certs.mjs
 
+      # Read-only: Apple's processing state of the latest uploads (did earlier 1.99.x builds go through?).
+      - name: Recent TestFlight builds
+        if: always() && env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: node apps/apple/scripts/testflight-builds.mjs 10
+
       - name: TestFlight skipped
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
         run: echo "::notice::App Store Connect secrets are not set; skipped the TestFlight upload."
