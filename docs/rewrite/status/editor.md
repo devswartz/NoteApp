@@ -2,6 +2,31 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-21: native text-input contract, step 2 (branch `rewrite/editor-input`)
+
+Branched from `origin/rewrite/native`. How UIKit, AppKit, Android, Windows (and later the web) text input maps onto the engine, written down, tested on today's editor, and passing in nv-editor.
+
+- **Contract**: `docs/rewrite/EDITOR.md` 10 "Native text input". The view exposes **one string per box** (a line per text block joined by `\n`; hard break `\n`; inline atoms and text-less blocks, task lines included, are U+FFFC), in UTF-16 offsets, which move 1:1 with engine positions inside a line. Per platform: which protocol call becomes `insert_text`, `replace_range`, `set_composition` / `commit_composition` / `finish_composition` / `cancel_composition`, `key()` or `set_selection`; keys vs text (chords go to `key()`, text through the protocol, keys go to the IME first while composing; newline, one-character delete-backward and tab through the protocol go to `key()`); the notifications a view sends when the engine changes text itself (`inputDelegate`, `updateSelection`, `NotifyTextChanged`, ...); Scribble, `UITextInteraction`, the keyboard's undo through an `UndoManager` that calls the engine.
+- **Engine (`crates/nv-editor`)**:
+  - `src/input.rs` (new): `ViewText` (`text`, `lines`, `to_pos`, `to_offset`, `slice`), `Editor::text_for_view()`, `view_offset_to_pos`, `pos_to_view_offset`; `Editor::replace_range(from, to, text) -> bool` (marks of the first replaced character, no input rules, its own undo step, selection mapped, refused outside text, offsets in the title when a task title has focus). 5 unit tests.
+  - `compose.rs`: cancel, and commit with empty text, now delete the selection the composition replaced (what Chromium does; before, cancel put the selection back).
+- **nv-core** (only `src/editor_session.rs`, plus a test in `tests/editor_session.rs`): `EditorSession::replace_range(from, to, text) -> bool`, `finish_composition()`, `text_for_view() -> String`, `view_offset_to_pos(u32) -> u32`, `pos_to_view_offset(u32) -> u32`; `cancel_composition` now runs `finish()`. lib.rs untouched.
+- **Suite**: step types `compose` (with `selection`), `commitComposition`, `cancelComposition`, `replace { from, to, text }` (positions), documented in `tests/editor/README.md` ("Text input"). TipTap drives them through Chromium's CDP: `Input.imeSetComposition` for marked text, `Input.insertText` to commit, an empty `imeSetComposition` to cancel; a replacement selects the range, inserts with `Input.insertText` and maps the old selection back (harness `nv.beginReplace` / `nv.endReplace`). A synthetic `insertReplacementText` `beforeinput` does nothing in ProseMirror, so it isn't used. New file `tests/editor/scenarios/input.json`, 18 scenarios.
+- **Counts**: TipTap **144 passed, 0 failed, 3 skipped** (147 scenarios; the new skip is below). nv-editor suite **147/147**, ratchet grown from 129 to 147 (`input` 18/18). `cargo test -p nv-editor -p nv-core` green (nv-editor 17 unit tests, nv-core `editor_session` 8), `cargo fmt --all`, `cargo clippy -p nv-editor -p nv-core --all-targets -- -D warnings` and `npx tsc -b` clean.
+
+### Findings
+
+- **Composition commits run input rules** in today's editor (TipTap's input rules also run on `compositionend`): `- ` committed through an IME makes a list. The engine does the same (commit types once with `insert_text`).
+- **Replacements run input rules** in today's editor: ProseMirror reads the DOM change as typed text (`handleTextInput`), so an autocorrect or dictation correction can make a list. The contract says replacements don't; `input/replacement doesn't run input rules` is skipped on TipTap (README Findings).
+- **Cancel over a selection deletes the selection** (Chromium deletes it when the composition starts); the engine now matches.
+- Undo after a committed composition is one step on both. Undo after a replacement restores the text; TipTap's selection there is the replaced range (an artefact of how the runner selects it), so that scenario ignores the selection.
+
+### What's next
+
+- The views: implement 10.3 to 10.6 against `EditorSession` (Apple first). The session will want `can_undo` / `can_redo` (for `UndoManager.canUndo`) and probably a `ViewText` record with the line table, so a view maps offsets without a call per position.
+- Composition in a task title (the title changes on commit only) and `replace_range` across a task line's notes are untested in the suite.
+- Not yet covered: reconversion (`setMarkedText` with a replacement range), Android `setComposingRegion`, Windows `TextUpdating` with a range away from the caret: all map to existing calls, but no scenario runs them.
+
 ## 2026-11-21: editor session in the Core API, step 1 (branch `rewrite/editor-session`)
 
 Branched from `origin/rewrite/native`. The native apps can now open a text box of a page and edit it through `nv-core`.
