@@ -8,6 +8,10 @@ name: Rust
 #             size budget. The web, Docker and app builds use the committed files and need no Rust.
 #             When it fails because the files differ, the job's `ink-wasm` artifact holds the right
 #             ones: copy them into src/ink/generated/ and commit.
+#   apple     builds the core for iOS and macOS as the NotiveloCore Swift package (an XCFramework plus
+#             the uniffi Swift bindings; crates/nv-core/build-xcframework.sh), runs its Swift tests
+#             against the page corpus, and uploads it as the `NotiveloCore` artifact. macOS minutes
+#             are dear, so on pull requests it runs only for the rewrite (branches rewrite/*).
 # Fuzzing (crates/nv-ink/fuzz, cargo +nightly fuzz run decode) runs by hand, not here.
 # Pull requests, and any push (a branch before it has a PR, main after a merge) that touches the Rust core or its build.
 on:
@@ -20,6 +24,8 @@ on:
       - 'src/ink/generated/**'
       - 'scripts/build-ink-wasm.sh'
       - '.github/workflows/rust.yml'
+      - 'tests/corpus/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -94,3 +100,32 @@ jobs:
           name: ink-wasm
           path: src/ink/generated/
           retention-days: 7
+
+  apple:
+    name: apple core
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'rewrite/') || startsWith(github.base_ref, 'rewrite/')
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: apple
+
+      - name: Build the NotiveloCore Swift package
+        run: bash crates/nv-core/build-xcframework.sh
+
+      - name: Swift tests (the bindings on the page corpus)
+        working-directory: target/apple/NotiveloCore
+        run: NV_CORPUS_DIR="$GITHUB_WORKSPACE/tests/corpus" swift test
+
+      - name: Upload the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotiveloCore
+          path: target/apple/NotiveloCore/
+          retention-days: 14

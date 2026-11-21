@@ -1,0 +1,24 @@
+[package]
+name = "nv-core"
+version = "0.1.0"
+description = "Notivelo's Core API (docs/ARCHITECTURE.md 3.3): the typed boundary the native apps call, exported with uniffi"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib: the Apple XCFramework (build-xcframework.sh); cdylib: Android, and uniffi's library-mode bindgen.
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[features]
+# The uniffi-bindgen binary (src/bin/uniffi-bindgen.rs), only needed to generate bindings.
+bindgen = ["uniffi/cli"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["bindgen"]
+
+[dependencies]
+nv-model = { path = "../nv-model" }
+uniffi = "0.32"

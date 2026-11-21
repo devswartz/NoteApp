@@ -2,7 +2,7 @@
 # The Tauri desktop shell (apps/desktop/src-tauri) is a separate Cargo project and stays out of
 # this workspace; so does the fuzz crate (it needs nightly and cargo-fuzz).
 [workspace]
-members = ["crates/nv-ink", "crates/nv-model"]
+members = ["crates/nv-ink", "crates/nv-model", "crates/nv-core"]
 exclude = ["apps/desktop/src-tauri", "crates/nv-ink/fuzz"]
 resolver = "2"
 
@@ -17,3 +17,10 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# Native libraries for the apps (crates/nv-core/build-xcframework.sh): release, but panics unwind
+# so the uniffi boundary turns them into errors instead of aborting the app.
+[profile.ffi]
+inherits = "release"
+opt-level = 3
+panic = "unwind"
