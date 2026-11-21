@@ -1,6 +1,6 @@
 # Rewrite status
 
-Updated by each workstream when it finishes a step (newest first under each heading). The overseeing session reads this to plan the next steps. Keep entries short.
+Kept by the overseeing session. **Workstreams don't edit this file** (parallel edits kept conflicting): each writes its updates, requests and handover notes in its own `docs/rewrite/status/<stream>.md` (core, editor, apple, …), and the overseer folds them in here when merging.
 
 ## Now
 

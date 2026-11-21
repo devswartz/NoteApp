@@ -19,6 +19,8 @@ on:
   push:
     paths:
       - 'crates/**'
+      - 'tests/editor/**'
+      - 'tests/corpus/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'src/ink/generated/**'
