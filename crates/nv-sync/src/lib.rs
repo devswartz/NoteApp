@@ -7,6 +7,9 @@
 pub mod live;
 pub mod protocol;
 
-pub use live::{ConnectError, Listener, LiveDoc, Status};
+pub use live::{
+    open_socket, AuthError, Backoff, ConnectError, Listener, LiveDoc, Options, Outbox, Session,
+    Status,
+};
 pub use protocol::{Handled, SyncDoc, SyncError, REMOTE_ORIGIN};
 pub use yrs;

@@ -181,9 +181,18 @@ fn locked_pages_are_never_stored() {
     let dir = TempDir::new("locked");
     let s = Script::default();
     let core = signed_in(&s, &dir);
-    s.reply(200, json!({ "ydoc": "CQk=" })) // p2, before any tree showed it locked
+    s.reply(200, json!({ "ydoc": "CQk=" })) // p2, before any tree showed it
+        .reply(200, tree(vec![page("p1", false), page("p2", false)]))
+        .reply(200, json!({ "ydoc": "CQk=" })) // p2, known unlocked
         .reply(200, tree(vec![page("p1", false), page("p2", true)]))
         .reply(200, json!({ "ydoc": "CQk=" })); // p2 again, now known to be locked
+    assert_eq!(core.page_document("p2".into()).unwrap(), [9, 9]);
+    assert_eq!(
+        core.cached_page_document("p2".into()),
+        None,
+        "not stored before a tree shows it unlocked"
+    );
+    core.tree("w1".into()).unwrap();
     assert_eq!(core.page_document("p2".into()).unwrap(), [9, 9]);
     assert!(core.cached_page_document("p2".into()).is_some());
     let t = core.tree("w1".into()).unwrap();

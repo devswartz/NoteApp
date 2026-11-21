@@ -37,7 +37,7 @@ pub struct Handled {
     pub doc_changed: bool,
     /// Someone's presence changed.
     pub awareness_changed: bool,
-    /// This was the server's step 2: the document now has everything the server had.
+    /// This was a step 2 (the answer to a step 1): the document now has everything the server had.
     pub synced: bool,
 }
 
@@ -77,12 +77,21 @@ impl SyncDoc {
         out
     }
 
-    /// Apply an update that came from the network.
-    pub fn apply_remote(&self, update: &[u8]) -> Result<(), SyncError> {
+    /// Apply an update that came from the network. Returns whether it changed the document
+    /// (a sync step 2 often carries nothing new: only deletions the document already has).
+    pub fn apply_remote(&self, update: &[u8]) -> Result<bool, SyncError> {
         let u = Update::decode_v1(update).map_err(|e| SyncError::Protocol(e.to_string()))?;
         let mut txn = self.doc.transact_mut_with(Origin::from(REMOTE_ORIGIN));
         txn.apply_update(u)
-            .map_err(|e| SyncError::Protocol(e.to_string()))
+            .map_err(|e| SyncError::Protocol(e.to_string()))?;
+        Ok(!txn.insert_set().is_empty() || !txn.delete_set().is_empty())
+    }
+
+    /// Step 1 with this document's state vector: the server answers with a step 2. A step 1
+    /// sent after updates works as a receipt: the server handles a connection's messages in
+    /// order, so its answer means it has applied everything sent before.
+    pub fn step1(&self) -> Vec<u8> {
+        encode(&Message::Sync(SyncMessage::SyncStep1(self.state_vector())))
     }
 
     pub fn handle(&self, data: &[u8]) -> Result<Handled, SyncError> {
@@ -95,13 +104,11 @@ impl SyncDoc {
                     .push(encode(&Message::Sync(SyncMessage::SyncStep2(diff))));
             }
             Message::Sync(SyncMessage::SyncStep2(u)) => {
-                self.apply_remote(&u)?;
-                out.doc_changed = true;
+                out.doc_changed = self.apply_remote(&u)?;
                 out.synced = true;
             }
             Message::Sync(SyncMessage::Update(u)) => {
-                self.apply_remote(&u)?;
-                out.doc_changed = true;
+                out.doc_changed = self.apply_remote(&u)?;
             }
             Message::Awareness(u) => {
                 self.awareness

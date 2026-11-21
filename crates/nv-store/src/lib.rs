@@ -4,10 +4,14 @@
 //! It is a cache of what the server sent, as the web app's `src/lib/offlineCache.ts` and
 //! `src/lib/pageCache.ts` are today, and follows their rules:
 //!
-//! - **Locked pages are never stored.** `put_tree` deletes the stored document of every page the
-//!   tree marks locked (in any workspace), and of every page stored for that workspace that the
-//!   tree no longer shows. `put_page_doc` refuses a page the store knows is locked. A page the
-//!   store has never seen in a tree is stored; the next `put_tree` that shows it locked drops it.
+//! - **Locked pages are never stored.** `put_tree` deletes the stored document (and queued edits)
+//!   of every page the tree marks locked (in any workspace), and the document of every page stored
+//!   for that workspace that the tree no longer shows. `put_page_doc` and `queue_updates` store
+//!   only pages a stored tree shows unlocked: a page no tree has shown yet might be locked, so it
+//!   is refused too (the apps always load the tree before opening a page).
+//! - **The outbox** (`queue_updates`, `queued_updates`, `unqueue`) keeps a live page's local edits
+//!   (Yjs updates) until the server is known to have them, so edits made offline survive an app
+//!   restart. `nv-sync` decides when they are confirmed.
 //! - Tasks are stored as the server sent them. Tasks on a locked page arrive with `locked: true`
 //!   and their title and text already withheld, so they are safe to keep (as the web app does).
 //! - `clear()` on sign-out drops everything; `set_account` clears too when another user signs in.
@@ -17,7 +21,9 @@
 //! app is upgraded in place on open; one from a newer app is refused (`StoreError::TooNew`), and
 //! since the store is only a cache the caller can delete the file and start again.
 //!
-//! Every write is one transaction. Deleted rows are overwritten on disk (`secure_delete`).
+//! Every write is one transaction. Deleted rows are overwritten on disk (`secure_delete`). The
+//! last write that failed is kept (`last_error`) and printed to stderr, for diagnostics: callers
+//! treat the store as a cache and carry on.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -29,10 +35,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 /// The schema version this build writes. Add an upgrade step to `UPGRADES` with every bump.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// One step per version: `UPGRADES[n]` takes a database from version `n` to `n + 1`.
-const UPGRADES: &[fn(&Transaction) -> rusqlite::Result<()>] = &[upgrade_to_1];
+const UPGRADES: &[fn(&Transaction) -> rusqlite::Result<()>] = &[upgrade_to_1, upgrade_to_2];
 
 /// Version 1: workspaces, tree nodes, tasks, page documents, and when each list was stored.
 fn upgrade_to_1(tx: &Transaction) -> rusqlite::Result<()> {
@@ -75,6 +81,19 @@ fn upgrade_to_1(tx: &Transaction) -> rusqlite::Result<()> {
              stored_at INTEGER NOT NULL,
              PRIMARY KEY (scope, workspace_id)
          );",
+    )
+}
+
+/// Version 2: the outbox, local edits of live pages not yet confirmed by the server.
+fn upgrade_to_2(tx: &Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        "CREATE TABLE outbox (
+             seq INTEGER PRIMARY KEY AUTOINCREMENT,
+             page_id TEXT NOT NULL,
+             update_v1 BLOB NOT NULL,
+             queued_at INTEGER NOT NULL
+         );
+         CREATE INDEX outbox_page ON outbox (page_id, seq);",
     )
 }
 
@@ -128,6 +147,7 @@ pub struct PageDoc {
 /// The local database for one account. Safe to share between threads (calls are serialised).
 pub struct Store {
     conn: Mutex<Connection>,
+    last_error: Mutex<Option<String>>,
 }
 
 fn now_ms() -> i64 {
@@ -151,6 +171,16 @@ fn mark_stored(tx: &Transaction, scope: &str, workspace_id: &str) -> rusqlite::R
         params![scope, workspace_id, now_ms()],
     )?;
     Ok(())
+}
+
+/// The workspace of a page a stored tree shows unlocked; None when it is locked or unknown.
+fn unlocked_page(tx: &Transaction, page_id: &str) -> rusqlite::Result<Option<String>> {
+    tx.query_row(
+        "SELECT workspace_id FROM nodes WHERE kind = 'page' AND id = ?1 AND locked = 0",
+        [page_id],
+        |r| r.get(0),
+    )
+    .optional()
 }
 
 fn schema_version(conn: &Connection) -> rusqlite::Result<u32> {
@@ -229,6 +259,7 @@ impl Store {
         migrate(&mut conn)?;
         Ok(Store {
             conn: Mutex::new(conn),
+            last_error: Mutex::new(None),
         })
     }
 
@@ -237,11 +268,26 @@ impl Store {
     }
 
     fn write<T>(&self, f: impl FnOnce(&Transaction) -> Result<T>) -> Result<T> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        let out = f(&tx)?;
-        tx.commit()?;
-        Ok(out)
+        let out: Result<T> = (|| {
+            let mut conn = self.conn();
+            let tx = conn.transaction()?;
+            let out = f(&tx)?;
+            tx.commit()?;
+            Ok(out)
+        })();
+        if let Err(e) = &out {
+            eprintln!("[nv-store] write failed: {e}");
+            *self.last_error.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.to_string());
+        }
+        out
+    }
+
+    /// The last write that failed (the store is a cache: callers carry on), for diagnostics.
+    pub fn last_error(&self) -> Option<String> {
+        self.last_error
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// The database's schema version (`SCHEMA_VERSION` once open).
@@ -370,6 +416,11 @@ impl Store {
                 [],
             )?;
             tx.execute(
+                "DELETE FROM outbox WHERE page_id IN
+                     (SELECT id FROM nodes WHERE kind = 'page' AND locked = 1)",
+                [],
+            )?;
+            tx.execute(
                 "DELETE FROM page_docs WHERE workspace_id = ?1 AND page_id NOT IN
                      (SELECT id FROM nodes WHERE kind = 'page' AND workspace_id = ?1 AND locked = 0)",
                 [workspace_id],
@@ -480,27 +531,68 @@ impl Store {
         Ok(Some(out))
     }
 
-    /// Store a page's document. Refused for a page a stored tree marks locked: returns false and
-    /// stores nothing.
+    /// Store a page's document. Only for a page a stored tree shows unlocked: otherwise (locked,
+    /// or not in any stored tree, so possibly locked) returns false and stores nothing.
     pub fn put_page_doc(&self, page_id: &str, doc: &[u8]) -> Result<bool> {
         self.write(|tx| {
-            let page: Option<(String, i64)> = tx
-                .query_row(
-                    "SELECT workspace_id, locked FROM nodes WHERE kind = 'page' AND id = ?1",
-                    [page_id],
-                    |r| Ok((r.get(0)?, r.get(1)?)),
-                )
-                .optional()?;
-            if matches!(page, Some((_, 1))) {
+            let Some(workspace_id) = unlocked_page(tx, page_id)? else {
                 return Ok(false);
-            }
+            };
             tx.execute(
                 "INSERT OR REPLACE INTO page_docs (page_id, workspace_id, doc, stored_at)
                  VALUES (?1, ?2, ?3, ?4)",
-                params![page_id, page.map(|(ws, _)| ws), doc, now_ms()],
+                params![page_id, workspace_id, doc, now_ms()],
             )?;
             Ok(true)
         })
+    }
+
+    /// Keep local edits (Yjs updates) of a page until the server has them; returns their keys
+    /// in order. Refused (None, nothing kept) unless a stored tree shows the page unlocked.
+    pub fn queue_updates(&self, page_id: &str, updates: &[Vec<u8>]) -> Result<Option<Vec<i64>>> {
+        self.write(|tx| {
+            if unlocked_page(tx, page_id)?.is_none() {
+                return Ok(None);
+            }
+            let mut insert = tx.prepare(
+                "INSERT INTO outbox (page_id, update_v1, queued_at) VALUES (?1, ?2, ?3)",
+            )?;
+            let now = now_ms();
+            let mut keys = Vec::with_capacity(updates.len());
+            for u in updates {
+                insert.execute(params![page_id, u, now])?;
+                keys.push(tx.last_insert_rowid());
+            }
+            Ok(Some(keys))
+        })
+    }
+
+    /// A page's queued edits, oldest first, with their keys.
+    pub fn queued_updates(&self, page_id: &str) -> Result<Vec<(i64, Vec<u8>)>> {
+        let conn = self.conn();
+        let mut st =
+            conn.prepare("SELECT seq, update_v1 FROM outbox WHERE page_id = ?1 ORDER BY seq")?;
+        let rows = st.query_map([page_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The server has these queued edits: forget them.
+    pub fn unqueue(&self, page_id: &str, keys: &[i64]) -> Result<()> {
+        self.write(|tx| {
+            let mut del = tx.prepare("DELETE FROM outbox WHERE page_id = ?1 AND seq = ?2")?;
+            for k in keys {
+                del.execute(params![page_id, k])?;
+            }
+            Ok(())
+        })
+    }
+
+    /// Pages with queued edits (not yet confirmed by the server).
+    pub fn queued_pages(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut st = conn.prepare("SELECT DISTINCT page_id FROM outbox ORDER BY page_id")?;
+        let rows = st.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// A page's stored document, if there is one.
@@ -520,10 +612,11 @@ impl Store {
             .optional()?)
     }
 
-    /// Delete a page's stored document (it was locked, deleted, or access ended).
+    /// Delete a page's stored document and queued edits (it was locked, deleted, or access ended).
     pub fn forget_page(&self, page_id: &str) -> Result<()> {
         self.write(|tx| {
             tx.execute("DELETE FROM page_docs WHERE page_id = ?1", [page_id])?;
+            tx.execute("DELETE FROM outbox WHERE page_id = ?1", [page_id])?;
             Ok(())
         })
     }
@@ -536,6 +629,7 @@ impl Store {
                  DELETE FROM nodes;
                  DELETE FROM tasks;
                  DELETE FROM page_docs;
+                 DELETE FROM outbox;
                  DELETE FROM stored;
                  DELETE FROM meta WHERE key = 'account';",
             )?;

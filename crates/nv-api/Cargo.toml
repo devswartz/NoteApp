@@ -11,4 +11,6 @@ base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Blocking HTTP with rustls (ring): no async runtime in the core, TLS that builds for every target.
-ureq = { version = "3", default-features = false, features = ["rustls"] }
+# Certificates are checked by the system (rustls-platform-verifier), not a bundled root list.
+ureq = { version = "3", default-features = false, features = ["rustls-no-provider", "platform-verifier"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

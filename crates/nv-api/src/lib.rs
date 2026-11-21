@@ -9,7 +9,7 @@
 
 pub mod types;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -74,14 +74,20 @@ pub trait Transport: Send + Sync {
     fn send(&self, req: &Request) -> Result<Response, String>;
 }
 
-/// HTTP over ureq with rustls.
+/// HTTP over ureq with rustls (ring), certificates checked by the system's verifier.
 pub struct UreqTransport {
     agent: ureq::Agent,
 }
 
 impl Default for UreqTransport {
     fn default() -> Self {
+        let tls = ureq::tls::TlsConfig::builder()
+            .provider(ureq::tls::TlsProvider::Rustls)
+            .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+            .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .build();
         let agent = ureq::Agent::config_builder()
+            .tls_config(tls)
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(30)))
             .user_agent(concat!("notivelo-core/", env!("CARGO_PKG_VERSION")))
@@ -300,6 +306,11 @@ impl Client {
     /// Exchange the refresh token for a new session. `SignedOut` when it is rejected.
     pub fn refresh(&self) -> Result<AuthSession, ApiError> {
         let _one = self.refreshing.lock().unwrap();
+        self.refresh_locked()
+    }
+
+    /// A refresh, with `refreshing` held.
+    fn refresh_locked(&self) -> Result<AuthSession, ApiError> {
         let Some(token) = self.tokens.lock().unwrap().refresh.clone() else {
             return Err(ApiError::SignedOut);
         };
@@ -347,14 +358,36 @@ impl Client {
         }
     }
 
-    /// A valid access token, refreshed first when it has under 30 s left.
+    /// The access token if it has over 30 s left (and isn't `except`).
+    fn fresh_access(&self, except: Option<&str>) -> Option<String> {
+        let t = self.tokens.lock().unwrap();
+        let (tok, exp) = t.access.as_ref()?;
+        (exp.saturating_duration_since(Instant::now()) > Duration::from_secs(30)
+            && Some(tok.as_str()) != except)
+            .then(|| tok.clone())
+    }
+
+    /// A valid access token, refreshed first when it has under 30 s left. Safe to call from
+    /// several threads: one refreshes, the others wait for it and use its token.
     pub fn access_token(&self) -> Result<String, ApiError> {
-        if let Some((tok, exp)) = &self.tokens.lock().unwrap().access {
-            if exp.saturating_duration_since(Instant::now()) > Duration::from_secs(30) {
-                return Ok(tok.clone());
-            }
+        if let Some(t) = self.fresh_access(None) {
+            return Ok(t);
         }
-        Ok(self.refresh()?.access_token)
+        let _one = self.refreshing.lock().unwrap();
+        if let Some(t) = self.fresh_access(None) {
+            return Ok(t);
+        }
+        Ok(self.refresh_locked()?.access_token)
+    }
+
+    /// A token to replace `rejected`, which the server refused (a collab socket closed with
+    /// 4401): another one if a refresh since gave a newer token, else a refresh.
+    pub fn access_token_replacing(&self, rejected: &str) -> Result<String, ApiError> {
+        let _one = self.refreshing.lock().unwrap();
+        if let Some(t) = self.fresh_access(Some(rejected)) {
+            return Ok(t);
+        }
+        Ok(self.refresh_locked()?.access_token)
     }
 
     /// An authenticated request: refresh-and-retry once on 401.

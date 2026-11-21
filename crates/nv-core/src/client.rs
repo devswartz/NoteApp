@@ -3,7 +3,15 @@
 //! it, `restore_session` at launch), the workspace list, tree and tasks, and live pages.
 //!
 //! Calls block until the server answers: apps call them off the main thread (Swift: from a
-//! `Task`).
+//! `Task`). Every call is safe from several threads at once: the session's tokens sit behind a
+//! lock (one refresh at a time; the others wait and use its token), HTTP goes through one
+//! thread-safe agent, and the store serialises its own reads and writes.
+//!
+//! **Live pages.** `open_live_page` returns at once and connects on the page's own thread,
+//! reconnecting by itself after drops (with backoff), refreshing the session on 4401, keeping
+//! local edits until the server has them (in the store, so they survive a restart), and reporting
+//! all of it as `LiveStatus` to a `LivePageListener`. `open_page` is the older form (it blocks
+//! for the first connect and reports `SyncStatus`); it reconnects the same way.
 //!
 //! **The on-device store** (`nv-store`, a Core made with `Core::with_store`). Reads come in pairs:
 //!
@@ -20,12 +28,13 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use nv_api::ApiError;
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::Page;
 use nv_store::Store;
-use nv_sync::{LiveDoc, Status};
+use nv_sync::{AuthError, Backoff, LiveDoc, Status};
 use serde_json::json;
 
 use crate::{page_info, CoreError, PageInfo};
@@ -258,6 +267,49 @@ fn open_store(path: &Path) -> Option<Arc<Store>> {
         .map(Arc::new)
 }
 
+/// The session as the live pages' threads see it.
+struct CoreSession(Arc<nv_api::Client>);
+
+fn auth_error(e: ApiError) -> AuthError {
+    match e {
+        ApiError::SignedOut => AuthError::SignedOut,
+        e => AuthError::Unavailable(e.to_string()),
+    }
+}
+
+impl nv_sync::Session for CoreSession {
+    fn token(&self) -> Result<String, AuthError> {
+        self.0.access_token().map_err(auth_error)
+    }
+    fn refresh(&self, rejected: &str) -> Result<String, AuthError> {
+        self.0.access_token_replacing(rejected).map_err(auth_error)
+    }
+}
+
+/// A live page's queued edits, in the store (refused there unless the page is known unlocked:
+/// then they stay in memory only).
+struct StoreOutbox {
+    store: Arc<Store>,
+    page_id: String,
+    /// Access ended (4403): keep nothing more.
+    forbidden: Arc<AtomicBool>,
+}
+
+impl nv_sync::Outbox for StoreOutbox {
+    fn keep(&self, updates: &[Vec<u8>]) -> Vec<Option<i64>> {
+        if self.forbidden.load(Ordering::SeqCst) {
+            return vec![None; updates.len()];
+        }
+        match self.store.queue_updates(&self.page_id, updates) {
+            Ok(Some(keys)) => keys.into_iter().map(Some).collect(),
+            _ => vec![None; updates.len()],
+        }
+    }
+    fn confirmed(&self, keys: &[i64]) {
+        let _ = self.store.unqueue(&self.page_id, keys);
+    }
+}
+
 /// Save a page's document to the store (refused there for a locked page).
 fn save_page(store: &Option<Arc<Store>>, page_id: &str, doc: &nv_model::yrs::Doc) {
     if let Some(s) = store {
@@ -271,8 +323,10 @@ fn save_page(store: &Option<Arc<Store>>, page_id: &str, doc: &nv_model::yrs::Doc
 /// The core for one server.
 #[derive(uniffi::Object)]
 pub struct Core {
-    api: nv_api::Client,
+    api: Arc<nv_api::Client>,
     store: Option<Arc<Store>>,
+    /// Reconnect delays of live pages (tests make them short).
+    backoff: Mutex<Backoff>,
 }
 
 impl Core {
@@ -284,8 +338,75 @@ impl Core {
         db_path: Option<String>,
     ) -> Arc<Core> {
         Arc::new(Core {
-            api: nv_api::Client::with_transport(server_url, transport),
+            api: Arc::new(nv_api::Client::with_transport(server_url, transport)),
             store: db_path.and_then(|p| open_store(Path::new(&p))),
+            backoff: Mutex::new(Backoff::default()),
+        })
+    }
+
+    /// Reconnect delays for live pages opened from now on: `base` doubling to `max`, with
+    /// jitter (default 1 s to 30 s). Not exported over uniffi; for tests.
+    pub fn set_reconnect_delays(&self, base: Duration, max: Duration) {
+        *self.backoff.lock().unwrap() = Backoff {
+            base,
+            max,
+            jitter: true,
+        };
+    }
+
+    /// What a live page needs: its relay to the app, and how it keeps edits.
+    fn live_parts(
+        &self,
+        page_id: &str,
+        sink: Sink,
+    ) -> (
+        nv_model::yrs::Doc,
+        Arc<AtomicBool>,
+        Arc<Relay>,
+        nv_sync::Options,
+    ) {
+        let doc = nv_model::new_doc();
+        let forbidden = Arc::new(AtomicBool::new(false));
+        let relay = Arc::new(Relay {
+            page_id: page_id.to_string(),
+            doc: doc.clone(),
+            store: self.store.clone(),
+            forbidden: forbidden.clone(),
+            sink,
+        });
+        let options = nv_sync::Options {
+            backoff: self.backoff.lock().unwrap().clone(),
+            outbox: self.store.clone().map(|store| {
+                Arc::new(StoreOutbox {
+                    store,
+                    page_id: page_id.to_string(),
+                    forbidden: forbidden.clone(),
+                }) as Arc<dyn nv_sync::Outbox>
+            }),
+            restored: self
+                .store
+                .as_ref()
+                .and_then(|s| s.queued_updates(page_id).ok())
+                .unwrap_or_default(),
+            auth_retries: 3,
+        };
+        (doc, forbidden, relay, options)
+    }
+
+    fn live_page(
+        &self,
+        page_id: String,
+        doc: nv_model::yrs::Doc,
+        forbidden: Arc<AtomicBool>,
+        live: LiveDoc,
+    ) -> Arc<LivePage> {
+        Arc::new(LivePage {
+            page_id,
+            me: self.user(),
+            doc,
+            store: self.store.clone(),
+            forbidden,
+            live: Mutex::new(Some(live)),
         })
     }
 
@@ -339,8 +460,9 @@ impl Core {
     #[uniffi::constructor]
     pub fn new(server_url: String) -> Arc<Core> {
         Arc::new(Core {
-            api: nv_api::Client::new(&server_url),
+            api: Arc::new(nv_api::Client::new(&server_url)),
             store: None,
+            backoff: Mutex::new(Backoff::default()),
         })
     }
 
@@ -350,14 +472,30 @@ impl Core {
     #[uniffi::constructor]
     pub fn with_store(server_url: String, db_path: String) -> Arc<Core> {
         Arc::new(Core {
-            api: nv_api::Client::new(&server_url),
+            api: Arc::new(nv_api::Client::new(&server_url)),
             store: open_store(Path::new(&db_path)),
+            backoff: Mutex::new(Backoff::default()),
         })
     }
 
     /// Whether this core keeps an on-device store.
     pub fn has_store(&self) -> bool {
         self.store.is_some()
+    }
+
+    /// The last store write that failed, if any (the store is a cache, so the calls that wrote
+    /// carried on), for diagnostics.
+    pub fn store_error(&self) -> Option<String> {
+        self.store.as_ref()?.last_error()
+    }
+
+    /// Pages with local edits the server hasn't confirmed yet (kept in the store; they are sent
+    /// the next time the page is open live). Empty without a store.
+    pub fn unsent_pages(&self) -> Vec<String> {
+        self.store
+            .as_ref()
+            .and_then(|s| s.queued_pages().ok())
+            .unwrap_or_default()
     }
 
     pub fn sign_in(&self, email: String, password: String) -> Result<SignedIn, CoreError> {
@@ -497,35 +635,99 @@ impl Core {
         )
     }
 
-    /// Open a page live: the listener hears the sync status and every change (anyone's).
-    /// Close it when the page leaves the screen. On `Closed { code: 4401 }` open it again (the
-    /// session refreshes first); 4403 means access is gone. With a store, the document is saved
-    /// on this device each time it is in sync and when it closes, unless the page is locked.
+    /// Open a page live and return at once: the page connects on its own thread and stays in
+    /// sync until closed, reconnecting by itself. The listener hears every `LiveStatus` and
+    /// every change (anyone's). Local edits (`LivePage::apply_update`) are kept until the server
+    /// has them: in the store (unless the page is locked or not in a stored tree), so ones made
+    /// offline are sent the next time the page opens, even after a restart; opening a page with
+    /// such edits applies them to the document first. Close it when the page leaves the screen.
+    /// With a store, the document is saved on this device each time it is in sync and when it
+    /// closes, unless the page is locked.
+    pub fn open_live_page(
+        &self,
+        page_id: String,
+        listener: Arc<dyn LivePageListener>,
+    ) -> Result<Arc<LivePage>, CoreError> {
+        let (doc, forbidden, relay, options) = self.live_parts(&page_id, Sink::Live(listener));
+        let live = LiveDoc::start(
+            &self.api.collab_url(&page_id),
+            doc.clone(),
+            Arc::new(CoreSession(self.api.clone())),
+            relay,
+            options,
+        )?;
+        Ok(self.live_page(page_id, doc, forbidden, live))
+    }
+
+    /// Open a page live, the older way: blocks until the socket is open (errors as before),
+    /// then works like `open_live_page` (reconnects by itself, keeps edits), reporting
+    /// `SyncStatus`: a drop is `Failed` (or `Closed` with the server's code, e.g. 4401 while it
+    /// refreshes the session) and needs no reopening; the end is `Closed` 1000 (closed),
+    /// 4403 (no access) or 4401 (signed out).
     pub fn open_page(
         &self,
         page_id: String,
         listener: Arc<dyn PageListener>,
     ) -> Result<Arc<LivePage>, CoreError> {
         let token = self.api.access_token()?;
-        let doc = nv_model::new_doc();
-        let forbidden = Arc::new(AtomicBool::new(false));
-        let relay = Arc::new(Relay {
-            page_id: page_id.clone(),
-            doc: doc.clone(),
-            store: self.store.clone(),
-            forbidden: forbidden.clone(),
-            listener,
-        });
-        let live = LiveDoc::connect(&self.api.collab_url(&page_id), &token, doc.clone(), relay)?;
-        Ok(Arc::new(LivePage {
-            page_id,
-            me: self.user(),
-            doc,
-            store: self.store.clone(),
-            forbidden,
-            live: Mutex::new(Some(live)),
-        }))
+        let url = self.api.collab_url(&page_id);
+        let socket = nv_sync::open_socket(&url, &token)?;
+        let (doc, forbidden, relay, options) = self.live_parts(&page_id, Sink::Sync(listener));
+        let live = LiveDoc::start_connected(
+            socket,
+            token,
+            &url,
+            doc.clone(),
+            Arc::new(CoreSession(self.api.clone())),
+            relay,
+            options,
+        )?;
+        Ok(self.live_page(page_id, doc, forbidden, live))
     }
+}
+
+/// A live page's connection, as `open_live_page` reports it.
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum LiveStatus {
+    /// Opening the connection: `attempt` 0 the first time, else how many tries in a row failed.
+    Connecting { attempt: u32 },
+    /// Connected, waiting for the server's copy.
+    Connected,
+    /// Up to date with the server; edits flow both ways (and queued ones have been sent).
+    Synced,
+    /// Not connected; the core tries again in `in_ms` milliseconds (0: at once, after
+    /// refreshing the session). `attempt` counts from 1 and starts again after a sync. `code`
+    /// is the server's close code when it closed the connection (none: network). Local edits
+    /// are kept meanwhile. Nothing to do: show "offline" or "reconnecting".
+    Reconnecting {
+        attempt: u32,
+        in_ms: u64,
+        code: Option<u16>,
+        reason: String,
+    },
+    /// Stopped for good: the last status. No more reconnecting.
+    Ended { reason: LiveEnd, message: String },
+}
+
+/// Why a live page stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum LiveEnd {
+    /// `close()` was called.
+    Closed,
+    /// The server says this user can't open the page (any more): it was locked, deleted, or
+    /// shared away (close code 4403). Its stored copy and queued edits are deleted.
+    NoAccess,
+    /// The session couldn't be refreshed (the refresh token was rejected): sign in again.
+    SignedOut,
+}
+
+/// Told about a page opened with `open_live_page`. Called on the page's own thread: hop to the
+/// main thread to update UI.
+#[uniffi::export(with_foreign)]
+pub trait LivePageListener: Send + Sync {
+    fn on_status(&self, status: LiveStatus);
+    /// The page changed (the initial sync, or someone's edit): its new state.
+    fn on_change(&self, page: PageInfo);
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
@@ -544,7 +746,7 @@ pub enum SyncStatus {
     },
 }
 
-/// Told about a live page's changes. Called on the core's sync thread: hop to the main thread to update UI.
+/// Told about a page opened with `open_page`. Called on the core's sync thread: hop to the main thread to update UI.
 #[uniffi::export(with_foreign)]
 pub trait PageListener: Send + Sync {
     fn on_status(&self, status: SyncStatus);
@@ -552,12 +754,61 @@ pub trait PageListener: Send + Sync {
     fn on_change(&self, page: PageInfo);
 }
 
+/// Who hears a live page.
+enum Sink {
+    Live(Arc<dyn LivePageListener>),
+    Sync(Arc<dyn PageListener>),
+}
+
 struct Relay {
     page_id: String,
     doc: nv_model::yrs::Doc,
     store: Option<Arc<Store>>,
     forbidden: Arc<AtomicBool>,
-    listener: Arc<dyn PageListener>,
+    sink: Sink,
+}
+
+fn live_status(s: Status) -> LiveStatus {
+    match s {
+        Status::Connecting { attempt } => LiveStatus::Connecting { attempt },
+        Status::Connected => LiveStatus::Connected,
+        Status::Synced => LiveStatus::Synced,
+        Status::Reconnecting {
+            attempt,
+            in_ms,
+            code,
+            reason,
+        } => LiveStatus::Reconnecting {
+            attempt,
+            in_ms,
+            code,
+            reason,
+        },
+        Status::Closed { code, reason } => LiveStatus::Ended {
+            reason: match code {
+                4403 => LiveEnd::NoAccess,
+                4401 => LiveEnd::SignedOut,
+                _ => LiveEnd::Closed,
+            },
+            message: reason,
+        },
+    }
+}
+
+/// The older statuses: a drop as `Failed` (or `Closed` with the server's code), as before.
+fn sync_status(s: Status) -> Option<SyncStatus> {
+    Some(match s {
+        Status::Connecting { .. } => return None,
+        Status::Connected => SyncStatus::Connected,
+        Status::Synced => SyncStatus::Synced,
+        Status::Reconnecting {
+            code: Some(code),
+            reason,
+            ..
+        } => SyncStatus::Closed { code, reason },
+        Status::Reconnecting { reason, .. } => SyncStatus::Failed { message: reason },
+        Status::Closed { code, reason } => SyncStatus::Closed { code, reason },
+    })
 }
 
 impl nv_sync::Listener for Relay {
@@ -576,15 +827,21 @@ impl nv_sync::Listener for Relay {
             }
             _ => {}
         }
-        self.listener.on_status(match s {
-            Status::Connected => SyncStatus::Connected,
-            Status::Synced => SyncStatus::Synced,
-            Status::Closed { code, reason } => SyncStatus::Closed { code, reason },
-            Status::Failed(message) => SyncStatus::Failed { message },
-        })
+        match &self.sink {
+            Sink::Live(l) => l.on_status(live_status(s)),
+            Sink::Sync(l) => {
+                if let Some(s) = sync_status(s) {
+                    l.on_status(s)
+                }
+            }
+        }
     }
     fn on_doc_changed(&self) {
-        self.listener.on_change(page_info(&Page::read(&self.doc)))
+        let page = page_info(&Page::read(&self.doc));
+        match &self.sink {
+            Sink::Live(l) => l.on_change(page),
+            Sink::Sync(l) => l.on_change(page),
+        }
     }
 }
 
@@ -649,8 +906,19 @@ impl LivePage {
             .unwrap_or_default()
     }
 
-    /// Close the connection (the listener hears `Closed { code: 1000 }`). With a store, the
-    /// document is saved on this device first, unless the page is locked or access ended.
+    /// Local edits the server hasn't confirmed yet (0 when everything is on the server).
+    pub fn unsent_updates(&self) -> u32 {
+        self.live
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map_or(0, |l| l.unconfirmed() as u32)
+    }
+
+    /// Close the connection, promptly (also while it waits to reconnect): the listener hears
+    /// `Ended { Closed }` (`Closed { code: 1000 }` for `open_page`) last. Edits not yet
+    /// confirmed stay in the store for next time. With a store, the document is saved on this
+    /// device, unless the page is locked or access ended.
     pub fn close(&self) {
         if let Some(mut l) = self.live.lock().unwrap().take() {
             l.close();
@@ -687,7 +955,7 @@ mod tests {
             doc: doc.clone(),
             store: Some(store.clone()),
             forbidden: forbidden.clone(),
-            listener: Arc::new(Quiet),
+            sink: Sink::Sync(Arc::new(Quiet)),
         };
         let live = LivePage {
             page_id: page_id.into(),
@@ -742,6 +1010,7 @@ mod tests {
     #[test]
     fn a_page_whose_access_ended_is_forgotten_and_not_saved_again() {
         let store = Arc::new(Store::open_in_memory().unwrap());
+        store.put_tree("w1", &tree_with(&[("p1", false)])).unwrap();
         let (relay, live) = page(&store, "p1");
         relay.on_status(Status::Synced);
         assert!(store.page_doc("p1").unwrap().is_some());

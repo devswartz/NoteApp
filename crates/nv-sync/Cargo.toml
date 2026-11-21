@@ -12,7 +12,8 @@ yrs = { version = "0.28", features = ["sync"] }
 # Blocking WebSocket client; TLS is set up here with rustls (ring), so no tungstenite TLS features.
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-webpki-roots = "1"
+# The system's trust store and certificate checks (Security.framework, Windows, Linux roots).
+rustls-platform-verifier = "0.7"
 
 [dev-dependencies]
 nv-model = { path = "../nv-model" }
