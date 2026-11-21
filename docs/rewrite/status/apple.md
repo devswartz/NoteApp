@@ -4,7 +4,7 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 
 ## Now
 
-- **iPad editing done** on branch `rewrite/apple-edit` (not merged): tap a box on the iPad canvas and type. Each box is a `BoxTextView` adopting `UITextInput` over `EditorSession` (EDITOR.md 10.3); edits go out through `LivePage.applyUpdate`, others' edits are merged back. CI green with screenshots of text typed through the UITextInput path (`-demoEdit`); TestFlight **1.99.TFRUN** below. **On a real device and against the real server it is untested**: Devon's check below is the first test. Next: whatever that check finds, then the ribbon (marks, lists, headings, task insert), the slash menu UI, creating/moving boxes, `UIIndirectScribbleInteraction`.
+- **iPad editing done** on branch `rewrite/apple-edit` (not merged): tap a box on the iPad canvas and type. Each box is a `BoxTextView` adopting `UITextInput` over `EditorSession` (EDITOR.md 10.3); edits go out through `LivePage.applyUpdate`, others' edits are merged back. CI green with screenshots of text typed through the UITextInput path (`-demoEdit`); TestFlight **1.99.27** below. **On a real device and against the real server it is untested**: Devon's check below is the first test. Next: whatever that check finds, then the ribbon (marks, lists, headings, task insert), the slash menu UI, creating/moving boxes, `UIIndirectScribbleInteraction`.
 - **M5 basics done** on branch `rewrite/apple-m5` (not merged): the iPad app signs in through the core, shows the workspace tree, opens pages live and read-only, and lists tasks with ticks. Built and screenshotted in CI; **real sign-in and live updates are untested** (no credentials in CI): Devon's TestFlight check below is the first real test. Next: whatever that check finds, then editing (nv-editor) and the rest of the iPad PARITY column.
 
 ## Requests
@@ -28,6 +28,7 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 - `PageCanvasView.swift`: boxes kept per id and updated in place (a remote change no longer rebuilds the page); one tap focuses a box with the caret at the tap (opening its session the first time; sessions stay open while the page is shown, and keep drawing the box), a tap outside the boxes ends editing (`finish_composition`), taps inside the focused box are its text interaction's; pinch/pan/double-tap zoom as before; the content inset follows the software keyboard and the caret is kept in view. `-demoEdit YES` (corpus mode) focuses the first box and types through UITextInput (CI screenshots `edit-*.png`).
 - **Threading (finding)**: `EditorSession` calls are synchronous and local (a mutex over the engine and its own yrs doc, no I/O), so they run on the main thread. `LivePage.applyUpdate` / `document()` are local too but take the page's lock, which `close()` holds while joining the socket thread, so they run on `LivePageModel.editQueue`. Network calls stay on `SessionModel`'s serial queue.
 - `SessionModel` builds the core with `Core.withStore` (Application Support/Store/notivelo-<host>.sqlite, excluded from backups) and shows the stored workspaces, tree and tasks before the server answers. Untested beyond building.
+- Known cosmetic: ordered-list markers wider than the 24 pt indent (`xlviii)`, `AA.`) overlap the start of the text.
 - Not done: opening a box while the page isn't connected (nothing happens on tap then), remote cursors and presence (the engine carries cursors; not drawn), ribbon/format UI beyond the keyboard bar's B/I/U, `/`, `[[`, `@` menus, creating/moving/resizing boxes, `UIIndirectScribbleInteraction` (writing outside boxes), task titles editable in the page, Mac editing (still the Markdown preview), sharper text when zoomed in.
 
 - `project.yml` (XcodeGen; the `.xcodeproj` is generated, not committed): targets `Notivelo` (iPad + iPhone, iOS 17, bundle ID `com.devswartz.notivelo`, App Group) and `NotiveloMac` (macOS 14, sandbox + network client). Both depend on the local package `NotiveloCore` at `../../target/apple/NotiveloCore` (CI builds it) and bundle `tests/corpus/cases` as `cases`.
@@ -52,11 +53,11 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 
 ### TestFlight so far (all VALID unless noted)
 
-1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · 1.99.20 (130.20) M5 basics (run 44920271305) · **1.99.TFRUN (130.TFRUN) iPad editing** (run TFID).
+1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · 1.99.20 (130.20) M5 basics (run 44920271305) · **1.99.27 (130.27) iPad editing** (run 44941240434, uploaded; not yet in the processing list at upload time).
 
 ## How Devon tests this build
 
-- **1.99.TFRUN (130.TFRUN)**, editing, on the iPad from TestFlight. Use a test page: edits are real and reach the server. Sign-in and the rest are as in the 1.99.20 steps below.
+- **1.99.27 (130.27)**, editing, on the iPad from TestFlight. Use a test page: edits are real and reach the server. Sign-in and the rest are as in the 1.99.20 steps below.
   1. Open a page. Tap inside a box: the caret appears where you tapped and the keyboard comes up. Type a sentence. Tap another box: editing moves there. Tap empty page: the keyboard goes away.
   2. Have the same page open in the web app. What you type on the iPad should show there within a second or so. Type in the web app (in the box you're editing on the iPad, and in another box): it should appear on the iPad without the caret jumping or the keyboard closing.
   3. Lists: on a new line type `- ` (a bullet list starts), type, Return (next bullet), Return on an empty bullet (leaves the list). The same with `1. `. With a keyboard, Tab / Shift+Tab nest and un-nest.
@@ -82,6 +83,6 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 
 ## Done
 
-- 2026-11-21, iPad editing (`rewrite/apple-edit`): boxes editable through `EditorSession` (UITextInput + TextKit 2, hardware keys, engine undo, clipboard), edits synced through `LivePage`, corpus pages editable on the device, on-device store. CI green (runs 44939006803, 44940132831, TFID); typing through UITextInput shown in the `edit-*.png` screenshots; TestFlight 1.99.TFRUN.
+- 2026-11-21, iPad editing (`rewrite/apple-edit`): boxes editable through `EditorSession` (UITextInput + TextKit 2, hardware keys, engine undo, clipboard), edits synced through `LivePage`, corpus pages editable on the device, on-device store. CI green (runs 44939006803, 44940132831, 44941240434); typing through UITextInput shown in the `edit-*.png` screenshots; TestFlight 1.99.27.
 - 2026-11-21, M5 basics (`rewrite/apple-m5`): real sign-in with the keychain and staging switch, workspace tree, live read-only pages from the core's typed box content (corpus pages through the same renderer), task list with optimistic ticks. CI green (simulator, screenshots, Mac); TestFlight 1.99.20 (130.20) uploaded by run 44920271305.
 - 2026-11-21: page view merged into `rewrite/native` (41c64bc); see `docs/rewrite/STATUS.md` Done for M1 and the M4 groundwork.
