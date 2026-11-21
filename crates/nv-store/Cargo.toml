@@ -1,0 +1,14 @@
+[package]
+name = "nv-store"
+version = "0.1.0"
+description = "Notivelo's on-device store (docs/ARCHITECTURE.md 3.3): workspaces, trees, tasks and page documents for one account, in SQLite"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+nv-api = { path = "../nv-api" }
+# bundled: SQLite is compiled in, the same version on every platform (iOS, macOS, Android, Windows).
+rusqlite = { version = "0.43", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
