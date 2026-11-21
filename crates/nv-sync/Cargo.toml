@@ -1,0 +1,18 @@
+[package]
+name = "nv-sync"
+version = "0.1.0"
+description = "Notivelo's live page sync: yrs over today's y-websocket protocol (server/collab.ts), with awareness"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+# `sync`: observers and docs are Send + Sync, so a doc can live on the connection thread.
+yrs = { version = "0.28", features = ["sync"] }
+# Blocking WebSocket client; TLS is set up here with rustls (ring), so no tungstenite TLS features.
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+
+[dev-dependencies]
+nv-model = { path = "../nv-model" }

@@ -38,4 +38,12 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(pageFormatVersion(), 2)
         XCTAssertFalse(coreVersion().isEmpty)
     }
+
+    func testCoreNeedsASignIn() throws {
+        let core = Core(serverUrl: "http://127.0.0.1:9")
+        XCTAssertNil(core.user())
+        XCTAssertThrowsError(try core.workspaces()) { error in
+            XCTAssertEqual(error as? CoreError, .SignedOut)
+        }
+    }
 }
