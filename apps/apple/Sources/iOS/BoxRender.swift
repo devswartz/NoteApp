@@ -425,7 +425,8 @@ struct BoxTextRenderer {
         }
         items.append((24, { x in UIImage.lucide("maximize-2", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 5.5, y: chipY + 4.5)) }))
         let add = NSAttributedString(string: "Add checklist", attributes: [.font: chipFont, .foregroundColor: p.text2])
-        let addW = 13 + 4 + add.size().width + 8
+        let addTextWidth: CGFloat = add.size().width
+        let addW: CGFloat = 25 + addTextWidth
         items.append((addW, { x in
             UIImage.lucide("list-plus", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 4, y: chipY + 4.5))
             add.draw(at: CGPoint(x: x + 21, y: chipY + (22 - chipFont.lineHeight) / 2))
@@ -448,7 +449,8 @@ struct BoxTextRenderer {
             }))
         }
         let dueText = Due.words(due).map { NSAttributedString(string: $0, attributes: [.font: chipFont, .foregroundColor: Due.tone(due, p)]) }
-        let dueW = dueText.map { 7 + 13 + 4 + $0.size().width + 7 } ?? 26
+        let dueTextWidth: CGFloat = dueText?.size().width ?? 0
+        let dueW: CGFloat = dueText == nil ? 26 : 31 + dueTextWidth
         items.append((dueW, { x in
             chip(dueW, x)
             let tone = dueText == nil ? p.text2 : Due.tone(due, p)
@@ -467,16 +469,18 @@ struct BoxTextRenderer {
         if let list = d?.checklist {
             let complete = list.done >= list.total
             let t = NSAttributedString(string: "\(list.done)/\(list.total)", attributes: [.font: chipFont, .foregroundColor: complete ? p.success : p.text2])
-            let w = 7 + 12 + 4 + t.size().width + 7
+            let tWidth: CGFloat = t.size().width
+            let w: CGFloat = 30 + tWidth
             items.append((w, { x in
                 chip(w, x)
                 UIImage.lucide("square-check", size: 12, color: complete ? p.success : p.text2)?.draw(at: CGPoint(x: x + 7, y: chipY + 5))
                 t.draw(at: CGPoint(x: x + 23, y: chipY + (22 - chipFont.lineHeight) / 2))
             }))
         }
-        let metaWidth = items.reduce(0) { $0 + $1.width } + CGFloat(items.count - 1) * 4
+        var metaWidth: CGFloat = CGFloat(items.count - 1) * 4
+        for item in items { metaWidth += item.width }
         let titleX: CGFloat = 26
-        let titleWidth = width - 6 - metaWidth - 8 - titleX
+        let titleWidth: CGFloat = width - 14 - metaWidth - titleX
         return Self.image(CGSize(width: width, height: rowHeight)) { _ in
             // The circle: 18, 1.6 ring; done: filled with a white check.
             let ring = priorityColor(priority, p)
@@ -581,8 +585,9 @@ struct BoxTextRenderer {
         let f = font(size, weight: 500)
         let s = NSAttributedString(string: text, attributes: [.font: f, .foregroundColor: fg])
         let iconW: CGFloat = icon == nil ? 0 : size * 0.95 + 3
-        let w = 3 + iconW + s.size().width + 3
-        let h = ceil(f.lineHeight) + 2
+        let textWidth: CGFloat = s.size().width
+        let w: CGFloat = 6 + iconW + textWidth
+        let h: CGFloat = ceil(f.lineHeight) + 2
         return Self.image(CGSize(width: w, height: h)) { _ in
             bg.setFill()
             UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h), cornerRadius: 4).fill()
