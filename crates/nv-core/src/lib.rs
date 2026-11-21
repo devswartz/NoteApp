@@ -2,15 +2,19 @@
 //! the Rust core. Types are written here once; uniffi generates the Swift and Kotlin side
 //! (`build-xcframework.sh` for Apple).
 //!
-//! First slice (M1): reading a page document with `nv-model`: its layout, outline, searchable
-//! text, Markdown, and the import sanitiser. Editor sessions, sync, the store and queries come in
-//! later milestones (docs/rewrite/PLAN.md). Requests for changes go through
+//! M1: reading a page document with `nv-model` (layout, outline, searchable text, Markdown, the
+//! import sanitiser). M3 (`client.rs`): a `Core` for one server: sign-in, workspaces, tree and
+//! tasks over `nv-api`, and live pages over `nv-sync`. Editor sessions and the local store come
+//! in later milestones (docs/rewrite/PLAN.md). Requests for changes go through
 //! docs/rewrite/STATUS.md ("Requests between streams"); the **core** stream owns this file.
 
 use std::collections::HashMap;
 
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::{DocKind, Page, TaskLine};
+
+mod client;
+pub use client::*;
 
 uniffi::setup_scaffolding!();
 
@@ -19,12 +23,27 @@ uniffi::setup_scaffolding!();
 pub enum CoreError {
     /// The bytes are not a page document (a Yjs update) this core can read.
     InvalidPage { message: String },
+    /// The server couldn't be reached (offline, DNS, TLS, timeout).
+    Network { message: String },
+    /// The server answered with an error. `code` is its stable code when it has one (e.g. `email_unverified`).
+    Server {
+        status: u16,
+        message: String,
+        code: Option<String>,
+    },
+    /// No session, or it ended: sign in again.
+    SignedOut,
 }
 
 impl std::fmt::Display for CoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CoreError::InvalidPage { message } => write!(f, "invalid page: {message}"),
+            CoreError::Network { message } => write!(f, "network error: {message}"),
+            CoreError::Server {
+                status, message, ..
+            } => write!(f, "{message} ({status})"),
+            CoreError::SignedOut => write!(f, "signed out"),
         }
     }
 }
@@ -141,9 +160,12 @@ fn int(f: f64) -> u32 {
 /// Read a stored page (`Y.encodeStateAsUpdate`).
 #[uniffi::export]
 pub fn read_page(update: Vec<u8>) -> Result<PageInfo, CoreError> {
-    let page = Page::from_update(&update)?;
-    let ex = nv_model::extract_page(&page);
-    Ok(PageInfo {
+    Ok(page_info(&Page::from_update(&update)?))
+}
+
+pub(crate) fn page_info(page: &Page) -> PageInfo {
+    let ex = nv_model::extract_page(page);
+    PageInfo {
         kind: match page.kind() {
             DocKind::Canvas => PageKind::Canvas,
             DocKind::Document => PageKind::Document,
@@ -166,7 +188,7 @@ pub fn read_page(update: Vec<u8>) -> Result<PageInfo, CoreError> {
                 wide: b.wide,
             })
             .collect(),
-        headings: nv_model::page_headings(&page)
+        headings: nv_model::page_headings(page)
             .into_iter()
             .map(|h| PageHeading {
                 box_id: h.box_id,
@@ -179,7 +201,7 @@ pub fn read_page(update: Vec<u8>) -> Result<PageInfo, CoreError> {
         task_ids: ex.task_ids.into_iter().collect(),
         mention_ids: ex.mention_ids.into_iter().collect(),
         has_ink: page.has_ink(),
-    })
+    }
 }
 
 /// The page as Markdown (`# title`, then its boxes in reading order). `tasks` says how to show

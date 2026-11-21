@@ -618,7 +618,10 @@ dependencies = [
 name = "nv-core"
 version = "0.1.0"
 dependencies = [
+ "nv-api",
  "nv-model",
+ "nv-sync",
+ "serde_json",
  "uniffi",
 ]
 
