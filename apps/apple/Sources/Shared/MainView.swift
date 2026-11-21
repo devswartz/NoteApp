@@ -40,7 +40,7 @@ struct MainView: View {
                         ContentUnavailableView("Page not found", systemImage: "doc.questionmark")
                     }
                 case let .sample(name)?:
-                    SamplePageScreen(name: name)
+                    SamplePageScreen(name: name).id(name)
                 case nil:
                     ContentUnavailableView("Pick a page", systemImage: "sidebar.left",
                                            description: Text("Choose a page in the sidebar, or open Tasks."))
@@ -170,7 +170,7 @@ struct SectionRow: View {
     }
 }
 
-/// A page on the server, open live and read-only: web edits show up as they happen.
+/// A page on the server, open live: tap a box to edit it (iPad/iPhone); web edits show up as they happen.
 struct LivePageScreen: View {
     let meta: PageMeta
     @Environment(SessionModel.self) private var session
@@ -198,7 +198,7 @@ struct LivePageScreen: View {
             ContentUnavailableView("Locked page", systemImage: "lock",
                                    description: Text("Locked pages open in the web app for now."))
         } else if let model, let page = model.snapshot {
-            PageContent(page: page)
+            PageContent(page: page, host: model)
                 .overlay(alignment: .top) { SyncBadge(state: model.state) }
         } else if let model, case let .ended(message) = model.state {
             ContentUnavailableView("Can't open this page", systemImage: "exclamationmark.triangle", description: Text(message))
@@ -237,15 +237,36 @@ struct SyncBadge: View {
     }
 }
 
-/// A bundled corpus page (corpus mode).
+/// A bundled corpus page (corpus mode), editable on this device only.
 struct SamplePageScreen: View {
     let name: String
+    @State private var sample: Sample
+
+    init(name: String) {
+        self.name = name
+        _sample = State(initialValue: Sample(name: name))
+    }
+
+    /// Loaded once, so box editors keep their host while the screen is shown.
+    final class Sample {
+        let page: Result<CorpusPage, Error>
+        let host: CorpusEditHost?
+
+        init(name: String) {
+            page = Result { try CorpusPage.load(name) }
+            if case let .success(p) = page, let s = p.snapshot, let document = s.document {
+                host = CorpusEditHost(document: document, tasks: s.tasks)
+            } else {
+                host = nil
+            }
+        }
+    }
 
     var body: some View {
-        switch Result(catching: { try CorpusPage.load(name) }) {
+        switch sample.page {
         case let .success(page):
             if let snapshot = page.snapshot {
-                PageContent(page: snapshot)
+                PageContent(page: snapshot, host: sample.host)
                     .navigationTitle(snapshot.title)
             }
         case let .failure(error):
@@ -258,10 +279,12 @@ struct SamplePageScreen: View {
 /// One page. iPad/iPhone: the native canvas. Mac: the core's Markdown for now (M6).
 struct PageContent: View {
     let page: PageSnapshot
+    /// Where edits go (iPad/iPhone); the Mac preview is read-only.
+    var host: PageEditHost?
 
     var body: some View {
         #if os(iOS)
-        PageCanvasView(page: page)
+        PageCanvasView(page: page, host: host)
             .ignoresSafeArea(edges: .bottom)
         #else
         ScrollView {

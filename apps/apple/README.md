@@ -1,6 +1,6 @@
 # Notivelo for iPad, iPhone and Mac (native rewrite)
 
-SwiftUI apps on the shared Rust core (`docs/ARCHITECTURE.md`, `docs/rewrite/PLAN.md`). Today (M5): sign-in through the core (refresh token in the keychain), the workspace tree in the sidebar, pages open live and read-only, and the task list with ticks. `-previewSignedIn YES` skips sign-in and shows the bundled corpus pages (CI screenshots).
+SwiftUI apps on the shared Rust core (`docs/ARCHITECTURE.md`, `docs/rewrite/PLAN.md`). Today (M5): sign-in through the core (refresh token in the keychain), the workspace tree in the sidebar, pages open live, the iPad/iPhone canvas edits a box at a time through the editor engine (`EditorSession`; `Sources/iOS/BoxTextView.swift` is the UITextInput view, `Sources/Shared/PageEditing.swift` the sync glue), and the task list with ticks. `-previewSignedIn YES` skips sign-in and shows the bundled corpus pages, editable on the device only (CI screenshots); add `-demoEdit YES` to type into the first box through UITextInput.
 
 - `project.yml`: the XcodeGen project. Targets **Notivelo** (iPad + iPhone, bundle ID `com.devswartz.notivelo`, iOS 17+) and **NotiveloMac** (same bundle ID, macOS 14+). The `.xcodeproj` is generated, not committed.
 - `Sources/Shared`: code for both (SwiftUI). `Sources/iOS`, `Sources/macOS`: platform-only code.

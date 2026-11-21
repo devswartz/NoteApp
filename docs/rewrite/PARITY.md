@@ -108,7 +108,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Images (insert, resize by corner) | ● | ● | ● | ● | ● | ● | `upload.ts`, `POST /uploads` |
 | File attachments (≤25 MB, type rules, signed short-lived links) | ● | ● | ● | ● | ● | ● | `/files/:id`, `/files/key` |
 | Slash menu (/) | ● | ● | ● | ● | ● | ● | `SlashMenu.tsx` |
-| Markdown input rules (#, -, *, 1., >, ```) | ● | ● | ● | ● | ● | ● | |
+| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● | ● | ● | ● | ● | |
 | Page links `[[`, create page from link | ● | ● | ● | ● | ● | ● | `PageLink.tsx` |
 | Linked from (backlinks) panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/backlinks` |
 | Drag handle: move a block with its nested lines, drop anywhere; keeps numbering | ● | ◐ | ● | ● | ◐ | ● | `blockMove.ts`, `listDrop.ts`, `handleReach.ts` |

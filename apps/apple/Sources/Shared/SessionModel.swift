@@ -44,7 +44,7 @@ final class SessionModel {
         preview = defaults.bool(forKey: "previewSignedIn")
         let url = defaults.bool(forKey: "useStaging") ? Self.staging : Self.production
         serverURL = url
-        core = Core(serverUrl: url)
+        core = preview ? Core(serverUrl: url) : Self.makeCore(url)
         if preview {
             user = User(id: "preview", email: "preview@notivelo", name: "Preview", color: "#3b82f6", emailVerified: true)
             phase = .signedIn
@@ -132,7 +132,7 @@ final class SessionModel {
         let staging = !isStaging
         UserDefaults.standard.set(staging, forKey: "useStaging")
         serverURL = staging ? Self.staging : Self.production
-        core = Core(serverUrl: serverURL)
+        core = Self.makeCore(serverURL)
         error = nil
         restore()
     }
@@ -147,7 +147,7 @@ final class SessionModel {
     }
 
     private func endSession(message: String?) {
-        core = Core(serverUrl: serverURL)
+        core = preview ? Core(serverUrl: serverURL) : Self.makeCore(serverURL)
         savedToken = nil
         user = nil
         workspaces = []
@@ -161,6 +161,21 @@ final class SessionModel {
         canRetryRestore = false
         error = message
         phase = .signedOut
+    }
+
+    /// A core with the on-device store (nv-store): reads fall back to the stored copies offline,
+    /// and `cached*` give the last copy at once. One file per server, in Application Support,
+    /// excluded from backups. Without a usable folder, a core without a store.
+    private static func makeCore(_ url: String) -> Core {
+        let fm = FileManager.default
+        guard var dir = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("Store", isDirectory: true) else { return Core(serverUrl: url) }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
+        let file = dir.appendingPathComponent("notivelo-\(URL(string: url)?.host ?? "server").sqlite")
+        return Core.withStore(serverUrl: url, dbPath: file.path)
     }
 
     private func store(_ token: String?) {
@@ -211,6 +226,12 @@ final class SessionModel {
 
     func loadWorkspaces() {
         loading = true
+        // The stored copy first (instant), then the server's answer.
+        if workspaces.isEmpty, let cached = core.cachedWorkspaces(), !cached.isEmpty {
+            workspaces = cached
+            let saved = UserDefaults.standard.string(forKey: workspaceKey)
+            if let pick = cached.first(where: { $0.id == saved }) ?? cached.first { selectWorkspace(pick.id) }
+        }
         call({ try $0.workspaces() }) { result in
             self.loading = false
             switch result {
@@ -245,6 +266,10 @@ final class SessionModel {
             return
         }
         loading = true
+        if tree == nil, !preview, let cached = core.cachedTree(workspaceId: ws) {
+            tree = cached
+            tasks = core.cachedTasks(workspaceId: ws) ?? []
+        }
         call({ core -> (Tree, [CoreTask]) in try (core.tree(workspaceId: ws), core.tasks(workspaceId: ws)) }) { result in
             defer { done?() }
             guard ws == self.workspaceId else { return }
