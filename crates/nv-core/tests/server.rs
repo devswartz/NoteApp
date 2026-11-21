@@ -114,8 +114,85 @@ fn core_against_a_running_server() {
         .any(|x| x.id == t.id));
     assert!(core.set_task_done(t.id.clone(), true).unwrap().done);
 
-    // A page: its saved document, then live.
+    // A task on a page with the client's id (as the editor makes them), created again (a
+    // retry: the same task), renamed, deleted (with its subtask), restored, deleted again.
     let page = &tree.pages[0];
+    let id = new_task_id();
+    let on_page = |id: &str, title: &str| NewTaskInput {
+        id: Some(id.into()),
+        title: title.into(),
+        page_id: Some(page.id.clone()),
+        parent_id: None,
+        done: false,
+    };
+    let made = core
+        .create_task_with(w.id.clone(), on_page(&id, ""))
+        .unwrap();
+    assert_eq!(
+        (made.id.as_str(), made.page_id.as_deref()),
+        (id.as_str(), Some(page.id.as_str()))
+    );
+    let again = core
+        .create_task_with(w.id.clone(), on_page(&id, "ignored"))
+        .unwrap();
+    assert_eq!((again.id, again.title), (id.clone(), String::new()));
+    let renamed = core
+        .set_task_title(id.clone(), "  Named by the core  ".into())
+        .unwrap();
+    assert_eq!(renamed.title, "Named by the core", "trimmed");
+    let sub_id = new_task_id();
+    let sub = core
+        .create_task_with(
+            w.id.clone(),
+            NewTaskInput {
+                parent_id: Some(id.clone()),
+                page_id: None,
+                done: true,
+                ..on_page(&sub_id, "Sub")
+            },
+        )
+        .unwrap();
+    assert!(sub.done && sub.parent_id.as_deref() == Some(id.as_str()));
+    let listed = |core: &Core| -> Vec<String> {
+        core.tasks(w.id.clone())
+            .unwrap()
+            .into_iter()
+            .map(|t| t.id)
+            .filter(|x| *x == id || *x == sub_id)
+            .collect()
+    };
+    assert_eq!(listed(&core).len(), 2);
+    core.delete_task(id.clone()).unwrap();
+    assert!(listed(&core).is_empty(), "the subtask went too");
+    core.delete_task(id.clone()).unwrap(); // already gone: fine
+                                           // Restoring needs the stored copy: a Core without a store can't.
+    assert!(!core.restore_task(id.clone()).unwrap());
+    let stored_dir = std::env::temp_dir().join(format!("nv-core-server-{stamp}"));
+    let with_store = Core::with_store(
+        url.clone(),
+        stored_dir.join("s.db").to_string_lossy().into(),
+    );
+    with_store.sign_in(email.clone(), password.into()).unwrap();
+    with_store.tree(w.id.clone()).unwrap();
+    with_store
+        .create_task_with(w.id.clone(), on_page(&id, "Back again"))
+        .unwrap();
+    with_store.tasks(w.id.clone()).unwrap();
+    with_store.delete_task(id.clone()).unwrap();
+    assert!(with_store.restore_task(id.clone()).unwrap());
+    let back = with_store.cached_task(id.clone()).unwrap();
+    assert_eq!(
+        (back.title.as_str(), back.page_id.as_deref()),
+        ("Back again", Some(page.id.as_str()))
+    );
+    assert!(listed(&with_store).contains(&id));
+    with_store.delete_task(id.clone()).unwrap();
+    assert_eq!(with_store.unsent_task_changes(), 0);
+    assert_eq!(with_store.task_error(), None);
+    with_store.sign_out();
+    let _ = std::fs::remove_dir_all(&stored_dir);
+
+    // A page: its saved document, then live.
     let saved = read_page(core.page_document(page.id.clone()).unwrap()).unwrap();
     let ev = Arc::new(Events::default());
     let live = core.open_page(page.id.clone(), ev.clone()).unwrap();

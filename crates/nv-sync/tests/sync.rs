@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use nv_sync::yrs::{Doc, ReadTxn, Text, Transact, WriteTxn, XmlFragment};
-use nv_sync::{AuthError, Backoff, Listener, LiveDoc, Options, Outbox, Session, Status, SyncDoc};
+use nv_sync::{
+    AuthError, Backoff, Listener, LiveDoc, Options, Outbox, RemoteHook, Session, Status, SyncDoc,
+};
 use support::{read_text, type_text, wait_for, TestServer};
 
 /// Deliver every message in `msgs` to `to`, returning its replies.
@@ -69,6 +71,78 @@ fn protocol_syncs_both_ways_in_memory() {
         server.handle(&[200]).is_err(),
         "a truncated message is an error"
     );
+}
+
+/// Records what it sees around each remote update: the text before, whether it changed, the
+/// text after. `skip` doesn't call `apply` (it is applied anyway).
+struct Around {
+    doc: Doc,
+    name: &'static str,
+    skip: bool,
+    log: Arc<Mutex<Vec<String>>>,
+}
+impl RemoteHook for Around {
+    fn around_remote(&self, apply: &mut dyn FnMut() -> bool) {
+        let before = read_text(&self.doc, "box:a");
+        let changed = if self.skip { false } else { apply() };
+        let after = read_text(&self.doc, "box:a");
+        self.log
+            .lock()
+            .unwrap()
+            .push(format!("{}: {before:?} {changed} {after:?}", self.name));
+    }
+}
+
+#[test]
+fn remote_hooks_run_around_each_remote_update_once() {
+    let server = SyncDoc::new(Doc::new());
+    let client = SyncDoc::new(Doc::new());
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let hook = |name, skip| {
+        Arc::new(Around {
+            doc: client.doc().clone(),
+            name,
+            skip,
+            log: log.clone(),
+        })
+    };
+    let outer = client.remote_hooks().add(hook("outer", false));
+    let inner = client.remote_hooks().add(hook("inner", false));
+    assert_eq!(client.remote_hooks().len(), 2);
+
+    let send = |text: &str| {
+        let before = server.state_vector();
+        type_text(server.doc(), "box:a", text);
+        let u = server.doc().transact().encode_state_as_update_v1(&before);
+        client.handle(&SyncDoc::update_message(u.clone())).unwrap();
+        u
+    };
+    let u = send("Hi");
+    // Inner first to finish; both saw the change happen inside their call.
+    assert_eq!(
+        *log.lock().unwrap(),
+        [r#"inner: "" true "Hi""#, r#"outer: "" true "Hi""#]
+    );
+    // The same update again (an echo) changes nothing: the hooks still run, told so.
+    log.lock().unwrap().clear();
+    client.handle(&SyncDoc::update_message(u)).unwrap();
+    assert_eq!(
+        *log.lock().unwrap(),
+        [r#"inner: "Hi" false "Hi""#, r#"outer: "Hi" false "Hi""#]
+    );
+    // A hook that doesn't call `apply`: applied after it anyway, exactly once.
+    assert!(client.remote_hooks().remove(outer));
+    assert!(client.remote_hooks().remove(inner));
+    assert!(!client.remote_hooks().remove(inner));
+    client.remote_hooks().add(hook("lazy", true));
+    log.lock().unwrap().clear();
+    send("!");
+    assert_eq!(*log.lock().unwrap(), [r#"lazy: "Hi" false "Hi""#]);
+    assert_eq!(read_text(client.doc(), "box:a"), "Hi!");
+    // A local edit doesn't run them.
+    log.lock().unwrap().clear();
+    type_text(client.doc(), "box:a", "?");
+    assert!(log.lock().unwrap().is_empty());
 }
 
 #[derive(Default)]

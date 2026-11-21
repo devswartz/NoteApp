@@ -432,7 +432,7 @@ fn upgrades_a_version_1_database_in_place() {
         );
     }
     let s = Store::open(&db.0).unwrap();
-    assert_eq!(s.schema_version().unwrap(), 2);
+    assert_eq!(s.schema_version().unwrap(), SCHEMA_VERSION);
     assert_eq!(s.account().unwrap().as_deref(), Some("u1"), "data kept");
     assert_eq!(s.page_doc("p1").unwrap().unwrap().doc, [1, 2]);
     s.put_tree("w1", &tree(vec![page("p1", false)])).unwrap();
@@ -448,4 +448,120 @@ fn a_failed_write_is_remembered() {
     s.put_tree("w1", &tree(vec![page("p1", false)]))
         .unwrap_err();
     assert!(s.last_error().unwrap().contains("outbox"));
+}
+
+fn subtask(id: &str, parent: &str) -> Task {
+    Task {
+        parent_id: Some(parent.into()),
+        ..task(id, false)
+    }
+}
+
+#[test]
+fn a_task_is_found_by_id_and_removed_with_its_subtasks() {
+    let s = Store::open_in_memory().unwrap();
+    let tasks = [
+        task("a", false),
+        subtask("a1", "a"),
+        subtask("a1x", "a1"),
+        task("b", false),
+    ];
+    s.put_tasks("w1", &tasks).unwrap();
+    assert_eq!(s.task("a1").unwrap().unwrap().title, "Task a1");
+    assert_eq!(s.task("nope").unwrap(), None);
+    let gone: Vec<String> = s
+        .remove_task("a")
+        .unwrap()
+        .into_iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(gone, ["a", "a1", "a1x"]);
+    let left: Vec<String> = s
+        .tasks("w1")
+        .unwrap()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.id)
+        .collect();
+    assert_eq!(left, ["b"]);
+    assert!(s.remove_task("a").unwrap().is_empty());
+}
+
+#[test]
+fn task_changes_queue_in_order_and_follow_the_locked_page_rules() {
+    let s = Store::open_in_memory().unwrap();
+    s.put_workspaces(&[workspace("w1")]).unwrap();
+    s.put_tree("w1", &tree(vec![page("p1", false), page("p2", true)]))
+        .unwrap();
+    let create = TaskOp::Create {
+        task: Box::new(nv_api::NewTask {
+            id: Some("t1".into()),
+            title: "Call Bo".into(),
+            page_id: Some("p1".into()),
+            ..Default::default()
+        }),
+    };
+    let rename = TaskOp::Update {
+        patch: serde_json::json!({ "title": "Call Bo back" }),
+    };
+    let a = s.queue_task_op("w1", "t1", Some("p1"), &create).unwrap();
+    let b = s.queue_task_op("w1", "t1", Some("p1"), &rename).unwrap();
+    let c = s.queue_task_op("w1", "t9", None, &TaskOp::Delete).unwrap();
+    assert!(a < b && b < c);
+    // A locked page, or one no stored tree shows: not kept.
+    assert_eq!(
+        s.queue_task_op("w1", "t2", Some("p2"), &TaskOp::Delete)
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        s.queue_task_op("w1", "t3", Some("p-unknown"), &TaskOp::Delete)
+            .unwrap(),
+        None
+    );
+    let ops = s.task_ops().unwrap();
+    assert_eq!(
+        ops.iter().map(|o| &o.op).collect::<Vec<_>>(),
+        [&create, &rename, &TaskOp::Delete]
+    );
+    assert_eq!(ops[2].task_id, "t9");
+    s.unqueue_task_op(ops[0].seq).unwrap();
+    assert_eq!(s.task_ops().unwrap().len(), 2);
+
+    // The page becomes locked: its task changes go; the standalone one stays.
+    s.put_tree("w1", &tree(vec![page("p1", true)])).unwrap();
+    let ops = s.task_ops().unwrap();
+    assert_eq!(ops.len(), 1);
+    assert_eq!(ops[0].task_id, "t9");
+    s.clear().unwrap();
+    assert!(s.task_ops().unwrap().is_empty());
+}
+
+#[test]
+fn upgrades_a_version_2_database_in_place() {
+    let db = TempDb::new("v2");
+    {
+        let mut c = Connection::open(&db.0).unwrap();
+        c.execute_batch("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            .unwrap();
+        let tx = c.transaction().unwrap();
+        upgrade_to_1(&tx).unwrap();
+        upgrade_to_2(&tx).unwrap();
+        tx.execute(
+            "INSERT INTO meta (key, value) VALUES ('schema_version', '2'), ('account', 'u1')",
+            [],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO outbox (page_id, update_v1, queued_at) VALUES ('p1', x'01', 5)",
+            [],
+        )
+        .unwrap();
+        tx.commit().unwrap();
+    }
+    let s = Store::open(&db.0).unwrap();
+    assert_eq!(s.schema_version().unwrap(), 3);
+    assert_eq!(s.queued_updates("p1").unwrap().len(), 1, "data kept");
+    s.queue_task_op("w1", "t1", None, &TaskOp::Delete).unwrap();
+    assert_eq!(s.task_ops().unwrap().len(), 1);
 }

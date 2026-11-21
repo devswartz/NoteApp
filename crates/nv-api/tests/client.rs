@@ -184,3 +184,57 @@ fn parses_a_task_from_the_server() {
     );
     assert_eq!(c.collab_url("p 1"), "ws://localhost:4417/collab/p%201");
 }
+
+fn task_json(id: &str, title: &str) -> serde_json::Value {
+    json!({ "id": id, "workspaceId": "w1", "title": title, "status": "open", "priority": 4,
+            "dueDate": null, "dueTime": null, "reminderAt": null, "assigneeId": null, "createdBy": "u1",
+            "pageId": "p1", "parentId": null, "completedAt": null,
+            "createdAt": "2026-11-01", "updatedAt": "2026-11-01" })
+}
+
+#[test]
+fn task_writes_create_with_a_client_id_rename_and_delete() {
+    let id = "0d9a1c7e-5b1f-4a53-9d0e-2f6a8b7c1e44";
+    let s = Script::default();
+    s.reply(200, session("acc", "ref", 900))
+        .reply(200, task_json(id, ""))
+        .reply(200, task_json(id, "Call Bo"))
+        .reply(200, json!({ "ok": true }))
+        .reply(404, json!({ "error": "Task not found" }));
+    let c = client(&s);
+    c.login("a@b.c", "pw").unwrap();
+    let new = nv_api::NewTask {
+        id: Some(id.into()),
+        page_id: Some("p1".into()),
+        ..Default::default()
+    };
+    assert_eq!(c.create_task("w1", &new).unwrap().id, id);
+    assert_eq!(c.set_task_title(id, "Call Bo").unwrap().title, "Call Bo");
+    c.delete_task(id).unwrap();
+    // Gone already: the server's 404 comes back as is (the core treats it as done).
+    assert!(matches!(
+        c.delete_task(id),
+        Err(ApiError::Http { status: 404, .. })
+    ));
+
+    let seen = s.seen();
+    let calls: Vec<_> = seen.iter().map(|r| (r.method, r.url.as_str())).collect();
+    assert_eq!(
+        calls[1..],
+        [
+            ("POST", "http://localhost:4417/api/workspaces/w1/tasks"),
+            ("PATCH", &*format!("http://localhost:4417/api/tasks/{id}")),
+            ("DELETE", &*format!("http://localhost:4417/api/tasks/{id}")),
+            ("DELETE", &*format!("http://localhost:4417/api/tasks/{id}")),
+        ]
+    );
+    // Only the fields that are set, under the server's names (an empty title is allowed).
+    let body: serde_json::Value = serde_json::from_str(seen[1].body.as_deref().unwrap()).unwrap();
+    assert_eq!(body, json!({ "id": id, "title": "", "pageId": "p1" }));
+    assert_eq!(seen[2].body.as_deref(), Some(r#"{"title":"Call Bo"}"#));
+    assert_eq!(seen[3].body, None);
+    assert_eq!(seen[3].bearer.as_deref(), Some("acc"));
+    // A NewTask reads back from its JSON (the core keeps queued creates that way).
+    let back: nv_api::NewTask = serde_json::from_value(body).unwrap();
+    assert_eq!(back, new);
+}

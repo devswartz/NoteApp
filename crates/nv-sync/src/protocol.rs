@@ -3,6 +3,7 @@
 //! type 1 is awareness (presence: name, colour, cursor). On connect both sides send step 1;
 //! each answers the other's with step 2; afterwards every change is an update message.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use yrs::sync::{Awareness, Message, SyncMessage};
@@ -41,11 +42,85 @@ pub struct Handled {
     pub synced: bool,
 }
 
+/// Code that keeps its own view of the document (an editor session bound to it) and must see
+/// each remote update applied, atomically with its own state. Called on the thread that handles
+/// the message (a live page's connection thread), around every remote update, the echo of a
+/// local edit included.
+pub trait RemoteHook: Send + Sync {
+    /// Call `apply` once (it is called for you afterwards if you don't): it applies the update
+    /// with `REMOTE_ORIGIN` and returns whether the document changed. Do what must happen before
+    /// (sticky positions) and after (re-read) around it, holding your own lock across the call so
+    /// no local edit of yours lands in between. Don't wait here for the connection's thread.
+    fn around_remote(&self, apply: &mut dyn FnMut() -> bool);
+}
+
+type HookList = Vec<(u64, Arc<dyn RemoteHook>)>;
+
+/// The hooks run around remote updates, shared by every clone of a `SyncDoc` (and handed out by
+/// `LiveDoc::remote_hooks`).
+#[derive(Clone, Default)]
+pub struct RemoteHooks {
+    hooks: Arc<Mutex<HookList>>,
+    next: Arc<AtomicU64>,
+}
+
+impl RemoteHooks {
+    /// Run `hook` around every remote update from now on. Returns its id, for `remove`.
+    pub fn add(&self, hook: Arc<dyn RemoteHook>) -> u64 {
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        self.lock().push((id, hook));
+        id
+    }
+
+    /// Stop running a hook. False if it wasn't there.
+    pub fn remove(&self, id: u64) -> bool {
+        let mut hooks = self.lock();
+        let before = hooks.len();
+        hooks.retain(|(i, _)| *i != id);
+        hooks.len() != before
+    }
+
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HookList> {
+        self.hooks.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// `apply` inside every hook (the first added outermost), exactly once. The list is copied
+    /// first, so a hook may add or remove hooks.
+    fn run(&self, apply: &mut dyn FnMut() -> bool) -> bool {
+        let hooks: Vec<Arc<dyn RemoteHook>> = self.lock().iter().map(|(_, h)| h.clone()).collect();
+        nest(&hooks, apply)
+    }
+}
+
+fn nest(hooks: &[Arc<dyn RemoteHook>], apply: &mut dyn FnMut() -> bool) -> bool {
+    let Some((hook, rest)) = hooks.split_first() else {
+        return apply();
+    };
+    let mut result: Option<bool> = None;
+    {
+        let mut inner = || *result.get_or_insert_with(|| nest(rest, apply));
+        hook.around_remote(&mut inner);
+    }
+    match result {
+        Some(changed) => changed,
+        None => nest(rest, apply),
+    }
+}
+
 /// One side of a page's sync: its document and awareness, and the protocol rules.
 #[derive(Clone)]
 pub struct SyncDoc {
     doc: Doc,
     awareness: Arc<Mutex<Awareness>>,
+    hooks: RemoteHooks,
 }
 
 pub fn encode(msg: &Message) -> Vec<u8> {
@@ -57,11 +132,17 @@ impl SyncDoc {
         SyncDoc {
             awareness: Arc::new(Mutex::new(Awareness::new(doc.clone()))),
             doc,
+            hooks: RemoteHooks::default(),
         }
     }
 
     pub fn doc(&self) -> &Doc {
         &self.doc
+    }
+
+    /// The hooks run around every remote update (`apply_remote`).
+    pub fn remote_hooks(&self) -> &RemoteHooks {
+        &self.hooks
     }
 
     /// What a client sends when its socket opens: step 1, and its presence if it has one.
@@ -77,14 +158,26 @@ impl SyncDoc {
         out
     }
 
-    /// Apply an update that came from the network. Returns whether it changed the document
-    /// (a sync step 2 often carries nothing new: only deletions the document already has).
+    /// Apply an update that came from the network, inside the remote hooks. Returns whether it
+    /// changed the document (a sync step 2 often carries nothing new: only deletions the
+    /// document already has).
     pub fn apply_remote(&self, update: &[u8]) -> Result<bool, SyncError> {
         let u = Update::decode_v1(update).map_err(|e| SyncError::Protocol(e.to_string()))?;
-        let mut txn = self.doc.transact_mut_with(Origin::from(REMOTE_ORIGIN));
-        txn.apply_update(u)
-            .map_err(|e| SyncError::Protocol(e.to_string()))?;
-        Ok(!txn.insert_set().is_empty() || !txn.delete_set().is_empty())
+        let mut u = Some(u);
+        let mut result: Result<bool, SyncError> = Ok(false);
+        let mut apply = || {
+            let Some(u) = u.take() else {
+                return false;
+            };
+            let mut txn = self.doc.transact_mut_with(Origin::from(REMOTE_ORIGIN));
+            result = txn
+                .apply_update(u)
+                .map(|_| !txn.insert_set().is_empty() || !txn.delete_set().is_empty())
+                .map_err(|e| SyncError::Protocol(e.to_string()));
+            matches!(result, Ok(true))
+        };
+        self.hooks.run(&mut apply);
+        result
     }
 
     /// Step 1 with this document's state vector: the server answers with a step 2. A step 1
