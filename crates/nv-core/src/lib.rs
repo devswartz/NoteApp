@@ -14,7 +14,9 @@ use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::{DocKind, Page, TaskLine};
 
 mod client;
+mod content;
 pub use client::*;
+pub use content::*;
 
 uniffi::setup_scaffolding!();
 
@@ -127,6 +129,8 @@ pub struct PageInfo {
     /// People mentioned, sorted.
     pub mention_ids: Vec<String>,
     pub has_ink: bool,
+    /// What's in each content fragment: `default` (box id none) first, then the boxes in reading order.
+    pub content: Vec<BoxContent>,
 }
 
 /// What the Markdown export shows for a task embedded in the page.
@@ -201,7 +205,16 @@ pub(crate) fn page_info(page: &Page) -> PageInfo {
         task_ids: ex.task_ids.into_iter().collect(),
         mention_ids: ex.mention_ids.into_iter().collect(),
         has_ink: page.has_ink(),
+        content: content::box_contents(&page.fragments),
     }
+}
+
+/// The content of every box of a stored page (`default` first, then the boxes in reading order).
+#[uniffi::export]
+pub fn page_content(update: Vec<u8>) -> Result<Vec<BoxContent>, CoreError> {
+    Ok(content::box_contents(
+        &Page::from_update(&update)?.fragments,
+    ))
 }
 
 /// The page as Markdown (`# title`, then its boxes in reading order). `tasks` says how to show

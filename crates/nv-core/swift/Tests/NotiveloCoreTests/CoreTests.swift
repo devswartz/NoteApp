@@ -46,4 +46,16 @@ final class CoreTests: XCTestCase {
             XCTAssertEqual(error as? CoreError, .SignedOut)
         }
     }
+
+    func testBoxContent() throws {
+        let content = try pageContent(update: corpus("lists", "page.bin"))
+        XCTAssertNil(content.first?.boxId)
+        XCTAssertEqual(content.last?.boxId, "b1")
+        XCTAssertEqual(content.last?.nodes.first?.kind, .bulletList)
+        let ordered = try XCTUnwrap(content.last?.nodes.first { $0.kind == .orderedList })
+        XCTAssertEqual(ordered.markers, ["1.", "2.", "3."])
+        let info = try readPage(update: corpus("document-page", "page.bin"))
+        let runs = info.content[0].nodes.flatMap(\.children).flatMap(\.runs)
+        XCTAssertTrue(runs.contains { $0.text == "bold" && $0.marks == [.bold] })
+    }
 }
