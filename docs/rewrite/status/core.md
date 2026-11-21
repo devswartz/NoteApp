@@ -37,7 +37,7 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 - 2026-11-21, M4 step 1 (`rewrite/core-m4`): `crates/nv-core/src/content.rs`, tests in
   `crates/nv-core/tests/api.rs` and the Swift `testBoxContent`; `build-xcframework.sh` uses
-  `lipo` for the simulator and macOS slices; rust.yml installs the two x86_64 targets.
+  `lipo` for the simulator and macOS slices and now runs `rustup target add` for its own targets (so apple-native.yml needs no change); rust.yml and apple-native.yml are both green on it.
 - 2026-11-21, M3 (`rewrite/core-m3`, merged): `nv-api`, `nv-sync`, the online Core API, `rewrite.yml`.
 - 2026-11-21, M1 (`rewrite/core-m1`, merged): corpus, `nv-model`, `nv-core` + XCFramework.
 
