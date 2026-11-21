@@ -4,14 +4,14 @@ Kept by the overseeing session. **Workstreams don't edit this file** (parallel e
 
 ## Now
 
-All three streams handed over on 2026-11-21 (context ran large); fresh sessions pick up from:
-- **core**: `docs/rewrite/status/core.md`. Box content in the Core API and x86_64 Apple slices done (merged). Next: `nv-store`, sync robustness (reconnect, offline queue, system TLS), Kotlin/Android build; then the editor's requests (editor session API in nv-core).
-- **editor**: `docs/rewrite/status/editor.md`. M2 done: `nv-editor` passes all 129 suite scenarios (merged). Next: the editor session in the Core API, then iPad editing with the apple stream (M4).
-- **apple**: `docs/rewrite/status/apple.md`. Next: M5 sign-in, live tree, live read-only pages (now with core's box content), tasks list; TestFlight 1.99.x.
+Round 4 merged 2026-11-21 (4e3eb60): editor text-input contract and composition scenarios (147/147), core `nv-store` (on-device SQLite cache, offline fallback), apple M5 basics (sign-in, tree, live read-only pages, tasks; TestFlight 1.99.20). Next:
+- **core**: `rewrite/core-sync`: reconnect with backoff, offline queue in nv-store, system TLS; apple's concurrency question; then Kotlin/Android CI, CHANGELOG-SYNC.md design.
+- **editor**: EditorSession gaps for native views (caret rects, marked ranges, suggest state, clipboard, real-clock undo grouping) in support of apple; then more parity scenarios.
+- **apple**: `rewrite/apple-edit`: iPad editing through EditorSession (EDITOR.md 10); TestFlight once a box can be typed into.
 
 ## Waiting on Devon
 
-- (none yet)
+- Optional: try TestFlight 1.99.20 on the iPad (sign in, open the tree, open pages, tick a task); notes in `docs/rewrite/status/apple.md`.
 
 ## Handover: editor (2026-11-21)
 
