@@ -1,0 +1,29 @@
+{
+  "scenarios": [
+    { "name": "/callout makes a callout", "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "/callout" }, { "key": "Enter" }, { "type": "x" }],
+      "expect": { "doc": "<callout><paragraph>x|</paragraph></callout><paragraph/>" } },
+    { "name": "Enter twice leaves a callout", "doc": "<callout><paragraph>x|</paragraph></callout><paragraph/>",
+      "steps": [{ "key": "Enter" }, { "key": "Enter" }],
+      "expect": { "doc": "<callout><paragraph>x</paragraph></callout><paragraph>|</paragraph><paragraph/>" } },
+    { "name": "/toggle makes a toggle", "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "/toggle" }, { "key": "Enter" }, { "type": "T" }],
+      "expect": { "doc": "<details><detailsSummary>T|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>" } },
+    { "name": "Enter in a closed toggle's summary makes a line after the toggle", "doc": "<details><detailsSummary>T|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>",
+      "steps": [{ "key": "Enter" }, { "type": "a" }],
+      "expect": { "doc": "<details><detailsSummary>T</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph>a|</paragraph><paragraph/>" } },
+    { "name": "Enter on an empty last toggle line leaves the toggle",
+      "skip": { "tiptap": "needs the toggle open, which is view state the harness can't set yet; behaviour from src/editor/blockExit.ts" }, "doc": "<details><detailsSummary>T</detailsSummary><detailsContent><paragraph>a</paragraph><paragraph>|</paragraph></detailsContent></details><paragraph/>",
+      "steps": [{ "key": "Enter" }],
+      "expect": { "doc": "<details><detailsSummary>T</detailsSummary><detailsContent><paragraph>a</paragraph></detailsContent></details><paragraph>|</paragraph><paragraph/>" } },
+    { "name": "/h1 makes a heading", "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "/h1" }, { "key": "Enter" }, { "type": "T" }],
+      "expect": { "doc": "<heading level=1>T|</heading><paragraph/>" } },
+    { "name": "/ then Escape leaves the text", "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "/ta" }, { "key": "Escape" }],
+      "expect": { "doc": "<paragraph>/ta|</paragraph>" } },
+    { "name": "/code makes a code block", "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "/code" }, { "key": "Enter" }, { "type": "x" }],
+      "expect": { "doc": "<codeBlock>x|</codeBlock><paragraph/>" } }
+  ]
+}

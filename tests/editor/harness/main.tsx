@@ -3,6 +3,7 @@
 // real key presses through Playwright and these hooks (window.nv).
 import { createRoot } from 'react-dom/client';
 import { useEffect } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
 import { getSchema, type Extensions } from '@tiptap/core';
 import Collaboration from '@tiptap/extension-collaboration';
@@ -50,7 +51,19 @@ function seedStore(tasks: Record<string, TaskIn>) {
     user: { id: 'u1', name: 'Tess Tester', email: 't@example.test', color: '#4f46e5' },
     wsId: 'w1',
     workspaces: [{ id: 'w1', name: 'W', role: 'owner' }],
-    members: [],
+    // Fixed people and pages for @mentions and [[ page links (tests/editor/README.md "Fixtures").
+    members: [
+      { id: 'u1', name: 'Tess Tester', email: 't@example.test', color: '#4f46e5', role: 'owner' },
+      { id: 'u2', name: 'Sam Lee', email: 'sam@example.test', color: '#0f766e', role: 'member' },
+    ],
+    tree: {
+      notebooks: [{ id: 'n1', workspaceId: 'w1', name: 'Work', color: '', visibility: 'shared', createdBy: 'u1', position: 1 }],
+      sections: [{ id: 's1', notebookId: 'n1', parentId: null, name: 'Notes', color: '', position: 1 }],
+      pages: [
+        { id: PAGE, sectionId: 's1', title: 'This page', icon: null, kind: 'canvas', position: 1, updatedAt: now, updatedBy: null },
+        { id: 'p2', sectionId: 's1', title: 'Project plan', icon: null, kind: 'canvas', position: 2, updatedAt: now, updatedBy: null },
+      ],
+    },
     tasks: all,
     tasksLoaded: true,
   } as never);
@@ -99,7 +112,7 @@ const nv = {
     const host = document.getElementById('box')!;
     host.innerHTML = '';
     const root = createRoot(host);
-    const editor = await new Promise<Editor>((resolve) => root.render(<Box doc={doc} um={um} onReady={resolve} />));
+    const editor = await new Promise<Editor>((resolve) => root.render(<MemoryRouter><Box doc={doc} um={um} onReady={resolve} /></MemoryRouter>));
     // Let y-tiptap's first sync land before placing the selection.
     await new Promise((r) => setTimeout(r, 0));
     current = { editor, doc, root };

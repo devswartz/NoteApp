@@ -1,0 +1,33 @@
+{
+  "scenarios": [
+    { "name": "insert a 2x2 table with a header row", "doc": "<paragraph>|</paragraph>", "steps": [{ "command": "insertTable", "args": { "rows": 2, "cols": 2 } }],
+      "expect": { "doc": "<table><tableRow><tableHeader><paragraph>|</paragraph></tableHeader><tableHeader><paragraph/></tableHeader></tableRow><tableRow><tableCell><paragraph/></tableCell><tableCell><paragraph/></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "Tab moves to the next cell", "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell><tableCell><paragraph>b</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "key": "Tab" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a</paragraph></tableCell><tableCell><paragraph>[b]</paragraph></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "Shift+Tab moves to the previous cell", "doc": "<table><tableRow><tableCell><paragraph>a</paragraph></tableCell><tableCell><paragraph>b|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "key": "Shift+Tab" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>[a]</paragraph></tableCell><tableCell><paragraph>b</paragraph></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "Tab in the last cell adds a row", "doc": "<table><tableRow><tableCell><paragraph>a</paragraph></tableCell><tableCell><paragraph>b|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "key": "Tab" }, { "type": "c" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a</paragraph></tableCell><tableCell><paragraph>b</paragraph></tableCell></tableRow><tableRow><tableCell><paragraph>c|</paragraph></tableCell><tableCell><paragraph/></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "Enter in a cell is a new paragraph in the cell", "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "key": "Enter" }, { "type": "b" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a</paragraph><paragraph>b|</paragraph></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "add a row after", "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "command": "addRowAfter" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow><tableRow><tableCell><paragraph/></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "add a column after", "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "command": "addColumnAfter" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell><tableCell><paragraph/></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "delete a row", "doc": "<table><tableRow><tableCell><paragraph>a</paragraph></tableCell></tableRow><tableRow><tableCell><paragraph>b|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "command": "deleteRow" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "delete a column", "doc": "<table><tableRow><tableCell><paragraph>a</paragraph></tableCell><tableCell><paragraph>b|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "command": "deleteColumn" }],
+      "expect": { "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow></table><paragraph/>" } },
+    { "name": "delete the table", "doc": "<paragraph>x</paragraph><table><tableRow><tableCell><paragraph>a|</paragraph></tableCell></tableRow></table><paragraph/>",
+      "steps": [{ "command": "deleteTable" }],
+      "expect": { "doc": "<paragraph>x</paragraph><paragraph>|</paragraph>" } }
+  ]
+}
