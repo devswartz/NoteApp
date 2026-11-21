@@ -63,6 +63,25 @@ fn run(s: &Value) -> Result<(), String> {
         } else if let Some(c) = step.get("command").and_then(Value::as_str) {
             command(&mut ed, c, step.get("args").unwrap_or(&json!({})))?;
             ed.finish();
+        } else if let Some(p) = step.get("paste") {
+            let c = nv_editor::clipboard::Clipboard {
+                html: p["text/html"].as_str().unwrap_or("").into(),
+                text: p["text/plain"].as_str().unwrap_or("").into(),
+            };
+            ed.paste(&c);
+            ed.finish();
+        } else if let Some(want) = step.get("copy") {
+            let cut = step.get("cut").and_then(Value::as_bool).unwrap_or(false);
+            let got = if cut { ed.cut() } else { ed.copy() };
+            ed.finish();
+            if let Some(t) = want.get("text").and_then(Value::as_str) {
+                if got.text != t {
+                    return Err(format!(
+                        "step {n}: copied text\n    want: {t:?}\n    got:  {:?}",
+                        got.text
+                    ));
+                }
+            }
         } else if let Some(id) = step.get("focusTitle").and_then(Value::as_str) {
             ed.focus_title(id);
         } else if let Some(ms) = step.get("wait").and_then(Value::as_u64) {

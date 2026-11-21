@@ -19,6 +19,19 @@ blocks/Mod+Alt+2 makes a heading 2
 blocks/Shift+Enter is a line break
 blocks/``` space makes a code block
 blocks/typing replaces a selection
+clipboard/copy a selection as plain text
+clipboard/copy a task line as plain text
+clipboard/cut removes the selection and keeps a cut task
+clipboard/paste HTML headings and a link
+clipboard/paste HTML keeps bold and italic
+clipboard/paste Markdown bold
+clipboard/paste a URL over a selection links it
+clipboard/paste an HTML list
+clipboard/paste plain text inline
+clipboard/paste plain text with line breaks makes paragraphs
+clipboard/pasted HTML drops script links
+clipboard/pasted plain text applies inline Markdown
+clipboard/pasted plain text keeps block Markdown as text
 containers// then Escape leaves the text
 containers//callout makes a callout
 containers//code makes a code block
@@ -110,6 +123,7 @@ undo/Mod+y redoes
 undo/a new edit clears redo
 undo/typing after a pause is a separate undo step
 undo/undo a list input rule
+undo/undo a paste
 undo/undo an Enter split
 undo/undo bold
 undo/undo takes back quick typing in one step
