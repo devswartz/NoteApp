@@ -195,6 +195,21 @@ fn migrates_an_unversioned_database_and_refuses_a_newer_one() {
         SCHEMA_VERSION as usize,
         "one upgrade per version"
     );
+
+    // The app's way in: a database it can't use is replaced by an empty one.
+    let s = Store::open_or_reset(&db.0).unwrap();
+    assert_eq!(s.schema_version().unwrap(), SCHEMA_VERSION);
+    assert_eq!(s.workspaces().unwrap(), None);
+}
+
+#[test]
+fn a_damaged_file_is_replaced() {
+    let db = TempDb::new("damaged");
+    std::fs::write(&db.0, [0xAB; 4096]).unwrap();
+    assert!(Store::open(&db.0).is_err());
+    let s = Store::open_or_reset(&db.0).unwrap();
+    s.put_workspaces(&[workspace("w1")]).unwrap();
+    assert_eq!(s.workspaces().unwrap().unwrap().len(), 1);
 }
 
 #[test]
@@ -262,6 +277,23 @@ fn pages_gone_from_the_tree_and_workspaces_gone_are_pruned() {
         s.page_doc("loose").unwrap().is_some(),
         "not known to be in w2"
     );
+}
+
+#[test]
+fn one_task_is_replaced_in_place_or_added_last() {
+    let s = Store::open_in_memory().unwrap();
+    s.put_tasks("w1", &[task("a", false), task("b", false)])
+        .unwrap();
+    let mut a = task("a", false);
+    a.status = "done".into();
+    s.put_task(&a).unwrap();
+    s.put_task(&task("c", false)).unwrap();
+    let got = s.tasks("w1").unwrap().unwrap();
+    assert_eq!(
+        got.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
+        ["a", "b", "c"]
+    );
+    assert_eq!(got[0].status, "done");
 }
 
 #[test]

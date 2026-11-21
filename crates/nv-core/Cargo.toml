@@ -23,5 +23,6 @@ required-features = ["bindgen"]
 nv-api = { path = "../nv-api" }
 nv-model = { path = "../nv-model" }
 nv-sync = { path = "../nv-sync" }
+nv-store = { path = "../nv-store" }
 serde_json = "1"
 uniffi = "0.32"

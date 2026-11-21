@@ -201,6 +201,23 @@ impl Store {
         Store::setup(conn)
     }
 
+    /// Open the database at `path`; if it can't be used (written by a newer app, or damaged),
+    /// delete it and start an empty one. Everything in it is a copy of the server's, so nothing is lost.
+    pub fn open_or_reset(path: impl AsRef<Path>) -> Result<Store> {
+        let path = path.as_ref();
+        match Store::open(path) {
+            Ok(s) => Ok(s),
+            Err(_) => {
+                for ext in ["", "-wal", "-shm"] {
+                    let mut p = path.as_os_str().to_owned();
+                    p.push(ext);
+                    let _ = std::fs::remove_file(p);
+                }
+                Store::open(path)
+            }
+        }
+    }
+
     /// A store that lives only as long as this value (tests, or no database path).
     pub fn open_in_memory() -> Result<Store> {
         Store::setup(Connection::open_in_memory()?)
@@ -415,6 +432,35 @@ impl Store {
             }
             drop(insert);
             mark_stored(tx, "tasks", workspace_id)?;
+            Ok(())
+        })
+    }
+
+    /// Store one task the server returned (after a create or an edit): replaced in place, or
+    /// added at the end of its workspace's list.
+    pub fn put_task(&self, task: &Task) -> Result<()> {
+        self.write(|tx| {
+            let ord: i64 = tx
+                .query_row(
+                    "SELECT ord FROM tasks WHERE workspace_id = ?1 AND id = ?2",
+                    params![task.workspace_id, task.id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .map_or_else(
+                    || {
+                        tx.query_row(
+                            "SELECT COALESCE(MAX(ord) + 1, 0) FROM tasks WHERE workspace_id = ?1",
+                            [&task.workspace_id],
+                            |r| r.get(0),
+                        )
+                    },
+                    Ok,
+                )?;
+            tx.execute(
+                "INSERT OR REPLACE INTO tasks (workspace_id, id, ord, json) VALUES (?1, ?2, ?3, ?4)",
+                params![task.workspace_id, task.id, ord, to_json(task)?],
+            )?;
             Ok(())
         })
     }
