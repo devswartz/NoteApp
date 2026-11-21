@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The shell: sidebar (notebooks, sections, task views) and a detail area. Placeholder data until M3.
+/// The shell: sidebar (task views, and for now the page-format corpus as sample pages) and a detail area.
 struct MainView: View {
     @Environment(SessionModel.self) private var session
-    @State private var selection: SidebarItem? = .today
+    @State private var selection: SidebarItem? = CorpusPage.caseNames.first.map(SidebarItem.page) ?? .today
 
     var body: some View {
         NavigationSplitView {
@@ -16,10 +16,13 @@ struct MainView: View {
                     }
                 }
         } detail: {
-            if let selection {
-                ContentUnavailableView(selection.title, systemImage: selection.symbol,
+            switch selection {
+            case let .page(name):
+                PageScreen(name: name)
+            case let item?:
+                ContentUnavailableView(item.title, systemImage: item.symbol,
                                        description: Text("Coming in the native rewrite."))
-            } else {
+            case nil:
                 ContentUnavailableView("Pick something", systemImage: "sidebar.left")
             }
         }
@@ -38,7 +41,7 @@ enum SidebarItem: Hashable, Identifiable {
         case .myTasks: "My Tasks"
         case .upcoming: "Upcoming"
         case .calendar: "Calendar"
-        case .page(let name): name
+        case let .page(name): name
         }
     }
 
@@ -56,11 +59,6 @@ enum SidebarItem: Hashable, Identifiable {
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
 
-    private let notebooks: [(name: String, pages: [String])] = [
-        ("Personal", ["Ideas", "Reading list"]),
-        ("Work", ["Meeting notes", "Roadmap"]),
-    ]
-
     var body: some View {
         List(selection: $selection) {
             Section("Tasks") {
@@ -68,14 +66,44 @@ struct SidebarView: View {
                     Label(item.title, systemImage: item.symbol).tag(item)
                 }
             }
-            ForEach(notebooks, id: \.name) { notebook in
-                Section(notebook.name) {
-                    ForEach(notebook.pages, id: \.self) { page in
-                        Label(page, systemImage: "doc.text").tag(SidebarItem.page(page))
-                    }
+            Section("Sample pages (corpus)") {
+                ForEach(CorpusPage.caseNames, id: \.self) { name in
+                    Label(name, systemImage: "doc.text").tag(SidebarItem.page(name))
                 }
             }
         }
         .navigationTitle("Notivelo")
+    }
+}
+
+/// One page, read through the core. iPad/iPhone: the native canvas. Mac: the core's Markdown for now (M6).
+struct PageScreen: View {
+    let name: String
+
+    var body: some View {
+        switch Result(catching: { try CorpusPage.load(name) }) {
+        case let .success(page):
+            content(page)
+                .navigationTitle(page.title)
+        case let .failure(error):
+            ContentUnavailableView("Can't open this page", systemImage: "exclamationmark.triangle",
+                                   description: Text(String(describing: error)))
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ page: CorpusPage) -> some View {
+        #if os(iOS)
+        PageCanvasView(page: page)
+            .ignoresSafeArea(edges: .bottom)
+        #else
+        ScrollView {
+            Text(page.markdown())
+                .font(.body.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        #endif
     }
 }

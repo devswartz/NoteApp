@@ -41,6 +41,10 @@ targets:
       - path: Sources/Shared
       - path: Sources/iOS
       - path: Resources
+      # The page-format corpus as sample pages (a folder reference: Notivelo.app/cases/<name>/page.bin …).
+      - path: ../../tests/corpus/cases
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: NotiveloCore
     entitlements:
@@ -83,6 +87,10 @@ targets:
       - path: Sources/Shared
       - path: Sources/macOS
       - path: Resources
+      # The page-format corpus as sample pages (a folder reference: Notivelo.app/cases/<name>/page.bin …).
+      - path: ../../tests/corpus/cases
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: NotiveloCore
     entitlements:

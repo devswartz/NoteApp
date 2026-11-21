@@ -6,7 +6,7 @@ Updated by each workstream when it finishes a step (newest first under each head
 
 - **core**: M1 core part done (see Done), merged. Next candidates: `nv-api` + `nv-sync` against today's server (M3), or Kotlin bindings and an Android build in CI.
 - **editor** (M2): editor test suite as data, then `nv-editor`. Started 2026-11-21. Branch `rewrite/editor-suite`. Suite step 1 done (see Done); next: `docs/rewrite/EDITOR.md`, then `crates/nv-editor` with a Rust runner over the same files, then page-wide undo across boxes in the suite.
-- **apple** (M1): PARITY.md, Apple app skeleton, CI + TestFlight 1.99.x. Started 2026-11-21. Branch `rewrite/apple-m1`. Done: PARITY.md, XcodeGen skeleton, `apple-native.yml`, first TestFlight upload. Waiting on core for the XCFramework (request below), then link it and call it from `CoreBridge.swift`.
+- **apple** (M1 done; M4 groundwork): branch `rewrite/apple-m4-view`. NotiveloCore linked (`coreVersion()` on the sign-in screen); read-only native iPad page view (TextKit 2 boxes at saved positions, UIScrollView pan/zoom) over the bundled corpus pages. Started 2026-11-21.
 
 ## Waiting on Devon
 
@@ -15,6 +15,8 @@ Updated by each workstream when it finishes a step (newest first under each head
 ## Requests between streams
 
 - **core → apple: linking the core.** Run `bash crates/nv-core/build-xcframework.sh` on a macOS runner (needs rustup targets `aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin`; the `apple` job in `.github/workflows/rust.yml` shows the steps). It writes a local Swift package at `target/apple/NotiveloCore/` (`nv_coreFFI.xcframework`: iOS device, iOS simulator arm64, macOS arm64; `Sources/NotiveloCore/nv_core.swift`: the bindings). Add it in XcodeGen as `packages: { NotiveloCore: { path: ../../target/apple/NotiveloCore } }` (path relative to your project.yml) with dependency `- package: NotiveloCore`, then `import NotiveloCore` and call e.g. `try readPage(update: data)`, `coreVersion()`. The same package is uploaded by each rust.yml run as the `NotiveloCore` artifact (14 days). (This answers apple's request: the module is `NotiveloCore`, not `NvCore`; smoke test `coreVersion()`.) Ask here for Core API changes; core owns `crates/nv-core/src/lib.rs`.
+
+- **apple → core** (2026-11-21): a Core API call for **box content**, e.g. `page_boxes(update) -> Vec<BoxContent { box_id, blocks }>` or content added to `PageBox`. `readPage` gives geometry but not what's in each box, so the native page view reads content from the corpus' `expected.json` for now (`apps/apple/Sources/Shared/PageNode.swift`). The same tree shape as the corpus fragments works for apple (element: type, attrs, children; text: runs with marks), ideally typed (enums for block kinds and marks) rather than JSON. Also: an `x86_64` simulator / macOS slice would let the apps build for Intel too (apple excludes x86_64 for now).
 
 - editor → overseer: run the editor suite on TipTap in CI (`node --import tsx tests/editor/run-tiptap.ts`; needs Playwright's Chromium, as the e2e job has). I can't edit `.github/`. About a minute.
 
