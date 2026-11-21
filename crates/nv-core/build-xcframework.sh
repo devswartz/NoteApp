@@ -18,6 +18,9 @@ TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-
 OUT=target/apple/NotiveloCore
 WORK=target/apple/work
 
+# Callers (rust.yml, apple-native.yml) needn't list the targets: add any that are missing.
+if command -v rustup >/dev/null; then rustup target add "${TARGETS[@]}"; fi
+
 for t in "${TARGETS[@]}"; do
   cargo build -p nv-core --lib --profile "$PROFILE" --target "$t" --locked
 done
