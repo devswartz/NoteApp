@@ -2,6 +2,11 @@
 
 All notable changes, by release. Pull request numbers refer to github.com/devswartz/NoteApp.
 
+## v1.5.13
+
+### Added
+- **Undo and Redo on phones.** Phones have no ribbon, so there was no way to undo a change in a note. The buttons now sit in a note's top bar on screens up to 760px wide, act on the whole page's history like the ribbon's, and keep the keyboard and cursor where they are. iPad and desktop keep them in the ribbon.
+
 ## v1.5.12
 
 A server-only release; the desktop and App Store apps are unchanged.
