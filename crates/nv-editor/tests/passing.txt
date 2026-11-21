@@ -98,6 +98,8 @@ tasks/a checked checklist item converts to a done task
 tasks/converting a bullet keeps its sub-points under the task
 tasks/converting several selected lines makes several tasks
 tasks/redo of a convert-to-task recreates the task
+tasks/undo after deleting a task line brings the task back
+tasks/undoing a convert-to-task removes the task
 typing/Enter splits a paragraph
 typing/Mod+b then type is bold
 typing/dash space makes a bullet
@@ -105,4 +107,10 @@ typing/slash task makes a task
 typing/type into an empty paragraph
 undo/Mod+Shift+z redoes
 undo/Mod+y redoes
+undo/a new edit clears redo
+undo/typing after a pause is a separate undo step
+undo/undo a list input rule
+undo/undo an Enter split
+undo/undo bold
+undo/undo takes back quick typing in one step
 undo/undo with nothing to undo does nothing

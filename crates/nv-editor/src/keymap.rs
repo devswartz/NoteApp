@@ -76,6 +76,8 @@ impl Editor {
             "Alt+Shift+ArrowUp" => self.move_block(true),
             "Alt+Shift+ArrowDown" => self.move_block(false),
             "Mod+a" => self.select_all(),
+            "Mod+z" => return self.undo(),
+            "Mod+y" | "Mod+Shift+z" => return self.redo(),
             "Mod+Enter" | "Mod+1" => self.convert_to_task(),
             _ => false,
         };

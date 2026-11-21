@@ -629,6 +629,7 @@ dependencies = [
 name = "nv-editor"
 version = "0.1.0"
 dependencies = [
+ "nv-model",
  "serde_json",
 ]
 

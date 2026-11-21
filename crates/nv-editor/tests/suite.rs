@@ -44,6 +44,8 @@ fn run(s: &Value) -> Result<(), String> {
     }
     let mut ed = Editor::new(doc, sel.unwrap_or(Selection::caret(1)));
     ed.tasks = Box::new(store.clone());
+    let clock = nv_editor::bind::Clock::manual();
+    ed.bind(nv_model::new_doc(), "default", clock.clone());
     let mut n = 0;
     for step in s["steps"].as_array().unwrap() {
         n += 1;
@@ -63,8 +65,8 @@ fn run(s: &Value) -> Result<(), String> {
             ed.finish();
         } else if let Some(id) = step.get("focusTitle").and_then(Value::as_str) {
             ed.focus_title(id);
-        } else if step.get("wait").is_some() {
-            // No clock-driven behaviour yet (undo grouping comes with the yrs binding).
+        } else if let Some(ms) = step.get("wait").and_then(Value::as_u64) {
+            clock.advance(ms);
         } else if let Some(e) = step.get("expect") {
             check(&ed, &store, e).map_err(|m| format!("step {n}: {m}"))?;
         } else {

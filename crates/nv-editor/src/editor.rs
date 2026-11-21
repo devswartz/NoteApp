@@ -28,6 +28,10 @@ pub struct Editor {
     pub tasks: Box<dyn crate::tasks::TaskHost>,
     /// Task ids in the doc after the last change (to see which lines went or came back).
     pub known_tasks: Vec<String>,
+    /// The box's fragment in the page doc, with its undo history (none for a detached editor).
+    pub binding: Option<crate::bind::Binding>,
+    /// The selection after the last change: what undo puts back.
+    last_sel: Selection,
 }
 
 impl Editor {
@@ -42,7 +46,10 @@ impl Editor {
             dismissed: None,
             tasks: Box::new(crate::tasks::NoTasks::default()),
             known_tasks: Vec::new(),
+            binding: None,
+            last_sel: Selection::All,
         };
+        ed.last_sel = ed.sel.clone();
         ed.known_tasks = crate::tasks::task_ids(&ed.doc);
         ed.finish();
         ed
@@ -949,6 +956,63 @@ impl Editor {
             self.doc.content.push(Node::el("paragraph", vec![]));
         }
         self.sync_tasks();
+        if let Some(b) = &mut self.binding {
+            b.write(&self.doc, &self.last_sel, &self.sel);
+        }
+        self.last_sel = self.sel.clone();
+    }
+
+    /// Bind the editor to `field` of a page doc: the tree is written there, and undo starts.
+    pub fn bind(&mut self, doc: nv_model::yrs::Doc, field: &str, clock: crate::bind::Clock) {
+        self.binding = Some(crate::bind::Binding::new(doc, field, &self.doc, clock));
+    }
+
+    /// Record the current state as its own undo step: what comes next starts a new one.
+    pub fn checkpoint(&mut self) {
+        if let Some(b) = &mut self.binding {
+            b.write(&self.doc, &self.last_sel, &self.sel);
+            b.stop_capturing();
+        }
+        self.last_sel = self.sel.clone();
+    }
+
+    pub fn undo(&mut self) -> bool {
+        let Some(b) = &mut self.binding else {
+            return false;
+        };
+        let Some((doc, sel)) = b.undo() else {
+            return true;
+        };
+        let sel = collapse_into_restored(&self.doc, &doc, sel);
+        self.apply_history(doc, sel);
+        true
+    }
+
+    pub fn redo(&mut self) -> bool {
+        let Some(b) = &mut self.binding else {
+            return false;
+        };
+        let Some((doc, sel)) = b.redo() else {
+            return true;
+        };
+        self.apply_history(doc, sel);
+        true
+    }
+
+    fn apply_history(&mut self, doc: Node, sel: Selection) {
+        self.doc = doc;
+        let size = self.doc.content_size();
+        self.sel = match sel {
+            Selection::Text { anchor, head } => Selection::Text {
+                anchor: anchor.min(size),
+                head: head.min(size),
+            },
+            other => other,
+        };
+        self.stored_marks = None;
+        self.focus = Focus::Doc;
+        self.sync_tasks();
+        self.last_sel = self.sel.clone();
     }
 
     pub fn select_all(&mut self) -> bool {
@@ -1113,4 +1177,49 @@ pub fn shift_sel(sel: &Selection, by: isize) -> Selection {
 
 pub fn attrs(v: Value) -> Attrs {
     v.as_object().cloned().unwrap_or_default()
+}
+
+/// The doc as a flat token list (one per position), to find what an undo re-inserted.
+fn tokens(n: &Node, out: &mut Vec<String>) {
+    for c in &n.content {
+        if c.is_text() {
+            for u in c.text.encode_utf16() {
+                out.push(format!("{u}{:?}", c.marks));
+            }
+        } else if c.is_leaf() {
+            out.push(format!("<{} {:?}/>", c.kind, c.attrs));
+        } else {
+            out.push(format!("<{} {:?}>", c.kind, c.attrs));
+            tokens(c, out);
+            out.push(format!("</{}>", c.kind));
+        }
+    }
+}
+
+/// A selection restored by undo whose ends fall in content the undo put back resolves to the
+/// start of that content, as yrs relative positions on deleted items do in today's editor.
+fn collapse_into_restored(before: &Node, after: &Node, sel: Selection) -> Selection {
+    let (mut a, mut b) = (Vec::new(), Vec::new());
+    tokens(before, &mut a);
+    tokens(after, &mut b);
+    if b.len() <= a.len() {
+        return sel;
+    }
+    let mut pre = 0;
+    while pre < a.len() && a[pre] == b[pre] {
+        pre += 1;
+    }
+    let mut suf = 0;
+    while suf < a.len() - pre && a[a.len() - 1 - suf] == b[b.len() - 1 - suf] {
+        suf += 1;
+    }
+    let end = b.len() - suf;
+    let m = |p: usize| if p >= pre && p <= end { pre } else { p };
+    match sel {
+        Selection::Text { anchor, head } => Selection::Text {
+            anchor: m(anchor),
+            head: m(head),
+        },
+        other => other,
+    }
 }
