@@ -1,0 +1,25 @@
+{
+  "scenarios": [
+    { "name": "[[ picks a page and inserts a page link and a space", "doc": "<paragraph>see |</paragraph>",
+      "steps": [{ "type": "[[proj" }, { "wait": 50 }, { "key": "Enter" }],
+      "expect": { "doc": "<paragraph>see <pageLink pageId=\"p2\"/> |</paragraph>" } },
+    { "name": "insert a page link by command", "doc": "<paragraph>a|</paragraph>",
+      "steps": [{ "command": "insertPageLink", "args": { "pageId": "p2" } }],
+      "expect": { "doc": "<paragraph>a<pageLink pageId=\"p2\"/>|</paragraph>" } },
+    { "name": "Backspace after a page link deletes it", "doc": "<paragraph>a<pageLink pageId=\"p2\"/>|</paragraph>",
+      "steps": [{ "key": "Backspace" }],
+      "expect": { "doc": "<paragraph>a|</paragraph>" } },
+    { "name": "@ picks a person and inserts a mention and a space", "doc": "<paragraph>ask |</paragraph>",
+      "steps": [{ "type": "@sa" }, { "wait": 50 }, { "key": "Enter" }],
+      "expect": { "doc": "<paragraph>ask <mention id=\"u2\" label=\"Sam Lee\"/> |</paragraph>" } },
+    { "name": "@ in the middle of a word does not open mentions", "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "a@sa" }, { "key": "Enter" }],
+      "expect": { "doc": "<paragraph>a@sa</paragraph><paragraph>|</paragraph>" } },
+    { "name": "Backspace after a mention deletes it", "doc": "<paragraph>a<mention id=\"u2\" label=\"Sam Lee\"/>|</paragraph>",
+      "steps": [{ "key": "Backspace" }],
+      "expect": { "doc": "<paragraph>a|</paragraph>" } },
+    { "name": "typing at the end of a link extends it (autolink links are inclusive)", "doc": "<paragraph><link href=\"https://example.com\">ab|</link></paragraph>",
+      "steps": [{ "type": "c" }],
+      "expect": { "doc": "<paragraph><link href=\"https://example.com\">abc|</link></paragraph>" } }
+  ]
+}

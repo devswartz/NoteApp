@@ -1,0 +1,34 @@
+{
+  "scenarios": [
+    {
+      "name": "type into an empty paragraph",
+      "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "Hello" }],
+      "expect": { "doc": "<paragraph>Hello|</paragraph>" }
+    },
+    {
+      "name": "Enter splits a paragraph",
+      "doc": "<paragraph>Hel|lo</paragraph>",
+      "steps": [{ "key": "Enter" }],
+      "expect": { "doc": "<paragraph>Hel</paragraph><paragraph>|lo</paragraph>" }
+    },
+    {
+      "name": "dash space makes a bullet",
+      "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "- a" }],
+      "expect": { "doc": "<bulletList><listItem><paragraph>a|</paragraph></listItem></bulletList><paragraph></paragraph>" }
+    },
+    {
+      "name": "Mod+b then type is bold",
+      "doc": "<paragraph>a|</paragraph>",
+      "steps": [{ "key": "Mod+b" }, { "type": "b" }],
+      "expect": { "doc": "<paragraph>a<bold>b|</bold></paragraph>" }
+    },
+    {
+      "name": "slash task makes a task",
+      "doc": "<paragraph>|</paragraph>",
+      "steps": [{ "type": "/task" }, { "key": "Enter" }],
+      "expect": { "doc": "<taskRef taskId=\"t1\"/><paragraph/>", "focus": "title:t1", "tasks": { "t1": { "title": "" } } }
+    }
+  ]
+}
