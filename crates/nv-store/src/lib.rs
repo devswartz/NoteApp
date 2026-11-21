@@ -12,6 +12,10 @@
 //! - **The outbox** (`queue_updates`, `queued_updates`, `unqueue`) keeps a live page's local edits
 //!   (Yjs updates) until the server is known to have them, so edits made offline survive an app
 //!   restart. `nv-sync` decides when they are confirmed.
+//! - **Task changes waiting for the server** (`queue_task_op`, `task_ops`, `unqueue_task_op`):
+//!   creates, edits and deletes made while the server couldn't be reached, in order, replayed by
+//!   the Core. A change to a task on a page is kept only when a stored tree shows the page
+//!   unlocked (its title is the user's text); `put_tree` drops those of pages now locked.
 //! - Tasks are stored as the server sent them. Tasks on a locked page arrive with `locked: true`
 //!   and their title and text already withheld, so they are safe to keep (as the web app does).
 //! - `clear()` on sign-out drops everything; `set_account` clears too when another user signs in.
@@ -29,16 +33,17 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use nv_api::{Notebook, PageMeta, Section, Task, Tree, Workspace};
+use nv_api::{NewTask, Notebook, PageMeta, Section, Task, Tree, Workspace};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The schema version this build writes. Add an upgrade step to `UPGRADES` with every bump.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// One step per version: `UPGRADES[n]` takes a database from version `n` to `n + 1`.
-const UPGRADES: &[fn(&Transaction) -> rusqlite::Result<()>] = &[upgrade_to_1, upgrade_to_2];
+const UPGRADES: &[fn(&Transaction) -> rusqlite::Result<()>] =
+    &[upgrade_to_1, upgrade_to_2, upgrade_to_3];
 
 /// Version 1: workspaces, tree nodes, tasks, page documents, and when each list was stored.
 fn upgrade_to_1(tx: &Transaction) -> rusqlite::Result<()> {
@@ -95,6 +100,44 @@ fn upgrade_to_2(tx: &Transaction) -> rusqlite::Result<()> {
          );
          CREATE INDEX outbox_page ON outbox (page_id, seq);",
     )
+}
+
+/// Version 3: task changes made offline, waiting to be sent (`op` is a `TaskOp` as JSON).
+fn upgrade_to_3(tx: &Transaction) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        "CREATE TABLE task_ops (
+             seq INTEGER PRIMARY KEY AUTOINCREMENT,
+             workspace_id TEXT NOT NULL,
+             task_id TEXT NOT NULL,
+             page_id TEXT,
+             op TEXT NOT NULL,
+             queued_at INTEGER NOT NULL
+         );
+         -- The editor looks tasks up by id alone (`task`).
+         CREATE INDEX tasks_id ON tasks (id);",
+    )
+}
+
+/// A task change waiting for the server.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "camelCase")]
+pub enum TaskOp {
+    /// POST /workspaces/:id/tasks (with the client's id, so a retry can't duplicate it).
+    Create { task: Box<NewTask> },
+    /// PATCH /tasks/:id with these fields.
+    Update { patch: serde_json::Value },
+    /// DELETE /tasks/:id.
+    Delete,
+}
+
+/// A queued task change, as `task_ops` lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueuedTaskOp {
+    /// Its key, for `unqueue_task_op`; also the order the changes were made in.
+    pub seq: i64,
+    pub workspace_id: String,
+    pub task_id: String,
+    pub op: TaskOp,
 }
 
 #[derive(Debug)]
@@ -353,6 +396,7 @@ impl Store {
             tx.execute_batch(
                 "DELETE FROM nodes WHERE workspace_id NOT IN (SELECT id FROM workspaces);
                  DELETE FROM tasks WHERE workspace_id NOT IN (SELECT id FROM workspaces);
+                 DELETE FROM task_ops WHERE workspace_id NOT IN (SELECT id FROM workspaces);
                  DELETE FROM page_docs WHERE workspace_id IS NOT NULL
                      AND workspace_id NOT IN (SELECT id FROM workspaces);
                  DELETE FROM stored WHERE workspace_id <> ''
@@ -417,6 +461,11 @@ impl Store {
             )?;
             tx.execute(
                 "DELETE FROM outbox WHERE page_id IN
+                     (SELECT id FROM nodes WHERE kind = 'page' AND locked = 1)",
+                [],
+            )?;
+            tx.execute(
+                "DELETE FROM task_ops WHERE page_id IN
                      (SELECT id FROM nodes WHERE kind = 'page' AND locked = 1)",
                 [],
             )?;
@@ -531,6 +580,113 @@ impl Store {
         Ok(Some(out))
     }
 
+    /// One stored task by id (in any workspace), if there is one.
+    pub fn task(&self, task_id: &str) -> Result<Option<Task>> {
+        let json: Option<String> = self
+            .conn()
+            .query_row("SELECT json FROM tasks WHERE id = ?1", [task_id], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        json.map(|j| from_json(&j)).transpose()
+    }
+
+    /// Delete a stored task and its subtasks, all levels (the server deletes them together);
+    /// returns what was removed, the task first.
+    pub fn remove_task(&self, task_id: &str) -> Result<Vec<Task>> {
+        self.write(|tx| {
+            let mut all: Vec<Task> = Vec::new();
+            {
+                let mut st = tx.prepare(
+                    "SELECT json FROM tasks WHERE workspace_id IN
+                         (SELECT workspace_id FROM tasks WHERE id = ?1)",
+                )?;
+                for json in st.query_map([task_id], |r| r.get::<_, String>(0))? {
+                    all.push(from_json(&json?)?);
+                }
+            }
+            let mut gone: Vec<Task> = all.iter().filter(|t| t.id == task_id).cloned().collect();
+            let mut i = 0;
+            while i < gone.len() {
+                let parent = gone[i].id.clone();
+                for t in &all {
+                    if t.parent_id.as_deref() == Some(parent.as_str())
+                        && !gone.iter().any(|g| g.id == t.id)
+                    {
+                        gone.push(t.clone());
+                    }
+                }
+                i += 1;
+            }
+            let mut del = tx.prepare("DELETE FROM tasks WHERE workspace_id = ?1 AND id = ?2")?;
+            for t in &gone {
+                del.execute(params![t.workspace_id, t.id])?;
+            }
+            Ok(gone)
+        })
+    }
+
+    /// Keep a task change until the server has it; returns its key. A change to a task on a
+    /// page (`page_id`) is refused (None, nothing kept) unless a stored tree shows that page
+    /// unlocked.
+    pub fn queue_task_op(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        page_id: Option<&str>,
+        op: &TaskOp,
+    ) -> Result<Option<i64>> {
+        self.write(|tx| {
+            if let Some(page) = page_id {
+                if unlocked_page(tx, page)?.is_none() {
+                    return Ok(None);
+                }
+            }
+            tx.execute(
+                "INSERT INTO task_ops (workspace_id, task_id, page_id, op, queued_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![workspace_id, task_id, page_id, to_json(op)?, now_ms()],
+            )?;
+            Ok(Some(tx.last_insert_rowid()))
+        })
+    }
+
+    /// Every queued task change, oldest first. One that can't be read is left out.
+    pub fn task_ops(&self) -> Result<Vec<QueuedTaskOp>> {
+        let conn = self.conn();
+        let mut st =
+            conn.prepare("SELECT seq, workspace_id, task_id, op FROM task_ops ORDER BY seq")?;
+        let rows = st.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (seq, workspace_id, task_id, op) = row?;
+            if let Ok(op) = from_json(&op) {
+                out.push(QueuedTaskOp {
+                    seq,
+                    workspace_id,
+                    task_id,
+                    op,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// The server has this task change (or refused it for good): forget it.
+    pub fn unqueue_task_op(&self, seq: i64) -> Result<()> {
+        self.write(|tx| {
+            tx.execute("DELETE FROM task_ops WHERE seq = ?1", [seq])?;
+            Ok(())
+        })
+    }
+
     /// Store a page's document. Only for a page a stored tree shows unlocked: otherwise (locked,
     /// or not in any stored tree, so possibly locked) returns false and stores nothing.
     pub fn put_page_doc(&self, page_id: &str, doc: &[u8]) -> Result<bool> {
@@ -630,6 +786,7 @@ impl Store {
                  DELETE FROM tasks;
                  DELETE FROM page_docs;
                  DELETE FROM outbox;
+                 DELETE FROM task_ops;
                  DELETE FROM stored;
                  DELETE FROM meta WHERE key = 'account';",
             )?;
