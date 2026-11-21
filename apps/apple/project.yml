@@ -1,0 +1,107 @@
+# Native Apple apps (iPad/iPhone and Mac) of the rewrite. See README.md.
+# Generate the Xcode project with `xcodegen generate` (CI does this; the .xcodeproj is not committed).
+name: Notivelo
+options:
+  bundleIdPrefix: com.devswartz
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    # Prototype builds go to TestFlight as 1.99.x (docs/rewrite/PLAN.md); CI passes the real numbers.
+    MARKETING_VERSION: "1.99.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    # Same App Store Connect app as today's iPhone/iPad and Mac App Store builds.
+    PRODUCT_BUNDLE_IDENTIFIER: com.devswartz.notivelo
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    CODE_SIGN_STYLE: Automatic
+    # DEVELOPMENT_TEAM comes from CI (secrets.APPLE_TEAM_ID) or your local Xcode account.
+
+targets:
+  # iPad first, iPhone too (TARGETED_DEVICE_FAMILY 1,2).
+  Notivelo:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/Shared
+      - path: Sources/iOS
+      - path: Resources
+    entitlements:
+      path: Sources/iOS/Notivelo.entitlements
+      properties:
+        # Shared container with the share extension and widget, as today (apps/mobile/ios/App/App/App.entitlements).
+        com.apple.security.application-groups:
+          - group.com.devswartz.notivelo
+    info:
+      path: Sources/iOS/Info.plist
+      properties:
+        CFBundleDisplayName: Notivelo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: AccentColor
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+
+  NotiveloMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Shared
+      - path: Sources/macOS
+      - path: Resources
+    entitlements:
+      path: Sources/macOS/NotiveloMac.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+    info:
+      path: Sources/macOS/Info.plist
+      properties:
+        CFBundleDisplayName: Notivelo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.productivity
+    settings:
+      base:
+        PRODUCT_NAME: Notivelo
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+
+schemes:
+  Notivelo:
+    build:
+      targets:
+        Notivelo: all
+    archive:
+      config: Release
+  NotiveloMac:
+    build:
+      targets:
+        NotiveloMac: all
+    archive:
+      config: Release
