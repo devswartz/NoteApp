@@ -24,9 +24,11 @@ blocks/Enter twice leaves a quote
 blocks/Markdown marks don't apply in a code block
 blocks/Mod+Alt+0 makes a paragraph
 blocks/Mod+Alt+1 on a heading 1 makes it a paragraph
+blocks/Mod+Alt+2 across two paragraphs makes both headings
 blocks/Mod+Alt+2 makes a heading 2
 blocks/Mod+Alt+3 makes a heading 3
 blocks/Mod+Alt+c makes a code block
+blocks/Mod+Shift+b across two paragraphs makes one quote
 blocks/Mod+Shift+b makes a quote
 blocks/Mod+a then Backspace empties the box
 blocks/Mod+a then typing replaces everything
@@ -39,15 +41,19 @@ clipboard/copy a selection as plain text
 clipboard/copy a task line as plain text
 clipboard/cut removes the selection and keeps a cut task
 clipboard/paste HTML headings and a link
+clipboard/paste HTML headings h1 to h4
 clipboard/paste HTML keeps a palette colour, drops other colours
 clipboard/paste HTML keeps bold and italic
 clipboard/paste HTML mark is a highlight
 clipboard/paste HTML underline and strike
 clipboard/paste Markdown bold
 clipboard/paste a URL over a selection links it
+clipboard/paste a nested HTML list
 clipboard/paste an HTML checklist
 clipboard/paste an HTML list
+clipboard/paste an HTML list into a bullet
 clipboard/paste an HTML numbered list
+clipboard/paste an HTML table
 clipboard/paste plain lines into a code block stays in the code block
 clipboard/paste plain text inline
 clipboard/paste plain text over a selection replaces it
@@ -69,12 +75,28 @@ containers/Enter in the middle of a callout line splits it in the callout
 containers/Enter on an empty last toggle line leaves the toggle
 containers/Enter twice leaves a callout
 containers/Mod+Shift+b in a quote unwraps it
+containers/Mod+a in a callout then Backspace
+containers/Mod+a in a code block then typing replaces everything with a paragraph
+containers/Mod+a in a quote then typing
+containers/Mod+a in a table cell then typing
 containers/typing in a toggle's summary
+inline/@ ArrowDown Enter picks the second person
+inline/@ ArrowUp wraps to the last person
+inline/@ Tab picks the highlighted person
+inline/@ in a code block does not open mentions
 inline/@ in the middle of a word does not open mentions
 inline/@ picks a person and inserts a mention and a space
+inline/@ then Escape: Enter is a new line
+inline/@ typing after ArrowDown starts the highlight again at the top
+inline/@ with no match: Enter is a new line
 inline/Backspace after a mention deletes it
 inline/Backspace after a page link deletes it
+inline/[[ ArrowDown Enter picks the second page
+inline/[[ ArrowUp wraps to the last page
 inline/[[ picks a page and inserts a page link and a space
+inline/[[ query with a space
+inline/[[ then Escape: Enter is a new line
+inline/[[ typing after ArrowDown starts the highlight again at the top
 inline/insert a page link by command
 inline/typing at the end of a link extends it (autolink links are inclusive)
 input/autocorrect at the caret puts the caret after
@@ -108,24 +130,33 @@ lists/3) starts numbering at 3 with parens
 lists/Alt+Shift+ArrowDown moves a bullet with its sub-points
 lists/Alt+Shift+ArrowUp moves a bullet up in its list
 lists/Backspace at the start of a bullet lifts it to a paragraph
+lists/Backspace at the start of a nested bullet lifts it a level
 lists/Backspace at the start of a second bullet lifts it out of the list
 lists/Enter in a bullet makes the next bullet
 lists/Enter in a checklist adds an unchecked item
 lists/Enter in a numbered list continues it
 lists/Enter in the middle of a bullet splits it
 lists/Enter on an empty checklist item leaves the checklist
+lists/Enter on an empty nested bullet in the middle outdents it
 lists/Enter on an empty nested bullet outdents it
 lists/Enter on an empty top-level bullet leaves the list
 lists/Mod+. toggles a bullet
 lists/Mod+Shift+7 makes a numbered list
 lists/Mod+Shift+8 makes a bullet list
+lists/Mod+Shift+8 over a whole list makes paragraphs again
+lists/Mod+Shift+8 over two paragraphs makes one list
 lists/Mod+Shift+9 makes a checklist
+lists/Shift+Tab on a middle nested bullet takes the ones after it along
 lists/Shift+Tab on a top-level bullet leaves the list
+lists/Shift+Tab on a top-level bullet with sub-points keeps them as a list
 lists/Shift+Tab outdents a nested bullet
 lists/Tab nests a bullet under the one above
+lists/Tab nests a bullet with its sub-points
 lists/Tab nests a checklist item
 lists/Tab nests a numbered item
+lists/Tab on a nested bullet nests it a level deeper
 lists/Tab on the first bullet stays put
+lists/Tab with two bullets selected nests both
 lists/[ ] does not make a checklist
 lists/a. makes a lettered list
 lists/bullet list becomes numbered
@@ -139,9 +170,14 @@ marks/*x* makes italic
 marks/==x== makes a highlight
 marks/Mod+Shift+h highlights a selection
 marks/Mod+Shift+s strike
+marks/Mod+b across two bold paragraphs unbolds both
+marks/Mod+b across two paragraphs bolds both
+marks/Mod+b at the end of bold text, then typing is plain
 marks/Mod+b bolds a selection
 marks/Mod+b on a partly bold selection bolds all of it
+marks/Mod+b then Mod+i with a caret, then typing is bold and italic
 marks/Mod+b twice unbolds
+marks/Mod+b with a caret inside a word only bolds what is typed
 marks/Mod+b with a caret, typed, then Mod+b again stops bold
 marks/Mod+e inline code
 marks/Mod+i italic
@@ -160,13 +196,35 @@ marks/no highlight removes it
 marks/remove a link
 marks/set a link on a selection
 marks/text colour
+marks/typing after a link's end with a space
 marks/typing after bold text continues bold
 marks/typing after coloured text continues the colour
+marks/typing at the end of inline code continues it
+marks/typing at the start of bold text is bold
 marks/~~x~~ makes strike
+rules/# in a bullet stays text
+rules/*** space makes a horizontal rule
+rules/+ space makes a bullet
+rules/- in the middle of a line is not a bullet
+rules/--- at the start of a line with text makes a rule
+rules/1. in a bullet stays text
+rules/2. starts a numbered list at 2
+rules/A. makes an uppercase lettered list
+rules/I) makes an uppercase roman list with parens
+rules/___ space makes a horizontal rule
+rules/```js space makes a code block with its language
+rules/~~~ space makes a code block
 slash// in a code block does not open the menu
 slash// inside a word does not open the menu
 slash// with no match: Enter is a new line
+slash//add in a bullet in a task's notes keeps the bullet
+slash//add in a task's note line keeps the line's text
+slash//add on a line with text below a task keeps the line
+slash//add on an empty note line replaces it
+slash//add on the line below a task puts a checklist at the top of its notes
+slash//add two lines below a task is not offered
 slash//bul makes a bulleted list
+slash//check ArrowUp next to a task wraps to Add checklist
 slash//check ArrowUp wraps to Task when Add checklist isn't offered
 slash//checklist makes a checklist
 slash//divider inserts a horizontal rule
@@ -201,14 +259,20 @@ tables/insert a table without a header row
 tasks//task, a title, Enter makes the next task
 tasks/Backspace across a selected task line deletes the task
 tasks/Backspace in an empty task title makes a plain line
+tasks/Enter in a bullet in a task's notes continues the bullet
 tasks/Enter in an empty task title leaves task mode
 tasks/Enter on an empty last note line leaves the task
 tasks/Mod+1 converts a line to a task
 tasks/Mod+Enter converts a line to a task
+tasks/Mod+Enter on a note line makes a subtask
+tasks/Mod+Enter on a selection across a task and a line keeps the task
+tasks/Mod+Enter on three lines skips the empty one
+tasks/Mod+Enter on two bullets keeps each one's sub-points
 tasks/Shift+Tab in a subtask title takes it back out
 tasks/Shift+Tab lifts a note line out of its task
 tasks/Tab in a task title makes it a subtask of the task above
 tasks/Tab on a bullet list's first line after a task moves the whole list in
+tasks/Tab on a checklist after a task moves it into the task's notes
 tasks/Tab on the line after a task moves it into the task's notes
 tasks/a checked checklist item converts to a done task
 tasks/converting a bullet keeps its sub-points under the task
@@ -221,13 +285,23 @@ typing/Mod+b then type is bold
 typing/dash space makes a bullet
 typing/slash task makes a task
 typing/type into an empty paragraph
+undo/Backspace right after a bold input rule undoes it
 undo/Mod+Shift+z redoes
 undo/Mod+y redoes
 undo/a new edit clears redo
 undo/typing after a pause is a separate undo step
+undo/undo a Tab indent
+undo/undo a bold input rule gives back the asterisks
+undo/undo a heading input rule gives back the typed text
 undo/undo a list input rule
 undo/undo a paste
+undo/undo a table insert
+undo/undo adding a table row
+undo/undo after converting two lines removes both tasks
 undo/undo an Enter split
 undo/undo bold
 undo/undo takes back quick typing in one step
+undo/undo then redo an HTML paste
+undo/undo then redo bold
+undo/undo twice takes back a bullet rule and its typing
 undo/undo with nothing to undo does nothing

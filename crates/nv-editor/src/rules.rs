@@ -26,13 +26,44 @@ pub fn after_text_input(ed: &mut Editor, typed: &str) {
             std::mem::replace(&mut ed.stored_marks, marks),
         );
         ed.checkpoint();
+        ed.rule_undo = Some((
+            (ed.doc.clone(), ed.sel.clone(), ed.stored_marks.clone()),
+            (new_doc.clone(), new_sel.clone()),
+        ));
         ed.doc = new_doc;
         ed.sel = new_sel;
         ed.stored_marks = new_marks;
         return;
     }
     if typed.chars().all(char::is_whitespace) {
+        unlink_trailing_whitespace(ed, typed);
         autolink(ed, &before);
+    }
+}
+
+/// Whitespace typed at the end of a link isn't linked, nor is what's typed after it (TipTap's
+/// Link: unlinkTrailingWhitespace).
+fn unlink_trailing_whitespace(ed: &mut Editor, typed: &str) {
+    let Some(pos) = ed.sel.head() else { return };
+    let from = pos - u16_len(typed);
+    let link = ed.marks_at(pos).into_iter().find(|m| m.kind == "link");
+    let Some(link) = link else { return };
+    // The link goes on past the caret: the whitespace is inside it.
+    let r = ed.resolve(pos);
+    let parent = r.parent(&ed.doc);
+    let mut p = 0;
+    for c in &parent.content {
+        p += c.node_size();
+        if p > r.parent_offset {
+            if c.marks.contains(&link) {
+                return;
+            }
+            break;
+        }
+    }
+    ed.remove_mark_range(from, pos, "link");
+    if let Some(m) = &mut ed.stored_marks {
+        m.retain(|m| m.kind != "link");
     }
 }
 
@@ -58,6 +89,14 @@ fn text_before(ed: &Editor, pos: usize) -> String {
 
 /// Rules matching the whole text before the caret, at the start of a text block.
 fn block_rule(ed: &mut Editor, before: &str) -> bool {
+    // The first line of a list item must stay a paragraph, so no block rule fits there.
+    if let Some(pos) = ed.sel.head() {
+        let r = ed.resolve(pos);
+        let d = r.depth();
+        if d >= 2 && r.node(&ed.doc, d - 1).is_list_item() && r.index_at(d - 1) == 0 {
+            return false;
+        }
+    }
     let start_list = |ed: &mut Editor, kind: &str, attrs: Attrs, join: bool| {
         clear_line_start(ed, before);
         wrap_in_list(ed, kind, attrs, join)

@@ -39,7 +39,13 @@ pub struct Editor {
     pub remote_cursors: Vec<crate::remote::RemoteCursor>,
     /// The selection after the last change: what undo puts back.
     pub(crate) last_sel: Selection,
+    /// The input rule that just ran, so Backspace right after it can take it back (TipTap's
+    /// undoInputRule): the state before it and the state it left.
+    pub(crate) rule_undo: Option<RuleUndo>,
 }
+
+/// What an input rule changed: (doc, selection, stored marks) before it, and (doc, selection) after.
+pub(crate) type RuleUndo = ((Node, Selection, Option<Vec<Mark>>), (Node, Selection));
 
 impl Editor {
     /// An editor on a box's content. Opening it adds the trailing paragraph when the content
@@ -58,6 +64,7 @@ impl Editor {
             composition: None,
             remote_cursors: Vec::new(),
             last_sel: Selection::All,
+            rule_undo: None,
         };
         ed.last_sel = ed.sel.clone();
         ed.known_tasks = crate::tasks::task_ids(&ed.doc);
@@ -471,6 +478,13 @@ impl Editor {
     // ───────────── Backspace / Delete ─────────────
 
     pub fn backspace(&mut self) -> bool {
+        // Right after an input rule: take the rule back, leaving what was typed.
+        if let Some((before, after)) = self.rule_undo.take() {
+            if self.doc == after.0 && self.sel == after.1 {
+                (self.doc, self.sel, self.stored_marks) = before;
+                return true;
+            }
+        }
         if let Selection::Node { pos } = self.sel {
             let size = node_after(&self.doc, pos).map_or(0, Node::node_size);
             self.delete_range(pos, pos + size);
@@ -835,6 +849,9 @@ impl Editor {
             let current = r.node(&self.doc, list_d);
             if current.is(list) {
                 // Same list: lift the items out of it.
+                if self.lift_items(d) {
+                    return true;
+                }
                 let mut guard = 0;
                 while self.list_item_depth().is_some() && guard < 10 {
                     if !self.outdent() {
@@ -863,11 +880,62 @@ impl Editor {
         let Some((path, a, b)) = self.block_range(from, to) else {
             return false;
         };
+        let coords = self.text_coords();
         let parent = self.doc.at_mut(&path);
         let kids: Vec<Node> = parent.content.drain(a..=b).collect();
         let items = kids.into_iter().map(|k| Node::el(item, vec![k])).collect();
         parent.content.insert(a, Node::el(list, items));
-        self.sel = shift_sel(&self.sel, 2);
+        match coords {
+            Some(c) => self.restore_text_coords(c),
+            None => self.sel = shift_sel(&self.sel, 2),
+        }
+        true
+    }
+
+    /// The list items of one list that the selection covers: (the list's path, first, last).
+    fn selected_items(&self, item_d: usize) -> Option<(Vec<usize>, usize, usize)> {
+        let (from, to) = self.range();
+        let rf = self.resolve(from);
+        let rt = self.resolve(to);
+        let list_path = rf.path_to(item_d - 1);
+        if rt.depth() < item_d || rt.path_to(item_d - 1) != list_path {
+            return None;
+        }
+        Some((list_path, rf.index_at(item_d - 1), rt.index_at(item_d - 1)))
+    }
+
+    /// Lift several selected top-level items of a list out of it at once (their blocks take
+    /// their place, splitting the list), as TipTap's liftListItem does over a range.
+    fn lift_items(&mut self, item_d: usize) -> bool {
+        let Some((list_path, a, b)) = self.selected_items(item_d) else {
+            return false;
+        };
+        if a == b
+            || item_d < 2
+            || self
+                .resolve(self.range().0)
+                .node(&self.doc, item_d - 2)
+                .is_list_item()
+        {
+            return false;
+        }
+        let coords = self.text_coords();
+        let list = self.doc.at(&list_path).clone();
+        let mut out = Vec::new();
+        if a > 0 {
+            out.push(list.copy(list.content[..a].to_vec()));
+        }
+        for it in &list.content[a..=b] {
+            out.extend(it.content.iter().cloned());
+        }
+        if b + 1 < list.content.len() {
+            out.push(list.copy(list.content[b + 1..].to_vec()));
+        }
+        let (parent, i) = list_path.split_at(list_path.len() - 1);
+        self.doc.at_mut(parent).content.splice(i[0]..=i[0], out);
+        if let Some(c) = coords {
+            self.restore_text_coords(c);
+        }
         true
     }
 
@@ -884,6 +952,21 @@ impl Editor {
         }
         let list_path = r.path_to(d - 1);
         let list_kind = self.doc.at(&list_path).kind.clone();
+        // Several items of the list selected: they all go under the item before the first.
+        if let Some((_, a, b)) = self.selected_items(d).filter(|(_, a, b)| b > a) {
+            let coords = self.text_coords();
+            let list = self.doc.at_mut(&list_path);
+            let items: Vec<Node> = list.content.drain(a..=b).collect();
+            let prev = &mut list.content[a - 1];
+            match prev.content.last_mut() {
+                Some(last) if last.is(&list_kind) => last.content.extend(items),
+                _ => prev.content.push(Node::el(&list_kind, items)),
+            }
+            if let Some(c) = coords {
+                self.restore_text_coords(c);
+            }
+            return true;
+        }
         let list = self.doc.at_mut(&list_path);
         let item = list.content.remove(idx);
         let prev = &mut list.content[idx - 1];
@@ -1022,6 +1105,9 @@ impl Editor {
         let last_is_para = self.doc.content.last().is_some_and(|n| n.is("paragraph"));
         if !last_is_para {
             self.doc.content.push(Node::el("paragraph", vec![]));
+            // TipTap's trailing paragraph is a transaction of its own, after which undoInputRule
+            // has nothing to take back (README Quirks).
+            self.rule_undo = None;
         }
         self.sync_tasks();
         if let Some(b) = &mut self.binding {
@@ -1262,6 +1348,35 @@ fn for_inline_in(doc: &Node, from: usize, to: usize, f: &mut dyn FnMut(&Node)) {
         }
         true
     });
+}
+
+/// A text selection as (text block index, offset in it) for anchor and head: for edits that move
+/// blocks around without adding or removing text blocks (list nesting, wrapping), which then put
+/// the selection back with `restore_text_coords`.
+pub(crate) type TextCoords = ((usize, usize), (usize, usize));
+
+impl Editor {
+    pub(crate) fn text_coords(&self) -> Option<TextCoords> {
+        let Selection::Text { anchor, head } = self.sel else {
+            return None;
+        };
+        let blocks = textblocks_between(&self.doc, 0, self.doc.content_size());
+        let at = |p: usize| {
+            blocks.iter().enumerate().find_map(|(i, (before, path))| {
+                let size = self.doc.at(path).content_size();
+                (p > *before && p <= before + 1 + size).then(|| (i, p - before - 1))
+            })
+        };
+        Some((at(anchor)?, at(head)?))
+    }
+
+    pub(crate) fn restore_text_coords(&mut self, c: TextCoords) {
+        let blocks = textblocks_between(&self.doc, 0, self.doc.content_size());
+        let pos = |(i, off): (usize, usize)| blocks.get(i).map(|(before, _)| before + 1 + off);
+        if let (Some(a), Some(h)) = (pos(c.0), pos(c.1)) {
+            self.sel = Selection::text(a, h);
+        }
+    }
 }
 
 /// Shift a selection's positions (after wrapping or unwrapping around it).

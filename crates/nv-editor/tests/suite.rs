@@ -46,6 +46,7 @@ fn run(s: &Value) -> Result<(), String> {
     let clock = nv_editor::bind::Clock::manual();
     ed.bind(nv_model::new_doc(), "default", clock.clone());
     let mut n = 0;
+    let mut menu: MenuHighlight = None;
     for step in s["steps"].as_array().unwrap() {
         n += 1;
         if let Some(t) = step.get("type").and_then(Value::as_str) {
@@ -55,7 +56,7 @@ fn run(s: &Value) -> Result<(), String> {
             }
         } else if let Some(k) = step.get("key").and_then(Value::as_str) {
             for _ in 0..step.get("times").and_then(Value::as_u64).unwrap_or(1) {
-                if !view_menu_key(&mut ed, k) {
+                if !view_menu_key(&mut ed, k, &mut menu) {
                     ed.key(k);
                 }
             }
@@ -112,37 +113,111 @@ fn run(s: &Value) -> Result<(), String> {
 }
 
 /// Fixtures (tests/editor/README.md): the pages and people the menus offer.
-const PAGES: &[(&str, &str)] = &[("p2", "Project plan")];
-const PEOPLE: &[(&str, &str)] = &[("u1", "Tess Tester"), ("u2", "Sam Lee")];
+const PAGES: &[(&str, &str)] = &[("p2", "Project plan"), ("p3", "Project notes")];
+const PEOPLE: &[(&str, &str, &str)] = &[
+    ("u1", "Tess Tester", "t@example.test"),
+    ("u2", "Sam Lee", "sam@example.test"),
+];
 
-/// What the view does for the `[[` and `@` menus: Enter or Tab picks the first match.
-fn view_menu_key(ed: &mut Editor, key: &str) -> bool {
-    use nv_editor::suggest::Trigger;
-    if !matches!(key, "Enter" | "Tab") {
-        return false;
+/// The `[[` menu's rows (today's `pageItems.ts`): matching pages, best first, then "Create"
+/// (None) when the query names no page exactly.
+fn page_rows(q: &str) -> Vec<Option<&'static str>> {
+    let q = q.trim().to_lowercase();
+    let mut scored: Vec<(usize, &str)> = PAGES
+        .iter()
+        .filter_map(|(id, title)| {
+            let t = title.to_lowercase();
+            let s = if q.is_empty() || t.starts_with(&q) {
+                0
+            } else if t.split_whitespace().any(|w| w.starts_with(&q)) {
+                1
+            } else if t.contains(&q) {
+                2
+            } else {
+                return None;
+            };
+            Some((s, *id))
+        })
+        .collect();
+    scored.sort_by_key(|x| x.0);
+    let mut rows: Vec<Option<&str>> = scored.into_iter().map(|x| Some(x.1)).collect();
+    if !q.is_empty() && !PAGES.iter().any(|(_, t)| t.to_lowercase() == q) {
+        rows.push(None);
     }
-    let Some(s) = ed.suggestion() else {
+    rows
+}
+
+/// The `@` menu's rows (today's `matchMembers`): (id, name), best first.
+fn people_rows(q: &str) -> Vec<(&'static str, &'static str)> {
+    let q = q.trim().to_lowercase();
+    if q.is_empty() {
+        return PEOPLE.iter().map(|p| (p.0, p.1)).collect();
+    }
+    let mut scored: Vec<(usize, &str, &str)> = PEOPLE
+        .iter()
+        .filter_map(|(id, name, email)| {
+            let n = name.to_lowercase();
+            let s = if n.starts_with(&q) {
+                0
+            } else if n.split_whitespace().any(|w| w.starts_with(&q)) {
+                1
+            } else if n.contains(&q) || email.starts_with(&q) {
+                2
+            } else {
+                return None;
+            };
+            Some((s, *id, *name))
+        })
+        .collect();
+    scored.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(b.2)));
+    scored.into_iter().map(|x| (x.1, x.2)).collect()
+}
+
+/// The view's `[[` / `@` menu highlight: (the menu's trigger position, its query, the index);
+/// it goes back to the top when the query changes, as in today's menus.
+type MenuHighlight = Option<(usize, String, usize)>;
+
+/// What the view does for the `[[` and `@` menus (they list pages and people, which the core
+/// has, so the highlight is the view's): ArrowUp / ArrowDown move the highlight, wrapping, and
+/// Enter or Tab picks the highlighted row. Escape goes to the engine (`dismiss_suggestion`).
+fn view_menu_key(ed: &mut Editor, key: &str, menu: &mut MenuHighlight) -> bool {
+    use nv_editor::suggest::Trigger;
+    let Some(s) = ed.suggestion().filter(|s| s.trigger != Trigger::Slash) else {
         return false;
     };
-    let q = s.query.to_lowercase();
-    let starts = |name: &str| {
-        name.to_lowercase()
-            .split_whitespace()
-            .any(|w| w.starts_with(&q))
-            || name.to_lowercase().starts_with(&q)
+    let n = match s.trigger {
+        Trigger::PageLink => page_rows(&s.query).len(),
+        _ => people_rows(&s.query).len(),
     };
-    let done = match s.trigger {
-        Trigger::PageLink => match PAGES.iter().find(|(_, t)| starts(t)) {
-            Some((id, _)) => ed.pick_page(id),
-            None => false,
+    let index = match menu {
+        Some((from, q, i)) if *from == s.from && *q == s.query => *i,
+        _ => 0,
+    };
+    let done = match key {
+        "ArrowDown" | "ArrowUp" => {
+            if n == 0 {
+                return false;
+            }
+            let delta = if key == "ArrowDown" { 1 } else { n - 1 };
+            *menu = Some((s.from, s.query.clone(), (index + delta) % n));
+            return true;
+        }
+        "Enter" | "Tab" => match s.trigger {
+            Trigger::PageLink => match page_rows(&s.query).get(index) {
+                Some(Some(id)) => ed.pick_page(id),
+                // "Create" makes a page on the server first: not something one box can do.
+                Some(None) => true,
+                None => false,
+            },
+            _ => match people_rows(&s.query).get(index) {
+                Some((id, name)) => ed.pick_mention(id, name),
+                None => false,
+            },
         },
-        Trigger::Mention => match PEOPLE.iter().find(|(_, n)| starts(n)) {
-            Some((id, n)) => ed.pick_mention(id, n),
-            None => false,
-        },
-        Trigger::Slash => false,
+        _ => return false,
     };
     if done {
+        *menu = None;
         ed.finish();
     }
     done
