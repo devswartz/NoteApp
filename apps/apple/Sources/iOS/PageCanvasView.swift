@@ -27,6 +27,7 @@ struct PageCanvasView: UIViewRepresentable {
 
     func updateUIView(_ view: PageScrollView, context: Context) {
         view.stacked = stacked
+        BoxTextRenderer.phoneChips = stacked
         view.setHeader(title: title, subline: subline, palette: palette, showAddIcon: showAddIcon)
         view.decor = decor
         view.show(page, host: host)
@@ -47,7 +48,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     var decor: [String: TaskDecor] = [:]
     var stacked = false
     /// Phones: the article's padding is 12 20, the title 28 pt.
-    static let phoneOriginY: CGFloat = 12 + 28 + 4 + 33.6 + 6 + 18.75 + 22
+    static let phoneOriginY: CGFloat = 12 + 44 + 4 + 33.6 + 6 + 18.75 + 22
     private var shownID: String?
     private var shownTasks: [String: TaskLine] = [:]
     private var shownTitles: [String: String] = [:]
@@ -156,9 +157,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         let width = max(bounds.width / max(zoomScale, 0.01) - left - (stacked ? 20 : 40), 100)
         let titleSize = titleLabel.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let top: CGFloat = stacked ? 12 : 32
-        titleLabel.frame = CGRect(x: left, y: top + 28 + 4, width: width, height: max(titleSize.height, stacked ? 33.6 : 43.2))
+        let iconRow: CGFloat = stacked ? 44 : 28
+        titleLabel.frame = CGRect(x: left, y: top + iconRow + 4, width: width, height: max(titleSize.height, stacked ? 33.6 : 43.2))
         subLabel.frame = CGRect(x: left, y: titleLabel.frame.maxY + 6, width: width, height: 18.75)
-        addIcon.frame = CGRect(x: left - 8, y: top, width: 160, height: 28)
+        addIcon.frame = CGRect(x: left - (stacked ? 0 : 8), y: top, width: 160, height: iconRow)
     }
 
     func show(_ page: PageSnapshot, host: PageEditHost?) {

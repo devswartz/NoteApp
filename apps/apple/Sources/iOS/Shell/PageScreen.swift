@@ -35,7 +35,7 @@ struct PageScreen: View {
             PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone)
             ZStack(alignment: .topTrailing) {
                 content(snapshot, palette)
-                if let snapshot, !snapshot.info.headings.isEmpty {
+                if let snapshot, !snapshot.info.headings.isEmpty, !phone {
                     OutlineBars(count: snapshot.info.headings.count, palette: palette).padding(.top, 33).padding(.trailing, 18)
                 }
             }

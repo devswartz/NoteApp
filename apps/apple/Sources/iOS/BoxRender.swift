@@ -79,6 +79,8 @@ struct BoxTextRenderer {
     static let object = "\u{FFFC}"
     /// Mention ids that are the signed-in person (drawn yellow, as "yourself").
     static var selfMentionIds: Set<String> = []
+    /// Phones: task lines show only the checklist count, due chip, the Add checklist icon and open (LOOK.md 2.4).
+    static var phoneChips = false
     /// List indent: 1.6 em.
     static let listIndent: CGFloat = 25.6
     /// CSS puts half the leading above the text; TextKit puts it all above. The baseline is raised
@@ -137,7 +139,7 @@ struct BoxTextRenderer {
             out.string.append(NSAttributedString(string: "\u{200B}", attributes: attrs))
         }
         return BoxRendering(string: out.string, markers: out.markers, decorations: out.decorations, length: length, topMargin: out.topMargin,
-                            bottomMargin: out.prevHalf + max(out.pendingBottom, 0) + out.addAfter)
+                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf)
     }
 
     // MARK: Blocks (the same walk as nv-editor's `ViewText::blocks`)
@@ -410,7 +412,9 @@ struct BoxTextRenderer {
             out.topMargin = spacing + half
             spacing = 0
         } else {
-            spacing += out.prevHalf + half
+            // The previous line's lineSpacing (its full leading) already sits below it: CSS wants
+            // half of it there and this line's half above, so the difference goes before this line.
+            spacing = max(spacing + half - out.prevHalf, 0)
         }
         out.pendingTop = 0
         out.pendingBottom = 0
@@ -495,14 +499,17 @@ struct BoxTextRenderer {
             UIBezierPath(roundedRect: CGRect(x: x, y: chipY, width: w, height: 22), cornerRadius: 6).fill()
         }
         items.append((24, { x in UIImage.lucide("maximize-2", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 5.5, y: chipY + 4.5)) }))
-        let add = NSAttributedString(string: "Add checklist", attributes: [.font: chipFont, .foregroundColor: p.text2])
+        let phone = Self.phoneChips
+        let add = NSAttributedString(string: phone ? "" : "Add checklist", attributes: [.font: chipFont, .foregroundColor: p.text2])
         let addTextWidth: CGFloat = add.size().width
         let addW: CGFloat = 25 + addTextWidth
         items.append((addW, { x in
             UIImage.lucide("list-plus", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 4, y: chipY + 4.5))
             add.draw(at: CGPoint(x: x + 21, y: chipY + (22 - chipFont.lineHeight) / 2))
         }))
-        if let name = d?.assignee, let color = d?.assigneeColor {
+        if phone {
+            // no assignee on phones
+        } else if let name = d?.assignee, let color = d?.assigneeColor {
             let ini = NSAttributedString(string: initials(name), attributes: [.font: WebType.ui(8.4, 600), .foregroundColor: color.initialsColor])
             items.append((20, { x in
                 color.setFill()
@@ -529,14 +536,14 @@ struct BoxTextRenderer {
             dueText?.draw(at: CGPoint(x: x + 24, y: chipY + (22 - chipFont.lineHeight) / 2))
         }))
         let priority = d?.priority ?? 4
-        items.append((26, { x in
+        if !phone || priority < 4 { items.append((26, { x in
             chip(26, x)
             if priority < 4 {
                 UIImage.lucide("flag-filled", size: 13, color: priorityColor(priority, p))?.draw(at: CGPoint(x: x + 6.5, y: chipY + 4.5))
             } else {
                 UIImage.lucide("flag", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 6.5, y: chipY + 4.5))
             }
-        }))
+        })) }
         if let list = d?.checklist {
             let complete = list.done >= list.total
             let t = NSAttributedString(string: "\(list.done)/\(list.total)", attributes: [.font: chipFont, .foregroundColor: complete ? p.success : p.text2])
