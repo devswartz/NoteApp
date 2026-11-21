@@ -135,8 +135,9 @@ struct PageTextRenderer {
             if let due {
                 line.append(NSAttributedString(string: "  \(due)", attributes: [.font: font(bodySize - 3), .foregroundColor: PlatformColor.systemBlue]))
             }
-            paragraph(line, with(ctx, marker: done ? "✓" : "◯"), out)
+            // Like a list item: the circle hangs in this level's indent, notes go one level in.
             c.indent += 1
+            paragraph(line, with(c, marker: done ? "✓" : "◯"), out)
             blocks(notes, c, out)
         case nil:
             // A task nobody can see here: its notes only, as the Markdown export does.
