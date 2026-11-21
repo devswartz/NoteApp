@@ -35,7 +35,7 @@ node --import tsx tests/editor/run-tiptap.ts [filter] [--print] [--headed]
 - `steps`, in order:
   - `{ "type": "text" }` types the characters one by one (input rules apply, as with a keyboard).
   - `{ "key": "Enter", "times": 2 }` presses a key or chord: `Mod` is Ctrl (Cmd on Apple); `Shift+Tab`, `Mod+Alt+2`, `Alt+Shift+ArrowUp`.
-  - `{ "command": "toggleMark", "args": { "mark": "bold" } }` runs an editor command (the ribbon and menus): see the list in `run-tiptap.ts` (`COMMANDS`), which is also the engine's command vocabulary.
+  - `{ "command": "toggleMark", "args": { "mark": "bold" } }` runs an editor command (the ribbon and menus): see the list in `run-tiptap.ts` (`COMMANDS`), which is also the engine's command vocabulary. `editLink { text, href }` is the link editor (Mod+K; `LinkEditor.tsx`): it opens on the selection, or the whole link around the caret, and applies its Text (omitted: as it opened, the linked text) and Address fields as Enter does.
   - `{ "paste": { "text/html": "…", "text/plain": "…" } }` pastes clipboard data.
   - `{ "copy": { "text": "…", "html": "…" }, "cut": false }` copies (or cuts) the selection and checks what went to the clipboard.
   - `{ "focusTitle": "t1" }` puts the caret at the end of a task line's title.
@@ -79,14 +79,17 @@ The harness seeds the app store: user `u1` (Tess Tester) in workspace `w1`; memb
 - **Typed links**: only URLs with a scheme autolink (`https://…`); a bare `example.com` doesn't. Typing at the end of a link extends it.
 - **Page links and mentions** picked from their menus are followed by a space.
 - **Selection after converting to a task** (Mod+Enter / Mod+1) and after undoing one is select-all, which looks incidental: those scenarios use `ignoreSelection`, and the engine may leave a better selection.
+- **Select-all, then typing** gives a paragraph, whatever the first block was (ProseMirror replaces an all-selection with the default block).
+- **Backspace after a divider** (or an image) with text on the line deletes the divider; on an empty line it deletes the line and selects the divider. After a task line it selects the task line (deleting it is a second Backspace).
 - **Toggles** open and close as view state, not in the doc (`persist: false`), and a loaded toggle is closed: Enter in its summary makes a line after it.
 
 ## Findings (possible bugs in today's editor)
 
 - Type, undo, type something else, then redo: the redo removes the new typing (expected: nothing to redo). Scenario `undo/a new edit clears redo`, skipped on TipTap.
 - A replacement (autocorrect, spell-check, a dictation correction) runs input rules in today's editor, because ProseMirror reads the DOM change as typed text (`handleTextInput`): replacing `x` in `-x` with a space makes a list. The native contract doesn't run rules on replacements. Scenario `input/replacement doesn't run input rules`, skipped on TipTap.
+- Delete at the end of a paragraph just above a bulleted list lifts the first bullet out to a plain paragraph; only a second Delete joins its text (expected: one Delete joins, as Backspace from the other side does). Scenario `blocks/Delete at the end of a paragraph before a bullet joins the bullet's text`, skipped on TipTap.
 - After Tab in a task's title (making it a subtask), the title loses focus in the harness; Shift+Tab keeps it. Not yet checked in the app.
 
 ## Not covered yet
 
-Page-wide undo across several boxes (`src/editor/pageUndo.ts`), box-level clipboard (`boxClipboard.ts`), images and files, comments, line picks, block drag and drop, task title natural-language parsing, collaborative merges (two editors on one doc).
+Merging and splitting table cells (needs a cell selection, which the notation can't write), Shift+Tab in a table's first cell (not handled: focus leaves the box, which is the view's), the slash menu's "Add checklist" (offered next to a task; the engine doesn't offer or run it yet), the link editor's popup itself (only its result, `editLink`), page-wide undo across several boxes (`src/editor/pageUndo.ts`), box-level clipboard (`boxClipboard.ts`), images and files, comments, line picks, block drag and drop, task title natural-language parsing, collaborative merges (two editors on one doc).

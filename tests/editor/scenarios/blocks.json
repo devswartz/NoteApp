@@ -39,6 +39,22 @@
     { "name": "Alt+Shift+ArrowDown moves a block down", "doc": "<paragraph>a|</paragraph><paragraph>b</paragraph>", "steps": [{ "key": "Alt+Shift+ArrowDown" }],
       "expect": { "doc": "<paragraph>b</paragraph><paragraph>a|</paragraph>" } },
     { "name": "Alt+Shift+ArrowUp moves a block up", "doc": "<paragraph>a</paragraph><paragraph>b|</paragraph>", "steps": [{ "key": "Alt+Shift+ArrowUp" }],
-      "expect": { "doc": "<paragraph>b|</paragraph><paragraph>a</paragraph>" } }
+      "expect": { "doc": "<paragraph>b|</paragraph><paragraph>a</paragraph>" } },
+    {"name": "## makes a heading 2", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "## T"}], "expect": {"doc": "<heading level=2>T|</heading><paragraph/>"}},
+    {"name": "Mod+Alt+1 on a heading 1 makes it a paragraph", "doc": "<heading level=1>T|</heading>", "steps": [{"key": "Mod+Alt+1"}], "expect": {"doc": "<paragraph>T|</paragraph><paragraph/>"}},
+    {"name": "Mod+Alt+3 makes a heading 3", "doc": "<paragraph>T|</paragraph>", "steps": [{"key": "Mod+Alt+3"}], "expect": {"doc": "<heading level=3>T|</heading><paragraph/>"}},
+    {"name": "Enter in the middle of a heading splits it into two headings", "doc": "<heading level=2>ab|cd</heading>", "steps": [{"key": "Enter"}], "expect": {"doc": "<heading level=2>ab</heading><heading level=2>|cd</heading><paragraph/>"}},
+    {"name": "Backspace in an empty heading at the top makes a paragraph", "doc": "<heading level=1>|</heading>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>|</paragraph><paragraph/>"}},
+    {"name": "Mod+Shift+b makes a quote", "doc": "<paragraph>q|</paragraph>", "steps": [{"key": "Mod+Shift+b"}], "expect": {"doc": "<blockquote><paragraph>q|</paragraph></blockquote><paragraph/>"}},
+    {"name": "Mod+Alt+c makes a code block", "doc": "<paragraph>x|</paragraph>", "steps": [{"key": "Mod+Alt+c"}], "expect": {"doc": "<codeBlock>x|</codeBlock><paragraph/>"}},
+    {"name": "three Enters at the end of a code block leave it", "doc": "<codeBlock>x|</codeBlock><paragraph/>", "steps": [{"key": "Enter", "times": 3}, {"type": "y"}], "expect": {"doc": "<codeBlock>x</codeBlock><paragraph>y|</paragraph><paragraph/>"}},
+    {"name": "Backspace at the start of an empty code block makes a paragraph", "doc": "<paragraph>a</paragraph><codeBlock>|</codeBlock><paragraph/>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>a</paragraph><paragraph>|</paragraph><paragraph/>"}},
+    {"name": "Markdown marks don't apply in a code block", "doc": "<codeBlock>|</codeBlock><paragraph/>", "steps": [{"type": "**b** "}], "expect": {"doc": "<codeBlock>**b** |</codeBlock><paragraph/>"}},
+    {"name": "Backspace on a selected divider deletes it", "doc": "<paragraph>a</paragraph>^<horizontalRule/><paragraph>b</paragraph>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>a</paragraph><paragraph>|b</paragraph>"}},
+    {"name": "Backspace at the start of a line after a divider deletes the divider", "doc": "<paragraph>a</paragraph><horizontalRule/><paragraph>|b</paragraph>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>a</paragraph><paragraph>|b</paragraph>"}},
+    {"name": "Mod+a then Backspace empties the box", "doc": "<paragraph>a</paragraph><bulletList><listItem><paragraph>b|</paragraph></listItem></bulletList>", "steps": [{"key": "Mod+a"}, {"key": "Backspace"}], "expect": {"doc": "<paragraph>|</paragraph>"}},
+    {"name": "Mod+a then typing replaces everything", "doc": "<heading level=1>T</heading><paragraph>a|</paragraph>", "steps": [{"key": "Mod+a"}, {"type": "x"}], "expect": {"doc": "<paragraph>x|</paragraph>"}},
+    {"name": "Delete at the end of a paragraph before a bullet joins the bullet's text", "doc": "<paragraph>a|</paragraph><bulletList><listItem><paragraph>b</paragraph></listItem></bulletList>", "skip": {"tiptap": "today's editor lifts the bullet out to a paragraph on the first Delete and joins on the second: looks like a bug, see README Findings"}, "steps": [{"key": "Delete"}], "expect": {"doc": "<paragraph>a|b</paragraph><paragraph/>"}},
+    {"name": "Shift+Enter in a heading is a line break", "doc": "<heading level=1>a|b</heading>", "steps": [{"key": "Shift+Enter"}], "expect": {"doc": "<heading level=1>a<hardBreak/>|b</heading><paragraph/>"}}
   ]
 }

@@ -24,6 +24,13 @@
       "expect": { "doc": "<paragraph>/ta|</paragraph>" } },
     { "name": "/code makes a code block", "doc": "<paragraph>|</paragraph>",
       "steps": [{ "type": "/code" }, { "key": "Enter" }, { "type": "x" }],
-      "expect": { "doc": "<codeBlock>x|</codeBlock><paragraph/>" } }
+      "expect": { "doc": "<codeBlock>x|</codeBlock><paragraph/>" } },
+    {"name": "Backspace at the start of a callout unwraps it", "doc": "<callout><paragraph>|x</paragraph></callout><paragraph/>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>|x</paragraph><paragraph/>"}},
+    {"name": "Backspace on an empty last callout line moves it out", "doc": "<callout><paragraph>x</paragraph><paragraph>|</paragraph></callout><paragraph/>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<callout><paragraph>x</paragraph></callout><paragraph>|</paragraph><paragraph/>"}},
+    {"name": "Enter in the middle of a callout line splits it in the callout", "doc": "<callout><paragraph>ab|cd</paragraph></callout><paragraph/>", "steps": [{"key": "Enter"}], "expect": {"doc": "<callout><paragraph>ab</paragraph><paragraph>|cd</paragraph></callout><paragraph/>"}},
+    {"name": "- in a callout makes a bullet inside it", "doc": "<callout><paragraph>|</paragraph></callout><paragraph/>", "steps": [{"type": "- a"}], "expect": {"doc": "<callout><bulletList><listItem><paragraph>a|</paragraph></listItem></bulletList></callout><paragraph/>"}},
+    {"name": "Backspace at the start of a quote unwraps it", "doc": "<blockquote><paragraph>|q</paragraph></blockquote><paragraph/>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>|q</paragraph><paragraph/>"}},
+    {"name": "Mod+Shift+b in a quote unwraps it", "doc": "<blockquote><paragraph>q|</paragraph></blockquote><paragraph/>", "steps": [{"key": "Mod+Shift+b"}], "expect": {"doc": "<paragraph>q|</paragraph><paragraph/>"}},
+    {"name": "typing in a toggle's summary", "doc": "<details><detailsSummary>T|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>", "steps": [{"type": "ab"}], "expect": {"doc": "<details><detailsSummary>Tab|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>"}}
   ]
 }
