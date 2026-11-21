@@ -46,6 +46,14 @@
     {"name": "default text colour removes it", "doc": "<paragraph><textStyle color=\"red\">[ab]</textStyle></paragraph>", "steps": [{"command": "unsetColor"}], "expect": {"doc": "<paragraph>[ab]</paragraph>"}},
     {"name": "no highlight removes it", "doc": "<paragraph>a<highlight color=\"yellow\">[b]</highlight></paragraph>", "steps": [{"command": "unsetHighlight"}], "expect": {"doc": "<paragraph>a[b]</paragraph>"}},
     {"name": "colour on part of a word splits it", "doc": "<paragraph>a[b]c</paragraph>", "steps": [{"command": "setColor", "args": {"color": "green"}}], "expect": {"doc": "<paragraph>a<textStyle color=\"green\">[b]</textStyle>c</paragraph>"}},
-    {"name": "typing after coloured text continues the colour", "doc": "<paragraph><textStyle color=\"red\">ab|</textStyle></paragraph>", "steps": [{"type": "c"}], "expect": {"doc": "<paragraph><textStyle color=\"red\">abc|</textStyle></paragraph>"}}
+    {"name": "typing after coloured text continues the colour", "doc": "<paragraph><textStyle color=\"red\">ab|</textStyle></paragraph>", "steps": [{"type": "c"}], "expect": {"doc": "<paragraph><textStyle color=\"red\">abc|</textStyle></paragraph>"}},
+    {"name": "Mod+b then Mod+i with a caret, then typing is bold and italic", "doc": "<paragraph>a|</paragraph>", "steps": [{"key": "Mod+b"}, {"key": "Mod+i"}, {"type": "b"}], "expect": {"doc": "<paragraph>a<bold><italic>b</italic></bold>|</paragraph>"}},
+    {"name": "Mod+b at the end of bold text, then typing is plain", "doc": "<paragraph><bold>ab|</bold></paragraph>", "steps": [{"key": "Mod+b"}, {"type": "c"}], "expect": {"doc": "<paragraph><bold>ab</bold>c|</paragraph>"}},
+    {"name": "typing at the start of bold text is bold", "doc": "<paragraph><bold>|ab</bold></paragraph>", "steps": [{"type": "x"}], "expect": {"doc": "<paragraph><bold>x|ab</bold></paragraph>"}},
+    {"name": "typing at the end of inline code continues it", "doc": "<paragraph><code>ab|</code></paragraph>", "steps": [{"type": "c"}], "expect": {"doc": "<paragraph><code>abc</code>|</paragraph>"}},
+    {"name": "Mod+b with a caret inside a word only bolds what is typed", "doc": "<paragraph>ab|cd</paragraph>", "steps": [{"key": "Mod+b"}, {"type": "X"}], "expect": {"doc": "<paragraph>ab<bold>X</bold>|cd</paragraph>"}},
+    {"name": "Mod+b across two paragraphs bolds both", "doc": "<paragraph>[ab</paragraph><paragraph>cd]</paragraph>", "steps": [{"key": "Mod+b"}], "expect": {"doc": "<paragraph><bold>[ab</bold></paragraph><paragraph><bold>cd</bold>]</paragraph>"}},
+    {"name": "Mod+b across two bold paragraphs unbolds both", "doc": "<paragraph><bold>[ab</bold></paragraph><paragraph><bold>cd]</bold></paragraph>", "steps": [{"key": "Mod+b"}], "expect": {"doc": "<paragraph>[ab</paragraph><paragraph>cd]</paragraph>"}},
+    {"name": "typing after a link's end with a space", "doc": "<paragraph><link href=\"https://x.test\">ab|</link></paragraph>", "steps": [{"type": " c"}], "expect": {"doc": "<paragraph><link href=\"https://x.test\">ab</link> c|</paragraph>"}}
   ]
 }

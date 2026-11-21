@@ -1,0 +1,16 @@
+{
+  "scenarios": [
+    {"name": "2. starts a numbered list at 2", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "2. a"}], "expect": {"doc": "<orderedList start=2><listItem><paragraph>a|</paragraph></listItem></orderedList><paragraph></paragraph>"}},
+    {"name": "+ space makes a bullet", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "+ a"}], "expect": {"doc": "<bulletList><listItem><paragraph>a|</paragraph></listItem></bulletList><paragraph></paragraph>"}},
+    {"name": "A. makes an uppercase lettered list", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "A. a"}], "expect": {"doc": "<orderedList type=\"A\"><listItem><paragraph>a|</paragraph></listItem></orderedList><paragraph></paragraph>"}},
+    {"name": "I) makes an uppercase roman list with parens", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "I) a"}], "expect": {"doc": "<orderedList paren=true type=\"I\"><listItem><paragraph>a|</paragraph></listItem></orderedList><paragraph></paragraph>"}},
+    {"name": "```js space makes a code block with its language", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "```js "}, {"type": "x"}], "expect": {"doc": "<codeBlock language=\"js\">x|</codeBlock><paragraph></paragraph>"}},
+    {"name": "~~~ space makes a code block", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "~~~ "}, {"type": "x"}], "expect": {"doc": "<codeBlock>x|</codeBlock><paragraph></paragraph>"}},
+    {"name": "___ space makes a horizontal rule", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "___ "}], "expect": {"doc": "<horizontalRule/><paragraph>|</paragraph>"}},
+    {"name": "*** space makes a horizontal rule", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "*** "}], "expect": {"doc": "<horizontalRule/><paragraph>|</paragraph>"}},
+    {"name": "--- at the start of a line with text makes a rule", "doc": "<paragraph>|x</paragraph>", "steps": [{"type": "---"}], "expect": {"doc": "<horizontalRule/><paragraph>|x</paragraph>"}},
+    {"name": "# in a bullet stays text", "doc": "<bulletList><listItem><paragraph>|</paragraph></listItem></bulletList>", "steps": [{"type": "# a"}], "expect": {"doc": "<bulletList><listItem><paragraph># a|</paragraph></listItem></bulletList><paragraph></paragraph>"}},
+    {"name": "1. in a bullet stays text", "doc": "<bulletList><listItem><paragraph>|</paragraph></listItem></bulletList>", "steps": [{"type": "1. a"}], "expect": {"doc": "<bulletList><listItem><paragraph>1. a|</paragraph></listItem></bulletList><paragraph></paragraph>"}},
+    {"name": "- in the middle of a line is not a bullet", "doc": "<paragraph>a|</paragraph>", "steps": [{"type": " - b"}], "expect": {"doc": "<paragraph>a - b|</paragraph>"}}
+  ]
+}

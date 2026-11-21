@@ -55,6 +55,8 @@
     {"name": "Mod+a then Backspace empties the box", "doc": "<paragraph>a</paragraph><bulletList><listItem><paragraph>b|</paragraph></listItem></bulletList>", "steps": [{"key": "Mod+a"}, {"key": "Backspace"}], "expect": {"doc": "<paragraph>|</paragraph>"}},
     {"name": "Mod+a then typing replaces everything", "doc": "<heading level=1>T</heading><paragraph>a|</paragraph>", "steps": [{"key": "Mod+a"}, {"type": "x"}], "expect": {"doc": "<paragraph>x|</paragraph>"}},
     {"name": "Delete at the end of a paragraph before a bullet joins the bullet's text", "doc": "<paragraph>a|</paragraph><bulletList><listItem><paragraph>b</paragraph></listItem></bulletList>", "skip": {"tiptap": "today's editor lifts the bullet out to a paragraph on the first Delete and joins on the second: looks like a bug, see README Findings"}, "steps": [{"key": "Delete"}], "expect": {"doc": "<paragraph>a|b</paragraph><paragraph/>"}},
-    {"name": "Shift+Enter in a heading is a line break", "doc": "<heading level=1>a|b</heading>", "steps": [{"key": "Shift+Enter"}], "expect": {"doc": "<heading level=1>a<hardBreak/>|b</heading><paragraph/>"}}
+    {"name": "Shift+Enter in a heading is a line break", "doc": "<heading level=1>a|b</heading>", "steps": [{"key": "Shift+Enter"}], "expect": {"doc": "<heading level=1>a<hardBreak/>|b</heading><paragraph/>"}},
+    {"name": "Mod+Alt+2 across two paragraphs makes both headings", "doc": "<paragraph>[ab</paragraph><paragraph>cd]</paragraph>", "steps": [{"key": "Mod+Alt+2"}], "expect": {"doc": "<heading level=2>[ab</heading><heading level=2>cd]</heading><paragraph></paragraph>"}},
+    {"name": "Mod+Shift+b across two paragraphs makes one quote", "doc": "<paragraph>[ab</paragraph><paragraph>cd]</paragraph>", "steps": [{"key": "Mod+Shift+b"}], "expect": {"doc": "<blockquote><paragraph>[ab</paragraph><paragraph>cd]</paragraph></blockquote><paragraph></paragraph>"}}
   ]
 }
