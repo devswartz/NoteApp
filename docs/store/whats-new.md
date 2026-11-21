@@ -16,6 +16,11 @@ Only a manual **Store submit** run (an older tag) falls back, when a section is 
 
 Newest version first.
 
+## v1.5.13
+
+- Undo and Redo on iPhone: the buttons are now in the top bar of every note you can edit.
+- Fixed: tasks on a note in the Trash can be completed and deleted again.
+
 ## v1.5.9
 
 - Deleting task lines from a note now deletes the tasks: select as many as you like and press Delete, just like bullets. Undo brings them back.
