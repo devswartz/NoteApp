@@ -82,9 +82,26 @@ tables/delete a column
 tables/delete a row
 tables/delete the table
 tables/insert a 2x2 table with a header row
+tasks//task, a title, Enter makes the next task
+tasks/Backspace across a selected task line deletes the task
+tasks/Backspace in an empty task title makes a plain line
+tasks/Enter in an empty task title leaves task mode
+tasks/Enter on an empty last note line leaves the task
+tasks/Mod+1 converts a line to a task
+tasks/Mod+Enter converts a line to a task
+tasks/Shift+Tab in a subtask title takes it back out
+tasks/Shift+Tab lifts a note line out of its task
+tasks/Tab in a task title makes it a subtask of the task above
+tasks/Tab on a bullet list's first line after a task moves the whole list in
+tasks/Tab on the line after a task moves it into the task's notes
+tasks/a checked checklist item converts to a done task
+tasks/converting a bullet keeps its sub-points under the task
+tasks/converting several selected lines makes several tasks
+tasks/redo of a convert-to-task recreates the task
 typing/Enter splits a paragraph
 typing/Mod+b then type is bold
 typing/dash space makes a bullet
+typing/slash task makes a task
 typing/type into an empty paragraph
 undo/Mod+Shift+z redoes
 undo/Mod+y redoes

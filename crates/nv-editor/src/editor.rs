@@ -26,6 +26,8 @@ pub struct Editor {
     pub dismissed: Option<usize>,
     /// The task store behind the box's task lines.
     pub tasks: Box<dyn crate::tasks::TaskHost>,
+    /// Task ids in the doc after the last change (to see which lines went or came back).
+    pub known_tasks: Vec<String>,
 }
 
 impl Editor {
@@ -39,7 +41,9 @@ impl Editor {
             focus: Focus::Doc,
             dismissed: None,
             tasks: Box::new(crate::tasks::NoTasks::default()),
+            known_tasks: Vec::new(),
         };
+        ed.known_tasks = crate::tasks::task_ids(&ed.doc);
         ed.finish();
         ed
     }
@@ -170,6 +174,10 @@ impl Editor {
 
     /// Typed text: replaces the selection, takes the stored or surrounding marks, runs input rules.
     pub fn insert_text(&mut self, text: &str) {
+        if matches!(self.focus, Focus::TaskTitle(_)) {
+            self.title_input(text);
+            return;
+        }
         let had_range = !self.sel.is_empty();
         self.delete_selection();
         let Some(pos) = self.sel.head() else { return };
@@ -940,6 +948,7 @@ impl Editor {
         if !last_is_para {
             self.doc.content.push(Node::el("paragraph", vec![]));
         }
+        self.sync_tasks();
     }
 
     pub fn select_all(&mut self) -> bool {
