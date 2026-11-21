@@ -4,9 +4,10 @@ Kept by the overseeing session. **Workstreams don't edit this file** (parallel e
 
 ## Now
 
-- **core** (M3): `nv-api`, `nv-sync` and the online Core API done on branch `rewrite/core-m3`, ready to merge (see Done). Next: `nv-store` (local SQLite), then reconnect/offline queue in `nv-sync`.
-- **editor** (M2): branch `rewrite/editor-engine`. `docs/rewrite/EDITOR.md` written; `crates/nv-editor` passes 90 of 129 suite scenarios (blocks, lists, marks, tables, containers, inline nodes, slash/`[[`/`@` menus all green). Left: tasks (0/18), undo/redo with the yrs binding (3/10), clipboard (0/13). **Handover for a fresh session** below (context ran large).
-- **apple** (M1 done; M4 groundwork): branch `rewrite/apple-m4-view`. NotiveloCore linked (`coreVersion()` on the sign-in screen); read-only native iPad page view (TextKit 2 boxes at saved positions, UIScrollView pan/zoom) over the bundled corpus pages. Started 2026-11-21.
+All three streams handed over on 2026-11-21 (context ran large); fresh sessions pick up from:
+- **core**: `docs/rewrite/status/core.md`. Box content in the Core API and x86_64 Apple slices done (merged). Next: `nv-store`, sync robustness (reconnect, offline queue, system TLS), Kotlin/Android build; then the editor's requests (editor session API in nv-core).
+- **editor**: `docs/rewrite/status/editor.md`. M2 done: `nv-editor` passes all 129 suite scenarios (merged). Next: the editor session in the Core API, then iPad editing with the apple stream (M4).
+- **apple**: `docs/rewrite/status/apple.md`. Next: M5 sign-in, live tree, live read-only pages (now with core's box content), tasks list; TestFlight 1.99.x.
 
 ## Waiting on Devon
 
