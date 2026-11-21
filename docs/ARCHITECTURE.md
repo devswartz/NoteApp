@@ -250,7 +250,7 @@ The web's editor commands, and then its data layer, move onto the core via WASM,
 
 ## 9. Open questions for Devon
 
-1. **Mac:** share the iPad app's code (SwiftUI with AppKit where needed, possibly Mac Catalyst at first), or a separate AppKit app?
+1. ~~**Mac:** share the iPad app's code or a separate AppKit app?~~ Decided 2026-11-21 (Devon): **full native Mac**, not Catalyst. Shared Swift for models, the core and SwiftUI where it is native on both; AppKit for the page canvas and text (NSTextView/TextKit 2 over EditorSession, NSTextInputClient), Mac menus, windows and shortcuts. It still matches today's look.
 2. **Windows:** WinUI 3 in C#, or keep the Tauri web app on Windows longer since you have no Windows pen device?
 3. **Reference devices** beyond the iPad: the iPhone, Mac, Android phone and Windows laptop for the budgets.
 4. **Self-hosting:** keep supporting it? It affects how the server addon is packaged.
