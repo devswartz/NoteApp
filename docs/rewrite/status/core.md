@@ -5,10 +5,33 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
-- **M4 step 1 done** on branch `rewrite/core-m4`, ready to merge: box content in the Core API, and
-  x86_64 slices in the XCFramework.
-- **Next, in order** (for a fresh session; see the handover below): `nv-store`, then `nv-sync`
-  robustness, then Kotlin bindings with an Android build in CI.
+- **nv-store done** on branch `rewrite/core-store`, ready to merge: the on-device SQLite store and
+  a cached-first Core API (notes for apple below).
+- **Next, in order** (for a fresh session; see the handover below): `nv-sync` robustness (its
+  offline queue can live in nv-store now), then Kotlin bindings with an Android build in CI.
+
+## For apple: the on-device store (2026-11-21)
+
+- Construct with `Core.withStore(serverUrl:dbPath:)`, e.g. a file in Application Support
+  (excluded from backups). The folder is created if missing; a file that can't be read (damaged,
+  or written by a newer app) is replaced by an empty one. `Core(serverUrl:)` still works and has
+  no store (`hasStore()` is false, every `cached*` returns nil).
+- Reads come in pairs. `cachedWorkspaces()`, `cachedTree(workspaceId:)`,
+  `cachedTasks(workspaceId:)`, `cachedPageDocument(pageId:)` are local and instant (nil when
+  nothing is stored; fine on the main thread). `workspaces()`, `tree(workspaceId:)`,
+  `tasks(workspaceId:)`, `pageDocument(pageId:)` ask the server, store the answer, and when the
+  server can't be reached (`CoreError.Network`) return the stored copy instead (they still throw
+  when nothing is stored, and on `Server`/`SignedOut`). So: show the cached copy, then call the
+  server one and show its answer.
+- Offline launch: `restoreSession` throws `Network`; keep the refresh token and carry on: the
+  network reads then fall back to the stored copies.
+- `createTask` and `setTaskDone` update the stored tasks. `signOut()` clears the store; signing in
+  as a different user clears it first.
+- A `LivePage` saves its document to the store each time it is `Synced` and when it is closed; a
+  `Closed(4403)` deletes the stored copy.
+- Locked pages are never stored: a tree that marks a page locked deletes its stored document, and
+  the store refuses to save one. Tasks on locked pages are stored as the server sent them
+  (already redacted), as the web app does.
 
 ## For apple: box content (2026-11-21)
 
@@ -35,6 +58,12 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Done
 
+- 2026-11-21, nv-store (`rewrite/core-store`): `crates/nv-store` (rusqlite bundled; records as
+  JSON columns; `schema_version` 1 with an `UPGRADES` list; locked pages never stored; pruning as
+  `prunePageCaches`), `Core::with_store` and the `cached_*` reads in `client.rs`, a non-exported
+  `Core::with_transport` for tests. Tests: nv-store unit tests, `crates/nv-core/tests/store.rs`
+  (scripted transport: cached-first, offline fallback, locked pages, sign-out, offline launch),
+  LivePage save tests in `client.rs`, the Swift `testCoreWithAStore`.
 - 2026-11-21, M4 step 1 (`rewrite/core-m4`): `crates/nv-core/src/content.rs`, tests in
   `crates/nv-core/tests/api.rs` and the Swift `testBoxContent`; `build-xcframework.sh` uses
   `lipo` for the simulator and macOS slices and now runs `rustup target add` for its own targets (so apple-native.yml needs no change); rust.yml and apple-native.yml are both green on it.
@@ -59,11 +88,13 @@ fresh. What they need to know:
   `PORT=4417 DATA_DIR=<scratch> JWT_SECRET=<32+ chars> GIT_SHA=core-test SIGNUP_MODE=open npx tsx server/index.ts`,
   then `NV_TEST_SERVER=http://127.0.0.1:4417 cargo test -p nv-core --test server`. Stop it
   afterwards (on Windows: find the PID listening on 4417 with `netstat -ano`, then `taskkill /F /T`).
-- **nv-store (next).** Add rusqlite with the `bundled` feature. Cache workspaces, tree, tasks and
-  page docs. The `Core` reads cached-first, then refreshes from the server; `Core::new` will need a
-  database path. Never store locked pages (`PageMeta.locked`, and `Task.locked` tasks as they come;
-  today's rule is in `src/lib/pageCache.ts`). Check that rusqlite builds for iOS in the apple
-  job.
+- **nv-store (done).** `Store` (one account; `Mutex<Connection>`, shared as `Arc<Store>` by the
+  `Core` and its `LivePage`s). Store write errors are ignored by the Core (fail soft, like
+  `offlineCache.ts`). A schema change: bump `SCHEMA_VERSION` and append a step to `UPGRADES`.
+  Not stored yet: trashed pages (nv-api's `Tree` has no `trashedPages`, so their docs are pruned),
+  members, tags. A live page isn't seeded from the stored copy when it opens (merging an old copy
+  could bring back content a version restore removed); `cachedPageDocument` is for showing a page
+  read-only while offline.
 - **nv-sync robustness.** Reconnect with exponential backoff (as `backoffMs` in src/api.ts: about
   1 s doubling to 30 s, with jitter); on 4401, refresh the token through the `Core` and reconnect;
   on 4403, stop. Queue local updates while offline (in nv-store once it exists) and send them after
