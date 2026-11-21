@@ -3,7 +3,9 @@ import SwiftUI
 /// The shell: sidebar (task views, and for now the page-format corpus as sample pages) and a detail area.
 struct MainView: View {
     @Environment(SessionModel.self) private var session
-    @State private var selection: SidebarItem? = CorpusPage.caseNames.first.map(SidebarItem.page) ?? .today
+    /// `-page <case>` on the command line opens that page (CI screenshots use it).
+    @State private var selection: SidebarItem? = (UserDefaults.standard.string(forKey: "page") ?? CorpusPage.caseNames.first)
+        .map(SidebarItem.page) ?? .today
 
     var body: some View {
         NavigationSplitView {

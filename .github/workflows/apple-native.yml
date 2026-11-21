@@ -85,6 +85,32 @@ jobs:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd-ios" CODE_SIGNING_ALLOWED=NO build | tail -n 60
 
+      # Runs the simulator build on an iPad and saves screenshots of a few corpus pages (artifact "ipad-screenshots").
+      - name: iPad screenshots
+        run: |
+          UDID="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPad Pro"))][0].udid')"
+          [ -n "$UDID" ] && [ "$UDID" != null ] || { echo "::warning::no iPad simulator"; exit 0; }
+          xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl install "$UDID" "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app"
+          mkdir -p "$RUNNER_TEMP/shots"
+          xcrun simctl launch "$UDID" com.devswartz.notivelo > /dev/null && sleep 6
+          xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/sign-in.png"
+          xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
+          for page in canvas-boxes blocks lists tasks settings-and-ink; do
+            xcrun simctl launch "$UDID" com.devswartz.notivelo -previewSignedIn YES -page "$page" > /dev/null && sleep 5
+            xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/$page.png"
+            xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
+          done
+          xcrun simctl shutdown "$UDID" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ipad-screenshots
+          path: ${{ runner.temp }}/shots/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Mac build
         working-directory: apps/apple
         run: |
