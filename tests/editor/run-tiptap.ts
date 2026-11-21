@@ -7,6 +7,8 @@
 // filter: only scenarios whose "file/name" contains it. --print: show the actual state of every
 // scenario run (for writing expectations). --schema: also write today's schema to schema.json,
 // which the Rust engine reads.
+//
+// Slow-runner stress: NV_EDITOR_THROTTLE=6 (CPU slowdown) and NV_EDITOR_API_DELAY=150 (ms per API reply).
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
 import { chromium, type CDPSession, type Page } from 'playwright';
@@ -132,6 +134,9 @@ function serve(dir: string): Promise<{ url: string; close: () => void }> {
 
 /** A tiny fake of the server's task API, so task create / update / delete succeed as they would. */
 async function stubApi(page: Page) {
+  // NV_EDITOR_API_DELAY=ms answers each API call that late, like a slow runner (writes still in flight
+  // when the next scenario starts).
+  const apiDelay = Number(process.env.NV_EDITOR_API_DELAY ?? 0);
   const tasks = new Map<string, Record<string, unknown>>();
   await page.route(/\/api\//, async (route) => {
     const req = route.request();
@@ -153,6 +158,7 @@ async function stubApi(page: Page) {
       tasks.set(id, t);
       out = t;
     } else if (req.method() === 'DELETE' && id) tasks.delete(id);
+    if (apiDelay > 0) await new Promise((r) => setTimeout(r, apiDelay));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(out) });
   });
   await page.route(/\/(ws|collab|events)/, (r) => r.abort());
@@ -228,8 +234,8 @@ async function run(page: Page, cdp: CDPSession, s: Scenario): Promise<string[]> 
       fails.push(...(await check(page, step.expect, `step ${n}`)));
     }
   }
-  // Task conversions run in a microtask and API writes settle asynchronously.
-  await page.waitForTimeout(50);
+  // Task conversions run in a microtask and API writes settle asynchronously: wait for both.
+  await page.evaluate(() => (window as any).nv.settle());
   fails.push(...(await check(page, s.expect, 'end')));
   return fails;
 }
@@ -245,6 +251,9 @@ try {
   page.on('pageerror', (e) => console.error('  page error:', e.message));
   await stubApi(page);
   const cdp = await page.context().newCDPSession(page);
+  // NV_EDITOR_THROTTLE=6 slows the page's CPU that many times, like a slow CI runner.
+  const throttle = Number(process.env.NV_EDITOR_THROTTLE ?? 0);
+  if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
   await page.goto(server.url);
   await page.waitForSelector('body[data-ready="1"]', { state: 'attached' });
   if (args.includes('--schema')) {
