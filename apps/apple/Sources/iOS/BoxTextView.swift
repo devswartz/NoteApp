@@ -181,7 +181,10 @@ final class BoxTextView: UIView, UITextInput {
             let frame = fragment.layoutFragmentFrame
             let baseline = frame.minY + line.typographicBounds.minY + line.glyphOrigin.y
             let font = marker.text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont ?? .systemFont(ofSize: 16)
-            marker.text.draw(at: CGPoint(x: inset.left + frame.minX + marker.x, y: inset.top + baseline - font.ascender))
+            // Right-aligned in the indent, just before where the line's text starts.
+            let textStart = caretRect(for: BoxTextPosition(marker.offset)).minX
+            let x = max(textStart - marker.text.size().width - 6, inset.left)
+            marker.text.draw(at: CGPoint(x: x, y: inset.top + baseline - font.ascender))
         }
     }
 

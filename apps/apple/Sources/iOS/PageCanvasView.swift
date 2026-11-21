@@ -254,13 +254,14 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     // MARK: CI evidence
 
     /// `-demoEdit YES` (corpus mode, CI screenshots): focus the first box and type into it through
-    /// the same UITextInput calls the keyboard makes (insertText, Return, a marked-text composition).
+    /// the same UITextInput calls the keyboard makes (Return, a "- " list rule, typing, a marked-text composition).
     private func runDemoIfAsked() {
         guard !demoDone, UserDefaults.standard.bool(forKey: "demoEdit"), let first = boxes.first, let box = boxViews[first.id] else { return }
         demoDone = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak box] in
             guard let self, let box else { return }
             self.beginEditing(box, at: nil) {
+                box.insertText("\n")
                 box.insertText("- ")
                 box.insertText("Typed on iPad")
                 box.insertText("\n")
