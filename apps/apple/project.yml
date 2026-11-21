@@ -9,6 +9,11 @@ options:
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
+# The Rust core as a local Swift package, built by crates/nv-core/build-xcframework.sh (CI runs it before xcodegen).
+packages:
+  NotiveloCore:
+    path: ../../target/apple/NotiveloCore
+
 settings:
   base:
     # Prototype builds go to TestFlight as 1.99.x (docs/rewrite/PLAN.md); CI passes the real numbers.
@@ -22,6 +27,9 @@ settings:
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     CODE_SIGN_STYLE: Automatic
+    # The core's XCFramework has arm64 slices only (iOS device, simulator on Apple silicon, macOS).
+    EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+    EXCLUDED_ARCHS[sdk=macosx*]: x86_64
     # DEVELOPMENT_TEAM comes from CI (secrets.APPLE_TEAM_ID) or your local Xcode account.
 
 targets:
@@ -33,6 +41,12 @@ targets:
       - path: Sources/Shared
       - path: Sources/iOS
       - path: Resources
+      # The page-format corpus as sample pages (a folder reference: Notivelo.app/cases/<name>/page.bin …).
+      - path: ../../tests/corpus/cases
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: NotiveloCore
     entitlements:
       path: Sources/iOS/Notivelo.entitlements
       properties:
@@ -73,6 +87,12 @@ targets:
       - path: Sources/Shared
       - path: Sources/macOS
       - path: Resources
+      # The page-format corpus as sample pages (a folder reference: Notivelo.app/cases/<name>/page.bin …).
+      - path: ../../tests/corpus/cases
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: NotiveloCore
     entitlements:
       path: Sources/macOS/NotiveloMac.entitlements
       properties:

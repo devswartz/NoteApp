@@ -13,7 +13,7 @@ on:
         default: false
   push:
     branches: ['rewrite/**']
-    paths: ['apps/apple/**', '.github/workflows/apple-native.yml']
+    paths: ['apps/apple/**', 'crates/**', 'Cargo.*', '.github/workflows/apple-native.yml']
 
 permissions:
   contents: read
@@ -29,6 +29,7 @@ defaults:
 
 env:
   MARKETING_VERSION_BASE: '1.99'
+  RUST_TOOLCHAIN: '1.99.1' # as rust.yml
 
 jobs:
   apple:
@@ -45,6 +46,18 @@ jobs:
         run: |
           sudo xcode-select -s "$(ls -d /Applications/Xcode_[0-9]*.app | grep -iv beta | sort -V | tail -1)"
           xcodebuild -version
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: apple-native
+
+      # The NotiveloCore Swift package (target/apple/NotiveloCore), linked by apps/apple/project.yml.
+      - name: Build the core
+        run: bash crates/nv-core/build-xcframework.sh
 
       - name: XcodeGen
         run: |
@@ -71,6 +84,32 @@ jobs:
           xcodebuild -project Notivelo.xcodeproj -scheme Notivelo -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd-ios" CODE_SIGNING_ALLOWED=NO build | tail -n 60
+
+      # Runs the simulator build on an iPad and saves screenshots of a few corpus pages (artifact "ipad-screenshots").
+      - name: iPad screenshots
+        run: |
+          UDID="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPad Pro"))][0].udid')"
+          [ -n "$UDID" ] && [ "$UDID" != null ] || { echo "::warning::no iPad simulator"; exit 0; }
+          xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl install "$UDID" "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app"
+          mkdir -p "$RUNNER_TEMP/shots"
+          xcrun simctl launch "$UDID" com.devswartz.notivelo > /dev/null && sleep 6
+          xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/sign-in.png"
+          xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
+          for page in canvas-boxes blocks lists tasks settings-and-ink; do
+            xcrun simctl launch "$UDID" com.devswartz.notivelo -previewSignedIn YES -page "$page" > /dev/null && sleep 5
+            xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/$page.png"
+            xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
+          done
+          xcrun simctl shutdown "$UDID" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ipad-screenshots
+          path: ${{ runner.temp }}/shots/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Mac build
         working-directory: apps/apple
@@ -144,6 +183,15 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: node scripts/ios-revoke-ci-certs.mjs
+
+      # Read-only: Apple's processing state of the latest uploads (did earlier 1.99.x builds go through?).
+      - name: Recent TestFlight builds
+        if: always() && env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: node apps/apple/scripts/testflight-builds.mjs 10
 
       - name: TestFlight skipped
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
