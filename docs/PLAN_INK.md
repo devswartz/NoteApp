@@ -1,5 +1,7 @@
 # Plan: handwriting and drawing (ink)
 
+> **On hold since 2026-11-17, superseded in part on 2026-11-21.** Ink on web pages (I2) never reached Notability's feel, and separate drawing pages were rejected. Ink now returns on native pages: `docs/ARCHITECTURE.md` (phases 2 and 3) draws `nv-ink` with Metal on the iPad's native page, with text and ink on the same page. The format, engine and quality bar below still apply; the web-page phases (I2 lockstep) don't. Lessons from I2 are on branch `claude/ink-i2-61c006`.
+
 Status: planned 2026-11-14 with Devon. The quality bar is **Notability or better**, even if it takes a redesign. It is the first project of the long-term architecture (`docs/ARCHITECTURE.md`, phases 0–2). Ink and drawing were out of scope for canvas pages (`docs/PLAN_CANVAS.md`); this plan brings them in.
 
 ## What the user gets
