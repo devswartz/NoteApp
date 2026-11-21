@@ -37,7 +37,7 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 
 ### TestFlight so far (all VALID unless noted)
 
-1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · **1.99.20 (130.20) M5 basics** (run 44920271305; upload not confirmed when this was written).
+1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · **1.99.20 (130.20) M5 basics** (run 44920271305, uploaded; Apple processing not checked).
 
 ## How Devon tests this build
 
@@ -54,5 +54,5 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 
 ## Done
 
-- 2026-11-21, M5 basics (`rewrite/apple-m5`): real sign-in with the keychain and staging switch, workspace tree, live read-only pages from the core's typed box content (corpus pages through the same renderer), task list with optimistic ticks. CI green (simulator, screenshots, Mac); TestFlight 1.99.20 (130.20) sent by run 44920271305 (upload not yet confirmed).
+- 2026-11-21, M5 basics (`rewrite/apple-m5`): real sign-in with the keychain and staging switch, workspace tree, live read-only pages from the core's typed box content (corpus pages through the same renderer), task list with optimistic ticks. CI green (simulator, screenshots, Mac); TestFlight 1.99.20 (130.20) uploaded by run 44920271305.
 - 2026-11-21: page view merged into `rewrite/native` (41c64bc); see `docs/rewrite/STATUS.md` Done for M1 and the M4 groundwork.
