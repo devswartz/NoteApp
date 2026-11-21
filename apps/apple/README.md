@@ -1,6 +1,6 @@
 # Notivelo for iPad, iPhone and Mac (native rewrite)
 
-SwiftUI apps on the shared Rust core (`docs/ARCHITECTURE.md`, `docs/rewrite/PLAN.md`). Today this is the M1 skeleton: a placeholder sign-in screen and a sidebar.
+SwiftUI apps on the shared Rust core (`docs/ARCHITECTURE.md`, `docs/rewrite/PLAN.md`). Today (M5): sign-in through the core (refresh token in the keychain), the workspace tree in the sidebar, pages open live and read-only, and the task list with ticks. `-previewSignedIn YES` skips sign-in and shows the bundled corpus pages (CI screenshots).
 
 - `project.yml`: the XcodeGen project. Targets **Notivelo** (iPad + iPhone, bundle ID `com.devswartz.notivelo`, iOS 17+) and **NotiveloMac** (same bundle ID, macOS 14+). The `.xcodeproj` is generated, not committed.
 - `Sources/Shared`: code for both (SwiftUI). `Sources/iOS`, `Sources/macOS`: platform-only code.
