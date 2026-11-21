@@ -38,7 +38,9 @@ fn run(s: &Value) -> Result<(), String> {
             }
         } else if let Some(k) = step.get("key").and_then(Value::as_str) {
             for _ in 0..step.get("times").and_then(Value::as_u64).unwrap_or(1) {
-                ed.key(k);
+                if !view_menu_key(&mut ed, k) {
+                    ed.key(k);
+                }
             }
         } else if let Some(c) = step.get("command").and_then(Value::as_str) {
             command(&mut ed, c, step.get("args").unwrap_or(&json!({})))?;
@@ -52,6 +54,43 @@ fn run(s: &Value) -> Result<(), String> {
         }
     }
     check(&ed, &s["expect"])
+}
+
+/// Fixtures (tests/editor/README.md): the pages and people the menus offer.
+const PAGES: &[(&str, &str)] = &[("p2", "Project plan")];
+const PEOPLE: &[(&str, &str)] = &[("u1", "Tess Tester"), ("u2", "Sam Lee")];
+
+/// What the view does for the `[[` and `@` menus: Enter or Tab picks the first match.
+fn view_menu_key(ed: &mut Editor, key: &str) -> bool {
+    use nv_editor::suggest::Trigger;
+    if !matches!(key, "Enter" | "Tab") {
+        return false;
+    }
+    let Some(s) = ed.suggestion() else {
+        return false;
+    };
+    let q = s.query.to_lowercase();
+    let starts = |name: &str| {
+        name.to_lowercase()
+            .split_whitespace()
+            .any(|w| w.starts_with(&q))
+            || name.to_lowercase().starts_with(&q)
+    };
+    let done = match s.trigger {
+        Trigger::PageLink => match PAGES.iter().find(|(_, t)| starts(t)) {
+            Some((id, _)) => ed.pick_page(id),
+            None => false,
+        },
+        Trigger::Mention => match PEOPLE.iter().find(|(_, n)| starts(n)) {
+            Some((id, n)) => ed.pick_mention(id, n),
+            None => false,
+        },
+        Trigger::Slash => false,
+    };
+    if done {
+        ed.finish();
+    }
+    done
 }
 
 fn command(ed: &mut Editor, name: &str, a: &Value) -> Result<(), String> {
@@ -103,6 +142,22 @@ fn command(ed: &mut Editor, name: &str, a: &Value) -> Result<(), String> {
             true
         }
         "selectAll" => ed.select_all(),
+        "insertTable" => ed.insert_table(
+            a["rows"].as_u64().unwrap_or(3) as usize,
+            a["cols"].as_u64().unwrap_or(3) as usize,
+            a["header"].as_bool().unwrap_or(true),
+        ),
+        "addRowAfter" => ed.add_row(true),
+        "addColumnAfter" => ed.add_column_after(),
+        "deleteRow" => ed.delete_row(),
+        "deleteColumn" => ed.delete_column(),
+        "deleteTable" => ed.delete_table(),
+        "insertPageLink" => ed.insert_page_link(a["pageId"].as_str().unwrap_or("")),
+        "insertMention" => ed.insert_mention(
+            a["id"].as_str().unwrap_or(""),
+            a["label"].as_str().unwrap_or(""),
+        ),
+        "insertTask" => ed.insert_task(a["title"].as_str().unwrap_or("")),
         other => return Err(format!("command {other} not supported yet")),
     };
     Ok(())

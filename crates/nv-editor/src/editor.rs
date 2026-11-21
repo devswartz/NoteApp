@@ -16,13 +16,16 @@ pub enum Focus {
     TaskTitle(String),
 }
 
-#[derive(Debug, Clone)]
 pub struct Editor {
     pub doc: Node,
     pub sel: Selection,
     /// Marks the next typed text gets (Mod+B with an empty selection), when set.
     pub stored_marks: Option<Vec<Mark>>,
     pub focus: Focus,
+    /// The suggestion menu closed with Escape (its trigger's position).
+    pub dismissed: Option<usize>,
+    /// The task store behind the box's task lines.
+    pub tasks: Box<dyn crate::tasks::TaskHost>,
 }
 
 impl Editor {
@@ -34,6 +37,8 @@ impl Editor {
             sel,
             stored_marks: None,
             focus: Focus::Doc,
+            dismissed: None,
+            tasks: Box::new(crate::tasks::NoTasks::default()),
         };
         ed.finish();
         ed

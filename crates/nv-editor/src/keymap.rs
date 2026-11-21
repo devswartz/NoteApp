@@ -31,7 +31,23 @@ pub fn normalize(chord: &str) -> String {
 impl Editor {
     /// Handle a key chord. Returns whether it did anything (unhandled keys are the view's: Tab to the next box).
     pub fn key(&mut self, chord: &str) -> bool {
-        let handled = match normalize(chord).as_str() {
+        let chord = normalize(chord);
+        // An open slash menu takes Enter and Tab (its first item) and Escape.
+        if let Some(s) = self.suggestion() {
+            if s.trigger == crate::suggest::Trigger::Slash
+                && matches!(chord.as_str(), "Enter" | "Tab")
+            {
+                if let Some(first) = crate::suggest::filter_slash(&s.query).first() {
+                    let done = self.pick_slash(first);
+                    self.finish();
+                    return done;
+                }
+            }
+            if chord == "Escape" {
+                return self.dismiss_suggestion();
+            }
+        }
+        let handled = match chord.as_str() {
             "Enter" => self.enter(),
             "Shift+Enter" => self.hard_break(),
             "Backspace" => self.backspace(),
@@ -63,6 +79,9 @@ impl Editor {
 
     /// Tab: list nesting (in a list it's always the list's, even with nothing to nest under).
     pub fn tab(&mut self) -> bool {
+        if self.go_to_cell(true) {
+            return true;
+        }
         if self.list_item_depth().is_some() {
             self.indent();
             return true;
@@ -71,6 +90,9 @@ impl Editor {
     }
 
     pub fn shift_tab(&mut self) -> bool {
+        if self.go_to_cell(false) {
+            return true;
+        }
         if self.list_item_depth().is_some() {
             self.outdent();
             return true;

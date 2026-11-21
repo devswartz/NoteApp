@@ -20,12 +20,19 @@ blocks/Shift+Enter is a line break
 blocks/``` space makes a code block
 blocks/typing replaces a selection
 containers// then Escape leaves the text
+containers//callout makes a callout
+containers//code makes a code block
+containers//h1 makes a heading
+containers//toggle makes a toggle
 containers/Enter in a closed toggle's summary makes a line after the toggle
 containers/Enter on an empty last toggle line leaves the toggle
 containers/Enter twice leaves a callout
 inline/@ in the middle of a word does not open mentions
+inline/@ picks a person and inserts a mention and a space
 inline/Backspace after a mention deletes it
 inline/Backspace after a page link deletes it
+inline/[[ picks a page and inserts a page link and a space
+inline/insert a page link by command
 inline/typing at the end of a link extends it (autolink links are inclusive)
 lists/1. makes a numbered list
 lists/3) starts numbering at 3 with parens
@@ -66,6 +73,15 @@ marks/text colour
 marks/typing after bold text continues bold
 marks/~~x~~ makes strike
 tables/Enter in a cell is a new paragraph in the cell
+tables/Shift+Tab moves to the previous cell
+tables/Tab in the last cell adds a row
+tables/Tab moves to the next cell
+tables/add a column after
+tables/add a row after
+tables/delete a column
+tables/delete a row
+tables/delete the table
+tables/insert a 2x2 table with a header row
 typing/Enter splits a paragraph
 typing/Mod+b then type is bold
 typing/dash space makes a bullet
