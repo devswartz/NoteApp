@@ -83,6 +83,23 @@ fn run(s: &Value) -> Result<(), String> {
             }
         } else if let Some(id) = step.get("focusTitle").and_then(Value::as_str) {
             ed.focus_title(id);
+        } else if let Some(t) = step.get("compose").and_then(Value::as_str) {
+            let sel = step.get("selection").and_then(Value::as_array).map(|a| {
+                let at = |i: usize| a.get(i).and_then(Value::as_u64).unwrap_or(0) as usize;
+                (at(0), at(1))
+            });
+            ed.set_composition(t, sel);
+            ed.finish();
+        } else if let Some(t) = step.get("commitComposition").and_then(Value::as_str) {
+            ed.commit_composition(t);
+            ed.finish();
+        } else if step.get("cancelComposition").is_some() {
+            ed.cancel_composition();
+            ed.finish();
+        } else if let Some(r) = step.get("replace") {
+            let at = |k: &str| r[k].as_u64().unwrap_or(0) as usize;
+            ed.replace_range(at("from"), at("to"), r["text"].as_str().unwrap_or(""));
+            ed.finish();
         } else if let Some(ms) = step.get("wait").and_then(Value::as_u64) {
             clock.advance(ms);
         } else if let Some(e) = step.get("expect") {

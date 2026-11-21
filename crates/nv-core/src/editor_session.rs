@@ -326,8 +326,41 @@ impl EditorSession {
         })
     }
 
+    /// End the composition with the marked text as it stands (`unmarkText`,
+    /// `finishComposingText`, `CompositionCompleted`, losing focus).
+    pub fn finish_composition(&self) {
+        self.with(|ed| ed.end_composition())
+    }
+
+    /// End the composition without typing: the marked text (and the selection it replaced) go.
     pub fn cancel_composition(&self) {
-        self.with(|ed| ed.cancel_composition())
+        self.with(|ed| {
+            ed.cancel_composition();
+            ed.finish();
+        })
+    }
+
+    /// Replace `from..to` (positions) with `text` without moving the selection there first:
+    /// autocorrect, spell-check and dictation results. Keeps the marks of the replaced text, runs
+    /// no input rules, is one undo step; the selection is mapped past it. In a task title,
+    /// `from..to` are offsets in the title. False when the range isn't in text.
+    pub fn replace_range(&self, from: u32, to: u32, text: String) -> bool {
+        self.edit(|ed| ed.replace_range(from as usize, to as usize, &text))
+    }
+
+    /// The box's text as the platform's text input sees it: one string, a line per text block
+    /// (joined by line feeds), U+FFFC for nodes without text. Offsets in it are UTF-16 units; map them
+    /// with `view_offset_to_pos` and `pos_to_view_offset` (EDITOR.md 10).
+    pub fn text_for_view(&self) -> String {
+        self.with(|ed| ed.text_for_view().text)
+    }
+
+    pub fn view_offset_to_pos(&self, offset: u32) -> u32 {
+        self.with(|ed| pos(ed.view_offset_to_pos(offset as usize)))
+    }
+
+    pub fn pos_to_view_offset(&self, pos_: u32) -> u32 {
+        self.with(|ed| pos(ed.pos_to_view_offset(pos_ as usize)))
     }
 
     /// What to draw now.

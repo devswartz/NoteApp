@@ -6,6 +6,7 @@ pub mod clipboard;
 pub mod command;
 pub mod compose;
 pub mod editor;
+pub mod input;
 pub mod insert;
 pub mod keymap;
 pub mod node;

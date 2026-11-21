@@ -40,6 +40,11 @@ node --import tsx tests/editor/run-tiptap.ts [filter] [--print] [--headed]
   - `{ "copy": { "text": "…", "html": "…" }, "cut": false }` copies (or cuts) the selection and checks what went to the clipboard.
   - `{ "focusTitle": "t1" }` puts the caret at the end of a task line's title.
   - `{ "wait": 700 }` lets time pass (undo groups typing within 500 ms).
+  - Text input the way an IME, autocorrect or dictation delivers it (see "Text input" below; the native mapping is `docs/rewrite/EDITOR.md` 10):
+    - `{ "compose": "ka", "selection": [1, 2] }` sets or updates the marked text (in place of the selection the composition started on); `selection` is the selection inside it, in UTF-16 offsets (default: the caret at its end).
+    - `{ "commitComposition": "か" }` ends it with its final text (which may differ from the marked text).
+    - `{ "cancelComposition": true }` ends it without text.
+    - `{ "replace": { "from": 7, "to": 10, "text": "the" } }` replaces positions `from..to` (ProseMirror positions, as in the notation) without the selection moving there: autocorrect, spell-check, dictation results. The selection is mapped past the change.
   - `{ "expect": { … } }` checks the state mid-way.
 - `expect`: `doc` (the box afterwards, selection included), `tasks` (every task that exists: title and status), `focus` (`editor`, or `title:t1` when the caret is in a task's title, where the doc shows no selection), `ignoreSelection: true` (compare without the selection; see Quirks).
 - `skip`: not run against that engine, with the reason.
@@ -55,6 +60,13 @@ Task ids: the ids in `doc` and `tasks` are names. Tasks the editor creates get t
 - Attributes are `key=value` with JSON values: `level=2`, `checked=true`, `href="https://x"`. Attributes at their default are left out of results; `<name/>` is an empty or leaf node.
 - Selection: `|` is a caret; `[` the anchor and `]` the head of a range (`]ab[` is a backwards selection); `^` right before a node selects that node; `[` at the very start and `]` at the very end is select-all. `\` escapes `< > | [ ] ^ \` in text.
 - Whitespace-only text containing a line break is ignored, so long expectations can be indented over several lines. Results put each top-level block on its own line.
+
+## Text input
+
+How the runners deliver the text-input steps:
+
+- **TipTap**: through Chromium's own input path over CDP (`page.context().newCDPSession(page)`), so ProseMirror sees the composition and DOM events a real input method causes. `compose` is `Input.imeSetComposition { text, selectionStart, selectionEnd }`; `commitComposition` is `Input.insertText` (which commits an open composition); `cancelComposition` is `Input.imeSetComposition` with empty text. `replace` selects `from..to` (`nv.beginReplace`, a ProseMirror selection, which ProseMirror puts in the DOM), types over it with `Input.insertText`, and puts the earlier selection back, mapped past the change (`nv.endReplace`), as a platform's text input does. A synthetic `beforeinput` of type `insertReplacementText` isn't used: it has no default action, and ProseMirror ignores it, so nothing would change. Each step waits 30 ms for ProseMirror's DOM observer.
+- **Rust**: `set_composition`, `commit_composition`, `cancel_composition` and `replace_range`, each followed by `finish()`.
 
 ## Fixtures
 
@@ -72,6 +84,7 @@ The harness seeds the app store: user `u1` (Tess Tester) in workspace `w1`; memb
 ## Findings (possible bugs in today's editor)
 
 - Type, undo, type something else, then redo: the redo removes the new typing (expected: nothing to redo). Scenario `undo/a new edit clears redo`, skipped on TipTap.
+- A replacement (autocorrect, spell-check, a dictation correction) runs input rules in today's editor, because ProseMirror reads the DOM change as typed text (`handleTextInput`): replacing `x` in `-x` with a space makes a list. The native contract doesn't run rules on replacements. Scenario `input/replacement doesn't run input rules`, skipped on TipTap.
 - After Tab in a task's title (making it a subtask), the title loses focus in the harness; Shift+Tab keeps it. Not yet checked in the app.
 
 ## Not covered yet

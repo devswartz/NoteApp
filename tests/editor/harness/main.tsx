@@ -97,12 +97,36 @@ function taskNames(editor: Editor, given: string[]): (id: string) => string {
   return (id) => names.get(id) ?? id;
 }
 
+// API calls still in flight (task creates, title saves, deletes), so the runner can wait for them: a reply
+// landing after the next scenario's load would put the earlier scenario's task back in the store.
+let inFlight = 0;
+const realFetch = window.fetch.bind(window);
+window.fetch = (...a: Parameters<typeof fetch>) => {
+  inFlight++;
+  return realFetch(...a).finally(() => inFlight--);
+};
+const tick = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/** Waits until no API call is in flight and the page has had a frame to apply the replies. */
+async function settle(timeoutMs = 5000) {
+  const end = Date.now() + timeoutMs;
+  for (let quiet = 0; quiet < 2 && Date.now() < end; ) {
+    await tick();
+    quiet = inFlight === 0 ? quiet + 1 : 0;
+  }
+}
+
 let given: string[] = [];
+let replacing: { anchor: number; head: number; from: number; to: number; size: number } | null = null;
 
 const nv = {
+  settle,
+
   async load(docText: string, tasks: Record<string, TaskIn> = {}) {
     current?.editor.destroy();
     current?.root.unmount();
+    // The last scenario's writes (unmounting can commit a title too) land before this one's store.
+    await settle();
     seedStore(tasks);
     given = Object.keys(tasks);
     const p = parse(docText, schema);
@@ -186,6 +210,30 @@ const nv = {
     const dt = new DataTransfer();
     for (const [type, value] of Object.entries(data)) dt.setData(type, value);
     current!.editor.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  },
+
+  /**
+   * A replacement (autocorrect, spell-check, dictation; README "Text input"): select from..to so
+   * ProseMirror puts the range in the DOM, for the runner to insert over it, then `endReplace`
+   * puts the selection back where it was, mapped past the change, as a platform's text input does.
+   */
+  beginReplace(from: number, to: number) {
+    const e = current!.editor;
+    const { anchor, head } = e.state.selection;
+    replacing = { anchor, head, from, to, size: e.state.doc.content.size };
+    e.view.focus();
+    e.view.dispatch(e.state.tr.setSelection(TextSelection.create(e.state.doc, from, to)));
+  },
+
+  endReplace() {
+    const e = current!.editor;
+    const r = replacing!;
+    replacing = null;
+    const delta = e.state.doc.content.size - r.size;
+    const map = (p: number) => (p <= r.from ? p : p >= r.to ? p + delta : r.to + delta);
+    const [a, h] = [map(r.anchor), map(r.head)];
+    const max = e.state.doc.content.size;
+    if (a <= max && h <= max) e.view.dispatch(e.state.tr.setSelection(TextSelection.create(e.state.doc, a, h)).setMeta('addToHistory', false));
   },
 
   /** Focus a task line's title, caret at the end (as clicking into it would). */

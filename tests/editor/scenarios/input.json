@@ -1,0 +1,181 @@
+{
+  "scenarios": [
+    {
+      "name": "compose then commit in an empty paragraph",
+      "doc": "<paragraph>|</paragraph>",
+      "steps": [
+        {"compose": "k"},
+        {"compose": "か"},
+        {"commitComposition": "か"}
+      ],
+      "expect": {"doc": "<paragraph>か|</paragraph>"}
+    },
+    {
+      "name": "pinyin updates the marked text, then commits",
+      "doc": "<paragraph>Hi |</paragraph>",
+      "steps": [
+        {"compose": "n"},
+        {"compose": "ni"},
+        {"compose": "nih"},
+        {"compose": "niha"},
+        {"compose": "nihao"},
+        {"expect": {"doc": "<paragraph>Hi nihao|</paragraph>"}},
+        {"commitComposition": "你好"}
+      ],
+      "expect": {"doc": "<paragraph>Hi 你好|</paragraph>"}
+    },
+    {
+      "name": "marked text keeps the IME's selection inside it",
+      "doc": "<paragraph>a|</paragraph>",
+      "steps": [
+        {"compose": "kana", "selection": [2, 4]},
+        {"expect": {"doc": "<paragraph>aka[na]</paragraph>"}},
+        {"compose": "kana", "selection": [1, 1]},
+        {"expect": {"doc": "<paragraph>ak|ana</paragraph>"}},
+        {"commitComposition": "かな"}
+      ],
+      "expect": {"doc": "<paragraph>aかな|</paragraph>"}
+    },
+    {
+      "name": "commit differs from the marked text (dead key)",
+      "doc": "<paragraph>caf|</paragraph>",
+      "steps": [
+        {"compose": "´"},
+        {"commitComposition": "é"}
+      ],
+      "expect": {"doc": "<paragraph>café|</paragraph>"}
+    },
+    {
+      "name": "cancel removes the marked text",
+      "doc": "<paragraph>ab|</paragraph>",
+      "steps": [
+        {"compose": "x"},
+        {"compose": "xy"},
+        {"cancelComposition": true}
+      ],
+      "expect": {"doc": "<paragraph>ab|</paragraph>"}
+    },
+    {
+      "name": "cancel after updates leaves the replaced selection deleted",
+      "doc": "<paragraph>a[bc]d</paragraph>",
+      "steps": [
+        {"compose": "x"},
+        {"compose": "xy"},
+        {"cancelComposition": true}
+      ],
+      "expect": {"doc": "<paragraph>a|d</paragraph>"}
+    },
+    {
+      "name": "composition over a selection replaces it",
+      "doc": "<paragraph>a[bc]d</paragraph>",
+      "steps": [
+        {"compose": "x"},
+        {"commitComposition": "日"}
+      ],
+      "expect": {"doc": "<paragraph>a日|d</paragraph>"}
+    },
+    {
+      "name": "composition inside bold text is bold",
+      "doc": "<paragraph><bold>a|b</bold></paragraph>",
+      "steps": [
+        {"compose": "に"},
+        {"commitComposition": "日本"}
+      ],
+      "expect": {"doc": "<paragraph><bold>a日本|b</bold></paragraph>"}
+    },
+    {
+      "name": "composition at the start of a list item",
+      "doc": "<bulletList><listItem><paragraph>|one</paragraph></listItem></bulletList><paragraph/>",
+      "steps": [
+        {"compose": "に"},
+        {"commitComposition": "日本"}
+      ],
+      "expect": {"doc": "<bulletList><listItem><paragraph>日本|one</paragraph></listItem></bulletList><paragraph/>"}
+    },
+    {
+      "name": "committing dash space through composition",
+      "doc": "<paragraph>|</paragraph>",
+      "steps": [
+        {"compose": "-"},
+        {"commitComposition": "-"},
+        {"compose": " "},
+        {"commitComposition": " "}
+      ],
+      "expect": {"doc": "<bulletList><listItem><paragraph>|</paragraph></listItem></bulletList><paragraph/>"}
+    },
+    {
+      "name": "committing dash space in one composition",
+      "doc": "<paragraph>|</paragraph>",
+      "steps": [
+        {"compose": "- "},
+        {"commitComposition": "- "}
+      ],
+      "expect": {"doc": "<bulletList><listItem><paragraph>|</paragraph></listItem></bulletList><paragraph/>"}
+    },
+    {
+      "name": "undo after a committed composition is one step",
+      "doc": "<paragraph>ab|</paragraph>",
+      "steps": [
+        {"type": "c"},
+        {"wait": 700},
+        {"compose": "k"},
+        {"compose": "か"},
+        {"commitComposition": "蚊"},
+        {"key": "Mod+z"}
+      ],
+      "expect": {"doc": "<paragraph>abc|</paragraph>"}
+    },
+    {
+      "name": "autocorrect replaces a word behind the caret, marks kept",
+      "doc": "<paragraph>I saw <italic>teh</italic> |</paragraph>",
+      "steps": [
+        {"replace": {"from": 7, "to": 10, "text": "the"}}
+      ],
+      "expect": {"doc": "<paragraph>I saw <italic>the</italic> |</paragraph>"}
+    },
+    {
+      "name": "autocorrect at the caret puts the caret after",
+      "doc": "<paragraph><bold>teh|</bold></paragraph>",
+      "steps": [
+        {"replace": {"from": 1, "to": 4, "text": "the"}}
+      ],
+      "expect": {"doc": "<paragraph><bold>the|</bold></paragraph>"}
+    },
+    {
+      "name": "replacement over a mark boundary",
+      "doc": "<paragraph>ab<bold>cd</bold> |</paragraph>",
+      "steps": [
+        {"replace": {"from": 2, "to": 4, "text": "XY"}}
+      ],
+      "expect": {"doc": "<paragraph>aXY<bold>d</bold> |</paragraph>"}
+    },
+    {
+      "name": "replacement doesn't run input rules",
+      "doc": "<paragraph>-x|</paragraph>",
+      "steps": [
+        {"replace": {"from": 2, "to": 3, "text": " "}}
+      ],
+      "expect": {"doc": "<paragraph>- |</paragraph>"},
+      "skip": {"tiptap": "today's editor reads a replacement as typed text (ProseMirror's handleTextInput), so input rules run on it and this line becomes a list; the contract (EDITOR.md 10) says replacements don't run them"}
+    },
+    {
+      "name": "undo after an autocorrect replacement is one step",
+      "doc": "<paragraph>teh |</paragraph>",
+      "steps": [
+        {"replace": {"from": 1, "to": 4, "text": "the"}},
+        {"key": "Mod+z"}
+      ],
+      "expect": {"doc": "<paragraph>teh </paragraph>", "ignoreSelection": true}
+    },
+    {
+      "name": "dictation draft then a long phrase",
+      "doc": "<paragraph>Note: |</paragraph>",
+      "steps": [
+        {"compose": "call Sam"},
+        {"compose": "call Sam about the plan"},
+        {"commitComposition": "call Sam about the plan tomorrow at 10, then email the team."}
+      ],
+      "expect": {"doc": "<paragraph>Note: call Sam about the plan tomorrow at 10, then email the team.|</paragraph>"}
+    }
+  ]
+}

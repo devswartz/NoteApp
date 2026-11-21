@@ -203,6 +203,33 @@ fn composition_is_one_change_on_commit() {
 }
 
 #[test]
+fn replacement_and_the_views_text() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    let before = box_text(&s, "a");
+    // The view's string starts with the box's first line, offsets matching positions - 1.
+    let text = s.text_for_view();
+    assert!(before.starts_with(text.lines().next().unwrap()));
+    assert_eq!(s.view_offset_to_pos(0), 1);
+    assert_eq!(s.pos_to_view_offset(1), 0);
+    // Autocorrect: the first two characters replaced, the caret where it was (shifted).
+    s.set_selection(3, 3);
+    assert!(s.replace_range(1, 3, "XYZ".into()));
+    assert_eq!(
+        s.state().selection,
+        EditorSelection::Text { anchor: 4, head: 4 }
+    );
+    let first: String = before.chars().skip(2).collect();
+    assert_eq!(box_text(&s, "a"), format!("XYZ{first}"));
+    assert!(s.undo());
+    assert_eq!(box_text(&s, "a"), before);
+    // finish_composition commits the marked text as it stands.
+    s.set_composition("ab".into(), 2, 2);
+    s.finish_composition();
+    assert_eq!(s.state().composing, None);
+    assert!(box_text(&s, "a").contains("ab"));
+}
+
+#[test]
 fn two_sessions_converge() {
     let (a, _) = open(page("canvas-boxes"), "box:a");
     let (b, _) = open(page("canvas-boxes"), "box:a");
