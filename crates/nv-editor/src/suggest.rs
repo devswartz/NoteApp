@@ -50,6 +50,62 @@ pub const SLASH_ITEMS: &[(&str, &str)] = &[
     ("Divider", "hr separator rule"),
 ];
 
+/// Each slash item's description and icon (today's `SlashMenu.tsx`; the icon is its Lucide
+/// name, for the view to map to its own symbols).
+pub const SLASH_DETAILS: &[(&str, &str, &str)] = &[
+    (
+        "Task",
+        "A real task, synced to your dashboard",
+        "circle-check",
+    ),
+    ("Text", "Plain paragraph", "type"),
+    ("Heading 1", "Large section heading", "heading-1"),
+    ("Heading 2", "Medium section heading", "heading-2"),
+    ("Heading 3", "Small section heading", "heading-3"),
+    (
+        "Checklist",
+        "Simple checkboxes (not tracked as tasks)",
+        "check-square",
+    ),
+    (
+        "Add checklist",
+        "A checklist at the top of this task's notes (its items are not tasks)",
+        "list-plus",
+    ),
+    ("Bulleted list", "Simple bulleted list", "list"),
+    ("Numbered list", "List with numbering", "list-ordered"),
+    (
+        "Toggle",
+        "Collapsible section with hidden content",
+        "chevron-right",
+    ),
+    ("Table", "Rows and columns", "table"),
+    ("Image", "Upload an image", "image"),
+    ("File attachment", "Upload any file", "paperclip"),
+    ("Link", "Link to a web page", "link-2"),
+    (
+        "Link to page",
+        "Link another page (or type [[)",
+        "file-symlink",
+    ),
+    ("Quote", "Capture a quotation", "quote"),
+    (
+        "Callout",
+        "Highlighted block with an icon",
+        "message-square-quote",
+    ),
+    ("Code block", "Code with syntax highlighting", "code-2"),
+    ("Divider", "Horizontal line", "minus"),
+];
+
+/// A slash item's (description, icon), or empty strings for an unknown title.
+pub fn slash_details(title: &str) -> (&'static str, &'static str) {
+    SLASH_DETAILS
+        .iter()
+        .find(|d| d.0 == title)
+        .map_or(("", ""), |d| (d.1, d.2))
+}
+
 /// Slash items for a query: title prefix first, then a word prefix in title or keywords, then a substring.
 pub fn filter_slash(query: &str) -> Vec<&'static str> {
     let q = query.trim().to_lowercase();
@@ -134,6 +190,46 @@ impl Editor {
             to: pos,
             query,
         })
+    }
+
+    /// The highlighted item of the open slash menu (an index into `filter_slash(query)`), or
+    /// None when no slash menu is open or nothing matches.
+    pub fn slash_highlight(&self) -> Option<usize> {
+        let s = self.suggestion().filter(|s| s.trigger == Trigger::Slash)?;
+        let n = filter_slash(&s.query).len();
+        if n == 0 {
+            return None;
+        }
+        Some(match &self.highlight {
+            Some((from, q, i)) if *from == s.from && *q == s.query => (*i).min(n - 1),
+            _ => 0,
+        })
+    }
+
+    /// Move the slash menu's highlight by `delta` items, wrapping (ArrowDown is 1, ArrowUp -1).
+    pub fn move_slash_highlight(&mut self, delta: i64) -> bool {
+        let Some(i) = self.slash_highlight() else {
+            return false;
+        };
+        let Some(s) = self.suggestion() else {
+            return false;
+        };
+        let n = filter_slash(&s.query).len() as i64;
+        let j = (i as i64 + delta).rem_euclid(n) as usize;
+        self.highlight = Some((s.from, s.query, j));
+        true
+    }
+
+    /// Run the highlighted slash item (Enter, Tab, a tap on the highlighted row).
+    pub fn pick_highlighted_slash(&mut self) -> bool {
+        let Some(i) = self.slash_highlight() else {
+            return false;
+        };
+        let Some(s) = self.suggestion() else {
+            return false;
+        };
+        let title = filter_slash(&s.query)[i];
+        self.pick_slash(title)
     }
 
     /// Escape on an open menu: it stays closed for this trigger.

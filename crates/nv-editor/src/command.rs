@@ -75,6 +75,8 @@ impl Editor {
             "pickPage" => self.pick_page(s(a, "pageId")),
             "pickMention" => self.pick_mention(s(a, "id"), s(a, "label")),
             "dismissSuggestion" => self.dismiss_suggestion(),
+            "moveHighlight" => self.move_slash_highlight(a["delta"].as_i64().unwrap_or(1)),
+            "pickHighlighted" => self.pick_highlighted_slash(),
             other => return Err(format!("command {other} not supported yet")),
         };
         Ok(done)

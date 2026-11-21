@@ -29,7 +29,9 @@ const LOAD: &str = "nv-editor-load";
 /// Origin of other people's changes applied through `apply_remote` (not undoable).
 pub const REMOTE: &str = "nv-editor-remote";
 
-/// Milliseconds for undo grouping: the wall clock, or a manual one tests move with `advance`.
+/// Milliseconds for undo grouping: a monotonic clock (milliseconds since the process first
+/// asked, so changing the system time can't merge or split steps), or a manual one tests move
+/// with `advance`.
 #[derive(Clone, Default)]
 pub struct Clock {
     manual: Option<Arc<AtomicU64>>,
@@ -44,9 +46,16 @@ impl Clock {
     pub fn now(&self) -> u64 {
         match &self.manual {
             Some(t) => t.load(Ordering::SeqCst),
-            None => std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis() as u64),
+            None => {
+                static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+                // Starts well above 0, as the manual clock does, so the first change can't group
+                // with an undo stack item stamped 0.
+                1_000_000
+                    + START
+                        .get_or_init(std::time::Instant::now)
+                        .elapsed()
+                        .as_millis() as u64
+            }
         }
     }
     pub fn advance(&self, ms: u64) {
@@ -132,6 +141,14 @@ impl Binding {
     /// The next change starts a new undo step, however soon it comes.
     pub fn stop_capturing(&mut self) {
         self.undo.reset();
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.undo.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.undo.can_redo()
     }
 
     /// Undo the newest change; returns the tree and the selection to show.

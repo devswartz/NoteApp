@@ -24,6 +24,9 @@ pub struct Editor {
     pub focus: Focus,
     /// The suggestion menu closed with Escape (its trigger's position).
     pub dismissed: Option<usize>,
+    /// The highlighted slash item: (the menu's trigger position, its query, the index). It
+    /// goes back to the first item when the query changes.
+    pub highlight: Option<(usize, String, usize)>,
     /// The task store behind the box's task lines.
     pub tasks: Box<dyn crate::tasks::TaskHost>,
     /// Task ids in the doc after the last change (to see which lines went or came back).
@@ -48,6 +51,7 @@ impl Editor {
             stored_marks: None,
             focus: Focus::Doc,
             dismissed: None,
+            highlight: None,
             tasks: Box::new(crate::tasks::NoTasks::default()),
             known_tasks: Vec::new(),
             binding: None,
@@ -1006,6 +1010,16 @@ impl Editor {
             b.stop_capturing();
         }
         self.last_sel = self.sel.clone();
+    }
+
+    /// Whether `undo` would change something (an open composition counts: undo commits it
+    /// first, then undoes that).
+    pub fn can_undo(&self) -> bool {
+        self.composition.is_some() || self.binding.as_ref().is_some_and(|b| b.can_undo())
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.composition.is_none() && self.binding.as_ref().is_some_and(|b| b.can_redo())
     }
 
     pub fn undo(&mut self) -> bool {
