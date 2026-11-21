@@ -47,6 +47,23 @@ final class CoreTests: XCTestCase {
         }
     }
 
+    func testCoreWithAStore() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nv-store-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let core = Core.withStore(serverUrl: "http://127.0.0.1:9", dbPath: dir.appendingPathComponent("store.db").path)
+        XCTAssertTrue(core.hasStore())
+        XCTAssertNil(core.cachedWorkspaces())
+        XCTAssertNil(core.cachedTree(workspaceId: "w1"))
+        XCTAssertNil(core.cachedTasks(workspaceId: "w1"))
+        XCTAssertNil(core.cachedPageDocument(pageId: "p1"))
+        XCTAssertThrowsError(try core.workspaces()) { error in
+            XCTAssertEqual(error as? CoreError, .SignedOut)
+        }
+        core.signOut()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("store.db").path))
+        XCTAssertFalse(Core(serverUrl: "http://127.0.0.1:9").hasStore())
+    }
+
     func testBoxContent() throws {
         let content = try pageContent(update: corpus("lists", "page.bin"))
         XCTAssertNil(content.first?.boxId)

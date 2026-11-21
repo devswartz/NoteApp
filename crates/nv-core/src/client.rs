@@ -3,13 +3,28 @@
 //! it, `restore_session` at launch), the workspace list, tree and tasks, and live pages.
 //!
 //! Calls block until the server answers: apps call them off the main thread (Swift: from a
-//! `Task`). Local-first reads from the on-device store replace most of these in M5/M7.
+//! `Task`).
+//!
+//! **The on-device store** (`nv-store`, a Core made with `Core::with_store`). Reads come in pairs:
+//!
+//! - `cached_workspaces()`, `cached_tree(..)`, `cached_tasks(..)`, `cached_page_document(..)`
+//!   are local and instant: the copy last stored, or none. Safe on the main thread.
+//! - `workspaces()`, `tree(..)`, `tasks(..)`, `page_document(..)` ask the server and store what
+//!   it sends. When the server can't be reached (`CoreError::Network`) they return the stored copy
+//!   instead, if there is one.
+//!
+//! So an app shows the cached copy first, then calls the server one and shows its answer. Locked
+//! pages are never stored (see `nv-store`); `sign_out` clears the store, and a sign-in as another
+//! user clears it first. A Core from `Core::new` has no store: the cached reads return none.
 
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use nv_api::ApiError;
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::Page;
+use nv_store::Store;
 use nv_sync::{LiveDoc, Status};
 use serde_json::json;
 
@@ -181,29 +196,168 @@ fn task(t: nv_api::Task) -> Task {
     }
 }
 
+fn workspace(w: nv_api::Workspace) -> Workspace {
+    Workspace {
+        id: w.id,
+        name: w.name,
+        role: w.role,
+        created_at: w.created_at,
+    }
+}
+
+fn tree(t: nv_api::Tree) -> Tree {
+    Tree {
+        notebooks: t
+            .notebooks
+            .into_iter()
+            .map(|n| Notebook {
+                id: n.id,
+                name: n.name,
+                color: n.color,
+                visibility: n.visibility,
+                position: n.position,
+            })
+            .collect(),
+        sections: t
+            .sections
+            .into_iter()
+            .map(|s| Section {
+                id: s.id,
+                notebook_id: s.notebook_id,
+                parent_id: s.parent_id,
+                name: s.name,
+                color: s.color,
+                position: s.position,
+            })
+            .collect(),
+        pages: t
+            .pages
+            .into_iter()
+            .map(|p| PageMeta {
+                id: p.id,
+                section_id: p.section_id,
+                title: p.title,
+                icon: p.icon,
+                position: p.position,
+                updated_at: p.updated_at,
+                locked: p.locked,
+            })
+            .collect(),
+    }
+}
+
+/// Open the database at `path`, replacing it when it can't be used (it is only a cache). If even
+/// that fails, an in-memory store, so the app still works (just without an offline copy).
+fn open_store(path: &Path) -> Option<Arc<Store>> {
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    Store::open_or_reset(path)
+        .or_else(|_| Store::open_in_memory())
+        .ok()
+        .map(Arc::new)
+}
+
+/// Save a page's document to the store (refused there for a locked page).
+fn save_page(store: &Option<Arc<Store>>, page_id: &str, doc: &nv_model::yrs::Doc) {
+    if let Some(s) = store {
+        let update = doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let _ = s.put_page_doc(page_id, &update);
+    }
+}
+
 /// The core for one server.
 #[derive(uniffi::Object)]
 pub struct Core {
     api: nv_api::Client,
+    store: Option<Arc<Store>>,
 }
 
 impl Core {
+    /// A core over any transport (tests use a scripted one), with a store at `db_path` (or none).
+    /// Not exported over uniffi.
+    pub fn with_transport(
+        server_url: &str,
+        transport: Box<dyn nv_api::Transport>,
+        db_path: Option<String>,
+    ) -> Arc<Core> {
+        Arc::new(Core {
+            api: nv_api::Client::with_transport(server_url, transport),
+            store: db_path.and_then(|p| open_store(Path::new(&p))),
+        })
+    }
+
     fn signed_in(&self, s: nv_api::AuthSession) -> SignedIn {
+        if let Some(store) = &self.store {
+            let _ = store.set_account(&s.user.id);
+        }
         SignedIn {
             user: user(s.user),
             refresh_token: s.refresh_token,
+        }
+    }
+
+    /// A server read, stored when it arrives; the stored copy when the server can't be reached.
+    fn fetch<T>(
+        &self,
+        fetch: impl FnOnce() -> Result<T, ApiError>,
+        put: impl FnOnce(&Store, &T),
+        cached: impl FnOnce(&Store) -> Option<T>,
+    ) -> Result<T, CoreError> {
+        match fetch() {
+            Ok(v) => {
+                if let Some(s) = &self.store {
+                    put(s, &v);
+                }
+                Ok(v)
+            }
+            Err(e) => {
+                let e = CoreError::from(e);
+                if matches!(e, CoreError::Network { .. }) {
+                    if let Some(v) = self.store.as_deref().and_then(cached) {
+                        return Ok(v);
+                    }
+                }
+                Err(e)
+            }
+        }
+    }
+
+    fn remember_task(&self, t: &nv_api::Task) {
+        if let Some(s) = &self.store {
+            let _ = s.put_task(t);
         }
     }
 }
 
 #[uniffi::export]
 impl Core {
-    /// A core talking to `server_url`, e.g. `https://app.notiveloapp.com`.
+    /// A core talking to `server_url`, e.g. `https://app.notiveloapp.com`, with no on-device
+    /// store: every read goes to the server and the `cached_*` reads return none.
     #[uniffi::constructor]
     pub fn new(server_url: String) -> Arc<Core> {
         Arc::new(Core {
             api: nv_api::Client::new(&server_url),
+            store: None,
         })
+    }
+
+    /// A core talking to `server_url` that keeps an on-device copy of the account's data in the
+    /// SQLite database at `db_path` (created if missing, with its folder; replaced if it can't be
+    /// read). Use one file per app install, e.g. in Application Support, excluded from backups.
+    #[uniffi::constructor]
+    pub fn with_store(server_url: String, db_path: String) -> Arc<Core> {
+        Arc::new(Core {
+            api: nv_api::Client::new(&server_url),
+            store: open_store(Path::new(&db_path)),
+        })
+    }
+
+    /// Whether this core keeps an on-device store.
+    pub fn has_store(&self) -> bool {
+        self.store.is_some()
     }
 
     pub fn sign_in(&self, email: String, password: String) -> Result<SignedIn, CoreError> {
@@ -234,78 +388,70 @@ impl Core {
         self.api.user().map(user)
     }
 
-    /// Sign out here and revoke the session on the server.
+    /// Sign out here, revoke the session on the server, and clear the on-device store.
     pub fn sign_out(&self) {
-        self.api.logout()
+        self.api.logout();
+        if let Some(s) = &self.store {
+            let _ = s.clear();
+        }
     }
 
+    /// The workspace list as last stored on this device, or none (local, instant).
+    pub fn cached_workspaces(&self) -> Option<Vec<Workspace>> {
+        let ws = self.store.as_ref()?.workspaces().ok()??;
+        Some(ws.into_iter().map(workspace).collect())
+    }
+
+    /// The workspace list from the server, stored on this device. Offline (`Network`): the
+    /// stored copy when there is one.
     pub fn workspaces(&self) -> Result<Vec<Workspace>, CoreError> {
-        Ok(self
-            .api
-            .workspaces()?
-            .into_iter()
-            .map(|w| Workspace {
-                id: w.id,
-                name: w.name,
-                role: w.role,
-                created_at: w.created_at,
-            })
-            .collect())
+        let ws = self.fetch(
+            || self.api.workspaces(),
+            |s, ws| {
+                let _ = s.put_workspaces(ws);
+            },
+            |s| s.workspaces().ok().flatten(),
+        )?;
+        Ok(ws.into_iter().map(workspace).collect())
     }
 
+    /// A workspace's tree as last stored on this device, or none (local, instant).
+    pub fn cached_tree(&self, workspace_id: String) -> Option<Tree> {
+        Some(tree(self.store.as_ref()?.tree(&workspace_id).ok()??))
+    }
+
+    /// A workspace's tree from the server, stored on this device (dropping the stored documents
+    /// of pages that are now locked or gone). Offline (`Network`): the stored copy when there is one.
     pub fn tree(&self, workspace_id: String) -> Result<Tree, CoreError> {
-        let t = self.api.tree(&workspace_id)?;
-        Ok(Tree {
-            notebooks: t
-                .notebooks
-                .into_iter()
-                .map(|n| Notebook {
-                    id: n.id,
-                    name: n.name,
-                    color: n.color,
-                    visibility: n.visibility,
-                    position: n.position,
-                })
-                .collect(),
-            sections: t
-                .sections
-                .into_iter()
-                .map(|s| Section {
-                    id: s.id,
-                    notebook_id: s.notebook_id,
-                    parent_id: s.parent_id,
-                    name: s.name,
-                    color: s.color,
-                    position: s.position,
-                })
-                .collect(),
-            pages: t
-                .pages
-                .into_iter()
-                .map(|p| PageMeta {
-                    id: p.id,
-                    section_id: p.section_id,
-                    title: p.title,
-                    icon: p.icon,
-                    position: p.position,
-                    updated_at: p.updated_at,
-                    locked: p.locked,
-                })
-                .collect(),
-        })
+        Ok(tree(self.fetch(
+            || self.api.tree(&workspace_id),
+            |s, t| {
+                let _ = s.put_tree(&workspace_id, t);
+            },
+            |s| s.tree(&workspace_id).ok().flatten(),
+        )?))
     }
 
-    /// The workspace's tasks, as the task views list them.
+    /// A workspace's tasks as last stored on this device, or none (local, instant).
+    pub fn cached_tasks(&self, workspace_id: String) -> Option<Vec<Task>> {
+        let ts = self.store.as_ref()?.tasks(&workspace_id).ok()??;
+        Some(ts.into_iter().map(task).collect())
+    }
+
+    /// The workspace's tasks from the server, as the task views list them, stored on this
+    /// device. Offline (`Network`): the stored copy when there is one.
     pub fn tasks(&self, workspace_id: String) -> Result<Vec<Task>, CoreError> {
-        Ok(self
-            .api
-            .tasks(&workspace_id)?
-            .into_iter()
-            .map(task)
-            .collect())
+        let ts = self.fetch(
+            || self.api.tasks(&workspace_id),
+            |s, ts| {
+                let _ = s.put_tasks(&workspace_id, ts);
+            },
+            |s| s.tasks(&workspace_id).ok().flatten(),
+        )?;
+        Ok(ts.into_iter().map(task).collect())
     }
 
-    /// A new task, standalone or on a page (`page_id`).
+    /// A new task, standalone or on a page (`page_id`). Added to the stored tasks.
     pub fn create_task(
         &self,
         workspace_id: String,
@@ -317,24 +463,44 @@ impl Core {
             page_id,
             ..Default::default()
         };
-        Ok(task(self.api.create_task(&workspace_id, &new)?))
+        let t = self.api.create_task(&workspace_id, &new)?;
+        self.remember_task(&t);
+        Ok(task(t))
     }
 
+    /// Tick or untick a task. The stored copy is updated.
     pub fn set_task_done(&self, task_id: String, done: bool) -> Result<Task, CoreError> {
-        Ok(task(self.api.update_task(
+        let t = self.api.update_task(
             &task_id,
             &json!({ "status": if done { "done" } else { "open" } }),
-        )?))
+        )?;
+        self.remember_task(&t);
+        Ok(task(t))
     }
 
-    /// A page's document as the server last saved it (a Yjs update; `read_page` reads it).
+    /// A page's document as last stored on this device, or none (local, instant). Never one
+    /// of a locked page.
+    pub fn cached_page_document(&self, page_id: String) -> Option<Vec<u8>> {
+        Some(self.store.as_ref()?.page_doc(&page_id).ok()??.doc)
+    }
+
+    /// A page's document as the server last saved it (a Yjs update; `read_page` reads it),
+    /// stored on this device unless the page is locked. Offline (`Network`): the stored copy
+    /// when there is one.
     pub fn page_document(&self, page_id: String) -> Result<Vec<u8>, CoreError> {
-        Ok(self.api.page_doc(&page_id)?)
+        self.fetch(
+            || self.api.page_doc(&page_id),
+            |s, d| {
+                let _ = s.put_page_doc(&page_id, d);
+            },
+            |s| s.page_doc(&page_id).ok().flatten().map(|d| d.doc),
+        )
     }
 
     /// Open a page live: the listener hears the sync status and every change (anyone's).
     /// Close it when the page leaves the screen. On `Closed { code: 4401 }` open it again (the
-    /// session refreshes first); 4403 means access is gone.
+    /// session refreshes first); 4403 means access is gone. With a store, the document is saved
+    /// on this device each time it is in sync and when it closes, unless the page is locked.
     pub fn open_page(
         &self,
         page_id: String,
@@ -342,8 +508,12 @@ impl Core {
     ) -> Result<Arc<LivePage>, CoreError> {
         let token = self.api.access_token()?;
         let doc = nv_model::new_doc();
+        let forbidden = Arc::new(AtomicBool::new(false));
         let relay = Arc::new(Relay {
+            page_id: page_id.clone(),
             doc: doc.clone(),
+            store: self.store.clone(),
+            forbidden: forbidden.clone(),
             listener,
         });
         let live = LiveDoc::connect(&self.api.collab_url(&page_id), &token, doc.clone(), relay)?;
@@ -351,6 +521,8 @@ impl Core {
             page_id,
             me: self.user(),
             doc,
+            store: self.store.clone(),
+            forbidden,
             live: Mutex::new(Some(live)),
         }))
     }
@@ -381,12 +553,29 @@ pub trait PageListener: Send + Sync {
 }
 
 struct Relay {
+    page_id: String,
     doc: nv_model::yrs::Doc,
+    store: Option<Arc<Store>>,
+    forbidden: Arc<AtomicBool>,
     listener: Arc<dyn PageListener>,
 }
 
 impl nv_sync::Listener for Relay {
     fn on_status(&self, s: Status) {
+        match &s {
+            // In sync with the server: keep this copy (the store refuses a locked page).
+            Status::Synced if !self.forbidden.load(Ordering::SeqCst) => {
+                save_page(&self.store, &self.page_id, &self.doc)
+            }
+            // Access is gone (the page was locked, or moved out of reach): drop any copy.
+            Status::Closed { code: 4403, .. } => {
+                self.forbidden.store(true, Ordering::SeqCst);
+                if let Some(store) = &self.store {
+                    let _ = store.forget_page(&self.page_id);
+                }
+            }
+            _ => {}
+        }
         self.listener.on_status(match s {
             Status::Connected => SyncStatus::Connected,
             Status::Synced => SyncStatus::Synced,
@@ -405,6 +594,9 @@ pub struct LivePage {
     page_id: String,
     me: Option<User>,
     doc: nv_model::yrs::Doc,
+    store: Option<Arc<Store>>,
+    /// Set when the server closed with 4403: nothing is saved after that.
+    forbidden: Arc<AtomicBool>,
     live: Mutex<Option<LiveDoc>>,
 }
 
@@ -457,10 +649,109 @@ impl LivePage {
             .unwrap_or_default()
     }
 
-    /// Close the connection (the listener hears `Closed { code: 1000 }`).
+    /// Close the connection (the listener hears `Closed { code: 1000 }`). With a store, the
+    /// document is saved on this device first, unless the page is locked or access ended.
     pub fn close(&self) {
         if let Some(mut l) = self.live.lock().unwrap().take() {
             l.close();
+            if !self.forbidden.load(Ordering::SeqCst) {
+                save_page(&self.store, &self.page_id, &self.doc);
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nv_model::yrs::{Text, WriteTxn};
+    use nv_sync::Listener;
+
+    struct Quiet;
+    impl PageListener for Quiet {
+        fn on_status(&self, _: SyncStatus) {}
+        fn on_change(&self, _: PageInfo) {}
+    }
+
+    /// A live page and its relay with no connection, sharing one store.
+    fn page(store: &Arc<Store>, page_id: &str) -> (Relay, LivePage) {
+        let doc = nv_model::new_doc();
+        {
+            let mut txn = doc.transact_mut();
+            let text = txn.get_or_insert_text("t");
+            text.push(&mut txn, "hello");
+        }
+        let forbidden = Arc::new(AtomicBool::new(false));
+        let relay = Relay {
+            page_id: page_id.into(),
+            doc: doc.clone(),
+            store: Some(store.clone()),
+            forbidden: forbidden.clone(),
+            listener: Arc::new(Quiet),
+        };
+        let live = LivePage {
+            page_id: page_id.into(),
+            me: None,
+            doc,
+            store: Some(store.clone()),
+            forbidden,
+            live: Mutex::new(None),
+        };
+        (relay, live)
+    }
+
+    fn tree_with(pages: &[(&str, bool)]) -> nv_api::Tree {
+        nv_api::Tree {
+            notebooks: vec![],
+            sections: vec![],
+            pages: pages
+                .iter()
+                .map(|(id, locked)| nv_api::PageMeta {
+                    id: (*id).into(),
+                    section_id: "s1".into(),
+                    title: String::new(),
+                    icon: None,
+                    kind: "canvas".into(),
+                    position: 0.0,
+                    updated_at: String::new(),
+                    updated_by: None,
+                    locked: *locked,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_live_page_is_saved_on_sync_unless_locked() {
+        let store = Arc::new(Store::open_in_memory().unwrap());
+        store
+            .put_tree("w1", &tree_with(&[("open", false), ("locked", true)]))
+            .unwrap();
+        let (relay, live) = page(&store, "open");
+        relay.on_status(Status::Synced);
+        assert_eq!(
+            store.page_doc("open").unwrap().unwrap().doc,
+            live.document()
+        );
+
+        let (relay, _) = page(&store, "locked");
+        relay.on_status(Status::Synced);
+        assert_eq!(store.page_doc("locked").unwrap(), None);
+    }
+
+    #[test]
+    fn a_page_whose_access_ended_is_forgotten_and_not_saved_again() {
+        let store = Arc::new(Store::open_in_memory().unwrap());
+        let (relay, live) = page(&store, "p1");
+        relay.on_status(Status::Synced);
+        assert!(store.page_doc("p1").unwrap().is_some());
+        relay.on_status(Status::Closed {
+            code: 4403,
+            reason: "no access".into(),
+        });
+        assert_eq!(store.page_doc("p1").unwrap(), None);
+        live.close();
+        relay.on_status(Status::Synced);
+        assert_eq!(store.page_doc("p1").unwrap(), None);
     }
 }
