@@ -449,6 +449,22 @@ impl Client {
         )
     }
 
+    /// Change a task's title (PATCH `{ title }`; the server trims it).
+    pub fn set_task_title(&self, task_id: &str, title: &str) -> Result<Task, ApiError> {
+        self.update_task(task_id, &json!({ "title": title }))
+    }
+
+    /// Delete a task (DELETE /tasks/:id); its subtasks go with it. A task that is already gone
+    /// (or never reached the server) answers 404.
+    pub fn delete_task(&self, task_id: &str) -> Result<(), ApiError> {
+        let _: Value = self.call(
+            "DELETE",
+            &format!("/tasks/{}", encode_component(task_id)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// A page's stored document (a Yjs update), as the server last saved it.
     pub fn page_doc(&self, page_id: &str) -> Result<Vec<u8>, ApiError> {
         let v: Value = self.call(

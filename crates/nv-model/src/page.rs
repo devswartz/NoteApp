@@ -252,6 +252,18 @@ impl Page {
         }
     }
 
+    /// One content fragment of `doc` (`default`, or `box:<id>` whether or not the box has
+    /// geometry), read on its own: the rest of the page isn't parsed. A fragment that doesn't
+    /// exist reads as empty.
+    pub fn fragment(doc: &Doc, name: &str) -> Fragment {
+        let txn = doc.transact();
+        Fragment {
+            nodes: tree::read_fragment(&txn, name),
+            box_id: name.strip_prefix("box:").map(String::from),
+            name: name.to_string(),
+        }
+    }
+
     /// The layout the content is in: canvas if it has boxes, else document.
     pub fn kind(&self) -> DocKind {
         if self.has_box_entries {
@@ -277,5 +289,64 @@ impl Page {
 
     pub fn has_ink(&self) -> bool {
         !self.ink.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use yrs::{MapPrelim, WriteTxn, XmlElementPrelim, XmlFragment, XmlTextPrelim};
+
+    /// A canvas page with one box that has geometry (`a`) and one fragment without (`b`).
+    fn page() -> Doc {
+        let doc = new_doc();
+        let mut txn = doc.transact_mut();
+        let boxes = txn.get_or_insert_map(BOXES_KEY);
+        boxes.insert(
+            &mut txn,
+            "a",
+            MapPrelim::from([("x", Any::from(0.0)), ("y", Any::from(0.0))]),
+        );
+        for (field, text) in [("box:a", "in a"), ("box:b", "in b")] {
+            let frag = txn.get_or_insert_xml_fragment(field);
+            let p = frag.push_back(&mut txn, XmlElementPrelim::empty("paragraph"));
+            p.push_back(&mut txn, XmlTextPrelim::new(text));
+        }
+        drop(txn);
+        doc
+    }
+
+    fn text(f: &Fragment) -> String {
+        f.nodes
+            .iter()
+            .flat_map(|n| n.children())
+            .filter_map(|n| match n {
+                Node::Text(runs) => Some(tree::runs_text(runs)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_fragment_reads_on_its_own_with_or_without_geometry() {
+        let doc = page();
+        // `read` lists only boxes with geometry.
+        let read = Page::read(&doc);
+        assert_eq!(read.fragments.len(), 2);
+        let a = Page::fragment(&doc, "box:a");
+        assert_eq!(a, read.fragments[1]);
+        assert_eq!(text(&a), "in a");
+
+        let b = Page::fragment(&doc, "box:b");
+        assert_eq!(b.box_id.as_deref(), Some("b"));
+        assert_eq!(text(&b), "in b");
+
+        let none = Page::fragment(&doc, "box:missing");
+        assert!(none.nodes.is_empty());
+        let default = Page::fragment(&doc, DEFAULT_FIELD);
+        assert_eq!((default.box_id, default.nodes.len()), (None, 0));
+
+        let txn = doc.transact();
+        assert_eq!(tree::read_fragment(&txn, "box:b"), b.nodes);
     }
 }

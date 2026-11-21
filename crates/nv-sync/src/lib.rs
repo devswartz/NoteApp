@@ -11,5 +11,5 @@ pub use live::{
     open_socket, AuthError, Backoff, ConnectError, Listener, LiveDoc, Options, Outbox, Session,
     Status,
 };
-pub use protocol::{Handled, SyncDoc, SyncError, REMOTE_ORIGIN};
+pub use protocol::{Handled, RemoteHook, RemoteHooks, SyncDoc, SyncError, REMOTE_ORIGIN};
 pub use yrs;
