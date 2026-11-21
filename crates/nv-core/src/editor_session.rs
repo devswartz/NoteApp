@@ -12,7 +12,7 @@
 use std::sync::{Arc, Mutex};
 
 use nv_editor::bind::Clock;
-use nv_editor::suggest::{filter_slash, Trigger};
+use nv_editor::suggest::{filter_slash, slash_details, Trigger};
 use nv_editor::{Editor, Focus, Selection, TaskHost};
 use nv_model::yrs::updates::decoder::Decode;
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
@@ -116,16 +116,98 @@ pub enum SuggestionTrigger {
     Mention,
 }
 
+/// A row of the slash menu.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SuggestionItem {
+    /// What `pickSlash {title}` takes (the item's title).
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    /// Today's icon, by its Lucide name (`heading-1`, `list-ordered`, ...): the view maps it to
+    /// its own symbols.
+    pub icon: String,
+}
+
 /// An open suggestion menu at the caret.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct EditorSuggestion {
     pub trigger: SuggestionTrigger,
     pub query: String,
-    /// The range a pick replaces (the trigger characters and the query).
+    /// The range a pick replaces (the trigger characters and the query), as positions.
     pub from: u32,
     pub to: u32,
-    /// For `/`: the matching items, in menu order.
+    /// The same range as offsets in `text_for_view()`: anchor the popup at `view_from`'s rect.
+    pub view_from: u32,
+    pub view_to: u32,
+    /// For `/`: the matching items' titles, in menu order.
     pub slash_items: Vec<String>,
+    /// For `/`: the matching items, in menu order.
+    pub items: Vec<SuggestionItem>,
+    /// For `/`: the highlighted row (an index into `items`); ArrowUp / ArrowDown move it and
+    /// Enter / Tab pick it (through `key`), or `move_suggestion_highlight` and
+    /// `pick_suggestion`. For `[[` and `@` the view lists pages or people and keeps its own
+    /// highlight. None when nothing matches.
+    pub highlighted: Option<u32>,
+}
+
+/// A range or selection as offsets in `text_for_view()` (UTF-16 units).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct ViewRange {
+    pub anchor: u32,
+    pub head: u32,
+}
+
+/// One line of `text_for_view()`: where it is, and what to draw it as.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ViewLine {
+    /// Where the line starts in the view's string, and its length (UTF-16 units, no line feed).
+    pub offset: u32,
+    pub len: u32,
+    /// For a text line, the position where its block's content starts; for an object line
+    /// (one U+FFFC), the position before its node.
+    pub pos: u32,
+    /// False for an object line (a rule, an image, a task's title line).
+    pub is_text: bool,
+    /// The block's node type (`paragraph`, `heading`, `codeBlock`, `horizontalRule`,
+    /// `image`, `taskRef`, ...).
+    pub kind: String,
+    /// A heading's level, 0 otherwise.
+    pub level: u8,
+    /// The nodes the line sits in, from the box down (`bulletList`, `listItem`, `blockquote`,
+    /// `callout`, `taskRef` for a task's notes, ...): indentation, quote bars, list depth.
+    pub containers: Vec<String>,
+    /// On a list item's first line: a bullet, or the item's number as exports write it (`1.`).
+    pub marker: Option<String>,
+    /// On a checklist item's first line: whether it is ticked.
+    pub checked: Option<bool>,
+    /// On a task's title line: the task's id (its title comes from the task list).
+    pub task_id: Option<String>,
+}
+
+/// The marked text while composing, as offsets in `text_for_view()`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct ViewMarked {
+    /// `markedTextRange`.
+    pub from: u32,
+    pub to: u32,
+    /// The selection inside it (absolute offsets, within `from..=to`).
+    pub sel_from: u32,
+    pub sel_to: u32,
+}
+
+/// The box as the platform's text input and layout see it (EDITOR.md 10.1).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ViewState {
+    /// `text_for_view()`: a line per block, joined by line feeds; U+FFFC for atoms and object
+    /// lines.
+    pub text: String,
+    /// Its length in UTF-16 units.
+    pub len: u32,
+    pub lines: Vec<ViewLine>,
+    /// `selectedTextRange`: the selection as offsets (a node selection is its U+FFFC,
+    /// select-all is `0..len`).
+    pub selection: ViewRange,
+    pub marked: Option<ViewMarked>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
@@ -154,6 +236,9 @@ pub struct EditorState {
     /// The IME's marked text, while composing (draw it underlined).
     pub composing: Option<TextRange>,
     pub remote_cursors: Vec<RemoteCursor>,
+    /// For the view's `UndoManager` (`canUndo`, `canRedo`) and the undo buttons.
+    pub can_undo: bool,
+    pub can_redo: bool,
 }
 
 fn pos(p: usize) -> u32 {
@@ -183,16 +268,14 @@ impl EditorSession {
     }
 }
 
-#[uniffi::export]
 impl EditorSession {
-    /// Open `field` (`box:<id>`, or `default` on an old single-column page) of a page document
-    /// (a full Yjs update). Opening adds the trailing paragraph if the box lacks one: send
-    /// `encode_update_since` afterwards like any edit.
-    #[uniffi::constructor]
-    pub fn open(
+    /// `open` with the clock undo groups by (`Clock::manual()` in tests; `open` uses the
+    /// monotonic clock). Not in the foreign API.
+    pub fn open_with_clock(
         update: Vec<u8>,
         field: String,
         tasks: Arc<dyn TaskCallbacks>,
+        clock: Clock,
     ) -> Result<Arc<EditorSession>, EditorError> {
         let doc = nv_model::doc_from_update(&update).map_err(invalid)?;
         if field != "default" {
@@ -204,10 +287,25 @@ impl EditorSession {
                 return Err(EditorError::NoSuchBox { field });
             }
         }
-        let ed = Editor::open(doc, &field, Box::new(Host(tasks)), Clock::default());
+        let ed = Editor::open(doc, &field, Box::new(Host(tasks)), clock);
         Ok(Arc::new(EditorSession {
             editor: Mutex::new(ed),
         }))
+    }
+}
+
+#[uniffi::export]
+impl EditorSession {
+    /// Open `field` (`box:<id>`, or `default` on an old single-column page) of a page document
+    /// (a full Yjs update). Opening adds the trailing paragraph if the box lacks one: send
+    /// `encode_update_since` afterwards like any edit.
+    #[uniffi::constructor]
+    pub fn open(
+        update: Vec<u8>,
+        field: String,
+        tasks: Arc<dyn TaskCallbacks>,
+    ) -> Result<Arc<EditorSession>, EditorError> {
+        EditorSession::open_with_clock(update, field, tasks, Clock::default())
     }
 
     /// Typed text (runs input rules). While composing, it replaces the marked text (as an IME
@@ -283,6 +381,16 @@ impl EditorSession {
 
     pub fn redo(&self) -> bool {
         self.with(|ed| ed.redo())
+    }
+
+    /// Whether `undo` would change something. Typing within 500 ms of the last change (on a
+    /// monotonic clock) is one step with it.
+    pub fn can_undo(&self) -> bool {
+        self.with(|ed| ed.can_undo())
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.with(|ed| ed.can_redo())
     }
 
     /// Put the caret or a text selection in the box's text (positions are clamped).
@@ -363,6 +471,90 @@ impl EditorSession {
         self.with(|ed| pos(ed.pos_to_view_offset(pos_ as usize)))
     }
 
+    /// The view's text with its line table, the selection and the marked text, all in view
+    /// offsets: what a UITextInput / TextKit 2 view lays out and answers the input system from.
+    /// Rects are the view's (its layout of these lines).
+    pub fn view_state(&self) -> ViewState {
+        self.with(|ed| {
+            let v = ed.text_for_view();
+            let (anchor, head) = ed.view_selection();
+            ViewState {
+                len: pos(v.len()),
+                lines: v
+                    .lines
+                    .iter()
+                    .map(|l| ViewLine {
+                        offset: pos(l.offset),
+                        len: pos(l.len),
+                        pos: pos(l.pos),
+                        is_text: l.text,
+                        kind: l.kind.clone(),
+                        level: l.level,
+                        containers: l.containers.clone(),
+                        marker: l.marker.clone(),
+                        checked: l.checked,
+                        task_id: l.task_id.clone(),
+                    })
+                    .collect(),
+                text: v.text,
+                selection: ViewRange {
+                    anchor: pos(anchor),
+                    head: pos(head),
+                },
+                marked: ed.view_composition().map(|((f, t), (a, b))| ViewMarked {
+                    from: pos(f),
+                    to: pos(t),
+                    sel_from: pos(a),
+                    sel_to: pos(b),
+                }),
+            }
+        })
+    }
+
+    /// The selection as offsets in `text_for_view()` (`selectedTextRange`'s getter).
+    pub fn view_selection(&self) -> ViewRange {
+        self.with(|ed| {
+            let (a, h) = ed.view_selection();
+            ViewRange {
+                anchor: pos(a),
+                head: pos(h),
+            }
+        })
+    }
+
+    /// Set the selection from offsets in `text_for_view()` (`selectedTextRange`'s setter, taps,
+    /// handles). Exactly one object line's U+FFFC selects its node; the whole string is
+    /// select-all; a caret on an object line goes to the nearest text. Ends a composition.
+    pub fn set_view_selection(&self, anchor: u32, head: u32) {
+        self.with(|ed| ed.set_view_selection(anchor as usize, head as usize))
+    }
+
+    /// `replace_range` with offsets in `text_for_view()` (`replace(_:withText:)`).
+    pub fn replace_view_range(&self, from: u32, to: u32, text: String) -> bool {
+        self.edit(|ed| {
+            let v = ed.text_for_view();
+            let (f, t) = (v.to_pos(from as usize), v.to_pos(to as usize));
+            ed.replace_range(f, t, &text)
+        })
+    }
+
+    /// Move the slash menu's highlight by `delta` rows, wrapping. False when no slash menu is
+    /// open.
+    pub fn move_suggestion_highlight(&self, delta: i32) -> bool {
+        self.with(|ed| ed.move_slash_highlight(delta as i64))
+    }
+
+    /// Run the slash menu's highlighted item. False when no slash menu is open (for `[[` and
+    /// `@`, pick with `pickPage` / `pickMention`).
+    pub fn pick_suggestion(&self) -> bool {
+        self.edit(|ed| ed.pick_highlighted_slash())
+    }
+
+    /// Close the open menu (Escape, a tap elsewhere); it stays closed for this trigger.
+    pub fn dismiss_suggestion(&self) -> bool {
+        self.with(|ed| ed.dismiss_suggestion())
+    }
+
     /// What to draw now.
     pub fn state(&self) -> EditorState {
         self.with(|ed| {
@@ -374,23 +566,39 @@ impl EditorSession {
                 Selection::Node { pos: p } => EditorSelection::Node { pos: pos(p) },
                 Selection::All => EditorSelection::All,
             };
-            let suggestion = ed.suggestion().map(|s| EditorSuggestion {
-                trigger: match s.trigger {
-                    Trigger::Slash => SuggestionTrigger::Slash,
-                    Trigger::PageLink => SuggestionTrigger::PageLink,
-                    Trigger::Mention => SuggestionTrigger::Mention,
-                },
-                slash_items: if s.trigger == Trigger::Slash {
+            let suggestion = ed.suggestion().map(|s| {
+                let titles = if s.trigger == Trigger::Slash {
                     filter_slash(&s.query)
-                        .into_iter()
-                        .map(String::from)
-                        .collect()
                 } else {
                     Vec::new()
-                },
-                query: s.query,
-                from: pos(s.from),
-                to: pos(s.to),
+                };
+                let v = ed.text_for_view();
+                EditorSuggestion {
+                    trigger: match s.trigger {
+                        Trigger::Slash => SuggestionTrigger::Slash,
+                        Trigger::PageLink => SuggestionTrigger::PageLink,
+                        Trigger::Mention => SuggestionTrigger::Mention,
+                    },
+                    items: titles
+                        .iter()
+                        .map(|t| {
+                            let (description, icon) = slash_details(t);
+                            SuggestionItem {
+                                id: t.to_string(),
+                                label: t.to_string(),
+                                description: description.into(),
+                                icon: icon.into(),
+                            }
+                        })
+                        .collect(),
+                    slash_items: titles.into_iter().map(String::from).collect(),
+                    highlighted: ed.slash_highlight().map(pos),
+                    query: s.query,
+                    view_from: pos(v.to_offset(s.from)),
+                    view_to: pos(v.to_offset(s.to)),
+                    from: pos(s.from),
+                    to: pos(s.to),
+                }
             });
             EditorState {
                 doc_json: ed.doc.to_json().to_string(),
@@ -405,6 +613,8 @@ impl EditorSession {
                     to: pos(c.to),
                 }),
                 remote_cursors: remote_cursors(ed),
+                can_undo: ed.can_undo(),
+                can_redo: ed.can_redo(),
             }
         })
     }

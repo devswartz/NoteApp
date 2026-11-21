@@ -303,3 +303,327 @@ fn tasks_go_through_the_callbacks() {
         s.state().doc_json
     );
 }
+
+/// Box a of canvas-boxes emptied, then: a heading, a bulleted list of two, a numbered item and
+/// a rule (typed through the session, input rules included).
+fn structured() -> Arc<EditorSession> {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    s.command("selectAll".into(), String::new()).unwrap();
+    s.key("Backspace".into());
+    s.insert_text("Title".into());
+    s.command("setHeading".into(), r#"{"level":1}"#.into())
+        .unwrap();
+    s.key("Enter".into());
+    for t in ["-", " ", "one"] {
+        s.insert_text(t.into());
+    }
+    s.key("Enter".into());
+    s.insert_text("two".into());
+    s.key("Enter".into());
+    s.key("Enter".into());
+    for t in ["1", ".", " ", "first"] {
+        s.insert_text(t.into());
+    }
+    s.key("Enter".into());
+    s.key("Enter".into());
+    s
+}
+
+#[test]
+fn the_views_lines_and_selection_in_offsets() {
+    let s = structured();
+    let v = s.view_state();
+    assert_eq!(v.text, "Title\none\ntwo\nfirst\n\n");
+    assert_eq!(v.len, 21);
+    let l = &v.lines;
+    assert_eq!(
+        (l[0].kind.as_str(), l[0].level, l[0].offset),
+        ("heading", 1, 0)
+    );
+    assert_eq!(l[1].containers, ["bulletList", "listItem"]);
+    assert_eq!(l[1].marker.as_deref(), Some("\u{2022}"));
+    assert_eq!((l[2].offset, l[2].len), (10, 3));
+    assert_eq!(l[3].containers, ["orderedList", "listItem"]);
+    assert_eq!(l[3].marker.as_deref(), Some("1."));
+    assert!(l[4].containers.is_empty() && l[4].marker.is_none());
+    // A selection set in view offsets ("ne\ntw") reads back the same, and is the engine's
+    // positions underneath.
+    s.set_view_selection(7, 12);
+    assert_eq!(
+        s.view_selection(),
+        ViewRange {
+            anchor: 7,
+            head: 12
+        }
+    );
+    assert_eq!(
+        s.state().selection,
+        EditorSelection::Text {
+            anchor: s.view_offset_to_pos(7),
+            head: s.view_offset_to_pos(12)
+        }
+    );
+    // Backwards selections keep their direction.
+    s.set_view_selection(12, 7);
+    assert_eq!(
+        s.view_state().selection,
+        ViewRange {
+            anchor: 12,
+            head: 7
+        }
+    );
+    // All of the string is select-all.
+    s.set_view_selection(0, 21);
+    assert_eq!(s.state().selection, EditorSelection::All);
+    assert_eq!(
+        s.view_selection(),
+        ViewRange {
+            anchor: 0,
+            head: 21
+        }
+    );
+    // A rule is an object line: its U+FFFC alone selects the node.
+    s.set_view_selection(20, 20);
+    s.insert_text("/".into());
+    s.insert_text("divider".into());
+    assert!(s.key("Enter".into()));
+    let v = s.view_state();
+    let rule = v
+        .lines
+        .iter()
+        .find(|l| l.kind == "horizontalRule")
+        .unwrap()
+        .clone();
+    assert!(!rule.is_text);
+    assert_eq!(
+        v.text.encode_utf16().nth(rule.offset as usize),
+        Some(0xfffc)
+    );
+    s.set_view_selection(rule.offset, rule.offset + 1);
+    assert_eq!(s.state().selection, EditorSelection::Node { pos: rule.pos });
+    assert_eq!(
+        s.view_selection(),
+        ViewRange {
+            anchor: rule.offset,
+            head: rule.offset + 1
+        }
+    );
+    // A caret at the rule's line start goes back to the text before it.
+    s.set_view_selection(rule.offset, rule.offset);
+    let EditorSelection::Text { head, .. } = s.state().selection else {
+        panic!("not a caret");
+    };
+    assert_eq!(s.pos_to_view_offset(head), rule.offset - 1);
+    // Replacing in view offsets: "two" becomes "2".
+    assert!(s.replace_view_range(10, 13, "2".into()));
+    assert!(s.view_state().text.starts_with("Title\none\n2\nfirst"));
+}
+
+#[test]
+fn marked_text_in_view_offsets() {
+    let s = structured();
+    // The caret after "two"; compose there.
+    s.set_view_selection(13, 13);
+    s.set_composition("k".into(), 1, 1);
+    s.set_composition("かな".into(), 0, 2);
+    let v = s.view_state();
+    assert_eq!(
+        v.marked,
+        Some(ViewMarked {
+            from: 13,
+            to: 15,
+            sel_from: 13,
+            sel_to: 15
+        })
+    );
+    assert_eq!(
+        v.selection,
+        ViewRange {
+            anchor: 13,
+            head: 15
+        }
+    );
+    assert!(v.text.contains("twoかな\n"));
+    // The positions agree with the view offsets.
+    let c = s.state().composing.unwrap();
+    assert_eq!(
+        (s.pos_to_view_offset(c.from), s.pos_to_view_offset(c.to)),
+        (13, 15)
+    );
+    // The caret inside the marked text.
+    s.set_composition("かな".into(), 1, 1);
+    let m = s.view_state().marked.unwrap();
+    assert_eq!((m.sel_from, m.sel_to), (14, 14));
+    s.commit_composition("仮名".into());
+    let v = s.view_state();
+    assert_eq!(v.marked, None);
+    assert!(v.text.contains("two仮名\n"));
+    assert_eq!(
+        v.selection,
+        ViewRange {
+            anchor: 15,
+            head: 15
+        }
+    );
+    // A composition over a selection set in view offsets replaces it; cancel removes both.
+    s.set_view_selection(6, 9);
+    s.set_composition("x".into(), 1, 1);
+    let m = s.view_state().marked.unwrap();
+    assert_eq!((m.from, m.to), (6, 7));
+    s.cancel_composition();
+    assert_eq!(s.view_state().marked, None);
+    assert!(s.view_state().text.starts_with("Title\n\ntwo"));
+}
+
+#[test]
+fn slash_menu_rows_highlight_and_anchor() {
+    let s = structured();
+    s.set_view_selection(20, 20);
+    s.insert_text("/".into());
+    s.insert_text("h".into());
+    let sug = s.state().suggestion.unwrap();
+    assert_eq!(sug.trigger, SuggestionTrigger::Slash);
+    assert_eq!((sug.view_from, sug.view_to), (20, 22));
+    assert_eq!(s.view_offset_to_pos(sug.view_from), sug.from);
+    assert_eq!(sug.items[0].id, "Heading 1");
+    assert_eq!(sug.items[0].icon, "heading-1");
+    assert_eq!(sug.items[0].description, "Large section heading");
+    assert_eq!(sug.items.len(), sug.slash_items.len());
+    assert_eq!(sug.highlighted, Some(0));
+    // ArrowDown moves the highlight, ArrowUp wraps to the last row, Enter picks.
+    assert!(s.key("ArrowDown".into()));
+    assert_eq!(s.state().suggestion.unwrap().highlighted, Some(1));
+    assert!(s.move_suggestion_highlight(-2));
+    assert_eq!(
+        s.state().suggestion.unwrap().highlighted,
+        Some(sug.items.len() as u32 - 1)
+    );
+    assert!(s.move_suggestion_highlight(2));
+    // Typing more resets the highlight to the first match.
+    s.insert_text("e".into());
+    assert_eq!(s.state().suggestion.unwrap().highlighted, Some(0));
+    assert!(s.key("ArrowDown".into()));
+    assert!(s.key("Enter".into()));
+    assert!(s.state().suggestion.is_none());
+    assert!(s
+        .state()
+        .doc_json
+        .contains(r#"{"attrs":{"level":2},"type":"heading"}"#));
+    // pick_suggestion runs the highlighted row; dismissing closes the menu for that trigger.
+    s.insert_text("/".into());
+    s.insert_text("quo".into());
+    assert!(s.pick_suggestion());
+    assert!(s.state().doc_json.contains("blockquote"));
+    s.insert_text("/".into());
+    assert!(s.dismiss_suggestion());
+    assert!(s.state().suggestion.is_none());
+    assert!(!s.pick_suggestion());
+    // `[[` has the view's list: no rows, no highlight, but the anchor.
+    s.insert_text(" [[pa".into());
+    let sug = s.state().suggestion.unwrap();
+    assert_eq!(sug.trigger, SuggestionTrigger::PageLink);
+    assert_eq!(sug.query, "pa");
+    assert!(sug.items.is_empty() && sug.highlighted.is_none());
+    assert_eq!(sug.view_to - sug.view_from, 4);
+    assert!(!s.move_suggestion_highlight(1));
+}
+
+#[test]
+fn clipboard_through_view_selections() {
+    let s = structured();
+    // "one" and "two": the list items.
+    s.set_view_selection(6, 13);
+    let c = s.copy();
+    assert!(c.text.contains("one") && c.text.contains("two"), "{c:?}");
+    assert!(c.html.contains("<ul>") && c.html.contains("<li>"), "{c:?}");
+    let cut = s.cut();
+    assert_eq!(cut, c);
+    assert!(!s.view_state().text.contains("one"));
+    // Paste the HTML back at the empty line at the end: a list again.
+    let end = s.view_state().len;
+    s.set_view_selection(end, end);
+    assert!(s.paste(cut.html.clone(), cut.text.clone()));
+    let v = s.view_state();
+    let one = v
+        .lines
+        .iter()
+        .find(|l| {
+            v.text
+                .encode_utf16()
+                .skip(l.offset as usize)
+                .take(3)
+                .eq("one".encode_utf16())
+        })
+        .unwrap();
+    assert_eq!(one.marker.as_deref(), Some("\u{2022}"));
+    // Plain text only: lines become paragraphs.
+    let end = s.view_state().len;
+    s.set_view_selection(end, end);
+    assert!(s.paste(String::new(), "alpha\nbeta".into()));
+    assert!(s.view_state().text.contains("alpha\nbeta"));
+    // Copy of a node selection (a rule) is its HTML.
+    s.set_view_selection(0, 0);
+    s.insert_text("/".into());
+    s.insert_text("divider".into());
+    s.key("Enter".into());
+    let rule = s
+        .view_state()
+        .lines
+        .into_iter()
+        .find(|l| l.kind == "horizontalRule")
+        .unwrap();
+    s.set_view_selection(rule.offset, rule.offset + 1);
+    assert!(s.copy().html.contains("<hr>"));
+}
+
+#[test]
+fn undo_groups_typing_in_500_ms_windows() {
+    let tasks: Arc<dyn TaskCallbacks> = Arc::new(FakeTasks::default());
+    let clock = nv_editor::bind::Clock::manual();
+    let s =
+        EditorSession::open_with_clock(page("canvas-boxes"), "box:a".into(), tasks, clock.clone())
+            .unwrap();
+    let before = box_text(&s, "a");
+    // Opening isn't undoable.
+    assert!(!s.can_undo() && !s.can_redo());
+    s.insert_text("a".into());
+    clock.advance(300);
+    s.insert_text("b".into());
+    // 600 ms after "a" but 300 ms after "b": the window runs from the last change.
+    clock.advance(300);
+    s.insert_text("c".into());
+    clock.advance(501);
+    s.insert_text("d".into());
+    assert!(s.can_undo() && s.state().can_undo);
+    assert_eq!(box_text(&s, "a"), format!("abcd{before}"));
+    // "d" alone, then "abc" together.
+    assert!(s.undo());
+    assert_eq!(box_text(&s, "a"), format!("abc{before}"));
+    assert!(s.can_redo() && s.state().can_redo);
+    assert!(s.undo());
+    assert_eq!(box_text(&s, "a"), before);
+    assert!(!s.can_undo());
+    assert!(s.redo());
+    assert!(s.redo());
+    assert!(!s.can_redo());
+    assert_eq!(box_text(&s, "a"), format!("abcd{before}"));
+    // An open composition counts as undoable (undo commits it first).
+    clock.advance(501);
+    s.set_composition("x".into(), 1, 1);
+    assert!(s.can_undo() && !s.can_redo());
+}
+
+#[test]
+fn undo_groups_on_the_real_clock() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    let before = box_text(&s, "a");
+    s.insert_text("x".into());
+    s.insert_text("y".into());
+    std::thread::sleep(std::time::Duration::from_millis(650));
+    s.insert_text("z".into());
+    assert!(s.undo());
+    assert_eq!(box_text(&s, "a"), format!("xy{before}"));
+    assert!(s.undo());
+    assert_eq!(box_text(&s, "a"), before);
+    assert!(!s.can_undo());
+}
