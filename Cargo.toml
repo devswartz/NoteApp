@@ -2,7 +2,7 @@
 # The Tauri desktop shell (apps/desktop/src-tauri) is a separate Cargo project and stays out of
 # this workspace; so does the fuzz crate (it needs nightly and cargo-fuzz).
 [workspace]
-members = ["crates/nv-ink", "crates/nv-model", "crates/nv-api", "crates/nv-sync", "crates/nv-core"]
+members = ["crates/nv-ink", "crates/nv-model", "crates/nv-api", "crates/nv-sync", "crates/nv-core", "crates/nv-editor"]
 exclude = ["apps/desktop/src-tauri", "crates/nv-ink/fuzz"]
 resolver = "2"
 

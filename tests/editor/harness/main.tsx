@@ -142,6 +142,34 @@ const nv = {
     return { doc: text, tasks, focus, sel: sel.toJSON() };
   },
 
+  /** Today's schema, for the Rust engine (tests/editor/schema.json; run-tiptap.ts --schema). */
+  schemaInfo() {
+    const attrs = (spec: Record<string, { default?: unknown }> | undefined) =>
+      Object.fromEntries(Object.entries(spec ?? {}).map(([k, v]) => [k, v.default === undefined ? null : v.default]));
+    const nodes = Object.fromEntries(
+      Object.values(schema.nodes).map((t) => [
+        t.name,
+        {
+          content: t.spec.content ?? '',
+          group: t.spec.group ?? '',
+          marks: t.spec.marks ?? null,
+          inline: t.isInline,
+          atom: t.isAtom,
+          leaf: t.isLeaf,
+          textblock: t.isTextblock,
+          code: !!t.spec.code,
+          isolating: !!t.spec.isolating,
+          defining: !!t.spec.defining,
+          attrs: attrs(t.spec.attrs as never),
+        },
+      ]),
+    );
+    const marks = Object.fromEntries(
+      Object.values(schema.marks).map((m) => [m.name, { inclusive: m.spec.inclusive ?? true, excludes: m.spec.excludes ?? null, attrs: attrs(m.spec.attrs as never) }]),
+    );
+    return { topNode: schema.topNodeType.name, nodeOrder: Object.keys(schema.nodes), markOrder: Object.keys(schema.marks), nodes, marks };
+  },
+
   canonical(text: string, noSelection = false) {
     return canonical(noSelection ? text.replace(/(?<!\\)[|[\]^]/g, '') : text, schema);
   },

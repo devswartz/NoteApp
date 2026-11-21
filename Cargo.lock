@@ -626,6 +626,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nv-editor"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "nv-ink"
 version = "0.1.0"
 dependencies = [

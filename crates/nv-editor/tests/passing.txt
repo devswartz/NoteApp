@@ -1,0 +1,91 @@
+# Editor suite scenarios the engine passes (tests/suite.rs). Regenerate with NV_EDITOR_UPDATE=1.
+blocks/# makes a heading 1
+blocks/### makes a heading 3
+blocks/#### is not a heading (levels 1-3)
+blocks/--- makes a horizontal rule
+blocks/> makes a quote
+blocks/Alt+Shift+ArrowDown moves a block down
+blocks/Alt+Shift+ArrowUp moves a block up
+blocks/Backspace at the start joins with the paragraph above
+blocks/Backspace at the start of a heading after a paragraph joins
+blocks/Backspace deletes a selected range across blocks
+blocks/Backspace on an empty last quote line moves it out
+blocks/Delete at the end joins with the paragraph below
+blocks/Enter at the end of a heading makes a paragraph
+blocks/Enter in a code block is a new line
+blocks/Enter twice leaves a quote
+blocks/Mod+Alt+0 makes a paragraph
+blocks/Mod+Alt+2 makes a heading 2
+blocks/Shift+Enter is a line break
+blocks/``` space makes a code block
+blocks/typing replaces a selection
+containers// then Escape leaves the text
+containers//callout makes a callout
+containers//code makes a code block
+containers//h1 makes a heading
+containers//toggle makes a toggle
+containers/Enter in a closed toggle's summary makes a line after the toggle
+containers/Enter on an empty last toggle line leaves the toggle
+containers/Enter twice leaves a callout
+inline/@ in the middle of a word does not open mentions
+inline/@ picks a person and inserts a mention and a space
+inline/Backspace after a mention deletes it
+inline/Backspace after a page link deletes it
+inline/[[ picks a page and inserts a page link and a space
+inline/insert a page link by command
+inline/typing at the end of a link extends it (autolink links are inclusive)
+lists/1. makes a numbered list
+lists/3) starts numbering at 3 with parens
+lists/Backspace at the start of a bullet lifts it to a paragraph
+lists/Enter in a bullet makes the next bullet
+lists/Enter in a checklist adds an unchecked item
+lists/Enter on an empty nested bullet outdents it
+lists/Enter on an empty top-level bullet leaves the list
+lists/Mod+. toggles a bullet
+lists/Shift+Tab on a top-level bullet leaves the list
+lists/Shift+Tab outdents a nested bullet
+lists/Tab nests a bullet under the one above
+lists/Tab nests a checklist item
+lists/Tab on the first bullet stays put
+lists/[ ] does not make a checklist
+lists/a. makes a lettered list
+lists/bullet list becomes numbered
+lists/checklist from the ribbon
+lists/star space makes a bullet
+lists/toggleBulletList twice is a paragraph again
+lists/toggleOrderedList command
+marks/**x** makes bold
+marks/*x* makes italic
+marks/Mod+Shift+s strike
+marks/Mod+b bolds a selection
+marks/Mod+b twice unbolds
+marks/Mod+e inline code
+marks/Mod+i italic
+marks/Mod+u underline
+marks/`x` makes code
+marks/a typed bare domain is not linked
+marks/a typed https URL becomes a link on space
+marks/bold and italic nest
+marks/highlight
+marks/remove a link
+marks/set a link on a selection
+marks/text colour
+marks/typing after bold text continues bold
+marks/~~x~~ makes strike
+tables/Enter in a cell is a new paragraph in the cell
+tables/Shift+Tab moves to the previous cell
+tables/Tab in the last cell adds a row
+tables/Tab moves to the next cell
+tables/add a column after
+tables/add a row after
+tables/delete a column
+tables/delete a row
+tables/delete the table
+tables/insert a 2x2 table with a header row
+typing/Enter splits a paragraph
+typing/Mod+b then type is bold
+typing/dash space makes a bullet
+typing/type into an empty paragraph
+undo/Mod+Shift+z redoes
+undo/Mod+y redoes
+undo/undo with nothing to undo does nothing

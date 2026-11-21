@@ -5,19 +5,25 @@ Updated by each workstream when it finishes a step (newest first under each head
 ## Now
 
 - **core** (M3): `nv-api`, `nv-sync` and the online Core API done on branch `rewrite/core-m3`, ready to merge (see Done). Next: `nv-store` (local SQLite), then reconnect/offline queue in `nv-sync`.
-- **editor** (M2): editor test suite as data, then `nv-editor`. Started 2026-11-21. Branch `rewrite/editor-suite`. Suite step 1 done (see Done); next: `docs/rewrite/EDITOR.md`, then `crates/nv-editor` with a Rust runner over the same files, then page-wide undo across boxes in the suite.
+- **editor** (M2): branch `rewrite/editor-engine`. `docs/rewrite/EDITOR.md` written; `crates/nv-editor` passes 90 of 129 suite scenarios (blocks, lists, marks, tables, containers, inline nodes, slash/`[[`/`@` menus all green). Left: tasks (0/18), undo/redo with the yrs binding (3/10), clipboard (0/13). **Handover for a fresh session** below (context ran large).
 - **apple** (M1): PARITY.md, Apple app skeleton, CI + TestFlight 1.99.x. Started 2026-11-21. Branch `rewrite/apple-m1`. Done: PARITY.md, XcodeGen skeleton, `apple-native.yml`, first TestFlight upload. Waiting on core for the XCFramework (request below), then link it and call it from `CoreBridge.swift`.
 
 ## Waiting on Devon
 
 - (none yet)
 
+## Handover: editor (2026-11-21)
+
+- Read `docs/rewrite/EDITOR.md`, `tests/editor/README.md`, then `crates/nv-editor/src/` (editor.rs: text, Enter/Backspace/Delete, marks, block types, lists; rules.rs: input rules and autolink; suggest.rs: menus and slash items; table.rs; insert.rs; tasks.rs: `TaskHost` and stubs; keymap.rs; notation.rs; schema.rs reads `tests/editor/schema.json`).
+- Test: `cargo test -p nv-editor` (ratchet: `tests/passing.txt` must keep passing; `NV_EDITOR_VERBOSE=1 ... -- --nocapture` shows every failure; `NV_EDITOR_UPDATE=1` rewrites the list). Suite on TipTap: `node --import tsx tests/editor/run-tiptap.ts [filter] [--print]`.
+- Next, in order: (1) **tasks**: a fake `TaskHost` in `tests/suite.rs` (ids `new-N`, renamed to `t<n>` in order of appearance like the harness), `tasks`/`focusTitle` checks, then convert (Mod+Enter/Mod+1, `convertTransaction` in `src/editor/taskChildren.ts`), Tab/Shift+Tab into and out of notes, Enter on an empty last note, title keys (Enter, Backspace, Tab as in `TaskRef.tsx` onKeyDown: needs a `title_key(chord)` and title text input on the engine), deleting a task line deletes the task, undo restores (`undoTasks.ts`). (2) **yrs binding + undo**: add `nv-model`/`yrs` deps, write the tree to `box:<id>` by diff (EDITOR.md 3), read back with `nv_model::tree`, `yrs::UndoManager` with a 500 ms capture timeout on an injectable clock (the suite's `wait` steps advance it). (3) **clipboard**: plain text and HTML out, plain text (inline Markdown paste rules) and HTML in, sanitised.
+- Engine behaviour that differs from today on purpose: type, undo, type, redo leaves the new typing (today's redo removes it; suite `undo/a new edit clears redo`). Not a decision for Devon unless he wants today's behaviour kept.
+- Root `Cargo.toml` got `crates/nv-editor` in `members` (the only file outside my area I touched). `rust.yml` doesn't trigger on `tests/editor/**`; worth adding since the crate reads the suite and schema from there.
+
 ## Requests between streams
 
 - **core → apple: linking the core.** Run `bash crates/nv-core/build-xcframework.sh` on a macOS runner (needs rustup targets `aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin`; the `apple` job in `.github/workflows/rust.yml` shows the steps). It writes a local Swift package at `target/apple/NotiveloCore/` (`nv_coreFFI.xcframework`: iOS device, iOS simulator arm64, macOS arm64; `Sources/NotiveloCore/nv_core.swift`: the bindings). Add it in XcodeGen as `packages: { NotiveloCore: { path: ../../target/apple/NotiveloCore } }` (path relative to your project.yml) with dependency `- package: NotiveloCore`, then `import NotiveloCore` and call e.g. `try readPage(update: data)`, `coreVersion()`. The same package is uploaded by each rust.yml run as the `NotiveloCore` artifact (14 days). (This answers apple's request: the module is `NotiveloCore`, not `NvCore`; smoke test `coreVersion()`.) Ask here for Core API changes; core owns `crates/nv-core/src/lib.rs`.
 - **core → apple: online Core API (M3).** `let core = Core(serverUrl:)`; `signIn(email:password:)` / `restoreSession(refreshToken:)` return the user and a refresh token for the keychain (store `core.refreshToken()` again after calls: it rotates); `workspaces()`, `tree(workspaceId:)`, `tasks(workspaceId:)`, `createTask`, `setTaskDone`. `openPage(pageId:listener:)` returns a `LivePage` (`info()`, `document()`, `applyUpdate(update:)`, `announcePresence(canEdit:)`, `close()`); implement `PageListener` (`onStatus`, `onChange(page:)`, called on the core's thread). Calls block: run them off the main thread. On `Closed(code: 4401)` reopen the page.
-
-- editor → overseer: run the editor suite on TipTap in CI (`node --import tsx tests/editor/run-tiptap.ts`; needs Playwright's Chromium, as the e2e job has). I can't edit `.github/`. About a minute.
 
 ## Done
 
