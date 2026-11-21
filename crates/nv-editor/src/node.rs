@@ -220,6 +220,41 @@ impl Node {
         self.content = out;
     }
 
+    /// The node as ProseMirror's JSON (`Node.toJSON()`): `type`, then `attrs` (all of them,
+    /// defaults included) when the node has any, `content` when it has children, and for text
+    /// `text` and `marks` (when it has any).
+    pub fn to_json(&self) -> Value {
+        let mut o = serde_json::Map::new();
+        o.insert("type".into(), Value::String(self.kind.clone()));
+        if self.is_text() {
+            o.insert("text".into(), Value::String(self.text.clone()));
+        } else {
+            if !self.attrs.is_empty() {
+                o.insert("attrs".into(), Value::Object(self.attrs.clone()));
+            }
+            if !self.content.is_empty() {
+                let kids = self.content.iter().map(Node::to_json).collect();
+                o.insert("content".into(), Value::Array(kids));
+            }
+        }
+        if !self.marks.is_empty() {
+            let marks = self
+                .marks
+                .iter()
+                .map(|m| {
+                    let mut mo = serde_json::Map::new();
+                    mo.insert("type".into(), Value::String(m.kind.clone()));
+                    if !m.attrs.is_empty() {
+                        mo.insert("attrs".into(), Value::Object(m.attrs.clone()));
+                    }
+                    Value::Object(mo)
+                })
+                .collect();
+            o.insert("marks".into(), Value::Array(marks));
+        }
+        Value::Object(o)
+    }
+
     /// The node at a child path.
     pub fn at(&self, path: &[usize]) -> &Node {
         path.iter().fold(self, |n, &i| &n.content[i])
@@ -263,5 +298,28 @@ impl Node {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::notation::parse;
+    use serde_json::json;
+
+    #[test]
+    fn to_json_is_prosemirror_shaped() {
+        let (doc, _) = parse("<heading level=2>a<bold>b</bold></heading>").unwrap();
+        assert_eq!(
+            doc.to_json(),
+            json!({"type": "doc", "content": [{
+                "type": "heading",
+                "attrs": doc.content[0].attrs,
+                "content": [
+                    {"type": "text", "text": "a"},
+                    {"type": "text", "text": "b", "marks": [{"type": "bold"}]}
+                ]
+            }]})
+        );
+        assert_eq!(doc.content[0].attrs["level"], json!(2));
     }
 }

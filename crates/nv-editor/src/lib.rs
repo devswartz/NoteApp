@@ -3,12 +3,15 @@
 
 pub mod bind;
 pub mod clipboard;
+pub mod command;
+pub mod compose;
 pub mod editor;
 pub mod insert;
 pub mod keymap;
 pub mod node;
 pub mod notation;
 pub mod pos;
+pub mod remote;
 pub mod rules;
 pub mod schema;
 pub mod selection;

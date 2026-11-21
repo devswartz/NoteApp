@@ -30,8 +30,12 @@ pub struct Editor {
     pub known_tasks: Vec<String>,
     /// The box's fragment in the page doc, with its undo history (none for a detached editor).
     pub binding: Option<crate::bind::Binding>,
+    /// IME composition in progress (provisional text, not written to yrs until commit).
+    pub composition: Option<crate::compose::Composition>,
+    /// Other people's carets in this box (kept across remote changes, `remote.rs`).
+    pub remote_cursors: Vec<crate::remote::RemoteCursor>,
     /// The selection after the last change: what undo puts back.
-    last_sel: Selection,
+    pub(crate) last_sel: Selection,
 }
 
 impl Editor {
@@ -47,6 +51,8 @@ impl Editor {
             tasks: Box::new(crate::tasks::NoTasks::default()),
             known_tasks: Vec::new(),
             binding: None,
+            composition: None,
+            remote_cursors: Vec::new(),
             last_sel: Selection::All,
         };
         ed.last_sel = ed.sel.clone();
@@ -109,7 +115,7 @@ impl Editor {
     // ───────────── Low-level edits ─────────────
 
     /// Replace `from..to` (offsets in the text block at `path`) with inline nodes.
-    fn splice(&mut self, path: &[usize], from: usize, to: usize, insert: Vec<Node>) {
+    pub(crate) fn splice(&mut self, path: &[usize], from: usize, to: usize, insert: Vec<Node>) {
         let block = self.doc.at_mut(path);
         let size = block.content_size();
         let mut content = block.inline_slice(0, from);
@@ -951,6 +957,10 @@ impl Editor {
 
     /// What runs after every input (TipTap's appendTransaction plugins): the trailing paragraph.
     pub fn finish(&mut self) {
+        // Composition text is provisional: nothing is written (or task-synced) until commit.
+        if self.composition.is_some() {
+            return;
+        }
         let last_is_para = self.doc.content.last().is_some_and(|n| n.is("paragraph"));
         if !last_is_para {
             self.doc.content.push(Node::el("paragraph", vec![]));
@@ -969,6 +979,9 @@ impl Editor {
 
     /// Record the current state as its own undo step: what comes next starts a new one.
     pub fn checkpoint(&mut self) {
+        if self.composition.is_some() {
+            return;
+        }
         if let Some(b) = &mut self.binding {
             b.write(&self.doc, &self.last_sel, &self.sel);
             b.stop_capturing();
@@ -977,6 +990,7 @@ impl Editor {
     }
 
     pub fn undo(&mut self) -> bool {
+        self.end_composition();
         let Some(b) = &mut self.binding else {
             return false;
         };
@@ -989,6 +1003,7 @@ impl Editor {
     }
 
     pub fn redo(&mut self) -> bool {
+        self.end_composition();
         let Some(b) = &mut self.binding else {
             return false;
         };

@@ -7,10 +7,9 @@
 use nv_editor::notation::{canonical, parse, serialize};
 use nv_editor::{Editor, Focus, Selection, TaskHost};
 use serde_json::{json, Value};
-use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 fn suite_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/editor/scenarios")
@@ -31,7 +30,7 @@ fn run(s: &Value) -> Result<(), String> {
     let (doc, sel) = parse(s["doc"].as_str().unwrap())?;
     let store = FakeTasks::default();
     if let Some(given) = s.get("tasks").and_then(Value::as_object) {
-        let mut t = store.0.borrow_mut();
+        let mut t = store.0.lock().unwrap();
         for (id, v) in given {
             t.given.push(id.clone());
             let status = v["status"].as_str().unwrap_or("open").to_string();
@@ -133,73 +132,7 @@ fn view_menu_key(ed: &mut Editor, key: &str) -> bool {
 }
 
 fn command(ed: &mut Editor, name: &str, a: &Value) -> Result<(), String> {
-    let attrs = |k: &str, v: &Value| {
-        let mut m = serde_json::Map::new();
-        m.insert(k.to_string(), v.clone());
-        m
-    };
-    match name {
-        "toggleMark" => ed.toggle_mark(a["mark"].as_str().unwrap_or("")),
-        "toggleBulletList" => ed.toggle_list("bulletList"),
-        "toggleOrderedList" => ed.toggle_list("orderedList"),
-        "toggleChecklist" => ed.toggle_list("taskList"),
-        "toggleQuote" => ed.toggle_wrap("blockquote"),
-        "toggleCodeBlock" => ed.toggle_code_block(),
-        "setParagraph" => ed.set_block_type("paragraph", Default::default()),
-        "setHeading" => ed.set_block_type("heading", attrs("level", &a["level"])),
-        "toggleHeading" => ed.toggle_heading(a["level"].as_u64().unwrap_or(1)),
-        "setColor" => {
-            let (f, t) = ed.range();
-            ed.add_mark_range(
-                f,
-                t,
-                &nv_editor::Mark::new("textStyle", attrs("color", &a["color"])),
-            );
-            true
-        }
-        "setHighlight" => {
-            let (f, t) = ed.range();
-            ed.add_mark_range(
-                f,
-                t,
-                &nv_editor::Mark::new("highlight", attrs("color", &a["color"])),
-            );
-            true
-        }
-        "setLink" => {
-            let (f, t) = ed.range();
-            ed.add_mark_range(
-                f,
-                t,
-                &nv_editor::Mark::new("link", attrs("href", &a["href"])),
-            );
-            true
-        }
-        "unsetLink" => {
-            let (f, t) = ed.range();
-            ed.remove_mark_range(f, t, "link");
-            true
-        }
-        "selectAll" => ed.select_all(),
-        "insertTable" => ed.insert_table(
-            a["rows"].as_u64().unwrap_or(3) as usize,
-            a["cols"].as_u64().unwrap_or(3) as usize,
-            a["header"].as_bool().unwrap_or(true),
-        ),
-        "addRowAfter" => ed.add_row(true),
-        "addColumnAfter" => ed.add_column_after(),
-        "deleteRow" => ed.delete_row(),
-        "deleteColumn" => ed.delete_column(),
-        "deleteTable" => ed.delete_table(),
-        "insertPageLink" => ed.insert_page_link(a["pageId"].as_str().unwrap_or("")),
-        "insertMention" => ed.insert_mention(
-            a["id"].as_str().unwrap_or(""),
-            a["label"].as_str().unwrap_or(""),
-        ),
-        "insertTask" => ed.insert_task(a["title"].as_str().unwrap_or("")),
-        other => return Err(format!("command {other} not supported yet")),
-    };
-    Ok(())
+    ed.command(name, a).map(|_| ())
 }
 
 /// The suite's task store: titles and status by id, in creation order, with deleted tasks kept
@@ -213,30 +146,31 @@ struct Tasks {
 }
 
 #[derive(Clone, Default)]
-struct FakeTasks(Rc<RefCell<Tasks>>);
+struct FakeTasks(Arc<Mutex<Tasks>>);
 
 impl TaskHost for FakeTasks {
     fn new_id(&mut self) -> String {
-        let mut t = self.0.borrow_mut();
+        let mut t = self.0.lock().unwrap();
         t.n += 1;
         format!("new-{}", t.n)
     }
     fn create(&mut self, id: &str, title: &str, done: bool) {
         let status = if done { "done" } else { "open" };
         self.0
-            .borrow_mut()
+            .lock()
+            .unwrap()
             .live
             .push((id.into(), title.into(), status.into()));
     }
     fn delete(&mut self, id: &str) {
-        let mut t = self.0.borrow_mut();
+        let mut t = self.0.lock().unwrap();
         if let Some(i) = t.live.iter().position(|x| x.0 == id) {
             let x = t.live.remove(i);
             t.deleted.push(x);
         }
     }
     fn restore(&mut self, id: &str) -> bool {
-        let mut t = self.0.borrow_mut();
+        let mut t = self.0.lock().unwrap();
         match t.deleted.iter().position(|x| x.0 == id) {
             Some(i) => {
                 let x = t.deleted.remove(i);
@@ -248,14 +182,15 @@ impl TaskHost for FakeTasks {
     }
     fn title(&self, id: &str) -> Option<String> {
         self.0
-            .borrow()
+            .lock()
+            .unwrap()
             .live
             .iter()
             .find(|x| x.0 == id)
             .map(|x| x.1.clone())
     }
     fn set_title(&mut self, id: &str, title: &str) {
-        if let Some(x) = self.0.borrow_mut().live.iter_mut().find(|x| x.0 == id) {
+        if let Some(x) = self.0.lock().unwrap().live.iter_mut().find(|x| x.0 == id) {
             x.1 = title.into();
         }
     }
@@ -264,7 +199,7 @@ impl TaskHost for FakeTasks {
 /// Suite names for task ids: given ones keep theirs; new ones get the next free `t<n>` in order
 /// of appearance, the doc first, then the task list (as the TipTap harness does).
 fn task_names(ed: &Editor, store: &FakeTasks) -> BTreeMap<String, String> {
-    let t = store.0.borrow();
+    let t = store.0.lock().unwrap();
     let mut names: BTreeMap<String, String> =
         t.given.iter().map(|g| (g.clone(), g.clone())).collect();
     let mut n = 0;
@@ -334,7 +269,8 @@ fn check(ed: &Editor, store: &FakeTasks, e: &Value) -> Result<(), String> {
             .collect();
         let got: BTreeMap<String, (String, String)> = store
             .0
-            .borrow()
+            .lock()
+            .unwrap()
             .live
             .iter()
             .map(|(id, title, status)| {

@@ -8,11 +8,14 @@
 use crate::node::{u16_len, Mark, Node};
 use crate::schema::{schema, Attrs};
 use crate::selection::Selection;
+use nv_model::yrs::branch::{Branch, BranchPtr};
 use nv_model::yrs::types::Attrs as YAttrs;
 use nv_model::yrs::undo::Options;
+use nv_model::yrs::updates::decoder::Decode;
 use nv_model::yrs::{
-    Any, Doc, Origin, Text, Transact, TransactionMut, UndoManager, Xml, XmlElementPrelim,
-    XmlElementRef, XmlFragment, XmlFragmentRef, XmlOut, XmlTextPrelim, XmlTextRef,
+    Any, Assoc, Doc, Origin, ReadTxn, StickyIndex, Text, Transact, TransactionMut, UndoManager,
+    Update, Xml, XmlElementPrelim, XmlElementRef, XmlFragment, XmlFragmentRef, XmlOut,
+    XmlTextPrelim, XmlTextRef,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -23,6 +26,8 @@ use std::sync::Arc;
 const LOCAL: &str = "nv-editor";
 /// Origin of the first write when a box is bound (not undoable).
 const LOAD: &str = "nv-editor-load";
+/// Origin of other people's changes applied through `apply_remote` (not undoable).
+pub const REMOTE: &str = "nv-editor-remote";
 
 /// Milliseconds for undo grouping: the wall clock, or a manual one tests move with `advance`.
 #[derive(Clone, Default)]
@@ -155,7 +160,152 @@ impl Binding {
     }
 }
 
+impl Binding {
+    /// Apply someone else's change (a Yjs update) to the doc. It isn't undoable here.
+    pub fn apply_remote(&self, update: &[u8]) -> Result<(), String> {
+        let u = Update::decode_v1(update).map_err(|e| e.to_string())?;
+        self.doc
+            .transact_mut_with(REMOTE)
+            .apply_update(u)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Sticky indexes (yrs relative positions) for positions in `tree`, which must be what the
+    /// fragment holds now. None where a position can't be tied to the fragment.
+    pub fn stick(&self, tree: &Node, positions: &[usize]) -> Vec<Option<StickyIndex>> {
+        let txn = self.doc.transact();
+        let mut slots = Vec::new();
+        if !walk(&txn, &self.fragment, &tree.content, 0, &mut slots) {
+            return positions.iter().map(|_| None).collect();
+        }
+        positions
+            .iter()
+            .map(|&p| stick_one(&txn, &slots, p))
+            .collect()
+    }
+
+    /// Where sticky indexes are now in `tree` (read from the fragment after a change).
+    pub fn unstick(&self, tree: &Node, sticks: &[Option<StickyIndex>]) -> Vec<Option<usize>> {
+        let txn = self.doc.transact();
+        let mut slots = Vec::new();
+        if !walk(&txn, &self.fragment, &tree.content, 0, &mut slots) {
+            return sticks.iter().map(|_| None).collect();
+        }
+        sticks
+            .iter()
+            .map(|st| {
+                let off = st.as_ref()?.get_offset(&txn)?;
+                let slot = slots.iter().find(|s| s.branch == off.branch)?;
+                let i = off.index as usize;
+                Some(match &slot.kind {
+                    SlotKind::Text { start, len } => start + i.min(*len),
+                    SlotKind::Kids { starts, end } => starts.get(i).copied().unwrap_or(*end),
+                })
+            })
+            .collect()
+    }
+}
+
+// ───────────── Positions ↔ yrs (for sticky indexes) ─────────────
+
+/// A yrs branch with the tree positions it covers: an `XmlText` (UTF-16 offsets from `start`),
+/// or an element or the fragment (the position before each child, and the content end).
+struct Slot {
+    branch: BranchPtr,
+    kind: SlotKind,
+}
+
+enum SlotKind {
+    Text { start: usize, len: usize },
+    Kids { starts: Vec<usize>, end: usize },
+}
+
+/// Walk the Y children of `y` beside the tree children `pm` (content starting at `start`),
+/// recording slots. False when they don't line up (an embed in text, say): the caller clamps.
+fn walk<T: ReadTxn, P: XmlFragment + AsRef<Branch>>(
+    txn: &T,
+    y: &P,
+    pm: &[Node],
+    start: usize,
+    out: &mut Vec<Slot>,
+) -> bool {
+    let mut pos = start;
+    let mut i = 0;
+    let mut starts = Vec::new();
+    for c in y.children(txn) {
+        starts.push(pos);
+        match c {
+            XmlOut::Element(e) => {
+                if !schema().nodes.contains_key(e.tag().as_ref()) {
+                    continue;
+                }
+                let Some(n) = pm.get(i) else { return false };
+                if n.kind.as_str() != e.tag().as_ref() || !walk(txn, &e, &n.content, pos + 1, out) {
+                    return false;
+                }
+                pos += n.node_size();
+                i += 1;
+            }
+            XmlOut::Text(t) => {
+                let len = t.len(txn) as usize;
+                let mut acc = 0;
+                while acc < len {
+                    let Some(n) = pm.get(i).filter(|n| n.is_text()) else {
+                        return false;
+                    };
+                    acc += u16_len(&n.text);
+                    i += 1;
+                }
+                if acc != len {
+                    return false;
+                }
+                out.push(Slot {
+                    branch: BranchPtr::from(AsRef::<Branch>::as_ref(&t)),
+                    kind: SlotKind::Text { start: pos, len },
+                });
+                pos += len;
+            }
+            XmlOut::Fragment(_) => {}
+        }
+    }
+    out.push(Slot {
+        branch: BranchPtr::from(AsRef::<Branch>::as_ref(y)),
+        kind: SlotKind::Kids { starts, end: pos },
+    });
+    i == pm.len()
+}
+
+fn stick_one<T: ReadTxn>(txn: &T, slots: &[Slot], pos: usize) -> Option<StickyIndex> {
+    // Inside text first (typing there should follow the text), then between children.
+    for s in slots {
+        if let SlotKind::Text { start, len } = s.kind {
+            if start <= pos && pos <= start + len {
+                return StickyIndex::at(txn, s.branch, (pos - start) as u32, Assoc::After);
+            }
+        }
+    }
+    for s in slots {
+        if let SlotKind::Kids { starts, end } = &s.kind {
+            let i = match starts.iter().position(|&p| p == pos) {
+                Some(i) => i,
+                None if *end == pos => starts.len(),
+                None => continue,
+            };
+            return StickyIndex::at(txn, s.branch, i as u32, Assoc::After);
+        }
+    }
+    None
+}
+
 // ───────────── Reading (through nv-model) ─────────────
+
+/// What `field` of `doc` holds, as a tree (through `nv_model::Page::read`, so a `box:<id>`
+/// fragment is only seen when the box has geometry).
+pub fn read_tree(doc: &Doc, field: &str) -> Node {
+    let mut n = Node::el("doc", read_children(doc, field));
+    n.normalize();
+    n
+}
 
 fn read_children(doc: &Doc, field: &str) -> Vec<Node> {
     let page = nv_model::Page::read(doc);
