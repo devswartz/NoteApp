@@ -1,0 +1,13 @@
+[package]
+name = "nv-model"
+version = "0.1.0"
+description = "Notivelo's page format: boxes, reading order, settings, ink, text, tasks, Markdown, sanitising (docs/ARCHITECTURE.md 3.4)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+yrs = "0.28"
+
+[dev-dependencies]
+serde_json = "1"
