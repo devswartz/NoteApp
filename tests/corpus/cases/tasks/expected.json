@@ -1,0 +1,401 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "main",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "main"
+  ],
+  "mainFragment": "box:main",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:main",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Before the tasks"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskRef",
+          "attrs": {
+            "taskId": "t1"
+          },
+          "content": [
+            {
+              "type": "bulletList",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "listItem",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "A note under the task"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "taskList",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "taskItem",
+                  "attrs": {
+                    "checked": true
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "Checked step"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "taskItem",
+                  "attrs": {
+                    "checked": false
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "Open step"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "taskRef",
+              "attrs": {
+                "taskId": "t3"
+              },
+              "content": []
+            }
+          ]
+        },
+        {
+          "type": "taskRef",
+          "attrs": {
+            "taskId": "t2"
+          },
+          "content": []
+        },
+        {
+          "type": "taskRef",
+          "attrs": {
+            "taskId": "unknown"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Notes of a task nobody can see"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskRef",
+          "attrs": {
+            "taskId": "hidden"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Left out with its task"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "After the tasks"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskRef",
+          "attrs": {
+            "taskId": ""
+          },
+          "content": []
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [
+    "hidden",
+    "t1",
+    "t2",
+    "t3",
+    "unknown"
+  ],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:main",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Before the tasks"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "taskRef",
+            "attrs": {
+              "taskId": "t1"
+            },
+            "content": [
+              {
+                "type": "bulletList",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "listItem",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "A note under the task"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "taskList",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "taskItem",
+                    "attrs": {
+                      "checked": true
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "Checked step"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "taskItem",
+                    "attrs": {
+                      "checked": false
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "Open step"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "taskRef",
+                "attrs": {
+                  "taskId": "t3"
+                },
+                "content": []
+              }
+            ]
+          },
+          {
+            "type": "taskRef",
+            "attrs": {
+              "taskId": "t2"
+            },
+            "content": []
+          },
+          {
+            "type": "taskRef",
+            "attrs": {
+              "taskId": "unknown"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Notes of a task nobody can see"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "taskRef",
+            "attrs": {
+              "taskId": "hidden"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Left out with its task"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "After the tasks"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "taskRef",
+            "attrs": {
+              "taskId": ""
+            },
+            "content": []
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

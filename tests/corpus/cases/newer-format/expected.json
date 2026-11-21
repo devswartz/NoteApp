@@ -1,0 +1,123 @@
+{
+  "kind": "canvas",
+  "formatVersion": 99,
+  "newerFormat": true,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "b",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "b"
+  ],
+  "mainFragment": "box:b",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:b",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Known paragraph"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "futureBlock",
+          "attrs": {
+            "kind": "hologram"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Text inside an unknown block"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:b",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Known paragraph"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "futureBlock",
+            "attrs": {
+              "kind": "hologram"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Text inside an unknown block"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

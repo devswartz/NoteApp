@@ -1,0 +1,213 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "nothing",
+      "x": 0,
+      "y": 0,
+      "w": 400,
+      "z": 0
+    },
+    {
+      "id": "number",
+      "x": 0,
+      "y": 0,
+      "w": 400,
+      "z": 0
+    },
+    {
+      "id": "plain",
+      "x": 5,
+      "y": 50,
+      "w": 320,
+      "z": 2,
+      "wide": true
+    },
+    {
+      "id": "strings",
+      "x": 0,
+      "y": 50,
+      "w": 400,
+      "z": 0
+    }
+  ],
+  "readingOrder": [
+    "nothing",
+    "number",
+    "strings",
+    "plain"
+  ],
+  "mainFragment": "box:nothing",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:nothing",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "No geometry at all"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "box:number",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Geometry is a number"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "box:strings",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Broken numbers"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "box:plain",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Plain object geometry"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:nothing",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "No geometry at all"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "box:number",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Geometry is a number"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "box:strings",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Broken numbers"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "box:plain",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Plain object geometry"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

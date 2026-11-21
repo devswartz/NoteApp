@@ -1,0 +1,1480 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "b1",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "b1"
+  ],
+  "mainFragment": "box:b1",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:b1",
+      "content": [
+        {
+          "type": "bulletList",
+          "attrs": {},
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Bullet one"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "bulletList",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "type": "listItem",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "attrs": {},
+                          "content": [
+                            {
+                              "text": [
+                                {
+                                  "insert": "Nested bullet"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "listItem",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "attrs": {},
+                          "content": [
+                            {
+                              "text": [
+                                {
+                                  "insert": "Nested two"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Bullet two"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": false,
+            "continued": false,
+            "start": 1
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "First"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Second"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "orderedList",
+                  "attrs": {
+                    "paren": false,
+                    "continued": false,
+                    "start": 1,
+                    "type": "a"
+                  },
+                  "content": [
+                    {
+                      "type": "listItem",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "attrs": {},
+                          "content": [
+                            {
+                              "text": [
+                                {
+                                  "insert": "Letter a"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "listItem",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "attrs": {},
+                          "content": [
+                            {
+                              "text": [
+                                {
+                                  "insert": "Letter b"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Third"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "A paragraph between lists"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": false,
+            "continued": true,
+            "start": 1
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Carries on (4)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Five"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": true,
+            "continued": false,
+            "start": 7
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Seven)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Eight)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "bulletList",
+          "attrs": {},
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "A bullet list between numbered ones"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": false,
+            "continued": true,
+            "start": 1
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Continued after a bullet list"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": false,
+            "continued": false,
+            "start": 1,
+            "type": "I"
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Roman I"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Roman II"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Roman III"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Roman IV"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Roman V"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": true,
+            "continued": false,
+            "start": 48,
+            "type": "i"
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "xlviii"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "xlix"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "orderedList",
+          "attrs": {
+            "paren": false,
+            "continued": false,
+            "start": 26,
+            "type": "A"
+          },
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Z"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "AA"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "AB"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskList",
+          "attrs": {},
+          "content": [
+            {
+              "type": "taskItem",
+              "attrs": {
+                "checked": false
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Open item"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "taskItem",
+              "attrs": {
+                "checked": true
+              },
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Done item"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "taskList",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "type": "taskItem",
+                      "attrs": {
+                        "checked": false
+                      },
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "attrs": {},
+                          "content": [
+                            {
+                              "text": [
+                                {
+                                  "insert": "Nested open"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [
+    {
+      "fragment": "box:b1",
+      "path": [
+        1
+      ],
+      "start": 1,
+      "markers": [
+        "1.",
+        "2.",
+        "3."
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        1,
+        1,
+        1
+      ],
+      "start": 1,
+      "markers": [
+        "a.",
+        "b."
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        3
+      ],
+      "start": 4,
+      "markers": [
+        "4.",
+        "5."
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        4
+      ],
+      "start": 7,
+      "markers": [
+        "7)",
+        "8)"
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        6
+      ],
+      "start": 9,
+      "markers": [
+        "9."
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        7
+      ],
+      "start": 1,
+      "markers": [
+        "I.",
+        "II.",
+        "III.",
+        "IV.",
+        "V."
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        8
+      ],
+      "start": 48,
+      "markers": [
+        "xlviii)",
+        "xlix)"
+      ]
+    },
+    {
+      "fragment": "box:b1",
+      "path": [
+        9
+      ],
+      "start": 26,
+      "markers": [
+        "Z.",
+        "AA.",
+        "AB."
+      ]
+    }
+  ],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:b1",
+        "content": [
+          {
+            "type": "bulletList",
+            "attrs": {},
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Bullet one"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "bulletList",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {},
+                            "content": [
+                              {
+                                "text": [
+                                  {
+                                    "insert": "Nested bullet"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {},
+                            "content": [
+                              {
+                                "text": [
+                                  {
+                                    "insert": "Nested two"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Bullet two"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": false,
+              "continued": false,
+              "start": 1
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "First"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Second"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "orderedList",
+                    "attrs": {
+                      "paren": false,
+                      "continued": false,
+                      "start": 1,
+                      "type": "a"
+                    },
+                    "content": [
+                      {
+                        "type": "listItem",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {},
+                            "content": [
+                              {
+                                "text": [
+                                  {
+                                    "insert": "Letter a"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "listItem",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {},
+                            "content": [
+                              {
+                                "text": [
+                                  {
+                                    "insert": "Letter b"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Third"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "A paragraph between lists"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": false,
+              "continued": true,
+              "start": 1
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Carries on (4)"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Five"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": true,
+              "continued": false,
+              "start": 7
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Seven)"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Eight)"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "attrs": {},
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "A bullet list between numbered ones"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": false,
+              "continued": true,
+              "start": 1
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Continued after a bullet list"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": false,
+              "continued": false,
+              "start": 1,
+              "type": "I"
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Roman I"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Roman II"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Roman III"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Roman IV"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Roman V"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": true,
+              "continued": false,
+              "start": 48,
+              "type": "i"
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "xlviii"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "xlix"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "attrs": {
+              "paren": false,
+              "continued": false,
+              "start": 26,
+              "type": "A"
+            },
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Z"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "AA"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "AB"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "taskList",
+            "attrs": {},
+            "content": [
+              {
+                "type": "taskItem",
+                "attrs": {
+                  "checked": false
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Open item"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "taskItem",
+                "attrs": {
+                  "checked": true
+                },
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Done item"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "taskList",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "type": "taskItem",
+                        "attrs": {
+                          "checked": false
+                        },
+                        "content": [
+                          {
+                            "type": "paragraph",
+                            "attrs": {},
+                            "content": [
+                              {
+                                "text": [
+                                  {
+                                    "insert": "Nested open"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

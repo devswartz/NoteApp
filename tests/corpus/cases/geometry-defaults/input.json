@@ -1,0 +1,5 @@
+{
+  "about": "Box geometry with broken or missing values (defaults: x 0, y 0, w 400, z 0) and plain-object entries.",
+  "title": "Geometry",
+  "tasks": {}
+}

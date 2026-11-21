@@ -1,0 +1,781 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "only",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "only"
+  ],
+  "mainFragment": "box:only",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:only",
+      "content": [
+        {
+          "type": "callout",
+          "attrs": {
+            "emoji": "⚠️"
+          },
+          "content": [
+            {
+              "type": "heading",
+              "attrs": {
+                "level": 2
+              },
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Heading in a callout"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Callout body"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "attrs": {
+            "emoji": "💡"
+          },
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Default emoji"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "details",
+          "attrs": {},
+          "content": [
+            {
+              "type": "detailsSummary",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Toggle title"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "detailsContent",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "heading",
+                  "attrs": {
+                    "level": 3
+                  },
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Heading in a toggle"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "Hidden body"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "attrs": {},
+          "content": [
+            {
+              "type": "tableRow",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "tableHeader",
+                  "attrs": {
+                    "colspan": 1,
+                    "rowspan": 1
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "Name"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "tableHeader",
+                  "attrs": {
+                    "colspan": 1,
+                    "rowspan": 1
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "Value"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tableRow",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "tableCell",
+                  "attrs": {
+                    "colspan": 1,
+                    "rowspan": 1
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "a | b"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "tableCell",
+                  "attrs": {
+                    "colspan": 1,
+                    "rowspan": 1
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "1"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "tableRow",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "tableCell",
+                  "attrs": {
+                    "colspan": 1,
+                    "rowspan": 1
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": [
+                        {
+                          "text": [
+                            {
+                              "insert": "c"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "tableCell",
+                  "attrs": {
+                    "colspan": 1,
+                    "rowspan": 1
+                  },
+                  "content": [
+                    {
+                      "type": "paragraph",
+                      "attrs": {},
+                      "content": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "image",
+          "attrs": {
+            "src": "/uploads/0123456789abcdef0123456789abcdef.png",
+            "alt": "A picture"
+          },
+          "content": []
+        },
+        {
+          "type": "image",
+          "attrs": {
+            "src": "https://example.com/i.jpg"
+          },
+          "content": []
+        },
+        {
+          "type": "fileAttachment",
+          "attrs": {
+            "url": "/files/report.pdf",
+            "name": "report.pdf",
+            "size": 12345,
+            "mime": "application/pdf"
+          },
+          "content": []
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Hi "
+                }
+              ]
+            },
+            {
+              "type": "mention",
+              "attrs": {
+                "id": "u1",
+                "label": "Devon"
+              },
+              "content": []
+            },
+            {
+              "text": [
+                {
+                  "insert": " and "
+                }
+              ]
+            },
+            {
+              "type": "mention",
+              "attrs": {
+                "id": "u2",
+                "label": ""
+              },
+              "content": []
+            },
+            {
+              "text": [
+                {
+                  "insert": ", see "
+                }
+              ]
+            },
+            {
+              "type": "pageLink",
+              "attrs": {
+                "pageId": "page-2"
+              },
+              "content": []
+            },
+            {
+              "text": [
+                {
+                  "insert": "."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 1
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "   "
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [
+    {
+      "boxId": "only",
+      "index": 0,
+      "level": 2,
+      "text": "Heading in a callout"
+    },
+    {
+      "boxId": "only",
+      "index": 1,
+      "level": 3,
+      "text": "Heading in a toggle"
+    }
+  ],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [
+    "u1",
+    "u2"
+  ],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:only",
+        "content": [
+          {
+            "type": "callout",
+            "attrs": {
+              "emoji": "⚠️"
+            },
+            "content": [
+              {
+                "type": "heading",
+                "attrs": {
+                  "level": 2
+                },
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Heading in a callout"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Callout body"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "callout",
+            "attrs": {
+              "emoji": "💡"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Default emoji"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "details",
+            "attrs": {},
+            "content": [
+              {
+                "type": "detailsSummary",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Toggle title"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "detailsContent",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "heading",
+                    "attrs": {
+                      "level": 3
+                    },
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Heading in a toggle"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "Hidden body"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "table",
+            "attrs": {},
+            "content": [
+              {
+                "type": "tableRow",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "tableHeader",
+                    "attrs": {
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "Name"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableHeader",
+                    "attrs": {
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "Value"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "tableRow",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "a | b"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "1"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "tableRow",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": [
+                          {
+                            "text": [
+                              {
+                                "insert": "c"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "tableCell",
+                    "attrs": {
+                      "colspan": 1,
+                      "rowspan": 1
+                    },
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "attrs": {},
+                        "content": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "image",
+            "attrs": {
+              "src": "/uploads/0123456789abcdef0123456789abcdef.png",
+              "alt": "A picture"
+            },
+            "content": []
+          },
+          {
+            "type": "image",
+            "attrs": {
+              "src": "https://example.com/i.jpg"
+            },
+            "content": []
+          },
+          {
+            "type": "fileAttachment",
+            "attrs": {
+              "url": "/files/report.pdf",
+              "name": "report.pdf",
+              "size": 12345,
+              "mime": "application/pdf"
+            },
+            "content": []
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Hi "
+                  }
+                ]
+              },
+              {
+                "type": "mention",
+                "attrs": {
+                  "id": "u1",
+                  "label": "Devon"
+                },
+                "content": []
+              },
+              {
+                "text": [
+                  {
+                    "insert": " and "
+                  }
+                ]
+              },
+              {
+                "type": "mention",
+                "attrs": {
+                  "id": "u2",
+                  "label": ""
+                },
+                "content": []
+              },
+              {
+                "text": [
+                  {
+                    "insert": ", see "
+                  }
+                ]
+              },
+              {
+                "type": "pageLink",
+                "attrs": {
+                  "pageId": "page-2"
+                },
+                "content": []
+              },
+              {
+                "text": [
+                  {
+                    "insert": "."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "   "
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

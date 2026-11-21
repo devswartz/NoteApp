@@ -1,0 +1,21 @@
+{
+  "about": "Task lines (taskRef) with notes: sub-bullets, checklists and subtasks; hidden, unknown and due tasks.",
+  "title": "Tasks",
+  "tasks": {
+    "t1": {
+      "title": "Write the plan",
+      "done": false,
+      "due": "2026-11-30"
+    },
+    "t2": {
+      "title": "Ship it",
+      "done": true
+    },
+    "t3": {
+      "title": "Subtask",
+      "done": false,
+      "due": null
+    },
+    "hidden": null
+  }
+}

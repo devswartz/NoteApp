@@ -1,0 +1,382 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "a",
+      "x": 20,
+      "y": 300,
+      "w": 300,
+      "z": 2
+    },
+    {
+      "id": "b",
+      "x": 20,
+      "y": 300,
+      "w": 250,
+      "z": 5
+    },
+    {
+      "id": "blank",
+      "x": 0,
+      "y": 1200,
+      "w": 400,
+      "z": 6
+    },
+    {
+      "id": "c",
+      "x": 500,
+      "y": 300,
+      "w": 300,
+      "z": 3
+    },
+    {
+      "id": "empty",
+      "x": 0,
+      "y": 1000,
+      "w": 400,
+      "z": 4
+    },
+    {
+      "id": "top",
+      "x": 900,
+      "y": -40.5,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "top",
+    "a",
+    "b",
+    "c",
+    "empty",
+    "blank"
+  ],
+  "mainFragment": "box:top",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:top",
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 1
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Top box"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "First in reading order"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "box:a",
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 1
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Left lower"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Box a"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "box:b",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Same place as a, id breaks the tie"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "taskRef",
+          "attrs": {
+            "taskId": "tb"
+          },
+          "content": []
+        }
+      ]
+    },
+    {
+      "name": "box:c",
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 2
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Right lower"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Box c"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "box:empty",
+      "content": []
+    },
+    {
+      "name": "box:blank",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": []
+        }
+      ]
+    }
+  ],
+  "headings": [
+    {
+      "boxId": "top",
+      "index": 0,
+      "level": 1,
+      "text": "Top box"
+    },
+    {
+      "boxId": "a",
+      "index": 0,
+      "level": 1,
+      "text": "Left lower"
+    },
+    {
+      "boxId": "c",
+      "index": 0,
+      "level": 2,
+      "text": "Right lower"
+    }
+  ],
+  "ink": [],
+  "taskIds": [
+    "tb"
+  ],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:top",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Top box"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "First in reading order"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "box:a",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Left lower"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Box a"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "box:b",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Same place as a, id breaks the tie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "taskRef",
+            "attrs": {
+              "taskId": "tb"
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "name": "box:c",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Right lower"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Box c"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "box:empty",
+        "content": []
+      },
+      {
+        "name": "box:blank",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": []
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

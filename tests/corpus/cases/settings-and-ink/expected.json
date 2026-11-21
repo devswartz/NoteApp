@@ -1,0 +1,96 @@
+{
+  "kind": "canvas",
+  "formatVersion": 2,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "blue",
+    "rules": "grid"
+  },
+  "boxes": [
+    {
+      "id": "b",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "b"
+  ],
+  "mainFragment": "box:b",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:b",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Handwriting below"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [
+    {
+      "id": "s1",
+      "bytes": "ASA/Xn2cu9r5GDdW"
+    },
+    {
+      "id": "s2",
+      "bytes": "AiFAX36dvNv6GThXdpW00/IRME9ujazL6gkoR2aFpMPiASA/Xn2cuw=="
+    }
+  ],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 2,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:b",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Handwriting below"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [
+      "s1",
+      "s2"
+    ],
+    "inkKeys": [
+      "s1",
+      "s2"
+    ]
+  }
+}
