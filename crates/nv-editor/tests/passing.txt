@@ -47,6 +47,24 @@ inline/Backspace after a page link deletes it
 inline/[[ picks a page and inserts a page link and a space
 inline/insert a page link by command
 inline/typing at the end of a link extends it (autolink links are inclusive)
+input/autocorrect at the caret puts the caret after
+input/autocorrect replaces a word behind the caret, marks kept
+input/cancel after updates leaves the replaced selection deleted
+input/cancel removes the marked text
+input/commit differs from the marked text (dead key)
+input/committing dash space in one composition
+input/committing dash space through composition
+input/compose then commit in an empty paragraph
+input/composition at the start of a list item
+input/composition inside bold text is bold
+input/composition over a selection replaces it
+input/dictation draft then a long phrase
+input/marked text keeps the IME's selection inside it
+input/pinyin updates the marked text, then commits
+input/replacement doesn't run input rules
+input/replacement over a mark boundary
+input/undo after a committed composition is one step
+input/undo after an autocorrect replacement is one step
 lists/1. makes a numbered list
 lists/3) starts numbering at 3 with parens
 lists/Backspace at the start of a bullet lifts it to a paragraph

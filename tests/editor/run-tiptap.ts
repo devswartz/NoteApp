@@ -9,7 +9,7 @@
 // which the Rust engine reads.
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
-import { chromium, type Page } from 'playwright';
+import { chromium, type CDPSession, type Page } from 'playwright';
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -32,6 +32,10 @@ type Step =
   | { copy: { html?: string; text?: string }; cut?: boolean }
   | { wait: number }
   | { focusTitle: string }
+  | { compose: string; selection?: [number, number] }
+  | { commitComposition: string }
+  | { cancelComposition: true }
+  | { replace: { from: number; to: number; text: string } }
   | { expect: Expect };
 interface Expect {
   doc?: string;
@@ -172,7 +176,33 @@ async function check(page: Page, exp: Expect, label: string): Promise<string[]> 
   return fails;
 }
 
-async function run(page: Page, s: Scenario): Promise<string[]> {
+/**
+ * Text input the way an IME, autocorrect or dictation delivers it (README "Text input"), through
+ * Chromium's own input path (CDP), so ProseMirror sees the composition and DOM events a real
+ * input method causes: Input.imeSetComposition shows marked text, Input.insertText commits it
+ * (or, with no composition, inserts over the selection), and an empty composition cancels.
+ */
+async function textInput(page: Page, cdp: CDPSession, step: Step) {
+  if ('compose' in step) {
+    const [a, b] = step.selection ?? [step.compose.length, step.compose.length];
+    await cdp.send('Input.imeSetComposition', { text: step.compose, selectionStart: a, selectionEnd: b });
+  } else if ('commitComposition' in step) {
+    await cdp.send('Input.insertText', { text: step.commitComposition });
+  } else if ('cancelComposition' in step) {
+    await cdp.send('Input.imeSetComposition', { text: '', selectionStart: 0, selectionEnd: 0 });
+  } else if ('replace' in step) {
+    // Autocorrect, spell-check and dictation results: the range is selected and typed over, then
+    // the selection goes back where it was (mapped past the replacement).
+    await page.evaluate((r) => (window as any).nv.beginReplace(r.from, r.to), step.replace);
+    await cdp.send('Input.insertText', { text: step.replace.text });
+    await page.waitForTimeout(30);
+    await page.evaluate(() => (window as any).nv.endReplace());
+  }
+  // ProseMirror reads composition and DOM changes asynchronously (DOMObserver, compositionend).
+  await page.waitForTimeout(30);
+}
+
+async function run(page: Page, cdp: CDPSession, s: Scenario): Promise<string[]> {
   await page.evaluate(({ doc, tasks }) => (window as any).nv.load(doc, tasks), { doc: s.doc, tasks: s.tasks ?? {} });
   const fails: string[] = [];
   let n = 0;
@@ -192,6 +222,7 @@ async function run(page: Page, s: Scenario): Promise<string[]> {
       if (step.copy.html !== undefined && got.html !== step.copy.html) fails.push(`step ${n} copied html\n    want: ${step.copy.html}\n    got:  ${got.html}`);
     } else if ('wait' in step) await page.waitForTimeout(step.wait);
     else if ('focusTitle' in step) await page.evaluate((id) => (window as any).nv.focusTitle(id), step.focusTitle);
+    else if ('compose' in step || 'commitComposition' in step || 'cancelComposition' in step || 'replace' in step) await textInput(page, cdp, step);
     else if ('expect' in step) {
       await page.waitForTimeout(20);
       fails.push(...(await check(page, step.expect, `step ${n}`)));
@@ -213,6 +244,7 @@ try {
   const page = await browser.newPage();
   page.on('pageerror', (e) => console.error('  page error:', e.message));
   await stubApi(page);
+  const cdp = await page.context().newCDPSession(page);
   await page.goto(server.url);
   await page.waitForSelector('body[data-ready="1"]', { state: 'attached' });
   if (args.includes('--schema')) {
@@ -230,7 +262,7 @@ try {
     }
     let fails: string[];
     try {
-      fails = await run(page, s);
+      fails = await run(page, cdp, s);
     } catch (e) {
       fails = [`threw: ${(e as Error).message}`];
     }

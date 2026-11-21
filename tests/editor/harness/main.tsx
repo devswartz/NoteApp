@@ -98,6 +98,7 @@ function taskNames(editor: Editor, given: string[]): (id: string) => string {
 }
 
 let given: string[] = [];
+let replacing: { anchor: number; head: number; from: number; to: number; size: number } | null = null;
 
 const nv = {
   async load(docText: string, tasks: Record<string, TaskIn> = {}) {
@@ -186,6 +187,30 @@ const nv = {
     const dt = new DataTransfer();
     for (const [type, value] of Object.entries(data)) dt.setData(type, value);
     current!.editor.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  },
+
+  /**
+   * A replacement (autocorrect, spell-check, dictation; README "Text input"): select from..to so
+   * ProseMirror puts the range in the DOM, for the runner to insert over it, then `endReplace`
+   * puts the selection back where it was, mapped past the change, as a platform's text input does.
+   */
+  beginReplace(from: number, to: number) {
+    const e = current!.editor;
+    const { anchor, head } = e.state.selection;
+    replacing = { anchor, head, from, to, size: e.state.doc.content.size };
+    e.view.focus();
+    e.view.dispatch(e.state.tr.setSelection(TextSelection.create(e.state.doc, from, to)));
+  },
+
+  endReplace() {
+    const e = current!.editor;
+    const r = replacing!;
+    replacing = null;
+    const delta = e.state.doc.content.size - r.size;
+    const map = (p: number) => (p <= r.from ? p : p >= r.to ? p + delta : r.to + delta);
+    const [a, h] = [map(r.anchor), map(r.head)];
+    const max = e.state.doc.content.size;
+    if (a <= max && h <= max) e.view.dispatch(e.state.tr.setSelection(TextSelection.create(e.state.doc, a, h)).setMeta('addToHistory', false));
   },
 
   /** Focus a task line's title, caret at the end (as clicking into it would). */
