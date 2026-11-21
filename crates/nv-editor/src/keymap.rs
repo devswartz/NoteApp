@@ -32,6 +32,11 @@ impl Editor {
     /// Handle a key chord. Returns whether it did anything (unhandled keys are the view's: Tab to the next box).
     pub fn key(&mut self, chord: &str) -> bool {
         let chord = normalize(chord);
+        if matches!(self.focus, crate::editor::Focus::TaskTitle(_)) {
+            let done = self.title_key(&chord);
+            self.finish();
+            return done;
+        }
         // An open slash menu takes Enter and Tab (its first item) and Escape.
         if let Some(s) = self.suggestion() {
             if s.trigger == crate::suggest::Trigger::Slash
@@ -71,6 +76,9 @@ impl Editor {
             "Alt+Shift+ArrowUp" => self.move_block(true),
             "Alt+Shift+ArrowDown" => self.move_block(false),
             "Mod+a" => self.select_all(),
+            "Mod+z" => return self.undo(),
+            "Mod+y" | "Mod+Shift+z" => return self.redo(),
+            "Mod+Enter" | "Mod+1" => self.convert_to_task(),
             _ => false,
         };
         self.finish();
@@ -82,6 +90,9 @@ impl Editor {
         if self.go_to_cell(true) {
             return true;
         }
+        if self.indent_into_task() {
+            return true;
+        }
         if self.list_item_depth().is_some() {
             self.indent();
             return true;
@@ -91,6 +102,9 @@ impl Editor {
 
     pub fn shift_tab(&mut self) -> bool {
         if self.go_to_cell(false) {
+            return true;
+        }
+        if self.list_item_depth().is_none() && self.lift_out_of_task() {
             return true;
         }
         if self.list_item_depth().is_some() {

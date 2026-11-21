@@ -1,6 +1,8 @@
 //! Notivelo's editor engine (docs/rewrite/EDITOR.md): one text box's document, selection and
 //! commands, checked against the editor suite in `tests/editor/` (`tests/suite.rs`).
 
+pub mod bind;
+pub mod clipboard;
 pub mod editor;
 pub mod insert;
 pub mod keymap;

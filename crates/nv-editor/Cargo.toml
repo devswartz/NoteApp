@@ -7,7 +7,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+nv-model = { path = "../nv-model" }
 serde_json = "1"
 
 [dev-dependencies]
+nv-model = { path = "../nv-model" }
 serde_json = "1"

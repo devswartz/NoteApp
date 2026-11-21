@@ -16,10 +16,19 @@ pub fn after_text_input(ed: &mut Editor, typed: &str) {
         return;
     }
     let before = text_before(ed, pos);
-    if block_rule(ed, &before) {
-        return;
-    }
-    if mark_rule(ed, &before) {
+    // A rule's change is its own undo step, after the typing that triggered it (so undo gives
+    // back the typed "- ", as today).
+    let (doc, sel, marks) = (ed.doc.clone(), ed.sel.clone(), ed.stored_marks.clone());
+    if block_rule(ed, &before) || mark_rule(ed, &before) {
+        let (new_doc, new_sel, new_marks) = (
+            std::mem::replace(&mut ed.doc, doc),
+            std::mem::replace(&mut ed.sel, sel),
+            std::mem::replace(&mut ed.stored_marks, marks),
+        );
+        ed.checkpoint();
+        ed.doc = new_doc;
+        ed.sel = new_sel;
+        ed.stored_marks = new_marks;
         return;
     }
     if typed.chars().all(char::is_whitespace) {
