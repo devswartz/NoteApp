@@ -37,15 +37,19 @@ impl Editor {
             self.finish();
             return done;
         }
-        // An open slash menu takes Enter and Tab (its first item) and Escape.
+        // An open slash menu takes Enter and Tab (its highlighted item, the first unless moved),
+        // ArrowUp and ArrowDown (the highlight) and Escape.
         if let Some(s) = self.suggestion() {
-            if s.trigger == crate::suggest::Trigger::Slash
-                && matches!(chord.as_str(), "Enter" | "Tab")
-            {
-                if let Some(first) = crate::suggest::filter_slash(&s.query).first() {
-                    let done = self.pick_slash(first);
-                    self.finish();
-                    return done;
+            if s.trigger == crate::suggest::Trigger::Slash && self.slash_highlight().is_some() {
+                match chord.as_str() {
+                    "Enter" | "Tab" => {
+                        let done = self.pick_highlighted_slash();
+                        self.finish();
+                        return done;
+                    }
+                    "ArrowDown" => return self.move_slash_highlight(1),
+                    "ArrowUp" => return self.move_slash_highlight(-1),
+                    _ => {}
                 }
             }
             if chord == "Escape" {
@@ -63,6 +67,7 @@ impl Editor {
             "Mod+i" => self.toggle_mark("italic"),
             "Mod+u" => self.toggle_mark("underline"),
             "Mod+Shift+s" => self.toggle_mark("strike"),
+            "Mod+Shift+h" => self.toggle_mark("highlight"),
             "Mod+e" => self.toggle_mark("code"),
             "Alt+Mod+0" => self.set_block_type("paragraph", Attrs::new()),
             "Alt+Mod+1" => self.toggle_heading(1),
@@ -71,6 +76,7 @@ impl Editor {
             "Mod+." => self.toggle_list("bulletList"),
             "Mod+Shift+8" => self.toggle_list("bulletList"),
             "Mod+Shift+7" => self.toggle_list("orderedList"),
+            "Mod+Shift+9" => self.toggle_list("taskList"),
             "Mod+Shift+b" => self.toggle_wrap("blockquote"),
             "Alt+Mod+c" => self.toggle_code_block(),
             "Alt+Shift+ArrowUp" => self.move_block(true),

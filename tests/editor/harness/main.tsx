@@ -19,6 +19,7 @@ import { CommentMark } from '../../../src/editor/collabComments.ts';
 import { pageUndoFor } from '../../../src/editor/pageUndo.ts';
 import { useStore } from '../../../src/store.ts';
 import { canonical, parse, serialize } from '../notation.ts';
+import { applyLink, normaliseUrl, openLinkEditor } from '../../../src/editor/LinkEditor.tsx';
 
 const PAGE = 'page-1';
 const FIELD = 'box:b1';
@@ -116,6 +117,21 @@ async function settle(timeoutMs = 5000) {
   }
 }
 
+/**
+ * The link editor (Mod+K, the Link slash item, LinkEditor.tsx): it opens on the selection (widened to
+ * the whole link when the caret is in one), the person fills in Text and Address, and Enter applies.
+ */
+function editLink(e: Editor, text: string | null, address: string): boolean {
+  if (!openLinkEditor(e, { insert: true })) return false;
+  const r = { from: e.state.selection.from, to: e.state.selection.to };
+  // The Text field starts as the linked text; `text` null leaves it so.
+  const initialText = r.from < r.to ? e.state.doc.textBetween(r.from, r.to, ' ') : '';
+  const href = normaliseUrl(address);
+  const label = (text ?? initialText) || (href ? address.trim() : initialText);
+  if (label) applyLink(e, r, label, href);
+  return true;
+}
+
 let given: string[] = [];
 let replacing: { anchor: number; head: number; from: number; to: number; size: number } | null = null;
 
@@ -201,6 +217,7 @@ const nv = {
   /** Runs a TipTap command by name (the suite's command vocabulary maps onto these in run-tiptap.ts). */
   command(name: string, args: unknown[] = []) {
     const e = current!.editor;
+    if (name === 'nv.editLink') return editLink(e, args[0] as string | null, String(args[1] ?? ''));
     const fn = (e.commands as unknown as Record<string, (...a: unknown[]) => boolean>)[name];
     if (!fn) throw new Error(`no command ${name}`);
     return fn(...args);

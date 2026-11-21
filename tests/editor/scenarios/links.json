@@ -1,0 +1,12 @@
+{
+  "scenarios": [
+    {"name": "Mod+K on a selection: an address links it", "doc": "<paragraph>see [docs] here</paragraph>", "steps": [{"command": "editLink", "args": {"href": "example.com"}}], "expect": {"doc": "<paragraph>see <link href=\"https://example.com\">[docs]</link> here</paragraph>"}},
+    {"name": "link editor with no selection inserts the address as a link", "doc": "<paragraph>see |</paragraph>", "steps": [{"command": "editLink", "args": {"text": "", "href": "https://example.com"}}], "expect": {"doc": "<paragraph>see <link href=\"https://example.com\">https://example.com</link>|</paragraph>"}},
+    {"name": "link editor with no selection inserts Text linked", "doc": "<paragraph>see |</paragraph>", "steps": [{"command": "editLink", "args": {"text": "docs", "href": "https://x.test"}}, {"type": " y"}], "expect": {"doc": "<paragraph>see <link href=\"https://x.test\">docs</link> y|</paragraph>"}},
+    {"name": "link editor in a link edits the whole link's address", "doc": "<paragraph>a <link href=\"https://old.test\">do|cs</link> b</paragraph>", "steps": [{"command": "editLink", "args": {"href": "https://new.test"}}], "expect": {"doc": "<paragraph>a <link href=\"https://new.test\">[docs]</link> b</paragraph>"}},
+    {"name": "link editor in a link changes its text", "doc": "<paragraph>a <link href=\"https://x.test\">do|cs</link> b</paragraph>", "steps": [{"command": "editLink", "args": {"text": "guide", "href": "https://x.test"}}], "expect": {"doc": "<paragraph>a <link href=\"https://x.test\">[guide]</link> b</paragraph>"}},
+    {"name": "link editor with an empty address unlinks", "doc": "<paragraph>a <link href=\"https://x.test\">do|cs</link> b</paragraph>", "steps": [{"command": "editLink", "args": {"href": ""}}], "expect": {"doc": "<paragraph>a [docs] b</paragraph>"}},
+    {"name": "link editor makes an email address a mailto link", "doc": "<paragraph>[Sam]</paragraph>", "steps": [{"command": "editLink", "args": {"href": "sam@example.test"}}], "expect": {"doc": "<paragraph><link href=\"mailto:sam@example.test\">[Sam]</link></paragraph>"}},
+    {"name": "link editor keeps bold on linked text", "doc": "<paragraph><bold>[ab]</bold></paragraph>", "steps": [{"command": "editLink", "args": {"href": "https://x.test"}}], "expect": {"doc": "<paragraph><bold><link href=\"https://x.test\">[ab]</link></bold></paragraph>"}}
+  ]
+}

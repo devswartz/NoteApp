@@ -35,6 +35,17 @@
     { "name": "a typed bare domain is not linked", "doc": "<paragraph>|</paragraph>", "steps": [{ "type": "see example.com " }],
       "expect": { "doc": "<paragraph>see example.com |</paragraph>" } },
     { "name": "remove a link", "doc": "<paragraph><link href=\"https://example.com\">[ab]</link></paragraph>", "steps": [{ "command": "unsetLink" }],
-      "expect": { "doc": "<paragraph>[ab]</paragraph>" } }
+      "expect": { "doc": "<paragraph>[ab]</paragraph>" } },
+    {"name": "Mod+b on a partly bold selection bolds all of it", "doc": "<paragraph>[a<bold>b</bold>c]</paragraph>", "steps": [{"key": "Mod+b"}], "expect": {"doc": "<paragraph><bold>[abc]</bold></paragraph>"}},
+    {"name": "Mod+b with a caret, typed, then Mod+b again stops bold", "doc": "<paragraph>a|</paragraph>", "steps": [{"key": "Mod+b"}, {"type": "b"}, {"key": "Mod+b"}, {"type": "c"}], "expect": {"doc": "<paragraph>a<bold>b</bold>c|</paragraph>"}},
+    {"name": "_x_ makes italic", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "a _b_ "}], "expect": {"doc": "<paragraph>a <italic>b</italic> |</paragraph>"}},
+    {"name": "__x__ makes bold", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "a __b__ "}], "expect": {"doc": "<paragraph>a <bold>b</bold> |</paragraph>"}},
+    {"name": "==x== makes a highlight", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "a ==b== "}], "expect": {"doc": "<paragraph>a <highlight>b</highlight> |</paragraph>"}},
+    {"name": "Mod+Shift+h highlights a selection", "doc": "<paragraph>a [b] c</paragraph>", "steps": [{"key": "Mod+Shift+h"}], "expect": {"doc": "<paragraph>a <highlight>[b]</highlight> c</paragraph>"}},
+    {"name": "a second text colour replaces the first", "doc": "<paragraph>[ab]</paragraph>", "steps": [{"command": "setColor", "args": {"color": "red"}}, {"command": "setColor", "args": {"color": "blue"}}], "expect": {"doc": "<paragraph><textStyle color=\"blue\">[ab]</textStyle></paragraph>"}},
+    {"name": "default text colour removes it", "doc": "<paragraph><textStyle color=\"red\">[ab]</textStyle></paragraph>", "steps": [{"command": "unsetColor"}], "expect": {"doc": "<paragraph>[ab]</paragraph>"}},
+    {"name": "no highlight removes it", "doc": "<paragraph>a<highlight color=\"yellow\">[b]</highlight></paragraph>", "steps": [{"command": "unsetHighlight"}], "expect": {"doc": "<paragraph>a[b]</paragraph>"}},
+    {"name": "colour on part of a word splits it", "doc": "<paragraph>a[b]c</paragraph>", "steps": [{"command": "setColor", "args": {"color": "green"}}], "expect": {"doc": "<paragraph>a<textStyle color=\"green\">[b]</textStyle>c</paragraph>"}},
+    {"name": "typing after coloured text continues the colour", "doc": "<paragraph><textStyle color=\"red\">ab|</textStyle></paragraph>", "steps": [{"type": "c"}], "expect": {"doc": "<paragraph><textStyle color=\"red\">abc|</textStyle></paragraph>"}}
   ]
 }

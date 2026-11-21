@@ -24,6 +24,9 @@ pub struct Editor {
     pub focus: Focus,
     /// The suggestion menu closed with Escape (its trigger's position).
     pub dismissed: Option<usize>,
+    /// The highlighted slash item: (the menu's trigger position, its query, the index). It
+    /// goes back to the first item when the query changes.
+    pub highlight: Option<(usize, String, usize)>,
     /// The task store behind the box's task lines.
     pub tasks: Box<dyn crate::tasks::TaskHost>,
     /// Task ids in the doc after the last change (to see which lines went or came back).
@@ -48,6 +51,7 @@ impl Editor {
             stored_marks: None,
             focus: Focus::Doc,
             dismissed: None,
+            highlight: None,
             tasks: Box::new(crate::tasks::NoTasks::default()),
             known_tasks: Vec::new(),
             binding: None,
@@ -363,8 +367,13 @@ impl Editor {
             .content
             .remove(*line_path.last().unwrap());
         let csize = self.doc.at(&cpath).node_size();
+        let emptied = self.doc.at(&cpath).content.is_empty();
         let outer = self.doc.at_mut(&outer_path);
-        if after {
+        if emptied {
+            // Its only line: the container goes (unwrapped).
+            outer.content[cidx] = line;
+            self.sel = Selection::caret(c_before + 1);
+        } else if after {
             outer.content.insert(cidx + 1, line);
             self.sel = Selection::caret(c_before + csize + 1);
         } else {
@@ -401,6 +410,22 @@ impl Editor {
         };
         let r = self.resolve(pos);
         if r.parent(&self.doc).is("codeBlock") {
+            // A third Enter at the end of a code block (after two empty lines) leaves it:
+            // the empty lines go and a paragraph follows (TipTap's exitOnTripleEnter).
+            let code = r.parent(&self.doc);
+            if self.sel.is_empty() && r.at_end(&self.doc) && code.text_content().ends_with("\n\n") {
+                let off = r.parent_offset;
+                self.splice(&r.path.clone(), off - 2, off, vec![]);
+                let after = self.resolve(pos - 2).after(&self.doc, r.depth());
+                let parent = r.path[..r.path.len() - 1].to_vec();
+                let i = r.path[r.path.len() - 1];
+                self.doc
+                    .at_mut(&parent)
+                    .content
+                    .insert(i + 1, Node::el("paragraph", vec![]));
+                self.sel = Selection::caret(after + 1);
+                return true;
+            }
             self.insert_text_raw("\n");
             return true;
         }
@@ -430,7 +455,7 @@ impl Editor {
     }
 
     /// Insert text without input rules or marks (a line break in code).
-    fn insert_text_raw(&mut self, text: &str) {
+    pub(crate) fn insert_text_raw(&mut self, text: &str) {
         self.delete_selection();
         let Some(pos) = self.sel.head() else { return };
         let r = self.resolve(pos);
@@ -446,19 +471,33 @@ impl Editor {
     // ───────────── Backspace / Delete ─────────────
 
     pub fn backspace(&mut self) -> bool {
-        if self.delete_selection() {
-            return true;
-        }
         if let Selection::Node { pos } = self.sel {
             let size = node_after(&self.doc, pos).map_or(0, Node::node_size);
             self.delete_range(pos, pos + size);
-            self.sel = Selection::caret(near_text(&self.doc, pos, -1));
+            // The caret goes to the line that took the node's place (ProseMirror maps forward).
+            self.sel = Selection::caret(near_text(&self.doc, pos, 1));
+            return true;
+        }
+        if self.delete_selection() {
             return true;
         }
         let Some(pos) = self.sel.head() else {
             return false;
         };
         let r = self.resolve(pos);
+        let parent = r.parent(&self.doc);
+        // A code block at the very start of the box, or an empty one, becomes a paragraph
+        // (TipTap's code block Backspace); so does any other empty non-paragraph line at the
+        // start (TipTap's base keymap: clearNodes).
+        let at_doc_start = near_text(&self.doc, 0, 1) == pos;
+        if (parent.is("codeBlock") && (pos == 1 || parent.content.is_empty()))
+            || (at_doc_start
+                && parent.is_textblock()
+                && !parent.is("paragraph")
+                && parent.content.is_empty())
+        {
+            return self.set_block_type("paragraph", Attrs::new());
+        }
         if !r.at_start() {
             // One character (or inline node) back; a surrogate pair counts as one.
             let back = char_before_len(&self.doc, &r);
@@ -495,6 +534,16 @@ impl Editor {
             level -= 1;
         }
         if level == 0 {
+            // Nothing before at any level: the first line of a quote or callout lifts out of it
+            // (ProseMirror's joinBackward falls back to lift; the callout's own Backspace).
+            if d >= 2
+                && matches!(
+                    r.node(&self.doc, d - 1).kind.as_str(),
+                    "blockquote" | "callout"
+                )
+            {
+                return self.move_line_out(r, false);
+            }
             return false;
         }
         if level < d {
@@ -511,9 +560,18 @@ impl Editor {
         if prev.is(crate::tasks::TASK) && prev.content.is_empty()
             || prev.is_leaf() && !prev.is_inline()
         {
-            // A leaf block (rule, image, task line) before: an empty line goes, else the leaf is selected.
-            let prev_pos = r.before(d) - prev.node_size();
-            if r.parent(&self.doc).content.is_empty() {
+            // A leaf block (rule, image, task line) before: an empty line goes and the leaf is
+            // selected; after a rule or image a line with text deletes the leaf (ProseMirror's
+            // joinBackward), after a task line it selects it.
+            let prev_size = prev.node_size();
+            let prev_pos = r.before(d) - prev_size;
+            let empty = r.parent(&self.doc).content.is_empty();
+            if !empty && !prev.is(crate::tasks::TASK) {
+                self.doc.at_mut(&parent_path).content.remove(idx - 1);
+                self.sel = Selection::caret(r.pos - prev_size);
+                return true;
+            }
+            if empty {
                 self.doc.at_mut(&parent_path).content.remove(idx);
             }
             self.sel = Selection::Node { pos: prev_pos };
@@ -1006,6 +1064,16 @@ impl Editor {
             b.stop_capturing();
         }
         self.last_sel = self.sel.clone();
+    }
+
+    /// Whether `undo` would change something (an open composition counts: undo commits it
+    /// first, then undoes that).
+    pub fn can_undo(&self) -> bool {
+        self.composition.is_some() || self.binding.as_ref().is_some_and(|b| b.can_undo())
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.composition.is_none() && self.binding.as_ref().is_some_and(|b| b.can_redo())
     }
 
     pub fn undo(&mut self) -> bool {

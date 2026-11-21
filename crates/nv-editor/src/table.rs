@@ -117,19 +117,51 @@ impl Editor {
 
     /// Add a column after the caret's column; each row gets a cell of its row's kind.
     pub fn add_column_after(&mut self) -> bool {
+        self.add_column(true)
+    }
+
+    /// Add a column after (or before) the caret's column; each row gets a cell of the kind
+    /// next to it (a header row's is a header).
+    pub fn add_column(&mut self, after: bool) -> bool {
         let Some((r, d)) = self.cell_at() else {
             return false;
         };
         let table_path = r.path_to(d - 2);
-        let ci = r.index_at(d - 1);
+        let (ri, ci) = (r.index_at(d - 2), r.index_at(d - 1));
+        let at = if after { ci + 1 } else { ci };
+        let mut shift = 0;
         let table = self.doc.at_mut(&table_path);
-        for row in &mut table.content {
+        for (i, row) in table.content.iter_mut().enumerate() {
             let kind = row
                 .content
                 .get(ci)
                 .map_or("tableCell".to_string(), |c| c.kind.clone());
-            row.content
-                .insert(ci + 1, Node::filled(&kind, Default::default()));
+            let cell = Node::filled(&kind, Default::default());
+            // Cells inserted before the caret move it on.
+            if !after && i <= ri {
+                shift += cell.node_size() as isize;
+            }
+            row.content.insert(at.min(row.content.len()), cell);
+        }
+        self.sel = crate::editor::shift_sel(&self.sel, shift);
+        true
+    }
+
+    /// The first row as header cells, or back to plain cells when it already is one.
+    pub fn toggle_header_row(&mut self) -> bool {
+        let Some((r, d)) = self.cell_at() else {
+            return false;
+        };
+        let table_path = r.path_to(d - 2);
+        let first = &mut self.doc.at_mut(&table_path).content[0];
+        let all_header = first.content.iter().all(|c| c.is("tableHeader"));
+        for cell in &mut first.content {
+            cell.kind = if all_header {
+                "tableCell"
+            } else {
+                "tableHeader"
+            }
+            .into();
         }
         true
     }

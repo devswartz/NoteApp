@@ -38,6 +38,13 @@
       "expect": { "tasks": { "t1": { "title": "Call Sam" } } } },
     { "name": "cut removes the selection and keeps a cut task", "doc": "<paragraph>[a</paragraph><taskRef taskId=\"t1\"/><paragraph>b]</paragraph>", "tasks": { "t1": { "title": "A" } },
       "steps": [{ "copy": {}, "cut": true }],
-      "expect": { "doc": "<paragraph>|</paragraph>", "tasks": { "t1": { "title": "A" } } } }
+      "expect": { "doc": "<paragraph>|</paragraph>", "tasks": { "t1": { "title": "A" } } } },
+    {"name": "paste an HTML numbered list", "doc": "<paragraph>|</paragraph>", "steps": [{"paste": {"text/html": "<ol><li>a</li><li>b</li></ol>"}}], "expect": {"doc": "<orderedList><listItem><paragraph>a</paragraph></listItem><listItem><paragraph>b|</paragraph></listItem></orderedList><paragraph/>"}},
+    {"name": "paste HTML keeps a palette colour, drops other colours", "doc": "<paragraph>|</paragraph>", "steps": [{"paste": {"text/html": "<p><span data-color=\"red\">a</span><span style=\"color:#f00\">b</span></p>"}}], "expect": {"doc": "<paragraph><textStyle color=\"red\">a</textStyle>b|</paragraph>"}},
+    {"name": "paste HTML mark is a highlight", "doc": "<paragraph>|</paragraph>", "steps": [{"paste": {"text/html": "<p>a<mark>b</mark></p>"}}], "expect": {"doc": "<paragraph>a<highlight>b|</highlight></paragraph>"}},
+    {"name": "paste HTML underline and strike", "doc": "<paragraph>|</paragraph>", "steps": [{"paste": {"text/html": "<p><u>a</u><s>b</s></p>"}}], "expect": {"doc": "<paragraph><underline>a</underline><strike>b|</strike></paragraph>"}},
+    {"name": "paste plain lines into a code block stays in the code block", "doc": "<codeBlock>|</codeBlock><paragraph/>", "steps": [{"paste": {"text/plain": "a\nb"}}], "expect": {"doc": "<codeBlock>a\nb|</codeBlock><paragraph/>"}},
+    {"name": "paste plain text over a selection replaces it", "doc": "<paragraph>a[bc]d</paragraph>", "steps": [{"paste": {"text/plain": "X"}}], "expect": {"doc": "<paragraph>aX|d</paragraph>"}},
+    {"name": "paste an HTML checklist", "doc": "<paragraph>|</paragraph>", "steps": [{"paste": {"text/html": "<ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\"><p>a</p></li></ul>"}}], "expect": {"doc": "<taskList><taskItem checked=true><paragraph>a|</paragraph></taskItem></taskList><paragraph/>"}}
   ]
 }
