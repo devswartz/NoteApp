@@ -1,0 +1,34 @@
+{
+  "kind": "document",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [],
+  "readingOrder": [],
+  "mainFragment": "default",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

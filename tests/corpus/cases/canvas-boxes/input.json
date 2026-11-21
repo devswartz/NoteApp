@@ -1,0 +1,10 @@
+{
+  "about": "A canvas: boxes in reading order (y, then x, then id), a wide box, empty boxes, headings per box.",
+  "title": "Canvas",
+  "tasks": {
+    "tb": {
+      "title": "Task in box b",
+      "done": false
+    }
+  }
+}

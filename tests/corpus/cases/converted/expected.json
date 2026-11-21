@@ -1,0 +1,168 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "conv1",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "conv1"
+  ],
+  "mainFragment": "box:conv1",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:conv1",
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 1
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Was a document"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Its text moved into a box"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "bulletList",
+          "attrs": {},
+          "content": [
+            {
+              "type": "listItem",
+              "attrs": {},
+              "content": [
+                {
+                  "type": "paragraph",
+                  "attrs": {},
+                  "content": [
+                    {
+                      "text": [
+                        {
+                          "insert": "With its list"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [
+    {
+      "boxId": "conv1",
+      "index": 0,
+      "level": 1,
+      "text": "Was a document"
+    }
+  ],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:conv1",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Was a document"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Its text moved into a box"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "attrs": {},
+            "content": [
+              {
+                "type": "listItem",
+                "attrs": {},
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "attrs": {},
+                    "content": [
+                      {
+                        "text": [
+                          {
+                            "insert": "With its list"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

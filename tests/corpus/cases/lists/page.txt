@@ -1,0 +1,53 @@
+Bullet one
+Nested bullet
+
+Nested two
+
+Bullet two
+
+First
+
+Second
+Letter a
+
+Letter b
+
+Third
+
+A paragraph between lists
+Carries on (4)
+
+Five
+
+Seven)
+
+Eight)
+
+A bullet list between numbered ones
+
+Continued after a bullet list
+
+Roman I
+
+Roman II
+
+Roman III
+
+Roman IV
+
+Roman V
+
+xlviii
+
+xlix
+
+Z
+
+AA
+
+AB
+
+Open item
+
+Done item
+Nested open

@@ -1,0 +1,541 @@
+{
+  "kind": "canvas",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [
+    {
+      "id": "b",
+      "x": 0,
+      "y": 0,
+      "w": 686,
+      "z": 1,
+      "wide": true
+    }
+  ],
+  "readingOrder": [
+    "b"
+  ],
+  "mainFragment": "box:b",
+  "fragments": [
+    {
+      "name": "default",
+      "content": []
+    },
+    {
+      "name": "box:b",
+      "content": [
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "js",
+                  "attributes": {
+                    "link": {
+                      "href": "javascript:alert(1)",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "split scheme",
+                  "attributes": {
+                    "link": {
+                      "href": "java\nscript:alert(1)",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "protocol relative",
+                  "attributes": {
+                    "link": {
+                      "href": "//evil.example",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "backslash",
+                  "attributes": {
+                    "link": {
+                      "href": "/\\evil.example",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "web",
+                  "attributes": {
+                    "link": {
+                      "href": "https://ok.example",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "mail",
+                  "attributes": {
+                    "link": {
+                      "href": "mailto:a@b.c",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "tel",
+                  "attributes": {
+                    "link": {
+                      "href": "tel:+15551234",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "path",
+                  "attributes": {
+                    "link": {
+                      "href": "/p/123",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "anchor",
+                  "attributes": {
+                    "link": {
+                      "href": "#top",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "deep",
+                  "attributes": {
+                    "link": {
+                      "href": "notivelo://page/1",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "data",
+                  "attributes": {
+                    "link": {
+                      "href": "data:text/html,x",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "hex colour",
+                  "attributes": {
+                    "textStyle": {
+                      "color": "#ff0000"
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "css highlight",
+                  "attributes": {
+                    "highlight": {
+                      "color": "url(x)"
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "good",
+                  "attributes": {
+                    "textStyle": {
+                      "color": "blue"
+                    },
+                    "highlight": {
+                      "color": "yellow"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "image",
+          "attrs": {
+            "src": "data:image/png;base64,AAAA"
+          },
+          "content": []
+        },
+        {
+          "type": "image",
+          "attrs": {
+            "src": "https://ok.example/a b.png"
+          },
+          "content": []
+        },
+        {
+          "type": "image",
+          "attrs": {
+            "src": "/uploads/0123456789abcdef0123456789abcdef.png?s=0123456789abcdef0123456789abcdef&e=1"
+          },
+          "content": []
+        },
+        {
+          "type": "fileAttachment",
+          "attrs": {
+            "url": "javascript:alert(1)",
+            "name": "bad",
+            "size": 0,
+            "mime": ""
+          },
+          "content": []
+        },
+        {
+          "type": "fileAttachment",
+          "attrs": {
+            "url": "https://ok.example/f.zip",
+            "name": "good",
+            "size": 0,
+            "mime": ""
+          },
+          "content": []
+        },
+        {
+          "type": "callout",
+          "attrs": {
+            "emoji": "💡"
+          },
+          "content": [
+            {
+              "type": "image",
+              "attrs": {
+                "src": "file:///etc/passwd"
+              },
+              "content": []
+            },
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "nested bad link",
+                      "attributes": {
+                        "link": {
+                          "href": "vbscript:x",
+                          "target": "_blank",
+                          "rel": "noopener noreferrer nofollow",
+                          "class": null,
+                          "title": null
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 10,
+    "fragments": [
+      {
+        "name": "default",
+        "content": []
+      },
+      {
+        "name": "box:b",
+        "content": [
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "js split scheme protocol relative backslash"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "web",
+                    "attributes": {
+                      "link": {
+                        "href": "https://ok.example",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "mail",
+                    "attributes": {
+                      "link": {
+                        "href": "mailto:a@b.c",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "tel",
+                    "attributes": {
+                      "link": {
+                        "href": "tel:+15551234",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "path",
+                    "attributes": {
+                      "link": {
+                        "href": "/p/123",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "anchor",
+                    "attributes": {
+                      "link": {
+                        "href": "#top",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "deep",
+                    "attributes": {
+                      "link": {
+                        "href": "notivelo://page/1",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " data"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "hex colour "
+                  },
+                  {
+                    "insert": "css highlight",
+                    "attributes": {
+                      "highlight": {
+                        "color": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "good",
+                    "attributes": {
+                      "textStyle": {
+                        "color": "blue"
+                      },
+                      "highlight": {
+                        "color": "yellow"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "image",
+            "attrs": {
+              "src": "/uploads/0123456789abcdef0123456789abcdef.png?s=0123456789abcdef0123456789abcdef&e=1"
+            },
+            "content": []
+          },
+          {
+            "type": "fileAttachment",
+            "attrs": {
+              "url": "https://ok.example/f.zip",
+              "name": "good",
+              "size": 0,
+              "mime": ""
+            },
+            "content": []
+          },
+          {
+            "type": "callout",
+            "attrs": {
+              "emoji": "💡"
+            },
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "nested bad link"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

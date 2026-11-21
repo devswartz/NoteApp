@@ -1,0 +1,774 @@
+{
+  "kind": "document",
+  "formatVersion": 1,
+  "newerFormat": false,
+  "pageSettings": {
+    "color": "none",
+    "rules": "none"
+  },
+  "boxes": [],
+  "readingOrder": [],
+  "mainFragment": "default",
+  "fragments": [
+    {
+      "name": "default",
+      "content": [
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 1
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Heading one"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 2
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Heading "
+                },
+                {
+                  "insert": "two",
+                  "attributes": {
+                    "italic": {}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "heading",
+          "attrs": {
+            "level": 3
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Heading three"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Plain, "
+                },
+                {
+                  "insert": "bold",
+                  "attributes": {
+                    "bold": {}
+                  }
+                },
+                {
+                  "insert": ", "
+                },
+                {
+                  "insert": "italic",
+                  "attributes": {
+                    "italic": {}
+                  }
+                },
+                {
+                  "insert": ", "
+                },
+                {
+                  "insert": "underline",
+                  "attributes": {
+                    "underline": {}
+                  }
+                },
+                {
+                  "insert": ", "
+                },
+                {
+                  "insert": "strike",
+                  "attributes": {
+                    "strike": {}
+                  }
+                },
+                {
+                  "insert": ", "
+                },
+                {
+                  "insert": "code",
+                  "attributes": {
+                    "code": {}
+                  }
+                },
+                {
+                  "insert": "."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "bold italic",
+                  "attributes": {
+                    "bold": {},
+                    "italic": {}
+                  }
+                },
+                {
+                  "insert": " and "
+                },
+                {
+                  "insert": "code wins",
+                  "attributes": {
+                    "bold": {},
+                    "code": {}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "A "
+                },
+                {
+                  "insert": "link",
+                  "attributes": {
+                    "link": {
+                      "href": "https://example.com/a?b=1",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    }
+                  }
+                },
+                {
+                  "insert": " and a "
+                },
+                {
+                  "insert": "bold link",
+                  "attributes": {
+                    "link": {
+                      "href": "mailto:someone@example.com",
+                      "target": "_blank",
+                      "rel": "noopener noreferrer nofollow",
+                      "class": null,
+                      "title": null
+                    },
+                    "bold": {}
+                  }
+                },
+                {
+                  "insert": "."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "red text",
+                  "attributes": {
+                    "textStyle": {
+                      "color": "red"
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "green highlight",
+                  "attributes": {
+                    "highlight": {
+                      "color": "green"
+                    }
+                  }
+                },
+                {
+                  "insert": " "
+                },
+                {
+                  "insert": "default highlight",
+                  "attributes": {
+                    "highlight": {
+                      "color": null
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Comment "
+                },
+                {
+                  "insert": "one",
+                  "attributes": {
+                    "comment--/IW9phle": {
+                      "threadId": "thread-1"
+                    }
+                  }
+                },
+                {
+                  "insert": " both",
+                  "attributes": {
+                    "comment--/IW9phle": {
+                      "threadId": "thread-1"
+                    },
+                    "comment--J2ifyg16": {
+                      "threadId": "thread-2"
+                    }
+                  }
+                },
+                {
+                  "insert": " end"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Line one"
+                }
+              ]
+            },
+            {
+              "type": "hardBreak",
+              "attrs": {},
+              "content": []
+            },
+            {
+              "text": [
+                {
+                  "insert": "line two"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": []
+        },
+        {
+          "type": "blockquote",
+          "attrs": {},
+          "content": [
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Quoted "
+                    },
+                    {
+                      "insert": "text",
+                      "attributes": {
+                        "bold": {}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "paragraph",
+              "attrs": {},
+              "content": [
+                {
+                  "text": [
+                    {
+                      "insert": "Second quoted line"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "horizontalRule",
+          "attrs": {},
+          "content": []
+        },
+        {
+          "type": "codeBlock",
+          "attrs": {
+            "language": "ts"
+          },
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "const a = 1;\nconsole.log(a | 2);"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "codeBlock",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "plain code"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "attrs": {},
+          "content": [
+            {
+              "text": [
+                {
+                  "insert": "Unicode: café, 日本語, emoji 🎉, combining é."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "headings": [],
+  "ink": [],
+  "taskIds": [],
+  "mentionIds": [],
+  "orderedLists": [],
+  "sanitized": {
+    "removed": 0,
+    "fragments": [
+      {
+        "name": "default",
+        "content": [
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 1
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Heading one"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 2
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Heading "
+                  },
+                  {
+                    "insert": "two",
+                    "attributes": {
+                      "italic": {}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "heading",
+            "attrs": {
+              "level": 3
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Heading three"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Plain, "
+                  },
+                  {
+                    "insert": "bold",
+                    "attributes": {
+                      "bold": {}
+                    }
+                  },
+                  {
+                    "insert": ", "
+                  },
+                  {
+                    "insert": "italic",
+                    "attributes": {
+                      "italic": {}
+                    }
+                  },
+                  {
+                    "insert": ", "
+                  },
+                  {
+                    "insert": "underline",
+                    "attributes": {
+                      "underline": {}
+                    }
+                  },
+                  {
+                    "insert": ", "
+                  },
+                  {
+                    "insert": "strike",
+                    "attributes": {
+                      "strike": {}
+                    }
+                  },
+                  {
+                    "insert": ", "
+                  },
+                  {
+                    "insert": "code",
+                    "attributes": {
+                      "code": {}
+                    }
+                  },
+                  {
+                    "insert": "."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "bold italic",
+                    "attributes": {
+                      "bold": {},
+                      "italic": {}
+                    }
+                  },
+                  {
+                    "insert": " and "
+                  },
+                  {
+                    "insert": "code wins",
+                    "attributes": {
+                      "bold": {},
+                      "code": {}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "A "
+                  },
+                  {
+                    "insert": "link",
+                    "attributes": {
+                      "link": {
+                        "href": "https://example.com/a?b=1",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      }
+                    }
+                  },
+                  {
+                    "insert": " and a "
+                  },
+                  {
+                    "insert": "bold link",
+                    "attributes": {
+                      "link": {
+                        "href": "mailto:someone@example.com",
+                        "target": "_blank",
+                        "rel": "noopener noreferrer nofollow",
+                        "class": null,
+                        "title": null
+                      },
+                      "bold": {}
+                    }
+                  },
+                  {
+                    "insert": "."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "red text",
+                    "attributes": {
+                      "textStyle": {
+                        "color": "red"
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "green highlight",
+                    "attributes": {
+                      "highlight": {
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "insert": " "
+                  },
+                  {
+                    "insert": "default highlight",
+                    "attributes": {
+                      "highlight": {
+                        "color": null
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Comment "
+                  },
+                  {
+                    "insert": "one",
+                    "attributes": {
+                      "comment--/IW9phle": {
+                        "threadId": "thread-1"
+                      }
+                    }
+                  },
+                  {
+                    "insert": " both",
+                    "attributes": {
+                      "comment--/IW9phle": {
+                        "threadId": "thread-1"
+                      },
+                      "comment--J2ifyg16": {
+                        "threadId": "thread-2"
+                      }
+                    }
+                  },
+                  {
+                    "insert": " end"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Line one"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak",
+                "attrs": {},
+                "content": []
+              },
+              {
+                "text": [
+                  {
+                    "insert": "line two"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": []
+          },
+          {
+            "type": "blockquote",
+            "attrs": {},
+            "content": [
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Quoted "
+                      },
+                      {
+                        "insert": "text",
+                        "attributes": {
+                          "bold": {}
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "attrs": {},
+                "content": [
+                  {
+                    "text": [
+                      {
+                        "insert": "Second quoted line"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "horizontalRule",
+            "attrs": {},
+            "content": []
+          },
+          {
+            "type": "codeBlock",
+            "attrs": {
+              "language": "ts"
+            },
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "const a = 1;\nconsole.log(a | 2);"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "codeBlock",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "plain code"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "attrs": {},
+            "content": [
+              {
+                "text": [
+                  {
+                    "insert": "Unicode: café, 日本語, emoji 🎉, combining é."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "ink": [],
+    "inkKeys": []
+  }
+}

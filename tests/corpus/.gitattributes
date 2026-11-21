@@ -1,0 +1,2 @@
+# Corpus files are compared byte for byte (page.bin, and the .md/.txt/.json expectations): never convert line endings.
+* -text

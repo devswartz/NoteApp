@@ -1,0 +1,18 @@
+Heading one
+Heading two
+Heading three
+Plain, bold, italic, underline, strike, code.
+bold italic and code wins
+A link and a bold link.
+red text green highlight default highlight
+Comment one both end
+Line one
+line two
+
+Quoted text
+Second quoted line
+
+const a = 1;
+console.log(a | 2);
+plain code
+Unicode: café, 日本語, emoji 🎉, combining é.

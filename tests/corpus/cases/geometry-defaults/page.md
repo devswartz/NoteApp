@@ -1,0 +1,9 @@
+# Geometry
+
+No geometry at all
+
+Geometry is a number
+
+Broken numbers
+
+Plain object geometry
