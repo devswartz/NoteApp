@@ -37,12 +37,20 @@ struct SignInView: View {
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
 
-            Text(CoreBridge.statusLine)
+            Text("\(Self.versionLine) · \(CoreBridge.statusLine)")
                 .font(.footnote.monospaced())
                 .foregroundStyle(.secondary)
                 .padding(.top, 24)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// "1.99.3 (412.3)": tells TestFlight builds apart.
+    private static var versionLine: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
     }
 }
