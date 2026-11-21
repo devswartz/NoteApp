@@ -4,7 +4,7 @@ struct RootView: View {
     @Environment(SessionModel.self) private var session
 
     var body: some View {
-        if session.isSignedIn {
+        if session.phase == .signedIn {
             MainView()
         } else {
             SignInView()

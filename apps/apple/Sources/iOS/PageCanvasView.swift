@@ -5,8 +5,9 @@ import UIKit
 /// Read-only native page (M4 groundwork): the page's text boxes at their saved positions, each a
 /// TextKit 2 text view, on a surface with the page colour and rule lines, in a UIScrollView for
 /// native pan and pinch zoom. No editing yet; the editor engine (nv-editor) comes next.
+/// A live page redraws on every change, keeping the zoom and scroll position.
 struct PageCanvasView: UIViewRepresentable {
-    let page: CorpusPage
+    let page: PageSnapshot
 
     func makeUIView(context: Context) -> PageScrollView {
         PageScrollView()
@@ -22,6 +23,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     static let margin: CGFloat = 40
     private let surface = PageSurfaceView()
     private var shownID: String?
+    private var shownInfo: PageInfo?
+    private var shownTasks: [String: TaskLine] = [:]
+    private var shownTitles: [String: String] = [:]
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -40,15 +44,23 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    func show(_ page: CorpusPage) {
-        guard page.id != shownID else { return }
+    func show(_ page: PageSnapshot) {
+        let samePage = page.id == shownID
+        guard !samePage || page.info != shownInfo || page.tasks != shownTasks || page.pageTitles != shownTitles else { return }
         shownID = page.id
+        shownInfo = page.info
+        shownTasks = page.tasks
+        shownTitles = page.pageTitles
+        // A change to the open page keeps where the reader is: redraw at zoom 1, then put zoom and offset back.
+        let keptZoom = samePage ? zoomScale : 1
+        let keptOffset = samePage ? contentOffset : .zero
         zoomScale = 1
         surface.subviews.forEach { $0.removeFromSuperview() }
 
-        let renderer = PageTextRenderer(tasks: page.tasks)
+        let renderer = PageTextRenderer(tasks: page.tasks, pageTitles: page.pageTitles)
         var frames: [(CGRect, UITextView, Double)] = []
-        for (box, content) in page.boxes {
+        for shown in page.boxes {
+            let box = shown.box
             let text = UITextView(usingTextLayoutManager: true)
             text.isEditable = false
             text.isScrollEnabled = false
@@ -56,7 +68,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             text.backgroundColor = .clear
             text.textContainerInset = UIEdgeInsets(top: 4, left: 6, bottom: 4, right: 6)
             text.textContainer.lineFragmentPadding = 0
-            text.attributedText = renderer.render(content)
+            text.attributedText = renderer.render(shown.content)
             text.accessibilityIdentifier = "box:\(box.id)"
             let width = CGFloat(box.w)
             let height = text.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
@@ -75,7 +87,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         surface.frame = CGRect(origin: .zero, size: size)
         surface.configure(settings: page.info.settings, pageOrigin: CGPoint(x: -origin.x, y: -origin.y))
         contentSize = size
-        contentOffset = .zero
+        if keptZoom != 1 { zoomScale = keptZoom }
+        let maxOffset = CGPoint(x: max(contentSize.width - bounds.width, 0), y: max(contentSize.height - bounds.height, 0))
+        contentOffset = CGPoint(x: min(max(keptOffset.x, -adjustedContentInset.left), maxOffset.x),
+                                y: min(max(keptOffset.y, -adjustedContentInset.top), maxOffset.y + adjustedContentInset.bottom))
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { surface }

@@ -10,12 +10,14 @@ typealias PlatformFont = NSFont
 typealias PlatformColor = NSColor
 #endif
 
-/// Turns a box's nodes into one attributed string, read-only, for TextKit 2. Covers every block
-/// and mark in the page-format corpus; exact spacing, rule-line snapping, tables as grids and
-/// images come with the native editor (M4).
+/// Turns a box's content (the core's typed `ContentNode`s) into one attributed string, read-only,
+/// for TextKit 2. Covers every block and mark in the page-format corpus; exact spacing,
+/// rule-line snapping, tables as grids and images come with the native editor.
 struct PageTextRenderer {
     var bodySize: CGFloat = 16
     var tasks: [String: TaskLine] = [:]
+    /// Page id → title, for page links.
+    var pageTitles: [String: String] = [:]
 
     private struct Context {
         var indent = 0
@@ -24,7 +26,7 @@ struct PageTextRenderer {
         var code = false
     }
 
-    func render(_ nodes: [PageNode]) -> NSAttributedString {
+    func render(_ nodes: [ContentNode]) -> NSAttributedString {
         let out = NSMutableAttributedString()
         blocks(nodes, Context(), out)
         if out.string.hasSuffix("\n") { out.deleteCharacters(in: NSRange(location: out.length - 1, length: 1)) }
@@ -33,7 +35,7 @@ struct PageTextRenderer {
 
     // MARK: Blocks
 
-    private func blocks(_ nodes: [PageNode], _ ctx: Context, _ out: NSMutableAttributedString) {
+    private func blocks(_ nodes: [ContentNode], _ ctx: Context, _ out: NSMutableAttributedString) {
         for (i, node) in nodes.enumerated() {
             var c = ctx
             if i > 0 { c.marker = nil } // a list item's marker goes on its first block only
@@ -41,85 +43,90 @@ struct PageTextRenderer {
         }
     }
 
-    private func block(_ node: PageNode, _ ctx: Context, _ out: NSMutableAttributedString) {
-        guard case let .element(type, attrs, content) = node else {
-            if case .text = node { paragraph(inline([node], size: bodySize), ctx, out) }
-            return
-        }
+    private func block(_ node: ContentNode, _ ctx: Context, _ out: NSMutableAttributedString) {
         var inner = ctx
         inner.marker = nil
-        switch type {
-        case "paragraph", "detailsSummary":
-            paragraph(inline(content, size: bodySize, prefix: type == "detailsSummary" ? "▾ " : ""), ctx, out)
-        case "heading":
-            let level = attrs["level"] as? Int ?? 1
+        let attrs = node.attrs
+        let content = node.children
+        switch node.kind {
+        case .text, .mention, .pageLink, .hardBreak:
+            paragraph(inline([node], size: bodySize), ctx, out)
+        case .paragraph:
+            paragraph(inline(content, size: bodySize), ctx, out)
+        case .detailsSummary:
+            paragraph(inline(content, size: bodySize, prefix: "▾ "), ctx, out)
+        case .heading:
+            let level = Int(attrs.number("level") ?? 1)
             let size: CGFloat = [1: 26, 2: 21, 3: 18][level] ?? bodySize
             paragraph(inline(content, size: size, bold: true), ctx, out, spacingBefore: 6)
-        case "codeBlock":
+        case .codeBlock:
             var c = ctx
             c.code = true
             paragraph(inline(content, size: bodySize - 2, monospaced: true), c, out)
-        case "bulletList":
+        case .bulletList:
             for item in content { block(item, with(ctx, marker: "•"), out) }
-        case "orderedList":
-            let start = attrs["start"] as? Int ?? 1
-            let listType = attrs["type"] as? String
-            let suffix = (attrs["paren"] as? Bool ?? false) ? ")" : "."
+        case .orderedList:
+            // The core numbers the items as exports do ("1.", "b)", "iv."), continued lists included.
             for (i, item) in content.enumerated() {
-                block(item, with(ctx, marker: listMarker(listType: listType, n: Int64(start + i)) + suffix), out)
+                let marker = i < node.markers.count ? node.markers[i] : "\(i + 1)."
+                block(item, with(ctx, marker: marker), out)
             }
-        case "taskList":
+        case .taskList:
             for item in content {
-                var checked = false
-                if case let .element(_, a, _) = item { checked = a["checked"] as? Bool ?? false }
+                let checked = item.attrs.bool("checked") ?? false
                 block(item, with(ctx, marker: checked ? "☑" : "☐"), out)
             }
-        case "listItem", "taskItem":
+        case .listItem, .taskItem:
             var c = ctx
             c.indent += 1
             blocks(content, c, out)
-        case "taskRef":
-            taskRef(id: attrs["taskId"] as? String ?? "", notes: content, ctx, out)
-        case "blockquote", "callout":
+        case .taskRef:
+            taskRef(id: attrs.string("taskId") ?? "", notes: content, ctx, out)
+        case .blockquote, .callout:
             var c = inner
             c.indent += 1
             c.quote = true
-            if type == "callout", let emoji = attrs["emoji"] as? String, !emoji.isEmpty { c.marker = emoji }
+            if node.kind == .callout, let emoji = attrs.string("emoji"), !emoji.isEmpty { c.marker = emoji }
             blocks(content, c, out)
-        case "details", "detailsContent", "table":
+        case .details, .detailsContent, .table:
             var c = inner
-            if type == "detailsContent" { c.indent += 1 }
+            if node.kind == .detailsContent { c.indent += 1 }
             blocks(content, c, out)
-        case "tableRow":
+        case .tableRow:
             paragraph(tableRow(content), ctx, out)
-        case "horizontalRule":
+        case .tableCell, .tableHeader:
+            blocks(content, inner, out)
+        case .horizontalRule:
             paragraph(NSAttributedString(string: String(repeating: "─", count: 24),
                                          attributes: [.font: font(bodySize), .foregroundColor: secondaryColor]), ctx, out)
-        case "image":
-            let alt = attrs["alt"] as? String ?? ""
+        case .image:
+            let alt = attrs.string("alt") ?? ""
             paragraph(placeholder("🖼 " + (alt.isEmpty ? "Image" : alt)), ctx, out)
-        case "fileAttachment":
-            paragraph(placeholder("📎 " + (attrs["name"] as? String ?? "File")), ctx, out)
-        default:
-            paragraph(placeholder("[\(type)]"), ctx, out)
+        case .fileAttachment:
+            paragraph(placeholder("📎 " + (attrs.string("name") ?? "File")), ctx, out)
+        case .unknown:
+            // Written by a newer app: show what is inside, or say an update is needed.
+            if content.isEmpty {
+                paragraph(placeholder("Update Notivelo to see this."), ctx, out)
+            } else {
+                blocks(content, inner, out)
+            }
         }
     }
 
-    private func tableRow(_ cells: [PageNode]) -> NSAttributedString {
+    private func tableRow(_ cells: [ContentNode]) -> NSAttributedString {
         let row = NSMutableAttributedString()
         for (i, cell) in cells.enumerated() {
             if i > 0 { row.append(NSAttributedString(string: "  │  ", attributes: [.font: font(bodySize), .foregroundColor: secondaryColor])) }
-            guard case let .element(cellType, _, blocks) = cell else { continue }
-            for (j, block) in blocks.enumerated() {
-                guard case let .element(_, _, inlineContent) = block else { continue }
+            for (j, block) in cell.children.enumerated() {
                 if j > 0 { row.append(NSAttributedString(string: " ")) }
-                row.append(inline(inlineContent, size: bodySize, bold: cellType == "tableHeader"))
+                row.append(inline(block.children, size: bodySize, bold: cell.kind == .tableHeader))
             }
         }
         return row
     }
 
-    private func taskRef(id: String, notes: [PageNode], _ ctx: Context, _ out: NSMutableAttributedString) {
+    private func taskRef(id: String, notes: [ContentNode], _ ctx: Context, _ out: NSMutableAttributedString) {
         var c = ctx
         c.marker = nil
         switch tasks[id] {
@@ -187,52 +194,57 @@ struct PageTextRenderer {
 
     // MARK: Inline
 
-    private func inline(_ content: [PageNode], size: CGFloat, bold: Bool = false, monospaced: Bool = false, prefix: String = "") -> NSAttributedString {
+    private func inline(_ content: [ContentNode], size: CGFloat, bold: Bool = false, monospaced: Bool = false, prefix: String = "") -> NSAttributedString {
         let out = NSMutableAttributedString(string: prefix, attributes: [.font: font(size, bold: bold), .foregroundColor: secondaryColor])
         for node in content {
-            switch node {
-            case let .text(runs):
-                for run in runs { out.append(textRun(run, size: size, bold: bold, monospaced: monospaced)) }
-            case .element("hardBreak", _, _):
+            switch node.kind {
+            case .text:
+                for run in node.runs { out.append(textRun(run, size: size, bold: bold, monospaced: monospaced)) }
+            case .hardBreak:
                 out.append(NSAttributedString(string: "\u{2028}", attributes: [.font: font(size)]))
-            case let .element("mention", attrs, _):
-                let label = attrs["label"] as? String ?? ""
+            case .mention:
+                let label = node.attrs.string("label") ?? ""
                 out.append(NSAttributedString(string: "@" + (label.isEmpty ? "someone" : label),
                                               attributes: [.font: font(size, bold: true), .foregroundColor: PlatformColor.systemBlue]))
-            case let .element("pageLink", attrs, _):
-                out.append(NSAttributedString(string: "↗ " + (attrs["pageId"] as? String ?? "page"),
+            case .pageLink:
+                let id = node.attrs.string("pageId") ?? ""
+                out.append(NSAttributedString(string: "↗ " + (pageTitles[id] ?? "Page"),
                                               attributes: [.font: font(size), .foregroundColor: PlatformColor.systemBlue]))
-            case let .element(_, _, children):
-                out.append(inline(children, size: size, bold: bold, monospaced: monospaced))
-            case .other:
-                break
+            default:
+                out.append(inline(node.children, size: size, bold: bold, monospaced: monospaced))
             }
         }
         return out
     }
 
-    private func textRun(_ run: PageNode.TextRun, size: CGFloat, bold: Bool, monospaced: Bool) -> NSAttributedString {
-        let m = run.marks
-        var attrs: [NSAttributedString.Key: Any] = [
-            .font: font(size, bold: bold || m["bold"] != nil, italic: m["italic"] != nil, monospaced: monospaced || m["code"] != nil),
-            .foregroundColor: textColor,
-        ]
-        if m["underline"] != nil { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-        if m["strike"] != nil { attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-        if let style = m["textStyle"] as? [String: Any], let name = style["color"] as? String, let color = Self.palette[name] {
-            attrs[.foregroundColor] = color
+    private func textRun(_ run: TextRun, size: CGFloat, bold: Bool, monospaced: Bool) -> NSAttributedString {
+        var isBold = bold
+        var italic = false
+        var code = monospaced
+        var attrs: [NSAttributedString.Key: Any] = [.foregroundColor: textColor]
+        for mark in run.marks {
+            switch mark {
+            case .bold: isBold = true
+            case .italic: italic = true
+            case .code: code = true
+            case .underline: attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            case .strike: attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            case let .textColor(color):
+                if let c = Self.palette[color] { attrs[.foregroundColor] = c }
+            case let .highlight(color):
+                attrs[.backgroundColor] = (Self.palette[color ?? "yellow"] ?? PlatformColor.systemYellow).withAlphaComponent(0.3)
+            case let .link(href):
+                if let url = URL(string: href), ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+                    attrs[.link] = url
+                }
+            case .comment:
+                if attrs[.backgroundColor] == nil { attrs[.backgroundColor] = PlatformColor.systemOrange.withAlphaComponent(0.18) }
+            case .unknown:
+                break
+            }
         }
-        if let hl = m["highlight"] as? [String: Any] {
-            attrs[.backgroundColor] = (Self.palette[hl["color"] as? String ?? "yellow"] ?? PlatformColor.systemYellow).withAlphaComponent(0.3)
-        }
-        if let link = m["link"] as? [String: Any], let href = link["href"] as? String, let url = URL(string: href),
-           ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
-            attrs[.link] = url
-        }
-        if m.keys.contains(where: { $0.hasPrefix("comment--") }) {
-            attrs[.backgroundColor] = PlatformColor.systemOrange.withAlphaComponent(0.18)
-        }
-        return NSAttributedString(string: run.insert, attributes: attrs)
+        attrs[.font] = font(size, bold: isBold, italic: italic, monospaced: code)
+        return NSAttributedString(string: run.text, attributes: attrs)
     }
 
     // MARK: Style
