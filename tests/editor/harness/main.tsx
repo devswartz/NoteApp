@@ -110,7 +110,7 @@ const nv = {
     um.clear();
   },
 
-  state() {
+  state(noSelection = false) {
     const e = current!.editor;
     const sel = e.state.selection;
     const name = taskNames(e, given);
@@ -118,7 +118,7 @@ const nv = {
     const active = document.activeElement as HTMLElement | null;
     const titleOf = active && active !== e.view.dom && e.view.dom.contains(active) ? (active.closest('[data-task-id]') as HTMLElement | null)?.dataset.taskId : undefined;
     const focus = titleOf ? `title:${name(titleOf)}` : active === e.view.dom ? 'editor' : 'none';
-    const inDoc = focus === 'editor';
+    const inDoc = focus === 'editor' && !noSelection;
     const node = inDoc && sel instanceof NodeSelection ? sel.from : null;
     const text = serialize(e.state.doc, { anchor: inDoc ? sel.anchor : null, head: inDoc ? sel.head : null, node, attr: (k, v) => (k === 'taskId' && typeof v === 'string' ? name(v) : v) });
     const tasks = Object.fromEntries(
@@ -126,11 +126,11 @@ const nv = {
         .map((t) => [name(t.id), { title: t.title, status: t.status }] as const)
         .sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })),
     );
-    return { doc: text, tasks, focus };
+    return { doc: text, tasks, focus, sel: sel.toJSON() };
   },
 
-  canonical(text: string) {
-    return canonical(text, schema);
+  canonical(text: string, noSelection = false) {
+    return canonical(noSelection ? text.replace(/(?<!\\)[|[\]^]/g, '') : text, schema);
   },
 
   /** Runs a TipTap command by name (the suite's command vocabulary maps onto these in run-tiptap.ts). */
@@ -145,6 +145,14 @@ const nv = {
     const dt = new DataTransfer();
     for (const [type, value] of Object.entries(data)) dt.setData(type, value);
     current!.editor.view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  },
+
+  /** Focus a task line's title, caret at the end (as clicking into it would). */
+  focusTitle(taskId: string) {
+    const el = current!.editor.view.dom.querySelector(`[data-task-id="${taskId}"] textarea`) as HTMLTextAreaElement | null;
+    if (!el) throw new Error(`no title for task ${taskId}`);
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
   },
 
   copy(cut = false) {

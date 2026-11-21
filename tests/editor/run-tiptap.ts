@@ -30,10 +30,13 @@ type Step =
   | { paste: Record<string, string> }
   | { copy: { html?: string; text?: string }; cut?: boolean }
   | { wait: number }
+  | { focusTitle: string }
   | { expect: Expect };
 interface Expect {
   doc?: string;
   tasks?: Tasks;
+  /** Compare the doc without the selection (where today's selection is incidental; README "Quirks"). */
+  ignoreSelection?: boolean;
   /** Where the keyboard focus is: "editor", or "title:<task>" for a task line's title. */
   focus?: string;
 }
@@ -153,10 +156,10 @@ async function stubApi(page: Page) {
 type State = { doc: string; tasks: Tasks; focus: string };
 
 async function check(page: Page, exp: Expect, label: string): Promise<string[]> {
-  const st = (await page.evaluate(() => (window as any).nv.state())) as State;
+  const st = (await page.evaluate((n) => (window as any).nv.state(n), !!exp.ignoreSelection)) as State;
   const fails: string[] = [];
   if (exp.doc !== undefined) {
-    const want = (await page.evaluate((d) => (window as any).nv.canonical(d), exp.doc)) as string;
+    const want = (await page.evaluate((d) => (window as any).nv.canonical(d.doc, d.n), { doc: exp.doc, n: !!exp.ignoreSelection })) as string;
     if (want !== st.doc) fails.push(`${label} doc\n    want: ${want.replace(/\n/g, '\n          ')}\n    got:  ${st.doc.replace(/\n/g, '\n          ')}`);
   }
   if (exp.tasks !== undefined) {
@@ -187,6 +190,7 @@ async function run(page: Page, s: Scenario): Promise<string[]> {
       if (step.copy.text !== undefined && got.text !== step.copy.text) fails.push(`step ${n} copied text\n    want: ${JSON.stringify(step.copy.text)}\n    got:  ${JSON.stringify(got.text)}`);
       if (step.copy.html !== undefined && got.html !== step.copy.html) fails.push(`step ${n} copied html\n    want: ${step.copy.html}\n    got:  ${got.html}`);
     } else if ('wait' in step) await page.waitForTimeout(step.wait);
+    else if ('focusTitle' in step) await page.evaluate((id) => (window as any).nv.focusTitle(id), step.focusTitle);
     else if ('expect' in step) {
       await page.waitForTimeout(20);
       fails.push(...(await check(page, step.expect, `step ${n}`)));
@@ -225,7 +229,7 @@ try {
     }
     if (print) {
       const st = (await page.evaluate(() => (window as any).nv.state())) as State;
-      console.log(`----  ${id}\n${st.doc}\ntasks ${JSON.stringify(st.tasks)}  focus ${st.focus}`);
+      console.log(`----  ${id}\n${st.doc}\ntasks ${JSON.stringify(st.tasks)}  focus ${st.focus}  sel ${JSON.stringify((st as any).sel)}`);
     }
     if (fails.length) {
       failed++;
