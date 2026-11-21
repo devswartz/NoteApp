@@ -1,0 +1,13 @@
+[package]
+name = "nv-editor"
+version = "0.1.0"
+description = "Notivelo's editor engine: document tree, selections, commands, input rules, undo, clipboard (docs/rewrite/EDITOR.md)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"

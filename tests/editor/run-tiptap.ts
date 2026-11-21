@@ -5,12 +5,13 @@
 //   node --import tsx tests/editor/run-tiptap.ts [filter] [--print] [--headed]
 //
 // filter: only scenarios whose "file/name" contains it. --print: show the actual state of every
-// scenario run (for writing expectations).
+// scenario run (for writing expectations). --schema: also write today's schema to schema.json,
+// which the Rust engine reads.
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
 import { chromium, type Page } from 'playwright';
 import { createServer } from 'node:http';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -214,6 +215,12 @@ try {
   await stubApi(page);
   await page.goto(server.url);
   await page.waitForSelector('body[data-ready="1"]', { state: 'attached' });
+  if (args.includes('--schema')) {
+    const info = await page.evaluate(() => (window as any).nv.schemaInfo());
+    writeFileSync(join(here, 'schema.json'), `${JSON.stringify(info, null, 2)}
+`);
+    console.log('wrote tests/editor/schema.json');
+  }
   for (const { file, s } of all) {
     const id = `${file}/${s.name}`;
     if (s.skip?.tiptap) {
