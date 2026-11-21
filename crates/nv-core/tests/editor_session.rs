@@ -175,6 +175,33 @@ fn slash_menu_in_the_state() {
 }
 
 #[test]
+fn add_checklist_is_offered_next_to_a_task() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    s.key("Mod+a".into());
+    s.insert_text("/add".into());
+    let rows = |s: &EditorSession| {
+        s.state()
+            .suggestion
+            .map(|g| g.slash_items)
+            .unwrap_or_default()
+    };
+    assert!(!rows(&s).contains(&"Add checklist".to_string()));
+    s.key("Mod+a".into());
+    s.insert_text("Pack".into());
+    assert!(s.key("Mod+Enter".into()));
+    // The task line (an empty one is two positions), then the line below it.
+    s.set_selection(3, 3);
+    s.insert_text("/add".into());
+    let sug = s.state().suggestion.unwrap();
+    assert_eq!(sug.slash_items, vec!["Add checklist".to_string()]);
+    assert_eq!(sug.items[0].icon, "list-plus");
+    assert!(s.key("Enter".into()));
+    let doc = s.state().doc_json;
+    assert!(doc.contains("taskList"), "{doc}");
+    assert!(!doc.contains("/add"), "{doc}");
+}
+
+#[test]
 fn unknown_boxes_and_bad_bytes() {
     let t: Arc<dyn TaskCallbacks> = Arc::new(FakeTasks::default());
     assert_eq!(

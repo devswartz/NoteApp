@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use nv_editor::bind::{Clock, REMOTE};
 use nv_editor::input::ViewText;
-use nv_editor::suggest::{filter_slash, slash_details, Trigger};
+use nv_editor::suggest::{slash_details, Trigger};
 use nv_editor::{Editor, Focus, Node, Selection, TaskHost};
 use nv_model::yrs::updates::decoder::Decode;
 use nv_model::yrs::{Doc, Origin, ReadTxn, StateVector, Transact, Update};
@@ -938,7 +938,7 @@ fn view_state(ed: &Editor, v: &ViewText) -> ViewState {
 fn suggestion(ed: &Editor, v: &ViewText) -> Option<EditorSuggestion> {
     ed.suggestion().map(|s| {
         let titles = if s.trigger == Trigger::Slash {
-            filter_slash(&s.query)
+            ed.slash_items()
         } else {
             Vec::new()
         };
