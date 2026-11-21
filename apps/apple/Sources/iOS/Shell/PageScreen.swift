@@ -1,0 +1,356 @@
+import NotiveloCore
+import SwiftUI
+
+/// What a task line draws besides its title (the web's chips): priority, assignee, checklist count.
+struct TaskDecor: Equatable {
+    var priority: UInt8 = 4
+    var assignee: String?
+    var assigneeColor: UIColor?
+    var checklist: (done: UInt32, total: UInt32)?
+
+    static func == (a: TaskDecor, b: TaskDecor) -> Bool {
+        a.priority == b.priority && a.assignee == b.assignee && a.checklist?.done == b.checklist?.done && a.checklist?.total == b.checklist?.total
+    }
+}
+
+/// A page: the top bar, then the canvas (title, sub-line, boxes) on the page's colour. In Hybrid
+/// the page is inset 6 pt with rounded top corners and a shadow (LOOK.md 0.3).
+struct PageScreen: View {
+    let pageId: String
+    @Environment(SessionModel.self) private var session
+    @Environment(Shell.self) private var shell
+    @State var live: LivePageModel?
+    @State var sample: SamplePageScreen.Sample?
+    let theme = Theme.shared
+
+    private var meta: PageMeta? { session.shownTree?.pages.first { $0.id == pageId } }
+
+    var body: some View {
+        let snapshot = currentSnapshot
+        let palette = theme.page.tinted(snapshot?.info.settings.color ?? "none")
+        let hybrid = theme.isHybrid
+        let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: hybrid ? 12 : 0, bottomLeading: 0, bottomTrailing: 0, topTrailing: hybrid ? 12 : 0), style: .continuous)
+        VStack(spacing: 0) {
+            PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount)
+            ZStack(alignment: .topTrailing) {
+                content(snapshot, palette)
+                if let snapshot, !snapshot.info.headings.isEmpty {
+                    OutlineBars(count: snapshot.info.headings.count, palette: palette).padding(.top, 33).padding(.trailing, 18)
+                }
+            }
+        }
+        .background(palette.bg.color)
+        .clipShape(shape)
+        .background(
+            shape.fill(palette.bg.color)
+                .shadow(color: hybrid ? Color.black.opacity(0.45) : .clear, radius: 12, x: 0, y: 6)
+                .overlay(shape.stroke(hybrid ? Color.black.opacity(0.55) : .clear, lineWidth: 1).padding(-0.5))
+        )
+        .padding(.top, hybrid ? 6 : 0).padding(.horizontal, hybrid ? 6 : 0)
+        .onAppear(perform: openPage)
+        .onDisappear {
+            live?.close()
+            live = nil
+            EditorFocus.shared.set(nil)
+        }
+    }
+
+    private var currentSnapshot: PageSnapshot? {
+        if let sample, case let .success(page) = sample.page { return page.snapshot }
+        return live?.snapshot
+    }
+
+    private var editHost: PageEditHost? {
+        if let host = sample?.host { return host }
+        return live
+    }
+
+    private var taskCount: Int {
+        if let s = currentSnapshot { return s.info.taskIds.count }
+        return session.openTaskCount(page: pageId)
+    }
+
+    private var status: String {
+        guard let live else { return "Saved" }
+        switch live.state {
+        case .live: return "Saved"
+        case .connecting: return "Connecting…"
+        case .offline: return "Offline"
+        case .ended: return "Offline"
+        }
+    }
+
+    private func openPage() {
+        if let name = LookData.caseName(pageId) {
+            if sample == nil { sample = SamplePageScreen.Sample(name: name) }
+            return
+        }
+        guard let meta, !meta.locked, live == nil else { return }
+        let m = LivePageModel(pageId: meta.id, title: meta.title, session: session)
+        live = m
+        m.open()
+        session.refreshTasks()
+    }
+
+    private var decor: [String: TaskDecor] {
+        var out: [String: TaskDecor] = [:]
+        let me = session.shownUser
+        for t in session.shownTasks {
+            var d = TaskDecor(priority: t.priority)
+            if session.preview || (t.assigneeId != nil && t.assigneeId == me?.id) {
+                d.assignee = me?.name
+                d.assigneeColor = me.map { UIColor(css: $0.color) }
+            }
+            if let total = t.checklistTotal, total > 0 { d.checklist = (t.checklistDone ?? 0, total) }
+            out[t.id] = d
+        }
+        if session.preview {
+            // Corpus task ids (t1, tb …) aren't the demo tasks: the look seed assigns them all to the demo user.
+            for id in ["t1", "t2", "t3", "tb"] where out[id] == nil {
+                out[id] = TaskDecor(priority: 4, assignee: me?.name, assigneeColor: me.map { UIColor(css: $0.color) },
+                                    checklist: id == "t1" ? (done: UInt32(1), total: UInt32(2)) : nil)
+            }
+        }
+        return out
+    }
+
+    @ViewBuilder
+    private func content(_ snapshot: PageSnapshot?, _ palette: Palette) -> some View {
+        if let meta, meta.locked {
+            message("Locked page", "Locked pages open in the web app for now.", palette)
+        } else if let snapshot {
+            let title = meta?.title ?? snapshot.title
+            let edited = meta.map { "Edited \(Due.ago($0.updatedAt))" + (session.preview ? " by you" : "") } ?? "Edited just now by you"
+            PageCanvasView(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
+                           decor: decor, showAddIcon: LookData.state?.hasPrefix("edit") ?? false)
+                .ignoresSafeArea(.container, edges: .bottom)
+                .ignoresSafeArea(.keyboard)
+        } else if let sample, case let .failure(error) = sample.page {
+            message("Page not found", String(describing: error), palette)
+        } else if let live, case let .ended(text) = live.state {
+            message("Page not found", text, palette)
+        } else if let live, case let .offline(text) = live.state {
+            message("Offline", "\(text)\nTrying again…", palette)
+        } else {
+            Text("Opening…").font(.web(13)).foregroundStyle(palette.textMuted.color)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func message(_ title: String, _ text: String, _ p: Palette) -> some View {
+        VStack(spacing: 8) {
+            Icon("file-text", 28, p.textMuted.color)
+            Text(title).font(.web(22, 700)).foregroundStyle(p.text.color)
+            Text(text).font(.web(14)).foregroundStyle(p.textMuted.color).multilineTextAlignment(.center)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// The page's top bar (LOOK.md 4.4): crumbs on the left; save status, tasks, comments, Share, ⋯ on the right.
+struct PageTopBar: View {
+    let meta: PageMeta?
+    let palette: Palette
+    let status: String
+    let taskCount: Int
+    @Environment(SessionModel.self) private var session
+    @Environment(Shell.self) private var shell
+
+    var body: some View {
+        let p = palette
+        let tree = session.shownTree
+        let section = meta.flatMap { m in tree?.sections.first { $0.id == m.sectionId } }
+        let notebook = section.flatMap { s in tree?.notebooks.first { $0.id == s.notebookId } }
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                if let notebook {
+                    Circle().fill(UIColor(css: notebook.color).color).frame(width: 8, height: 8)
+                    Text(notebook.name).lineLimit(1)
+                    Icon("chevron-right", 14, p.textMuted.color)
+                }
+                if let section { Text(section.name).lineLimit(1) }
+            }
+            .font(.web(13))
+            .foregroundStyle(p.text2.color)
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                HStack(spacing: 5) {
+                    Icon(status == "Saved" ? "check" : status == "Offline" ? "cloud-off" : "loader", 14, statusColor.color)
+                    Text(status).font(.web(12))
+                }
+                .foregroundStyle(statusColor.color)
+                .padding(.horizontal, 6)
+                iconButton("list-todo", badge: taskCount) { shell.notYet("Tasks on this page") }
+                iconButton("message-square", badge: 0) { shell.notYet("Comments") }
+                Button { shell.notYet("Sharing") } label: {
+                    HStack(spacing: 6) {
+                        Icon("user-plus", 14, p.text.color)
+                        Text("Share").font(.web(13, 500)).foregroundStyle(p.text.color)
+                    }
+                    .padding(.horizontal, 10).frame(height: 28)
+                    .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+                    .shadowSm(p)
+                }
+                .buttonStyle(.plain)
+                Button { shell.menu = .pageOptions } label: {
+                    Icon("ellipsis", 18, p.text2.color).frame(width: 32, height: 32)
+                }
+                .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+                .anchor("page-options", shell)
+            }
+        }
+        .padding(.leading, 20).padding(.trailing, 16)
+        .frame(height: 48)
+        .background(p.bg.withAlphaComponent(0.88).color)
+    }
+
+    private var statusColor: UIColor {
+        status == "Offline" ? UIColor.mix(palette.warn, 0.65, palette.text) : palette.text2
+    }
+
+    private func iconButton(_ icon: String, badge: Int, _ action: @escaping () -> Void) -> some View {
+        let p = palette
+        return Button(action: action) {
+            Icon(icon, 18, p.text2.color)
+                .frame(width: 32, height: 32)
+                .overlay(alignment: .topTrailing) {
+                    if badge > 0 {
+                        Text("\(badge)").font(.web(10, 600)).foregroundStyle(.white)
+                            .padding(.horizontal, 4).frame(minWidth: 16, minHeight: 16)
+                            .background(p.accentSolid.color, in: Capsule())
+                            .offset(x: 2, y: -1)
+                    }
+                }
+        }
+        .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+    }
+}
+
+/// The outline rail at the page's top right: a 16×2 bar per heading, the first in the accent.
+struct OutlineBars: View {
+    let count: Int
+    let palette: Palette
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            ForEach(0..<min(count, 14), id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1).fill((i == 0 ? palette.accent : palette.borderStrong).color).frame(width: 16, height: 2)
+            }
+        }
+        .frame(width: 28)
+        .allowsHitTesting(false)
+    }
+}
+
+/// No page selected: the Notes overview (recently edited cards, then every notebook).
+struct NotesHome: View {
+    @Environment(SessionModel.self) private var session
+    @Environment(Shell.self) private var shell
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        let tree = session.shownTree
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Notes").font(.web(26, 700)).tracking(-0.52).foregroundStyle(p.text.color)
+                if let tree {
+                    let index = TreeIndex(tree)
+                    let recent = tree.pages.sorted { $0.updatedAt > $1.updatedAt }.prefix(8)
+                    if !recent.isEmpty {
+                        heading("Recently edited", p).padding(.top, 14)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 10)], spacing: 10) {
+                            ForEach(Array(recent), id: \.id) { page in
+                                Button { shell.open(page: page.id) } label: {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        if let icon = page.icon, !icon.isEmpty { Text(icon).font(.system(size: 14)) } else { Icon("file-text", 16, p.text2.color) }
+                                        Text(page.title.isEmpty ? "Untitled" : page.title).font(.web(14, 650)).foregroundStyle(p.text.color)
+                                            .lineLimit(1).padding(.top, 10)
+                                        Text(Due.ago(page.updatedAt)).font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.top, 8)
+                                    }
+                                    .padding(14)
+                                    .frame(maxWidth: .infinity, minHeight: 100, alignment: .topLeading)
+                                    .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(p.border.color, lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.top, 10)
+                    }
+                    ForEach(index.notebooks, id: \.id) { nb in
+                        HStack(spacing: 8) {
+                            LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
+                            Text(nb.name).font(.web(14, 650)).foregroundStyle(p.text.color)
+                        }
+                        .padding(.top, 30).padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+                        ForEach(index.sections(in: nb), id: \.id) { s in
+                            HStack(spacing: 8) {
+                                RoundedRectangle(cornerRadius: 2).fill(UIColor(css: s.color).color).frame(width: 3, height: 14)
+                                Text(s.name).font(.web(13, 600)).foregroundStyle(p.text2.color)
+                            }
+                            .padding(.top, 14).padding(.bottom, 6)
+                            ForEach(index.pages(in: s), id: \.id) { page in
+                                Button { shell.open(page: page.id) } label: {
+                                    HStack(spacing: 10) {
+                                        Icon("file-text", 15, p.textMuted.color)
+                                        Text(page.title.isEmpty ? "Untitled" : page.title).font(.web(14)).foregroundStyle(p.text.color)
+                                        Spacer(minLength: 0)
+                                        Text(Due.ago(page.updatedAt)).font(.web(12.5)).foregroundStyle(p.textMuted.color)
+                                    }
+                                    .padding(.horizontal, 12).frame(height: 42)
+                                    .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.top, 36).padding(.horizontal, 40).padding(.bottom, 120)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .refreshable { await session.refresh() }
+    }
+
+    private func heading(_ text: String, _ p: Palette) -> some View {
+        Text(text).font(.web(13.5, 650)).foregroundStyle(p.text.color)
+            .padding(.bottom, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+    }
+}
+
+/// A section with no page open: empty → "This section has no pages yet."
+struct SectionScreen: View {
+    let sectionId: String
+    @Environment(SessionModel.self) private var session
+    @Environment(Shell.self) private var shell
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        let section = session.shownTree?.sections.first { $0.id == sectionId }
+        VStack(spacing: 8) {
+            Icon("file-text", 28, p.textMuted.color)
+            Text(section?.name ?? "Section").font(.web(22, 700)).foregroundStyle(p.text.color)
+            Text("This section has no pages yet.").font(.web(14)).foregroundStyle(p.textMuted.color)
+            Button { shell.notYet("New page") } label: {
+                HStack(spacing: 6) {
+                    Icon("file-plus", 15, .white)
+                    Text("New page").font(.web(14, 500)).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 12).frame(height: 32)
+                .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}

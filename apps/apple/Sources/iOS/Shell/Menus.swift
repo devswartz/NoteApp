@@ -1,0 +1,496 @@
+import NotiveloCore
+import SwiftUI
+
+/// A popover in the web's menu style (LOOK.md 4.9): `--bg-elevated`, 1 pt border, radius 12,
+/// `--shadow-lg`, padding 6.
+struct MenuCard<Content: View>: View {
+    let palette: Palette
+    var width: CGFloat
+    var radius: CGFloat = 12
+    var padding: CGFloat = 6
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content() }
+            .padding(padding)
+            .frame(width: width, alignment: .leading)
+            .background(palette.bgElevated.color, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(palette.border.color, lineWidth: 1))
+            .shadowLg(palette)
+    }
+}
+
+/// A menu item: 32 high, icon column 18 (icon 15 muted), text 14, hint 12 muted, check for the current choice.
+struct MenuItem: View {
+    let palette: Palette
+    let title: String
+    var icon: String?
+    var hint: String?
+    var note: String?
+    var danger = false
+    var disabled = false
+    var checked = false
+    var trailingChevron = false
+    let action: () -> Void
+
+    var body: some View {
+        let p = palette
+        let fg = danger ? p.danger : p.text
+        Button(action: action) {
+            HStack(alignment: note == nil ? .center : .top, spacing: 10) {
+                Group {
+                    if let icon { Icon(icon, 15, (danger ? p.danger : p.textMuted).color) } else { Color.clear }
+                }
+                .frame(width: 18, height: 18)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.web(14)).foregroundStyle(fg.color).lineLimit(1)
+                    if let note {
+                        Text(note).font(.web(11.5)).foregroundStyle(p.textMuted.color).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let hint { Text(hint).font(.web(12)).foregroundStyle(p.textMuted.color).padding(.leading, 16) }
+                if checked { Icon("check", 14, p.accent.color) }
+                if trailingChevron { Icon("chevron-right", 14, p.textMuted.color) }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, note == nil ? 0 : 7)
+            .frame(minHeight: 32)
+        }
+        .buttonStyle(PressStyle(radius: 6, pressed: (danger ? p.danger.withAlphaComponent(0.12) : p.bgHover).color))
+        .disabled(disabled)
+        .opacity(disabled ? 0.6 : 1)
+    }
+}
+
+/// The menu label row (MY NOTEBOOKS, THEME …): 11.5/600 uppercase muted.
+struct MenuLabel: View {
+    let palette: Palette
+    let text: String
+    var body: some View {
+        Text(text.uppercased()).font(.web(11.5, 600)).tracking(0.35).foregroundStyle(palette.textMuted.color)
+            .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 4)
+    }
+}
+
+/// A separator running to the popover's edges, 6 pt above and below.
+struct MenuSeparator: View {
+    let palette: Palette
+    var body: some View {
+        Rectangle().fill(palette.border.color).frame(height: 1).padding(.horizontal, -6).padding(.vertical, 6)
+    }
+}
+
+/// The colour row in notebook and section menus: 20×20 circles, gap 6, padding 8.
+struct ColorRow: View {
+    let palette: Palette
+    let selected: String?
+    let pick: (String) -> Void
+    static let colors = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#64748b"]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(Self.colors, id: \.self) { c in
+                Button { pick(c) } label: {
+                    Circle().fill(UIColor(css: c).color).frame(width: 20, height: 20)
+                        .overlay(Circle().stroke(palette.accent.color, lineWidth: 2).padding(-3).opacity(c.lowercased() == selected?.lowercased() ? 1 : 0))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+    }
+}
+
+/// Every menu of the shell, placed at its anchor; a tap outside closes it.
+struct MenuLayer: View {
+    let width: CGFloat
+    let height: CGFloat
+    @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
+    let theme = Theme.shared
+    let focus = EditorFocus.shared
+
+    var body: some View {
+        if let menu = shell.menu {
+            ZStack(alignment: .topLeading) {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture { shell.menu = nil }
+                placed(menu)
+            }
+            .frame(width: width, height: height)
+        }
+    }
+
+    private func anchorFrame(_ id: String) -> CGRect {
+        shell.frames[id] ?? CGRect(x: width / 2, y: 60, width: 0, height: 0)
+    }
+
+    /// The popover's corner at a point: below start-aligned, below end-aligned, or right of a rail button bottom-aligned.
+    private func at<V: View>(_ point: CGPoint, _ alignment: Alignment, _ content: V) -> some View {
+        Color.clear.frame(width: 0, height: 0)
+            .overlay(alignment: alignment) { content.fixedSize() }
+            .position(x: min(max(point.x, 8), width - 8), y: min(max(point.y, 8), height - 8))
+    }
+
+    @ViewBuilder
+    private func placed(_ menu: Shell.Menu) -> some View {
+        let p = theme.chrome
+        switch menu {
+        case .account:
+            let f = anchorFrame("rail-account")
+            at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading, accountMenu(p))
+        case .workspace:
+            let f = anchorFrame("rail-workspace")
+            at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading, workspaceMenu(p))
+        case .notebookPicker:
+            let f = anchorFrame("notebook-picker")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, notebookPicker(p))
+        case .notebookOptions:
+            let f = anchorFrame("notebook-options")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, notebookOptions(p))
+        case let .section(id):
+            let f = anchorFrame("section:\(id)")
+            at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, sectionMenu(p, id))
+        case let .pageRow(id):
+            let f = anchorFrame("page:\(id)")
+            at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, pageRowMenu(p))
+        case .pageOptions:
+            let f = anchorFrame("page-options")
+            at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, pageOptions(p))
+        case .blockType:
+            let f = anchorFrame("rb-block")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, blockMenu(p))
+        case .textColor:
+            let f = anchorFrame("rb-text-colour")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, colorMenu(theme.page, highlight: false))
+        case .highlight:
+            let f = anchorFrame("rb-highlight")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, colorMenu(theme.page, highlight: true))
+        case .taskSplit:
+            let f = anchorFrame("rb-task")
+            at(CGPoint(x: f.minX - 30, y: f.maxY + 6), .topLeading, taskMenu(p))
+        case .pageColor:
+            let f = anchorFrame("rb-page-colour")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, pageColorMenu(p))
+        case .ruleLines:
+            let f = anchorFrame("rb-rule-lines")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, ruleMenu(p))
+        }
+    }
+
+    // MARK: Rail and sidebar menus
+
+    private func accountMenu(_ p: Palette) -> some View {
+        let user = session.shownUser
+        return MenuCard(palette: p, width: 262) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(user?.name ?? "").font(.web(14, 600)).foregroundStyle(p.text.color)
+                Text(user?.email ?? "").font(.web(12.5)).foregroundStyle(p.textMuted.color)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            MenuSeparator(palette: p)
+            MenuLabel(palette: p, text: "Theme")
+            HStack(spacing: 2) {
+                ForEach(ThemeMode.allCases, id: \.self) { mode in
+                    let active = theme.mode == mode
+                    Button { theme.mode = mode } label: {
+                        VStack(spacing: 3) {
+                            Icon(mode.icon, 14, (active ? p.text : p.text2).color)
+                            Text(mode.label).font(.web(11.5, 500)).foregroundStyle((active ? p.text : p.text2).color)
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 42)
+                        .background(active ? p.bg.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .shadowSm(p)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(2)
+            .background(p.bgSubtle.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+            .padding(.horizontal, 4).padding(.bottom, 2)
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Settings", icon: "settings") { shell.notYet("Settings") }
+            MenuItem(palette: p, title: "Keyboard shortcuts", icon: "keyboard", hint: "?") { shell.notYet("The shortcuts list") }
+            if session.isStaging {
+                MenuItem(palette: p, title: "Server: \(session.host)", icon: "globe", disabled: true) {}
+            }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Sign out", icon: "log-out") {
+                shell.menu = nil
+                session.signOut()
+            }
+        }
+    }
+
+    private func workspaceMenu(_ p: Palette) -> some View {
+        MenuCard(palette: p, width: 240) {
+            ForEach(session.shownWorkspaces, id: \.id) { ws in
+                MenuItem(palette: p, title: ws.name, hint: ws.role.prefix(1).uppercased() + ws.role.dropFirst(),
+                         checked: ws.id == (session.shownWorkspace?.id)) {
+                    shell.menu = nil
+                    if !session.preview { session.selectWorkspace(ws.id) }
+                }
+            }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.notYet("New workspace") }
+            MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.notYet("Workspace settings") }
+            MenuItem(palette: p, title: "Activity", icon: "activity") { shell.notYet("Activity") }
+            MenuItem(palette: p, title: "Trash", icon: "trash") { shell.notYet("Trash") }
+        }
+    }
+
+    private func notebookPicker(_ p: Palette) -> some View {
+        let tree = session.shownTree
+        let current = currentNotebook(tree, shell)
+        let notebooks = tree.map { TreeIndex($0).notebooks } ?? []
+        return MenuCard(palette: p, width: 260) {
+            MenuLabel(palette: p, text: "My notebooks")
+            ForEach(notebooks, id: \.id) { nb in
+                Button {
+                    shell.menu = nil
+                    shell.notebookId = nb.id
+                    shell.route = .notes
+                } label: {
+                    HStack(spacing: 10) {
+                        LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
+                        Text(nb.name).font(.web(14)).foregroundStyle(p.text.color).lineLimit(1)
+                        Spacer(minLength: 0)
+                        if nb.id == current?.id { Icon("check", 14, p.accent.color) }
+                    }
+                    .padding(.horizontal, 10).frame(height: 32)
+                }
+                .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
+            }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "New notebook", icon: "book-plus") { shell.notYet("New notebook") }
+        }
+    }
+
+    private func notebookOptions(_ p: Palette) -> some View {
+        let nb = currentNotebook(session.shownTree, shell)
+        return MenuCard(palette: p, width: 230) {
+            MenuItem(palette: p, title: "New section", icon: "folder-plus") { shell.notYet("New section") }
+            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
+            MenuItem(palette: p, title: "Share with people…", icon: "user-plus") { shell.notYet("Sharing") }
+            MenuItem(palette: p, title: nb?.visibility == "private" ? "Share with workspace" : "Make private", icon: "lock") { shell.notYet("Changing who sees a notebook") }
+            MenuItem(palette: p, title: "Print…", icon: "printer") { shell.notYet("Printing") }
+            ColorRow(palette: p, selected: nb?.color) { _ in shell.notYet("Notebook colours") }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Delete notebook", icon: "trash", danger: true) { shell.notYet("Deleting notebooks") }
+        }
+    }
+
+    private func sectionMenu(_ p: Palette, _ id: String) -> some View {
+        let section = session.shownTree?.sections.first { $0.id == id }
+        return MenuCard(palette: p, width: 236) {
+            Group {
+            MenuItem(palette: p, title: "New page", icon: "file-plus") { shell.notYet("New page") }
+            MenuItem(palette: p, title: "New page from template", icon: "layout-template", trailingChevron: true) { shell.notYet("Templates") }
+            MenuItem(palette: p, title: "Default template…", icon: "file-cog") { shell.notYet("Templates") }
+            MenuItem(palette: p, title: "New subsection", icon: "folder-plus") { shell.notYet("New subsection") }
+            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
+            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.notYet("Duplicating") }
+            MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.notYet("Moving") }
+            }
+            MenuItem(palette: p, title: "Print…", icon: "printer") { shell.notYet("Printing") }
+            ColorRow(palette: p, selected: section?.color) { _ in shell.notYet("Section colours") }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Delete section", icon: "trash", danger: true) { shell.notYet("Deleting sections") }
+        }
+    }
+
+    private func pageRowMenu(_ p: Palette) -> some View {
+        MenuCard(palette: p, width: 236) {
+            MenuItem(palette: p, title: "Add to favourites", icon: "star") { shell.notYet("Favourites") }
+            MenuItem(palette: p, title: "Copy link", icon: "link-2") { shell.notYet("Copying links") }
+            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
+            MenuItem(palette: p, title: "Lock page", icon: "lock",
+                     note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
+            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.notYet("Duplicating") }
+            MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.notYet("Moving") }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { shell.notYet("Deleting pages") }
+        }
+    }
+
+    private func pageOptions(_ p: Palette) -> some View {
+        let tree = session.shownTree
+        let index = tree.map(TreeIndex.init)
+        return MenuCard(palette: p, width: 300) {
+            Group {
+            MenuItem(palette: p, title: "Share…", icon: "user-plus") { shell.notYet("Sharing") }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Lock page", icon: "lock",
+                     note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
+            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.notYet("Duplicating") }
+            MenuItem(palette: p, title: "Save as template…", icon: "layout-template") { shell.notYet("Templates") }
+            MenuItem(palette: p, title: "Version history", icon: "rotate-ccw-clock") { shell.notYet("Version history") }
+            MenuSeparator(palette: p)
+            }
+            Group {
+            MenuItem(palette: p, title: "Export as Markdown", icon: "file-down") { shell.notYet("Export") }
+            MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.notYet("Export") }
+            MenuItem(palette: p, title: "Print", icon: "printer", hint: "⌘P") { shell.notYet("Printing") }
+            MenuItem(palette: p, title: "Print page colour") { shell.notYet("Printing") }
+            MenuItem(palette: p, title: "Import Markdown…", icon: "file-up") { shell.notYet("Import") }
+            MenuSeparator(palette: p)
+            }
+            HStack(spacing: 2) {
+                segment(p, "Move to", "folder-input", active: true)
+                segment(p, "Copy to", "copy", active: false)
+            }
+            .padding(2)
+            .background(p.bgHover.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 4).padding(.bottom, 4)
+            if let index {
+                ForEach(index.notebooks.prefix(2), id: \.id) { nb in
+                    Text(nb.name).font(.web(11.5, 600)).foregroundStyle(p.textMuted.color).padding(.horizontal, 10).padding(.top, 6)
+                    ForEach(index.sections(in: nb).prefix(3), id: \.id) { s in
+                        MenuItem(palette: p, title: s.name) { shell.notYet("Moving pages") }
+                            .overlay(alignment: .leading) { Circle().fill(UIColor(css: s.color).color).frame(width: 8, height: 8).padding(.leading, 15) }
+                    }
+                }
+            }
+            MenuSeparator(palette: p)
+            MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { shell.notYet("Deleting pages") }
+        }
+    }
+
+    private func segment(_ p: Palette, _ title: String, _ icon: String, active: Bool) -> some View {
+        HStack(spacing: 6) {
+            Icon(icon, 13, (active ? p.text : p.text2).color)
+            Text(title).font(.web(12.5, 500)).foregroundStyle((active ? p.text : p.text2).color)
+        }
+        .frame(maxWidth: .infinity).frame(height: 28)
+        .background(active ? p.bgElevated.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    // MARK: Ribbon menus
+
+    private func blockMenu(_ p: Palette) -> some View {
+        MenuCard(palette: p, width: 220, radius: 10, padding: 4) {
+            blockItem(p, "Normal", .web(14), "⌘⌥0") { focus.run("setParagraph") }
+            blockItem(p, "Heading 1", .web(18, 700), "⌘⌥1") { focus.run("setHeading", ["level": 1]) }
+            blockItem(p, "Heading 2", .web(16, 650), "⌘⌥2") { focus.run("setHeading", ["level": 2]) }
+            blockItem(p, "Heading 3", .web(14.5, 600), "⌘⌥3") { focus.run("setHeading", ["level": 3]) }
+            blockItem(p, "Quote", Font(UIFont.italicSystemFont(ofSize: 14) as CTFont), nil, quote: true) { focus.run("toggleQuote") }
+            blockItem(p, "Code", Font(WebType.mono(13) as CTFont), "⌘⌥C") { focus.run("toggleCodeBlock") }
+        }
+    }
+
+    private func blockItem(_ p: Palette, _ title: String, _ font: Font, _ key: String?, quote: Bool = false, _ action: @escaping () -> Void) -> some View {
+        Button {
+            shell.menu = nil
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                Text(title).font(font).foregroundStyle(p.text.color)
+                Spacer(minLength: 16)
+                if let key { Text(key).font(.web(11.5, 500)).foregroundStyle(p.textMuted.color) }
+            }
+            .padding(.vertical, 6).padding(.horizontal, 10)
+            .overlay(alignment: .leading) {
+                if quote { Rectangle().fill(p.borderStrong.color).frame(width: 3) }
+            }
+        }
+        .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
+    }
+
+    private func colorMenu(_ p: Palette, highlight: Bool) -> some View {
+        MenuCard(palette: p, width: 120, radius: 10, padding: 4) {
+            Text(highlight ? "Highlight" : "Text colour").font(.web(12, 500)).foregroundStyle(p.textMuted.color)
+                .padding(.top, 2).padding(.horizontal, 4).padding(.bottom, 6)
+            let names: [String?] = [nil] + Palette.colorNames.map { Optional($0) }
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 4), count: 3), spacing: 4) {
+                ForEach(0..<names.count, id: \.self) { i in
+                    let name = names[i]
+                    Button {
+                        shell.menu = nil
+                        if highlight {
+                            if let name { focus.run("setHighlight", ["color": name]) } else { focus.run("unsetHighlight") }
+                        } else {
+                            if let name { focus.run("setColor", ["color": name]) } else { focus.run("unsetColor") }
+                        }
+                    } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(highlight && name != nil ? p.highlight(name).color : p.bgElevated.color)
+                            RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(p.border.color, lineWidth: 1)
+                            if highlight && name == nil {
+                                Rectangle().fill(p.textMuted.color).frame(width: 18, height: 2).rotationEffect(.degrees(-45))
+                            } else if !highlight {
+                                Text("A").font(.web(15, 600)).foregroundStyle((name.flatMap { p.textColor($0) } ?? p.text).color)
+                            }
+                        }
+                        .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(width: 104)
+        }
+    }
+
+    private func taskMenu(_ p: Palette) -> some View {
+        MenuCard(palette: p, width: 220, radius: 10, padding: 4) {
+            Button {
+                shell.menu = nil
+                focus.run("toggleChecklist")
+            } label: {
+                HStack(spacing: 8) {
+                    Icon("list-checks", 16, p.text2.color)
+                    Text("Plain checkbox").font(.web(14)).foregroundStyle(p.text.color)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 6).padding(.horizontal, 10)
+            }
+            .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
+        }
+    }
+
+    private func pageColorMenu(_ p: Palette) -> some View {
+        let names = ["none", "yellow", "green", "blue", "purple", "pink", "grey"]
+        let page = theme.page
+        return MenuCard(palette: p, width: 156, radius: 10, padding: 4) {
+            Text("Page colour").font(.web(12, 500)).foregroundStyle(p.textMuted.color)
+                .padding(.top, 2).padding(.horizontal, 4).padding(.bottom, 6)
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 4), count: 4), spacing: 4) {
+                ForEach(names, id: \.self) { name in
+                    Button { shell.notYet("Changing the page colour") } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(page.tinted(name).bg.color)
+                            if name == "none" {
+                                Rectangle().fill(p.textMuted.color).frame(width: 2, height: 40).rotationEffect(.degrees(45))
+                            }
+                            RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(p.borderStrong.color, lineWidth: 1)
+                        }
+                        .frame(width: 32, height: 32)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .frame(width: 140)
+        }
+    }
+
+    private func ruleMenu(_ p: Palette) -> some View {
+        MenuCard(palette: p, width: 160, radius: 10, padding: 4) {
+            let items: [(String, String?)] = [("None", nil), ("Lines", "rows-3"), ("Grid", "grid-3x3")]
+            ForEach(0..<items.count, id: \.self) { i in
+                Button { shell.notYet("Changing rule lines") } label: {
+                    HStack(spacing: 8) {
+                        if let icon = items[i].1 { Icon(icon, 16, p.text2.color) } else { Color.clear.frame(width: 16, height: 16) }
+                        Text(items[i].0).font(.web(14)).foregroundStyle(p.text.color)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 6).padding(.horizontal, 10)
+                }
+                .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
+            }
+        }
+    }
+}
