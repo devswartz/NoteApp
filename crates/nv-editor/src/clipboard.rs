@@ -56,6 +56,13 @@ impl Editor {
             return true;
         }
         let text = text.replace("\r\n", "\n");
+        // In a code block, text goes in as it is, line breaks and all.
+        if let Some(pos) = self.sel.head() {
+            if self.resolve(pos).parent(&self.doc).is("codeBlock") {
+                self.insert_text_raw(&text);
+                return true;
+            }
+        }
         let blocks: Vec<Node> = text
             .split('\n')
             .map(|line| Node::el("paragraph", inline_markdown(line)))
@@ -317,6 +324,10 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         marks: Vec<Mark>,
         block_kind: Option<(String, Attrs)>,
         lists: Vec<(String, Vec<Node>)>,
+        /// The open `<li>`'s attributes (a checklist item's `checked`).
+        item: Attrs,
+        /// Per open `<span>`: whether it opened a colour (`textStyle`) mark.
+        spans: Vec<bool>,
     }
     let mut b = B {
         blocks: Vec::new(),
@@ -324,6 +335,8 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         marks: Vec::new(),
         block_kind: None,
         lists: Vec::new(),
+        item: Attrs::new(),
+        spans: Vec::new(),
     };
     fn flush(b: &mut B) {
         let has = b
@@ -348,6 +361,9 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         let mut node = Node::new(&kind, attrs, content);
         node.normalize();
         match b.lists.last_mut() {
+            Some((kind, items)) if kind == "taskList" => {
+                items.push(Node::new("taskItem", b.item.clone(), vec![node]))
+            }
             Some((_, items)) => items.push(Node::el("listItem", vec![node])),
             None => b.blocks.push(node),
         }
@@ -378,13 +394,40 @@ pub fn parse_html(html: &str) -> Vec<Node> {
                 "s" | "strike" | "del" => Some("strike"),
                 "code" => Some("code"),
                 "a" => Some("link"),
+                "mark" => Some("highlight"),
                 _ => None,
             };
+            // Colours are palette names only (src/editor/colors.ts): `<span data-color>` is a
+            // text colour, `<mark data-color>` a highlight; anything else stays plain text.
+            let color = attr("data-color").filter(|c| nv_model::urls::is_color_name(Some(c)));
+            if name == "span" {
+                if closing {
+                    if b.spans.pop() == Some(true) {
+                        if let Some(i) = b.marks.iter().rposition(|x| x.kind == "textStyle") {
+                            b.marks.remove(i);
+                        }
+                    }
+                } else if !body.ends_with('/') {
+                    b.spans.push(color.is_some());
+                    if let Some(c) = &color {
+                        let mut a = Attrs::new();
+                        a.insert("color".into(), json!(c));
+                        b.marks.push(Mark::new("textStyle", a));
+                    }
+                }
+                continue;
+            }
             if let Some(m) = mark {
                 if closing {
                     if let Some(i) = b.marks.iter().rposition(|x| x.kind == m) {
                         b.marks.remove(i);
                     }
+                } else if m == "highlight" {
+                    let mut a = Attrs::new();
+                    if let Some(c) = &color {
+                        a.insert("color".into(), json!(c));
+                    }
+                    b.marks.push(Mark::new("highlight", a));
                 } else if m == "link" {
                     let href = nv_model::urls::safe_link_url(attr("href").as_deref());
                     if !href.is_empty() {
@@ -401,6 +444,12 @@ pub fn parse_html(html: &str) -> Vec<Node> {
             match (name.as_str(), closing) {
                 ("p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" | "pre", false) => {
                     flush(&mut b);
+                    if name == "li" {
+                        b.item = Attrs::new();
+                        if attr("data-checked").as_deref() == Some("true") {
+                            b.item.insert("checked".into(), json!(true));
+                        }
+                    }
                     if let Some(level) = name.strip_prefix('h').and_then(|l| l.parse::<u64>().ok())
                     {
                         let mut a = Attrs::new();
@@ -416,7 +465,9 @@ pub fn parse_html(html: &str) -> Vec<Node> {
                 ("ul" | "ol", false) => {
                     flush(&mut b);
                     b.lists.push((
-                        if name == "ul" {
+                        if attr("data-type").as_deref() == Some("taskList") {
+                            "taskList".into()
+                        } else if name == "ul" {
                             "bulletList".into()
                         } else {
                             "orderedList".into()

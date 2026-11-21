@@ -107,11 +107,16 @@ pub fn slash_details(title: &str) -> (&'static str, &'static str) {
 }
 
 /// Slash items for a query: title prefix first, then a word prefix in title or keywords, then a substring.
+///
+/// "Add checklist" is left out: today's menu offers it only on a line in a task's notes or just
+/// below a task, and the engine can't run it yet (a follow-up, with the session passing the
+/// caret's context; docs/rewrite/status/editor.md).
 pub fn filter_slash(query: &str) -> Vec<&'static str> {
     let q = query.trim().to_lowercase();
     let mut scored: Vec<(usize, usize, &str)> = SLASH_ITEMS
         .iter()
         .enumerate()
+        .filter(|(_, (title, _))| *title != "Add checklist")
         .filter_map(|(n, (title, kw))| {
             let t = title.to_lowercase();
             let all = format!("{t} {}", kw.to_lowercase());

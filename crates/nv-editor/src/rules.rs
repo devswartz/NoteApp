@@ -190,12 +190,13 @@ fn insert_rule(ed: &mut Editor) -> bool {
     true
 }
 
-/// `**b**`, `__b__`, `*i*`, `_i_`, `` `c` ``, `~~s~~` just before the caret (after a space or the line start).
+/// `**b**`, `__b__`, `*i*`, `_i_`, `` `c` ``, `~~s~~`, `==h==` just before the caret (after a space or the line start).
 fn mark_rule(ed: &mut Editor, before: &str) -> bool {
     for (delim, mark) in [
         ("**", "bold"),
         ("__", "bold"),
         ("~~", "strike"),
+        ("==", "highlight"),
         ("`", "code"),
         ("*", "italic"),
         ("_", "italic"),

@@ -41,11 +41,17 @@ impl Editor {
                 self.add_mark_range(f, t, &Mark::new(kind, one(attr, &a[attr])));
                 true
             }
-            "unsetLink" => {
+            "unsetLink" | "unsetColor" | "unsetHighlight" => {
+                let kind = match name {
+                    "unsetColor" => "textStyle",
+                    "unsetHighlight" => "highlight",
+                    _ => "link",
+                };
                 let (f, t) = self.range();
-                self.remove_mark_range(f, t, "link");
+                self.remove_mark_range(f, t, kind);
                 true
             }
+            "editLink" => self.edit_link(a["text"].as_str(), s(a, "href")),
             "selectAll" => self.select_all(),
             "insertTable" => self.insert_table(
                 a["rows"].as_u64().unwrap_or(3) as usize,
@@ -53,7 +59,10 @@ impl Editor {
                 a["header"].as_bool().unwrap_or(true),
             ),
             "addRowAfter" => self.add_row(true),
+            "addRowBefore" => self.add_row(false),
             "addColumnAfter" => self.add_column_after(),
+            "addColumnBefore" => self.add_column(false),
+            "toggleHeaderRow" => self.toggle_header_row(),
             "deleteRow" => self.delete_row(),
             "deleteColumn" => self.delete_column(),
             "deleteTable" => self.delete_table(),
