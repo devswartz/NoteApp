@@ -660,6 +660,7 @@ name = "nv-core"
 version = "0.1.0"
 dependencies = [
  "nv-api",
+ "nv-editor",
  "nv-model",
  "nv-store",
  "nv-sync",

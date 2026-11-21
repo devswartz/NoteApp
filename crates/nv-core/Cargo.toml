@@ -21,6 +21,7 @@ required-features = ["bindgen"]
 
 [dependencies]
 nv-api = { path = "../nv-api" }
+nv-editor = { path = "../nv-editor" }
 nv-model = { path = "../nv-model" }
 nv-sync = { path = "../nv-sync" }
 nv-store = { path = "../nv-store" }

@@ -15,8 +15,10 @@ use nv_model::{DocKind, Page, TaskLine};
 
 mod client;
 mod content;
+mod editor_session;
 pub use client::*;
 pub use content::*;
+pub use editor_session::*;
 
 uniffi::setup_scaffolding!();
 
