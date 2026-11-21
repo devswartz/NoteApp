@@ -138,7 +138,7 @@ async function stubApi(page: Page) {
     if (req.method() === 'POST' && /\/tasks$/.test(new URL(req.url()).pathname)) {
       const now = new Date().toISOString();
       const t = { workspaceId: 'w1', description: '', status: 'open', priority: 4, dueDate: null, dueTime: null, recurrence: null, reminderAt: null, assigneeId: null, createdBy: 'u1', pageId: null, parentId: null, teamId: null, tagIds: [], position: 1, completedAt: null, createdAt: now, updatedAt: now, ...body };
-      tasks.set(String(t.id), t);
+      tasks.set(String(body.id), t);
       out = t;
     } else if (req.method() === 'PATCH' && id) {
       const t = { ...(tasks.get(id) ?? { id }), ...body };
