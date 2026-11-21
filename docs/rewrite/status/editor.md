@@ -2,6 +2,12 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-21: TipTap suite flake on CI fixed (branch `rewrite/editor-input`)
+
+- **Cause**: Rewrite run 44920734045 failed `tasks/Backspace in an empty task title makes a plain line` (tasks want `{}`, got `{"t1":{"title":"A"}}`). Not focus timing: the previous scenario's task create / title save (title "A") was still in flight on the slower runner, and its reply landed after the next scenario's `nv.load`, putting that task back in the store.
+- **Fix** (`tests/editor/harness/main.tsx`, `tests/editor/run-tiptap.ts`): the harness counts in-flight fetches; `nv.settle()` waits until none are in flight for two frames. `nv.load` settles before seeding the store, and the runner settles before each scenario's end check (instead of a fixed 50 ms). No scenario or expectation changed. New stress flags: `NV_EDITOR_API_DELAY=150` (ms per stub API reply; reproduced the leak in 6 task scenarios before the fix) and `NV_EDITOR_THROTTLE=6` (CDP CPU throttling).
+- **Result**: local full suite 144 passed, 0 failed, 3 skipped, ~19 s before and after (26 s with delay 150 + throttle 4, all passing); `npx tsc -b` clean, `cargo test -p nv-editor --test suite` green. CI Rewrite run 44921701420 green (editor suite (TipTap) passed).
+
 ## 2026-11-21: native text-input contract, step 2 (branch `rewrite/editor-input`)
 
 Branched from `origin/rewrite/native`. How UIKit, AppKit, Android, Windows (and later the web) text input maps onto the engine, written down, tested on today's editor, and passing in nv-editor.
