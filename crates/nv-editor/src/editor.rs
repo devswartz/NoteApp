@@ -972,6 +972,25 @@ impl Editor {
         self.last_sel = self.sel.clone();
     }
 
+    /// An editor on what `field` of `doc` holds now, bound to it, with the caret at the start
+    /// of the first text block. Opening writes the trailing paragraph when it's missing.
+    pub fn open(
+        doc: nv_model::yrs::Doc,
+        field: &str,
+        tasks: Box<dyn crate::tasks::TaskHost>,
+        clock: crate::bind::Clock,
+    ) -> Editor {
+        let mut tree = crate::bind::read_tree(&doc, field);
+        if !tree.content.last().is_some_and(|n| n.is("paragraph")) {
+            tree.content.push(Node::el("paragraph", vec![]));
+        }
+        let caret = Selection::caret(near_text(&tree, 0, 1));
+        let mut ed = Editor::new(tree, caret);
+        ed.tasks = tasks;
+        ed.bind(doc, field, clock);
+        ed
+    }
+
     /// Bind the editor to `field` of a page doc: the tree is written there, and undo starts.
     pub fn bind(&mut self, doc: nv_model::yrs::Doc, field: &str, clock: crate::bind::Clock) {
         self.binding = Some(crate::bind::Binding::new(doc, field, &self.doc, clock));
