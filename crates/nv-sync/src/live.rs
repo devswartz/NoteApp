@@ -37,7 +37,7 @@ use tungstenite::{Message as WsMessage, WebSocket};
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, Origin, Transact};
 
-use crate::protocol::{SyncDoc, REMOTE_ORIGIN};
+use crate::protocol::{RemoteHooks, SyncDoc, REMOTE_ORIGIN};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
@@ -490,8 +490,17 @@ impl LiveDoc {
         })
     }
 
+    /// The document. Any transaction on it without `REMOTE_ORIGIN` is a local edit: the update
+    /// observer queues it (and keeps it in the outbox) and sends it, exactly as
+    /// `apply_local_update` does. Don't use `REMOTE_ORIGIN` for local edits: they wouldn't be sent.
     pub fn doc(&self) -> &Doc {
         self.sync.doc()
+    }
+
+    /// The hooks run around every remote update, on the connection's thread (see `RemoteHook`).
+    /// The handle stays usable after `close()` (nothing more is applied then).
+    pub fn remote_hooks(&self) -> RemoteHooks {
+        self.sync.remote_hooks().clone()
     }
 
     /// Apply a local edit made elsewhere (a Yjs update); it is sent to the server.

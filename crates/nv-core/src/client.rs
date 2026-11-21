@@ -182,7 +182,7 @@ fn user(u: nv_api::User) -> User {
     }
 }
 
-fn task(t: nv_api::Task) -> Task {
+pub(crate) fn task(t: nv_api::Task) -> Task {
     Task {
         done: t.status == "done",
         checklist_done: t.checklist.as_ref().map(|c| c.done),
@@ -323,10 +323,12 @@ fn save_page(store: &Option<Arc<Store>>, page_id: &str, doc: &nv_model::yrs::Doc
 /// The core for one server.
 #[derive(uniffi::Object)]
 pub struct Core {
-    api: Arc<nv_api::Client>,
-    store: Option<Arc<Store>>,
+    pub(crate) api: Arc<nv_api::Client>,
+    pub(crate) store: Option<Arc<Store>>,
     /// Reconnect delays of live pages (tests make them short).
     backoff: Mutex<Backoff>,
+    /// Task writes: their order, deleted tasks for undo, the last refusal (`tasks.rs`).
+    pub(crate) tasks: crate::tasks::TaskState,
 }
 
 impl Core {
@@ -341,6 +343,7 @@ impl Core {
             api: Arc::new(nv_api::Client::with_transport(server_url, transport)),
             store: db_path.and_then(|p| open_store(Path::new(&p))),
             backoff: Mutex::new(Backoff::default()),
+            tasks: Default::default(),
         })
     }
 
@@ -406,6 +409,8 @@ impl Core {
             doc,
             store: self.store.clone(),
             forbidden,
+            hooks: live.remote_hooks(),
+            closed: AtomicBool::new(false),
             live: Mutex::new(Some(live)),
         })
     }
@@ -445,12 +450,6 @@ impl Core {
             }
         }
     }
-
-    fn remember_task(&self, t: &nv_api::Task) {
-        if let Some(s) = &self.store {
-            let _ = s.put_task(t);
-        }
-    }
 }
 
 #[uniffi::export]
@@ -463,6 +462,7 @@ impl Core {
             api: Arc::new(nv_api::Client::new(&server_url)),
             store: None,
             backoff: Mutex::new(Backoff::default()),
+            tasks: Default::default(),
         })
     }
 
@@ -475,6 +475,7 @@ impl Core {
             api: Arc::new(nv_api::Client::new(&server_url)),
             store: open_store(Path::new(&db_path)),
             backoff: Mutex::new(Backoff::default()),
+            tasks: Default::default(),
         })
     }
 
@@ -529,6 +530,7 @@ impl Core {
     /// Sign out here, revoke the session on the server, and clear the on-device store.
     pub fn sign_out(&self) {
         self.api.logout();
+        self.tasks.clear();
         if let Some(s) = &self.store {
             let _ = s.clear();
         }
@@ -577,43 +579,56 @@ impl Core {
     }
 
     /// The workspace's tasks from the server, as the task views list them, stored on this
-    /// device. Offline (`Network`): the stored copy when there is one.
+    /// device. Task changes queued offline are sent first, and those still waiting are laid
+    /// over the list. Offline (`Network`): the stored copy when there is one.
     pub fn tasks(&self, workspace_id: String) -> Result<Vec<Task>, CoreError> {
-        let ts = self.fetch(
+        self.send_queued_quietly();
+        let mut ts = self.fetch(
             || self.api.tasks(&workspace_id),
             |s, ts| {
                 let _ = s.put_tasks(&workspace_id, ts);
             },
             |s| s.tasks(&workspace_id).ok().flatten(),
         )?;
+        if self.overlay_queued(&workspace_id) {
+            if let Some(stored) = self
+                .store
+                .as_ref()
+                .and_then(|s| s.tasks(&workspace_id).ok().flatten())
+            {
+                ts = stored;
+            }
+        }
         Ok(ts.into_iter().map(task).collect())
     }
 
-    /// A new task, standalone or on a page (`page_id`). Added to the stored tasks.
+    /// A new task, standalone or on a page (`page_id`), with an id the core makes. Added to the
+    /// stored tasks; offline it is queued (as `create_task_with`).
     pub fn create_task(
         &self,
         workspace_id: String,
         title: String,
         page_id: Option<String>,
     ) -> Result<Task, CoreError> {
-        let new = nv_api::NewTask {
-            title,
-            page_id,
-            ..Default::default()
-        };
-        let t = self.api.create_task(&workspace_id, &new)?;
-        self.remember_task(&t);
-        Ok(task(t))
+        self.create_task_with(
+            workspace_id,
+            crate::NewTaskInput {
+                id: None,
+                title,
+                page_id,
+                parent_id: None,
+                done: false,
+            },
+        )
     }
 
-    /// Tick or untick a task. The stored copy is updated.
+    /// Tick or untick a task. The stored copy is updated; offline the change is queued when the
+    /// store knows the task (sent in order with the other task changes).
     pub fn set_task_done(&self, task_id: String, done: bool) -> Result<Task, CoreError> {
-        let t = self.api.update_task(
+        self.edit_task(
             &task_id,
-            &json!({ "status": if done { "done" } else { "open" } }),
-        )?;
-        self.remember_task(&t);
-        Ok(task(t))
+            json!({ "status": if done { "done" } else { "open" } }),
+        )
     }
 
     /// A page's document as last stored on this device, or none (local, instant). Never one
@@ -854,14 +869,51 @@ pub struct LivePage {
     store: Option<Arc<Store>>,
     /// Set when the server closed with 4403: nothing is saved after that.
     forbidden: Arc<AtomicBool>,
+    /// Run around every remote update of `doc`, on the connection's thread.
+    hooks: nv_sync::RemoteHooks,
+    /// `close()` was called: edits made on `doc` from now on aren't sent.
+    closed: AtomicBool,
     live: Mutex<Option<LiveDoc>>,
 }
 
+// Used by the editor stream's `EditorSession::open_live` (not written yet) and the tests.
+#[cfg_attr(not(test), allow(dead_code))]
+/// For code in this crate that binds to the live document itself (the editor session's
+/// `open_live`). See docs/rewrite/status/core.md, "For editor: the live doc".
+///
+/// - **Local edits.** Any transaction on `doc()` whose origin isn't `nv_sync::REMOTE_ORIGIN`
+///   is a local edit: LiveDoc's update observer takes it (on the editing thread, when the
+///   transaction commits), keeps it in the outbox (the store) and sends it, exactly like
+///   `apply_update`. It isn't reported back as a remote change (`on_change` and the remote hooks
+///   fire only for updates that arrive from the server; the server's echo of it changes nothing,
+///   so hooks are told `false`).
+/// - **Remote edits.** Each update from the server is applied on the page's connection thread
+///   inside every hook added with `add_remote_hook` (first added outermost). That thread holds
+///   no lock of the core's or nv-sync's while it calls a hook, and no yrs transaction; `apply()`
+///   opens a write transaction on `doc()` and commits it before it returns. So a hook may take
+///   its own mutex, then call `apply()`; it must hold no yrs transaction on `doc()` while it does,
+///   and must not wait for the connection's thread (`close()`).
+/// - Edits queued while offline (from the store) are in `doc()` before `open_live_page`
+///   returns; nothing is applied through the hooks for them.
 impl LivePage {
-    /// The page's yrs doc, for `EditorSession::open_live` (editor stream): local writes to it
-    /// are sent like `apply_update`'s, and the sync thread applies others' changes to it.
+    /// The page's live document (shared, not a copy: `Doc` is a handle).
     pub(crate) fn doc(&self) -> &nv_model::yrs::Doc {
         &self.doc
+    }
+
+    /// Run `hook` around every remote update from now on. Returns its id for
+    /// `remove_remote_hook`. Hold the hooked state through a `Weak` if it holds this page.
+    pub(crate) fn add_remote_hook(&self, hook: Arc<dyn nv_sync::RemoteHook>) -> u64 {
+        self.hooks.add(hook)
+    }
+
+    pub(crate) fn remove_remote_hook(&self, id: u64) {
+        self.hooks.remove(id);
+    }
+
+    /// `close()` was called (or the page was never connected): edits on `doc()` aren't sent.
+    pub(crate) fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
     }
 }
 
@@ -928,6 +980,7 @@ impl LivePage {
     /// confirmed stay in the store for next time. With a store, the document is saved on this
     /// device, unless the page is locked or access ended.
     pub fn close(&self) {
+        self.closed.store(true, Ordering::SeqCst);
         if let Some(mut l) = self.live.lock().unwrap().take() {
             l.close();
             if !self.forbidden.load(Ordering::SeqCst) {
@@ -971,6 +1024,8 @@ mod tests {
             doc,
             store: Some(store.clone()),
             forbidden,
+            hooks: Default::default(),
+            closed: AtomicBool::new(true),
             live: Mutex::new(None),
         };
         (relay, live)
@@ -1032,3 +1087,7 @@ mod tests {
         assert_eq!(store.page_doc("p1").unwrap(), None);
     }
 }
+
+#[cfg(test)]
+#[path = "live_doc_tests.rs"]
+mod live_doc_tests;

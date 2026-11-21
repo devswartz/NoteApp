@@ -132,21 +132,35 @@ pub struct Task {
     pub locked: bool,
 }
 
-/// A new task (POST /workspaces/:id/tasks). The id is the client's, so a retried create can't duplicate it.
-#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+/// A new task (POST /workspaces/:id/tasks). The id is the client's (a UUID), so a retried create
+/// can't duplicate it: the server returns the task it already made with that id (when the same
+/// user made it in the same workspace; 409 otherwise). The web app always sends one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct NewTask {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub title: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due_date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub due_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reminder_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assignee_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag_ids: Option<Vec<String>>,
 }

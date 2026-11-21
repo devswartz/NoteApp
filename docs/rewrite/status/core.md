@@ -5,14 +5,181 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
-- **nv-sync robustness done** on branch `rewrite/core-sync`, ready to merge: live pages reconnect
-  by themselves (backoff, 4401 refresh, 4403 stop), keep local edits until the server has them
-  (in the store, across restarts), connect without blocking (`openLivePage`), and TLS uses the
-  system's trust store. Notes for apple below ("For apple: live pages").
-- **Next, in order** (for a fresh session; see the handover below): the editor stream's requests
-  in `docs/rewrite/status/editor.md` (share the live doc with `EditorSession`; the public fragment
-  reader in nv-model), then Kotlin bindings with an Android build in CI (including the platform
-  verifier's Android init, below), then the CHANGELOG-SYNC.md design.
+- **Task calls, live doc plumbing and the fragment reader done** on branch `rewrite/core-tasks`,
+  ready to merge: apple's task request (create with the client's id, rename, delete, restore,
+  queued offline, plus `Core.pageTasks` as a ready-made `TaskCallbacks`), the editor's two
+  requests (the live doc and remote hooks for `EditorSession::open_live`; `Page::fragment` /
+  `tree::read_fragment`). Notes below: "For apple: task calls", "For editor: the live doc".
+- **Next, in order** (for a fresh session; see the handover below): Kotlin bindings with an
+  Android library build in CI (`cargo-ndk`, including the platform verifier's Android init,
+  below), then the CHANGELOG-SYNC.md design.
+
+## For apple: task calls (2026-11-21, `rewrite/core-tasks`)
+
+All additions; nothing was renamed or removed, so today's Swift compiles unchanged (checked by
+generating the Swift bindings on Windows; the Apple CI run is the real check).
+
+- **The easy way: `core.pageTasks(workspaceId:pageId:) -> TaskCallbacks`.** Pass it as `tasks`
+  to `EditorSession.open` (and later `openLive`) instead of `LocalTaskCallbacks`. Its calls
+  return at once, so they are safe where the session calls them (with its lock held, on the
+  main thread): titles come from this page's own changes, then the stored tasks; creates,
+  renames, deletes and restores go to the server on its own thread (`nv-core-tasks`, one per
+  `pageTasks` object, ended when it is released), in order, and are queued offline (below).
+  Tasks are made in `workspaceId`, on `pageId`. Keep one per open page. A refused write shows
+  in `core.taskError()`. There is no change notification yet: refresh the task list from
+  `cachedTasks` (or `tasks`) when you next show it.
+- **The calls themselves**, if apple keeps its own `TaskCallbacks` (all block on the network,
+  so call them off the main thread, in order, e.g. on the serial queue):
+  - `newTaskId() -> String` (free function): a random v4 UUID, lower case, as the web app's
+    `crypto.randomUUID()`.
+  - `createTaskWith(workspaceId:task: NewTaskInput) throws -> Task`; `NewTaskInput { id: String?,
+    title: String, pageId: String?, parentId: String?, done: Bool }` (all but `title` have
+    defaults). The server accepts the client's id (a UUID; `server/tasks.ts` `createTask`) and
+    a retry with the same id returns the task it already made (409 if another user or workspace
+    used it). An empty title is allowed. `done: true` is a create then a PATCH, as the web
+    app's restore does.
+  - `setTaskTitle(taskId:title:) throws -> Task` (PATCH `{ title }`; the server trims it).
+  - `deleteTask(taskId:) throws` (DELETE `/tasks/:id`; subtasks go too, on the server and in
+    the store; a task already gone, 404, counts as deleted; a refusal such as 403 puts the
+    stored copy back).
+  - `canRestoreTask(taskId:) -> Bool` (instant) and `restoreTask(taskId:) throws -> Bool`:
+    bring back a task this Core deleted, with its subtasks, same ids and fields (description,
+    due, priority, assignee, tags, recurrence…), done ones done again: what the web app's undo
+    does (`restoreTasks` in `src/store/tasks.ts`; the server has no undelete, the task is made
+    again with its old id). Needs a store (the fields come from the stored copy).
+  - `cachedTask(taskId:) -> Task?` (instant, from the store, queued changes included).
+  - `sendTaskChanges() throws -> UInt32` (send what was queued offline; returns how many still
+    wait), `unsentTaskChanges() -> UInt32`, `taskError() -> String?`.
+- **`TaskCallbacks` → Core** (what `pageTasks` does; for an own implementation):
+
+  | `TaskCallbacks` | Core |
+  |---|---|
+  | `newId()` | `newTaskId()` |
+  | `create(id, title, done)` | `createTaskWith(ws, NewTaskInput(id, title, pageId, nil, done))` |
+  | `delete(id)` | `deleteTask(id)` (keep the title locally until it's done) |
+  | `restore(id) -> Bool` | answer at once: "did this page delete it?"; then `restoreTask(id)` behind (falls back to `createTaskWith` with the old title when it returns false, e.g. no store) |
+  | `title(id) -> String?` | this page's pending change, else `cachedTask(id)?.title` (never a network call: it is called while drawing) |
+  | `setTitle(id, title)` | `setTaskTitle(id, title)` |
+
+  The engine calls these with the session's lock held, so nothing in them may block on the
+  network or call back into the session: do the Core call on another queue (in order), and
+  answer `title`/`restore` from local state.
+- **Offline.** With a store, a task write the server can't be reached for is kept in the store
+  (new table `task_ops`, schema 3, upgraded in place), applied to the stored tasks at once, and
+  the call returns as if it worked (the task as it will be). Writes are sent in order, one at a
+  time: by `sendTaskChanges()`, before `tasks()` reads the list, and before every task write
+  (a write made while earlier ones still wait queues behind them). `tasks()` lays writes still
+  waiting over the server's list. A queued write the server then refuses (4xx) is dropped,
+  noted in `taskError()`, and a refused create is removed from the stored tasks; 5xx and
+  network errors keep it for later. Not queued (the call throws `Network` as before): without
+  a store, for a task on a page the stored tree doesn't show unlocked (its title is the user's
+  text), and for an edit of a task the store doesn't know. Apple could call
+  `sendTaskChanges()` when a live page reaches `.synced`.
+- **Behaviour changes** (no API change): `createTask(workspaceId:title:pageId:)` now sends an
+  id the core makes; it, `setTaskDone` and the new calls queue offline instead of throwing
+  `Network` (when the rules above allow), and `tasks()` sends queued writes first. Locked
+  pages: unchanged (tasks are stored as the server sends them, redacted).
+
+## For editor: the live doc (2026-11-21, `rewrite/core-tasks`)
+
+Core's half of `EditorSession::open_live`; editor writes `open_live` in `editor_session.rs`.
+
+- **What core provides** (`crates/nv-core/src/client.rs`, crate-visible, on `LivePage`):
+
+  ```rust
+  impl LivePage {
+      /// The page's live document (a handle: clone it into the editor's binding).
+      pub(crate) fn doc(&self) -> &nv_model::yrs::Doc;
+      /// Run `hook` around every remote update; returns its id.
+      pub(crate) fn add_remote_hook(&self, hook: Arc<dyn nv_sync::RemoteHook>) -> u64;
+      pub(crate) fn remove_remote_hook(&self, id: u64);
+      /// `close()` was called: edits on `doc()` are no longer sent.
+      pub(crate) fn is_closed(&self) -> bool;
+  }
+  // nv-sync (crates/nv-sync/src/protocol.rs), re-exported as nv_sync::RemoteHook:
+  pub trait RemoteHook: Send + Sync {
+      /// Call `apply` once (it is called after you if you don't): it applies the update with
+      /// REMOTE_ORIGIN and returns whether the document changed.
+      fn around_remote(&self, apply: &mut dyn FnMut() -> bool);
+  }
+  ```
+
+  And in nv-model: `nv_model::Page::fragment(doc: &Doc, name: &str) -> Fragment` and
+  `nv_model::tree::read_fragment(txn, name) -> Vec<Node>` (now public): one fragment, `default`
+  or any `box:<id>` with or without geometry, without reading the rest of the page (an absent
+  fragment reads as empty).
+- **Why a hook around the update, not a callback after it.** The engine's remote path takes
+  sticky positions on the old tree *before* the update and maps them after
+  (`remote.rs`: `stick` → `apply_remote` → `read` → `unstick`), and its `finish()` writes the
+  whole tree as a diff against the fragment, so an edit landing between a remote update and
+  the session's re-read would undo the remote change. `around_remote` lets the session hold its
+  own mutex across stick, apply and re-read, so the session's tree and the fragment always match
+  whenever the lock is free.
+- **Local edits.** Any transaction on `doc()` whose origin isn't `nv_sync::REMOTE_ORIGIN` is a
+  local edit: LiveDoc's update observer takes it when it commits (on the editing thread), keeps
+  it in the outbox (the store) and sends it, exactly as `LivePage::apply_update` does. So the
+  binding's `LOCAL` and `LOAD` writes (the trailing paragraph at open too) and the undo
+  manager's writes all go out; nothing else to call. They are not reported back: `on_change`
+  and the hooks fire only for updates from the server, and the server's echo of a local edit
+  changes nothing (hooks see `apply() == false`). Tested in
+  `crates/nv-core/src/live_doc_tests.rs` (edit on the doc with an own origin, online and
+  offline: server, outbox, receipt; a remote update runs the hook with before/after; a hook
+  holding its lock while another thread edits under the same lock).
+- **Threads and locks.**
+  - `around_remote` runs on the page's connection thread (`nv-sync`), for every remote update
+    (sync step 2 after each connect, and updates), with no core or nv-sync lock held and no
+    yrs transaction open. `apply()` opens a write transaction on the doc and commits it before
+    it returns.
+  - So the session's hook takes the session's `Mutex<Editor>`, then calls `apply()`. Local
+    calls take the same mutex, then write the doc: one lock order (session mutex → yrs
+    transaction), no deadlock. Inside the hook, hold no yrs transaction on the doc while calling
+    `apply()` (the engine's `stick` drops its read transaction before returning: fine).
+  - Several sessions on one page each add a hook; they nest (first added outermost), so during
+    a remote update the connection thread holds every session's mutex at once, in the order they
+    were added. Rule: never call into one session while holding another's lock (and
+    `TaskCallbacks` must not call sessions). Don't call `LivePage::close()`, `apply_update`,
+    `presence` or `unsent_updates` with the session locked (they take the page's lock, which
+    `close()` holds while it waits up to 1 s for the connection thread).
+  - The hook should hold the session through a `Weak` (the session holds `Arc<LivePage>`, which
+    holds the hooks: a cycle otherwise); remove it in the session's `Drop`.
+  - `LivePageListener::on_change` fires after the hooks, on the same thread: when apple hears
+    it, the sessions already hold the new tree, so it just re-reads `state()` / `view_state()`.
+  - Edits queued offline from an earlier run are applied to `doc()` before `open_live_page`
+    returns, without hooks (no session exists yet).
+- **What editor would change** (nv-editor, editor-owned):
+  1. In `remote.rs`, a variant of `Editor::apply_update` that takes the apply step instead of
+     bytes, e.g. `pub fn around_remote(&mut self, apply: &mut dyn FnMut() -> bool)`: the same
+     `suspend_composition` / stick / *apply()* / read / unstick / `resume_composition` as today,
+     with `b.apply_remote(update)?` replaced by `apply()` (skip the re-read when it returns
+     false, if you like). `Binding::apply_remote` must not be used on the live doc: its origin
+     (`nv-editor-remote`) isn't `REMOTE_ORIGIN`, so the update would be sent back out as a local
+     edit (harmless, Yjs is idempotent, but wasteful).
+  2. `Editor::open` already takes a `Doc` by value; `Doc` is a handle, so
+     `Editor::open(page.doc().clone(), &field, …)` binds to the live doc itself. Nothing else in
+     the engine owns a separate doc.
+- **Suggested signature** (editor writes it in `editor_session.rs`):
+
+  ```rust
+  #[uniffi::export]
+  impl EditorSession {
+      /// `field` of a page open live: edits go out through the page, others' come in through it.
+      #[uniffi::constructor]
+      pub fn open_live(
+          page: Arc<LivePage>,
+          field: String,
+          tasks: Arc<dyn TaskCallbacks>,
+      ) -> Result<Arc<EditorSession>, EditorError>;
+  }
+  ```
+
+  Sketch: refuse when `page.is_closed()`; check the field with `Page::fragment` or the box
+  geometry (open after `LiveStatus::Synced`, or the doc may not have the box yet and the
+  trailing paragraph written at open would merge in beside the server's content);
+  `Editor::open(page.doc().clone(), …)`; keep `page` and the hook id in the session; the hook is
+  `struct LiveHook(Weak<EditorSession>)` whose `around_remote` upgrades, locks the editor and
+  calls `ed.around_remote(apply)` (or just `apply()` when the session is gone). In live mode
+  `apply_update` / `encode_update_since` aren't needed (keep them for corpus pages). With
+  `core.pageTasks(...)` as `tasks`, the session's task lines are backed by the server.
 
 ## For apple: live pages (2026-11-21, `rewrite/core-sync`)
 
@@ -153,6 +320,24 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
 
 ## Done
 
+- 2026-11-21, task calls and live-doc plumbing (`rewrite/core-tasks`): nv-api `delete_task`,
+  `set_task_title`, `NewTask` with every TaskPatch field (and `Deserialize`); nv-store schema 3
+  (`task_ops` queue with the locked-page rule, `task(id)` with an index, `remove_task` with
+  subtasks); `crates/nv-core/src/tasks.rs` (`newTaskId`, `createTaskWith`/`NewTaskInput`,
+  `setTaskTitle`, `deleteTask`, `canRestoreTask`/`restoreTask`, `cachedTask`,
+  `sendTaskChanges`, `unsentTaskChanges`, `taskError`, `pageTasks` → `TaskCallbacks`; writes
+  serialised, queued offline); `createTask`/`setTaskDone`/`tasks` routed through it; nv-sync
+  `RemoteHook`/`RemoteHooks` around remote updates (`SyncDoc::remote_hooks`,
+  `LiveDoc::remote_hooks`); `LivePage::doc`/`add_remote_hook`/`remove_remote_hook`/`is_closed`
+  (crate-visible); nv-model `Page::fragment` and public `tree::read_fragment`. Tests: nv-api
+  `task_writes_create_with_a_client_id_rename_and_delete`; nv-store task-op queue, removal
+  with subtasks, upgrade from version 2; nv-sync `remote_hooks_run_around_each_remote_update_once`;
+  nv-core `tests/tasks.rs` (online writes and restore, offline queue across a restart, refusals
+  and overlay, locked pages and unknown tasks, `pageTasks`) and `src/live_doc_tests.rs` (above);
+  nv-model `a_fragment_reads_on_its_own_with_or_without_geometry`; the real-server test now also
+  creates a task with a client id, retries it, renames it, deletes it with a subtask, and
+  restores it through a stored Core (passed locally against `server/index.ts`, on port 4427
+  because 4417 was taken by another process).
 - 2026-11-21, nv-sync robustness (`rewrite/core-sync`): `LiveDoc` reconnects with backoff
   (injectable `Backoff`), refreshes on 4401 through a `Session` (`access_token_replacing` in nv-api,
   serialised refreshes), stops on 4403 / signed out, closes promptly; local edits queue until a
@@ -184,8 +369,7 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
 
 ## Handover (for the next core session)
 
-The context of the session that did M1–M4 step 1 is large, so the next steps should start
-fresh. What they need to know:
+Start each step in a fresh session (earlier contexts are large). What it needs to know:
 
 - **Layout.** `nv-model` reads a page into an owned `Page` (fragments as `tree::Node`) and must
   keep passing `tests/corpus` (`crates/nv-model/tests/corpus.rs`). `nv-api::Client` is blocking
@@ -199,11 +383,11 @@ fresh. What they need to know:
 - **Tests against the real server.** Start it with
   `PORT=4417 DATA_DIR=<scratch> JWT_SECRET=<32+ chars> GIT_SHA=core-test SIGNUP_MODE=open npx tsx server/index.ts`,
   then `NV_TEST_SERVER=http://127.0.0.1:4417 cargo test -p nv-core --test server`. Stop it
-  afterwards (on Windows: find the PID listening on 4417 with `netstat -ano`, then `taskkill /F /T`).
+  afterwards (on Windows: find the PID listening on 4417 with `netstat -ano`, then `taskkill /F /T`). If 4417 is already taken (another session's server), use another port, e.g. 4427; don't stop a server you didn't start.
 - **nv-store (done).** `Store` (one account; `Mutex<Connection>`, shared as `Arc<Store>` by the
   `Core` and its `LivePage`s). Store write errors are ignored by the Core (fail soft, like
   `offlineCache.ts`) but kept in `Store::last_error` and printed to stderr. A schema change: bump
-  `SCHEMA_VERSION` and append a step to `UPGRADES` (now at 2: the `outbox`). Page documents and
+  `SCHEMA_VERSION` and append a step to `UPGRADES` (now at 3: the `outbox`, then `task_ops`). Page documents and
   queued edits are stored only for pages a stored tree shows unlocked.
   Not stored yet: trashed pages (nv-api's `Tree` has no `trashedPages`, so their docs are pruned),
   members, tags. A live page isn't seeded from the stored copy when it opens (merging an old copy
@@ -229,6 +413,19 @@ fresh. What they need to know:
   crate's Kotlin component on the classpath, its `rustls-platform-verifier-android` Maven
   artifact); without it the first connection fails. To do with the Kotlin step. A fallback if that
   ever blocks a platform: `webpki-roots` behind a cfg for that target only.
+- **Tasks (done).** `tasks.rs`: every task write takes `TaskState::order` (one at a time, in
+  order, across threads), sends the store's queue first, and queues itself on `Network` when the
+  store allows (`nv_store::TaskOp`: create, PATCH, delete). `apply_locally` applies a queued
+  write to the stored tasks (also re-applied over the server's list in `tasks()`). Deleted
+  tasks are kept in memory (`TaskState::deleted`, cleared on sign-out) for `restore_task`.
+  `PageTasks` is the Rust `TaskCallbacks` over the Core: a channel to one worker thread, a
+  local title overlay cleared when each job settles (kept for good without a store). Not done:
+  a change notification for task lists; queued edits of tasks the store doesn't know; the
+  queue can't merge a create and a delete of the same task (both are sent).
+- **Live doc for the editor (done, core's half).** `RemoteHooks` live in `SyncDoc` (shared by
+  its clones); `SyncDoc::apply_remote` runs them nested around the transaction. Editor writes
+  `open_live` (see "For editor: the live doc"); until then the `LivePage` accessors are
+  `#[cfg_attr(not(test), allow(dead_code))]`.
 - **Kotlin and Android.** uniffi's Kotlin from the same library (`--language kotlin`), plus
   `cargo-ndk` for `aarch64-linux-android`, `armv7-linux-androideabi` and `x86_64-linux-android`
   in a Linux job.

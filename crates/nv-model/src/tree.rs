@@ -127,8 +127,9 @@ pub(crate) fn read_node<T: ReadTxn>(txn: &T, n: &XmlOut) -> Node {
     }
 }
 
-/// A root fragment's nodes (none when the root doesn't exist).
-pub(crate) fn read_fragment<T: ReadTxn>(txn: &T, name: &str) -> Vec<Node> {
+/// A root fragment's nodes (none when the root doesn't exist): `default`, or any `box:<id>`,
+/// whether or not the box has geometry. Reads that fragment only, not the rest of the page.
+pub fn read_fragment<T: ReadTxn>(txn: &T, name: &str) -> Vec<Node> {
     match txn.get_xml_fragment(name) {
         Some(f) => f.children(txn).map(|c| read_node(txn, &c)).collect(),
         None => Vec::new(),
