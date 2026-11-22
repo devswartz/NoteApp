@@ -206,7 +206,11 @@ final class BoxTextView: UIView, UITextInput {
         syncFolds()
         setNeedsDisplay()
         let used = layoutManager.usageBoundsForTextContainer.height
-        let h = max(ceil(used) + inset.top + inset.bottom, 41.2)
+        // The editor keeps an empty paragraph after a last block that isn't one (a task line, an image …): about a line on phones.
+        let trailing: CGFloat = BoxTextRenderer.phoneChips && r.string.string.hasSuffix(BoxTextRenderer.object) ? 25 : 0
+        var h = max(ceil(used) + inset.top + inset.bottom + trailing, 41.2)
+        // Phones: an empty box is one placeholder line ("Type '/' for commands…"), shorter than a box with text.
+        if emptyOnPhone(r) { h = 35 }
         if h != contentHeight {
             contentHeight = h
             onHeightChange?(self)
@@ -215,10 +219,21 @@ final class BoxTextView: UIView, UITextInput {
 
     // MARK: Drawing
 
+    /// An empty box on a phone: the web shows "Type '/' for commands…" in it.
+    private func emptyOnPhone(_ r: BoxRendering) -> Bool {
+        BoxTextRenderer.phoneChips && !chrome
+            && r.string.string.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "​￼"))).isEmpty
+    }
+
     override func draw(_ rect: CGRect) {
         guard let ctx = UIGraphicsGetCurrentContext() else { return }
         let inset = self.inset
         let p = palette
+        if emptyOnPhone(rendering) {
+            let f = renderer.font(16.5)
+            NSAttributedString(string: "Type '/' for commands…", attributes: [.font: f, .foregroundColor: p.textPlaceholder])
+                .draw(at: CGPoint(x: Self.pad.left, y: Self.pad.top + (28 - f.lineHeight) / 2))
+        }
         if chrome {
             let box = UIBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 6)
             p.bg.setFill()

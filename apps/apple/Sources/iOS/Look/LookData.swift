@@ -17,9 +17,15 @@ enum LookData {
 
     static let user = User(id: "demo", email: "demo@example.com", name: "Demo User", color: "#f59e0b", emailVerified: true)
     static let workspaces = [
+        Workspace(id: "demos-space", name: "Demo's Space", role: "owner", createdAt: "2026-11-21T00:00:00Z"),
         Workspace(id: "demo-team", name: "Demo Team", role: "owner", createdAt: "2026-11-21T00:00:00Z"),
         Workspace(id: "empty-space", name: "Empty Space", role: "owner", createdAt: "2026-11-21T00:00:00Z"),
     ]
+
+    /// The workspace shown: Demo Team, or Empty Space in the empty-workspace states.
+    static var workspace: Workspace {
+        workspaces.first { $0.id == (state?.hasPrefix("empty-workspace") == true || state?.hasPrefix("empty-tasks") == true ? "empty-space" : "demo-team") } ?? workspaces[0]
+    }
 
     /// The look seed's page order and titles (seed.ts ORDER); "sandbox" is a copy of canvas-boxes.
     static let pages: [(caseName: String, title: String)] = [
@@ -41,6 +47,7 @@ enum LookData {
     }
 
     static var tree: Tree {
+        if state?.hasPrefix("empty-workspace") == true { return Tree(notebooks: [], sections: [], pages: []) }
         let notebook = Notebook(id: "look", name: "Look reference", color: "#ec4899", visibility: "shared", position: 1)
         let sections = [
             CoreSection(id: "corpus", notebookId: "look", parentId: nil, name: "Corpus", color: "#ec4899", position: 1),
@@ -50,13 +57,20 @@ enum LookData {
             PageMeta(id: pageId(p.caseName), sectionId: "corpus", title: p.title, icon: nil, position: Double(i + 1),
                      updatedAt: iso(minutesAgo: p.caseName == "sandbox" ? 1 : 12), locked: false)
         }
-        return Tree(notebooks: [notebook], sections: sections, pages: metas)
+        let others = [
+            Notebook(id: "team", name: "Team Notebook", color: "#6366f1", visibility: "shared", position: 0),
+            Notebook(id: "product", name: "Product", color: "#6366f1", visibility: "shared", position: 2),
+            Notebook(id: "engineering", name: "Engineering", color: "#10b981", visibility: "shared", position: 3),
+            Notebook(id: "marketing", name: "Marketing", color: "#f59e0b", visibility: "shared", position: 4),
+            Notebook(id: "personal", name: "Personal (private)", color: "#8b5cf6", visibility: "private", position: 5),
+        ]
+        return Tree(notebooks: [notebook] + others, sections: sections, pages: metas)
     }
 
     /// Pages the demo tasks are written on that aren't in the tree (shown by title only).
     static let otherPageTitles = ["welcome": "Welcome 👋", "weekly-sync": "Weekly sync · Saturday 21 November"]
 
-    private static func day(_ offset: Int) -> String {
+    static func day(_ offset: Int) -> String {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -69,7 +83,7 @@ enum LookData {
         CoreTask(id: id, workspaceId: "demo-team", title: title, description: "", done: done, priority: priority,
                  dueDate: due.map(day), dueTime: nil, assigneeId: mine ? "demo" : nil, pageId: page, parentId: nil,
                  tagIds: [], checklistDone: nil, checklistTotal: nil, completedAt: done ? iso(minutesAgo: 30) : nil,
-                 createdAt: iso(minutesAgo: 600), updatedAt: iso(minutesAgo: 30), locked: false)
+                 createdAt: iso(minutesAgo: 10), updatedAt: iso(minutesAgo: 30), locked: false)
     }
 
     /// The demo seed's tasks as the Tasks views show them: 3 for Today (1 overdue), 7 in the next

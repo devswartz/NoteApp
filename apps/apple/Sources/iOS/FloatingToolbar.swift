@@ -15,6 +15,8 @@ final class FloatingToolbarView: UIView {
     private var swatchKind: String?
     private var buttons: [(UIButton, CGFloat)] = []
     private(set) var barSize = CGSize.zero
+    /// The widest the bar may be (phones: 100 vw - 16); buttons wrap onto a second row beyond it.
+    private var limit: CGFloat = .greatestFiniteMagnitude
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -30,20 +32,27 @@ final class FloatingToolbarView: UIView {
     /// Does `point` (the superview's coordinates) fall on the toolbar or its colour popover?
     func covers(_ point: CGPoint) -> Bool { !isHidden && frame.contains(point) }
 
-    func build(palette p: Palette) {
-        guard p.bg != palette.bg || buttons.isEmpty || p.isDark != palette.isDark else { return }
+    func build(palette p: Palette, maxWidth: CGFloat = .greatestFiniteMagnitude) {
+        guard p.bg != palette.bg || buttons.isEmpty || p.isDark != palette.isDark || maxWidth != limit else { return }
         palette = p
+        limit = maxWidth
         bar.subviews.forEach { $0.removeFromSuperview() }
         buttons = []
         var x: CGFloat = 3
+        var y: CGFloat = 3
+        var right: CGFloat = 0
         let h: CGFloat = 30
         func gap() { x += 1 }
+        func wrap(_ w: CGFloat) {
+            if x > 3 && x + w + 3 > maxWidth { right = max(right, x); x = 3; y += h + 1 }
+        }
         func icon(_ name: String, _ label: String, _ action: @escaping () -> Void) {
             let b = UIButton(type: .custom)
             b.setImage(UIImage.lucide(name, size: 16, color: p.text2), for: .normal)
             b.layer.cornerRadius = 6
             b.accessibilityLabel = label
-            b.frame = CGRect(x: x, y: 3, width: 30, height: h)
+            wrap(30)
+            b.frame = CGRect(x: x, y: y, width: 30, height: h)
             b.addAction(UIAction { _ in action() }, for: .touchUpInside)
             bar.addSubview(b)
             buttons.append((b, x))
@@ -61,7 +70,8 @@ final class FloatingToolbarView: UIView {
             b.titleEdgeInsets = UIEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
             b.layer.cornerRadius = 6
             b.accessibilityLabel = text
-            b.frame = CGRect(x: x, y: 3, width: width, height: h)
+            wrap(width)
+            b.frame = CGRect(x: x, y: y, width: width, height: h)
             b.addAction(UIAction { _ in action() }, for: .touchUpInside)
             bar.addSubview(b)
             buttons.append((b, x))
@@ -69,8 +79,10 @@ final class FloatingToolbarView: UIView {
             gap()
         }
         func separator() {
+            wrap(8)
+            if x == 3 { return }
             x += 3
-            let s = UIView(frame: CGRect(x: x, y: 3 + 6, width: 1, height: 18))
+            let s = UIView(frame: CGRect(x: x, y: y + 6, width: 1, height: 18))
             s.backgroundColor = p.border
             bar.addSubview(s)
             x += 1 + 3
@@ -92,7 +104,8 @@ final class FloatingToolbarView: UIView {
         separator()
         word("circle-check", "Task") { [weak self] in self?.run("convertToTask") }
         x += 2
-        barSize = CGSize(width: x, height: 36)
+        right = max(right, x)
+        barSize = CGSize(width: y > 3 ? min(maxWidth, right + 1) : right, height: y + h + 3)
         bar.backgroundColor = p.bgElevated
         bar.layer.cornerRadius = 10
         bar.layer.borderWidth = 1

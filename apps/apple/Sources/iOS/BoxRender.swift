@@ -83,7 +83,8 @@ struct BoxRendering {
 /// web app's `.ProseMirror` (LOOK.md 2.3, 2.4): 16 / 1.7 lines, block margins collapsed as CSS
 /// does, headings, list markers by depth, checklists, quotes, callouts, code blocks, task rows.
 struct BoxTextRenderer {
-    var bodySize: CGFloat = 16
+    /// 16, phones 16.5 (LOOK.md 2.3); headings are em-based and scale with it.
+    var bodySize: CGFloat = BoxTextRenderer.phoneChips ? 16.5 : 16
     var tasks: [String: TaskLine] = [:]
     var pageTitles: [String: String] = [:]
     /// The text container's width (attachments and block backgrounds use it).
@@ -181,8 +182,8 @@ struct BoxTextRenderer {
         switch c.type {
         case "heading":
             switch Int(c.number("level") ?? 1) {
-            case 1: return (33.6, 8.4)
-            case 2: return (23.76, 5.4)
+            case 1: return (33.6, bodySize > 16 ? 3.9 : 8.4)
+            case 2: return (23.76, bodySize > 16 ? 0 : 5.4)
             default: return (17.92, 3.58)
             }
         case "bulletList", "orderedList", "taskList": return (4.8, 4.8)
@@ -416,7 +417,7 @@ struct BoxTextRenderer {
         switch c.type {
         case "heading":
             let level = Int(c.number("level") ?? 1)
-            let size: CGFloat = [1: 28, 2: 21.6, 3: 17.92][level] ?? bodySize
+            let size: CGFloat = ([1: 28, 2: 21.6, 3: 17.92][level] ?? 16) * bodySize / 16 * (level == 1 && bodySize > 16 ? 1.045 : 1)
             let lh: CGFloat = [1: 1.3, 2: 1.35, 3: 1.7][level] ?? 1.7
             let text = NSMutableAttributedString(attributedString: inline(c.content, size: size, weight: 700, ctx: ctx))
             let kern: CGFloat = level == 1 ? -0.02 * size : level == 2 ? -0.01 * size : 0
@@ -658,6 +659,14 @@ struct BoxTextRenderer {
         let text = NSAttributedString(string: "This task was deleted or is not visible to you.",
                                       attributes: [.font: WebType.ui(12.5), .foregroundColor: p.textMuted])
         let remove = NSAttributedString(string: "Remove from page", attributes: [.font: WebType.ui(13, 500), .foregroundColor: p.text2])
+        if Self.phoneChips {
+            // Phones: the button wraps under the text (the web's flex-wrap), indented 14 from the box.
+            return Self.image(CGSize(width: width, height: 70)) { _ in
+                UIImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.draw(at: CGPoint(x: 4, y: 6))
+                text.draw(at: CGPoint(x: 27, y: 6 + (15 - WebType.ui(12.5).lineHeight) / 2 + 1))
+                remove.draw(at: CGPoint(x: 14, y: 39 + (15 - WebType.ui(13).lineHeight) / 2 + 1))
+            }
+        }
         return Self.image(CGSize(width: width, height: 40)) { _ in
             UIImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.draw(at: CGPoint(x: 0, y: 6))
             text.draw(at: CGPoint(x: 23, y: 6 + (15 - WebType.ui(12.5).lineHeight) / 2 + 1))

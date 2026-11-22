@@ -20,7 +20,7 @@ struct Rail: View {
             }
             Spacer(minLength: 0)
             foot((shell.sidebarOpen ?? true) ? "panel-left-close" : "panel-left-open") { shell.toggleSidebar() }
-            foot("search") { shell.notYet("Search") }
+            foot("search") { shell.openSearch() }
             foot("bell") { shell.notYet("Notifications") }
             Button { shell.menu = .workspace } label: {
                 LetterTile(letter: session.shownWorkspace?.name ?? "W",

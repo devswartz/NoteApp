@@ -45,7 +45,7 @@ shoot() {
   [ "$theme" != light ] && name="$theme-$state"
   [ -z "$signedout" ] && args+=(-previewSignedIn YES)
   [ "$land" = 1 ] && args+=(-lookLandscape YES)
-  case "$state" in edit-*|menu-*|ribbon-menu-*|slash-menu) wait=7 ;; esac
+  case "$state" in edit-*|menu-*|ribbon-menu-*|slash-menu|*-drawer) wait=7 ;; esac
   mkdir -p "$OUT/native/$vp"
   xcrun simctl terminate "$udid" "$BUNDLE" > /dev/null 2>&1 || true
   if ! xcrun simctl launch "$udid" "$BUNDLE" "${args[@]}" > /dev/null; then
@@ -76,12 +76,12 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
     shoot "$UDID" $L 1 $theme page-settings-and-ink
   done
   for state in edit-selection edit-new-box edit-link page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
-               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed; do
+               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed search task-detail; do
     shoot "$UDID" $L 1 light "$state"
   done
   P=ipad-portrait
   shoot "$UDID" $P 0 light sign-in signed-out
-  for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page; do
+  for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page search task-detail; do
     shoot "$UDID" $P 0 light "$state"
   done
   xcrun simctl shutdown "$UDID" || true
@@ -97,9 +97,13 @@ if PHONE="$(pick "iPhone 16e" "iPhone 14" "iPhone 13" "iPhone 12")"; then
   V=iphone
   shoot "$UDID" $V 0 light sign-in signed-out
   shoot "$UDID" $V 0 hybrid sign-in signed-out
-  for state in page-canvas-boxes tasks-today; do
+  for state in page-canvas-boxes tasks-today edit-caret sidebar-drawer page-settings-and-ink; do
+    for theme in light hybrid dark; do
+      shoot "$UDID" $V 0 $theme "$state"
+    done
+  done
+  for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail; do
     shoot "$UDID" $V 0 light "$state"
-    shoot "$UDID" $V 0 hybrid "$state"
   done
   xcrun simctl shutdown "$UDID" || true
 else

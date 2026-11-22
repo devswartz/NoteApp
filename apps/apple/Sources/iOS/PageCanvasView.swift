@@ -51,7 +51,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     var decor: [String: TaskDecor] = [:]
     var stacked = false
     /// Phones: the article's padding is 12 20, the title 28 pt.
-    static let phoneOriginY: CGFloat = 12 + 44 + 4 + 33.6 + 6 + 18.75 + 22
+    static let phoneOriginY: CGFloat = 12 + 44 + 4 + 33.6 + 6 + 18.75 + 22 + 6
     private var shownID: String?
     private var shownTasks: [String: TaskLine] = [:]
     private var shownTitles: [String: String] = [:]
@@ -303,7 +303,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         var frames: [(String, CGRect, Double)] = []
         var separators: [CGFloat] = []
         // Phones: one under the other, padding 12 0, a hairline between (text 20 pt in).
-        var y = Self.phoneOriginY - BoxTextView.pad.top
+        // The first of several boxes has 9 pt more above it than a lone box (a page's text).
+        var y = Self.phoneOriginY - BoxTextView.pad.top + (boxes.count > 1 ? 9 : 0)
         for box in boxes {
             guard let view = boxViews[box.id] else { continue }
             let w = width(of: box)
@@ -311,8 +312,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             let frame: CGRect
             if stacked {
                 frame = CGRect(x: 20 - BoxTextView.pad.left, y: y, width: w, height: view.contentHeight)
-                separators.append(frame.maxY + 5)
-                y = frame.maxY + 5 + 1 + 5
+                separators.append(frame.maxY + 12)
+                y = frame.maxY + 12 + 1 + 5
             } else {
                 frame = CGRect(x: ox + CGFloat(box.x), y: oy + CGFloat(box.y), width: w, height: view.contentHeight)
             }
@@ -505,11 +506,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         hideToolbar()
         menu.isHidden = true
         if linkEditor.superview == nil { addSubview(linkEditor) }
-        linkEditor.present(palette: palette, text: ctx.text, address: ctx.href, maxWidth: max(bounds.width - 16, 200), phone: stacked)
+        linkEditor.present(palette: palette, text: ctx.text, address: ctx.href, maxWidth: max(min(bounds.width - 16, 360), 200), phone: stacked)
         let anchor = convert(ctx.rect, from: box)
         let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
         let size = linkEditor.size
-        let x = min(max(anchor.minX, visible.minX + 8), max(visible.maxX - size.width - 8, visible.minX + 8))
+        // Inside the canvas with the toolbar's 8 pt margin, measured from the safe edge so the shadow doesn't touch the window.
+        let right = visible.maxX - max(adjustedContentInset.right, safeAreaInsets.right) - 8
+        let x = min(max(anchor.minX, visible.minX + 8), max(right - size.width, visible.minX + 8))
         var y = anchor.maxY + 8
         if y + size.height > visible.maxY - 8 { y = max(anchor.minY - 8 - size.height, visible.minY + 8) }
         linkEditor.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
@@ -547,7 +550,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             return
         }
         if toolbar.superview == nil { addSubview(toolbar) }
-        toolbar.build(palette: palette)
+        toolbar.build(palette: palette, maxWidth: stacked ? bounds.width - 16 : .greatestFiniteMagnitude)
         let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
         toolbar.isHidden = false
         toolbar.place(over: convert(rect, from: box), visible: visible)
