@@ -387,9 +387,34 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         publishState()
     }
 
+    private var observed = Set<ObjectIdentifier>()
+    private var gestureLog: [String] = []
+
+    /// Logs the state changes of every gesture recognizer from here up to the window (who takes a swipe?).
+    private func observeRecognizers() {
+        guard LookData.state != nil else { return }
+        var v: UIView? = self
+        while let view = v {
+            for g in view.gestureRecognizers ?? [] where !observed.contains(ObjectIdentifier(g)) && !(g is TouchProbe) {
+                observed.insert(ObjectIdentifier(g))
+                g.addTarget(self, action: #selector(recognizerChanged(_:)))
+            }
+            v = view.superview
+        }
+    }
+
+    @objc private func recognizerChanged(_ g: UIGestureRecognizer) {
+        let name = String(describing: type(of: g)).replacingOccurrences(of: "UIScrollView", with: "SV")
+        let entry = "\(name.prefix(34)):\(g.state.rawValue)@\(String(describing: type(of: g.view ?? UIView())).prefix(14))"
+        if gestureLog.last != entry { gestureLog.append(entry) }
+        if gestureLog.count > 80 { gestureLog.removeFirst(40) }
+    }
+
     /// The scroll state as the page title's accessibility value (the UI test reads it, and prints it when a swipe does nothing).
     func publishState() {
-        titleLabel.accessibilityValue = "contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
+        observeRecognizers()
+        titleLabel.accessibilityValue = "gestures=\(gestureLog.suffix(40).joined(separator: ",")) "
+            +"contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
             + "scrollEnabled=\(isScrollEnabled) pan=\(panGestureRecognizer.isEnabled) panState=\(panGestureRecognizer.state.rawValue) "
             + "states=\((gestureRecognizers ?? []).map { $0.state.rawValue }) maxPanTouches=\(panGestureRecognizer.maximumNumberOfTouches) "
             + "lastHit=\(lastHit) panLog=\(panLog) windowTouches=\(windowProbe.summary) scrollTouches=\(scrollProbe.summary) "
