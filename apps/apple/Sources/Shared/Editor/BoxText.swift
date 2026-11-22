@@ -1,5 +1,5 @@
 import NotiveloCore
-import UIKit
+import Foundation
 
 /// A box's tree in one shape for drawing, read from the core's typed content (boxes not open in
 /// the engine) or from an editor session's ProseMirror JSON (`EditorState.docJson`).

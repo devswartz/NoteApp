@@ -2,7 +2,7 @@ import NotiveloCore
 import SwiftUI
 
 /// The page's canvas (title, sub-line, boxes) on the page's colour. iPad/iPhone: the native UIKit canvas. Mac: `MacPageCanvas`
-/// (Sources/macOS), a read-only placeholder until the TextKit 2 box view of M6 part 2 replaces it.
+/// (Sources/macOS), the TextKit 2 box canvas over the editor engine.
 struct PageCanvas: View {
     let page: PageSnapshot
     let host: PageEditHost?
@@ -21,7 +21,7 @@ struct PageCanvas: View {
             .ignoresSafeArea(.container, edges: .bottom)
             .ignoresSafeArea(.keyboard)
         #else
-        MacPageCanvas(page: page, host: host, title: title, subline: subline, palette: palette)
+        MacPageCanvas(page: page, host: host, title: title, subline: subline, palette: palette, decor: decor, notify: notify)
         #endif
     }
 }

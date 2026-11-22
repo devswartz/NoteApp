@@ -1,15 +1,5 @@
 import UIKit
 
-/// Which addresses a tap may open: the web only follows http, https and mailto links.
-enum LinkURL {
-    static func openable(_ href: String) -> URL? {
-        let trimmed = href.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme) else { return nil }
-        return url
-    }
-}
-
 /// A text field with the web's `.input` look: 34 high, padding 0 10, 1 pt `--border`, radius 8,
 /// `--bg`; focused: accent border and a 3 pt `--accent-soft` ring.
 private final class LinkField: UITextField {
