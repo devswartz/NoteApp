@@ -226,6 +226,12 @@ final class BoxTextView: UIView, UITextInput {
             box.stroke()
         }
         for d in rendering.decorations { drawDecoration(d, inset: inset) }
+        // Look mode (CI): the simulator shows no UIKit selection without a keyboard, so draw the
+        // engine's selection as the web does (accent, soft).
+        if LookData.state != nil, editor != nil, sel.hi > sel.lo {
+            p.accent.withAlphaComponent(0.16).setFill()
+            for r in selectionRects(for: BoxTextRange(sel.lo, sel.hi)).map(\.rect) { UIRectFill(r) }
+        }
         layoutManager.enumerateTextLayoutFragments(from: layoutManager.documentRange.location, options: [.ensuresLayout]) { fragment in
             let frame = fragment.layoutFragmentFrame.offsetBy(dx: inset.left, dy: inset.top)
             if frame.intersects(rect.insetBy(dx: -20, dy: -20)) {
@@ -645,6 +651,7 @@ final class BoxTextView: UIView, UITextInput {
             inputDelegate?.selectionDidChange(self)
         }
         interaction?.textInput = self
+        if LookData.state != nil { setNeedsDisplay() }
         onCaretChange?(self)
     }
 
