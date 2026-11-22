@@ -5,7 +5,7 @@ import NotiveloCore
 /// { x, y, w, z, wide }). `LiveBoxGeometry` sends each change to the server through the core's box
 /// calls (`LivePage.createBoxWithId` …); `LocalBoxGeometry` keeps changes on this device only (the
 /// look states and corpus pages, which have no server). Both show a change at once, over what the
-/// page document says, until the page document has it.
+/// page document says, until the page document has it. (Box calls: crates/nv-core/src/boxes.rs.)
 protocol BoxGeometryStore: AnyObject {
     /// Do changes reach the server?
     var savesToServer: Bool { get }
