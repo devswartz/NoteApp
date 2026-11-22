@@ -133,6 +133,29 @@ function editLink(e: Editor, text: string | null, address: string): boolean {
   return true;
 }
 
+/**
+ * Opens every toggle, as clicking its button does: open state is view state (persist: false), not
+ * in the doc, and a loaded toggle is closed. The engine has no such state: its runner ignores this.
+ */
+type Loaded = { node: number | null; anchor: number | null; head: number | null };
+let loadedSel: Loaded | null = null;
+const selectionFor = (d: Editor['state']['doc'], p: Loaded) =>
+  p.node !== null ? NodeSelection.create(d, p.node) : TextSelection.create(d, p.anchor ?? 1, p.head ?? p.anchor ?? 1);
+
+function openToggles(e: Editor): boolean {
+  for (const d of Array.from(e.view.dom.querySelectorAll('div[data-type="details"]'))) {
+    if (d.classList.contains('is-open')) continue;
+    (d.querySelector(':scope > button') as HTMLButtonElement | null)?.click();
+  }
+  // A selection inside a closed toggle's content can't live in the DOM (it's hidden), so the browser moved
+  // it at load: put the loaded selection back now the content is shown.
+  if (loadedSel) {
+    e.view.focus();
+    e.view.dispatch(e.state.tr.setSelection(selectionFor(e.state.doc, loadedSel)).setMeta('addToHistory', false));
+  }
+  return true;
+}
+
 let given: string[] = [];
 let replacing: { anchor: number; head: number; from: number; to: number; size: number } | null = null;
 
@@ -159,7 +182,8 @@ const nv = {
     current = { editor, doc, root };
     editor.view.focus();
     const d = editor.state.doc;
-    const sel = p.node !== null ? NodeSelection.create(d, p.node) : p.anchor !== null ? TextSelection.create(d, p.anchor, p.head ?? p.anchor) : null;
+    loadedSel = p.node !== null || p.anchor !== null ? { node: p.node, anchor: p.anchor, head: p.head } : null;
+    const sel = loadedSel ? selectionFor(d, loadedSel) : null;
     if (sel) editor.view.dispatch(editor.state.tr.setSelection(sel).setMeta('addToHistory', false));
     um.clear();
   },
@@ -218,6 +242,7 @@ const nv = {
   /** Runs a TipTap command by name (the suite's command vocabulary maps onto these in run-tiptap.ts). */
   command(name: string, args: unknown[] = []) {
     const e = current!.editor;
+    if (name === 'nv.openToggles') return openToggles(e);
     if (name === 'nv.editLink') return editLink(e, args[0] as string | null, String(args[1] ?? ''));
     const fn = (e.commands as unknown as Record<string, (...a: unknown[]) => boolean>)[name];
     if (!fn) throw new Error(`no command ${name}`);
