@@ -29,6 +29,7 @@ nv-store = { path = "../nv-store" }
 getrandom = "0.2"
 serde_json = "1"
 uniffi = "0.32"
+regex = "1"
 
 [dev-dependencies]
 # For the stand-in collab server (crates/nv-sync/tests/support) in tests/live.rs.

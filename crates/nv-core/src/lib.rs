@@ -17,11 +17,16 @@ mod boxes;
 mod client;
 mod content;
 mod editor_session;
+mod quickadd;
+mod recurrence;
+mod task_detail;
 mod tasks;
 pub use boxes::*;
 pub use client::*;
 pub use content::*;
 pub use editor_session::*;
+pub use quickadd::{QuickAddKind, QuickAddResult, QuickAddToken};
+pub use task_detail::*;
 pub use tasks::*;
 
 uniffi::setup_scaffolding!();

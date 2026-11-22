@@ -238,3 +238,194 @@ fn task_writes_create_with_a_client_id_rename_and_delete() {
     let back: nv_api::NewTask = serde_json::from_value(body).unwrap();
     assert_eq!(back, new);
 }
+
+#[test]
+fn reads_every_task_field_and_tolerates_missing_and_unknown_ones() {
+    let full = json!({
+        "id": "t1", "workspaceId": "w1", "title": "Ship", "description": "Notes", "status": "done", "priority": 2,
+        "dueDate": "2026-12-01", "dueTime": "09:30",
+        "recurrence": { "freq": "week", "interval": 2, "byWeekday": [1, 4], "until": "2027-01-01", "basis": "completion" },
+        "reminderAt": "2026-12-01T08:00:00.000Z", "assigneeId": "u2", "assignedBy": "u1", "createdBy": "u1",
+        "pageId": "p1", "parentId": "t0", "teamId": "tm1", "tagIds": ["g1", "g2"],
+        "checklist": { "done": 1, "total": 3 }, "completedAt": "2026-11-30T10:00:00.000Z", "completedBy": "u2",
+        "createdAt": "2026-11-01T00:00:00Z", "updatedAt": "2026-11-02T00:00:00Z", "locked": true, "newerField": [1],
+    });
+    let t: nv_api::Task = serde_json::from_value(full).unwrap();
+    assert_eq!(
+        (
+            t.assigned_by.as_deref(),
+            t.completed_by.as_deref(),
+            t.team_id.as_deref()
+        ),
+        (Some("u1"), Some("u2"), Some("tm1"))
+    );
+    let r = t.recurrence.clone().unwrap();
+    assert_eq!(
+        (
+            r.freq.as_str(),
+            r.interval,
+            r.by_weekday.clone(),
+            r.basis.as_deref()
+        ),
+        ("week", Some(2), Some(vec![1, 4]), Some("completion"))
+    );
+    // It goes out the way it came (the store keeps tasks as JSON).
+    let back: nv_api::Task = serde_json::from_value(serde_json::to_value(&t).unwrap()).unwrap();
+    assert_eq!(back, t);
+
+    // An older server: only the ids and the title. A rule this core can't read is none.
+    let bare: nv_api::Task =
+        serde_json::from_value(json!({ "id": "t2", "title": "x", "recurrence": { "freq": 7 } }))
+            .unwrap();
+    assert_eq!(
+        (bare.status.as_str(), bare.priority, bare.recurrence),
+        ("open", 4, None)
+    );
+    assert!(bare.tag_ids.is_empty() && bare.description.is_empty() && !bare.locked);
+}
+
+#[test]
+fn a_task_patch_sends_set_fields_and_null_for_cleared_ones() {
+    let rule = nv_api::Recurrence {
+        freq: "month".into(),
+        interval: Some(1),
+        by_month_day: Some(-1),
+        ..Default::default()
+    };
+    let patch = nv_api::TaskPatch {
+        title: Some("T".into()),
+        description: Some(String::new()),
+        status: Some("done".into()),
+        priority: Some(1),
+        due_date: Some(None),
+        due_time: Some(Some("08:05".into())),
+        recurrence: Some(Some(rule)),
+        reminder_at: Some(None),
+        assignee_id: Some(Some("u2".into())),
+        page_id: Some(None),
+        parent_id: Some(Some("t0".into())),
+        team_id: Some(None),
+        tag_ids: Some(vec![]),
+    };
+    assert_eq!(
+        patch.to_value(),
+        json!({
+            "title": "T", "description": "", "status": "done", "priority": 1, "dueDate": null, "dueTime": "08:05",
+            "recurrence": { "freq": "month", "interval": 1, "byMonthDay": -1 }, "reminderAt": null,
+            "assigneeId": "u2", "pageId": null, "parentId": "t0", "teamId": null, "tagIds": []
+        })
+    );
+    assert_eq!(nv_api::TaskPatch::default().to_value(), json!({}));
+    assert!(nv_api::TaskPatch::default().is_empty() && !patch.is_empty());
+    // Only what is set.
+    let only = nv_api::TaskPatch {
+        recurrence: Some(None),
+        ..Default::default()
+    };
+    assert_eq!(only.to_value(), json!({ "recurrence": null }));
+}
+
+#[test]
+fn task_detail_endpoints_tags_teams_members_reminders_notes() {
+    let s = Script::default();
+    s.reply(200, session("acc", "ref", 900))
+        .reply(200, task_json("t1", "A"))
+        .reply(200, json!([{ "id": "g1", "workspaceId": "w1", "name": "waiting", "color": "#10b981", "createdBy": "u1", "createdAt": "x" }]))
+        .reply(200, json!({ "id": "g2", "workspaceId": "w1", "name": "budget", "color": "#ef4444", "createdBy": "u1", "createdAt": "x" }))
+        .reply(200, json!([{ "id": "tm1", "workspaceId": "w1", "parentId": null, "name": "Elders", "color": "#6366f1", "position": 1, "memberIds": ["u1"] }]))
+        .reply(200, json!({ "members": [{ "id": "u1", "email": "a@b.c", "name": "Ann", "color": "#123456", "role": "owner" }], "invites": [] }))
+        .reply(200, json!([
+            { "id": "r1", "taskId": "t1", "userId": "u1", "kind": "before", "minutes": 30, "nextFireAt": "2026-12-01T09:00:00.000Z", "lastFiredAt": null, "createdAt": "x" },
+            { "id": "r2", "taskId": "t1", "userId": "u1", "kind": "at", "at": "2026-12-01T07:00:00.000Z", "nextFireAt": null, "lastFiredAt": null, "createdAt": "x" }
+        ]))
+        .reply(200, json!({ "id": "r3", "taskId": "t1", "userId": "u1", "kind": "at", "at": "2026-12-02T07:00:00.000Z", "nextFireAt": "2026-12-02T07:00:00.000Z", "lastFiredAt": null, "createdAt": "x" }))
+        .reply(200, json!({ "id": "r3", "taskId": "t1", "userId": "u1", "kind": "before", "minutes": 5, "nextFireAt": null, "lastFiredAt": null, "createdAt": "x" }))
+        .reply(200, json!({ "ok": true }))
+        .reply(200, json!({ "markdown": "- [ ] one\n- [x] two" }))
+        .reply(200, json!([task_json("t9", "Old")]));
+    let c = client(&s);
+    c.login("a@b.c", "pw").unwrap();
+    let patch = nv_api::TaskPatch {
+        due_date: Some(None),
+        priority: Some(2),
+        ..Default::default()
+    };
+    c.patch_task("t1", &patch).unwrap();
+    assert_eq!(c.tags("w1").unwrap()[0].name, "waiting");
+    assert_eq!(
+        c.create_tag("w1", "#budget", Some("#ef4444")).unwrap().id,
+        "g2"
+    );
+    assert_eq!(c.teams("w1").unwrap()[0].member_ids, ["u1"]);
+    assert_eq!(c.members("w1").unwrap()[0].role, "owner");
+    let rs = c.reminders("t1").unwrap();
+    assert_eq!(
+        (rs[0].spec.clone(), rs[1].spec.clone()),
+        (
+            nv_api::ReminderSpec::Before { minutes: 30 },
+            nv_api::ReminderSpec::At {
+                at: "2026-12-01T07:00:00.000Z".into()
+            }
+        )
+    );
+    c.add_reminder(
+        "t1",
+        &nv_api::ReminderSpec::At {
+            at: "2026-12-02T07:00:00.000Z".into(),
+        },
+    )
+    .unwrap();
+    let r = c
+        .update_reminder("r3", &nv_api::ReminderSpec::Before { minutes: 5 })
+        .unwrap();
+    assert_eq!(r.spec, nv_api::ReminderSpec::Before { minutes: 5 });
+    c.delete_reminder("r3").unwrap();
+    assert_eq!(c.task_notes("t1").unwrap(), "- [ ] one\n- [x] two");
+    assert_eq!(
+        c.completed_tasks("w1", Some("2026-11-01T00:00:00.000Z"))
+            .unwrap()[0]
+            .id,
+        "t9"
+    );
+
+    let seen = s.seen();
+    let calls: Vec<_> = seen[1..]
+        .iter()
+        .map(|r| {
+            format!(
+                "{} {}",
+                r.method,
+                r.url.replace("http://localhost:4417/api", "")
+            )
+        })
+        .collect();
+    assert_eq!(
+        calls,
+        [
+            "PATCH /tasks/t1",
+            "GET /workspaces/w1/tags",
+            "POST /workspaces/w1/tags",
+            "GET /workspaces/w1/teams",
+            "GET /workspaces/w1/members",
+            "GET /tasks/t1/reminders",
+            "POST /tasks/t1/reminders",
+            "PATCH /reminders/r3",
+            "DELETE /reminders/r3",
+            "GET /tasks/t1/notes",
+            "GET /workspaces/w1/tasks/completed?before=2026-11-01T00%3A00%3A00.000Z",
+        ]
+    );
+    assert_eq!(
+        seen[1].body.as_deref(),
+        Some(r#"{"dueDate":null,"priority":2}"#)
+    );
+    let body = |i: usize| -> serde_json::Value {
+        serde_json::from_str(seen[i].body.as_deref().unwrap()).unwrap()
+    };
+    assert_eq!(body(3), json!({ "name": "#budget", "color": "#ef4444" }));
+    assert_eq!(
+        body(7),
+        json!({ "kind": "at", "at": "2026-12-02T07:00:00.000Z" })
+    );
+    assert_eq!(body(8), json!({ "kind": "before", "minutes": 5 }));
+}

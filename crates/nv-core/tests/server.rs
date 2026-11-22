@@ -124,6 +124,7 @@ fn core_against_a_running_server() {
         page_id: Some(page.id.clone()),
         parent_id: None,
         done: false,
+        ..Default::default()
     };
     let made = core
         .create_task_with(w.id.clone(), on_page(&id, ""))
@@ -338,4 +339,326 @@ impl TaskCallbacks for NoTaskCallbacks {
         None
     }
     fn set_title(&self, _: String, _: String) {}
+}
+
+/// Every task field, set and cleared through `update_task` and read back, then tags, members,
+/// reminders, notes and quick add, against the real server (docs/rewrite/status/core.md, "For
+/// apple: task details").
+#[test]
+fn task_details_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let core = Core::new(url);
+    let me = core
+        .register(
+            "Detail Test".into(),
+            format!("detail-test-{stamp}@example.com"),
+            "correct horse battery staple 1".into(),
+        )
+        .unwrap()
+        .user;
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    let read = |id: &str| -> TaskDetail {
+        core.task_details(ws.clone())
+            .unwrap()
+            .into_iter()
+            .find(|t| t.id == id)
+            .unwrap_or_else(|| panic!("task {id} isn't listed"))
+    };
+    let ch = TaskChanges::default;
+
+    // Quick add decides the fields of a new task; the tag is made by name first.
+    let q = parse_quick_add(
+        "Call Sam tomorrow 3pm p2 @me #waiting every 2 weeks on mon,thu".into(),
+        "2026-11-05".into(),
+    );
+    assert_eq!(q.title, "Call Sam");
+    let tag = core
+        .create_tag(ws.clone(), q.tags[0].clone(), None)
+        .unwrap();
+    assert_eq!(tag.name, "waiting");
+    let members = core.members(ws.clone()).unwrap();
+    assert_eq!(members.len(), 1);
+    assert_eq!(
+        resolve_member("me".into(), members.clone(), me.id.clone()).as_deref(),
+        Some(me.id.as_str())
+    );
+    let id = new_task_id();
+    let made = core
+        .create_task_with(
+            ws.clone(),
+            NewTaskInput {
+                id: Some(id.clone()),
+                title: q.title.clone(),
+                priority: q.priority,
+                due_date: q.due_date.clone(),
+                due_time: q.due_time.clone(),
+                recurrence: q.recurrence.clone(),
+                assignee_id: Some(me.id.clone()),
+                tag_ids: Some(vec![tag.id.clone()]),
+                description: Some("From quick add".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(made.priority, 2);
+    let d = read(&id);
+    assert_eq!(
+        (
+            d.title.as_str(),
+            d.description.as_str(),
+            d.priority,
+            d.due_date.as_deref(),
+            d.due_time.as_deref()
+        ),
+        (
+            "Call Sam",
+            "From quick add",
+            2,
+            Some("2026-11-06"),
+            Some("15:00")
+        )
+    );
+    let rule = d.recurrence.clone().unwrap();
+    assert_eq!(
+        (rule.freq.as_str(), rule.interval, rule.by_weekday.clone()),
+        ("week", Some(2), Some(vec![1, 4]))
+    );
+    assert_eq!(
+        (
+            d.assignee_id.as_deref(),
+            d.assigned_by.as_deref(),
+            d.created_by.as_str()
+        ),
+        (Some(me.id.as_str()), Some(me.id.as_str()), me.id.as_str())
+    );
+    assert_eq!(d.tag_ids, [tag.id.as_str()]);
+    assert_eq!(
+        describe_recurrence(rule, d.due_date.clone()),
+        "Every 2 weeks on Mon, Thu"
+    );
+
+    // Set everything else, one read back after each group.
+    let u = core
+        .update_task(
+            id.clone(),
+            TaskChanges {
+                title: Some("  Call Sam Jones ".into()),
+                description: Some("Ring before noon".into()),
+                priority: Some(1),
+                due_date: Some("2026-12-24".into()),
+                due_time: Some("08:15".into()),
+                reminder_at: Some("2026-12-24T07:00:00.000Z".into()),
+                recurrence: Some(TaskRecurrence {
+                    by_month_day: Some(-1),
+                    ..first_rule("month")
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        (u.title.as_str(), u.priority, u.due_time.as_deref()),
+        ("Call Sam Jones", 1, Some("08:15"))
+    );
+    let d = read(&id);
+    assert_eq!(
+        (
+            d.description.as_str(),
+            d.due_date.as_deref(),
+            d.reminder_at.as_deref()
+        ),
+        (
+            "Ring before noon",
+            Some("2026-12-24"),
+            Some("2026-12-24T07:00:00.000Z")
+        )
+    );
+    let rule = d.recurrence.clone().unwrap();
+    assert_eq!((rule.freq.as_str(), rule.by_month_day), ("month", Some(-1)));
+    assert_eq!(
+        describe_recurrence(rule, d.due_date.clone()),
+        "Every month on the last day"
+    );
+
+    // Clear what can be cleared.
+    let c = core
+        .update_task(
+            id.clone(),
+            TaskChanges {
+                clear_due_time: true,
+                clear_recurrence: true,
+                clear_reminder_at: true,
+                clear_assignee: true,
+                tag_ids: Some(vec![]),
+                description: Some(String::new()),
+                ..ch()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        (c.due_time, c.recurrence, c.reminder_at, c.assignee_id),
+        (None, None, None, None)
+    );
+    let d = read(&id);
+    assert_eq!(
+        (d.assigned_by, d.tag_ids.len(), d.description.as_str()),
+        (None, 0, "")
+    );
+    assert_eq!(d.due_date.as_deref(), Some("2026-12-24"));
+    core.update_task(
+        id.clone(),
+        TaskChanges {
+            clear_due_date: true,
+            ..ch()
+        },
+    )
+    .unwrap();
+    assert_eq!(read(&id).due_date, None);
+
+    // Tick it: who and when; reopen it.
+    let t = core
+        .update_task(
+            id.clone(),
+            TaskChanges {
+                done: Some(true),
+                ..ch()
+            },
+        )
+        .unwrap();
+    assert!(t.done && t.completed_at.is_some());
+    assert_eq!(t.completed_by.as_deref(), Some(me.id.as_str()));
+    let t = core
+        .update_task(
+            id.clone(),
+            TaskChanges {
+                done: Some(false),
+                ..ch()
+            },
+        )
+        .unwrap();
+    assert!(!t.done && t.completed_at.is_none() && t.completed_by.is_none());
+
+    // A recurring task ticked comes back open with its next date.
+    let rid = new_task_id();
+    core.create_task_with(
+        ws.clone(),
+        NewTaskInput {
+            id: Some(rid.clone()),
+            title: "Water plants".into(),
+            due_date: Some("2026-01-05".into()),
+            recurrence: Some(first_rule("week")),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let t = core
+        .update_task(
+            rid.clone(),
+            TaskChanges {
+                done: Some(true),
+                ..ch()
+            },
+        )
+        .unwrap();
+    assert!(!t.done, "a recurring task rolls forward and stays open");
+    assert!(t.due_date.as_deref() > Some("2026-01-05"));
+
+    // Subtasks: make one a subtask of another, then a task of its own.
+    let sub = new_task_id();
+    core.create_task_with(
+        ws.clone(),
+        NewTaskInput {
+            id: Some(sub.clone()),
+            title: "Step".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let s = core
+        .update_task(
+            sub.clone(),
+            TaskChanges {
+                parent_id: Some(id.clone()),
+                ..ch()
+            },
+        )
+        .unwrap();
+    assert_eq!(s.parent_id.as_deref(), Some(id.as_str()));
+    let s = core
+        .update_task(
+            sub.clone(),
+            TaskChanges {
+                clear_parent: true,
+                ..ch()
+            },
+        )
+        .unwrap();
+    assert_eq!(s.parent_id, None);
+
+    // The server refuses what the core would not catch (a task as its own subtask).
+    assert!(matches!(
+        core.update_task(
+            id.clone(),
+            TaskChanges {
+                parent_id: Some(id.clone()),
+                ..ch()
+            }
+        ),
+        Err(CoreError::Server { status: 400, .. })
+    ));
+
+    // Reminders: add, list, change, remove.
+    let r = core
+        .add_reminder(id.clone(), ReminderSpec::Before { minutes: 30 })
+        .unwrap();
+    let r2 = core
+        .add_reminder(
+            id.clone(),
+            ReminderSpec::At {
+                at: "2030-01-01T09:00:00.000Z".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(core.task_reminders(id.clone()).unwrap().len(), 2);
+    let r = core
+        .update_reminder(r.id.clone(), ReminderSpec::Before { minutes: 5 })
+        .unwrap();
+    assert_eq!(r.spec, ReminderSpec::Before { minutes: 5 });
+    core.delete_reminder(r.id).unwrap();
+    core.delete_reminder(r2.id).unwrap();
+    assert!(core.task_reminders(id.clone()).unwrap().is_empty());
+
+    // Lists and notes.
+    assert!(core.teams(ws.clone()).unwrap().is_empty());
+    assert_eq!(
+        core.tags(ws.clone())
+            .unwrap()
+            .iter()
+            .map(|t| t.name.as_str())
+            .collect::<Vec<_>>(),
+        ["waiting"]
+    );
+    assert_eq!(core.task_notes(id.clone()).unwrap(), "");
+    assert_eq!(members[0].id, me.id);
+}
+
+/// A rule with only a frequency (every 1 unit).
+fn first_rule(freq: &str) -> TaskRecurrence {
+    TaskRecurrence {
+        freq: freq.into(),
+        interval: Some(1),
+        by_weekday: None,
+        by_month_day: None,
+        by_nth_weekday: None,
+        until: None,
+        count: None,
+        basis: None,
+    }
 }

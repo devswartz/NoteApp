@@ -22,6 +22,10 @@ editor stores it. Add a case when the editor gains a block, mark or attribute.
 `list-markers.json`: `listMarker(type, n)` for every list type over a range of numbers, and
 `listSuffix(paren)` (`shared/listMarker.ts`).
 
+`quickadd.json`: `parseQuickAdd(input, today)` (`shared/quickadd.ts`) for a list of lines and four "today"s, and
+`describeRecurrence` / `firstOccurrence` (`shared/recurrence.ts`) for a list of rules; made by
+`node --import tsx scripts/corpus/quickadd.ts`, checked by `crates/nv-core/tests/quickadd.rs`.
+
 `cases/<name>/`:
 
 | File | What | From |

@@ -125,4 +125,27 @@ final class CoreTests: XCTestCase {
             guard case BoxError.Closed = error else { return XCTFail("\(error)") }
         }
     }
+
+    func testQuickAddAndTaskFields() throws {
+        let q = parseQuickAdd(text: "Call Sam tomorrow 3pm p1 @sam #waiting +elders every week", today: "2026-11-05")
+        XCTAssertEqual(q.title, "Call Sam")
+        XCTAssertEqual([q.dueDate, q.dueTime], ["2026-11-06", "15:00"])
+        XCTAssertEqual(q.priority, 1)
+        XCTAssertEqual([q.assignee, q.team], ["sam", "elders"])
+        XCTAssertEqual(q.tags, ["waiting"])
+        XCTAssertEqual(q.recurrence?.freq, "week")
+        XCTAssertEqual(Set(q.tokens.map(\.kind)), [.date, .time, .priority, .assignee, .tag, .team, .recurrence])
+        let rule = TaskRecurrence(freq: "week", interval: 2, byWeekday: [4, 1])
+        XCTAssertEqual(describeRecurrence(rule: rule, dueDate: nil), "Every 2 weeks on Mon, Thu")
+        XCTAssertEqual(firstOccurrence(rule: TaskRecurrence(freq: "week", interval: 1, byWeekday: [1]), from: "2026-11-05"), "2026-11-09")
+        let members = [WorkspaceMember(id: "u2", name: "Samuel Jones", email: "sam@x.org", color: "#123456", role: "member")]
+        XCTAssertEqual(resolveMember(mention: "sam", members: members, me: "u1"), "u2")
+        // A bad value is refused before anything is sent (this core has no server).
+        let core = Core(serverUrl: "http://127.0.0.1:9")
+        XCTAssertThrowsError(try core.updateTask(taskId: "t1", changes: TaskChanges(priority: 5))) { error in
+            guard case CoreError.Server(let status, let message, _) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual([String(status), message], ["400", "Invalid priority"])
+        }
+        XCTAssertNil(core.cachedTaskDetail(taskId: "t1"))
+    }
 }

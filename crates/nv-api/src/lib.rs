@@ -449,6 +449,131 @@ impl Client {
         )
     }
 
+    /// Change some of a task (PATCH /tasks/:id with the set fields; see `TaskPatch`). Answers
+    /// with the task as the server now has it.
+    pub fn patch_task(&self, task_id: &str, patch: &TaskPatch) -> Result<Task, ApiError> {
+        self.update_task(task_id, &patch.to_value())
+    }
+
+    /// Done tasks older than the list's 30 days, newest first (GET /workspaces/:id/tasks/completed):
+    /// at most 100 completed before (an ISO instant: the last one's `completed_at`).
+    pub fn completed_tasks(
+        &self,
+        workspace_id: &str,
+        before: Option<&str>,
+    ) -> Result<Vec<Task>, ApiError> {
+        let mut path = format!(
+            "/workspaces/{}/tasks/completed",
+            encode_component(workspace_id)
+        );
+        if let Some(b) = before {
+            path.push_str(&format!("?before={}", encode_component(b)));
+        }
+        self.call("GET", &path, None)
+    }
+
+    /// The notes written under the task on its page, as Markdown (GET /tasks/:id/notes): bullets,
+    /// checklists (`- [ ] x`) and so on, subtasks left out. Empty without notes or a page.
+    pub fn task_notes(&self, task_id: &str) -> Result<String, ApiError> {
+        let v: Value = self.call(
+            "GET",
+            &format!("/tasks/{}/notes", encode_component(task_id)),
+            None,
+        )?;
+        Ok(v["markdown"].as_str().unwrap_or_default().to_string())
+    }
+
+    /// The workspace's tags, by name (GET /workspaces/:id/tags).
+    pub fn tags(&self, workspace_id: &str) -> Result<Vec<Tag>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/workspaces/{}/tags", encode_component(workspace_id)),
+            None,
+        )
+    }
+
+    /// A tag by name (POST /workspaces/:id/tags; members). A name that exists (any case) returns
+    /// that tag, a leading # is dropped, at most 40 characters. `color` is #rrggbb; none picks one.
+    pub fn create_tag(
+        &self,
+        workspace_id: &str,
+        name: &str,
+        color: Option<&str>,
+    ) -> Result<Tag, ApiError> {
+        let mut body = json!({ "name": name });
+        if let Some(c) = color {
+            body["color"] = json!(c);
+        }
+        self.call(
+            "POST",
+            &format!("/workspaces/{}/tags", encode_component(workspace_id)),
+            Some(&body),
+        )
+    }
+
+    /// The workspace's teams and subteams (GET /workspaces/:id/teams).
+    pub fn teams(&self, workspace_id: &str) -> Result<Vec<Team>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/workspaces/{}/teams", encode_component(workspace_id)),
+            None,
+        )
+    }
+
+    /// The workspace's members (GET /workspaces/:id/members; its pending invites, which only
+    /// admins get, are left out).
+    pub fn members(&self, workspace_id: &str) -> Result<Vec<Member>, ApiError> {
+        let v: Value = self.call(
+            "GET",
+            &format!("/workspaces/{}/members", encode_component(workspace_id)),
+            None,
+        )?;
+        serde_json::from_value(v["members"].clone()).map_err(|e| ApiError::Decode(e.to_string()))
+    }
+
+    /// The caller's reminders on a task (GET /tasks/:id/reminders), oldest first.
+    pub fn reminders(&self, task_id: &str) -> Result<Vec<Reminder>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/tasks/{}/reminders", encode_component(task_id)),
+            None,
+        )
+    }
+
+    /// Add a reminder to a task (POST /tasks/:id/reminders; at most 10 per task).
+    pub fn add_reminder(&self, task_id: &str, spec: &ReminderSpec) -> Result<Reminder, ApiError> {
+        let body = serde_json::to_value(spec).map_err(|e| ApiError::Decode(e.to_string()))?;
+        self.call(
+            "POST",
+            &format!("/tasks/{}/reminders", encode_component(task_id)),
+            Some(&body),
+        )
+    }
+
+    /// Change a reminder (PATCH /reminders/:id).
+    pub fn update_reminder(
+        &self,
+        reminder_id: &str,
+        spec: &ReminderSpec,
+    ) -> Result<Reminder, ApiError> {
+        let body = serde_json::to_value(spec).map_err(|e| ApiError::Decode(e.to_string()))?;
+        self.call(
+            "PATCH",
+            &format!("/reminders/{}", encode_component(reminder_id)),
+            Some(&body),
+        )
+    }
+
+    /// Remove a reminder (DELETE /reminders/:id).
+    pub fn delete_reminder(&self, reminder_id: &str) -> Result<(), ApiError> {
+        let _: Value = self.call(
+            "DELETE",
+            &format!("/reminders/{}", encode_component(reminder_id)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// Change a task's title (PATCH `{ title }`; the server trims it).
     pub fn set_task_title(&self, task_id: &str, title: &str) -> Result<Task, ApiError> {
         self.update_task(task_id, &json!({ "title": title }))
