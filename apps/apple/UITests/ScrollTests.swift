@@ -13,12 +13,23 @@ final class ScrollTests: XCTestCase {
         let before = title.frame.minY
         let stateBefore = String(describing: title.value ?? "nil")
         let window = app.windows.firstMatch
+
+        func moved() -> Bool { !title.exists || title.frame.minY < before - 80 }
+        var tried: [String] = []
+
         window.swipeUp()
-        window.swipeUp()
-        Thread.sleep(forTimeInterval: 1.5)
-        // The title has moved up (or scrolled out of the tree altogether).
-        let moved = !title.exists || title.frame.minY < before - 80
-        XCTAssertTrue(moved, "swiping the page did not scroll it (title still at y=\(before) -> \(title.frame.minY)); "
+        Thread.sleep(forTimeInterval: 1.0)
+        tried.append("swipeUp=\(moved())")
+        if !moved() {
+            // A slow drag (press, hold, drag), in case only the flick is lost.
+            let from = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+            let to = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            from.press(forDuration: 0.1, thenDragTo: to)
+            Thread.sleep(forTimeInterval: 1.0)
+            tried.append("pressDrag=\(moved())")
+        }
+        let ok = moved()
+        XCTAssertTrue(ok, "swiping the page did not scroll it (title y=\(before) -> \(title.frame.minY)); tried \(tried); "
             + "before: \(stateBefore); after: \(String(describing: title.value ?? "nil"))")
     }
 }

@@ -117,6 +117,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         isUserInteractionEnabled = true
         accessibilityIdentifier = "page-scroll"
         titleLabel.accessibilityIdentifier = "page-title"
+        panGestureRecognizer.addTarget(self, action: #selector(panSeen(_:)))
         toolbar.isHidden = true
         toolbar.onCommand = { [weak self] name, args in
             EditorFocus.shared.run(name, args)
@@ -353,10 +354,33 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) { publishState() }
 
+    // Diagnostics for the scroll test: how many touches reached the page, and what the pan did.
+    private var hitCount = 0
+    private var panLog: [Int] = []
+    private var lastHit = ""
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let v = super.hitTest(point, with: event)
+        hitCount += 1
+        var chain: [String] = []
+        var cur = v
+        while let c = cur, chain.count < 4 { chain.append(String(describing: type(of: c))); cur = c.superview }
+        lastHit = chain.joined(separator: ">")
+        return v
+    }
+
+    @objc private func panSeen(_ g: UIPanGestureRecognizer) {
+        panLog.append(g.state.rawValue)
+        if panLog.count > 12 { panLog.removeFirst() }
+        publishState()
+    }
+
     /// The scroll state as the page title's accessibility value (the UI test reads it, and prints it when a swipe does nothing).
     func publishState() {
         titleLabel.accessibilityValue = "contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
             + "scrollEnabled=\(isScrollEnabled) pan=\(panGestureRecognizer.isEnabled) panState=\(panGestureRecognizer.state.rawValue) "
+            + "hits=\(hitCount) lastHit=\(lastHit) panLog=\(panLog) "
+            + "windowHit=\(window.flatMap { w in w.hitTest(convert(CGPoint(x: bounds.midX, y: bounds.midY), to: w), with: nil) }.map { String(describing: type(of: $0)) } ?? "nil") "
             + "stacked=\(stacked) boxes=\(boxViews.count) surface=\(surface.frame) tracking=\(isTracking) dragging=\(isDragging) "
             + "recognizers=\((gestureRecognizers ?? []).map { String(describing: type(of: $0)) })"
     }
