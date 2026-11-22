@@ -71,7 +71,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private let menu = SuggestionMenuView()
     private weak var menuOwner: BoxTextView?
     private let doubleTap = UITapGestureRecognizer()
-    private let boxPan = UIPanGestureRecognizer()
+    private let boxPan = BoxDragRecognizer()
     private let toolbar = FloatingToolbarView()
     private let linkEditor = LinkEditorView()
     var notify: ((String) -> Void)?
@@ -111,6 +111,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         addGestureRecognizer(singleTap)
         boxPan.addTarget(self, action: #selector(panned(_:)))
         boxPan.maximumNumberOfTouches = 1
+        // Fails at touch-down unless the touch starts on the edited box's bar or width handle: otherwise it
+        // recognized every swipe (even with `gestureRecognizerShouldBegin` returning false) and the page never scrolled.
+        boxPan.accepts = { [weak self] touch in
+            guard let self else { return false }
+            return self.moveHit(touch.location(in: self.surface)) != nil
+        }
         addGestureRecognizer(boxPan)
         // The page's own pan never waits on the box pan (a pan that must fail first can leave the page stuck);
         // `gestureRecognizerShouldBegin` keeps them apart: a pan that starts on a box's bar or handle is the box's.
@@ -845,6 +851,20 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
 /// The page surface: rule lines or grid, 28 points apart, as the web app draws them (LOOK.md 1.3):
 /// a 1 pt line on the last point of every band, the pattern starting 7 pt below the surface origin.
+/// The pan that moves or resizes the box being edited. Fails at touch-down when the touch is not on its bar or handle
+/// (`accepts`), so it never competes with the page's own scrolling.
+final class BoxDragRecognizer: UIPanGestureRecognizer {
+    var accepts: ((UITouch) -> Bool)?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        if let accepts, let touch = touches.first, !accepts(touch) {
+            state = .failed
+            return
+        }
+        super.touchesBegan(touches, with: event)
+    }
+}
+
 /// Counts the touches that reach a view (the scroll test's diagnostics); never recognizes, never blocks.
 final class TouchProbe: UIGestureRecognizer {
     private var began = 0, moved = 0, ended = 0, cancelled = 0
