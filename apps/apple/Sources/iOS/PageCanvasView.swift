@@ -679,8 +679,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 if state == "edit-link" {
                     // The last line ("Box c") made a link, then the editor opened on it (prefilled, with Open and Remove).
                     let shown = box.shownText as NSString
-                    let nl = shown.range(of: "
-", options: .backwards).location
+                    let nl = shown.range(of: "\n", options: .backwards).location
                     let start = nl == NSNotFound ? 0 : nl + 1
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         box.lookSelect(from: start)
