@@ -610,7 +610,9 @@ struct BoxTextRenderer {
         for item in items { metaWidth += item.width }
         let titleX: CGFloat = 26
         let titleWidth: CGFloat = width - 14 - metaWidth - titleX
-        let image = Self.image(CGSize(width: width, height: rowHeight)) { _ in
+        // A box too narrow for the chips lets them run past its edge, 34 pt from the circle's left, as the web does.
+        let rowStart = max(width - 6, 34 + metaWidth)
+        let image = Self.image(CGSize(width: rowStart + 6, height: rowHeight)) { _ in
             // The circle: 18, 1.6 ring; done: filled with a white check.
             let ring = priorityColor(priority, p)
             let circle = CGRect(x: 0.8, y: 8.8, width: 16.4, height: 16.4)
@@ -636,7 +638,7 @@ struct BoxTextRenderer {
                 NSAttributedString(string: title, attributes: attrs)
                     .draw(in: CGRect(x: titleX, y: 5 + (24 - font(bodySize).lineHeight) / 2, width: titleWidth, height: 24))
             }
-            var x = width - 6
+            var x = rowStart
             for item in items {
                 x -= item.width
                 item.draw(x)

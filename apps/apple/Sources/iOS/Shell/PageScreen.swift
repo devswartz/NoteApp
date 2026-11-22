@@ -132,7 +132,7 @@ struct PageScreen: View {
             let title = meta?.title ?? snapshot.title
             let edited = meta.map { "Edited \(Due.ago($0.updatedAt))" + (session.preview ? " by you" : "") } ?? "Edited just now by you"
             PageCanvasView(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
-                           decor: decor, showAddIcon: phone || ((LookData.state?.hasPrefix("edit") ?? false) || LookData.state == "slash-menu"), stacked: phone)
+                           decor: decor, showAddIcon: phone || ((LookData.state?.hasPrefix("edit") ?? false)), stacked: phone, notify: { shell.say($0) })
                 .ignoresSafeArea(.container, edges: .bottom)
                 .ignoresSafeArea(.keyboard)
         } else if let sample, case let .failure(error) = sample.page {

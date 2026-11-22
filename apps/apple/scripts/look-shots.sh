@@ -75,7 +75,7 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
     shoot "$UDID" $L 1 $theme menu-account
     shoot "$UDID" $L 1 $theme page-settings-and-ink
   done
-  for state in page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
+  for state in edit-selection edit-new-box page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
                slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed; do
     shoot "$UDID" $L 1 light "$state"
   done

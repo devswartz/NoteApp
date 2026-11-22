@@ -20,6 +20,8 @@ struct PageCanvasView: UIViewRepresentable {
     var showAddIcon = false
     /// Phones: boxes stacked in reading order, full width (LOOK.md 3.2).
     var stacked = false
+    /// A short message for the user (the shell's toast).
+    var notify: ((String) -> Void)?
 
     func makeUIView(context: Context) -> PageScrollView {
         PageScrollView()
@@ -27,6 +29,7 @@ struct PageCanvasView: UIViewRepresentable {
 
     func updateUIView(_ view: PageScrollView, context: Context) {
         view.stacked = stacked
+        view.notify = notify
         BoxTextRenderer.phoneChips = stacked
         view.setHeader(title: title, subline: subline, palette: palette, showAddIcon: showAddIcon)
         view.decor = decor
@@ -67,6 +70,15 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private let menu = SuggestionMenuView()
     private weak var menuOwner: BoxTextView?
     private let doubleTap = UITapGestureRecognizer()
+    private let boxPan = UIPanGestureRecognizer()
+    private let toolbar = FloatingToolbarView()
+    var notify: ((String) -> Void)?
+    private var geometry = LocalBoxGeometry()
+    private var movedNotice = false
+    /// The boxes as the page document has them (before local changes).
+    private var pageBoxes: [PageBox] = []
+    private enum Drag { case move(id: String, start: CGPoint, x: Double, y: Double), resize(id: String, start: CGPoint, w: Double) }
+    private var drag: Drag?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -93,6 +105,16 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         singleTap.addTarget(self, action: #selector(tapped(_:)))
         singleTap.require(toFail: doubleTap)
         addGestureRecognizer(singleTap)
+        boxPan.addTarget(self, action: #selector(panned(_:)))
+        boxPan.maximumNumberOfTouches = 1
+        addGestureRecognizer(boxPan)
+        panGestureRecognizer.require(toFail: boxPan)
+        toolbar.isHidden = true
+        toolbar.onCommand = { [weak self] name, args in
+            EditorFocus.shared.run(name, args)
+            self?.updateToolbar()
+        }
+        toolbar.onNotYet = { [weak self] what in self?.notify?("\(what) isn’t in the native preview yet.") }
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)),
                                                name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)),
@@ -172,6 +194,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             boxViews = [:]
             editors = [:]
             shownID = page.id
+            geometry = LocalBoxGeometry()
+            movedNotice = false
+            hideToolbar()
             demoDone = false
             lookDone = false
             zoomScale = 1
@@ -188,11 +213,14 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         shownDecor = decor
         settings = page.info.settings
         let shown = page.boxes
-        boxes = shown.map(\.box)
+        let contentOf = Dictionary(shown.map { ($0.box.id, $0.content) }, uniquingKeysWith: { a, _ in a })
+        pageBoxes = shown.map { $0.box }
+        let merged = geometry.apply(to: pageBoxes)
+        boxes = merged
 
         var seen = Set<String>()
-        for item in shown {
-            let id = item.box.id
+        for box in merged {
+            let id = box.id
             seen.insert(id)
             let view = boxViews[id] ?? makeBoxView(id)
             view.tasks = page.tasks
@@ -200,9 +228,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             view.pageChoices = page.pageChoices
             view.people = page.people
             view.decor = decor
-            view.setWidth(width(of: item.box))
+            view.setWidth(width(of: box))
             if view.editor == nil {
-                view.show(content: item.content)
+                view.show(content: contentOf[id] ?? [])
             }
             if tasksChanged { view.rerender() }
         }
@@ -233,7 +261,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.onMenu = { [weak self] box, content in self?.showMenu(box, content) }
         view.onCaretChange = { [weak self] box in
             self?.keepCaretVisible(box)
-            if box === self?.editing { EditorFocus.shared.refresh() }
+            if box === self?.editing {
+                EditorFocus.shared.refresh()
+                self?.updateToolbar()
+            }
         }
         boxViews[id] = view
         surface.addSubview(view)
@@ -292,6 +323,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { surface }
 
+    func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateToolbar() }
+
     // MARK: Editing
 
     @objc private func tapped(_ tap: UITapGestureRecognizer) {
@@ -305,10 +338,109 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             }
         }
         guard let box = box(at: p) else {
-            stopEditing()
+            if editing != nil || stacked || host == nil || p.y < Self.originY || toolbar.covers(tap.location(in: self)) {
+                stopEditing()
+            } else {
+                createBox(at: p)
+            }
             return
         }
         beginEditing(box, at: tap.location(in: box))
+    }
+
+    // MARK: Creating, moving and resizing boxes
+
+    /// A tap on empty canvas: a box 360 wide, 12 pt above the tap, in front (the web's click-to-create).
+    private func createBox(at p: CGPoint) {
+        let x = max(Double(p.x - Self.originX), 0)
+        let y = max(Double(p.y - Self.originY - 12), 0)
+        let front = (boxes.map(\.z).max() ?? 0) + 1
+        let id = geometry.createBox(x: x, y: y, width: 360, front: front)
+        boxes = geometry.apply(to: pageBoxes)
+        let view = makeBoxView(id)
+        view.show(content: [])
+        view.setWidth(360)
+        relayout()
+        // The core can't write a new box yet, so there is no editor to open: the box is drawn as
+        // the web draws a new one (editing frame) and goes again when it is left empty.
+        editing = view
+        view.chrome = true
+        surface.bringSubviewToFront(view)
+        EditorFocus.shared.set(nil)
+        notify?("New boxes can\u{2019}t be saved or typed in yet (the core has no box calls).")
+    }
+
+    /// A box left empty and made here goes away again (the web removes an empty box on leaving).
+    private func removeIfEmptyLocal(_ box: BoxTextView) {
+        guard geometry.isLocal(box.boxId), box.editor == nil else { return }
+        geometry.deleteBox(box.boxId)
+        boxes.removeAll { $0.id == box.boxId }
+        boxViews[box.boxId] = nil
+        box.removeFromSuperview()
+    }
+
+    private func moveHit(_ p: CGPoint) -> Drag? {
+        guard !stacked, let box = editing, box.superview != nil, let b = boxes.first(where: { $0.id == box.boxId }) else { return nil }
+        let f = box.frame
+        // The top bar (12 high in the web, a bigger target here) and the width handle on the right edge.
+        if CGRect(x: f.minX, y: f.minY - 26, width: f.width, height: 34).contains(p) {
+            return .move(id: b.id, start: p, x: b.x, y: b.y)
+        }
+        if CGRect(x: f.maxX - 14, y: f.midY - 40, width: 28, height: 80).contains(p) {
+            return .resize(id: b.id, start: p, w: Double(f.width))
+        }
+        return nil
+    }
+
+    @objc private func panned(_ pan: UIPanGestureRecognizer) {
+        let p = pan.location(in: surface)
+        switch pan.state {
+        case .began:
+            drag = moveHit(pan.location(in: surface))
+            if drag != nil { hideToolbar() }
+        case .changed:
+            guard let drag else { return }
+            switch drag {
+            case let .move(id, start, x, y):
+                geometry.moveBox(id, x: max(x + Double(p.x - start.x), 0), y: max(y + Double(p.y - start.y), 0))
+            case let .resize(id, start, w):
+                geometry.resizeBox(id, width: min(max(w + Double(p.x - start.x), 120), 2400))
+            }
+            boxes = geometry.apply(to: pageBoxes)
+            relayout()
+        case .ended, .cancelled, .failed:
+            guard let finished = drag else { return }
+            drag = nil
+            if case let .move(id, _, _, _) = finished, let z = boxes.map(\.z).max(), let mine = boxes.first(where: { $0.id == id }), mine.z < z {
+                geometry.bringToFront(id, z: z + 1)
+                boxes = geometry.apply(to: pageBoxes)
+                relayout()
+            }
+            if !geometry.savesToServer, !movedNotice, !geometry.isLocal(editing?.boxId ?? "") {
+                movedNotice = true
+                notify?("Moving and resizing boxes isn\u{2019}t saved to the server yet (the core has no box calls).")
+            }
+            updateToolbar()
+        default: break
+        }
+    }
+
+    // MARK: Floating toolbar
+
+    private func hideToolbar() { toolbar.hide() }
+
+    /// Show the toolbar over the selected text of the box being edited, or hide it.
+    private func updateToolbar() {
+        guard let box = editing, box.isFirstResponder, drag == nil, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
+            hideToolbar()
+            return
+        }
+        if toolbar.superview == nil { addSubview(toolbar) }
+        toolbar.build(palette: palette)
+        let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
+        toolbar.isHidden = false
+        toolbar.place(over: convert(rect, from: box), visible: visible)
+        bringSubviewToFront(toolbar)
     }
 
     /// The front-most box under a point of the surface.
@@ -356,6 +488,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private func stopEditing() {
         guard let box = editing else { return }
         editing = nil
+        hideToolbar()
+        removeIfEmptyLocal(box)
         box.endTitleEdit()
         box.chrome = false
         _ = box.resignFirstResponder()
@@ -378,6 +512,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     /// The `/`, `[[` or `@` popover of the box being edited (nil content: close it).
     private func showMenu(_ box: BoxTextView, _ content: MenuContent?) {
+        if content != nil { hideToolbar() }
         guard let content else {
             if menuOwner === box || menuOwner == nil { menu.isHidden = true }
             return
@@ -416,6 +551,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         // Taps inside the box being edited are its text interaction's (caret, word selection).
+        if g === boxPan { return moveHit(g.location(in: surface)) != nil }
+        if g === singleTap || g === doubleTap, toolbar.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, menu.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, let box = editing, box.bounds.contains(g.location(in: box)) { return false }
         return super.gestureRecognizerShouldBegin(g)
@@ -454,7 +591,21 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// Look states with a box being edited (`-lookState edit-caret`, CI): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
-              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu"].contains(state) else { return }
+              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box"].contains(state) else { return }
+        if state == "edit-new-box" {
+            guard !boxViews.isEmpty else { return }
+            lookDone = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                self.createBox(at: CGPoint(x: Self.originX + 300, y: Self.originY + 80))
+                if let id = self.boxes.last?.id {
+                    self.geometry.moveBox(id, x: 420, y: 110)
+                    self.boxes = self.geometry.apply(to: self.pageBoxes)
+                    self.relayout()
+                }
+            }
+            return
+        }
         guard let box = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
         lookDone = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak box] in
@@ -463,6 +614,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 if state == "slash-menu" {
                     box.insertText("\n")
                     box.insertText("/")
+                }
+                if state == "edit-selection" {
+                    box.selectedTextRange = box.textRange(from: box.beginningOfDocument, to: box.endOfDocument)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.updateToolbar() }
                 }
             }
         }
