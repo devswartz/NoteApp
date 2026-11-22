@@ -428,24 +428,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     // MARK: Floating toolbar
 
     private func hideToolbar() { toolbar.hide() }
-    private let debugLabel = UILabel()
-    private static var lookSelection = ""
-
-    /// CI only (`-lookState edit-selection`): why the toolbar is or isn't shown.
-    private static func debugText(_ box: BoxTextView?, _ dragging: Bool, _ menuHidden: Bool) -> String {
-        let range = (box?.selectedTextRange as? BoxTextRange).map { "\($0.lo)-\($0.hi)" } ?? "nil"
-        return Self.lookSelection + " " + "editing=\(box != nil) drag=\(dragging) menuHidden=\(menuHidden) sel=\(range) rect=\(String(describing: box?.selectionBounds)) firstResponder=\(box?.isFirstResponder ?? false)"
-    }
 
     /// Show the toolbar over the selected text of the box being edited, or hide it.
     private func updateToolbar() {
-        if LookData.state == "edit-selection" {
-            if debugLabel.superview == nil { debugLabel.numberOfLines = 0; debugLabel.font = .systemFont(ofSize: 11); debugLabel.textColor = .red; addSubview(debugLabel) }
-            let b = editing
-            debugLabel.text = Self.debugText(b, drag != nil, menu.isHidden)
-            debugLabel.frame = CGRect(x: contentOffset.x + 8, y: contentOffset.y + 4, width: 600, height: 40)
-            bringSubviewToFront(debugLabel)
-        }
         guard let box = editing, drag == nil, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
             hideToolbar()
             return
@@ -637,7 +622,6 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                     let start = nl == NSNotFound ? 0 : nl + 1
                     for t in [0.3, 1.0, 2.0] {
                         DispatchQueue.main.asyncAfter(deadline: .now() + t) {
-                            Self.lookSelection = "start=" + String(start) + " len=" + String(shown.length)
                             box.lookSelect(from: start)
                             self.updateToolbar()
                         }
