@@ -462,7 +462,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if y + size.height > visible.maxY - 8 { y = max(anchor.minY - 8 - size.height, visible.minY + 8) }
         linkEditor.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
         bringSubviewToFront(linkEditor)
-        linkEditor.focusFirst()
+        if LookData.state == nil { linkEditor.focusFirst() } // look shots: no keyboard in the picture
     }
 
     private func hideLinkEditor(refocus: Bool) {
