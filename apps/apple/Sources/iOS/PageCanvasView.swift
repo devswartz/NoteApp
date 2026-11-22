@@ -303,7 +303,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             if stacked {
                 frame = CGRect(x: 20 - BoxTextView.pad.left, y: y, width: w, height: view.contentHeight)
                 separators.append(frame.maxY + 12)
-                y = frame.maxY + 12 + 1 - 0.5
+                y = frame.maxY + 12 + 1 + 5
             } else {
                 frame = CGRect(x: ox + CGFloat(box.x), y: oy + CGFloat(box.y), width: w, height: view.contentHeight)
             }

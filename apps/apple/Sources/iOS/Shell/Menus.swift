@@ -72,7 +72,7 @@ struct MenuItem: View {
                     Text(title).font(.web(phone ? 15 : 14)).foregroundStyle(fg.color).lineLimit(1)
                     if let note {
                         Text(note).font(.web(phone ? 12 : 11.5)).foregroundStyle(p.textMuted.color).fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: 240, alignment: .leading)
+                            .frame(maxWidth: phone ? 262 : 240, alignment: .leading)
                     }
                 }
                 Spacer(minLength: 0)
@@ -81,7 +81,7 @@ struct MenuItem: View {
                 if trailingChevron { Icon("chevron-right", 14, p.textMuted.color) }
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, note == nil ? 0 : 7)
+            .padding(.vertical, note == nil ? 0 : (phone ? 11 : 7))
             .frame(minHeight: phone ? 44 : 32)
         }
         .buttonStyle(PressStyle(radius: 6, pressed: (danger ? p.danger.withAlphaComponent(0.12) : p.bgHover).color))

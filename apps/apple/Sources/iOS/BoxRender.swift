@@ -182,8 +182,8 @@ struct BoxTextRenderer {
         switch c.type {
         case "heading":
             switch Int(c.number("level") ?? 1) {
-            case 1: return (33.6, 8.4)
-            case 2: return (23.76, 5.4)
+            case 1: return (33.6, bodySize > 16 ? 3.9 : 8.4)
+            case 2: return (23.76, bodySize > 16 ? 0 : 5.4)
             default: return (17.92, 3.58)
             }
         case "bulletList", "orderedList", "taskList": return (4.8, 4.8)
