@@ -1077,6 +1077,36 @@ final class BoxTextView: UIView, UITextInput {
         return nil
     }
 
+    /// The selected text (the quote of a new comment); "" for a caret.
+    var selectedQuote: String {
+        guard editor != nil, sel.hi > sel.lo, sel.hi <= text.length else { return "" }
+        return text.substring(with: NSRange(location: sel.lo, length: sel.hi - sel.lo)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The comment thread whose mark is under `point` (this view's coordinates), if any.
+    func commentThread(at point: CGPoint) -> String? {
+        guard rendering.length > 0, let p = closestPosition(to: point) as? BoxTextPosition else { return nil }
+        let str = rendering.string
+        for i in [p.offset, p.offset - 1] where i >= 0 && i < rendering.length {
+            guard let id = str.attribute(.nvThread, at: i, effectiveRange: nil) as? String, !id.isEmpty else { continue }
+            if segments(i, i + 1, type: .standard).contains(where: { $0.insetBy(dx: -2, dy: -2).contains(point) }) { return id }
+        }
+        return nil
+    }
+
+    /// Does the text carry the mark of this comment thread?
+    func hasThread(_ id: String) -> Bool {
+        var found = false
+        let whole = NSRange(location: 0, length: rendering.string.length)
+        rendering.string.enumerateAttribute(.nvThread, in: whole, options: []) { value, _, stop in
+            if (value as? String) == id {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
     /// The selected text's bounds in this view's coordinates; nil for a caret (the floating toolbar).
     var selectionBounds: CGRect? {
         guard editor != nil, marked == nil, sel.hi > sel.lo else { return nil }

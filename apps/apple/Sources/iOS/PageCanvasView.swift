@@ -130,6 +130,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             self?.updateToolbar()
         }
         toolbar.onLink = { [weak self] in self?.showLinkEditor() }
+        toolbar.onComment = { [weak self] in self?.startComment() }
+        NotificationCenter.default.addObserver(self, selector: #selector(commentsChanged), name: CommentsModel.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(commentUnset(_:)), name: CommentsModel.unset, object: nil)
         EditorFocus.shared.onLink = { [weak self] in self?.showLinkEditor() }
         linkEditor.onApply = { [weak self] text, address in self?.applyLink(text: text, address: address) }
         linkEditor.onRemove = { [weak self] in self?.removeLink() }
@@ -383,7 +386,44 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             UIApplication.shared.open(url)
             return
         }
+        // Text with a comment: its thread opens in the comments panel (the editing carries on).
+        if let thread = box.commentThread(at: tap.location(in: box)) { CommentsModel.shared.focus(thread) }
         beginEditing(box, at: tap.location(in: box))
+    }
+
+    // MARK: Comments
+
+    /// The toolbar's Comment button: mark the selection with a new thread and ask for the comment in the panel.
+    private func startComment() {
+        guard let box = editing, host != nil else { return }
+        let quote = box.selectedQuote
+        guard !quote.isEmpty else { return }
+        CommentsModel.shared.begin(box: box, quote: quote)
+        hideToolbar()
+    }
+
+    /// Threads were loaded, resolved or focused: draw the marks again (resolved ones plain, the open one stronger).
+    @objc private func commentsChanged() {
+        for view in boxViews.values { view.rerender() }
+    }
+
+    /// Take a thread's mark off the page (a cancelled or deleted thread): in every box that carries it, opening
+    /// the boxes that were never edited.
+    @objc private func commentUnset(_ note: Notification) {
+        guard let id = note.object as? String else { return }
+        let json = "{\"threadId\":\"\(id)\"}"
+        for (boxId, view) in boxViews where view.hasThread(id) {
+            if view.editor != nil {
+                view.command("unsetComment", json)
+            } else if let host {
+                BoxEditor.open(boxId: boxId, host: host) { [weak self, weak view] result in
+                    guard let self, let view, self.boxViews[boxId] === view, case let .success(editor) = result else { return }
+                    self.editors[boxId] = editor
+                    view.attach(editor)
+                    view.command("unsetComment", json)
+                }
+            }
+        }
     }
 
     // MARK: Creating, moving and resizing boxes

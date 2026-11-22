@@ -23,6 +23,7 @@ struct PageScreen: View {
     @State var live: LivePageModel?
     @State var sample: SamplePageScreen.Sample?
     let theme = Theme.shared
+    private let comments = CommentsModel.shared
 
     private var meta: PageMeta? { session.shownTree?.pages.first { $0.id == pageId } }
 
@@ -33,11 +34,19 @@ struct PageScreen: View {
         let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: hybrid ? 12 : 0, bottomLeading: 0, bottomTrailing: 0, topTrailing: hybrid ? 12 : 0), style: .continuous)
         VStack(spacing: 0) {
             PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone)
-            ZStack(alignment: .topTrailing) {
-                content(snapshot, palette)
-                if let snapshot, !snapshot.info.headings.isEmpty, !phone {
-                    OutlineBars(count: snapshot.info.headings.count, palette: palette).padding(.top, 33).padding(.trailing, 18)
+            HStack(spacing: 0) {
+                ZStack(alignment: .topTrailing) {
+                    content(snapshot, palette)
+                    if let snapshot, !snapshot.info.headings.isEmpty, !phone {
+                        OutlineBars(count: snapshot.info.headings.count, palette: palette).padding(.top, 33).padding(.trailing, 18)
+                    }
                 }
+                // The comments panel: the iPad's side panel (320 wide).
+                if comments.open && !phone { CommentsPanel(palette: theme.chrome, phone: false) }
+            }
+            // The phone's bottom sheet (max 55 % of the height).
+            .overlay(alignment: .bottom) {
+                if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: UIScreen.main.bounds.height * 0.55) }
             }
         }
         .background(palette.bg.color)
@@ -50,6 +59,7 @@ struct PageScreen: View {
         .padding(.top, hybrid ? 6 : 0).padding(.horizontal, hybrid ? 6 : 0)
         .onAppear(perform: openPage)
         .onDisappear {
+            comments.detach(pageId: pageId)
             live?.close()
             live = nil
             EditorFocus.shared.set(nil)
@@ -101,6 +111,7 @@ struct PageScreen: View {
         live = m
         m.open()
         session.refreshTasks()
+        if !session.preview { comments.attach(session, pageId: meta.id) }
     }
 
     private var decor: [String: TaskDecor] {
@@ -226,7 +237,18 @@ struct PageTopBar: View {
                 .padding(.horizontal, 6)
                 }
                 iconButton("list-todo", badge: taskCount) { shell.notYet("Tasks on this page") }
-                iconButton("message-square", badge: 0) { shell.notYet("Comments") }
+                iconButton("message-square", badge: CommentsModel.shared.openThreads.count, active: CommentsModel.shared.open) {
+                    let model = CommentsModel.shared
+                    if model.pageId == nil {
+                        shell.notYet("Comments")
+                    } else if model.open {
+                        model.cancel()
+                        model.open = false
+                    } else {
+                        model.open = true
+                        model.reload()
+                    }
+                }
                 Button { shell.notYet("Sharing") } label: {
                     HStack(spacing: 6) {
                         Icon("user-plus", 14, p.text.color)
@@ -254,11 +276,12 @@ struct PageTopBar: View {
         status == "Offline" ? UIColor.mix(palette.warn, 0.65, palette.text) : palette.text2
     }
 
-    private func iconButton(_ icon: String, badge: Int, _ action: @escaping () -> Void) -> some View {
+    private func iconButton(_ icon: String, badge: Int, active: Bool = false, _ action: @escaping () -> Void) -> some View {
         let p = palette
         return Button(action: action) {
-            Icon(icon, 18, p.text2.color)
+            Icon(icon, 18, (active ? p.accent : p.text2).color)
                 .frame(width: 32, height: 32)
+                .background(active ? p.accentSoft.color : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(alignment: .topTrailing) {
                     if badge > 0 {
                         Text("\(badge)").font(.web(10, 600)).foregroundStyle(.white)

@@ -37,7 +37,19 @@ final class SessionModel {
     private(set) var loading = false
     /// The device has a network path (the offline banner waits 30 s after this turns false).
     private(set) var online = true
+    /// The workspace's members, tags and teams (what a task's assignee, tag and team ids point at).
+    private(set) var members: [WorkspaceMember] = []
+    private(set) var tags: [TaskTag] = []
+    private(set) var teams: [TaskTeam] = []
+    /// Tasks with every field, once a task sheet has asked for them (task id → task).
+    private(set) var details: [String: TaskDetail] = [:]
+    /// Your reminders on the tasks whose sheet was opened (task id → list).
+    private(set) var reminders: [String: [TaskReminder]] = [:]
+    /// What the search palette last found, and for which words.
+    private(set) var searchResults: SearchResults?
+    private(set) var searchedQuery = ""
 
+    @ObservationIgnored fileprivate var searchWork: DispatchWorkItem?
     @ObservationIgnored fileprivate var core: Core
     @ObservationIgnored fileprivate var taskRefreshWork: DispatchWorkItem?
     @ObservationIgnored private var savedToken: String?
@@ -177,6 +189,12 @@ final class SessionModel {
         tree = nil
         tasks = []
         pendingDone = [:]
+        members = []
+        tags = []
+        teams = []
+        details = [:]
+        reminders = [:]
+        searchResults = nil
         loadError = nil
         loading = false
         busy = false
@@ -277,6 +295,11 @@ final class SessionModel {
         tree = nil
         tasks = []
         pendingDone = [:]
+        members = []
+        tags = []
+        teams = []
+        details = [:]
+        reminders = [:]
         reload()
     }
 
@@ -301,6 +324,7 @@ final class SessionModel {
                 self.tree = tree
                 self.tasks = tasks
                 self.loadError = nil
+                self.loadLookups()
             case let .failure(e):
                 if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
             }
@@ -376,9 +400,12 @@ extension SessionModel {
             .map { PageChoice(id: $0.id, title: $0.title, crumb: crumb($0.sectionId)) }
     }
 
-    /// People the `@` menu offers. The core has no list of the workspace's members yet (requested),
-    /// so for now only the signed-in person.
+    /// People the `@` menu offers: the workspace's members (`Core.members`); until they are loaded (or
+    /// offline), only the signed-in person.
     var people: [PageMember] {
+        if !members.isEmpty {
+            return members.map { PageMember(id: $0.id, name: $0.name, email: $0.email, color: $0.color) }
+        }
         guard let user else { return [] }
         return [PageMember(id: user.id, name: user.name, email: user.email, color: user.color)]
     }
@@ -449,5 +476,196 @@ extension SessionModel {
                 if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
             }
         }
+    }
+}
+
+// MARK: Task fields, lookups, reminders (the full task model of the core)
+
+extension SessionModel {
+    /// Today as the core's local date, YYYY-MM-DD.
+    static var todayString: String { dayString(Date()) }
+
+    /// A date as the core's local date, YYYY-MM-DD.
+    static func dayString(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    /// Members, tags and teams of the workspace (the core keeps no stored copy: needs the network).
+    func loadLookups() {
+        guard !preview, let ws = workspaceId else { return }
+        call({ core -> ([WorkspaceMember], [TaskTag], [TaskTeam]) in
+            (try core.members(workspaceId: ws), try core.tags(workspaceId: ws), try core.teams(workspaceId: ws))
+        }) { result in
+            guard ws == self.workspaceId, case let .success((members, tags, teams)) = result else { return }
+            self.members = members
+            self.tags = tags
+            self.teams = teams
+        }
+    }
+
+    func member(_ id: String?) -> WorkspaceMember? {
+        guard let id else { return nil }
+        return members.first { $0.id == id }
+    }
+
+    /// A person's name for the footer lines: a member, "a deleted user", or "someone".
+    func personName(_ id: String?) -> String {
+        guard let id else { return "someone" }
+        if let m = member(id) { return m.name }
+        if id == user?.id, let name = user?.name { return name }
+        return id == "deleted-user" ? "a deleted user" : "someone"
+    }
+
+    /// The task with every field: the stored copy at once, then the server's.
+    func loadDetail(_ id: String) {
+        guard !preview, let ws = workspaceId else { return }
+        if details[id] == nil, let cached = core.cachedTaskDetail(taskId: id) { details[id] = cached }
+        call({ try $0.taskDetails(workspaceId: ws) }) { result in
+            guard ws == self.workspaceId, case let .success(list) = result else { return }
+            for d in list { self.details[d.id] = d }
+        }
+        loadReminders(id)
+    }
+
+    /// Show a changed task: its full copy, and the fields the list shows.
+    fileprivate func merge(_ d: TaskDetail) {
+        details[d.id] = d
+        guard let i = tasks.firstIndex(where: { $0.id == d.id }) else { return }
+        tasks[i].title = d.title
+        tasks[i].description = d.description
+        tasks[i].done = d.done
+        tasks[i].priority = d.priority
+        tasks[i].dueDate = d.dueDate
+        tasks[i].dueTime = d.dueTime
+        tasks[i].assigneeId = d.assigneeId
+        tasks[i].tagIds = d.tagIds
+        tasks[i].completedAt = d.completedAt
+        tasks[i].updatedAt = d.updatedAt
+    }
+
+    /// Show the change at once (the server's answer replaces it).
+    fileprivate func showLocally(_ id: String, _ c: TaskChanges) {
+        if let i = tasks.firstIndex(where: { $0.id == id }) {
+            if let v = c.description { tasks[i].description = v }
+            if let v = c.priority { tasks[i].priority = v }
+            if let v = c.dueDate { tasks[i].dueDate = v } else if c.clearDueDate { tasks[i].dueDate = nil }
+            if let v = c.dueTime { tasks[i].dueTime = v } else if c.clearDueTime { tasks[i].dueTime = nil }
+            if let v = c.assigneeId { tasks[i].assigneeId = v } else if c.clearAssignee { tasks[i].assigneeId = nil }
+            if let v = c.tagIds { tasks[i].tagIds = v }
+        }
+        guard var d = details[id] else { return }
+        if let v = c.description { d.description = v }
+        if let v = c.priority { d.priority = v }
+        if let v = c.dueDate { d.dueDate = v } else if c.clearDueDate { d.dueDate = nil }
+        if let v = c.dueTime { d.dueTime = v } else if c.clearDueTime { d.dueTime = nil }
+        if let v = c.recurrence { d.recurrence = v } else if c.clearRecurrence { d.recurrence = nil }
+        if let v = c.reminderAt { d.reminderAt = v } else if c.clearReminderAt { d.reminderAt = nil }
+        if let v = c.assigneeId {
+            d.assigneeId = v
+        } else if c.clearAssignee {
+            d.assigneeId = nil
+            d.assignedBy = nil
+        }
+        if let v = c.teamId { d.teamId = v } else if c.clearTeam { d.teamId = nil }
+        if let v = c.tagIds { d.tagIds = v }
+        details[id] = d
+    }
+
+    /// Change fields of a task (`Core.updateTask`): shown at once, then sent; `failed` gets the message when it is refused.
+    func update(_ id: String, _ changes: TaskChanges, failed: ((String) -> Void)? = nil) {
+        showLocally(id, changes)
+        call({ try $0.updateTask(taskId: id, changes: changes) }) { result in
+            switch result {
+            case let .success(d):
+                self.merge(d)
+                // A new date or a tick can move the task between lists: fetch them again soon.
+                self.scheduleTaskRefresh()
+            case let .failure(e):
+                if e is CancellationError { return }
+                failed?(CoreBridge.message(e))
+                self.refreshTasks()
+                self.loadDetail(id)
+            }
+        }
+    }
+
+    /// A tag by name (made when it doesn't exist), added to the list the sheet shows.
+    func createTag(_ name: String, then done: @escaping (TaskTag?) -> Void) {
+        guard let ws = workspaceId else { return done(nil) }
+        call({ try $0.createTag(workspaceId: ws, name: name, color: nil) }) { result in
+            if case let .success(tag) = result {
+                if !self.tags.contains(where: { $0.id == tag.id }) { self.tags.append(tag) }
+                done(tag)
+            } else {
+                done(nil)
+            }
+        }
+    }
+
+    // MARK: Reminders
+
+    func loadReminders(_ taskId: String) {
+        call({ try $0.taskReminders(taskId: taskId) }) { result in
+            if case let .success(list) = result { self.reminders[taskId] = list }
+        }
+    }
+
+    func addReminder(_ taskId: String, _ spec: ReminderSpec, failed: ((String) -> Void)? = nil) {
+        call({ try $0.addReminder(taskId: taskId, spec: spec) }) { result in
+            switch result {
+            case let .success(r): self.reminders[taskId, default: []].append(r)
+            case let .failure(e): if !(e is CancellationError) { failed?(CoreBridge.message(e)) }
+            }
+        }
+    }
+
+    func deleteReminder(_ taskId: String, _ reminderId: String, failed: ((String) -> Void)? = nil) {
+        let before = reminders[taskId]
+        reminders[taskId]?.removeAll { $0.id == reminderId }
+        call({ try $0.deleteReminder(reminderId: reminderId) }) { result in
+            if case let .failure(e) = result {
+                if !(e is CancellationError) { failed?(CoreBridge.message(e)) }
+                self.reminders[taskId] = before
+            }
+        }
+    }
+
+    // MARK: Search (the core's content search)
+
+    /// Ask the server what the words match in page text and task descriptions, 150 ms after the last call (the web's delay).
+    func search(_ query: String) {
+        searchWork?.cancel()
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !preview, let ws = workspaceId, !q.isEmpty else {
+            searchResults = nil
+            searchedQuery = ""
+            return
+        }
+        let work = DispatchWorkItem { [weak self] in
+            self?.call({ try $0.search(workspaceId: ws, query: q, limit: nil) }) { result in
+                guard let self, ws == self.workspaceId else { return }
+                switch result {
+                case let .success(r):
+                    self.searchResults = r
+                    self.searchedQuery = q
+                case .failure:
+                    // Offline or refused: the title matches of the tree stay.
+                    self.searchResults = nil
+                    self.searchedQuery = ""
+                }
+            }
+        }
+        searchWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
+    func clearSearch() {
+        searchWork?.cancel()
+        searchResults = nil
+        searchedQuery = ""
     }
 }
