@@ -66,6 +66,7 @@ fn tree(pages: Vec<PageMeta>) -> Tree {
             position: 1.0,
         }],
         pages,
+        trashed_pages: vec![],
     }
 }
 
@@ -566,4 +567,64 @@ fn upgrades_a_version_2_database_in_place() {
     assert_eq!(s.queued_updates("p1").unwrap().len(), 1, "data kept");
     s.queue_task_op("w1", "t1", None, &TaskOp::Delete).unwrap();
     assert_eq!(s.task_ops().unwrap().len(), 1);
+}
+
+#[test]
+fn a_trashed_page_keeps_its_document_until_it_is_gone_for_good() {
+    let s = Store::open_in_memory().unwrap();
+    s.put_workspaces(&[workspace("w1")]).unwrap();
+    s.put_tree("w1", &tree(vec![page("p1", false), page("p2", false)]))
+        .unwrap();
+    assert!(s.put_page_doc("p1", b"one").unwrap());
+    assert!(s.put_page_doc("p2", b"two").unwrap());
+
+    // p1 goes to the Trash: out of `pages`, into `trashed_pages`; its document stays.
+    let mut t = tree(vec![page("p2", false)]);
+    t.trashed_pages = vec![nv_api::TrashedPage {
+        id: "p1".into(),
+        title: "One".into(),
+    }];
+    s.put_tree("w1", &t).unwrap();
+    assert_eq!(s.page_doc("p1").unwrap().unwrap().doc, b"one");
+    assert_eq!(s.tree("w1").unwrap(), Some(t));
+    // It is not a live page: nothing new is stored for it, and it has no workspace as a page.
+    assert!(!s.put_page_doc("p1", b"new").unwrap());
+    assert_eq!(s.workspace_of("page", "p1").unwrap(), None);
+    assert_eq!(s.workspace_of("page", "p2").unwrap().as_deref(), Some("w1"));
+
+    // Restored: back in `pages`, document untouched.
+    s.put_tree("w1", &tree(vec![page("p1", false), page("p2", false)]))
+        .unwrap();
+    assert_eq!(s.page_doc("p1").unwrap().unwrap().doc, b"one");
+    assert!(s.tree("w1").unwrap().unwrap().trashed_pages.is_empty());
+
+    // Trashed, then deleted for good: gone from both lists, so the document goes.
+    let mut t = tree(vec![page("p2", false)]);
+    t.trashed_pages = vec![nv_api::TrashedPage {
+        id: "p1".into(),
+        title: "One".into(),
+    }];
+    s.put_tree("w1", &t).unwrap();
+    s.put_tree("w1", &tree(vec![page("p2", false)])).unwrap();
+    assert_eq!(s.page_doc("p1").unwrap(), None);
+    assert!(s.page_doc("p2").unwrap().is_some());
+}
+
+#[test]
+fn the_store_knows_which_workspace_holds_a_node() {
+    let s = Store::open_in_memory().unwrap();
+    assert_eq!(s.tree_workspaces().unwrap(), Vec::<String>::new());
+    s.put_workspaces(&[workspace("w1")]).unwrap();
+    s.put_tree("w1", &tree(vec![page("p1", false)])).unwrap();
+    assert_eq!(s.tree_workspaces().unwrap(), ["w1"]);
+    assert_eq!(
+        s.workspace_of("notebook", "n1").unwrap().as_deref(),
+        Some("w1")
+    );
+    assert_eq!(
+        s.workspace_of("section", "s1").unwrap().as_deref(),
+        Some("w1")
+    );
+    assert_eq!(s.workspace_of("page", "p1").unwrap().as_deref(), Some("w1"));
+    assert_eq!(s.workspace_of("page", "nope").unwrap(), None);
 }

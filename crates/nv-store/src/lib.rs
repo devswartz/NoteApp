@@ -8,7 +8,9 @@
 //!   of every page the tree marks locked (in any workspace), and the document of every page stored
 //!   for that workspace that the tree no longer shows. `put_page_doc` and `queue_updates` store
 //!   only pages a stored tree shows unlocked: a page no tree has shown yet might be locked, so it
-//!   is refused too (the apps always load the tree before opening a page).
+//!   is refused too (the apps always load the tree before opening a page). **Pages in the Trash**
+//!   (the tree's `trashed_pages`) keep their stored documents, since the page may be restored; a
+//!   page gone from both lists (deleted for good, or access ended) loses its document.
 //! - **The outbox** (`queue_updates`, `queued_updates`, `unqueue`) keeps a live page's local edits
 //!   (Yjs updates) until the server is known to have them, so edits made offline survive an app
 //!   restart. `nv-sync` decides when they are confirmed.
@@ -33,7 +35,7 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use nv_api::{NewTask, Notebook, PageMeta, Section, Task, Tree, Workspace};
+use nv_api::{NewTask, Notebook, PageMeta, Section, Task, TrashedPage, Tree, Workspace};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -432,10 +434,24 @@ impl Store {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?;
             for (i, n) in tree.notebooks.iter().enumerate() {
-                insert.execute(params!["notebook", n.id, workspace_id, i as i64, 0, to_json(n)?])?;
+                insert.execute(params![
+                    "notebook",
+                    n.id,
+                    workspace_id,
+                    i as i64,
+                    0,
+                    to_json(n)?
+                ])?;
             }
             for (i, s) in tree.sections.iter().enumerate() {
-                insert.execute(params!["section", s.id, workspace_id, i as i64, 0, to_json(s)?])?;
+                insert.execute(params![
+                    "section",
+                    s.id,
+                    workspace_id,
+                    i as i64,
+                    0,
+                    to_json(s)?
+                ])?;
             }
             for (i, p) in tree.pages.iter().enumerate() {
                 insert.execute(params![
@@ -444,6 +460,18 @@ impl Store {
                     workspace_id,
                     i as i64,
                     p.locked as i64,
+                    to_json(p)?
+                ])?;
+            }
+            // Pages in the Trash keep their stored documents (the page may be restored; the
+            // rows only say so, `unlocked_page` and the locked-page rules look at `page` rows).
+            for (i, p) in tree.trashed_pages.iter().enumerate() {
+                insert.execute(params![
+                    "trashed_page",
+                    p.id,
+                    workspace_id,
+                    i as i64,
+                    0,
                     to_json(p)?
                 ])?;
             }
@@ -471,7 +499,8 @@ impl Store {
             )?;
             tx.execute(
                 "DELETE FROM page_docs WHERE workspace_id = ?1 AND page_id NOT IN
-                     (SELECT id FROM nodes WHERE kind = 'page' AND workspace_id = ?1 AND locked = 0)",
+                     (SELECT id FROM nodes WHERE workspace_id = ?1
+                        AND ((kind = 'page' AND locked = 0) OR kind = 'trashed_page'))",
                 [workspace_id],
             )?;
             mark_stored(tx, "tree", workspace_id)?;
@@ -504,7 +533,31 @@ impl Store {
             notebooks: Self::nodes::<Notebook>(&conn, workspace_id, "notebook")?,
             sections: Self::nodes::<Section>(&conn, workspace_id, "section")?,
             pages: Self::nodes::<PageMeta>(&conn, workspace_id, "page")?,
+            trashed_pages: Self::nodes::<TrashedPage>(&conn, workspace_id, "trashed_page")?,
         }))
+    }
+
+    /// The workspace a stored tree shows a notebook, section or page in (`kind`: "notebook",
+    /// "section" or "page"); None when no stored tree has it.
+    pub fn workspace_of(&self, kind: &str, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT workspace_id FROM nodes WHERE kind = ?1 AND id = ?2",
+                params![kind, id],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?)
+    }
+
+    /// The workspaces that have a stored tree.
+    pub fn tree_workspaces(&self) -> Result<Vec<String>> {
+        let conn = self.conn();
+        let mut st = conn.prepare(
+            "SELECT workspace_id FROM stored WHERE scope = 'tree' ORDER BY workspace_id",
+        )?;
+        let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
     /// Whether a stored tree marks the page locked.

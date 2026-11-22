@@ -86,6 +86,109 @@ pub struct Tree {
     pub notebooks: Vec<Notebook>,
     pub sections: Vec<Section>,
     pub pages: Vec<PageMeta>,
+    /// Pages in the Trash that the caller could restore (members and up; absent from older
+    /// servers): a task on one shows its page as "in Trash".
+    #[serde(default)]
+    pub trashed_pages: Vec<TrashedPage>,
+}
+
+/// A page in the Trash, as the tree lists it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrashedPage {
+    pub id: String,
+    pub title: String,
+}
+
+/// POST /workspaces/:id/notebooks: the notebook and the "General" section it starts with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNotebook {
+    pub id: String,
+    pub section_id: String,
+}
+
+/// DELETE /pages|sections|notebooks/:id: what went to the Trash.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Trashed {
+    pub trash_id: String,
+    /// Tasks that were on what went to the Trash (they stay in the task list).
+    #[serde(default)]
+    pub tasks: u32,
+}
+
+/// POST /pages/:id/move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageMoved {
+    pub section_id: String,
+    pub position: f64,
+}
+
+/// POST /sections/:id/move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionMoved {
+    pub notebook_id: String,
+    pub parent_id: Option<String>,
+    pub position: f64,
+}
+
+/// POST /trash/:kind/:id/restore.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Restored {
+    /// Where it went when its old place was gone ("" when it went back as it was).
+    #[serde(default)]
+    pub moved_to: String,
+}
+
+/// What a Trash entry is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrashKind {
+    Page,
+    Section,
+    Notebook,
+}
+
+impl TrashKind {
+    /// The word in the server's paths (`/trash/:kind/:id`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrashKind::Page => "page",
+            TrashKind::Section => "section",
+            TrashKind::Notebook => "notebook",
+        }
+    }
+}
+
+/// One entry of the Trash (GET /workspaces/:id/trash): the item at the top of what was deleted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub kind: TrashKind,
+    pub id: String,
+    /// The page's title, or the section's or notebook's name.
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub deleted_at: String,
+    #[serde(default)]
+    pub deleted_by: Option<String>,
+    #[serde(default)]
+    pub deleted_by_name: Option<String>,
+    /// When the daily job removes it for good (60 days after `deleted_at`).
+    pub expires_at: String,
+    pub days_left: u32,
+    /// Where it was: "Notebook > Section" (empty for a notebook).
+    #[serde(default)]
+    pub path: String,
+    /// How many pages and (sub)sections went with it.
+    #[serde(default)]
+    pub pages: u32,
+    #[serde(default)]
+    pub sections: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

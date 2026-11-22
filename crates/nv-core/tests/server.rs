@@ -842,3 +842,362 @@ fn search_and_comments_against_a_running_server() {
     assert!(core.page_comments(page.id.clone()).unwrap().is_empty());
     live.close();
 }
+
+/// The stored tree's pages of one section, in position order, as "id".
+fn cached_section_pages(core: &Core, ws: &str, section: &str) -> Vec<String> {
+    let mut v: Vec<_> = core
+        .cached_tree(ws.into())
+        .unwrap()
+        .pages
+        .into_iter()
+        .filter(|p| p.section_id == section)
+        .collect();
+    v.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+    v.into_iter().map(|p| p.id).collect()
+}
+
+fn page_title(t: &Tree, id: &str) -> String {
+    t.pages.iter().find(|p| p.id == id).unwrap().title.clone()
+}
+
+#[test]
+fn tree_management_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let db = std::env::temp_dir().join(format!("nv-core-tree-server-{stamp}/store.db"));
+    let core = Core::with_store(url.clone(), db.to_string_lossy().into_owned());
+    core.register(
+        "Tree Test".into(),
+        format!("tree-test-{stamp}@example.com"),
+        "correct horse battery staple 1".into(),
+    )
+    .unwrap();
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    core.tree(ws.clone()).unwrap();
+    let cached = || core.cached_tree(ws.clone()).unwrap();
+
+    // A notebook starts with one "General" section; the stored tree has both at once.
+    let nb = core
+        .create_notebook(ws.clone(), "Projects".into(), Some("#4f46e5".into()), None)
+        .unwrap();
+    let t = cached();
+    let n = t.notebooks.iter().find(|n| n.id == nb.id).unwrap();
+    assert_eq!(
+        (n.name.as_str(), n.color.as_str(), n.visibility.as_str()),
+        ("Projects", "#4f46e5", "shared")
+    );
+    assert!(t
+        .sections
+        .iter()
+        .any(|s| s.id == nb.section_id && s.name == "General"));
+    // A blank name is refused by the server and nothing changes.
+    assert!(matches!(
+        core.create_notebook(ws.clone(), "  ".into(), None, None),
+        Err(CoreError::Server { status: 400, .. })
+    ));
+
+    // Notebook: rename, colour, a bad colour.
+    core.rename_notebook(nb.id.clone(), "Work".into()).unwrap();
+    core.set_notebook_color(nb.id.clone(), "#10b981".into())
+        .unwrap();
+    assert!(matches!(
+        core.set_notebook_color(nb.id.clone(), "green".into()),
+        Err(CoreError::Server { status: 400, .. })
+    ));
+    let n = cached()
+        .notebooks
+        .into_iter()
+        .find(|n| n.id == nb.id)
+        .unwrap();
+    assert_eq!((n.name.as_str(), n.color.as_str()), ("Work", "#10b981"));
+
+    // A second notebook, then reorder: first, and last again.
+    let nb2 = core
+        .create_notebook(ws.clone(), "Home".into(), None, None)
+        .unwrap();
+    let order = |t: &Tree| {
+        let mut v: Vec<_> = t.notebooks.iter().collect();
+        v.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+        v.into_iter().map(|n| n.id.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(*order(&cached()).last().unwrap(), nb2.id);
+    let pos = core.move_notebook(nb2.id.clone(), Some(0)).unwrap();
+    assert_eq!(order(&cached())[0], nb2.id);
+    assert_eq!(
+        cached()
+            .notebooks
+            .iter()
+            .find(|n| n.id == nb2.id)
+            .unwrap()
+            .position,
+        pos
+    );
+    core.move_notebook(nb2.id.clone(), None).unwrap();
+    assert_eq!(*order(&cached()).last().unwrap(), nb2.id);
+
+    // Sections: a second section, a subsection, a sub-subsection, and the 3-level limit.
+    let a = nb.section_id.clone();
+    let b = core
+        .create_section(nb.id.clone(), "Plans".into(), None, Some("#ef4444".into()))
+        .unwrap();
+    let sub = core
+        .create_section(nb.id.clone(), "Q4".into(), Some(b.clone()), None)
+        .unwrap();
+    let subsub = core
+        .create_section(nb.id.clone(), "Oct".into(), Some(sub.clone()), None)
+        .unwrap();
+    assert!(matches!(
+        core.create_section(nb.id.clone(), "Too deep".into(), Some(subsub.clone()), None),
+        Err(CoreError::Server { status: 400, .. })
+    ));
+    let t = cached();
+    let s = |id: &str| t.sections.iter().find(|s| s.id == id).unwrap().clone();
+    assert_eq!(s(&sub).parent_id.as_deref(), Some(b.as_str()));
+    assert_eq!(s(&subsub).parent_id.as_deref(), Some(sub.as_str()));
+    assert_eq!(s(&b).color, "#ef4444");
+    core.rename_section(b.clone(), "Roadmap".into()).unwrap();
+    core.set_section_color(b.clone(), "#0ea5e9".into()).unwrap();
+    let t = cached();
+    let sb = t.sections.iter().find(|s| s.id == b).unwrap();
+    assert_eq!(
+        (sb.name.as_str(), sb.color.as_str()),
+        ("Roadmap", "#0ea5e9")
+    );
+
+    // Move a section: Q4 (with Oct) up to the top level at the front, then into the other
+    // notebook, then back under Roadmap; moving it into its own child is refused.
+    let m = core
+        .move_section(sub.clone(), nb.id.clone(), None, Some(0))
+        .unwrap();
+    assert_eq!(
+        (m.notebook_id.as_str(), m.parent_id.clone()),
+        (nb.id.as_str(), None)
+    );
+    let t = cached();
+    assert_eq!(
+        t.sections.iter().find(|s| s.id == sub).unwrap().parent_id,
+        None
+    );
+    let top = |t: &Tree, nbid: &str| {
+        let mut v: Vec<_> = t
+            .sections
+            .iter()
+            .filter(|s| s.notebook_id == nbid && s.parent_id.is_none())
+            .collect();
+        v.sort_by(|a, b| a.position.partial_cmp(&b.position).unwrap());
+        v.into_iter().map(|s| s.id.clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(top(&t, &nb.id)[0], sub, "dropped first");
+    assert!(matches!(
+        core.move_section(sub.clone(), nb.id.clone(), Some(subsub.clone()), None),
+        Err(CoreError::Server { status: 400, .. })
+    ));
+    let m = core
+        .move_section(sub.clone(), nb2.id.clone(), None, None)
+        .unwrap();
+    assert_eq!(m.notebook_id, nb2.id);
+    let t = cached();
+    assert_eq!(
+        t.sections.iter().find(|s| s.id == sub).unwrap().notebook_id,
+        nb2.id
+    );
+    assert_eq!(
+        t.sections
+            .iter()
+            .find(|s| s.id == subsub)
+            .unwrap()
+            .notebook_id,
+        nb2.id,
+        "its subsections go with it"
+    );
+    let m = core
+        .move_section(sub.clone(), nb.id.clone(), Some(b.clone()), None)
+        .unwrap();
+    assert_eq!(
+        (m.notebook_id.as_str(), m.parent_id.as_deref()),
+        (nb.id.as_str(), Some(b.as_str()))
+    );
+    assert_eq!(
+        cached()
+            .sections
+            .iter()
+            .find(|s| s.id == subsub)
+            .unwrap()
+            .notebook_id,
+        nb.id
+    );
+
+    // Pages: create, rename, icon; reorder inside a section; move to another section.
+    let p1 = core.create_page(a.clone(), Some("One".into())).unwrap();
+    let p2 = core.create_page(a.clone(), Some("Two".into())).unwrap();
+    let p3 = core.create_page(a.clone(), None).unwrap();
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p1.clone(), p2.clone(), p3.clone()]
+    );
+    core.rename_page(p3.clone(), "Three".into()).unwrap();
+    core.set_page_icon(p3.clone(), Some("*".into())).unwrap();
+    let t = cached();
+    let pm = t.pages.iter().find(|p| p.id == p3).unwrap();
+    assert_eq!(
+        (pm.title.as_str(), pm.icon.as_deref()),
+        ("Three", Some("*"))
+    );
+    core.set_page_icon(p3.clone(), None).unwrap();
+    assert_eq!(
+        cached().pages.iter().find(|p| p.id == p3).unwrap().icon,
+        None
+    );
+    // p3 to the front; then p1 to index 2 (among the others, without itself: the end).
+    core.move_page(p3.clone(), None, Some(0)).unwrap();
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p3.clone(), p1.clone(), p2.clone()]
+    );
+    core.move_page(p1.clone(), None, Some(2)).unwrap();
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p3.clone(), p2.clone(), p1.clone()]
+    );
+    // The position the web would compute for the same drop is the one the server chooses.
+    let sibs: Vec<f64> = {
+        let t = cached();
+        let mut v: Vec<_> = t
+            .pages
+            .iter()
+            .filter(|p| p.section_id == a && p.id != p2)
+            .collect();
+        v.sort_by(|x, y| x.position.partial_cmp(&y.position).unwrap());
+        v.iter().map(|p| p.position).collect()
+    };
+    let want = position_at(sibs, 1);
+    let place = core.move_page(p2.clone(), None, Some(1)).unwrap();
+    assert_eq!(place.position, want);
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p3.clone(), p2.clone(), p1.clone()]
+    );
+    // To another section (a subsection), at the end; then back to the front of the first.
+    let place = core.move_page(p1.clone(), Some(sub.clone()), None).unwrap();
+    assert_eq!(place.section_id, sub);
+    assert_eq!(cached_section_pages(&core, &ws, &sub), vec![p1.clone()]);
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p3.clone(), p2.clone()]
+    );
+    core.move_page(p1.clone(), Some(a.clone()), Some(0))
+        .unwrap();
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p1.clone(), p3.clone(), p2.clone()]
+    );
+    // Another workspace's section is refused.
+    let other = Core::new(url.clone());
+    other
+        .register(
+            "Other".into(),
+            format!("tree-other-{stamp}@example.com"),
+            "correct horse battery staple 1".into(),
+        )
+        .unwrap();
+    let ows = other.workspaces().unwrap()[0].id.clone();
+    let osec = other.tree(ows).unwrap().sections[0].id.clone();
+    assert!(matches!(
+        core.move_page(p1.clone(), Some(osec), None),
+        Err(CoreError::Server { .. })
+    ));
+
+    // Duplicate a page: next to the original, "(copy)"; into another section keeps the title.
+    let c1 = core.copy_page(p1.clone(), None, None).unwrap();
+    assert_eq!(
+        cached_section_pages(&core, &ws, &a),
+        [p1.clone(), c1.clone(), p3.clone(), p2.clone()]
+    );
+    assert_eq!(page_title(&cached(), &c1), "One (copy)");
+    let c2 = core.copy_page(p1.clone(), Some(b.clone()), None).unwrap();
+    assert_eq!(page_title(&cached(), &c2), "One");
+    // Duplicate a section with its subsections and pages.
+    let cs = core.copy_section(b.clone(), None, None).unwrap();
+    let t = cached();
+    let csec = t.sections.iter().find(|s| s.id == cs).unwrap();
+    assert_eq!(csec.name, "Roadmap (copy)");
+    assert!(t
+        .sections
+        .iter()
+        .any(|s| s.parent_id.as_deref() == Some(cs.as_str()) && s.name == "Q4"));
+    assert!(t.sections.iter().any(|s| s.name == "Oct" && s.id != subsub));
+
+    // Trash: a page, a section with its pages and subsections, a notebook.
+    let tr = core.delete_page(p2.clone()).unwrap();
+    assert_eq!(tr.trash_id, p2);
+    let t = cached();
+    assert!(!t.pages.iter().any(|p| p.id == p2));
+    assert!(core
+        .cached_trashed_pages(ws.clone())
+        .unwrap()
+        .iter()
+        .any(|p| p.id == p2));
+    let items = core.trash(ws.clone()).unwrap();
+    assert_eq!(items[0].kind, TrashKind::Page);
+    assert_eq!(items[0].id, p2);
+    assert_eq!(items[0].name, "Two");
+    assert_eq!(items[0].days_left, 60);
+    // Restore: back where it was.
+    assert_eq!(
+        core.restore_from_trash(ws.clone(), TrashKind::Page, p2.clone())
+            .unwrap(),
+        None
+    );
+    assert!(cached().pages.iter().any(|p| p.id == p2));
+    assert!(core.cached_trashed_pages(ws.clone()).unwrap().is_empty());
+    // A section with a subsection and a page goes as one entry and comes back as one.
+    core.delete_section(b.clone()).unwrap();
+    let t = cached();
+    assert!(!t
+        .sections
+        .iter()
+        .any(|s| s.id == b || s.id == sub || s.id == subsub));
+    let items = core.trash(ws.clone()).unwrap();
+    let it = items.iter().find(|i| i.id == b).unwrap();
+    assert_eq!(it.kind, TrashKind::Section);
+    assert!(it.sections >= 2 && it.pages >= 1, "{it:?}");
+    core.restore_from_trash(ws.clone(), TrashKind::Section, b.clone())
+        .unwrap();
+    assert!(cached().sections.iter().any(|s| s.id == sub));
+    // Delete forever: the copy of the section made above.
+    core.delete_section(cs.clone()).unwrap();
+    core.delete_forever(ws.clone(), TrashKind::Section, cs.clone())
+        .unwrap();
+    assert!(!core.trash(ws.clone()).unwrap().iter().any(|i| i.id == cs));
+    assert!(matches!(
+        core.restore_from_trash(ws.clone(), TrashKind::Section, cs.clone()),
+        Err(CoreError::Server { status: 404, .. })
+    ));
+    // A notebook: delete, restore, delete, then empty the Trash.
+    core.delete_notebook(nb2.id.clone()).unwrap();
+    assert!(!cached().notebooks.iter().any(|n| n.id == nb2.id));
+    core.restore_from_trash(ws.clone(), TrashKind::Notebook, nb2.id.clone())
+        .unwrap();
+    assert!(cached().notebooks.iter().any(|n| n.id == nb2.id));
+    core.delete_notebook(nb2.id.clone()).unwrap();
+    core.delete_page(p3.clone()).unwrap();
+    let removed = core.empty_trash(ws.clone()).unwrap();
+    assert_eq!(removed, 2);
+    assert!(core.trash(ws.clone()).unwrap().is_empty());
+    assert!(core.cached_trashed_pages(ws.clone()).unwrap().is_empty());
+    assert!(matches!(
+        core.restore_from_trash(ws.clone(), TrashKind::Notebook, nb2.id.clone()),
+        Err(CoreError::Server { status: 404, .. })
+    ));
+
+    // The stored tree is what the server has.
+    let server_tree = core.tree(ws.clone()).unwrap();
+    assert_eq!(server_tree, cached());
+    let _ = std::fs::remove_dir_all(db.parent().unwrap());
+}

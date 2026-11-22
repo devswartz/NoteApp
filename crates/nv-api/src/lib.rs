@@ -7,6 +7,7 @@
 //!
 //! The client is blocking: the core calls it from its own threads, never the UI thread.
 
+mod tree;
 pub mod types;
 
 use std::sync::{Arc, Mutex};

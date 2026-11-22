@@ -22,6 +22,7 @@ mod recurrence;
 mod search;
 mod task_detail;
 mod tasks;
+mod tree_edit;
 pub use boxes::*;
 pub use client::*;
 pub use content::*;
@@ -30,6 +31,7 @@ pub use quickadd::{QuickAddKind, QuickAddResult, QuickAddToken};
 pub use search::*;
 pub use task_detail::*;
 pub use tasks::*;
+pub use tree_edit::*;
 
 uniffi::setup_scaffolding!();
 

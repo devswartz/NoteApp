@@ -1045,6 +1045,7 @@ mod tests {
 
     fn tree_with(pages: &[(&str, bool)]) -> nv_api::Tree {
         nv_api::Tree {
+            trashed_pages: vec![],
             notebooks: vec![],
             sections: vec![],
             pages: pages

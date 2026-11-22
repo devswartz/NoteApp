@@ -5,6 +5,11 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **Tree management is done on `rewrite/core-tree`** (cut from `rewrite/native` 501dcbf, not
+  merged): create, rename, recolour, move, duplicate and delete notebooks, sections and pages, and
+  the Trash (list, restore, delete forever, empty), with the stored tree kept current ("For apple:
+  tree management"). **Sharing, version history and locked-page unlock come next on the same
+  branch.**
 - **The whole `rewrite/core-tasks-full` step is done** (cut from `rewrite/native` a625e3c, not
   merged): the full task model (task details, update, tags, teams, members, reminders, quick add;
   "For apple: task details"), **full-text search** ("For apple: search") and **comment threads**
@@ -19,6 +24,179 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For apple: tree management (2026-11-22, `rewrite/core-tree`)
+
+Answers apple's request for tree writes (create, rename, recolour, move, duplicate, delete, Trash).
+All additions: no existing record or call changed (`Tree`, `Notebook`, `Section` and `PageMeta`
+are as before). The truth is the server: `server/routes/tree.ts` (notebooks, sections, move,
+copy), `server/routes/pages.ts` (pages), `server/routes/trash.ts` and `server/trash.ts` (Trash);
+the web's callers are `src/components/shell/treeDnd.ts` (drops), `notesRows.tsx` (menus),
+`NewNotebookDialog.tsx` and `src/lib/trash.ts` (delete + Undo).
+
+```swift
+// notebooks
+core.createNotebook(workspaceId:, name:, color: String? = nil, visibility: String? = nil) throws -> NewNotebook   // {id, sectionId}
+core.renameNotebook(notebookId:, name:) throws
+core.setNotebookColor(notebookId:, color:) throws
+core.setNotebookVisibility(notebookId:, visibility:) throws -> UInt32     // page shares that ended
+core.moveNotebook(notebookId:, index: UInt32? = nil) throws -> Double      // new position
+core.deleteNotebook(notebookId:) throws -> Trashed                         // {trashId, tasks}
+// sections (and subsections)
+core.createSection(notebookId:, name:, parentId: String? = nil, color: String? = nil) throws -> String   // id
+core.renameSection(sectionId:, name:) throws
+core.setSectionColor(sectionId:, color:) throws
+core.moveSection(sectionId:, notebookId:, parentId: String? = nil, index: UInt32? = nil) throws -> SectionPlace
+core.copySection(sectionId:, notebookId: String? = nil, name: String? = nil) throws -> String            // id of the copy
+core.deleteSection(sectionId:) throws -> Trashed
+// pages
+core.createPage(sectionId:, title: String? = nil) throws -> String        // id
+core.renamePage(pageId:, title:) throws
+core.setPageIcon(pageId:, icon: String?) throws                           // nil clears
+core.movePage(pageId:, sectionId: String? = nil, index: UInt32? = nil) throws -> PagePlace
+core.copyPage(pageId:, sectionId: String? = nil, title: String? = nil) throws -> String                  // id of the copy
+core.deletePage(pageId:) throws -> Trashed
+// Trash
+core.trash(workspaceId:) throws -> [TrashEntry]
+core.restoreFromTrash(workspaceId:, kind: TrashKind, id:) throws -> String?   // where it went, nil: back as it was
+core.deleteForever(workspaceId:, kind:, id:) throws
+core.emptyTrash(workspaceId:) throws -> UInt32                                // entries removed
+core.cachedTrashedPages(workspaceId:) -> [TrashedPage]?                       // local, from the stored tree
+// pure helpers (the web's, same results)
+positionAt(siblingPositions: [Double], index: UInt32) -> Double
+dropIndex(siblingIds: [String], targetId: String, after: Bool) -> UInt32
+```
+
+Records: `NewNotebook { id, sectionId }`, `PagePlace { sectionId, position }`,
+`SectionPlace { notebookId, parentId: String?, position }`, `Trashed { trashId, tasks }`,
+`TrashedPage { id, title }`, `TrashEntry { kind, id, name, icon: String?, deletedAt, deletedBy:
+String?, deletedByName: String?, expiresAt, daysLeft, path, pages, sections }`, enum
+`TrashKind { page, section, notebook }`. Times are ISO instants (UTC). No name clashes with
+`apps/apple` (grepped for each: none).
+
+**Server routes used.** `POST /workspaces/:id/notebooks` | `PATCH /notebooks/:id` (`name`,
+`color`, `visibility`) | `POST /notebooks/:id/move` | `DELETE /notebooks/:id` | `POST
+/notebooks/:id/sections` | `PATCH /sections/:id` (`name`, `color`) | `POST /sections/:id/move` |
+`POST /sections/:id/copy` | `DELETE /sections/:id` | `POST /sections/:id/pages` | `PATCH
+/pages/:id` (`title`, `icon`) | `POST /pages/:id/move` | `POST /pages/:id/copy` | `DELETE
+/pages/:id` | `GET /workspaces/:id/trash` | `POST /trash/:kind/:id/restore` | `DELETE
+/trash/:kind/:id` | `DELETE /workspaces/:id/trash`. The PATCH routes also take `position`,
+`notebookId`, `parentId`, `sectionId` and (pages) `titleWas`/`iconWas`; the core does not send
+them (moves use the `/move` routes, as the web does; the stale-title check is for the web's
+editor, which can hold an old title).
+
+**Positions and moves.**
+- Positions are the server's: REAL numbers per sibling list (notebooks of a workspace, top-level
+  sections of a notebook, subsections of a section, pages of a section). **You never send a
+  position.** A move sends `index`: the place among the new siblings **without the item itself**
+  (0 = first; omitted = last). The server turns it into a position (empty list 1; at or past the
+  end last + 1; first, first - 1; else the average of the two neighbours) and **returns it**.
+  `positionAt` is the same rule (`treePosition.ts`), for an optimistic drop; `dropIndex` is the
+  web's `indexFor`: pass the new siblings in position order without the dragged item, the target
+  row and whether the drop is below it; "inside" a section or notebook has no target, so use the
+  sibling count (or leave `index` nil).
+- **Pages** (`movePage`): `sectionId` nil keeps the section (a reorder); another section of the
+  same workspace moves it there (any notebook). Another workspace: `Server` 400 ("Cannot move
+  between workspaces"). Needs edit access to the target section. A locked page may only go to a
+  notebook only its owner can see (400 otherwise).
+- **Sections** (`moveSection`): always says where. `parentId` a section id: nested under it, and
+  **that section's notebook wins** over `notebookId`; `parentId` nil: the top level of
+  `notebookId`. Its subsections and pages go with it (their `notebookId` changes in the tree).
+  Refused with 400: into itself or one of its own subsections, past 3 levels (`MAX_SECTION_DEPTH`,
+  `shared/sections.ts`; mirror `canNestUnder` in the UI), another workspace, or a section holding
+  locked pages into a notebook others can see. The web's drop rules: a section dropped on the
+  middle of another nests there, on a notebook goes to its top level.
+- **Notebooks** (`moveNotebook`): reorder only; `index` is among the workspace's other notebooks.
+- `createSection(parentId:)` makes a subsection (same notebook, 3 levels). Create always appends
+  (last position).
+- **Duplicate.** `copyPage`: in its own section the copy sits right after the original and is
+  titled "<title> (copy)" ("Untitled (copy)" if empty); into another section it goes to the end and
+  keeps the title; `title` overrides. The tasks written on the page are copied too. A locked page
+  cannot be duplicated (400 "Remove the lock to duplicate this page"). `copySection`: copies the
+  subsections and pages (and their tasks), **leaves locked pages out**; same notebook: named
+  "<name> (copy)" next to the original's siblings (end of the list); another notebook of the
+  workspace (`notebookId`): keeps the name, at the top level. Both need edit access; the
+  workspace must be the same (400 otherwise).
+- **Create a notebook.** The server makes it with one section named "General" (`sectionId`). The
+  new-notebook dialog's starting structures are apple's: the web renames/recolours that section
+  and adds more with `createSection` and pages with `createPage` + `setPageIcon`
+  (`NewNotebookDialog.tsx`). `visibility` "private" makes it visible to its creator (and whoever
+  it is shared with, next step). Names are trimmed by the server, 1 to 100 characters (400
+  otherwise); colours are `#rrggbb` (400 otherwise); a page title is cut to 300 characters. Page
+  icons: an emoji or short text, cut to 16 characters.
+- **New page.** `createPage(sectionId:, title:)` makes a blank canvas page (title "" = untitled).
+  The web's "New page" additionally asks the server for the section's default template and fills
+  the page from its creator's client; that client-side fill is not part of this call.
+- Who may do what (server): members and up can create, rename, move, copy and delete in
+  notebooks they can see; viewers get `Server` 403/404. A **notebook** is deleted only by its
+  creator or a workspace admin, its visibility changed only by its creator. Private notebooks are
+  invisible to others (404).
+
+**What delete does.** Every delete goes to the **Trash**, not away, for 60 days: `deletePage`,
+`deleteSection` (with its subsections and pages), `deleteNotebook` (with everything in it). It
+returns `Trashed { trashId, tasks }`: `tasks` is how many tasks were on what went (the web's toast
+says "Its n tasks stay in your task list"; they do stay, shown as on a page "in Trash"). The web's
+Undo is `restoreFromTrash(kind:, id:)` with the deleted item's own id (`trashId` equals it).
+- `trash(workspaceId:)`: the entries the caller may see, newest first: for each, the item at the
+  top of the batch. Members and up only (viewers: empty); someone else's locked page is not
+  listed. `path` is "Notebook > Section" (empty for a notebook), `pages`/`sections` count what went
+  with it, `daysLeft` runs from 60.
+- `restoreFromTrash` puts back the entry and everything trashed with it. If its old place is gone it
+  goes elsewhere and the call returns the name (a page: the notebook's first section; a section:
+  the notebook's top level, named by the notebook). `nil`: back as it was. A page or section whose
+  notebook is also in the Trash: `Server` 409 "Its notebook is in the Trash too" (restore the
+  notebook first). An entry that is gone (purged, expired, or not yours): 404.
+- `deleteForever` removes an entry for good (its tasks become standalone; cannot be undone) and
+  `emptyTrash` removes all of the caller's visible entries (**owners and admins only**, others
+  get 403; returns how many entries went).
+
+**The stored tree.** After every write the server accepted, the core **fetches the workspace's
+tree again and stores it** (not a local patch: a restore, a duplicate or a section move touches
+rows only the server knows, and the server's positions stay exact). So when the call returns,
+`cachedTree(workspaceId:)` shows the change, with the server's own positions. Which workspace is
+found from the stored tree by the id; if the id is in no stored tree every stored workspace tree
+is refreshed; without a store (`Core(serverUrl:)`) nothing is fetched. If that refetch fails (the
+connection dropped right after the write) the call still returns success (it is done on the
+server) and the stored tree stays stale until the next `tree(workspaceId:)`. Apple can also
+patch its own copy at once for the drop and let the refetch correct it.
+- **Locked pages** are unchanged: the refetched tree marks a page locked and the store deletes its
+  document, as with any tree load. Moving, renaming and trashing one's own locked page work; the
+  server withholds other people's locked pages from every list.
+- **Trash and stored documents.** The tree now reads `trashedPages` (`[{id, title}]`, members and
+  up): `nv-store` keeps them as `trashed_page` rows, and **a trashed page keeps its stored
+  document** (so Undo/restore is instant and offline reading works), where before the tree load
+  that follows a delete dropped it as "no longer shown". A page gone from both `pages` and
+  `trashedPages` (deleted forever, or access lost) loses its document as before. A trashed page is
+  not a live page: nothing new is stored for it and its offline edits are refused.
+  `cachedTrashedPages(workspaceId:)` is the list, for a task's "in Trash" label. The public
+  `Tree` record is unchanged (no `trashedPages` field), so `Tree(...)` initialisers keep building.
+- Tasks are not refetched: after `deleteForever` or `emptyTrash` the tasks of purged pages lose
+  their page on the server; call `tasks(workspaceId:)` to see it.
+
+**Online only.** These calls are not queued: the server makes every id (a client-chosen id is
+ignored), so an offline create could not be named, ordered or referred to by later calls (move a
+page that does not exist yet), and moves and deletes depend on positions and permissions only the
+server knows. Offline they throw `CoreError.Network` unchanged, nothing is changed, and nothing
+is sent twice (writes are never retried). Refusals are `CoreError.Server(status:, message:, code:)`
+with the server's message (400 rules above, 403 role, 404 gone/not visible, 409 restore blocked);
+`SignedOut` as everywhere. Show the message in the dialog. `cachedTree` stays as it was after a
+failure.
+
+**Tests.** `crates/nv-api/tests/tree.rs` (every call's method, path, body and answer),
+`crates/nv-core/tests/tree_edit.rs` (scripted: bodies, the stored tree after each write, trash and
+restore keeping the document, locked pages, offline, refusals, failed refetch, no store, the
+position helpers), `crates/nv-store/src/tests.rs` (trashed pages), and the real-server test
+`tree_management_against_a_running_server` in `crates/nv-core/tests/server.rs` (creates a
+notebook, sections, subsections, 3-level limit, pages; renames, colours, icons; reorders,
+moves between sections and notebooks; duplicates pages and a section; trash, restore, delete
+forever, empty), which also checks the stored tree equals the server's after the whole run.
+
+## For apple: not in this step
+
+Sharing, version history and unlocking locked pages are next on this branch. Not done here: the
+section's default template (`defaultTemplateId`/`noDefaultTemplate` on `Section` in
+`shared/types.ts`; the core's `Section` does not carry them yet), page "pending template" fills,
+notebook sharing lists (`sharedWith`), favourites.
 
 ## For apple: search (2026-11-22, `rewrite/core-tasks-full`)
 
@@ -674,6 +852,15 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
 
 ## Done
 
+- 2026-11-22, tree management (`rewrite/core-tree`): nv-api `tree.rs` (`create_notebook`,
+  `patch_notebook`, `move_notebook`, `delete_notebook`, `create_section`, `patch_section`,
+  `move_section`, `copy_section`, `delete_section`, `create_page`, `patch_page`, `move_page`,
+  `copy_page`, `delete_page`, `trash`, `restore_from_trash`, `purge_from_trash`, `empty_trash`),
+  `Tree.trashed_pages`; nv-store keeps `trashed_page` rows and the stored documents of trashed
+  pages, plus `workspace_of` / `tree_workspaces`; nv-core `tree_edit.rs` (the Core calls above,
+  `positionAt`, `dropIndex`, `cachedTrashedPages`), each write followed by a stored-tree refetch.
+  Tests: `crates/nv-api/tests/tree.rs`, `crates/nv-core/tests/tree_edit.rs`, nv-store tests, and
+  `tree_management_against_a_running_server` (real server on port 4467, passed).
 - 2026-11-22, search and comment threads (`rewrite/core-tasks-full`): nv-api `search`,
   `page_comments`, `add_comment_thread`, `reply_to_thread`, `set_thread_resolved`,
   `delete_comment_thread`, `edit_comment`, `delete_comment` with `SearchResult`/`CommentThread`
