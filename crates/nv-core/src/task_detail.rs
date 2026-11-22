@@ -29,7 +29,7 @@ pub struct TaskRecurrence {
     pub interval: Option<u32>,
     /// `week`: the days, 0 Sunday … 6 Saturday. None: the due date's weekday.
     #[uniffi(default = None)]
-    pub by_weekday: Option<Vec<u8>>,
+    pub by_weekday: Option<Vec<u32>>,
     /// `month` (and `year`): the day of the month, 1 to 31, or -1 for the last.
     #[uniffi(default = None)]
     pub by_month_day: Option<i32>,
@@ -53,7 +53,10 @@ impl From<&Recurrence> for TaskRecurrence {
         TaskRecurrence {
             freq: r.freq.clone(),
             interval: r.interval,
-            by_weekday: r.by_weekday.clone(),
+            by_weekday: r
+                .by_weekday
+                .as_ref()
+                .map(|v| v.iter().map(|&d| u32::from(d)).collect()),
             by_month_day: r.by_month_day,
             by_nth_weekday: r.by_nth_weekday.as_ref().map(|n| TaskNthWeekday {
                 n: n.n,
@@ -71,7 +74,11 @@ impl From<&TaskRecurrence> for Recurrence {
         Recurrence {
             freq: r.freq.clone(),
             interval: r.interval,
-            by_weekday: r.by_weekday.clone(),
+            by_weekday: r.by_weekday.as_ref().map(|v| {
+                v.iter()
+                    .map(|&d| u8::try_from(d).unwrap_or(u8::MAX))
+                    .collect()
+            }),
             by_month_day: r.by_month_day,
             by_nth_weekday: r.by_nth_weekday.as_ref().map(|n| NthWeekday {
                 n: n.n,
