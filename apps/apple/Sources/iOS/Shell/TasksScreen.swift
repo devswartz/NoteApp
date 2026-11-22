@@ -326,6 +326,7 @@ struct TaskRowView: View {
     let task: CoreTask
     @Environment(\.phoneLayout) private var phone
     @Environment(SessionModel.self) private var session
+    @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
     var body: some View {
@@ -353,6 +354,8 @@ struct TaskRowView: View {
         }
         .padding(.vertical, phone ? 12 : 13).padding(.horizontal, phone ? 12 : 6)
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+        .contentShape(Rectangle())
+        .onTapGesture { if !task.locked { shell.openTask(task.id) } }
     }
 
     @ViewBuilder

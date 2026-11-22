@@ -61,6 +61,11 @@ final class Shell {
     var ribbonCollapsed = false
     var menu: Menu?
     var toast: String?
+    /// The search palette (Cmd+K, the rail's and the phone's search buttons) and what is typed in it.
+    var searchOpen = false
+    var searchQuery = ""
+    /// The task whose detail sheet is open.
+    var taskDetailId: String?
     /// Sections open in the tree.
     var expanded: Set<String> = []
     var recentOpen = false
@@ -100,6 +105,8 @@ final class Shell {
             notebookId = "look"
             if state != "" && !state.hasSuffix("canvas-boxes") && state != "sidebar" { recents = [LookData.pageId("canvas-boxes")] }
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
+            if state == "search" { searchOpen = true; searchQuery = "plan" }
+            if state == "task-detail" { route = .tasks(.my); taskDetailId = "t-review" }
         } else {
             route = .notes
             if defaults.object(forKey: "sidebarOpen") != nil { sidebarOpen = defaults.bool(forKey: "sidebarOpen") }
@@ -130,8 +137,25 @@ final class Shell {
             route = .section("corpus")
         case "empty-workspace-notes":
             route = .notes
+        case "search":
+            route = .section("corpus")
         default: break
         }
+    }
+
+    func openSearch() {
+        menu = nil
+        taskDetailId = nil
+        searchQuery = ""
+        searchOpen = true
+    }
+
+    func closeSearch() { searchOpen = false }
+
+    func openTask(_ id: String) {
+        menu = nil
+        searchOpen = false
+        taskDetailId = id
     }
 
     func toggleSidebar() {
@@ -240,6 +264,9 @@ struct AppShell: View {
             .frame(width: width, height: geo.size.height)
             .background(chrome.bgSidebar.color)
             .overlay { MenuLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
+            .overlay { SearchLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
+            .overlay { TaskDetailLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
+            .background { Button("") { shell.openSearch() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true) }
             .overlay(alignment: .bottom) { ToastView() }
             .coordinateSpace(name: "shell")
         }

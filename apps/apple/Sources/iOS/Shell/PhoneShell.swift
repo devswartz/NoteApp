@@ -94,7 +94,7 @@ struct PhoneShell: View {
             HStack(spacing: 0) {
                 Button { shell.notYet("Notifications") } label: { Icon("bell", 20, p.text2.color).frame(width: 44, height: 44) }
                     .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
-                Button { shell.notYet("Search") } label: { Icon("search", 20, p.text2.color).frame(width: 44, height: 44) }
+                Button { shell.openSearch() } label: { Icon("search", 20, p.text2.color).frame(width: 44, height: 44) }
                     .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
             }
             .frame(width: 88, alignment: .trailing)
@@ -109,13 +109,13 @@ struct PhoneShell: View {
 
     private func tabBar(_ p: Palette) -> some View {
         HStack(spacing: 0) {
-            tab("Notes", "book-open", active: !isTasks) {
+            tab("Notes", "book-open", active: !isTasks && !shell.searchOpen) {
                 shell.route = .notes
                 shell.phoneNotebook = nil
             }
-            tab("Tasks", "list-checks", active: isTasks) { if !isTasks { shell.route = .tasks(.today) } }
+            tab("Tasks", "list-checks", active: isTasks && !shell.searchOpen) { if !isTasks { shell.route = .tasks(.today) } }
             tab("Calendar", "calendar-days", active: false) { shell.notYet("The calendar") }
-            tab("Search", "search", active: false) { shell.notYet("Search") }
+            tab("Search", "search", active: shell.searchOpen) { shell.openSearch() }
         }
         .frame(height: 60)
         .background(p.bg.withAlphaComponent(0.9).color)

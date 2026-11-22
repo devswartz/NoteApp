@@ -382,3 +382,51 @@ extension SessionModel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 }
+
+// MARK: Task detail edits
+
+extension SessionModel {
+    /// Rename a task: shown at once, sent with `Core.setTaskTitle` (the server trims it).
+    func rename(task: CoreTask, to title: String) {
+        let id = task.id
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, t != task.title else { return }
+        if let i = tasks.firstIndex(where: { $0.id == id }) { tasks[i].title = t }
+        call({ try $0.setTaskTitle(taskId: id, title: t) }) { result in
+            switch result {
+            case let .success(updated):
+                if let i = self.tasks.firstIndex(where: { $0.id == id }) { self.tasks[i] = updated }
+            case let .failure(e):
+                if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
+                self.refreshTasks()
+            }
+        }
+    }
+
+    /// Delete a task (its subtasks go with it): gone from the list at once, then `Core.deleteTask`.
+    func delete(taskId id: String) {
+        tasks.removeAll { $0.id == id || $0.parentId == id }
+        call({ try $0.deleteTask(taskId: id) }) { result in
+            if case let .failure(e) = result {
+                if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
+            }
+            self.refreshTasks()
+        }
+    }
+
+    /// A subtask on the same page as its parent (`Core.createTaskWith` with a parent).
+    func addSubtask(to parent: CoreTask, title: String) {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, let ws = workspaceId else { return }
+        let input = NewTaskInput(id: nil, title: t, pageId: parent.pageId, parentId: parent.id, done: false)
+        call({ try $0.createTaskWith(workspaceId: ws, task: input) }) { result in
+            switch result {
+            case let .success(created):
+                if !self.tasks.contains(where: { $0.id == created.id }) { self.tasks.append(created) }
+                self.scheduleTaskRefresh()
+            case let .failure(e):
+                if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
+            }
+        }
+    }
+}

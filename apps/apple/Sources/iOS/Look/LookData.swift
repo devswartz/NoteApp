@@ -70,7 +70,7 @@ enum LookData {
     /// Pages the demo tasks are written on that aren't in the tree (shown by title only).
     static let otherPageTitles = ["welcome": "Welcome 👋", "weekly-sync": "Weekly sync · Saturday 21 November"]
 
-    private static func day(_ offset: Int) -> String {
+    static func day(_ offset: Int) -> String {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -83,7 +83,7 @@ enum LookData {
         CoreTask(id: id, workspaceId: "demo-team", title: title, description: "", done: done, priority: priority,
                  dueDate: due.map(day), dueTime: nil, assigneeId: mine ? "demo" : nil, pageId: page, parentId: nil,
                  tagIds: [], checklistDone: nil, checklistTotal: nil, completedAt: done ? iso(minutesAgo: 30) : nil,
-                 createdAt: iso(minutesAgo: 600), updatedAt: iso(minutesAgo: 30), locked: false)
+                 createdAt: iso(minutesAgo: 10), updatedAt: iso(minutesAgo: 30), locked: false)
     }
 
     /// The demo seed's tasks as the Tasks views show them: 3 for Today (1 overdue), 7 in the next

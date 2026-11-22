@@ -659,6 +659,14 @@ struct BoxTextRenderer {
         let text = NSAttributedString(string: "This task was deleted or is not visible to you.",
                                       attributes: [.font: WebType.ui(12.5), .foregroundColor: p.textMuted])
         let remove = NSAttributedString(string: "Remove from page", attributes: [.font: WebType.ui(13, 500), .foregroundColor: p.text2])
+        if Self.phoneChips {
+            // Phones: the button wraps under the text (the web's flex-wrap), indented 14 from the box.
+            return Self.image(CGSize(width: width, height: 70)) { _ in
+                UIImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.draw(at: CGPoint(x: 4, y: 6))
+                text.draw(at: CGPoint(x: 27, y: 6 + (15 - WebType.ui(12.5).lineHeight) / 2 + 1))
+                remove.draw(at: CGPoint(x: 14, y: 39 + (15 - WebType.ui(13).lineHeight) / 2 + 1))
+            }
+        }
         return Self.image(CGSize(width: width, height: 40)) { _ in
             UIImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.draw(at: CGPoint(x: 0, y: 6))
             text.draw(at: CGPoint(x: 23, y: 6 + (15 - WebType.ui(12.5).lineHeight) / 2 + 1))
