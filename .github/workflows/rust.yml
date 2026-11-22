@@ -26,7 +26,6 @@ on:
       - 'src/ink/generated/**'
       - 'scripts/build-ink-wasm.sh'
       - '.github/workflows/rust.yml'
-      - 'tests/corpus/**'
   workflow_dispatch:
 
 permissions:
@@ -62,6 +61,8 @@ jobs:
 
   ink-wasm:
     name: ink wasm
+    # The rewrite doesn't touch the ink engine: skip it on rewrite feature branches (it still runs on PRs, main and rewrite/native).
+    if: github.event_name == 'pull_request' || !startsWith(github.ref_name, 'rewrite/') || github.ref_name == 'rewrite/native'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -105,7 +106,9 @@ jobs:
 
   apple:
     name: apple core
-    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'rewrite/') || startsWith(github.base_ref, 'rewrite/')
+    # Rewrite feature branches skip it: the Apple native workflow builds the same package on every apple push.
+    # It runs on rewrite/native (after a merge), on main and on PRs to or from rewrite/*.
+    if: (github.event_name != 'pull_request' && (!startsWith(github.ref_name, 'rewrite/') || github.ref_name == 'rewrite/native')) || (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'rewrite/') || startsWith(github.base_ref, 'rewrite/')))
     runs-on: macos-15
     timeout-minutes: 30
     steps:
