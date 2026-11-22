@@ -16,6 +16,21 @@ struct ShownBox {
 }
 
 /// One state of a page: everything the page view needs to draw it.
+/// A page the `[[` menu can link to: its title and where it lives ("Notebook › Section").
+struct PageChoice: Equatable {
+    let id: String
+    let title: String
+    let crumb: String
+}
+
+/// A person the `@` menu can mention.
+struct PageMember: Equatable {
+    let id: String
+    let name: String
+    let email: String
+    let color: String
+}
+
 struct PageSnapshot {
     let id: String
     let title: String
@@ -26,6 +41,10 @@ struct PageSnapshot {
     let pageTitles: [String: String]
     /// The page document (a Yjs update), for the Mac's Markdown preview.
     let document: Data?
+    /// Pages the `[[` menu offers (newest first), without this page.
+    var pageChoices: [PageChoice] = []
+    /// People the `@` menu offers.
+    var people: [PageMember] = []
 
     /// The boxes in reading order with their content (core's typed box content).
     var boxes: [ShownBox] {
@@ -104,7 +123,11 @@ final class LivePageModel: PageSource {
     /// Moves bytes between box editors and the live page, off the main thread: `LivePage` calls
     /// take the page's lock, which `close()` holds while it waits for the socket thread.
     @ObservationIgnored private let editQueue = DispatchQueue(label: "com.devswartz.notivelo.page-edits", qos: .userInitiated)
-    @ObservationIgnored private let tasksStore = LocalTaskCallbacks()
+    /// The editor's task store: the core's own (`Core.pageTasks`), so a task made on the iPad is
+    /// made on the server, renamed there and deleted there; `LocalTaskCallbacks` without a server.
+    @ObservationIgnored private let tasksStore: PageTaskStore
+    /// Moves when this page changed a task (the page redraws its task lines).
+    private(set) var tasksRevision = 0
     @ObservationIgnored var onRemoteChange: (() -> Void)?
     @ObservationIgnored var onSynced: (() -> Void)?
 
@@ -112,19 +135,28 @@ final class LivePageModel: PageSource {
         self.pageId = pageId
         self.title = title
         self.session = session
+        tasksStore = PageTaskStore(inner: session.coreTasks(pageId: pageId) ?? LocalTaskCallbacks())
+        tasksStore.onChange = { [weak self] in
+            DispatchQueue.main.async {
+                self?.tasksRevision += 1
+                self?.session?.scheduleTaskRefresh()
+            }
+        }
     }
 
     var snapshot: PageSnapshot? {
         guard let info else { return nil }
-        let lines = session?.taskLines ?? [:]
-        tasksStore.update(from: lines)
+        _ = tasksRevision
+        let lines = tasksStore.overlay(session?.taskLines ?? [:])
+        (tasksStore.inner as? LocalTaskCallbacks)?.update(from: lines)
         #if os(macOS)
         let document = live?.document()
         #else
         let document: Data? = nil
         #endif
         return PageSnapshot(id: pageId, title: title, info: info, tasks: lines,
-                            pageTitles: session?.pageTitles ?? [:], document: document)
+                            pageTitles: session?.pageTitles ?? [:], document: document,
+                            pageChoices: session?.pageChoices(excluding: pageId) ?? [], people: session?.people ?? [])
     }
 
     func open() {
@@ -159,6 +191,7 @@ final class LivePageModel: PageSource {
     /// Leave the page: close the connection (off the main thread; it may wait for the socket).
     func close() {
         isClosed = true
+        tasksStore.flush()
         generation += 1
         if let live { Self.closeInBackground(live) }
         live = nil

@@ -45,7 +45,7 @@ shoot() {
   [ "$theme" != light ] && name="$theme-$state"
   [ -z "$signedout" ] && args+=(-previewSignedIn YES)
   [ "$land" = 1 ] && args+=(-lookLandscape YES)
-  case "$state" in edit-*|menu-*|ribbon-menu-*) wait=7 ;; esac
+  case "$state" in edit-*|menu-*|ribbon-menu-*|slash-menu) wait=7 ;; esac
   mkdir -p "$OUT/native/$vp"
   xcrun simctl terminate "$udid" "$BUNDLE" > /dev/null 2>&1 || true
   if ! xcrun simctl launch "$udid" "$BUNDLE" "${args[@]}" > /dev/null; then
@@ -75,8 +75,8 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
     shoot "$UDID" $L 1 $theme menu-account
     shoot "$UDID" $L 1 $theme page-settings-and-ink
   done
-  for state in page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
-               menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed; do
+  for state in edit-selection edit-new-box page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
+               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed; do
     shoot "$UDID" $L 1 light "$state"
   done
   P=ipad-portrait

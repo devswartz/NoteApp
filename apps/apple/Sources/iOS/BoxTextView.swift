@@ -106,7 +106,6 @@ final class BoxTextView: UIView, UITextInput {
     }()
     /// Presses this view handled itself (their ends don't go to super either).
     private var handledPresses = Set<UIPress>()
-    private let suggestionLabel = UILabel()
 
     weak var inputDelegate: UITextInputDelegate?
     lazy var tokenizer: UITextInputTokenizer = UITextInputStringTokenizer(textInput: self)
@@ -123,13 +122,6 @@ final class BoxTextView: UIView, UITextInput {
         layoutManager.textContainer = container
         contentStorage.addTextLayoutManager(layoutManager)
         if contentStorage.textStorage == nil { contentStorage.textStorage = NSTextStorage() }
-        suggestionLabel.font = .systemFont(ofSize: 13)
-        suggestionLabel.textColor = .secondaryLabel
-        suggestionLabel.backgroundColor = .secondarySystemBackground
-        suggestionLabel.layer.cornerRadius = 6
-        suggestionLabel.layer.masksToBounds = true
-        suggestionLabel.isHidden = true
-        addSubview(suggestionLabel)
         tintColor = palette.text
         moveBar.cornerRadius = 6
         moveBar.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
@@ -138,6 +130,7 @@ final class BoxTextView: UIView, UITextInput {
         widthHandle.isHidden = true
         layer.addSublayer(moveBar)
         layer.addSublayer(widthHandle)
+        addGestureRecognizer(titleTap)
     }
 
     override func layoutSubviews() {
@@ -208,6 +201,7 @@ final class BoxTextView: UIView, UITextInput {
             contentStorage.textStorage?.setAttributedString(r.string)
         }
         layoutManager.ensureLayout(for: layoutManager.documentRange)
+        syncFolds()
         setNeedsDisplay()
         let used = layoutManager.usageBoundsForTextContainer.height
         let h = max(ceil(used) + inset.top + inset.bottom, 41.2)
@@ -232,6 +226,12 @@ final class BoxTextView: UIView, UITextInput {
             box.stroke()
         }
         for d in rendering.decorations { drawDecoration(d, inset: inset) }
+        // Look mode (CI): the simulator shows no UIKit selection without a keyboard, so draw the
+        // engine's selection as the web does (accent, soft).
+        if LookData.state != nil, editor != nil, sel.hi > sel.lo {
+            p.accent.withAlphaComponent(0.16).setFill()
+            for r in selectionRects(for: BoxTextRange(sel.lo, sel.hi)).map(\.rect) { UIRectFill(r) }
+        }
         layoutManager.enumerateTextLayoutFragments(from: layoutManager.documentRange.location, options: [.ensuresLayout]) { fragment in
             let frame = fragment.layoutFragmentFrame.offsetBy(dx: inset.left, dy: inset.top)
             if frame.intersects(rect.insetBy(dx: -20, dy: -20)) {
@@ -275,7 +275,7 @@ final class BoxTextView: UIView, UITextInput {
                 default: UIRectFill(r.insetBy(dx: 0.25, dy: 0.25))
                 }
             case .fold:
-                UIImage.lucide("chevron-down", size: 14, color: p.textMuted)?.draw(at: CGPoint(x: x - 21, y: line.top + 10))
+                break // drawn by `syncFolds` (outside the view's bounds)
             case let .toggle(open):
                 let cy = line.top + line.height / 2
                 let tri = UIBezierPath()
@@ -355,31 +355,169 @@ final class BoxTextView: UIView, UITextInput {
             if done { path.setLineDash([4, 3], count: 2, phase: 0) }
             p.border.setStroke()
             path.stroke()
-        case let .table(rows):
+        case let .table(rows, heights):
             let top = first.top - d.topPad
             let width = right - left
             let cols = max(rows.map(\.count).max() ?? 1, 1)
             let colW = width / CGFloat(cols)
+            var y = top
+            var ys: [CGFloat] = [top]
             for (i, row) in rows.enumerated() {
-                let y = top + CGFloat(i) * 40.2
+                let h = heights.indices.contains(i) ? heights[i] : 40.2
                 for (j, cell) in row.enumerated() {
-                    let r = CGRect(x: left + CGFloat(j) * colW, y: y, width: colW, height: 40.2)
+                    let r = CGRect(x: left + CGFloat(j) * colW, y: y, width: colW, height: h)
                     if cell.1 {
                         p.bgSubtle.setFill()
                         UIRectFill(r)
                     }
-                    let style = NSMutableParagraphStyle()
-                    style.lineBreakMode = .byTruncatingTail
-                    let f = WebType.ui(16, cell.1 ? 600 : 400)
-                    NSAttributedString(string: cell.0, attributes: [.font: f, .foregroundColor: p.text, .paragraphStyle: style])
-                        .draw(in: CGRect(x: r.minX + 10, y: r.minY + (40.2 - f.lineHeight) / 2, width: colW - 20, height: f.lineHeight + 2))
+                    let text = BoxTextRenderer.cellText(cell.0, header: cell.1, color: p.text)
+                    let natural = WebType.ui(16, cell.1 ? 600 : 400).lineHeight
+                    text.draw(with: CGRect(x: r.minX + 10, y: r.minY + 6.5 + (27.2 - natural) / 2, width: colW - 20, height: h), options: .usesLineFragmentOrigin, context: nil)
                 }
+                y += h
+                ys.append(y)
             }
             p.border.setFill()
-            for i in 0...rows.count { UIRectFill(CGRect(x: left, y: top + CGFloat(i) * 40.2, width: width, height: 1)) }
-            for j in 0...cols { UIRectFill(CGRect(x: min(left + CGFloat(j) * colW, right - 1), y: top, width: 1, height: CGFloat(rows.count) * 40.2 + 1)) }
+            for yy in ys { UIRectFill(CGRect(x: left, y: yy, width: width, height: 1)) }
+            for j in 0...cols { UIRectFill(CGRect(x: min(left + CGFloat(j) * colW, right - 1), y: top, width: 1, height: y - top + 1)) }
         }
     }
+
+    // MARK: Task titles
+
+    private var titleField: TaskTitleField?
+    private var titleTask: String?
+    private lazy var titleTap: UITapGestureRecognizer = {
+        let t = UITapGestureRecognizer(target: self, action: #selector(titleTapped(_:)))
+        t.cancelsTouchesInView = false
+        t.delegate = self
+        return t
+    }()
+
+    /// The task whose title is under `p` (view coordinates).
+    func titleHit(at p: CGPoint) -> String? {
+        for t in rendering.taskTitles {
+            guard let line = lineBox(t.offset) else { continue }
+            if CGRect(x: inset.left + t.x, y: line.top + 11, width: max(t.width, 30), height: 34).contains(p) { return t.id }
+        }
+        return nil
+    }
+
+    @objc private func titleTapped(_ tap: UITapGestureRecognizer) {
+        _ = beginTitleEdit(at: tap.location(in: self))
+    }
+
+    /// A tap on a task line's title edits the title (its own field, as on the web).
+    @discardableResult
+    func beginTitleEdit(at p: CGPoint) -> Bool {
+        guard editor != nil, let id = titleHit(at: p) else { return false }
+        runCommand("focusTitle", ["id": id])
+        return true
+    }
+
+    /// Show the title field over the focused task's title (the engine's focus), or take it away.
+    private func updateTitleField(_ id: String?) {
+        guard let id, let t = rendering.taskTitles.first(where: { $0.id == id }), let line = lineBox(t.offset), editor != nil else {
+            removeTitleField()
+            return
+        }
+        let field: TaskTitleField
+        if let f = titleField {
+            field = f
+        } else {
+            field = TaskTitleField()
+            field.borderStyle = .none
+            field.autocorrectionType = .default
+            field.returnKeyType = .next
+            field.addTarget(self, action: #selector(titleChanged(_:)), for: .editingChanged)
+            field.delegate = self
+            field.onEmptyBackspace = { [weak self] in
+                guard let self, let id = self.titleTask else { return }
+                self.flushTitle()
+                self.titleKey("Backspace", id)
+            }
+            addSubview(field)
+            titleField = field
+        }
+        field.font = WebType.ui(16)
+        field.textColor = palette.text
+        field.tintColor = palette.accent
+        field.backgroundColor = palette.bg
+        field.attributedPlaceholder = NSAttributedString(string: "Task", attributes: [.foregroundColor: palette.textPlaceholder, .font: WebType.ui(16)])
+        field.frame = CGRect(x: inset.left + t.x, y: line.top + 16, width: max(t.width, 60), height: 24)
+        if titleTask != id {
+            titleTask = id
+            field.text = editor?.tasks?.title(id: id) ?? ""
+        }
+        if !field.isFirstResponder { field.becomeFirstResponder() }
+    }
+
+    private func removeTitleField() {
+        guard let f = titleField else { return }
+        titleField = nil
+        titleTask = nil
+        f.delegate = nil
+        if f.isFirstResponder { f.resignFirstResponder() }
+        f.removeFromSuperview()
+    }
+
+    func titleReturn() {
+        flushTitle()
+        if let id = titleTask { titleKey("Enter", id) }
+    }
+
+    func titleDidEnd() { flushTitle() }
+
+    /// Send a pending title change to the server now.
+    private func flushTitle() { editor?.tasks?.flush() }
+
+    /// Stop editing a task title (a tap elsewhere ends the page's editing).
+    func endTitleEdit() {
+        flushTitle()
+        removeTitleField()
+    }
+
+    @objc private func titleChanged(_ f: UITextField) {
+        guard let id = titleTask else { return }
+        editor?.tasks?.editTitle(id: id, title: f.text ?? "")
+    }
+
+    /// A key in the focused title (Enter: the next task or a note line; Backspace in an empty title: a plain line).
+    fileprivate func titleKey(_ chord: String, _ id: String) {
+        guard let editor else { return }
+        _ = engine(fromProtocol: false, edits: false) { $0.key(chord: chord) }
+        editor.edited()
+        if editor.session.state().focusTaskId == nil {
+            _ = becomeFirstResponder()
+        }
+    }
+
+    // MARK: Fold arrows
+
+    private var foldLayers: [CALayer] = []
+    private var foldHits: [(rect: CGRect, id: String)] = []
+
+    /// The fold arrows left of task lines with notes sit in the page's gutter, outside this view's
+    /// drawing: they are layers (a view's layers aren't clipped to its bounds).
+    private func syncFolds() {
+        foldLayers.forEach { $0.removeFromSuperlayer() }
+        foldLayers = []
+        foldHits = []
+        for m in rendering.markers {
+            guard case let .fold(collapsed, id) = m.kind, let line = lineBox(m.offset) else { continue }
+            let x = inset.left + m.x - 21
+            let l = CALayer()
+            l.contentsScale = UIScreen.main.scale
+            l.contents = UIImage.lucide(collapsed ? "chevron-right" : "chevron-down", size: 14, color: palette.textMuted)?.cgImage
+            l.frame = CGRect(x: x, y: line.top + 21, width: 14, height: 14)
+            layer.addSublayer(l)
+            foldLayers.append(l)
+            foldHits.append((CGRect(x: x - 6, y: line.top + 11, width: 20, height: 34), id))
+        }
+    }
+
+    /// The task whose fold arrow is at `p` (view coordinates).
+    func foldTask(at p: CGPoint) -> String? { foldHits.first { $0.rect.contains(p) }?.id }
 
     // MARK: Editing
 
@@ -421,7 +559,7 @@ final class BoxTextView: UIView, UITextInput {
                 removeInteraction(i)
                 interaction = nil
             }
-            suggestionLabel.isHidden = true
+            hideMenu()
         }
         return resigned
     }
@@ -506,28 +644,142 @@ final class BoxTextView: UIView, UITextInput {
                 apply(r)
             }
         }
+        if chrome { updateTitleField(state.focusTaskId) }
         updateSuggestion()
         if notify {
             inputDelegate?.textDidChange(self)
             inputDelegate?.selectionDidChange(self)
         }
         interaction?.textInput = self
+        if LookData.state != nil { setNeedsDisplay() }
         onCaretChange?(self)
     }
 
-    /// The engine's open suggestion menu (`/`): no menu UI yet, so say what Enter picks.
-    private func updateSuggestion() {
-        guard isFirstResponder, let s = suggestion, s.trigger == .slash, let first = s.slashItems.first else {
-            suggestionLabel.isHidden = true
-            return
-        }
-        suggestionLabel.text = "  ↵ \(first)   ·   esc closes  "
-        suggestionLabel.sizeToFit()
-        let caret = caretRect(for: BoxTextPosition(sel.hi))
-        suggestionLabel.frame.origin = CGPoint(x: max(caret.minX - 8, 0), y: caret.maxY + 4)
-        suggestionLabel.isHidden = false
+    // MARK: Suggestion menus (`/`, `[[`, `@`)
+
+    /// People the `@` menu offers, and pages the `[[` menu offers (set by the canvas).
+    var people: [PageMember] = []
+    var pageChoices: [PageChoice] = []
+    /// A menu opened, changed or closed (nil): the canvas shows the popover.
+    var onMenu: ((BoxTextView, MenuContent?) -> Void)?
+    private var menuRows: [MenuRow] = []
+    private var menuKind = MenuContent.Kind.slash
+    private var menuHighlight = 0
+    private var menuKey = ""
+
+    private func hideMenu() {
+        guard !menuRows.isEmpty || menuKey != "" else { return }
+        menuRows = []
+        menuKey = ""
+        onMenu?(self, nil)
     }
 
+    /// Whether a `[[` or `@` menu with rows is open (their highlight and keys are this view's).
+    private var ownMenuOpen: Bool {
+        isFirstResponder && suggestion != nil && menuKind != .slash && !menuRows.isEmpty
+    }
+
+    private func pageMatches(_ query: String) -> [MenuRow] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        var scored: [(Int, Int, PageChoice)] = []
+        for (n, p) in pageChoices.enumerated() {
+            let t = (p.title.isEmpty ? "Untitled" : p.title).lowercased()
+            let score: Int
+            if q.isEmpty { score = 1 } else if t.hasPrefix(q) { score = 0 } else if t.split(separator: " ").contains(where: { $0.hasPrefix(q) }) { score = 1 } else if t.contains(q) { score = 2 } else { score = -1 }
+            if score >= 0 { scored.append((score, n, p)) }
+        }
+        scored.sort { ($0.0, $0.1) < ($1.0, $1.1) }
+        return scored.prefix(8).map { MenuRow(id: $0.2.id, title: $0.2.title.isEmpty ? "Untitled" : $0.2.title, detail: $0.2.crumb, icon: "file-text", dot: nil) }
+    }
+
+    private func peopleMatches(_ query: String) -> [MenuRow] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let hits = people.filter { q.isEmpty || $0.name.lowercased().contains(q) || $0.email.lowercased().contains(q) }
+        return hits.prefix(8).map { MenuRow(id: $0.id, title: $0.name, detail: $0.email, icon: nil, dot: UIColor(css: $0.color)) }
+    }
+
+    /// The engine's open suggestion menu: slash rows from the engine (it owns the highlight), pages
+    /// and people from the app (this view owns their highlight).
+    private func updateSuggestion() {
+        guard isFirstResponder, editor != nil, let s = suggestion else {
+            hideMenu()
+            return
+        }
+        let key = "\(s.trigger)|\(s.query)"
+        if key != menuKey { menuKey = key; menuHighlight = 0 }
+        let kind: MenuContent.Kind
+        var rows: [MenuRow] = []
+        var highlighted: Int?
+        var empty: String?
+        switch s.trigger {
+        case .slash:
+            kind = .slash
+            rows = s.items.map { MenuRow(id: $0.id, title: $0.label, detail: $0.description, icon: $0.icon, dot: nil) }
+            highlighted = s.highlighted.map { Int($0) }
+        case .pageLink:
+            kind = .page
+            rows = pageMatches(s.query)
+            empty = "Type a page title…"
+        case .mention:
+            kind = .mention
+            rows = peopleMatches(s.query)
+            empty = "No matching people"
+        }
+        if kind != .slash, !rows.isEmpty {
+            menuHighlight = min(menuHighlight, rows.count - 1)
+            highlighted = menuHighlight
+        }
+        menuRows = rows
+        menuKind = kind
+        if kind == .slash && rows.isEmpty {
+            onMenu?(self, nil)
+            return
+        }
+        let anchor = caretRect(for: BoxTextPosition(min(Int(s.viewFrom), text.length)))
+        onMenu?(self, MenuContent(kind: kind, rows: rows, highlighted: highlighted, anchor: anchor, emptyText: empty))
+    }
+
+    /// Run row `i` of the open menu.
+    func pickMenuRow(_ i: Int) {
+        guard menuRows.indices.contains(i) else { return }
+        let r = menuRows[i]
+        switch menuKind {
+        case .slash: runCommand("pickSlash", ["title": r.id])
+        case .page: runCommand("pickPage", ["pageId": r.id])
+        case .mention: runCommand("pickMention", ["id": r.id, "label": r.title])
+        }
+    }
+
+    private func runCommand(_ name: String, _ args: [String: Any]) {
+        let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        command(name, json)
+    }
+
+    /// Hardware keys while a menu is open: Up/Down move the highlight, Enter/Tab pick, Escape closes.
+    /// (The engine takes Enter, Tab and Escape for the slash menu itself.) True when handled.
+    private func menuKeyPressed(_ key: UIKey) -> Bool {
+        guard isFirstResponder, suggestion != nil, !menuRows.isEmpty, key.modifierFlags.intersection([.command, .control, .alternate, .shift]).isEmpty else { return false }
+        let up = key.keyCode == .keyboardUpArrow, down = key.keyCode == .keyboardDownArrow
+        if up || down {
+            if menuKind == .slash {
+                return sendKey(up ? "ArrowUp" : "ArrowDown")
+            }
+            menuHighlight = (menuHighlight + (down ? 1 : menuRows.count - 1)) % menuRows.count
+            updateSuggestion()
+            return true
+        }
+        guard menuKind != .slash else { return false }
+        switch key.keyCode {
+        case .keyboardReturnOrEnter, .keypadEnter, .keyboardTab:
+            pickMenuRow(menuHighlight)
+            return true
+        case .keyboardEscape:
+            runCommand("dismissSuggestion", [:])
+            return true
+        default:
+            return false
+        }
+    }
     /// The platform set the selection (taps, handles, arrows, the IME).
     private func selectByPlatform(_ r: BoxTextRange, notify: Bool) {
         let len = text.length
@@ -574,6 +826,11 @@ final class BoxTextView: UIView, UITextInput {
     var hasText: Bool { text.length > 0 }
 
     func insertText(_ s: String) {
+        // Return or Tab on the software keyboard picks the row of an open `[[` or `@` menu.
+        if (s == "\n" || s == "\t") && ownMenuOpen && marked == nil {
+            pickMenuRow(menuHighlight)
+            return
+        }
         engine(fromProtocol: true) { session in
             if s == "\n" {
                 // The Return key is a key in disguise: lists, tasks and tables apply.
@@ -748,6 +1005,19 @@ final class BoxTextView: UIView, UITextInput {
         return rects.filter { abs($0.minY - first.minY) < 1 }.reduce(first) { $0.union($1) }
     }
 
+    /// Look mode (CI): select from `lo` to the end of the text through the engine, telling UIKit.
+    func lookSelect(from lo: Int) {
+        selectByPlatform(BoxTextRange(lo, text.length), notify: true)
+    }
+
+    /// The selected text's bounds in this view's coordinates; nil for a caret (the floating toolbar).
+    var selectionBounds: CGRect? {
+        guard editor != nil, marked == nil, sel.hi > sel.lo else { return nil }
+        let rects = selectionRects(for: BoxTextRange(sel.lo, sel.hi)).map(\.rect)
+        guard let first = rects.first else { return firstRect(for: BoxTextRange(sel.lo, sel.hi)) }
+        return rects.reduce(first) { $0.union($1) }
+    }
+
     func selectionRects(for range: UITextRange) -> [UITextSelectionRect] {
         guard let r = range as? BoxTextRange, !r.isEmpty else { return [] }
         let rects = segments(r.lo, r.hi, type: .selection)
@@ -826,7 +1096,9 @@ final class BoxTextView: UIView, UITextInput {
         }
         var rest = Set<UIPress>()
         for press in presses {
-            if let key = press.key, let chord = Self.engineChord(key), sendKey(chord) {
+            if let key = press.key, menuKeyPressed(key) {
+                handledPresses.insert(press)
+            } else if let key = press.key, let chord = Self.engineChord(key), sendKey(chord) {
                 handledPresses.insert(press)
             } else {
                 rest.insert(press)
@@ -918,4 +1190,24 @@ final class BoxTextView: UIView, UITextInput {
         if !c.html.isEmpty { item["public.html"] = c.html }
         UIPasteboard.general.items = [item]
     }
+}
+
+/// A task line's title field: Backspace in an empty one is the engine's (it turns the line plain).
+final class TaskTitleField: UITextField {
+    var onEmptyBackspace: (() -> Void)?
+
+    override func deleteBackward() {
+        if (text ?? "").isEmpty { onEmptyBackspace?() } else { super.deleteBackward() }
+    }
+}
+
+extension BoxTextView: UIGestureRecognizerDelegate, UITextFieldDelegate {
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    func textFieldShouldReturn(_ f: UITextField) -> Bool {
+        titleReturn()
+        return false
+    }
+
+    func textFieldDidEndEditing(_ f: UITextField) { titleDidEnd() }
 }

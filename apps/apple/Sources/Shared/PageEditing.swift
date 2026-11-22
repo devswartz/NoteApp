@@ -38,8 +38,10 @@ final class BoxEditor {
     let boxId: String
     let session: EditorSession
     private weak var host: PageEditHost?
+    /// The page's task store (title typing, flushing).
+    var tasks: PageTaskStore? { host?.taskCallbacks as? PageTaskStore }
     private var confirmed = Data()
-    /// The engine has no `canUndo` / `canRedo` yet (requested): the view's undo manager asks these.
+    /// The view's undo manager asks these (kept here; the session also has `canUndo()`).
     private(set) var canUndo = false
     private(set) var canRedo = false
 
@@ -119,9 +121,9 @@ final class BoxEditor {
 }
 
 /// The task store behind a box's task lines, for the engine. Titles come from the workspace's
-/// task list (live) or the corpus case. Creating, deleting and renaming tasks from the iPad isn't
-/// wired to the server yet (the Core API can't create a task with the engine's id, nor delete or
-/// rename one: requested), so those stay on this device for now.
+/// task list (live) or the corpus case. Device only: used without a server (corpus mode, CI), where
+/// tasks made, renamed or deleted in the editor stay on this device. A signed-in page uses the
+/// core's own store (`Core.pageTasks`) through `PageTaskStore`.
 final class LocalTaskCallbacks: TaskCallbacks, @unchecked Sendable {
     private let lock = NSLock()
     private var titles: [String: String] = [:]
@@ -182,9 +184,128 @@ final class CorpusEditHost: PageEditHost {
         self.document = document
         let callbacks = LocalTaskCallbacks()
         callbacks.update(from: tasks)
-        taskCallbacks = callbacks
+        taskCallbacks = PageTaskStore(inner: callbacks)
     }
 
     func fetchDocument(_ done: @escaping (Data?) -> Void) { done(document) }
     func send(_ update: Data, _ done: @escaping (Bool) -> Void) { done(true) }
+}
+
+/// The task store behind a page's task lines (what the engine calls, EDITOR.md 5): wraps the core's
+/// own (`Core.pageTasks`: creates, renames and deletes go to the server on the core's thread, queued
+/// offline) or the device-only one (corpus mode). It also keeps what this page changed until the
+/// task list from the server shows it (`overlay`), debounces title typing (`editTitle`), and says
+/// when something changed so the app refreshes its task list.
+final class PageTaskStore: TaskCallbacks, @unchecked Sendable {
+    let inner: TaskCallbacks
+    private let lock = NSLock()
+    private var local: [String: (title: String, done: Bool)] = [:]
+    private var pending: [String: DispatchWorkItem] = [:]
+    /// Something changed (any thread): redraw the page's task lines, refresh the task list.
+    var onChange: (() -> Void)?
+
+    init(inner: TaskCallbacks) { self.inner = inner }
+
+    private func changed() { onChange?() }
+
+    func newId() -> String { inner.newId() }
+
+    func create(id: String, title: String, done: Bool) {
+        lock.lock()
+        local[id] = (title, done)
+        lock.unlock()
+        inner.create(id: id, title: title, done: done)
+        changed()
+    }
+
+    func delete(id: String) {
+        lock.lock()
+        local[id] = nil
+        let work = pending.removeValue(forKey: id)
+        lock.unlock()
+        work?.cancel()
+        inner.delete(id: id)
+        changed()
+    }
+
+    func restore(id: String) -> Bool {
+        let ok = inner.restore(id: id)
+        if ok, let t = inner.title(id: id) {
+            lock.lock()
+            local[id] = (t, false)
+            lock.unlock()
+        }
+        changed()
+        return ok
+    }
+
+    func title(id: String) -> String? {
+        lock.lock()
+        let mine = local[id]?.title
+        lock.unlock()
+        return mine ?? inner.title(id: id)
+    }
+
+    func setTitle(id: String, title: String) {
+        lock.lock()
+        local[id] = (title, local[id]?.done ?? false)
+        let work = pending.removeValue(forKey: id)
+        lock.unlock()
+        work?.cancel()
+        inner.setTitle(id: id, title: title)
+        changed()
+    }
+
+    /// Typing in a title field: shown at once, sent to the server after a pause (or `flush`).
+    func editTitle(id: String, title: String) {
+        lock.lock()
+        local[id] = (title, local[id]?.done ?? false)
+        pending[id]?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            self.pending[id] = nil
+            self.lock.unlock()
+            self.inner.setTitle(id: id, title: title)
+            self.changed()
+        }
+        pending[id] = work
+        lock.unlock()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+        changed()
+    }
+
+    /// Send the titles typed so far now (before a key goes to the engine, when editing ends, when the page closes).
+    func flush() {
+        lock.lock()
+        let works = Array(pending)
+        lock.unlock()
+        for (id, work) in works {
+            work.cancel()
+            lock.lock()
+            pending[id] = nil
+            let t = local[id]?.title
+            lock.unlock()
+            if let t { inner.setTitle(id: id, title: t) }
+        }
+        if !works.isEmpty { changed() }
+    }
+
+    /// The task lines with this page's own changes on top, until the server's list has them.
+    func overlay(_ lines: [String: TaskLine]) -> [String: TaskLine] {
+        lock.lock()
+        defer { lock.unlock() }
+        var out = lines
+        for (id, mine) in local {
+            switch lines[id] {
+            case let .shown(title, done, due)?:
+                if title == mine.title { local[id] = nil } else { out[id] = .shown(title: mine.title, done: done, due: due) }
+            case .hidden?:
+                break
+            case nil:
+                out[id] = .shown(title: mine.title, done: mine.done, due: nil)
+            }
+        }
+        return out
+    }
 }

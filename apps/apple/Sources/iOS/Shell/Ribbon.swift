@@ -223,7 +223,7 @@ struct NoteRibbon: View {
         RibbonButton(icon: "list-indent-decrease", m: m, enabled: on) { focus.run("outdent") }
         RibbonButton(icon: "list-indent-increase", m: m, enabled: on) { focus.run("indent") }
         HStack(spacing: 0) {
-            Button { shell.notYet("Making tasks on the iPad") } label: {
+            Button { focus.run("convertToTask") } label: {
                 Icon("circle-check", m.icon, p.text2.color).padding(.leading, m.pad).padding(.trailing, 4).frame(height: m.height)
             }
             .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
