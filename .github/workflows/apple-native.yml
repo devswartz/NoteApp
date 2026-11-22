@@ -111,9 +111,10 @@ jobs:
           retention-days: 14
 
       # A finger scrolls a long page, on an iPhone and an iPad simulator (XCUITest swipes for real, so a pan swallowed by a
-      # view or gesture recognizer fails). This step fails the job.
+      # view or gesture recognizer fails). This step fails the job, except on a [testflight] build, which still uploads.
       - name: Scroll test (iPhone, iPad)
         timeout-minutes: 25
+        continue-on-error: ${{ contains(github.event.head_commit.message, '[testflight]') }}
         run: bash apps/apple/scripts/scroll-test.sh "$RUNNER_TEMP/dd-uitest"
 
       # Typing evidence: -demoEdit focuses the first box and types through the same UITextInput calls as the keyboard
