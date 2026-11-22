@@ -5,17 +5,18 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
-- **The whole `rewrite/core-tasks-full` step is done** (cut from `rewrite/native` a625e3c, not
-  merged): the full task model (task details, update, tags, teams, members, reminders, quick add;
-  "For apple: task details"), **full-text search** ("For apple: search") and **comment threads**
-  ("For apple: comments"). That answers all of apple's open requests to core. **Core pauses
-  after this step.**
-- Before that: box calls on `LivePage` (branch `rewrite/core-boxes`, "For apple: boxes", "For
-  editor: boxes"), then task calls, live doc plumbing and the fragment reader (branch
-  `rewrite/core-tasks`: "For apple: task calls", "For editor: the live doc").
-- **Next, in order** (for a fresh session; see the handover below): Kotlin bindings with an
-  Android library build in CI (`cargo-ndk`, including the platform verifier's Android init,
-  below), then the CHANGELOG-SYNC.md design.
+- **The CHANGELOG-SYNC.md design is written** (`docs/rewrite/CHANGELOG-SYNC.md`, branch
+  `rewrite/core-changelog`, cut from `rewrite/native` a70aaa1, not merged): the server's durable
+  change log for M7 (a per-page write-ahead log so receipts are durable, a per-workspace change
+  feed, a batch task-ops endpoint with conflict rules), the core side, the rollout and the soak
+  test. **Core is paused.** The M7 server work (PRs to `main`) waits for Devon's OK on the design;
+  its open questions are listed at the end of the document.
+- **Next queued:** Kotlin bindings with an Android library build in CI (`cargo-ndk`, including
+  the platform verifier's Android init, below). The M7 core work (nv-api `changes`/`task_ops`,
+  nv-store schema 4, `FeedSync`, Core API change notifications) follows once the server steps exist.
+- Before that: the whole `rewrite/core-tasks-full` step (task details, search, comment threads;
+  merged), box calls on `LivePage` (`rewrite/core-boxes`), task calls and live doc plumbing
+  (`rewrite/core-tasks`).
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
@@ -673,6 +674,15 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
   so Intel builds link. The iOS device slice is still arm64 only.
 
 ## Done
+
+- 2026-11-22, CHANGELOG-SYNC design (`rewrite/core-changelog`, documents only, no code):
+  `docs/rewrite/CHANGELOG-SYNC.md`. Today's gaps found by reading `server/collab.ts` (a receipt
+  means "in memory"; up to 5 s per page lost on a crash), `server/events.ts` (2,000-event memory
+  buffer, cursor dies on every restart, `tree` carries no ids) and `server/tasks.ts` (no base
+  version; a retried tick of a repeating task rolls it twice). Design: page update log with
+  compaction, trigger-fed per-workspace change feed with `GET /changes` plus a push nudge,
+  `POST /task-ops` with op ids and per-field `was` checks, redaction at read time, flags, rollout
+  steps and a soak test.
 
 - 2026-11-22, search and comment threads (`rewrite/core-tasks-full`): nv-api `search`,
   `page_comments`, `add_comment_thread`, `reply_to_thread`, `set_thread_resolved`,
