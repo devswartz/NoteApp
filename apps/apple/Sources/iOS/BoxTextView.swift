@@ -206,7 +206,9 @@ final class BoxTextView: UIView, UITextInput {
         syncFolds()
         setNeedsDisplay()
         let used = layoutManager.usageBoundsForTextContainer.height
-        let h = max(ceil(used) + inset.top + inset.bottom, 41.2)
+        // The editor keeps an empty paragraph after a last block that isn't one (a task line, an image …): about a line on phones.
+        let trailing: CGFloat = BoxTextRenderer.phoneChips && r.string.string.hasSuffix(BoxTextRenderer.object) ? 25 : 0
+        let h = max(ceil(used) + inset.top + inset.bottom + trailing, 41.2)
         if h != contentHeight {
             contentHeight = h
             onHeightChange?(self)

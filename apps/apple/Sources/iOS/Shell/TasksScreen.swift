@@ -86,7 +86,7 @@ struct TaskBuckets {
         switch l {
         case .today: return mine.filter { $0.dueDate != nil && (Due.days($0.dueDate) ?? 1) <= 0 }
         case .my: return mine
-        case .upcoming: return mine.filter { if let n = Due.days($0.dueDate) { return n > 0 && n <= 14 } else { return false } }
+        case .upcoming: return mine.filter { if let n = Due.days($0.dueDate) { return n <= 14 } else { return false } }
         case .all, .team: return open
         }
     }
@@ -194,7 +194,26 @@ struct TasksScreen: View {
                         .padding(.top, phone ? 12 : 20)
                 }
                 if groups.isEmpty {
-                    emptyState(p).padding(.top, 20)
+                    if list == .today {
+                        // The empty Today still lists its day, with Add task, above the message.
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Today · " + Due.format(Date(), "EEE d MMM")).font(.web(13.5, 650)).foregroundStyle(p.text.color)
+                                .padding(.top, 8).padding(.bottom, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+                            Button { shell.notYet("Adding tasks") } label: {
+                                HStack(spacing: 8) {
+                                    Icon("plus", 15, p.textMuted.color)
+                                    Text("Add task").font(.web(13.5)).foregroundStyle(p.textMuted.color)
+                                }
+                                .padding(.vertical, 8).padding(.horizontal, 6)
+                            }
+                            .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+                            .padding(.top, 2)
+                        }
+                        .padding(.top, 20)
+                    }
+                    emptyState(p).padding(.top, list == .today ? 36 : 20)
                 } else {
                     VStack(alignment: .leading, spacing: 22) {
                         ForEach(Array(groups.enumerated()), id: \.offset) { _, g in
@@ -228,6 +247,7 @@ struct TasksScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .refreshable { await session.refresh() }
+        .noEdgeEffect()
         .onAppear { session.refreshTasks() }
     }
 
@@ -235,9 +255,10 @@ struct TasksScreen: View {
     private func emptyState(_ p: Palette) -> some View {
         if list == .today {
             VStack(spacing: 6) {
-                Text("☀️").font(.system(size: 34))
-                Text("You’re all caught up").font(.web(15, 700)).foregroundStyle(p.text.color)
-                Text("Nothing due today. Enjoy it — or plan ahead in Upcoming.").font(.web(14)).foregroundStyle(p.textMuted.color)
+                Text("☀️").font(.system(size: 40))
+                Text("You’re all caught up").font(.web(15, 700)).foregroundStyle(p.text.color).padding(.top, 6)
+                Text("Nothing due today. Enjoy it — or plan ahead in Upcoming.").font(.web(phone ? 15 : 14)).foregroundStyle(p.textMuted.color)
+                    .multilineTextAlignment(.center).lineSpacing(phone ? 4 : 0).padding(.top, 8)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40).padding(.horizontal, 16)
@@ -278,7 +299,7 @@ struct StatsCard: View {
             }
             .fixedSize()
         }
-        .padding(.vertical, 14).padding(.horizontal, 16)
+        .padding(.vertical, 16).padding(.horizontal, 16)
         .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(p.border.color, lineWidth: 1))
         .overlay(alignment: .bottomLeading) {
@@ -316,9 +337,10 @@ struct TaskRowView: View {
             }
             .padding(.top, 1)
             .disabled(task.locked)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: phone ? 6 : 3) {
                 Text(task.locked ? "Locked task" : task.title)
                     .font(.web(14))
+                    .lineSpacing(phone ? 4 : 0)
                     .strikethrough(done)
                     .foregroundStyle(done ? p.textMuted.color : p.text.color)
                     .frame(minHeight: 19.6)
@@ -412,7 +434,7 @@ struct FlowLayout: Layout {
         for v in subviews {
             let s = measure(v, maxW)
             if x > 0 && x + s.width > maxW { y += rowH + lineSpacing; x = 0; rowH = 0 }
-            x += s.width + spacing
+            x += s.width + (s.width > 0 ? spacing : 0)
             rowH = max(rowH, s.height)
             width = max(width, x - spacing)
         }
@@ -425,7 +447,7 @@ struct FlowLayout: Layout {
             let s = measure(v, bounds.width)
             if x > bounds.minX && x + s.width > bounds.maxX { y += rowH + lineSpacing; x = bounds.minX; rowH = 0 }
             v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: min(s.width, bounds.width), height: s.height))
-            x += s.width + spacing
+            x += s.width + (s.width > 0 ? spacing : 0)
             rowH = max(rowH, s.height)
         }
     }

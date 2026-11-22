@@ -24,7 +24,7 @@ enum LookData {
 
     /// The workspace shown: Demo Team, or Empty Space in the empty-workspace states.
     static var workspace: Workspace {
-        workspaces.first { $0.id == (state?.hasPrefix("empty-workspace") == true ? "empty-space" : "demo-team") } ?? workspaces[0]
+        workspaces.first { $0.id == (state?.hasPrefix("empty-workspace") == true || state?.hasPrefix("empty-tasks") == true ? "empty-space" : "demo-team") } ?? workspaces[0]
     }
 
     /// The look seed's page order and titles (seed.ts ORDER); "sandbox" is a copy of canvas-boxes.

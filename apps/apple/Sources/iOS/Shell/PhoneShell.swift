@@ -85,7 +85,7 @@ struct PhoneShell: View {
             VStack(spacing: 0) {
                 if subtitled {
                     Text("Notes").font(.web(15, 600)).foregroundStyle(p.text.color).lineLimit(1)
-                    Text(workspaceName).font(.web(10.5)).foregroundStyle(p.textMuted.color).lineLimit(1)
+                    Text(workspaceName).font(.web(15)).foregroundStyle(p.text2.color).lineLimit(1)
                 } else {
                     Text(workspaceName).font(.web(15, 600)).foregroundStyle(p.text.color).lineLimit(1)
                 }
@@ -198,7 +198,7 @@ struct PhoneDrawer: View {
             .padding(8)
             .overlay(alignment: .top) { Rectangle().fill(p.border.color).frame(height: 1) }
         }
-        .background(p.bgSidebar.color)
+        .background(p.bgSidebar.color.ignoresSafeArea())
     }
 }
 
@@ -227,6 +227,7 @@ struct PhoneScreen<Content: View, Lead: View, Action: View>: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.leading, -6)
+                    .padding(.top, 2.4)
                     .padding(.bottom, 8)
                 }
                 HStack(spacing: 8) {
@@ -235,20 +236,21 @@ struct PhoneScreen<Content: View, Lead: View, Action: View>: View {
                     Spacer(minLength: 0)
                     action()
                 }
-                .frame(minHeight: back == nil ? 38 : 40)
-                .padding(.bottom, 12)
+                .frame(minHeight: back == nil ? 38 : 41.6)
+                .padding(.bottom, back == nil ? 12 : 13.5)
                 content()
             }
             .padding(.top, 20).padding(.horizontal, 16).padding(.bottom, 96)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .noEdgeEffect()
     }
 }
 
 /// A group title: 13.5/650 with a hairline under it.
 private func groupTitle(_ text: String, _ p: Palette) -> some View {
     Text(text).font(.web(13.5, 650)).foregroundStyle(p.text.color)
-        .padding(.top, 8).padding(.bottom, 6)
+        .padding(.top, 9.5).padding(.bottom, 7.5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
 }

@@ -417,7 +417,7 @@ struct BoxTextRenderer {
         switch c.type {
         case "heading":
             let level = Int(c.number("level") ?? 1)
-            let size: CGFloat = ([1: 28, 2: 21.6, 3: 17.92][level] ?? 16) * bodySize / 16
+            let size: CGFloat = ([1: 28, 2: 21.6, 3: 17.92][level] ?? 16) * bodySize / 16 * (level == 1 && bodySize > 16 ? 1.045 : 1)
             let lh: CGFloat = [1: 1.3, 2: 1.35, 3: 1.7][level] ?? 1.7
             let text = NSMutableAttributedString(attributedString: inline(c.content, size: size, weight: 700, ctx: ctx))
             let kern: CGFloat = level == 1 ? -0.02 * size : level == 2 ? -0.01 * size : 0

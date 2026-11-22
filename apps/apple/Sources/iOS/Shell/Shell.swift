@@ -183,6 +183,15 @@ extension EnvironmentValues {
 }
 
 extension View {
+    /// iOS 26 fades a scroll view's edges at the screen edge; the web has no such effect.
+    @ViewBuilder func noEdgeEffect() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) { scrollEdgeEffectHidden(true, for: .all) } else { self }
+        #else
+        self
+        #endif
+    }
+
     /// Remember this view's frame in the shell's coordinate space (menus open from it).
     func anchor(_ id: String, _ shell: Shell) -> some View {
         background(GeometryReader { g in

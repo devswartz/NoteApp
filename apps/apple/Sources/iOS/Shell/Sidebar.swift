@@ -68,11 +68,13 @@ struct NotesPanel: View {
                 .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
                 .background(shell.menu == .notebookPicker ? p.bgPressed.color : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .anchor("notebook-picker", shell)
-                Button { shell.menu = .notebookOptions } label: {
-                    Icon("ellipsis", 15, p.textMuted.color).frame(width: phone ? 36 : 24, height: phone ? 36 : 24)
+                if notebook != nil {
+                    Button { shell.menu = .notebookOptions } label: {
+                        Icon("ellipsis", 15, p.textMuted.color).frame(width: phone ? 36 : 24, height: phone ? 36 : 24)
+                    }
+                    .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+                    .anchor("notebook-options", shell)
                 }
-                .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
-                .anchor("notebook-options", shell)
             }
             .padding(.top, 10)
             .padding(.horizontal, 8)
@@ -110,7 +112,7 @@ struct NotesPanel: View {
                             Text("Create one").foregroundStyle(p.accent.color)
                         }
                         .font(.web(phone ? 13 : 12.5))
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 6).padding(.top, phone ? 5 : 0)
                     } else if session.loading {
                         Text("Loading…").font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.horizontal, 6)
                     }
@@ -123,6 +125,7 @@ struct NotesPanel: View {
                 .padding(.bottom, 16)
             }
             .refreshable { await session.refresh() }
+            .noEdgeEffect()
         }
     }
 }

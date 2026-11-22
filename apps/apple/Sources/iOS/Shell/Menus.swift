@@ -20,10 +20,14 @@ struct MenuCard<Content: View>: View {
     var width: CGFloat
     var radius: CGFloat = 12
     var padding: CGFloat = 6
+    /// Taller than this, the content is cut off (a phone's popover can't scroll here).
+    var maxHeight: CGFloat? = nil
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content() }
+            .frame(height: maxHeight, alignment: .top)
+            .clipped()
             .padding(padding)
             .frame(width: width, alignment: .leading)
             .background(palette.bgElevated.color, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -39,6 +43,7 @@ struct MenuItem: View {
     let title: String
     var icon: String?
     var hint: String?
+    var tile: String?
     var note: String?
     var danger = false
     var disabled = false
@@ -52,14 +57,22 @@ struct MenuItem: View {
         let fg = danger ? p.danger : p.text
         Button(action: action) {
             HStack(alignment: note == nil ? .center : .top, spacing: 10) {
-                Group {
-                    if let icon { Icon(icon, 15, (danger ? p.danger : p.textMuted).color) } else { Color.clear }
+                if let tile {
+                    LetterTile(letter: tile,
+                               fill: AnyShapeStyle(LinearGradient(colors: [Color(uiColor: UIColor(hex: 0x6366F1)), Color(uiColor: UIColor(hex: 0x8B5CF6))],
+                                                                  startPoint: .topLeading, endPoint: .bottomTrailing)),
+                               size: 20, radius: 6, fontSize: 11)
+                } else {
+                    Group {
+                        if let icon { Icon(icon, 15, (danger ? p.danger : p.textMuted).color) } else { Color.clear }
+                    }
+                    .frame(width: 18, height: 18)
                 }
-                .frame(width: 18, height: 18)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.web(phone ? 15 : 14)).foregroundStyle(fg.color).lineLimit(1)
                     if let note {
-                        Text(note).font(.web(11.5)).foregroundStyle(p.textMuted.color).fixedSize(horizontal: false, vertical: true)
+                        Text(note).font(.web(phone ? 12 : 11.5)).foregroundStyle(p.textMuted.color).fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: 240, alignment: .leading)
                     }
                 }
                 Spacer(minLength: 0)
@@ -79,11 +92,12 @@ struct MenuItem: View {
 
 /// The menu label row (MY NOTEBOOKS, THEME …): 11.5/600 uppercase muted.
 struct MenuLabel: View {
+    @Environment(\.phoneLayout) private var phone
     let palette: Palette
     let text: String
     var body: some View {
         Text(text.uppercased()).font(.web(11.5, 600)).tracking(0.35).foregroundStyle(palette.textMuted.color)
-            .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 4)
+            .padding(.horizontal, 10).padding(.top, phone ? 10 : 6).padding(.bottom, phone ? 3 : 4)
     }
 }
 
@@ -109,7 +123,7 @@ struct ColorRow: View {
             ForEach(Self.colors, id: \.self) { c in
                 Button { pick(c) } label: {
                     Circle().fill(UIColor(css: c).color).frame(width: phone ? 32 : 20, height: phone ? 32 : 20)
-                        .overlay(Circle().stroke(palette.accent.color, lineWidth: 2).padding(-3).opacity(c.lowercased() == selected?.lowercased() ? 1 : 0))
+                        .overlay { if c.lowercased() == selected?.lowercased() { Icon("check", phone ? 16 : 12, .white) } }
                 }
                 .buttonStyle(.plain)
             }
@@ -271,6 +285,7 @@ struct MenuLayer: View {
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "Settings", icon: "settings") { shell.notYet("Settings") }
             MenuItem(palette: p, title: "Keyboard shortcuts", icon: "keyboard", hint: "?") { shell.notYet("The shortcuts list") }
+            MenuItem(palette: p, title: "Get the apps", icon: "download") { shell.notYet("The app downloads") }
             if session.isStaging {
                 MenuItem(palette: p, title: "Server: \(session.host)", icon: "globe", disabled: true) {}
             }
@@ -285,7 +300,7 @@ struct MenuLayer: View {
     private func workspaceMenu(_ p: Palette) -> some View {
         MenuCard(palette: p, width: phone ? 252 : 240) {
             ForEach(session.shownWorkspaces, id: \.id) { ws in
-                MenuItem(palette: p, title: ws.name, hint: ws.role.prefix(1).uppercased() + ws.role.dropFirst(),
+                MenuItem(palette: p, title: ws.name, hint: ws.role, tile: ws.name,
                          checked: ws.id == (session.shownWorkspace?.id)) {
                     shell.menu = nil
                     if !session.preview { session.selectWorkspace(ws.id) }
@@ -314,9 +329,9 @@ struct MenuLayer: View {
                     HStack(spacing: 10) {
                         LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
                         Text(nb.name).font(.web(phone ? 15 : 14)).foregroundStyle(p.text.color).lineLimit(1)
+                        if nb.id == current?.id { Icon("check", 14, p.accent.color).padding(.leading, 2) }
+                        if nb.visibility == "private" { Icon("lock", 13, p.textMuted.color).padding(.leading, 6) }
                         Spacer(minLength: 0)
-                        if nb.id == current?.id { Icon("check", 14, p.accent.color) }
-                        if nb.visibility == "private" && phone { Icon("lock", 13, p.textMuted.color) }
                     }
                     .padding(.horizontal, 10).frame(height: phone ? 44 : 32)
                 }
@@ -377,7 +392,7 @@ struct MenuLayer: View {
     private func pageOptions(_ p: Palette) -> some View {
         let tree = session.shownTree
         let index = tree.map(TreeIndex.init)
-        return MenuCard(palette: p, width: 300) {
+        return MenuCard(palette: p, width: 300, maxHeight: phone ? 492 : nil) {
             Group {
             MenuItem(palette: p, title: "Share…", icon: "user-plus") { shell.notYet("Sharing") }
             MenuSeparator(palette: p)
@@ -391,7 +406,7 @@ struct MenuLayer: View {
             Group {
             MenuItem(palette: p, title: "Export as Markdown", icon: "file-down") { shell.notYet("Export") }
             MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.notYet("Export") }
-            MenuItem(palette: p, title: "Print", icon: "printer", hint: "⌘P") { shell.notYet("Printing") }
+            MenuItem(palette: p, title: "Print", icon: "printer", hint: "Ctrl+P") { shell.notYet("Printing") }
             MenuItem(palette: p, title: "Print page colour") { shell.notYet("Printing") }
             MenuItem(palette: p, title: "Import Markdown…", icon: "file-up") { shell.notYet("Import") }
             MenuSeparator(palette: p)

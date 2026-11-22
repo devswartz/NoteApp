@@ -51,7 +51,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     var decor: [String: TaskDecor] = [:]
     var stacked = false
     /// Phones: the article's padding is 12 20, the title 28 pt.
-    static let phoneOriginY: CGFloat = 12 + 44 + 4 + 33.6 + 6 + 18.75 + 22 + 15
+    static let phoneOriginY: CGFloat = 12 + 44 + 4 + 33.6 + 6 + 18.75 + 22 + 6
     private var shownID: String?
     private var shownTasks: [String: TaskLine] = [:]
     private var shownTitles: [String: String] = [:]
@@ -293,7 +293,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         var frames: [(String, CGRect, Double)] = []
         var separators: [CGFloat] = []
         // Phones: one under the other, padding 12 0, a hairline between (text 20 pt in).
-        var y = Self.phoneOriginY - BoxTextView.pad.top
+        // The first of several boxes has 9 pt more above it than a lone box (a page's text).
+        var y = Self.phoneOriginY - BoxTextView.pad.top + (boxes.count > 1 ? 9 : 0)
         for box in boxes {
             guard let view = boxViews[box.id] else { continue }
             let w = width(of: box)
