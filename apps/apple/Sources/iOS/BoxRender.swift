@@ -12,7 +12,7 @@ struct BoxMarker {
         /// A checklist box (15×15, accent when checked), 8 pt before the text.
         case checkbox(Bool)
         /// A task line's fold arrow, in the 26 pt gutter left of its circle.
-        case fold
+        case fold(collapsed: Bool, taskId: String)
         /// A toggle's triangle (open or closed).
         case toggle(Bool)
     }
@@ -20,6 +20,14 @@ struct BoxMarker {
     let offset: Int
     let kind: Kind
     let x: CGFloat
+}
+
+/// A task line's title area: the line starts at `offset`; `x` and `width` are in the container.
+struct BoxTaskTitle {
+    let offset: Int
+    let id: String
+    let x: CGFloat
+    let width: CGFloat
 }
 
 /// A block drawn behind its lines (from the first line at `from` to the line ending before `to`).
@@ -31,7 +39,7 @@ struct BoxDecoration {
         /// The guide line left of a task's notes (dashed when the task is done).
         case guide(done: Bool)
         /// A table, drawn in the space above its (hidden) cell lines: rows of (text, header).
-        case table(rows: [[(String, Bool)]])
+        case table(rows: [[(String, Bool)]], heights: [CGFloat])
     }
 
     let kind: Kind
@@ -57,6 +65,8 @@ struct BoxRendering {
     let topMargin: CGFloat
     /// The last line's half-leading: added to the bottom inset.
     var bottomMargin: CGFloat = 0
+    /// Where each task line's title is drawn (the title field of a task being edited goes there).
+    var taskTitles: [BoxTaskTitle] = []
 
     static let empty = BoxRendering(string: NSAttributedString(), markers: [], decorations: [], length: 0, topMargin: 0)
 }
@@ -75,6 +85,14 @@ struct BoxTextRenderer {
     var width: CGFloat = 600
     var palette: Palette = .light
     var decor: [String: TaskDecor] = [:]
+
+    /// Tasks whose notes are folded away (the arrow left of the task; kept on this device, as the web does).
+    static var collapsedTasks: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "collapsedTasks") ?? [])
+
+    static func toggleCollapsed(_ id: String) {
+        if collapsedTasks.contains(id) { collapsedTasks.remove(id) } else { collapsedTasks.insert(id) }
+        UserDefaults.standard.set(Array(collapsedTasks), forKey: "collapsedTasks")
+    }
 
     static let object = "\u{FFFC}"
     /// Mention ids that are the signed-in person (drawn yellow, as "yourself").
@@ -101,6 +119,7 @@ struct BoxTextRenderer {
         let string = NSMutableAttributedString()
         var markers: [BoxMarker] = []
         var decorations: [BoxDecoration] = []
+        var taskTitles: [BoxTaskTitle] = []
         var lastStyle: NSParagraphStyle?
         var lastLineEmpty = true
         var lines = 0
@@ -139,7 +158,7 @@ struct BoxTextRenderer {
             out.string.append(NSAttributedString(string: "\u{200B}", attributes: attrs))
         }
         return BoxRendering(string: out.string, markers: out.markers, decorations: out.decorations, length: length, topMargin: out.topMargin,
-                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf)
+                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf, taskTitles: out.taskTitles)
     }
 
     // MARK: Blocks (the same walk as nv-editor's `ViewText::blocks`)
@@ -281,19 +300,42 @@ struct BoxTextRenderer {
             // TextKit 2 can't set paragraphs side by side: the table is drawn in the space above
             // its cell lines, which are kept (for the view text's offsets) but hidden.
             let rows = c.content.map { row in row.content.map { cell in (plainText(cell), cell.type == "tableHeader") } }
-            let height = CGFloat(rows.count) * 40.2 + 1
+            // Cells wrap inside their column: a row is 40.2 for one line, 27.2 more for each further line.
+            let cols = max(rows.map(\.count).max() ?? 1, 1)
+            let colW = max(width - ctx.left - ctx.right, 20) / CGFloat(cols)
+            let heights: [CGFloat] = rows.map { row in
+                var lines = 1
+                for cell in row {
+                    let a = Self.cellText(cell.0, header: cell.1, color: palette.text)
+                    let h = a.boundingRect(with: CGSize(width: max(colW - 20, 10), height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil).height
+                    lines = max(lines, Int(((h + Self.cellLeading) / 27.2).rounded()))
+                }
+                return 40.2 + CGFloat(lines - 1) * 27.2
+            }
+            let height = heights.reduce(0, +) + 1
             out.flush(pad: height)
             var cx = inner
             cx.hidden = true
             let from = out.string.length + (out.lines > 0 ? 1 : 0)
             blocks(c, cx, out)
-            var d = BoxDecoration(kind: .table(rows: rows), from: from, to: out.string.length, left: ctx.left, right: ctx.right)
+            var d = BoxDecoration(kind: .table(rows: rows, heights: heights), from: from, to: out.string.length, left: ctx.left, right: ctx.right)
             d.topPad = height
             out.decorations.append(d)
         default:
             // table, rows, unknown nodes: their blocks, one line each.
             blocks(c, inner, out)
         }
+    }
+
+    /// The extra leading that makes wrapped cell lines 27.2 apart (16 pt text, line-height 1.7).
+    static var cellLeading: CGFloat { 27.2 - WebType.ui(16, 400).lineHeight }
+
+    /// A table cell's text (wraps inside its column).
+    static func cellText(_ text: String, header: Bool, color: UIColor) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byWordWrapping
+        style.lineSpacing = cellLeading
+        return NSAttributedString(string: text, attributes: [.font: WebType.ui(16, header ? 600 : 400), .foregroundColor: color, .paragraphStyle: style])
     }
 
     private func plainText(_ n: BoxNode) -> String {
@@ -335,25 +377,33 @@ struct BoxTextRenderer {
         let id = c.string("taskId") ?? ""
         let avail = max(width - ctx.left - ctx.right, 60)
         let image: UIImage
+        var titleWidth: CGFloat?
         var done = false
         switch tasks[id] {
         case let .shown(title, isDone, due)?:
             done = isDone
-            image = taskRow(title: title, done: isDone, due: due, decor: decor[id], width: avail)
+            let row = taskRow(title: title, done: isDone, due: due, decor: decor[id], width: avail)
+            image = row.image
+            titleWidth = row.titleWidth
         default:
             image = missingTask(width: avail)
         }
         var lineCtx = ctx
-        if !c.content.isEmpty && tasks[id] != nil { lineCtx.marker = .fold }
+        let folded = Self.collapsedTasks.contains(id)
+        if !c.content.isEmpty && tasks[id] != nil && tasks[id] != .hidden { lineCtx.marker = .fold(collapsed: folded, taskId: id) }
         line(attachment(image, height: image.size.height), lineCtx, out, lineHeight: image.size.height, raise: false)
+        if let titleWidth, !ctx.hidden { out.taskTitles.append(BoxTaskTitle(offset: out.string.length - 1, id: id, x: ctx.left + 26, width: titleWidth)) }
         guard !c.content.isEmpty else { return }
         var notes = ctx
         notes.marker = nil
         notes.left += 38
-        if tasks[id] == nil || tasks[id] == .hidden { notes.hidden = true }
+        if tasks[id] == nil || tasks[id] == .hidden || folded { notes.hidden = true }
         let from = out.string.length + 1
         blocks(c, notes, out)
-        out.decorations.append(BoxDecoration(kind: .guide(done: done), from: from, to: out.string.length, left: ctx.left + 26, right: ctx.right))
+        // Hidden notes (missing task, folded) draw no guide line (it showed as a dot in the gutter).
+        if !notes.hidden {
+            out.decorations.append(BoxDecoration(kind: .guide(done: done), from: from, to: out.string.length, left: ctx.left + 26, right: ctx.right))
+        }
     }
 
     private func textblock(_ c: BoxNode, _ ctx: Context, _ out: Output) {
@@ -487,7 +537,7 @@ struct BoxTextRenderer {
 
     // MARK: Task rows (TaskRef.tsx, LOOK.md 2.4)
 
-    private func taskRow(title: String, done: Bool, due: String?, decor d: TaskDecor?, width: CGFloat) -> UIImage {
+    private func taskRow(title: String, done: Bool, due: String?, decor d: TaskDecor?, width: CGFloat) -> (image: UIImage, titleWidth: CGFloat) {
         let p = palette
         let rowHeight: CGFloat = 34
         let chipFont = WebType.ui(11.5, 500)
@@ -559,7 +609,7 @@ struct BoxTextRenderer {
         for item in items { metaWidth += item.width }
         let titleX: CGFloat = 26
         let titleWidth: CGFloat = width - 14 - metaWidth - titleX
-        return Self.image(CGSize(width: width, height: rowHeight)) { _ in
+        let image = Self.image(CGSize(width: width, height: rowHeight)) { _ in
             // The circle: 18, 1.6 ring; done: filled with a white check.
             let ring = priorityColor(priority, p)
             let circle = CGRect(x: 0.8, y: 8.8, width: 16.4, height: 16.4)
@@ -592,6 +642,7 @@ struct BoxTextRenderer {
                 x -= 4
             }
         }
+        return (image, titleWidth)
     }
 
     private func missingTask(width: CGFloat) -> UIImage {

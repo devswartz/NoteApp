@@ -84,7 +84,7 @@ final class Shell {
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
             case "empty-no-page": route = .notes
             case "empty-section": route = .section("empty-section")
-            case "edit-caret", "edit-selection", "ribbon-page-active": route = .page(LookData.pageId("sandbox"))
+            case "edit-caret", "edit-selection", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))
             default:
                 if state.hasPrefix("page-") {
                     route = .page(LookData.pageId(String(state.dropFirst("page-".count))))

@@ -35,7 +35,8 @@ final class SessionModel {
     private(set) var loadError: String?
     private(set) var loading = false
 
-    @ObservationIgnored private var core: Core
+    @ObservationIgnored fileprivate var core: Core
+    @ObservationIgnored fileprivate var taskRefreshWork: DispatchWorkItem?
     @ObservationIgnored private var savedToken: String?
     @ObservationIgnored private let queue = DispatchQueue(label: "com.devswartz.notivelo.core", qos: .userInitiated)
 
@@ -292,6 +293,8 @@ final class SessionModel {
         }
     }
 
+    fileprivate func setTasksFromStore(_ list: [CoreTask]) { tasks = list }
+
     func refreshTasks() {
         guard let ws = workspaceId else { return }
         call({ try $0.tasks(workspaceId: ws) }) { result in
@@ -315,5 +318,67 @@ final class SessionModel {
                 if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
             }
         }
+    }
+}
+
+// MARK: Tasks written on pages, and the menus' data
+
+extension SessionModel {
+    /// The core's task store for a page (`Core.pageTasks`): a task line made in the editor is made on
+    /// the server (with the id the engine chose), renamed and deleted there too. Nil without a server.
+    func coreTasks(pageId: String) -> TaskCallbacks? {
+        guard !preview, let ws = workspaceId else { return nil }
+        return core.pageTasks(workspaceId: ws, pageId: pageId)
+    }
+
+    /// Pages the `[[` menu offers: newest first, with "Notebook › Section" for each.
+    func pageChoices(excluding pageId: String) -> [PageChoice] {
+        guard let tree else { return [] }
+        let notebooks = Dictionary(uniqueKeysWithValues: tree.notebooks.map { ($0.id, $0.name) })
+        let sections = Dictionary(uniqueKeysWithValues: tree.sections.map { ($0.id, $0) })
+        func crumb(_ sectionId: String) -> String {
+            var names: [String] = []
+            var current = sections[sectionId]
+            var guardCount = 0
+            while let s = current, guardCount < 12 {
+                names.insert(s.name, at: 0)
+                if let parent = s.parentId { current = sections[parent] } else {
+                    if let n = notebooks[s.notebookId] { names.insert(n, at: 0) }
+                    current = nil
+                }
+                guardCount += 1
+            }
+            return names.joined(separator: " › ")
+        }
+        return tree.pages.filter { $0.id != pageId }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map { PageChoice(id: $0.id, title: $0.title, crumb: crumb($0.sectionId)) }
+    }
+
+    /// People the `@` menu offers. The core has no list of the workspace's members yet (requested),
+    /// so for now only the signed-in person.
+    var people: [PageMember] {
+        guard let user else { return [] }
+        return [PageMember(id: user.id, name: user.name, email: user.email, color: user.color)]
+    }
+
+    /// The task list again, soon: from the device's store first (the core writes a task there when it
+    /// makes it), then from the server.
+    func scheduleTaskRefresh() {
+        guard !preview, let ws = workspaceId else { return }
+        taskRefreshWork?.cancel()
+        let core = self.core
+        let work = DispatchWorkItem { [weak self] in
+            DispatchQueue.global(qos: .utility).async {
+                let cached = core.cachedTasks(workspaceId: ws)
+                DispatchQueue.main.async {
+                    guard let self, ws == self.workspaceId, core === self.core else { return }
+                    if let cached { self.setTasksFromStore(cached) }
+                    self.refreshTasks()
+                }
+            }
+        }
+        taskRefreshWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 }
