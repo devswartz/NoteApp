@@ -63,7 +63,7 @@ struct NotesPanel: View {
                             Text(notebook.name).font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color).lineLimit(1).truncationMode(.tail)
                             if notebook.visibility == "private" { Icon("lock", 12, p.textMuted.color) }
                         } else {
-                            if phone { Icon("book-plus", 17, p.text2.color) }
+                            Icon("book-plus", phone ? 17 : 15, p.text2.color)
                             Text("Notebooks").font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color)
                         }
                         Spacer(minLength: 0)

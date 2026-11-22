@@ -97,7 +97,7 @@ final class Shell {
             case "tasks-upcoming": route = .tasks(.upcoming)
             case "tasks-my": route = .tasks(.my)
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
-            case "empty-no-page", "notes-home": route = .notes
+            case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
