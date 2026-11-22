@@ -1,6 +1,7 @@
 name: Apple native
 # The native iPad/iPhone and Mac apps of the rewrite (apps/apple, XcodeGen). Builds both on every push to a rewrite branch
-# that touches them. Uploads the iPad/iPhone build to TestFlight as 1.99.x (prototype builds, docs/rewrite/PLAN.md) when:
+# that touches them: the core, the iPad/iPhone simulator build and the Mac build (the gate, about 6 min). The look side-by-sides,
+# the scroll test and the typing shots run only on rewrite/native and for commits with [checks]. Uploads the iPad/iPhone build to TestFlight as 1.99.x (prototype builds, docs/rewrite/PLAN.md) when:
 #   - a pushed commit message contains [testflight], or
 #   - it is run by hand with "testflight" ticked (manual runs need this file on the default branch).
 # Never submits anything to App Review. Signing works like mobile.yml: cloud-managed signing with the App Store Connect key.
@@ -39,6 +40,7 @@ jobs:
     env:
       HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
       UPLOAD: ${{ (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]')) }}
+      CHECKS: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/rewrite/native' || contains(github.event.head_commit.message, '[checks]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -86,53 +88,6 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/dd-ios" CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/ios-build.log" 2>&1             || { grep -E "error:" "$RUNNER_TEMP/ios-build.log" | sort -u | head -n 120; tail -n 30 "$RUNNER_TEMP/ios-build.log"; exit 1; }
           grep -E "warning:.*Sources/iOS" "$RUNNER_TEMP/ios-build.log" | sort -u | head -n 40 || true
           tail -n 5 "$RUNNER_TEMP/ios-build.log"
-
-      # The look step (docs/rewrite/LOOK.md): the native app in the states of docs/rewrite/look/reference/ at the same
-      # viewports (iPad 820×1180 pt portrait and landscape, iPhone 390×844 pt), and side-by-side pictures (reference | native).
-      # Artifacts "look-side-by-side" and "look-native". Corpus mode only: no network, no credentials.
-      - name: Look (native screenshots, side-by-sides)
-        continue-on-error: true
-        timeout-minutes: 32
-        run: bash apps/apple/scripts/look-shots.sh "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app" "$RUNNER_TEMP/look"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: look-side-by-side
-          path: ${{ runner.temp }}/look/side-by-side/
-          if-no-files-found: ignore
-          retention-days: 14
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: look-native
-          path: ${{ runner.temp }}/look/native/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      # Typing evidence: -demoEdit focuses the first box and types through the same UITextInput calls as the keyboard
-      # (a "- " list rule, Return, and an open IME composition), on a corpus page edited locally (nothing is sent).
-      - name: iPad typing screenshots
-        continue-on-error: true
-        run: |
-          UDID="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPad Pro"))][0].udid')"
-          [ -n "$UDID" ] && [ "$UDID" != null ] || { echo "::warning::no iPad simulator"; exit 0; }
-          xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b > /dev/null
-          xcrun simctl ui "$UDID" appearance light
-          xcrun simctl install "$UDID" "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app"
-          mkdir -p "$RUNNER_TEMP/shots"
-          for page in canvas-boxes tasks; do
-            xcrun simctl launch "$UDID" com.devswartz.notivelo -previewSignedIn YES -page "$page" -demoEdit YES > /dev/null && sleep 8
-            xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/edit-$page.png"
-            xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
-          done
-          xcrun simctl shutdown "$UDID" || true
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ipad-screenshots
-          path: ${{ runner.temp }}/shots/
-          if-no-files-found: ignore
-          retention-days: 14
 
       - name: Mac build
         working-directory: apps/apple
@@ -220,3 +175,61 @@ jobs:
       - name: TestFlight skipped
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
         run: echo "::notice::App Store Connect secrets are not set; skipped the TestFlight upload."
+
+      # Checks (about 25 min), only on pushes to rewrite/native, commits with [checks], or by hand: the look side-by-sides,
+      # the scroll XCUITest and the typing screenshots. Every push gets the build gate above (core, iPad/iPhone, Mac).
+      # The look step (docs/rewrite/LOOK.md): the native app in the states of docs/rewrite/look/reference/ at the same
+      # viewports (iPad 820×1180 pt portrait and landscape, iPhone 390×844 pt), and side-by-side pictures (reference | native).
+      # Artifacts "look-side-by-side" and "look-native". Corpus mode only: no network, no credentials.
+      - name: Look (native screenshots, side-by-sides)
+        if: env.CHECKS == 'true'
+        continue-on-error: true
+        timeout-minutes: 32
+        run: bash apps/apple/scripts/look-shots.sh "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app" "$RUNNER_TEMP/look"
+      - uses: actions/upload-artifact@v4
+        if: always() && env.CHECKS == 'true'
+        with:
+          name: look-side-by-side
+          path: ${{ runner.temp }}/look/side-by-side/
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && env.CHECKS == 'true'
+        with:
+          name: look-native
+          path: ${{ runner.temp }}/look/native/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # A finger scrolls a long page, on an iPhone and an iPad simulator (XCUITest swipes for real, so a pan swallowed by a
+      # view or gesture recognizer fails). This step fails the job (after any TestFlight upload, which comes first).
+      - name: Scroll test (iPhone, iPad)
+        if: env.CHECKS == 'true'
+        timeout-minutes: 25
+        run: bash apps/apple/scripts/scroll-test.sh "$RUNNER_TEMP/dd-uitest"
+
+      # Typing evidence: -demoEdit focuses the first box and types through the same UITextInput calls as the keyboard
+      # (a "- " list rule, Return, and an open IME composition), on a corpus page edited locally (nothing is sent).
+      - name: iPad typing screenshots
+        if: env.CHECKS == 'true'
+        continue-on-error: true
+        run: |
+          UDID="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPad Pro"))][0].udid')"
+          [ -n "$UDID" ] && [ "$UDID" != null ] || { echo "::warning::no iPad simulator"; exit 0; }
+          xcrun simctl boot "$UDID" && xcrun simctl bootstatus "$UDID" -b > /dev/null
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl install "$UDID" "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app"
+          mkdir -p "$RUNNER_TEMP/shots"
+          for page in canvas-boxes tasks; do
+            xcrun simctl launch "$UDID" com.devswartz.notivelo -previewSignedIn YES -page "$page" -demoEdit YES > /dev/null && sleep 8
+            xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/shots/edit-$page.png"
+            xcrun simctl terminate "$UDID" com.devswartz.notivelo || true
+          done
+          xcrun simctl shutdown "$UDID" || true
+      - uses: actions/upload-artifact@v4
+        if: always() && env.CHECKS == 'true'
+        with:
+          name: ipad-screenshots
+          path: ${{ runner.temp }}/shots/
+          if-no-files-found: ignore
+          retention-days: 14

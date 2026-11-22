@@ -16,7 +16,55 @@ struct CorpusPage: PageSource {
         return names.filter { !$0.hasPrefix(".") }.sorted()
     }
 
+    /// Look-only pages built in code (the corpus has no case for them): one box with only a task line (open,
+    /// done, or one the person can't see), and one empty box. Read-only (no page document).
+    private static func synthetic(_ name: String) throws -> CorpusPage? {
+        let tasks: [String: TaskLine]
+        let nodes: [ContentNode]
+        func node(_ kind: NodeKind, _ attrs: [Attr] = []) -> ContentNode {
+            ContentNode(kind: kind, attrs: attrs, runs: [], children: [], markers: [])
+        }
+        let ref = node(.taskRef, [Attr(name: "taskId", value: .text(value: "t-only"))])
+        switch name {
+        case "box-task-open":
+            tasks = ["t-only": .shown(title: "Add ChatGPT app connection", done: false, due: nil)]
+            nodes = [ref]
+        case "box-task-done":
+            tasks = ["t-only": .shown(title: "Add ChatGPT app connection", done: true, due: nil)]
+            nodes = [ref]
+        case "box-task-hidden":
+            tasks = ["t-only": .hidden]
+            nodes = [ref]
+        case "box-empty":
+            tasks = [:]
+            nodes = [node(.paragraph)]
+        case "long":
+            // Thirty short boxes down the page (taller than any screen): the scroll test (CI) swipes it.
+            tasks = [:]
+            nodes = []
+        default:
+            return nil
+        }
+        guard let dir = Bundle.main.url(forResource: bundleFolder, withExtension: nil)?.appendingPathComponent("empty") else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        var info = try readPage(update: Data(contentsOf: dir.appendingPathComponent("page.bin")))
+        info.kind = .canvas
+        if name == "long" {
+            info.boxes = (0..<30).map { PageBox(id: "b\($0)", x: 20, y: 20 + Double($0) * 110, w: 400, z: Double($0), wide: false) }
+            info.content = (0..<30).map { i in
+                let text = ContentNode(kind: .text, attrs: [], runs: [TextRun(text: "Box \(i + 1): a few words so the page is long enough to scroll.", marks: [])], children: [], markers: [])
+                return BoxContent(boxId: "b\(i)", nodes: [ContentNode(kind: .paragraph, attrs: [], runs: [], children: [text], markers: [])])
+            }
+        } else {
+            info.boxes = [PageBox(id: "only", x: 20, y: 20, w: 400, z: 1, wide: false)]
+            info.content = [BoxContent(boxId: "only", nodes: nodes)]
+        }
+        return CorpusPage(snapshot: PageSnapshot(id: "corpus:\(name)", title: "Notivelo", info: info, tasks: tasks, pageTitles: [:], document: nil))
+    }
+
     static func load(_ name: String) throws -> CorpusPage {
+        if let page = try synthetic(name) { return page }
         guard let dir = Bundle.main.url(forResource: bundleFolder, withExtension: nil)?.appendingPathComponent(name) else {
             throw CocoaError(.fileNoSuchFile)
         }

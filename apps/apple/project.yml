@@ -80,6 +80,20 @@ targets:
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
 
+  # UI tests (iPhone and iPad simulators): a finger scrolls a long page. Run by scripts/scroll-test.sh in CI.
+  NotiveloUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Notivelo
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.devswartz.notivelo.uitests
+        TARGETED_DEVICE_FAMILY: "1,2"
+
   NotiveloMac:
     type: application
     platform: macOS
@@ -117,6 +131,10 @@ schemes:
     build:
       targets:
         Notivelo: all
+    test:
+      config: Debug
+      targets:
+        - NotiveloUITests
     archive:
       config: Release
   NotiveloMac:
