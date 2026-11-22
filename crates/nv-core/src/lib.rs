@@ -13,10 +13,12 @@ use std::collections::HashMap;
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::{DocKind, Page, TaskLine};
 
+mod boxes;
 mod client;
 mod content;
 mod editor_session;
 mod tasks;
+pub use boxes::*;
 pub use client::*;
 pub use content::*;
 pub use editor_session::*;
