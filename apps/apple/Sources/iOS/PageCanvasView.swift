@@ -431,7 +431,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     /// Show the toolbar over the selected text of the box being edited, or hide it.
     private func updateToolbar() {
-        guard let box = editing, box.isFirstResponder, drag == nil, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
+        guard let box = editing, drag == nil, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
             hideToolbar()
             return
         }
@@ -616,7 +616,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                     box.insertText("/")
                 }
                 if state == "edit-selection" {
-                    box.selectedTextRange = box.textRange(from: box.beginningOfDocument, to: box.endOfDocument)
+                    // The last line ("Box c"), as the web reference selects.
+                    let shown = box.shownText as NSString
+                    let nl = shown.range(of: "\n", options: .backwards).location
+                    let start = nl == NSNotFound ? 0 : nl + 1
+                    if let a = box.position(from: box.beginningOfDocument, offset: start) {
+                        box.selectedTextRange = box.textRange(from: a, to: box.endOfDocument)
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.updateToolbar() }
                 }
             }

@@ -1002,7 +1002,7 @@ final class BoxTextView: UIView, UITextInput {
     var selectionBounds: CGRect? {
         guard editor != nil, marked == nil, sel.hi > sel.lo else { return nil }
         let rects = selectionRects(for: BoxTextRange(sel.lo, sel.hi)).map(\.rect)
-        guard let first = rects.first else { return nil }
+        guard let first = rects.first else { return firstRect(for: BoxTextRange(sel.lo, sel.hi)) }
         return rects.reduce(first) { $0.union($1) }
     }
 
