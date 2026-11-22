@@ -319,7 +319,7 @@ struct TaskSheet: View {
                 if ownTags.isEmpty {
                     Text("No tags").foregroundStyle(p.textMuted.color)
                 } else {
-                    FlowLayout(spacing: 4) {
+                    FlowLayout(spacing: 4, lineSpacing: 4) {
                         ForEach(ownTags, id: \.id) { t in
                             Text(t.name).font(.web(12, 500)).lineLimit(1)
                                 .foregroundStyle(UIColor.mix(UIColor(css: t.color), 0.7, p.text).color)
