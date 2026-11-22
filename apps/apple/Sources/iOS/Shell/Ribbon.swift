@@ -1,0 +1,320 @@
+import NotiveloCore
+import Observation
+import SwiftUI
+
+/// The box being edited, for the ribbon (the web's "active editor").
+@Observable
+final class EditorFocus {
+    static let shared = EditorFocus()
+    @ObservationIgnored private(set) weak var box: BoxTextView?
+    private(set) var active = false
+    private(set) var canUndo = false
+    private(set) var canRedo = false
+
+    func set(_ box: BoxTextView?) {
+        self.box = box
+        active = box != nil
+        refresh()
+    }
+
+    func refresh() {
+        let session = box?.editor?.session
+        canUndo = session?.canUndo() ?? false
+        canRedo = session?.canRedo() ?? false
+    }
+
+    /// An engine command for the focused box (`EditorSession.command`, EDITOR.md 4).
+    func run(_ name: String, _ args: [String: Any] = [:]) {
+        guard let box else { return }
+        let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        box.command(name, json)
+        refresh()
+    }
+
+    func undo() {
+        box?.engineUndo()
+        refresh()
+    }
+
+    func redo() {
+        box?.engineRedo()
+        refresh()
+    }
+}
+
+/// Ribbon sizes by window width (src/styles/toolbar.css): ≤ 1023 the smallest buttons; ≤ 1279
+/// compact (no group names, no words). Wider windows get the compact ribbon too for now.
+struct RibbonMetrics {
+    let small: Bool
+    init(width: CGFloat) { small = width <= 1023 }
+    var height: CGFloat { small ? 30 : 36 }
+    var minWidth: CGFloat { small ? 25 : 36 }
+    var pad: CGFloat { small ? 3 : 8 }
+    var icon: CGFloat { small ? 16 : 18 }
+    var block: CGFloat { small ? 84 : 124 }
+    var gap: CGFloat { small ? 0 : 2 }
+    var sepMargin: CGFloat { small ? 2 : 4 }
+    var padLeft: CGFloat { small ? 6 : 12 }
+    var padRight: CGFloat { small ? 4 : 10 }
+}
+
+/// One ribbon button (`.bm-btn.rb-btn`): icon, optional caret, optional colour bar; pressed =
+/// accent on accent-soft; disabled = 0.4.
+struct RibbonButton: View {
+    let icon: String
+    let m: RibbonMetrics
+    var enabled = true
+    var pressed = false
+    var caret = false
+    var bar: Color?
+    var anchor: String?
+    let action: () -> Void
+    @Environment(Shell.self) private var shell
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        let color = pressed ? p.accent.color : p.text2.color
+        let button = Button(action: action) {
+            HStack(spacing: 4) {
+                ZStack(alignment: .bottom) {
+                    Icon(icon, m.icon, color)
+                    if let bar {
+                        RoundedRectangle(cornerRadius: 2).fill(bar).frame(width: m.icon - 2, height: 3).offset(y: 3)
+                    }
+                }
+                if caret { Icon("chevron-down", 12, color).opacity(0.7).padding(.leading, -2) }
+            }
+            .padding(.horizontal, m.pad)
+            .frame(minWidth: m.minWidth)
+            .frame(height: m.height)
+            .background(pressed ? p.accentSoft.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        if let anchor {
+            button.anchor(anchor, shell)
+        } else {
+            button
+        }
+    }
+}
+
+struct RibbonSeparator: View {
+    let m: RibbonMetrics
+    let theme = Theme.shared
+
+    var body: some View {
+        Rectangle().fill(theme.chrome.border.color).frame(width: 1, height: 22).padding(.horizontal, m.sepMargin)
+    }
+}
+
+/// The ribbon for the current route (LOOK.md 4.1): the note ribbon on pages, the Tasks ribbon on
+/// task views, the Notes ribbon on the overview.
+struct Ribbon: View {
+    let width: CGFloat
+    @Environment(Shell.self) private var shell
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        let m = RibbonMetrics(width: width)
+        HStack(spacing: m.gap) {
+            switch shell.route {
+            case .page: NoteRibbon(m: m)
+            case let .tasks(list): TasksRibbon(m: m, list: list)
+            case .notes, .section: NotesRibbon(m: m)
+            }
+            Spacer(minLength: 0)
+            if case .page = shell.route { HistoryGroup(m: m) }
+            Button { shell.ribbonCollapsed = true } label: {
+                Icon("chevron-up", 16, p.text2.color).padding(.horizontal, 5).frame(minWidth: 28).frame(height: 28)
+            }
+            .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+            .padding(.leading, 4)
+        }
+        .padding(.leading, m.padLeft)
+        .padding(.trailing, m.padRight)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
+        .background(p.bgSidebar.color)
+        .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+        .padding(.bottom, 1)
+    }
+}
+
+/// The collapsed ribbon: a 30 pt strip with the group names and "Show ribbon".
+struct CollapsedRibbon: View {
+    @Environment(Shell.self) private var shell
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        let names: String = {
+            switch shell.route {
+            case .page: return "Text · Lists · Insert · Page · View · History"
+            case .tasks: return "New · Show · Organise · Filter · Views · Print"
+            default: return "New · Import"
+            }
+        }()
+        HStack {
+            Text(names).font(.web(11.5)).foregroundStyle(p.textMuted.color).lineLimit(1)
+            Spacer(minLength: 8)
+            Button { shell.ribbonCollapsed = false } label: {
+                HStack(spacing: 4) {
+                    Text("Show ribbon").font(.web(12.5, 500))
+                    Icon("chevron-down", 14, p.text2.color)
+                }
+                .foregroundStyle(p.text2.color)
+                .padding(.horizontal, 8).frame(height: 26)
+            }
+            .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+        }
+        .padding(.leading, 16).padding(.trailing, 10)
+        .frame(height: 30)
+        .frame(maxWidth: .infinity)
+        .background(p.bgSidebar.color)
+        .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+        .padding(.bottom, 1)
+        .contentShape(Rectangle())
+        .onTapGesture { shell.ribbonCollapsed = false }
+    }
+}
+
+/// Text · Lists · Insert · Page · View (the note ribbon). Editing controls are enabled while a
+/// box is being edited; the ones the engine has commands for run them, the rest say "not yet".
+struct NoteRibbon: View {
+    let m: RibbonMetrics
+    @Environment(Shell.self) private var shell
+    let focus = EditorFocus.shared
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        let on = focus.active
+        Group {
+        Button { shell.menu = .blockType } label: {
+            HStack(spacing: 4) {
+                Text("Normal").font(.web(13, 500)).foregroundStyle(p.text.color).lineLimit(1)
+                Spacer(minLength: 0)
+                Icon("chevron-down", 14, p.text.color)
+            }
+            .padding(.leading, m.small ? 6 : 10).padding(.trailing, m.small ? 4 : 6)
+            .frame(width: m.block, height: m.height)
+            .background(p.bg.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(p.border.color, lineWidth: 1))
+        }
+        .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+        .disabled(!on).opacity(on ? 1 : 0.4)
+        .anchor("rb-block", shell)
+        RibbonButton(icon: "letter-b", m: m, enabled: on) { focus.run("toggleMark", ["mark": "bold"]) }
+        RibbonButton(icon: "italic", m: m, enabled: on) { focus.run("toggleMark", ["mark": "italic"]) }
+        RibbonButton(icon: "underline", m: m, enabled: on) { focus.run("toggleMark", ["mark": "underline"]) }
+        RibbonButton(icon: "strikethrough", m: m, enabled: on) { focus.run("toggleMark", ["mark": "strike"]) }
+        RibbonButton(icon: "baseline", m: m, enabled: on, anchor: "rb-text-colour") { shell.menu = .textColor }
+        RibbonButton(icon: "highlighter", m: m, enabled: on, anchor: "rb-highlight") { shell.menu = .highlight }
+        RibbonButton(icon: "remove-formatting", m: m, enabled: on) { shell.notYet("Clear formatting") }
+        RibbonSeparator(m: m)
+        }
+        Group {
+        RibbonButton(icon: "list", m: m, enabled: on) { focus.run("toggleBulletList") }
+        RibbonButton(icon: "list-ordered", m: m, enabled: on) { focus.run("toggleOrderedList") }
+        RibbonButton(icon: "list-indent-decrease", m: m, enabled: on) { focus.run("outdent") }
+        RibbonButton(icon: "list-indent-increase", m: m, enabled: on) { focus.run("indent") }
+        HStack(spacing: 0) {
+            Button { shell.notYet("Making tasks on the iPad") } label: {
+                Icon("circle-check", m.icon, p.text2.color).padding(.leading, m.pad).padding(.trailing, 4).frame(height: m.height)
+            }
+            .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+            Button { shell.menu = .taskSplit } label: {
+                Icon("chevron-down", 14, p.text2.color).padding(.horizontal, 2).frame(minWidth: 18).frame(height: m.height)
+            }
+            .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+            .anchor("rb-task", shell)
+        }
+        .disabled(!on).opacity(on ? 1 : 0.4)
+        RibbonSeparator(m: m)
+        }
+        Group {
+        RibbonButton(icon: "table", m: m, enabled: on) { focus.run("insertTable", ["rows": 3, "cols": 3, "header": true]) }
+        RibbonButton(icon: "image-plus", m: m, enabled: on) { shell.notYet("Images") }
+        RibbonButton(icon: "paperclip", m: m, enabled: on) { shell.notYet("File attachments") }
+        RibbonButton(icon: "link-2", m: m, enabled: on) { shell.notYet("Links") }
+        RibbonButton(icon: "file-symlink", m: m, enabled: on) { shell.notYet("Links to pages") }
+        RibbonButton(icon: "minus", m: m, enabled: on) { shell.notYet("Dividers from the ribbon") }
+        RibbonSeparator(m: m)
+        }
+        Group {
+        RibbonButton(icon: "paint-bucket", m: m, bar: Color.clear, anchor: "rb-page-colour") { shell.menu = .pageColor }
+        RibbonButton(icon: "rows-3", m: m, anchor: "rb-rule-lines") { shell.menu = .ruleLines }
+        RibbonButton(icon: "printer", m: m) { shell.notYet("Printing") }
+        RibbonSeparator(m: m)
+        RibbonButton(icon: "list-tree", m: m, pressed: true) { shell.notYet("Hiding the outline") }
+        }
+    }
+}
+
+struct HistoryGroup: View {
+    let m: RibbonMetrics
+    let focus = EditorFocus.shared
+
+    var body: some View {
+        RibbonButton(icon: "undo-2", m: m, enabled: focus.active && focus.canUndo) { focus.undo() }
+        RibbonButton(icon: "redo-2", m: m, enabled: focus.active && focus.canRedo) { focus.redo() }
+    }
+}
+
+/// The Tasks ribbon (SectionRibbons.tsx): New | Show | Organise | Filter | Views | Print.
+struct TasksRibbon: View {
+    let m: RibbonMetrics
+    let list: Shell.TaskList
+    @Environment(Shell.self) private var shell
+
+    var body: some View {
+        let fixed = list == .today
+        Group {
+        RibbonButton(icon: "plus", m: m) { shell.notYet("Adding tasks") }
+        RibbonSeparator(m: m)
+        RibbonButton(icon: "sun", m: m, pressed: list == .today) { shell.route = .tasks(.today) }
+        RibbonButton(icon: "calendar-range", m: m, pressed: list == .upcoming) { shell.route = .tasks(.upcoming) }
+        RibbonButton(icon: "inbox", m: m, pressed: list == .my) { shell.route = .tasks(.my) }
+        RibbonButton(icon: "list-checks", m: m, pressed: list == .all) { shell.route = .tasks(.all) }
+        RibbonSeparator(m: m)
+        RibbonButton(icon: "layers", m: m, enabled: !fixed, caret: true) { shell.notYet("Grouping") }
+        RibbonButton(icon: "arrow-up-down", m: m, enabled: !fixed, caret: true) { shell.notYet("Sorting") }
+        RibbonSeparator(m: m)
+        }
+        Group {
+        RibbonButton(icon: "eye", m: m, caret: true) { shell.notYet("Filters") }
+        RibbonButton(icon: "user", m: m, enabled: !fixed && list != .my, caret: true) { shell.notYet("Filters") }
+        RibbonButton(icon: "tag", m: m, caret: true) { shell.notYet("Filters") }
+        RibbonButton(icon: "users-round", m: m, caret: true) { shell.notYet("Filters") }
+        RibbonButton(icon: "flag", m: m, caret: true) { shell.notYet("Filters") }
+        RibbonButton(icon: "sliders-horizontal", m: m, caret: true) { shell.notYet("Filters") }
+        RibbonButton(icon: "funnel-x", m: m, enabled: false) {}
+        RibbonSeparator(m: m)
+        }
+        Group {
+        RibbonButton(icon: "bookmark", m: m, caret: true) { shell.notYet("Saved views") }
+        RibbonButton(icon: "bookmark-plus", m: m, enabled: false) {}
+        RibbonSeparator(m: m)
+        RibbonButton(icon: "printer", m: m) { shell.notYet("Printing") }
+        }
+    }
+}
+
+/// The Notes ribbon (overview, empty section): New | Import.
+struct NotesRibbon: View {
+    let m: RibbonMetrics
+    @Environment(Shell.self) private var shell
+
+    var body: some View {
+        RibbonButton(icon: "file-plus", m: m) { shell.notYet("New page") }
+        RibbonButton(icon: "layout-template", m: m, caret: true) { shell.notYet("Templates") }
+        RibbonButton(icon: "folder-plus", m: m) { shell.notYet("New section") }
+        RibbonButton(icon: "book-plus", m: m) { shell.notYet("New notebook") }
+        RibbonSeparator(m: m)
+        RibbonButton(icon: "upload", m: m, caret: true) { shell.notYet("Import") }
+    }
+}

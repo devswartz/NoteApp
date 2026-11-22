@@ -284,7 +284,7 @@ struct PageContent: View {
 
     var body: some View {
         #if os(iOS)
-        PageCanvasView(page: page, host: host)
+        PageCanvasView(page: page, host: host, title: page.title, subline: "", palette: .light)
             .ignoresSafeArea(edges: .bottom)
         #else
         ScrollView {
