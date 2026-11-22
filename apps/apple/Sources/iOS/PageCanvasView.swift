@@ -111,7 +111,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         boxPan.addTarget(self, action: #selector(panned(_:)))
         boxPan.maximumNumberOfTouches = 1
         addGestureRecognizer(boxPan)
-        panGestureRecognizer.require(toFail: boxPan)
+        // The page's own pan never waits on the box pan (a pan that must fail first can leave the page stuck);
+        // `gestureRecognizerShouldBegin` keeps them apart: a pan that starts on a box's bar or handle is the box's.
+        isScrollEnabled = true
+        isUserInteractionEnabled = true
+        accessibilityIdentifier = "page-scroll"
+        titleLabel.accessibilityIdentifier = "page-title"
         toolbar.isHidden = true
         toolbar.onCommand = { [weak self] name, args in
             EditorFocus.shared.run(name, args)
@@ -668,6 +673,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
         // Taps inside the box being edited are its text interaction's (caret, word selection).
         if g === boxPan { return moveHit(g.location(in: surface)) != nil }
+        if g === panGestureRecognizer, moveHit(g.location(in: surface)) != nil { return false }
         if g === singleTap || g === doubleTap, toolbar.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, linkEditor.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, menu.covers(g.location(in: self)) { return false }

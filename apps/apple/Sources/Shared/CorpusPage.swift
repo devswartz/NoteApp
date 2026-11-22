@@ -38,6 +38,10 @@ struct CorpusPage: PageSource {
         case "box-empty":
             tasks = [:]
             nodes = [node(.paragraph)]
+        case "long":
+            // Thirty short boxes down the page (taller than any screen): the scroll test (CI) swipes it.
+            tasks = [:]
+            nodes = []
         default:
             return nil
         }
@@ -46,8 +50,16 @@ struct CorpusPage: PageSource {
         }
         var info = try readPage(update: Data(contentsOf: dir.appendingPathComponent("page.bin")))
         info.kind = .canvas
-        info.boxes = [PageBox(id: "only", x: 20, y: 20, w: 400, z: 1, wide: false)]
-        info.content = [BoxContent(boxId: "only", nodes: nodes)]
+        if name == "long" {
+            info.boxes = (0..<30).map { PageBox(id: "b\($0)", x: 20, y: 20 + Double($0) * 110, w: 400, z: Double($0), wide: false) }
+            info.content = (0..<30).map { i in
+                let text = ContentNode(kind: .text, attrs: [], runs: [TextRun(text: "Box \(i + 1): a few words so the page is long enough to scroll.", marks: [])], children: [], markers: [])
+                return BoxContent(boxId: "b\(i)", nodes: [ContentNode(kind: .paragraph, attrs: [], runs: [], children: [text], markers: [])])
+            }
+        } else {
+            info.boxes = [PageBox(id: "only", x: 20, y: 20, w: 400, z: 1, wide: false)]
+            info.content = [BoxContent(boxId: "only", nodes: nodes)]
+        }
         return CorpusPage(snapshot: PageSnapshot(id: "corpus:\(name)", title: "Notivelo", info: info, tasks: tasks, pageTitles: [:], document: nil))
     }
 
