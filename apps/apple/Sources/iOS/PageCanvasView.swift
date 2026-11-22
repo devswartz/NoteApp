@@ -72,6 +72,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private let doubleTap = UITapGestureRecognizer()
     private let boxPan = UIPanGestureRecognizer()
     private let toolbar = FloatingToolbarView()
+    private let linkEditor = LinkEditorView()
     var notify: ((String) -> Void)?
     private var geometry = LocalBoxGeometry()
     private var movedNotice = false
@@ -114,7 +115,14 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             EditorFocus.shared.run(name, args)
             self?.updateToolbar()
         }
-        toolbar.onNotYet = { [weak self] what in self?.notify?("\(what) isn’t in the native preview yet.") }
+        toolbar.onLink = { [weak self] in self?.showLinkEditor() }
+        EditorFocus.shared.onLink = { [weak self] in self?.showLinkEditor() }
+        linkEditor.onApply = { [weak self] text, address in self?.applyLink(text: text, address: address) }
+        linkEditor.onRemove = { [weak self] in self?.removeLink() }
+        linkEditor.onOpen = { href in
+            if let url = LinkURL.openable(href) { UIApplication.shared.open(url) }
+        }
+        linkEditor.onCancel = { [weak self] in self?.hideLinkEditor(refocus: true) }
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)),
                                                name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged(_:)),
@@ -259,6 +267,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.palette = palette
         view.onHeightChange = { [weak self] _ in self?.relayout() }
         view.onMenu = { [weak self] box, content in self?.showMenu(box, content) }
+        view.onLinkKey = { [weak self] in self?.showLinkEditor() }
         view.onCaretChange = { [weak self] box in
             self?.keepCaretVisible(box)
             if box === self?.editing {
@@ -337,12 +346,18 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 return
             }
         }
+        if linkEditor.isShown { hideLinkEditor(refocus: false) }
         guard let box = box(at: p) else {
             if editing != nil || stacked || host == nil || p.y < Self.originY || toolbar.covers(tap.location(in: self)) {
                 stopEditing()
             } else {
                 createBox(at: p)
             }
+            return
+        }
+        // A link in a box that is not being edited opens (http, https, mailto), as the web's read-only text does.
+        if box !== editing, let url = box.linkHref(at: tap.location(in: box)).flatMap(LinkURL.openable) {
+            UIApplication.shared.open(url)
             return
         }
         beginEditing(box, at: tap.location(in: box))
@@ -429,9 +444,53 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func hideToolbar() { toolbar.hide() }
 
+    // MARK: Link editor
+
+    /// Show the link editor under the selection or caret of the box being edited (the toolbar and
+    /// ribbon Link buttons, Cmd+K): prefilled when the selection is in a link.
+    private func showLinkEditor() {
+        guard let box = editing, box.editor != nil, let ctx = box.prepareLink() else { return }
+        hideToolbar()
+        menu.isHidden = true
+        if linkEditor.superview == nil { addSubview(linkEditor) }
+        linkEditor.present(palette: palette, text: ctx.text, address: ctx.href, maxWidth: max(bounds.width - 16, 200), phone: stacked)
+        let anchor = convert(ctx.rect, from: box)
+        let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
+        let size = linkEditor.size
+        let x = min(max(anchor.minX, visible.minX + 8), max(visible.maxX - size.width - 8, visible.minX + 8))
+        var y = anchor.maxY + 8
+        if y + size.height > visible.maxY - 8 { y = max(anchor.minY - 8 - size.height, visible.minY + 8) }
+        linkEditor.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
+        bringSubviewToFront(linkEditor)
+        if LookData.state == nil { linkEditor.focusFirst() } // look shots: no keyboard in the picture
+    }
+
+    private func hideLinkEditor(refocus: Bool) {
+        guard linkEditor.isShown else { return }
+        linkEditor.dismiss()
+        if refocus, let box = editing { _ = box.becomeFirstResponder() }
+        updateToolbar()
+    }
+
+    private func applyLink(text: String, address: String) {
+        guard let box = editing else { return }
+        linkEditor.dismiss()
+        _ = box.becomeFirstResponder()
+        EditorFocus.shared.run("editLink", ["text": text, "href": address])
+        updateToolbar()
+    }
+
+    private func removeLink() {
+        guard let box = editing else { return }
+        linkEditor.dismiss()
+        _ = box.becomeFirstResponder()
+        EditorFocus.shared.run("unsetLink")
+        updateToolbar()
+    }
+
     /// Show the toolbar over the selected text of the box being edited, or hide it.
     private func updateToolbar() {
-        guard let box = editing, drag == nil, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
+        guard let box = editing, drag == nil, !linkEditor.isShown, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
             hideToolbar()
             return
         }
@@ -489,6 +548,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         guard let box = editing else { return }
         editing = nil
         hideToolbar()
+        if linkEditor.isShown { linkEditor.dismiss() }
         removeIfEmptyLocal(box)
         box.endTitleEdit()
         box.chrome = false
@@ -553,6 +613,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         // Taps inside the box being edited are its text interaction's (caret, word selection).
         if g === boxPan { return moveHit(g.location(in: surface)) != nil }
         if g === singleTap || g === doubleTap, toolbar.covers(g.location(in: self)) { return false }
+        if g === singleTap || g === doubleTap, linkEditor.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, menu.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, let box = editing, box.bounds.contains(g.location(in: box)) { return false }
         return super.gestureRecognizerShouldBegin(g)
@@ -591,7 +652,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// Look states with a box being edited (`-lookState edit-caret`, CI): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
-              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box"].contains(state) else { return }
+              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link"].contains(state) else { return }
         if state == "edit-new-box" {
             guard !boxViews.isEmpty else { return }
             lookDone = true
@@ -614,6 +675,17 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 if state == "slash-menu" {
                     box.insertText("\n")
                     box.insertText("/")
+                }
+                if state == "edit-link" {
+                    // The last line ("Box c") made a link, then the editor opened on it (prefilled, with Open and Remove).
+                    let shown = box.shownText as NSString
+                    let nl = shown.range(of: "\n", options: .backwards).location
+                    let start = nl == NSNotFound ? 0 : nl + 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        box.lookSelect(from: start)
+                        EditorFocus.shared.run("editLink", ["text": shown.substring(from: start), "href": "example.com/notes"])
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.showLinkEditor() }
                 }
                 if state == "edit-selection" {
                     // The last line ("Box c"), as the web reference selects.

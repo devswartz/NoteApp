@@ -10,6 +10,8 @@ final class EditorFocus {
     private(set) var active = false
     private(set) var canUndo = false
     private(set) var canRedo = false
+    /// The link editor of the canvas showing the focused box.
+    @ObservationIgnored var onLink: (() -> Void)?
 
     func set(_ box: BoxTextView?) {
         self.box = box
@@ -30,6 +32,8 @@ final class EditorFocus {
         box.command(name, json)
         refresh()
     }
+
+    func openLinkEditor() { onLink?() }
 
     func undo() {
         box?.engineUndo()
@@ -240,7 +244,7 @@ struct NoteRibbon: View {
         RibbonButton(icon: "table", m: m, enabled: on) { focus.run("insertTable", ["rows": 3, "cols": 3, "header": true]) }
         RibbonButton(icon: "image-plus", m: m, enabled: on) { shell.notYet("Images") }
         RibbonButton(icon: "paperclip", m: m, enabled: on) { shell.notYet("File attachments") }
-        RibbonButton(icon: "link-2", m: m, enabled: on) { shell.notYet("Links") }
+        RibbonButton(icon: "link-2", m: m, enabled: on) { focus.openLinkEditor() }
         RibbonButton(icon: "file-symlink", m: m, enabled: on) { shell.notYet("Links to pages") }
         RibbonButton(icon: "minus", m: m, enabled: on) { shell.notYet("Dividers from the ribbon") }
         RibbonSeparator(m: m)

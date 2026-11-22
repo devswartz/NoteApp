@@ -53,6 +53,11 @@ struct BoxDecoration {
     var bottomPad: CGFloat = 0
 }
 
+extension NSAttributedString.Key {
+    /// A link's address, on the text it covers (the link editor and taps read it back).
+    static let nvHref = NSAttributedString.Key("nvHref")
+}
+
 struct BoxRendering {
     /// The view's text with attributes: the same UTF-16 length as `text_for_view()`, plus a
     /// zero-width space when the last line is empty (so TextKit lays out a line for the caret).
@@ -758,6 +763,7 @@ struct BoxTextRenderer {
             case "highlight":
                 attrs[.backgroundColor] = palette.highlight(mark.attrs["color"] as? String)
             case "link":
+                if let href = mark.attrs["href"] as? String { attrs[.nvHref] = href }
                 attrs[.foregroundColor] = palette.accent
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
             case "comment":

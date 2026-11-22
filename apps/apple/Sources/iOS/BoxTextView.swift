@@ -77,6 +77,8 @@ final class BoxTextView: UIView, UITextInput {
     }
     private let moveBar = CALayer()
     private let widthHandle = CALayer()
+    /// Cmd+K was pressed (the canvas shows the link editor).
+    var onLinkKey: (() -> Void)?
     /// The height changed (the box grows with its text).
     var onHeightChange: ((BoxTextView) -> Void)?
     /// The caret moved or the text changed while editing (the canvas keeps the caret in view).
@@ -1010,6 +1012,52 @@ final class BoxTextView: UIView, UITextInput {
         selectByPlatform(BoxTextRange(lo, text.length), notify: true)
     }
 
+    /// What the link editor opens on: the selection, or the whole link around the caret (which is
+    /// then selected in the engine, as the web's `extendMarkRange` does). Nil when not editing.
+    func prepareLink() -> (text: String, href: String, rect: CGRect)? {
+        guard editor != nil, marked == nil else { return nil }
+        let str = rendering.string
+        let n = rendering.length
+        var lo = sel.lo, hi = sel.hi
+        var href = ""
+        func hrefAt(_ i: Int, _ r: inout NSRange) -> String? {
+            guard i >= 0, i < n else { return nil }
+            return str.attribute(.nvHref, at: i, longestEffectiveRange: &r, in: NSRange(location: 0, length: n)) as? String
+        }
+        var run = NSRange()
+        if lo == hi {
+            if let h = hrefAt(lo - 1, &run) ?? hrefAt(lo, &run) {
+                href = h
+                lo = run.location
+                hi = run.location + run.length
+                selectByPlatform(BoxTextRange(lo, hi), notify: true)
+            }
+        } else if let h = hrefAt(lo, &run) {
+            href = h
+        }
+        let shown = hi > lo ? text.substring(with: NSRange(location: lo, length: hi - lo)) : ""
+        let rect = hi > lo ? (selectionBounds ?? firstRect(for: BoxTextRange(lo, hi))) : caretRect(for: BoxTextPosition(lo))
+        return (shown, href, rect)
+    }
+
+    /// Is the caret in a link (for Cmd+K)?
+    private var caretInLink: Bool {
+        let n = rendering.length
+        return [sel.lo - 1, sel.lo].contains { $0 >= 0 && $0 < n && rendering.string.attribute(.nvHref, at: $0, effectiveRange: nil) != nil }
+    }
+
+    /// The address of the link under `point` (this view's coordinates), if any.
+    func linkHref(at point: CGPoint) -> String? {
+        guard rendering.length > 0, let p = closestPosition(to: point) as? BoxTextPosition else { return nil }
+        let str = rendering.string
+        // The glyph must really be under the finger: closestPosition snaps to the nearest edge.
+        for i in [p.offset, p.offset - 1] where i >= 0 && i < rendering.length {
+            guard let href = str.attribute(.nvHref, at: i, effectiveRange: nil) as? String else { continue }
+            if segments(i, i + 1, type: .standard).contains(where: { $0.insetBy(dx: -2, dy: -2).contains(point) }) { return href }
+        }
+        return nil
+    }
+
     /// The selected text's bounds in this view's coordinates; nil for a caret (the floating toolbar).
     var selectionBounds: CGRect? {
         guard editor != nil, marked == nil, sel.hi > sel.lo else { return nil }
@@ -1064,11 +1112,20 @@ final class BoxTextView: UIView, UITextInput {
             ("0", [.command, .alternate]), ("1", [.command, .alternate]), ("2", [.command, .alternate]), ("3", [.command, .alternate]),
             ("c", [.command, .alternate]), ("1", .command), ("\r", .command), ("a", .command),
         ]
+        let link = UIKeyCommand(input: "k", modifierFlags: .command, action: #selector(linkKeyCommand))
+        link.wantsPriorityOverSystemBehavior = true
         return chords.map { input, flags in
             let c = UIKeyCommand(input: input, modifierFlags: flags, action: #selector(engineKeyCommand(_:)))
             c.wantsPriorityOverSystemBehavior = true
             return c
-        }
+        } + [link]
+    }
+
+    /// Cmd+K: the link editor on the selected text or the link at the caret (the web does the
+    /// same; with neither it opens the command palette, which the native app doesn't have yet).
+    @objc private func linkKeyCommand() {
+        guard sel.hi > sel.lo || caretInLink else { return }
+        onLinkKey?()
     }
 
     @objc private func engineKeyCommand(_ command: UIKeyCommand) {
