@@ -205,13 +205,11 @@ struct SearchLayer: View {
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(maxWidth: rowWidth * 0.6, alignment: .leading)
                     .clipped()
+                Spacer(minLength: 0)
                 if let sub = hit.sub {
                     Text(SearchLogic.marked(sub, mark: Color(red: 250 / 255, green: 204 / 255, blue: 21 / 255).opacity(0.35)))
                         .font(.web(12.5)).foregroundStyle(p.textMuted.color)
                         .lineLimit(1).truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                } else {
-                    Spacer(minLength: 0)
                 }
             }
             .padding(.horizontal, 10)
