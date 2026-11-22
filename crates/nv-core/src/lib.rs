@@ -19,6 +19,7 @@ mod content;
 mod editor_session;
 mod quickadd;
 mod recurrence;
+mod search;
 mod task_detail;
 mod tasks;
 pub use boxes::*;
@@ -26,6 +27,7 @@ pub use client::*;
 pub use content::*;
 pub use editor_session::*;
 pub use quickadd::{QuickAddKind, QuickAddResult, QuickAddToken};
+pub use search::*;
 pub use task_detail::*;
 pub use tasks::*;
 

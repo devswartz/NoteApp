@@ -5,18 +5,122 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
-- **The full task model in the Core API is done** on branch `rewrite/core-tasks-full` (cut from
-  `rewrite/native` a625e3c, not merged): every field of today's server task readable
-  (`TaskDetail`) and settable (`updateTask`), tags, teams, members, reminders and task notes, and
-  quick add ported with a corpus from the web's parser. Notes: "For apple: task details". **Search
-  and comments come next, on the same branch** (apple's two other open requests: `search`, comment
-  threads).
+- **The whole `rewrite/core-tasks-full` step is done** (cut from `rewrite/native` a625e3c, not
+  merged): the full task model (task details, update, tags, teams, members, reminders, quick add;
+  "For apple: task details"), **full-text search** ("For apple: search") and **comment threads**
+  ("For apple: comments"). That answers all of apple's open requests to core. **Core pauses
+  after this step.**
 - Before that: box calls on `LivePage` (branch `rewrite/core-boxes`, "For apple: boxes", "For
   editor: boxes"), then task calls, live doc plumbing and the fragment reader (branch
   `rewrite/core-tasks`: "For apple: task calls", "For editor: the live doc").
-- **Next, in order** (for a fresh session; see the handover below): search and comments (above),
-  then Kotlin bindings with an Android library build in CI (`cargo-ndk`, including the platform
-  verifier's Android init, below), then the CHANGELOG-SYNC.md design.
+- **Next, in order** (for a fresh session; see the handover below): Kotlin bindings with an
+  Android library build in CI (`cargo-ndk`, including the platform verifier's Android init,
+  below), then the CHANGELOG-SYNC.md design.
+- **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
+  apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
+  apple: comments").
+
+## For apple: search (2026-11-22, `rewrite/core-tasks-full`)
+
+Answers apple's request "search(workspace_id, q) so the palette finds text inside pages". All
+additions. The truth is the server's `GET /workspaces/:id/search?q=&limit=`
+(`server/routes/search.ts`); the web's use is `PaletteInner` in `src/components/CommandPalette.tsx`
+(asks 150 ms after the last keystroke, no limit given, shows the page snippet with `<mark>`).
+
+```swift
+core.search(workspaceId:, query:, limit: UInt32? = nil) throws -> SearchResults
+parseSnippet(snippet:) -> [SnippetRun]          // pure; search() already applies it
+```
+
+- `SearchResults { pages: [PageSearchHit], tasks: [TaskSearchHit] }`, best match first in each
+  list.
+- `PageSearchHit { pageId, title, icon: String?, snippet: [SnippetRun], notebookName, sectionName,
+  path }`. `path` is the server's "Notebook › Section › Subsection" string, ready to show (the
+  web's crumb).
+- `SnippetRun { text, matched: Bool }`. The server wraps matched terms in « and » (about 14 words
+  of context, `…` at cut ends); `parseSnippet` splits on `«…»` exactly as the web's
+  `highlightSnippet` does (markers dropped, empty runs left out, an unclosed « stays text). An
+  **empty `snippet` array** means a title-only match (nothing to show under the title).
+- `TaskSearchHit { task: TaskDetail, snippet: [SnippetRun]? }`: the snippet is present only when
+  the task's **description** matched (the title is shown anyway).
+- Matching (server): every word is prefix-matched ("plan" finds "planning") and stemmed, all
+  words must match, at most 12 words, the query is cut to 200 characters. Title hits weigh 10x
+  text hits; ties go to the recently edited. Open tasks sort before done ones. `limit` is 1 to 50
+  per list (server default 20). Sub-task occurrences of repeating tasks are not searched.
+- A blank (whitespace) query returns empty results **without a request**.
+- **Locked pages:** the owner finds a locked page by its **title only** (its text is never
+  indexed, so `snippet` is empty); tasks on locked pages are left out. Pages in notebooks the
+  caller cannot see are never returned.
+- **Online only.** Nothing is cached or queued; without a connection `search` throws
+  `CoreError.Network` unchanged, and a rejected sign-in gives `CoreError.SignedOut`. The
+  device's own title search (the tree) is still the offline fallback, apple's to keep.
+- The server has no "recent pages" or quick-switcher endpoint (the web's palette lists recent
+  pages from the tree it already holds), so there is nothing to add for that.
+- Swift names: `SearchResults`, `PageSearchHit`, `TaskSearchHit`, `SnippetRun` do not clash with
+  `apps/apple` (its own `SearchHit` and `SearchLogic` are untouched).
+
+## For apple: comments (2026-11-22, `rewrite/core-tasks-full`)
+
+Answers apple's request for comment threads (list for a page, create on a range, reply, resolve).
+The truth is `server/routes/comments.ts`; the web's use is `src/editor/collabComments.ts`
+(`beginComment`, the store) and `src/editor/collabCommentsPanel.tsx`. All calls **need the
+network**: nothing is cached or queued, and `CoreError.Network` is returned unchanged.
+
+```swift
+core.pageComments(pageId:) throws -> [CommentThread]                         // oldest thread first
+core.addCommentThread(pageId:, threadId:, quote:, body:) throws -> CommentThread
+core.replyToCommentThread(threadId:, body:) throws -> CommentThread
+core.resolveCommentThread(threadId:) throws -> CommentThread
+core.reopenCommentThread(threadId:) throws -> CommentThread
+core.editComment(commentId:, body:) throws -> CommentThread                  // your own only
+core.deleteComment(commentId:) throws -> Bool                                // true: that was the thread's last comment, the thread is gone
+core.deleteCommentThread(threadId:) throws
+newCommentThreadId() -> String                                               // a random UUID
+```
+
+- `CommentThread { id, pageId, workspaceId, quote, createdBy, createdAt, resolved: Bool,
+  resolvedAt: String?, resolvedBy: String?, comments: [ThreadComment] }`; `ThreadComment { id,
+  threadId, authorId, body, createdAt, editedAt: String? }`. Comments are oldest first; the first
+  started the thread. Times are ISO instants (UTC). Authors are user ids: `Core.members(...)` has
+  names and colours (an author may be `deleted-user`). Bodies are plain text, 1 to 10 000
+  characters (the server answers 400 for blank or longer). `quote` is the selected text, cut to 500
+  characters. There is no mention parsing in the API (the server's notification hooks read `@name`
+  from the body; the client sends plain text).
+- **Who may do what** (server): anyone who can open the page can read threads (viewers too).
+  Members and up can start a thread, reply, resolve and reopen (any of them, not only the
+  starter); a viewer gets `CoreError.Server(status: 403, ...)`. Editing a comment: its author
+  only. Deleting a comment: its author or a workspace admin; deleting the last one removes the
+  thread. Deleting a whole thread: its starter or an admin. A reply to a resolved thread reopens it.
+  Locked pages answer 403 until unlocked.
+- **The anchor.** A thread is tied to the page text by a `comment` mark whose attribute
+  `threadId` equals the thread's id (`Mark::Comment { thread_id }` in `content.rs`, so reading
+  existing anchors already works). The server never touches the document: the mark is the client's
+  job, and the server accepts any UUID as the thread id. **The call order the web uses**
+  (`beginComment`, `submitComment`, `cancelComment` in `collabComments.ts`), which apple should
+  follow:
+  1. On Comment with a non-empty selection: `let id = newCommentThreadId()`; keep the selected
+     text (at most 500 characters) as `quote`.
+  2. **Mark the selection with `id` through the editor engine** (the web's `setComment(id)`), so
+     the highlight shows while the composer is open and follows concurrent edits.
+  3. The user types the comment; **then** `core.addCommentThread(pageId:, threadId: id, quote:,
+     body:)`. Retrying with the same id returns the same thread (safe after a timeout); another
+     user's id gives 409.
+  4. If the user cancels, or step 3 fails for good: remove the mark of `id` (`unsetComment(id)`).
+  5. When a thread is deleted (`deleteCommentThread`, or `deleteComment` returned `true`): remove
+     its mark the same way. Resolved threads keep their mark; the web just stops highlighting them
+     (it draws marks only for open threads that `pageComments` returned).
+  **The engine has no such commands today** (`crates/nv-editor` and `EditorSession` have none and
+  nothing in `nv-core` writes the mark), so the editor stream needs to add `set_comment(thread_id)`
+  (mark the current selection) and `unset_comment(thread_id)` (remove every mark of that thread).
+  Until it does, apple can list, create (step 3 alone), reply, resolve and delete threads and show
+  `quote`, but a new thread has no highlight in the page. (The server's header comment in
+  `comments.ts` says "create the thread, then add the mark"; the web does it the other way round,
+  as above.)
+- Live updates: the server publishes an event `{type: 'comments', workspaceId, pageId}` on its
+  event stream when a thread changes; the core has no event stream yet, so refetch with
+  `pageComments` after your own calls and when the page is opened.
+- Swift names: `CommentThread`, `ThreadComment` do not clash with `apps/apple` (no `Comment*` or
+  `Thread*` types there).
 
 ## For apple: task details (2026-11-22, `rewrite/core-tasks-full`)
 
@@ -569,6 +673,17 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
   so Intel builds link. The iOS device slice is still arm64 only.
 
 ## Done
+
+- 2026-11-22, search and comment threads (`rewrite/core-tasks-full`): nv-api `search`,
+  `page_comments`, `add_comment_thread`, `reply_to_thread`, `set_thread_resolved`,
+  `delete_comment_thread`, `edit_comment`, `delete_comment` with `SearchResult`/`CommentThread`
+  types; nv-core `search.rs` (`Core.search`, `parseSnippet`/`SnippetRun`, `pageComments`,
+  `addCommentThread`, `replyToCommentThread`, `resolveCommentThread`, `reopenCommentThread`,
+  `editComment`, `deleteComment`, `deleteCommentThread`, `newCommentThreadId`). Tests:
+  `crates/nv-api/tests/search_comments.rs`, `crates/nv-core/tests/search.rs` (scripted transport),
+  the real-server test `search_and_comments_against_a_running_server` (page text written through
+  a live page, found after the server's debounced save; a full thread round trip; passed locally
+  on port 4457), Swift `testSnippetRunsAndThreadIds`. No server changes.
 
 - 2026-11-22, the full task model (`rewrite/core-tasks-full`): nv-api `Task` with every server field
   (`assigned_by`, `completed_by`; missing and unknown fields tolerated), typed `Recurrence`,

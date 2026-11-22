@@ -148,4 +148,16 @@ final class CoreTests: XCTestCase {
         }
         XCTAssertNil(core.cachedTaskDetail(taskId: "t1"))
     }
+
+    func testSnippetRunsAndThreadIds() throws {
+        let runs = parseSnippet(snippet: "the \u{AB}plan\u{BB} for Q4")
+        XCTAssertEqual(runs.map(\.text), ["the ", "plan", " for Q4"])
+        XCTAssertEqual(runs.map(\.matched), [false, true, false])
+        XCTAssertTrue(parseSnippet(snippet: "").isEmpty)
+        XCTAssertEqual(newCommentThreadId().count, 36)
+        // A blank search asks nothing (this core has no server).
+        let core = Core(serverUrl: "http://127.0.0.1:9")
+        let none = try core.search(workspaceId: "w1", query: "  ")
+        XCTAssertTrue(none.pages.isEmpty && none.tasks.isEmpty)
+    }
 }

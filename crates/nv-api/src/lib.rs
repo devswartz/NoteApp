@@ -590,6 +590,103 @@ impl Client {
         Ok(())
     }
 
+    /// Full-text search over the workspace's pages and tasks (GET /workspaces/:id/search?q=&limit=).
+    /// The server trims the query to 200 characters, matches each term as a prefix, stemmed, all
+    /// terms required, and `limit` is 1 to 50 (default 20; applies to pages and tasks each).
+    pub fn search(
+        &self,
+        workspace_id: &str,
+        query: &str,
+        limit: Option<u32>,
+    ) -> Result<SearchResult, ApiError> {
+        let mut path = format!(
+            "/workspaces/{}/search?q={}",
+            encode_component(workspace_id),
+            encode_component(query)
+        );
+        if let Some(l) = limit {
+            path.push_str(&format!("&limit={l}"));
+        }
+        self.call("GET", &path, None)
+    }
+
+    /// A page's comment threads with their comments, oldest thread first (GET /pages/:id/comments).
+    pub fn page_comments(&self, page_id: &str) -> Result<Vec<CommentThread>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/pages/{}/comments", encode_component(page_id)),
+            None,
+        )
+    }
+
+    /// Start a thread (POST /pages/:id/comments; members and up). `thread_id` is a UUID the
+    /// caller chose, the id of the `comment` mark; sending it again returns the same thread.
+    pub fn add_comment_thread(
+        &self,
+        page_id: &str,
+        thread_id: &str,
+        quote: &str,
+        body: &str,
+    ) -> Result<CommentThread, ApiError> {
+        self.call(
+            "POST",
+            &format!("/pages/{}/comments", encode_component(page_id)),
+            Some(&json!({ "threadId": thread_id, "quote": quote, "body": body })),
+        )
+    }
+
+    /// Reply to a thread (POST /comment-threads/:id/replies); this reopens a resolved thread.
+    pub fn reply_to_thread(&self, thread_id: &str, body: &str) -> Result<CommentThread, ApiError> {
+        self.call(
+            "POST",
+            &format!("/comment-threads/{}/replies", encode_component(thread_id)),
+            Some(&json!({ "body": body })),
+        )
+    }
+
+    /// Resolve or reopen a thread (PATCH /comment-threads/:id; members and up).
+    pub fn set_thread_resolved(
+        &self,
+        thread_id: &str,
+        resolved: bool,
+    ) -> Result<CommentThread, ApiError> {
+        self.call(
+            "PATCH",
+            &format!("/comment-threads/{}", encode_component(thread_id)),
+            Some(&json!({ "resolved": resolved })),
+        )
+    }
+
+    /// Delete a whole thread (DELETE /comment-threads/:id): its starter or a workspace admin.
+    pub fn delete_comment_thread(&self, thread_id: &str) -> Result<(), ApiError> {
+        let _: Value = self.call(
+            "DELETE",
+            &format!("/comment-threads/{}", encode_component(thread_id)),
+            None,
+        )?;
+        Ok(())
+    }
+
+    /// Edit your own comment (PATCH /comments/:id); answers with its thread.
+    pub fn edit_comment(&self, comment_id: &str, body: &str) -> Result<CommentThread, ApiError> {
+        self.call(
+            "PATCH",
+            &format!("/comments/{}", encode_component(comment_id)),
+            Some(&json!({ "body": body })),
+        )
+    }
+
+    /// Delete one comment (DELETE /comments/:id): its author or an admin. Deleting a thread's
+    /// last comment deletes the thread; answers whether that happened.
+    pub fn delete_comment(&self, comment_id: &str) -> Result<bool, ApiError> {
+        let v: Value = self.call(
+            "DELETE",
+            &format!("/comments/{}", encode_component(comment_id)),
+            None,
+        )?;
+        Ok(v["threadDeleted"].as_bool().unwrap_or(false))
+    }
+
     /// A page's stored document (a Yjs update), as the server last saved it.
     pub fn page_doc(&self, page_id: &str) -> Result<Vec<u8>, ApiError> {
         let v: Value = self.call(

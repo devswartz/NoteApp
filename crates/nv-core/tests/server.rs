@@ -662,3 +662,183 @@ fn first_rule(freq: &str) -> TaskRecurrence {
         basis: None,
     }
 }
+
+/// Search for text written into a page (after the server's debounced save), then a comment
+/// thread's round trip, against the real server (docs/rewrite/status/core.md, "For apple:
+/// search" and "For apple: comments").
+#[test]
+fn search_and_comments_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let core = Core::new(url);
+    let me = core
+        .register(
+            "Search Test".into(),
+            format!("search-test-{stamp}@example.com"),
+            "correct horse battery staple 1".into(),
+        )
+        .unwrap()
+        .user;
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    let tree = core.tree(ws.clone()).unwrap();
+    let page = &tree.pages[0];
+
+    // Write a word nothing else has into the page's body.
+    let ev = Arc::new(LiveEvents::default());
+    let live = core.open_live_page(page.id.clone(), ev.clone()).unwrap();
+    wait_for("sync", 10, || {
+        ev.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
+    let main = live
+        .info()
+        .boxes
+        .first()
+        .map(|b| format!("box:{}", b.id))
+        .unwrap_or_else(|| "default".into());
+    let word = format!("quokkamarker{stamp}");
+    live.apply_update(add_paragraph(
+        &live.document(),
+        &main,
+        &format!("A note about the {word} for the search test"),
+    ))
+    .unwrap();
+    wait_for("the server's receipt", 10, || live.unsent_updates() == 0);
+
+    // The server saves after a pause and indexes then; a prefix of the word finds the page, and
+    // its snippet marks the match.
+    let prefix = &word[..word.len() - 3];
+    let found: Mutex<Option<PageSearchHit>> = Mutex::new(None);
+    wait_for("the page to be searchable", 20, || {
+        let r = core.search(ws.clone(), prefix.into(), None).unwrap();
+        let hit = r.pages.into_iter().find(|p| p.page_id == page.id);
+        let some = hit.is_some();
+        *found.lock().unwrap() = hit;
+        some
+    });
+    let hit = found.into_inner().unwrap().unwrap();
+    assert_eq!(hit.title, page.title);
+    assert!(
+        hit.path.contains(&hit.notebook_name) && hit.path.contains(&hit.section_name),
+        "{}",
+        hit.path
+    );
+    let matched: Vec<&str> = hit
+        .snippet
+        .iter()
+        .filter(|r| r.matched)
+        .map(|r| r.text.as_str())
+        .collect();
+    assert_eq!(matched, [word.as_str()], "{:?}", hit.snippet);
+    assert!(hit.snippet.iter().any(|r| !r.matched));
+    // Nothing else matches; a blank query and a limit are fine.
+    assert!(core
+        .search(ws.clone(), format!("nomatch{stamp}"), Some(5))
+        .unwrap()
+        .pages
+        .is_empty());
+
+    // A task is found by its title.
+    let task = core
+        .create_task(ws.clone(), format!("Zebrafinch{stamp} task"), None)
+        .unwrap();
+    let r = core
+        .search(ws.clone(), format!("zebrafinch{stamp}"), None)
+        .unwrap();
+    assert_eq!(
+        r.tasks
+            .iter()
+            .map(|t| t.task.id.as_str())
+            .collect::<Vec<_>>(),
+        [task.id.as_str()]
+    );
+
+    // Comments: create the thread under a client id, reply, resolve, reopen by replying, edit,
+    // delete a comment, then the thread.
+    assert!(core.page_comments(page.id.clone()).unwrap().is_empty());
+    let tid = new_comment_thread_id();
+    let t = core
+        .add_comment_thread(
+            page.id.clone(),
+            tid.clone(),
+            "the note".into(),
+            "First".into(),
+        )
+        .unwrap();
+    assert_eq!(
+        (
+            t.id.as_str(),
+            t.page_id.as_str(),
+            t.quote.as_str(),
+            t.resolved
+        ),
+        (tid.as_str(), page.id.as_str(), "the note", false)
+    );
+    assert_eq!(t.comments.len(), 1);
+    assert_eq!(
+        (
+            t.comments[0].body.as_str(),
+            t.comments[0].author_id.as_str()
+        ),
+        ("First", me.id.as_str())
+    );
+    // A retry with the same id returns the same thread.
+    let again = core
+        .add_comment_thread(
+            page.id.clone(),
+            tid.clone(),
+            "the note".into(),
+            "First".into(),
+        )
+        .unwrap();
+    assert_eq!(again.comments.len(), 1);
+
+    let t = core
+        .reply_to_comment_thread(tid.clone(), "Second".into())
+        .unwrap();
+    assert_eq!(t.comments.len(), 2);
+    let t = core.resolve_comment_thread(tid.clone()).unwrap();
+    assert!(t.resolved && t.resolved_by.as_deref() == Some(me.id.as_str()));
+    let t = core.reopen_comment_thread(tid.clone()).unwrap();
+    assert!(!t.resolved && t.resolved_at.is_none());
+    core.resolve_comment_thread(tid.clone()).unwrap();
+    let t = core
+        .reply_to_comment_thread(tid.clone(), "Third".into())
+        .unwrap();
+    assert!(!t.resolved, "a reply reopens a resolved thread");
+    let second = t.comments[1].id.clone();
+    let t = core
+        .edit_comment(second.clone(), "Second, edited".into())
+        .unwrap();
+    assert_eq!(t.comments[1].body, "Second, edited");
+    assert!(t.comments[1].edited_at.is_some());
+    let listed = core.page_comments(page.id.clone()).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].comments.len(), 3);
+    assert!(matches!(
+        core.reply_to_comment_thread(tid.clone(), "  ".into()),
+        Err(CoreError::Server { status: 400, .. })
+    ));
+    assert!(!core.delete_comment(second).unwrap());
+    assert_eq!(
+        core.page_comments(page.id.clone()).unwrap()[0]
+            .comments
+            .len(),
+        2
+    );
+    core.delete_comment_thread(tid.clone()).unwrap();
+    assert!(core.page_comments(page.id.clone()).unwrap().is_empty());
+    // The last comment of a thread takes the thread with it.
+    let tid2 = new_comment_thread_id();
+    let t = core
+        .add_comment_thread(page.id.clone(), tid2, String::new(), "Only".into())
+        .unwrap();
+    assert!(core.delete_comment(t.comments[0].id.clone()).unwrap());
+    assert!(core.page_comments(page.id.clone()).unwrap().is_empty());
+    live.close();
+}

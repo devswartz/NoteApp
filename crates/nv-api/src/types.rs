@@ -392,3 +392,83 @@ pub struct Reminder {
     #[serde(default)]
     pub created_at: String,
 }
+
+/// A page hit in a search (GET /workspaces/:id/search; shared/types.ts `SearchResult.pages`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPage {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// The matching text with matched terms between `«` and `»`; empty for a title-only match
+    /// (and always for a locked page: its text is never indexed).
+    #[serde(default)]
+    pub snippet: String,
+    #[serde(default)]
+    pub notebook_name: String,
+    #[serde(default)]
+    pub section_name: String,
+    /// "Notebook › Section › Subsection".
+    #[serde(default)]
+    pub path: String,
+}
+
+/// A task hit in a search: the task, and a snippet only when its description matched.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchTask {
+    #[serde(flatten)]
+    pub task: Task,
+    #[serde(default)]
+    pub snippet: Option<String>,
+}
+
+/// What a search finds, best match first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct SearchResult {
+    #[serde(default)]
+    pub pages: Vec<SearchPage>,
+    #[serde(default)]
+    pub tasks: Vec<SearchTask>,
+}
+
+/// One comment in a thread (server/routes/comments.ts).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Comment {
+    pub id: String,
+    #[serde(default)]
+    pub thread_id: String,
+    #[serde(default)]
+    pub author_id: String,
+    pub body: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub edited_at: Option<String>,
+}
+
+/// A comment thread on a text selection of a page, with its comments oldest first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentThread {
+    pub id: String,
+    #[serde(default)]
+    pub page_id: String,
+    #[serde(default)]
+    pub workspace_id: String,
+    /// The selected text when the thread was started (at most 500 characters).
+    #[serde(default)]
+    pub quote: String,
+    #[serde(default)]
+    pub created_by: String,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub resolved_at: Option<String>,
+    #[serde(default)]
+    pub resolved_by: Option<String>,
+    #[serde(default)]
+    pub comments: Vec<Comment>,
+}
