@@ -1,6 +1,7 @@
 import NotiveloCore
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 /// The native page below its top bar, laid out as the web app's `.page-article` (LOOK.md 4.5):
 /// the title and "Edited …" line, then the canvas surface whose origin is 40 pt in from the note
@@ -359,13 +360,20 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     func scrollViewDidScroll(_ scrollView: UIScrollView) { publishState() }
 
     // Diagnostics for the scroll test: how many touches reached the page, and what the pan did.
-    private var hitCount = 0
     private var panLog: [Int] = []
     private var lastHit = ""
+    private let windowProbe = TouchProbe()
+    private let scrollProbe = TouchProbe()
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard LookData.state != nil else { return }
+        if let window, windowProbe.view == nil { window.addGestureRecognizer(windowProbe) }
+        if scrollProbe.view == nil { addGestureRecognizer(scrollProbe) }
+    }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let v = super.hitTest(point, with: event)
-        hitCount += 1
         var chain: [String] = []
         var cur = v
         while let c = cur, chain.count < 4 { chain.append(String(describing: type(of: c))); cur = c.superview }
@@ -384,8 +392,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         titleLabel.accessibilityValue = "contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
             + "scrollEnabled=\(isScrollEnabled) pan=\(panGestureRecognizer.isEnabled) panState=\(panGestureRecognizer.state.rawValue) "
             + "states=\((gestureRecognizers ?? []).map { $0.state.rawValue }) maxPanTouches=\(panGestureRecognizer.maximumNumberOfTouches) "
-            + "hits=\(hitCount) lastHit=\(lastHit) panLog=\(panLog) "
-            + "windowHit=\(window.flatMap { w in w.hitTest(convert(CGPoint(x: bounds.midX, y: bounds.midY), to: w), with: nil) }.map { String(describing: type(of: $0)) } ?? "nil") "
+            + "lastHit=\(lastHit) panLog=\(panLog) windowTouches=\(windowProbe.summary) scrollTouches=\(scrollProbe.summary) "
             + "stacked=\(stacked) boxes=\(boxViews.count) surface=\(surface.frame) tracking=\(isTracking) dragging=\(isDragging) "
             + "recognizers=\((gestureRecognizers ?? []).map { String(describing: type(of: $0)) })"
     }
@@ -809,6 +816,29 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
 /// The page surface: rule lines or grid, 28 points apart, as the web app draws them (LOOK.md 1.3):
 /// a 1 pt line on the last point of every band, the pattern starting 7 pt below the surface origin.
+/// Counts the touches that reach a view (the scroll test's diagnostics); never recognizes, never blocks.
+final class TouchProbe: UIGestureRecognizer {
+    private var began = 0, moved = 0, ended = 0, cancelled = 0
+    private var last = CGPoint.zero
+    var summary: String { "began=\(began) moved=\(moved) ended=\(ended) cancelled=\(cancelled) last=\(Int(last.x)),\(Int(last.y))" }
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+    }
+    convenience init() { self.init(target: nil, action: nil) }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        began += 1
+        if let t = touches.first { last = t.location(in: nil) }
+    }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { moved += 1; if let t = touches.first { last = t.location(in: nil) } }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { ended += 1 }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { cancelled += 1 }
+}
+
 final class PageSurfaceView: UIView {
     static let rule: CGFloat = 28
     var ruleColor = Palette.light.pageRule

@@ -91,6 +91,7 @@ jobs:
       # viewports (iPad 820×1180 pt portrait and landscape, iPhone 390×844 pt), and side-by-side pictures (reference | native).
       # Artifacts "look-side-by-side" and "look-native". Corpus mode only: no network, no credentials.
       - name: Look (native screenshots, side-by-sides)
+        if: ${{ !contains(github.event.head_commit.message, '[scroll-only]') }}
         continue-on-error: true
         timeout-minutes: 32
         run: bash apps/apple/scripts/look-shots.sh "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app" "$RUNNER_TEMP/look"
@@ -118,6 +119,7 @@ jobs:
       # Typing evidence: -demoEdit focuses the first box and types through the same UITextInput calls as the keyboard
       # (a "- " list rule, Return, and an open IME composition), on a corpus page edited locally (nothing is sent).
       - name: iPad typing screenshots
+        if: ${{ !contains(github.event.head_commit.message, '[scroll-only]') }}
         continue-on-error: true
         run: |
           UDID="$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPad Pro"))][0].udid')"
