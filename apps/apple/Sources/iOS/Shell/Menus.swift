@@ -26,6 +26,7 @@ struct MenuCard<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content() }
+            .fixedSize(horizontal: false, vertical: true)
             .frame(height: maxHeight, alignment: .top)
             .clipped()
             .padding(padding)
