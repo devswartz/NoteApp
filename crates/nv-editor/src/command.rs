@@ -3,7 +3,7 @@
 //! API's editor session call the same thing. The caller runs `finish()` afterwards.
 
 use crate::editor::Editor;
-use crate::node::Mark;
+use crate::node::{add_mark, remove_mark, Mark};
 use crate::schema::Attrs;
 use serde_json::Value;
 
@@ -18,6 +18,13 @@ fn s<'a>(a: &'a Value, k: &str) -> &'a str {
 }
 
 impl Editor {
+    /// The marks typed text gets at `pos`: the stored ones, else those of the text around it.
+    fn current_marks(&self, pos: usize) -> Vec<Mark> {
+        self.stored_marks
+            .clone()
+            .unwrap_or_else(|| self.marks_at(pos))
+    }
+
     /// Run the command `name` with its arguments (a JSON object). Ok(whether it did anything),
     /// or Err for a name the engine doesn't know.
     pub fn command(&mut self, name: &str, a: &Value) -> Result<bool, String> {
@@ -38,7 +45,14 @@ impl Editor {
                     _ => ("link", "href"),
                 };
                 let (f, t) = self.range();
-                self.add_mark_range(f, t, &Mark::new(kind, one(attr, &a[attr])));
+                let mark = Mark::new(kind, one(attr, &a[attr]));
+                if f == t && kind != "link" {
+                    // A caret: what is typed next takes the colour (a stored mark).
+                    let cur = self.current_marks(f);
+                    self.stored_marks = Some(add_mark(&cur, &mark));
+                } else {
+                    self.add_mark_range(f, t, &mark);
+                }
                 true
             }
             "unsetLink" | "unsetColor" | "unsetHighlight" => {
@@ -48,9 +62,29 @@ impl Editor {
                     _ => "link",
                 };
                 let (f, t) = self.range();
-                self.remove_mark_range(f, t, kind);
+                if f == t && kind != "link" {
+                    let cur = self.current_marks(f);
+                    self.stored_marks = Some(remove_mark(&cur, kind));
+                } else {
+                    self.remove_mark_range(f, t, kind);
+                }
                 true
             }
+            // The comment anchor (collabComments.ts): the selection gets the thread's mark; a thread
+            // is taken off the whole document.
+            "setComment" => {
+                let (f, t) = self.range();
+                self.add_mark_range(f, t, &Mark::new("comment", one("threadId", &a["threadId"])));
+                true
+            }
+            "unsetComment" => {
+                let id = a["threadId"].clone();
+                let end = self.doc.content_size();
+                self.remove_mark_where(0, end, "comment", "threadId", &id);
+                true
+            }
+            // View state (an open toggle): nothing in the engine, the suite sends it for TipTap.
+            "openToggles" => true,
             "editLink" => self.edit_link(a["text"].as_str(), s(a, "href")),
             "selectAll" => self.select_all(),
             "insertTable" => self.insert_table(

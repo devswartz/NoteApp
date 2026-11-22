@@ -1,4 +1,54 @@
 # Editor suite scenarios the engine passes (tests/suite.rs). Regenerate with NV_EDITOR_UPDATE=1.
+atoms/Backspace at the start of a line after a file card deletes the file card
+atoms/Backspace at the start of a line after an image deletes the image
+atoms/Backspace in a list item after an image does not eat the image
+atoms/Backspace on a selected file card deletes it
+atoms/Backspace on a selected image deletes it
+atoms/Backspace on an empty line after a file card selects the file card
+atoms/Backspace on an empty line after an image selects the image
+atoms/Delete at the end of a line before a file card
+atoms/Delete at the end of a line before an image
+atoms/Delete at the end of an empty line before a file card
+atoms/Delete at the end of an empty line before an image
+atoms/Delete on a selected file card deletes it
+atoms/Delete on a selected image deletes it
+atoms/Enter before a file card
+atoms/Enter before an image
+atoms/Enter on a selected file card
+atoms/Enter on a selected image
+atoms/Mod+z after typing next to an image
+atoms/Tab on a selected file card changes nothing
+atoms/a file card as the last block gets a paragraph after it
+atoms/a selected image then Mod+b changes nothing
+atoms/a selection across a file card deleted
+atoms/a selection across an image deleted
+atoms/an image as the last block gets a paragraph after it
+atoms/copy a selected file card
+atoms/copy a selected image
+atoms/cut a selected file card
+atoms/cut a selected image
+atoms/paste a file card with an unsafe link is dropped
+atoms/paste a file card's HTML
+atoms/paste a javascript: image is dropped
+atoms/paste an external https image keeps it
+atoms/paste an image over a selected image
+atoms/paste an image's HTML between words
+atoms/paste an image's HTML into an empty line
+atoms/paste an inline base64 image is dropped
+atoms/paste text over a selected file card
+atoms/paste text over a selected image
+atoms/redo deletes the file card again
+atoms/redo deletes the image again
+atoms/select-all over a file card and typing
+atoms/select-all over an image and typing
+atoms/two file cards: deleting the first keeps the second
+atoms/two images: deleting the first keeps the second
+atoms/typing before a file card stays in its paragraph
+atoms/typing before an image stays in its paragraph
+atoms/typing over a selected file card replaces it
+atoms/typing over a selected image replaces it
+atoms/undo brings back a deleted file card
+atoms/undo brings back a deleted image
 blocks/# makes a heading 1
 blocks/## makes a heading 2
 blocks/### makes a heading 3
@@ -61,6 +111,76 @@ clipboard/paste plain text with line breaks makes paragraphs
 clipboard/pasted HTML drops script links
 clipboard/pasted plain text applies inline Markdown
 clipboard/pasted plain text keeps block Markdown as text
+colors/Backspace over coloured text, then typing continues the colour
+colors/Enter inside coloured text keeps the colour on both lines
+colors/Mod+Shift+h highlights
+colors/Mod+Shift+h twice removes the highlight
+colors/Mod+b over coloured text keeps the colour
+colors/a colour over a heading's text
+colors/a colour over a link
+colors/a colour over a list item
+colors/a colour over a range that starts in another colour
+colors/a colour over a table cell's text
+colors/a colour over bold text keeps the bold
+colors/a colour over inline code does nothing (code excludes other marks)
+colors/a colour over part of a coloured range splits it
+colors/a colour over two paragraphs
+colors/a colour with a caret colours what is typed next
+colors/a colour with a caret, then Mod+b, then typing
+colors/a highlight and a text colour together
+colors/a highlight over a comment keeps both
+colors/a highlight over part of a highlight
+colors/a highlight over two paragraphs
+colors/a highlight replaces another highlight
+colors/a new text colour replaces the old one
+colors/copy a highlight
+colors/copy coloured text
+colors/paste HTML colour and highlight together
+colors/paste HTML colour inside bold
+colors/paste HTML highlight with a palette colour
+colors/paste HTML highlight with an inline background is a plain highlight
+colors/paste HTML highlight with an unknown colour name
+colors/paste HTML text with an unknown colour name drops it
+colors/paste HTML with a font colour drops it
+colors/paste coloured HTML into coloured text
+colors/paste plain text inside coloured text takes the colour
+colors/paste plain text over a coloured selection
+colors/select-all, colour, then typing replaces it all
+colors/typing at the end of a highlight continues it
+colors/typing at the end of coloured text continues the colour
+colors/typing at the start of coloured text is plain
+colors/typing over a coloured selection takes the colour
+colors/undo takes back a colour
+colors/unsetColor keeps the highlight
+colors/unsetColor on part of a coloured range
+colors/unsetColor on text with no colour changes nothing
+colors/unsetColor removes the colour of the selection
+colors/unsetColor with a caret in coloured text: what is typed next is plain
+colors/unsetHighlight on part of a highlight
+colors/unsetHighlight removes a highlight
+comments/Backspace deletes a character of a comment
+comments/Backspace joins a plain line onto a comment
+comments/Backspace joins two paragraphs and the anchor runs on
+comments/Delete before a comment removes its first letter
+comments/Enter inside a comment splits the anchor in two
+comments/Mod+b over commented text keeps the comment
+comments/copy a comment: the HTML carries the thread id
+comments/cut a comment removes its text and anchor
+comments/deleting all the commented text removes the anchor
+comments/paste a comment's HTML keeps the anchor
+comments/paste plain text inside a comment stays in it
+comments/paste plain text over a comment drops it
+comments/setComment across two paragraphs marks both
+comments/setComment marks the selection
+comments/setComment over bold text keeps the bold
+comments/two comments overlap
+comments/typing at the end of a comment is outside it
+comments/typing at the start of a comment is outside it
+comments/typing inside a comment stays in it
+comments/typing over a whole comment
+comments/typing over part of a comment keeps the anchor around the rest
+comments/undo takes back setComment
+comments/unsetComment removes one thread's anchors
 containers/- in a callout makes a bullet inside it
 containers// then Escape leaves the text
 containers//callout makes a callout
@@ -280,6 +400,37 @@ tasks/converting several selected lines makes several tasks
 tasks/redo of a convert-to-task recreates the task
 tasks/undo after deleting a task line brings the task back
 tasks/undoing a convert-to-task removes the task
+toggles//toggle in the middle of a word is plain text
+toggles//toggle makes a toggle on an empty line before text
+toggles/Backspace at the start of a summary after a paragraph
+toggles/Backspace at the start of an empty second line in toggle content
+toggles/Backspace at the start of an empty toggle's content
+toggles/Backspace at the start of the first toggle's summary does nothing
+toggles/Backspace at the start of toggle content with text
+toggles/Backspace in an empty summary of an empty toggle
+toggles/Delete at the end of a toggle's summary
+toggles/Enter in a closed toggle's summary with the caret mid-text
+toggles/Enter in toggle content splits the line
+toggles/Enter on an empty last line of toggle content leaves the toggle
+toggles/Enter on an empty middle line of toggle content adds a line
+toggles/Enter on the only empty line of toggle content leaves the toggle
+toggles/Mod+Shift+b in toggle content quotes the line
+toggles/Shift+Tab in toggle content leaves the toggle as it is
+toggles/Tab in a toggle's summary leaves the toggle as it is
+toggles/Tab in toggle content leaves the toggle as it is
+toggles/Tab on a bullet in toggle content indents it
+toggles/a bullet rule inside toggle content
+toggles/a heading in a toggle's summary
+toggles/a slash heading inside toggle content
+toggles/paste a heading into a toggle's summary
+toggles/paste a list into toggle content
+toggles/paste text into a toggle's summary
+toggles/paste two paragraphs into a toggle's summary
+toggles/paste two paragraphs into toggle content
+toggles/select across a summary and its content, then Backspace
+toggles/select-all in a toggle then Backspace
+toggles/typing in toggle content
+toggles/undo takes back a toggle made from a slash item
 typing/Enter splits a paragraph
 typing/Mod+b then type is bold
 typing/dash space makes a bullet

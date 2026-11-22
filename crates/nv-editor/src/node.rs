@@ -65,10 +65,15 @@ impl Mark {
 /// Add a mark to a set (replacing one of the same type, dropping marks it excludes), keeping schema order.
 pub fn add_mark(marks: &[Mark], m: &Mark) -> Vec<Mark> {
     let ex = schema().mark(&m.kind).excludes.clone();
+    // `excludes: ""` (the comment anchor): marks of the same kind with other attributes stay beside it.
+    let coexists = matches!(&ex, Some(e) if e.is_empty());
+    if coexists && marks.contains(m) {
+        return marks.to_vec();
+    }
     let mut out: Vec<Mark> = marks
         .iter()
         .filter(|x| {
-            x.kind != m.kind
+            (coexists || x.kind != m.kind)
                 && !matches!(&ex, Some(e) if e == "_" || e.split_whitespace().any(|n| n == x.kind))
         })
         .cloned()

@@ -42,6 +42,9 @@ pub struct Editor {
     /// The input rule that just ran, so Backspace right after it can take it back (TipTap's
     /// undoInputRule): the state before it and the state it left.
     pub(crate) rule_undo: Option<RuleUndo>,
+    /// The marks of the text just deleted, and where: the browser keeps typing in the deleted
+    /// run's format (Backspace over bold, then typing, is bold), so typing at that caret takes them.
+    pub(crate) deleted_marks: Option<(usize, Vec<Mark>)>,
 }
 
 /// What an input rule changed: (doc, selection, stored marks) before it, and (doc, selection) after.
@@ -65,6 +68,7 @@ impl Editor {
             remote_cursors: Vec::new(),
             last_sel: Selection::All,
             rule_undo: None,
+            deleted_marks: None,
         };
         ed.last_sel = ed.sel.clone();
         ed.known_tasks = crate::tasks::task_ids(&ed.doc);
@@ -189,9 +193,59 @@ impl Editor {
             self.sel = Selection::caret(1);
             return true;
         }
+        if let Selection::Node { pos } = self.sel {
+            // A selected block goes; the selection moves to what took its place (ProseMirror's
+            // Selection.near, forward first): a line, or the next image or card selected.
+            self.delete_range(pos, to);
+            self.sel = near_sel(&self.doc, pos.min(self.doc.content_size()), 1);
+            return true;
+        }
+        let kept = self.deleted_marks_in(from, to);
         let at = self.delete_range(from, to);
         self.sel = Selection::caret(near_text(&self.doc, at, -1));
+        self.keep_deleted_marks(kept);
         true
+    }
+
+    /// The inclusive marks of the first inline content in `from..to`, when it's in one text block.
+    pub(crate) fn deleted_marks_in(&self, from: usize, to: usize) -> Vec<Mark> {
+        if self.resolve(from).path != self.resolve(to).path {
+            return vec![];
+        }
+        let mut found: Option<Vec<Mark>> = None;
+        for_inline_in(&self.doc, from, to, &mut |n| {
+            found.get_or_insert_with(|| n.marks.clone());
+        });
+        found
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| schema().mark(&m.kind).inclusive)
+            .collect()
+    }
+
+    pub(crate) fn keep_deleted_marks(&mut self, marks: Vec<Mark>) {
+        self.deleted_marks = match (marks.is_empty(), self.sel.head()) {
+            (false, Some(at)) => Some((at, marks)),
+            _ => None,
+        };
+    }
+
+    /// A selected block (an image, a file card, a rule) under typing or a paste of text is
+    /// replaced by an empty line to type in, ProseMirror's replace-with-inline-content.
+    pub(crate) fn node_selection_to_line(&mut self) {
+        let Selection::Node { pos } = self.sel else {
+            return;
+        };
+        let Some(n) = node_after(&self.doc, pos) else {
+            return;
+        };
+        if !(n.is_leaf() && !n.is_inline()) || n.is(crate::tasks::TASK) {
+            return;
+        }
+        let r = self.resolve(pos);
+        let parent = r.path.clone();
+        self.doc.at_mut(&parent).content[r.index] = Node::el("paragraph", vec![]);
+        self.sel = Selection::caret(pos + 1);
     }
 
     // ───────────── Typing ─────────────
@@ -202,6 +256,7 @@ impl Editor {
             self.title_input(text);
             return;
         }
+        self.node_selection_to_line();
         let had_range = !self.sel.is_empty();
         self.delete_selection();
         let Some(pos) = self.sel.head() else { return };
@@ -209,13 +264,19 @@ impl Editor {
         if !r.parent(&self.doc).is_textblock() {
             return;
         }
+        let deleted = match self.deleted_marks.take() {
+            Some((at, m)) if at == pos => Some(m),
+            _ => None,
+        };
         let marks = if had_range {
             self.stored_marks
                 .take()
+                .or(deleted)
                 .unwrap_or_else(|| self.marks_at(pos))
         } else {
             self.stored_marks
                 .clone()
+                .or(deleted)
                 .unwrap_or_else(|| self.marks_at(pos))
         };
         let marks = if r.parent(&self.doc).is("codeBlock") {
@@ -344,6 +405,9 @@ impl Editor {
         }
         let idx = r.index_at(d - 1);
         let n = container.content.len();
+        if container.is("detailsContent") && n == 1 {
+            return self.leave_empty_toggle_content(&r);
+        }
         if idx == n - 1 && n > 1 {
             return self.move_line_out(&r, true);
         }
@@ -412,6 +476,30 @@ impl Editor {
     }
 
     pub fn enter(&mut self) -> bool {
+        if let Selection::Node { pos } = self.sel {
+            // ProseMirror's createParagraphNear: an empty line after the selected block (before
+            // it when it is the first block of its parent).
+            let r = self.resolve(pos);
+            if node_after(&self.doc, pos).is_some_and(|n| n.is_leaf() && !n.is_inline()) {
+                let size = node_after(&self.doc, pos).map_or(0, Node::node_size);
+                let parent = r.path.clone();
+                let at = if r.parent_offset == 0 {
+                    self.doc
+                        .at_mut(&parent)
+                        .content
+                        .insert(r.index, Node::el("paragraph", vec![]));
+                    pos
+                } else {
+                    self.doc
+                        .at_mut(&parent)
+                        .content
+                        .insert(r.index + 1, Node::el("paragraph", vec![]));
+                    pos + size
+                };
+                self.sel = Selection::caret(at + 1);
+                return true;
+            }
+        }
         let Some(pos) = self.sel.head() else {
             return self.split_block();
         };
@@ -485,13 +573,6 @@ impl Editor {
                 return true;
             }
         }
-        if let Selection::Node { pos } = self.sel {
-            let size = node_after(&self.doc, pos).map_or(0, Node::node_size);
-            self.delete_range(pos, pos + size);
-            // The caret goes to the line that took the node's place (ProseMirror maps forward).
-            self.sel = Selection::caret(near_text(&self.doc, pos, 1));
-            return true;
-        }
         if self.delete_selection() {
             return true;
         }
@@ -500,6 +581,11 @@ impl Editor {
         };
         let r = self.resolve(pos);
         let parent = r.parent(&self.doc);
+        // At the start of a toggle's summary the toggle comes apart: the summary becomes a line
+        // and the content's lines follow it.
+        if parent.is("detailsSummary") && r.at_start() {
+            return self.unwrap_toggle(&r);
+        }
         // A code block at the very start of the box, or an empty one, becomes a paragraph
         // (TipTap's code block Backspace); so does any other empty non-paragraph line at the
         // start (TipTap's base keymap: clearNodes).
@@ -515,8 +601,10 @@ impl Editor {
         if !r.at_start() {
             // One character (or inline node) back; a surrogate pair counts as one.
             let back = char_before_len(&self.doc, &r);
+            let kept = self.deleted_marks_in(pos - back, pos);
             self.delete_range(pos - back, pos);
             self.sel = Selection::caret(pos - back);
+            self.keep_deleted_marks(kept);
             return true;
         }
         if crate::tasks::backspace_at_note_start(self) {
@@ -535,6 +623,9 @@ impl Editor {
                 && c.content.len() > 1
             {
                 return self.move_line_out(&r, true);
+            }
+            if c.is("detailsContent") && c.content.len() == 1 {
+                return self.leave_empty_toggle_content(&r);
             }
         }
         self.join_backward(&r)
@@ -619,7 +710,29 @@ impl Editor {
         let r = self.resolve(pos);
         if !r.at_end(&self.doc) {
             let fwd = char_after_len(&self.doc, &r);
+            let kept = self.deleted_marks_in(pos, pos + fwd);
             self.delete_range(pos, pos + fwd);
+            self.keep_deleted_marks(kept);
+            return true;
+        }
+        // The end of a toggle's summary: nothing joins it to the content.
+        if r.parent(&self.doc).is("detailsSummary") {
+            return true;
+        }
+        // A leaf block next (an image, a file card, a rule): a line with text deletes it, an
+        // empty line goes and the leaf is selected (ProseMirror's joinForward on an atom).
+        let after = r.after(&self.doc, r.depth());
+        if node_after(&self.doc, after)
+            .is_some_and(|n| n.is_leaf() && !n.is_inline() && !n.is(crate::tasks::TASK))
+        {
+            let d = r.depth();
+            let (parent, idx) = (r.path_to(d - 1), r.index_at(d - 1));
+            if r.parent(&self.doc).content.is_empty() {
+                self.doc.at_mut(&parent).content.remove(idx);
+                self.sel = Selection::Node { pos: r.before(d) };
+            } else {
+                self.doc.at_mut(&parent).content.remove(idx + 1);
+            }
             return true;
         }
         // Join the next text block into this one.
@@ -703,6 +816,23 @@ impl Editor {
         self.map_inline(from, to, &|n| {
             let mut n = n;
             n.marks = remove_mark(&n.marks, kind);
+            n
+        });
+    }
+
+    /// Remove the marks of `kind` whose attribute `attr` is `value` from `from..to`.
+    pub fn remove_mark_where(
+        &mut self,
+        from: usize,
+        to: usize,
+        kind: &str,
+        attr: &str,
+        value: &serde_json::Value,
+    ) {
+        self.map_inline(from, to, &|n| {
+            let mut n = n;
+            n.marks
+                .retain(|m| !(m.kind == kind && m.attrs.get(attr) == Some(value)));
             n
         });
     }
@@ -1102,6 +1232,7 @@ impl Editor {
         if self.composition.is_some() {
             return;
         }
+        fill_toggles(&mut self.doc);
         let last_is_para = self.doc.content.last().is_some_and(|n| n.is("paragraph"));
         if !last_is_para {
             self.doc.content.push(Node::el("paragraph", vec![]));
@@ -1198,6 +1329,7 @@ impl Editor {
             other => other,
         };
         self.stored_marks = None;
+        self.deleted_marks = None;
         self.focus = Focus::Doc;
         self.sync_tasks();
         self.last_sel = self.sel.clone();
@@ -1221,6 +1353,97 @@ pub fn node_after(doc: &Node, pos: usize) -> Option<&Node> {
         }
         p == r.parent_offset
     })
+}
+
+fn is_block_leaf(n: &Node) -> bool {
+    n.is_leaf() && !n.is_inline()
+}
+
+/// The node ending at `pos`, when `pos` is at a child boundary.
+fn node_before(doc: &Node, pos: usize) -> Option<&Node> {
+    let r = resolve(doc, pos);
+    let p = r.parent(doc);
+    let sum: usize = p.content[..r.index.min(p.content.len())]
+        .iter()
+        .map(Node::node_size)
+        .sum();
+    (r.index > 0 && sum == r.parent_offset).then(|| &p.content[r.index - 1])
+}
+
+/// ProseMirror's `Selection.near`: the nearest valid selection from `pos`, looking in `dir`
+/// (1 forward, -1 back) first: a caret in a text block, or a block leaf (an image, a file card)
+/// selected.
+pub fn near_sel(doc: &Node, pos: usize, dir: i32) -> Selection {
+    let size = doc.content_size();
+    for d in [dir, -dir] {
+        let mut p = pos as i64;
+        while p >= 0 && p as usize <= size {
+            let q = p as usize;
+            if resolve(doc, q).parent(doc).is_textblock() {
+                return Selection::caret(q);
+            }
+            if d > 0 {
+                if node_after(doc, q).is_some_and(is_block_leaf) {
+                    return Selection::Node { pos: q };
+                }
+            } else if let Some(n) = node_before(doc, q).filter(|n| is_block_leaf(n)) {
+                return Selection::Node {
+                    pos: q - n.node_size(),
+                };
+            }
+            p += d as i64;
+        }
+    }
+    Selection::caret(near_text(doc, pos, dir))
+}
+
+/// A toggle always has its summary and a content with a line in it (the schema's fill).
+fn fill_toggles(n: &mut Node) {
+    for c in &mut n.content {
+        if c.is("details") {
+            if c.content.len() == 1 {
+                c.content.push(Node::el("detailsContent", vec![]));
+            }
+            if let Some(body) = c.content.get_mut(1).filter(|b| b.content.is_empty()) {
+                body.content.push(Node::el("paragraph", vec![]));
+            }
+        }
+        if !c.is_textblock() && !c.is_leaf() {
+            fill_toggles(c);
+        }
+    }
+}
+
+impl Editor {
+    /// Backspace at the start of a toggle's summary: the toggle is gone, its summary a line and
+    /// its content's lines after it.
+    fn unwrap_toggle(&mut self, r: &ResolvedPos) -> bool {
+        let d = r.depth();
+        let (outer, idx) = (r.path_to(d - 2), r.index_at(d - 2));
+        let details = r.node(&self.doc, d - 1).clone();
+        let mut lines = vec![Node::el("paragraph", details.content[0].content.clone())];
+        if let Some(body) = details.content.get(1) {
+            lines.extend(body.content.iter().cloned());
+        }
+        let before = r.before(d - 1);
+        self.doc.at_mut(&outer).content.splice(idx..=idx, lines);
+        self.sel = Selection::caret(before + 1);
+        true
+    }
+
+    /// Enter or Backspace on the only, empty line of a toggle's content: a line after the
+    /// toggle takes the caret (the content keeps its empty line, as the schema needs one).
+    pub(crate) fn leave_empty_toggle_content(&mut self, r: &ResolvedPos) -> bool {
+        let d = r.depth();
+        let (outer, idx) = (r.path_to(d - 3), r.index_at(d - 3));
+        let after = r.after(&self.doc, d - 2);
+        self.doc
+            .at_mut(&outer)
+            .content
+            .insert(idx + 1, Node::el("paragraph", vec![]));
+        self.sel = Selection::caret(after + 1);
+        true
+    }
 }
 
 /// The nearest position in a text block from `pos`, searching in `dir` (-1 back, 1 forward) first.
