@@ -49,6 +49,7 @@ enum LookData {
     static var tree: Tree {
         if state?.hasPrefix("empty-workspace") == true { return Tree(notebooks: [], sections: [], pages: []) }
         let notebook = Notebook(id: "look", name: "Look reference", color: "#ec4899", visibility: "shared", position: 1)
+        if state == "empty-notebook" { return Tree(notebooks: [notebook], sections: [], pages: []) }
         let sections = [
             CoreSection(id: "corpus", notebookId: "look", parentId: nil, name: "Corpus", color: "#ec4899", position: 1),
             CoreSection(id: "empty-section", notebookId: "look", parentId: nil, name: "Empty section", color: "#14b8a6", position: 2),

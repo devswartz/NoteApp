@@ -312,12 +312,22 @@ struct TasksRibbon: View {
 struct NotesRibbon: View {
     let m: RibbonMetrics
     @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
 
     var body: some View {
-        RibbonButton(icon: "file-plus", m: m) { shell.notYet("New page") }
-        RibbonButton(icon: "layout-template", m: m, caret: true) { shell.notYet("Templates") }
-        RibbonButton(icon: "folder-plus", m: m) { shell.notYet("New section") }
-        RibbonButton(icon: "book-plus", m: m) { shell.notYet("New notebook") }
+        // Without a notebook there is nowhere for a page or section: those buttons are dimmed, as on the web.
+        let tree = session.shownTree
+        let notebook = currentNotebook(tree, shell)
+        let sectionId: String? = {
+            if case let .section(id) = shell.route { return id }
+            if case let .page(id) = shell.route { return tree?.pages.first { $0.id == id }?.sectionId }
+            return notebook.flatMap { nb in TreeIndex(tree ?? Tree(notebooks: [], sections: [], pages: [])).sections(in: nb).first?.id }
+        }()
+        let canAdd = notebook != nil
+        RibbonButton(icon: "file-plus", m: m, enabled: canAdd) { shell.newPage(in: sectionId ?? "", session) }
+        RibbonButton(icon: "layout-template", m: m, enabled: canAdd, caret: true) { shell.notYet("Templates") }
+        RibbonButton(icon: "folder-plus", m: m, enabled: canAdd) { if let notebook { shell.newSection(in: notebook.id, parent: nil, session) } }
+        RibbonButton(icon: "book-plus", m: m) { shell.newNotebook(session) }
         RibbonSeparator(m: m)
         RibbonButton(icon: "upload", m: m, caret: true) { shell.notYet("Import") }
     }

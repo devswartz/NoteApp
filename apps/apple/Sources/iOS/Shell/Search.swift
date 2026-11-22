@@ -163,6 +163,11 @@ struct SearchLayer: View {
                             }
                         }
                     }
+                    .overlay(alignment: .top) {
+                        if flat.isEmpty && !shell.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
+                            Text("No results").font(.web(phone ? 15 : 14)).foregroundStyle(p.textMuted.color).padding(.vertical, 40)
+                        }
+                    }
                     .padding(6)
                     .background(GeometryReader { g in Color.clear.preference(key: SearchHeightKey.self, value: g.size.height) })
                 }

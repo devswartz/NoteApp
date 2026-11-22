@@ -58,7 +58,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | F6 region cycling | ● | — | ● | ● | — | ● | `useF6Regions.ts` |
 | Swipe actions on rows | ● | ● | — | — | ● | ◐ | `SwipeRow.tsx` *(verify which rows)* |
 | Toasts with Undo | ● | ● | ● | ● | ● | ● | |
-| Offline banner / pill (after 30 s) | ● | ● | ● | ● | ● | ● | |
+| Offline banner / pill (after 30 s) | ● ✓ | ● | ● | ● | ● | ● | |
 | "New version available, reload" prompt | ◐ | ◐ | ◐ | ◐ | ◐ | ● | service worker; bundled apps update via store/updater |
 | Deep links (`notivelo://`, universal links `/w/…`) | ● | ● | ● | ● | ● | — | `DeepLinks.tsx`, `platform/deepLinks.ts` |
 | Themes: Light, Dark, Hybrid (default), System | ● | ● | ● | ● | ● | ● | native window theme on desktop (`theme.rs`) |

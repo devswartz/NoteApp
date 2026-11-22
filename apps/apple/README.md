@@ -14,3 +14,5 @@ cd apps/apple && xcodegen generate && open Notivelo.xcodeproj
 ```
 
 CI: `.github/workflows/apple-native.yml` (macos-15) builds both on pushes to `rewrite/**`. A commit message with `[testflight]` also archives the iPad/iPhone app and uploads it to TestFlight as **1.99.x** (internal testing only, never App Review). The build number is `<mobile.yml's latest run>.<this run>`, so it sorts above every build already uploaded and below the next real release build.
+
+Test steps for each TestFlight build: `docs/rewrite/status/apple.md`, "How Devon tests this build".

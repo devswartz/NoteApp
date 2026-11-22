@@ -49,6 +49,13 @@ struct NotesPanel: View {
         let notebook = currentNotebook(tree, shell)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
+                if let notebook, shell.renaming == "notebook:\(notebook.id)" {
+                    HStack(spacing: 8) {
+                        LetterTile(letter: notebook.name, fill: AnyShapeStyle(UIColor(css: notebook.color).color), size: 22, radius: 6, fontSize: 12)
+                        RenameField(initial: notebook.name) { shell.commitRename(.notebook, notebook.id, to: $0, session) }
+                    }
+                    .padding(.horizontal, 8).frame(height: 36)
+                } else {
                 Button { shell.menu = .notebookPicker } label: {
                     HStack(spacing: 8) {
                         if let notebook {
@@ -56,7 +63,7 @@ struct NotesPanel: View {
                             Text(notebook.name).font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color).lineLimit(1).truncationMode(.tail)
                             if notebook.visibility == "private" { Icon("lock", 12, p.textMuted.color) }
                         } else {
-                            if phone { Icon("book-plus", 17, p.text2.color) }
+                            Icon("book-plus", phone ? 17 : 15, p.text2.color)
                             Text("Notebooks").font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color)
                         }
                         Spacer(minLength: 0)
@@ -68,6 +75,7 @@ struct NotesPanel: View {
                 .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
                 .background(shell.menu == .notebookPicker ? p.bgPressed.color : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .anchor("notebook-picker", shell)
+                }
                 if notebook != nil {
                     Button { shell.menu = .notebookOptions } label: {
                         Icon("ellipsis", 15, p.textMuted.color).frame(width: phone ? 36 : 24, height: phone ? 36 : 24)
@@ -97,10 +105,15 @@ struct NotesPanel: View {
                             }
                         }
                         VStack(alignment: .leading, spacing: 0) {
-                            GroupHeading(title: "Sections", icon: nil, open: true, plus: { shell.notYet("New section") }, toggle: {})
+                            GroupHeading(title: "Sections", icon: nil, open: true, plus: { shell.newSection(in: notebook.id, parent: nil, session) }, toggle: {})
                             let sections = index.sections(in: notebook)
                             if sections.isEmpty {
-                                Text("No sections yet. Add one").font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.horizontal, 6).padding(.vertical, 4)
+                                HStack(spacing: 4) {
+                                    Text("No sections yet.").foregroundStyle(p.textMuted.color)
+                                    Button { shell.newSection(in: notebook.id, parent: nil, session) } label: { Text("Add one").foregroundStyle(p.accent.color).fontWeight(.medium) }
+                                        .buttonStyle(.plain)
+                                }
+                                .font(.web(12.5)).padding(.horizontal, 6).padding(.vertical, 4)
                             }
                             ForEach(sections, id: \.id) { section in
                                 SectionNode(section: section, index: index, depth: 0)
@@ -109,12 +122,13 @@ struct NotesPanel: View {
                     } else if tree != nil {
                         HStack(spacing: 4) {
                             Text("No notebooks yet.").foregroundStyle(p.textMuted.color)
-                            Text("Create one").foregroundStyle(p.accent.color)
+                            Button { shell.newNotebook(session) } label: { Text("Create one").foregroundStyle(p.accent.color).fontWeight(.medium) }
+                                .buttonStyle(.plain)
                         }
                         .font(.web(phone ? 13 : 12.5))
                         .padding(.horizontal, 6).padding(.top, phone ? 5 : 0)
-                    } else if session.loading {
-                        Text("Loading…").font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.horizontal, 6)
+                    } else if session.loadError == nil {
+                        TreeSkeleton()
                     }
                     if let error = session.loadError {
                         Text(error).font(.web(12.5)).foregroundStyle(p.danger.color).padding(.horizontal, 6)
@@ -178,6 +192,7 @@ struct SectionNode: View {
     let depth: Int
     @Environment(\.phoneLayout) private var phone
     @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
     let theme = Theme.shared
 
     var body: some View {
@@ -190,13 +205,17 @@ struct SectionNode: View {
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .frame(width: 14)
                 RoundedRectangle(cornerRadius: 2).fill(UIColor(css: section.color).color).frame(width: 4, height: 14)
-                Text(section.name)
-                    .font(.web(phone ? 15 : 14, selected ? 600 : 400))
-                    .foregroundStyle(selected ? p.accent.color : p.text2.color)
-                    .lineLimit(1)
+                if shell.renaming == "section:\(section.id)" {
+                    RenameField(initial: section.name) { shell.commitRename(.section, section.id, to: $0, session) }
+                } else {
+                    Text(section.name)
+                        .font(.web(phone ? 15 : 14, selected ? 600 : 400))
+                        .foregroundStyle(selected ? p.accent.color : p.text2.color)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 if phone {
-                    Button { shell.notYet("New page") } label: { Icon("plus", 15, p.text2.color).frame(width: 36, height: 36) }
+                    Button { shell.newPage(in: section.id, session) } label: { Icon("plus", 15, p.text2.color).frame(width: 36, height: 36) }
                         .buttonStyle(.plain)
                     Button { shell.menu = .section(section.id) } label: { Icon("ellipsis", 15, p.text2.color).frame(width: 36, height: 36) }
                         .buttonStyle(.plain)
@@ -231,7 +250,7 @@ struct SectionNode: View {
                         .padding(.leading, phone ? 6 + 14 * CGFloat(depth + 1) + 14 : 6 + 14 * CGFloat(depth + 1) + 20)
                         .frame(height: phone ? 40 : 28)
                         .contentShape(Rectangle())
-                        .onTapGesture { shell.notYet("New page") }
+                        .onTapGesture { shell.newPage(in: section.id, session) }
                     }
                 }
                 .padding(.leading, 4)
@@ -271,10 +290,14 @@ struct PageRowView: View {
             } else {
                 Icon(page.locked ? "lock" : "file-text", 14, p.textMuted.color)
             }
-            Text(page.title.isEmpty ? "Untitled" : page.title)
-                .font(.web(phone ? 15 : 14, active ? 500 : 400))
-                .foregroundStyle(active ? p.accent.color : p.text2.color)
-                .lineLimit(1)
+            if shell.renaming == "page:\(page.id)" {
+                RenameField(initial: page.title) { shell.commitRename(.page, page.id, to: $0, session) }
+            } else {
+                Text(page.title.isEmpty ? "Untitled" : page.title)
+                    .font(.web(phone ? 15 : 14, active ? 500 : 400))
+                    .foregroundStyle(active ? p.accent.color : p.text2.color)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 0)
             if phone {
                 Button { shell.menu = .pageRow(page.id) } label: { Icon("ellipsis", 15, p.text2.color).frame(width: 36, height: 36) }
@@ -361,5 +384,44 @@ struct TasksPanel: View {
             }
             .padding(.horizontal, 8)
         }
+    }
+}
+
+/// The web's `RenameInput` (`.input.input-sm.sb-rename`, 24 high): Enter or leaving the field saves, Escape cancels.
+struct RenameField: View {
+    let initial: String
+    let done: (String?) -> Void
+    @State private var text = ""
+    @State private var finished = false
+    @FocusState private var focused: Bool
+    let theme = Theme.shared
+
+    var body: some View {
+        let p = theme.chrome
+        TextField("", text: $text)
+            .font(.web(13))
+            .foregroundStyle(p.text.color)
+            .tint(p.accent.color)
+            .focused($focused)
+            .submitLabel(.done)
+            .textInputAutocapitalization(.sentences)
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(p.bg.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(focused ? p.accent.color : p.border.color, lineWidth: 1))
+            .onSubmit { finish() }
+            .onKeyPress(.escape) { finished = true; done(nil); return .handled }
+            .onChange(of: focused) { _, now in if !now { finish() } }
+            .onAppear {
+                text = initial
+                DispatchQueue.main.asyncAfter(deadline: .now() + (LookData.state == nil ? 0.1 : 0)) { focused = true }
+            }
+    }
+
+    private func finish() {
+        guard !finished else { return }
+        finished = true
+        let value = text.trimmingCharacters(in: .whitespaces)
+        done(value.isEmpty || value == initial ? nil : value)
     }
 }

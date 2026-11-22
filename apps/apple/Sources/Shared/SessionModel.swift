@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import NotiveloCore
 import Observation
 
@@ -34,10 +35,13 @@ final class SessionModel {
     private(set) var pendingDone: [String: Bool] = [:]
     private(set) var loadError: String?
     private(set) var loading = false
+    /// The device has a network path (the offline banner waits 30 s after this turns false).
+    private(set) var online = true
 
     @ObservationIgnored fileprivate var core: Core
     @ObservationIgnored fileprivate var taskRefreshWork: DispatchWorkItem?
     @ObservationIgnored private var savedToken: String?
+    @ObservationIgnored private var pathMonitor: NWPathMonitor?
     @ObservationIgnored private let queue = DispatchQueue(label: "com.devswartz.notivelo.core", qos: .userInitiated)
 
     init() {
@@ -46,6 +50,7 @@ final class SessionModel {
         let url = defaults.bool(forKey: "useStaging") ? Self.staging : Self.production
         serverURL = url
         core = preview ? Core(serverUrl: url) : Self.makeCore(url)
+        if !preview { watchNetwork() }
         if preview {
             user = User(id: "preview", email: "preview@notivelo", name: "Preview", color: "#3b82f6", emailVerified: true)
             phase = .signedIn
@@ -59,6 +64,22 @@ final class SessionModel {
     var workspace: Workspace? { workspaces.first { $0.id == workspaceId } }
 
     func isDone(_ task: CoreTask) -> Bool { pendingDone[task.id] ?? task.done }
+
+    /// Follows the device's connection; back online, the tree and tasks are read again.
+    private func watchNetwork() {
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let now = path.status == .satisfied
+                let wasOffline = !self.online
+                self.online = now
+                if now && wasOffline && self.phase == .signedIn { self.reload() }
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.devswartz.notivelo.path"))
+    }
 
     // MARK: Sign-in
 
