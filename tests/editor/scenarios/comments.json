@@ -34,7 +34,7 @@
       "expect": {"doc": "<paragraph>a|b<comment threadId=\"c2\">cd</comment></paragraph>"}},
     {"name": "Mod+b over commented text keeps the comment", "doc": "<paragraph>a<comment threadId=\"c1\">[bc]</comment>d</paragraph>", "steps": [{"key": "Mod+b"}],
       "expect": {"doc": "<paragraph>a<bold><comment threadId=\"c1\">[bc]</comment></bold>d</paragraph>"}},
-    {"name": "undo takes back setComment", "doc": "<paragraph>a[bc]d</paragraph>", "steps": [{"command": "setComment", "args": {"threadId": "c1"}}, {"command": "undo"}],
+    {"name": "undo takes back setComment", "doc": "<paragraph>a[bc]d</paragraph>", "steps": [{"command": "setComment", "args": {"threadId": "c1"}}, {"key": "Mod+z"}],
       "expect": {"doc": "<paragraph>a[bc]d</paragraph>"}},
     {"name": "copy a comment: the HTML carries the thread id", "doc": "<paragraph>a<comment threadId=\"c1\">[bc]</comment>d</paragraph>", "steps": [{"copy": {"text": "bc", "html": "<p data-pm-slice=\"1 1 []\"><span data-thread-id=\"c1\" class=\"comment-anchor\">bc</span></p>"}}],
       "expect": {"doc": "<paragraph>a<comment threadId=\"c1\">[bc]</comment>d</paragraph>"}},
