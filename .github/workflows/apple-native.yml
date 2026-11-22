@@ -35,7 +35,7 @@ jobs:
   apple:
     name: apple (iPad/iPhone + Mac build; TestFlight on request)
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 80
     env:
       HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
       UPLOAD: ${{ (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]')) }}
@@ -92,7 +92,7 @@ jobs:
       # Artifacts "look-side-by-side" and "look-native". Corpus mode only: no network, no credentials.
       - name: Look (native screenshots, side-by-sides)
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 32
         run: bash apps/apple/scripts/look-shots.sh "$RUNNER_TEMP/dd-ios/Build/Products/Debug-iphonesimulator/Notivelo.app" "$RUNNER_TEMP/look"
       - uses: actions/upload-artifact@v4
         if: always()

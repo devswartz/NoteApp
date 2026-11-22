@@ -184,7 +184,7 @@ struct SearchLayer: View {
         .clipShape(shape)
         .shadowLg(p)
         .onChange(of: shell.searchQuery) { index = 0 }
-        .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true } }
+        .onAppear { if LookData.state == nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true } } }
         .background {
             Button("") {
                 if flat.indices.contains(index), case let .task(id) = flat[index].kind, let t = session.shownTasks.first(where: { $0.id == id }) {
@@ -202,7 +202,9 @@ struct SearchLayer: View {
                 Icon(hit.icon, 16, (hit.done ? p.success : p.textMuted).color).frame(width: 16)
                 label(hit, p, size)
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                     .frame(maxWidth: rowWidth * 0.6, alignment: .leading)
+                    .clipped()
                 if let sub = hit.sub {
                     Text(SearchLogic.marked(sub, mark: Color(red: 250 / 255, green: 204 / 255, blue: 21 / 255).opacity(0.35)))
                         .font(.web(12.5)).foregroundStyle(p.textMuted.color)
