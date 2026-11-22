@@ -269,11 +269,16 @@ struct OutlineBars: View {
 
 /// No page selected: the Notes overview (recently edited cards, then every notebook).
 struct NotesHome: View {
+    @Environment(\.phoneLayout) private var phone
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
     var body: some View {
+        if phone { PhoneNotes() } else { overview }
+    }
+
+    @ViewBuilder private var overview: some View {
         let p = theme.chrome
         let tree = session.shownTree
         ScrollView {
@@ -352,11 +357,16 @@ struct NotesHome: View {
 /// A section with no page open: empty → "This section has no pages yet."
 struct SectionScreen: View {
     let sectionId: String
+    @Environment(\.phoneLayout) private var phone
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
     var body: some View {
+        if phone { PhoneSectionScreen(sectionId: sectionId) } else { empty }
+    }
+
+    @ViewBuilder private var empty: some View {
         let p = theme.chrome
         let section = session.shownTree?.sections.first { $0.id == sectionId }
         VStack(spacing: 8) {

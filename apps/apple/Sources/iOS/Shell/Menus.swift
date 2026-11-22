@@ -1,6 +1,18 @@
 import NotiveloCore
 import SwiftUI
 
+private struct MenuPaddingKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 6
+}
+
+extension EnvironmentValues {
+    /// The enclosing menu card's padding (separators run out to its edges).
+    var menuPadding: CGFloat {
+        get { self[MenuPaddingKey.self] }
+        set { self[MenuPaddingKey.self] = newValue }
+    }
+}
+
 /// A popover in the web's menu style (LOOK.md 4.9): `--bg-elevated`, 1 pt border, radius 12,
 /// `--shadow-lg`, padding 6.
 struct MenuCard<Content: View>: View {
@@ -17,6 +29,7 @@ struct MenuCard<Content: View>: View {
             .background(palette.bgElevated.color, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(palette.border.color, lineWidth: 1))
             .shadowLg(palette)
+            .environment(\.menuPadding, padding)
     }
 }
 
@@ -32,6 +45,7 @@ struct MenuItem: View {
     var checked = false
     var trailingChevron = false
     let action: () -> Void
+    @Environment(\.phoneLayout) private var phone
 
     var body: some View {
         let p = palette
@@ -43,7 +57,7 @@ struct MenuItem: View {
                 }
                 .frame(width: 18, height: 18)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.web(14)).foregroundStyle(fg.color).lineLimit(1)
+                    Text(title).font(.web(phone ? 15 : 14)).foregroundStyle(fg.color).lineLimit(1)
                     if let note {
                         Text(note).font(.web(11.5)).foregroundStyle(p.textMuted.color).fixedSize(horizontal: false, vertical: true)
                     }
@@ -55,7 +69,7 @@ struct MenuItem: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, note == nil ? 0 : 7)
-            .frame(minHeight: 32)
+            .frame(minHeight: phone ? 44 : 32)
         }
         .buttonStyle(PressStyle(radius: 6, pressed: (danger ? p.danger.withAlphaComponent(0.12) : p.bgHover).color))
         .disabled(disabled)
@@ -76,8 +90,9 @@ struct MenuLabel: View {
 /// A separator running to the popover's edges, 6 pt above and below.
 struct MenuSeparator: View {
     let palette: Palette
+    @Environment(\.menuPadding) private var pad
     var body: some View {
-        Rectangle().fill(palette.border.color).frame(height: 1).padding(.horizontal, -6).padding(.vertical, 6)
+        Rectangle().fill(palette.border.color).frame(height: 1).padding(.horizontal, -pad).padding(.vertical, 6)
     }
 }
 
@@ -86,19 +101,20 @@ struct ColorRow: View {
     let palette: Palette
     let selected: String?
     let pick: (String) -> Void
+    @Environment(\.phoneLayout) private var phone
     static let colors = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#64748b"]
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: phone ? 12 : 6) {
             ForEach(Self.colors, id: \.self) { c in
                 Button { pick(c) } label: {
-                    Circle().fill(UIColor(css: c).color).frame(width: 20, height: 20)
+                    Circle().fill(UIColor(css: c).color).frame(width: phone ? 32 : 20, height: phone ? 32 : 20)
                         .overlay(Circle().stroke(palette.accent.color, lineWidth: 2).padding(-3).opacity(c.lowercased() == selected?.lowercased() ? 1 : 0))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(8)
+        .padding(.horizontal, 8).padding(.vertical, phone ? 12 : 8)
     }
 }
 
@@ -108,19 +124,38 @@ struct MenuLayer: View {
     let height: CGFloat
     @Environment(Shell.self) private var shell
     @Environment(SessionModel.self) private var session
+    @Environment(\.phoneLayout) private var phone
     let theme = Theme.shared
     let focus = EditorFocus.shared
+
+    /// Phones open the notebook, section and page-row menus as bottom sheets over a dimmed screen.
+    private func isSheet(_ menu: Shell.Menu) -> Bool {
+        guard phone else { return false }
+        switch menu {
+        case .notebookOptions, .section, .pageRow: return true
+        default: return false
+        }
+    }
 
     var body: some View {
         if let menu = shell.menu {
             ZStack(alignment: .topLeading) {
-                Color.black.opacity(0.001)
+                (isSheet(menu) ? theme.chrome.bgOverlay.color : Color.black.opacity(0.001))
                     .contentShape(Rectangle())
                     .onTapGesture { shell.menu = nil }
                 placed(menu)
             }
             .frame(width: width, height: height)
         }
+    }
+
+    /// A bottom sheet: 8 pt from the sides and the bottom.
+    private func sheet<V: View>(_ content: V) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            content.padding(.bottom, 8)
+        }
+        .frame(width: width, height: height)
     }
 
     private func anchorFrame(_ id: String) -> CGRect {
@@ -139,23 +174,45 @@ struct MenuLayer: View {
         let p = theme.chrome
         switch menu {
         case .account:
-            let f = anchorFrame("rail-account")
-            at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading, accountMenu(p))
+            if phone {
+                let f = anchorFrame("drawer-account")
+                at(CGPoint(x: f.minX, y: f.minY + 2), .bottomLeading, accountMenu(p))
+            } else {
+                let f = anchorFrame("rail-account")
+                at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading, accountMenu(p))
+            }
         case .workspace:
-            let f = anchorFrame("rail-workspace")
-            at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading, workspaceMenu(p))
+            if phone {
+                let f = anchorFrame("drawer-workspace")
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, workspaceMenu(p))
+            } else {
+                let f = anchorFrame("rail-workspace")
+                at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading, workspaceMenu(p))
+            }
         case .notebookPicker:
             let f = anchorFrame("notebook-picker")
-            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, notebookPicker(p))
+            at(CGPoint(x: f.minX + (phone ? 6 : 0), y: f.maxY + 6), .topLeading, notebookPicker(p))
         case .notebookOptions:
-            let f = anchorFrame("notebook-options")
-            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, notebookOptions(p))
+            if phone {
+                sheet(notebookOptions(p))
+            } else {
+                let f = anchorFrame("notebook-options")
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, notebookOptions(p))
+            }
         case let .section(id):
-            let f = anchorFrame("section:\(id)")
-            at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, sectionMenu(p, id))
+            if phone {
+                sheet(sectionMenu(p, id))
+            } else {
+                let f = anchorFrame("section:\(id)")
+                at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, sectionMenu(p, id))
+            }
         case let .pageRow(id):
-            let f = anchorFrame("page:\(id)")
-            at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, pageRowMenu(p))
+            if phone {
+                sheet(pageRowMenu(p))
+            } else {
+                let f = anchorFrame("page:\(id)")
+                at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, pageRowMenu(p))
+            }
         case .pageOptions:
             let f = anchorFrame("page-options")
             at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, pageOptions(p))
@@ -226,7 +283,7 @@ struct MenuLayer: View {
     }
 
     private func workspaceMenu(_ p: Palette) -> some View {
-        MenuCard(palette: p, width: 240) {
+        MenuCard(palette: p, width: phone ? 252 : 240) {
             ForEach(session.shownWorkspaces, id: \.id) { ws in
                 MenuItem(palette: p, title: ws.name, hint: ws.role.prefix(1).uppercased() + ws.role.dropFirst(),
                          checked: ws.id == (session.shownWorkspace?.id)) {
@@ -246,21 +303,22 @@ struct MenuLayer: View {
         let tree = session.shownTree
         let current = currentNotebook(tree, shell)
         let notebooks = tree.map { TreeIndex($0).notebooks } ?? []
-        return MenuCard(palette: p, width: 260) {
+        return MenuCard(palette: p, width: phone ? 274 : 260) {
             MenuLabel(palette: p, text: "My notebooks")
             ForEach(notebooks, id: \.id) { nb in
                 Button {
                     shell.menu = nil
                     shell.notebookId = nb.id
-                    shell.route = .notes
+                    if !phone { shell.route = .notes }
                 } label: {
                     HStack(spacing: 10) {
                         LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
-                        Text(nb.name).font(.web(14)).foregroundStyle(p.text.color).lineLimit(1)
+                        Text(nb.name).font(.web(phone ? 15 : 14)).foregroundStyle(p.text.color).lineLimit(1)
                         Spacer(minLength: 0)
                         if nb.id == current?.id { Icon("check", 14, p.accent.color) }
+                        if nb.visibility == "private" && phone { Icon("lock", 13, p.textMuted.color) }
                     }
-                    .padding(.horizontal, 10).frame(height: 32)
+                    .padding(.horizontal, 10).frame(height: phone ? 44 : 32)
                 }
                 .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
             }
@@ -271,7 +329,7 @@ struct MenuLayer: View {
 
     private func notebookOptions(_ p: Palette) -> some View {
         let nb = currentNotebook(session.shownTree, shell)
-        return MenuCard(palette: p, width: 230) {
+        return MenuCard(palette: p, width: phone ? width - 16 : 230, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             MenuItem(palette: p, title: "New section", icon: "folder-plus") { shell.notYet("New section") }
             MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
             MenuItem(palette: p, title: "Share with people…", icon: "user-plus") { shell.notYet("Sharing") }
@@ -285,7 +343,7 @@ struct MenuLayer: View {
 
     private func sectionMenu(_ p: Palette, _ id: String) -> some View {
         let section = session.shownTree?.sections.first { $0.id == id }
-        return MenuCard(palette: p, width: 236) {
+        return MenuCard(palette: p, width: phone ? width - 16 : 236, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             Group {
             MenuItem(palette: p, title: "New page", icon: "file-plus") { shell.notYet("New page") }
             MenuItem(palette: p, title: "New page from template", icon: "layout-template", trailingChevron: true) { shell.notYet("Templates") }
@@ -303,7 +361,7 @@ struct MenuLayer: View {
     }
 
     private func pageRowMenu(_ p: Palette) -> some View {
-        MenuCard(palette: p, width: 236) {
+        MenuCard(palette: p, width: phone ? width - 16 : 236, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             MenuItem(palette: p, title: "Add to favourites", icon: "star") { shell.notYet("Favourites") }
             MenuItem(palette: p, title: "Copy link", icon: "link-2") { shell.notYet("Copying links") }
             MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }

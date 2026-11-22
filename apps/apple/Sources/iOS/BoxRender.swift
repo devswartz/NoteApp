@@ -83,7 +83,8 @@ struct BoxRendering {
 /// web app's `.ProseMirror` (LOOK.md 2.3, 2.4): 16 / 1.7 lines, block margins collapsed as CSS
 /// does, headings, list markers by depth, checklists, quotes, callouts, code blocks, task rows.
 struct BoxTextRenderer {
-    var bodySize: CGFloat = 16
+    /// 16, phones 16.5 (LOOK.md 2.3); headings are em-based and scale with it.
+    var bodySize: CGFloat = BoxTextRenderer.phoneChips ? 16.5 : 16
     var tasks: [String: TaskLine] = [:]
     var pageTitles: [String: String] = [:]
     /// The text container's width (attachments and block backgrounds use it).
@@ -416,7 +417,7 @@ struct BoxTextRenderer {
         switch c.type {
         case "heading":
             let level = Int(c.number("level") ?? 1)
-            let size: CGFloat = [1: 28, 2: 21.6, 3: 17.92][level] ?? bodySize
+            let size: CGFloat = ([1: 28, 2: 21.6, 3: 17.92][level] ?? 16) * bodySize / 16
             let lh: CGFloat = [1: 1.3, 2: 1.35, 3: 1.7][level] ?? 1.7
             let text = NSMutableAttributedString(attributedString: inline(c.content, size: size, weight: 700, ctx: ctx))
             let kern: CGFloat = level == 1 ? -0.02 * size : level == 2 ? -0.01 * size : 0

@@ -143,6 +143,8 @@ struct TaskBuckets {
 /// Today / My Tasks / Upcoming / All tasks (LOOK.md 4.10).
 struct TasksScreen: View {
     let list: Shell.TaskList
+    @Environment(\.phoneLayout) private var phone
+    @State private var everyone = false
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
@@ -153,11 +155,43 @@ struct TasksScreen: View {
         let groups = buckets.groups(list)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(list.title).font(.web(26, 700)).tracking(-0.52).foregroundStyle(p.text.color).frame(height: 34)
+                Text(list.title).font(.web(phone ? 24 : 26, 700)).tracking(phone ? -0.48 : -0.52).foregroundStyle(p.text.color).frame(height: phone ? 38 : 34)
                 Text(list.subtitle).font(.web(14)).foregroundStyle(p.textMuted.color).frame(height: 21).padding(.top, 4)
+                if phone {
+                    // The ribbon's filter buttons, as one button (Add filter) under the heading.
+                    Button { shell.notYet("Filters") } label: {
+                        HStack(spacing: 6) {
+                            Icon("plus", 15, p.text.color)
+                            Text("Add filter").font(.web(13.5, 500)).foregroundStyle(p.text.color)
+                        }
+                        .padding(.horizontal, 10).frame(height: 28)
+                        .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+                        .shadowSm(p)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 16)
+                    if list == .upcoming {
+                        HStack(spacing: 2) {
+                            ForEach(["Mine", "Everyone"], id: \.self) { label in
+                                let active = (label == "Everyone") == everyone
+                                Button { everyone = label == "Everyone" } label: {
+                                    Text(label).font(.web(13.5, 500)).foregroundStyle(p.text.color)
+                                        .padding(.horizontal, 12).frame(height: 26)
+                                        .background(active ? p.bgElevated.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                        .shadow(color: active ? Color.black.opacity(0.08) : .clear, radius: 1, x: 0, y: 1)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(2)
+                        .background(p.bgHover.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.top, 12)
+                    }
+                }
                 if list == .today {
                     StatsCard(done: buckets.doneToday, left: buckets.list(.today).count)
-                        .padding(.top, 20)
+                        .padding(.top, phone ? 12 : 20)
                 }
                 if groups.isEmpty {
                     emptyState(p).padding(.top, 20)
@@ -190,7 +224,7 @@ struct TasksScreen: View {
                     .padding(.top, 20)
                 }
             }
-            .padding(.top, 36).padding(.horizontal, 40).padding(.bottom, 120)
+            .padding(.top, phone ? 20 : 36).padding(.horizontal, phone ? 16 : 40).padding(.bottom, phone ? 96 : 120)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .refreshable { await session.refresh() }
@@ -231,16 +265,18 @@ struct StatsCard: View {
             stat(done > 0 ? "1" : "0", "day streak", p)
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 6) {
+                // The last seven days, today at the right.
                 let today = Calendar.current.component(.weekday, from: Date()) - 1 // Sunday 0
                 ForEach(0..<7, id: \.self) { i in
                     VStack(spacing: 3) {
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(i == today ? p.accent.color : p.bgHover.color)
+                            .fill(i == 6 ? p.accent.color : p.bgHover.color)
                             .frame(width: 10, height: 32)
-                        Text(["S", "M", "T", "W", "T", "F", "S"][i]).font(.web(10.5)).foregroundStyle(p.textMuted.color)
+                        Text(["S", "M", "T", "W", "T", "F", "S"][((today - (6 - i)) % 7 + 7) % 7]).font(.web(10.5)).foregroundStyle(p.textMuted.color)
                     }
                 }
             }
+            .fixedSize()
         }
         .padding(.vertical, 14).padding(.horizontal, 16)
         .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -258,22 +294,24 @@ struct StatsCard: View {
     private func stat(_ n: String, _ label: String, _ p: Palette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(n).font(.web(22, 700)).foregroundStyle(p.text.color)
-            Text(label).font(.web(12)).foregroundStyle(p.textMuted.color)
+            Text(label).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
         }
+        .fixedSize()
     }
 }
 
 /// A task row (src/components/TaskRow.tsx): circle, title, meta line, avatar.
 struct TaskRowView: View {
     let task: CoreTask
+    @Environment(\.phoneLayout) private var phone
     @Environment(SessionModel.self) private var session
     let theme = Theme.shared
 
     var body: some View {
         let p = theme.chrome
         let done = session.isDone(task)
-        HStack(alignment: .top, spacing: 10) {
-            TaskCircle(priority: task.priority, done: done, size: 18, palette: p) {
+        HStack(alignment: .top, spacing: phone ? 16 : 10) {
+            TaskCircle(priority: task.priority, done: done, size: phone ? 22 : 18, palette: p) {
                 session.setDone(task, !done)
             }
             .padding(.top, 1)
@@ -291,7 +329,7 @@ struct TaskRowView: View {
                 AvatarView(name: me.name, color: UIColor(css: me.color), size: 20)
             }
         }
-        .padding(.vertical, 13).padding(.horizontal, 6)
+        .padding(.vertical, phone ? 12 : 13).padding(.horizontal, phone ? 12 : 6)
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
     }
 
@@ -302,7 +340,7 @@ struct TaskRowView: View {
             session.shownTree?.pages.first(where: { $0.id == id })?.title ?? LookData.otherPageTitles[id]
         }
         if due != nil || task.priority < 4 || pageTitle != nil {
-            HStack(spacing: 6) {
+            FlowLayout(spacing: phone ? 9 : 6, lineSpacing: 6) {
                 Color.clear.frame(width: 0, height: 18)
                 if let due {
                     let tone = Due.tone(task.dueDate, p).color
@@ -317,7 +355,7 @@ struct TaskRowView: View {
                 if let pageTitle {
                     HStack(spacing: 4) {
                         Icon("file-text", 13, p.textMuted.color)
-                        Text(pageTitle).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
+                        Text(pageTitle).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(phone ? 2 : 1)
                     }
                 }
             }
@@ -355,5 +393,40 @@ struct TaskCircle: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(done ? "Mark as not done" : "Mark as done")
+    }
+}
+
+/// Children in rows that wrap (the web's `flex-wrap`): each left to right, a new row when the next doesn't fit.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    private func measure(_ v: LayoutSubview, _ maxW: CGFloat) -> CGSize {
+        let s = v.sizeThatFits(.unspecified)
+        return s.width > maxW ? v.sizeThatFits(ProposedViewSize(width: maxW, height: nil)) : s
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, width: CGFloat = 0
+        for v in subviews {
+            let s = measure(v, maxW)
+            if x > 0 && x + s.width > maxW { y += rowH + lineSpacing; x = 0; rowH = 0 }
+            x += s.width + spacing
+            rowH = max(rowH, s.height)
+            width = max(width, x - spacing)
+        }
+        return CGSize(width: width, height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for v in subviews {
+            let s = measure(v, bounds.width)
+            if x > bounds.minX && x + s.width > bounds.maxX { y += rowH + lineSpacing; x = bounds.minX; rowH = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: min(s.width, bounds.width), height: s.height))
+            x += s.width + spacing
+            rowH = max(rowH, s.height)
+        }
     }
 }

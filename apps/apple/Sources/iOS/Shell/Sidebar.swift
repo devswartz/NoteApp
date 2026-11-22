@@ -38,6 +38,7 @@ func currentNotebook(_ tree: Tree?, _ shell: Shell) -> Notebook? {
 }
 
 struct NotesPanel: View {
+    @Environment(\.phoneLayout) private var phone
     @Environment(Shell.self) private var shell
     @Environment(SessionModel.self) private var session
     let theme = Theme.shared
@@ -52,10 +53,11 @@ struct NotesPanel: View {
                     HStack(spacing: 8) {
                         if let notebook {
                             LetterTile(letter: notebook.name, fill: AnyShapeStyle(UIColor(css: notebook.color).color), size: 22, radius: 6, fontSize: 12)
-                            Text(notebook.name).font(.web(14, 650)).foregroundStyle(p.text.color).lineLimit(1).truncationMode(.tail)
+                            Text(notebook.name).font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color).lineLimit(1).truncationMode(.tail)
                             if notebook.visibility == "private" { Icon("lock", 12, p.textMuted.color) }
                         } else {
-                            Text("Notebooks").font(.web(14, 650)).foregroundStyle(p.text.color)
+                            if phone { Icon("book-plus", 17, p.text2.color) }
+                            Text("Notebooks").font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color)
                         }
                         Spacer(minLength: 0)
                         Icon("chevron-down", 14, p.textMuted.color)
@@ -64,9 +66,10 @@ struct NotesPanel: View {
                     .frame(height: 36)
                 }
                 .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+                .background(shell.menu == .notebookPicker ? p.bgPressed.color : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .anchor("notebook-picker", shell)
                 Button { shell.menu = .notebookOptions } label: {
-                    Icon("ellipsis", 15, p.textMuted.color).frame(width: 24, height: 24)
+                    Icon("ellipsis", 15, p.textMuted.color).frame(width: phone ? 36 : 24, height: phone ? 36 : 24)
                 }
                 .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
                 .anchor("notebook-options", shell)
@@ -106,7 +109,7 @@ struct NotesPanel: View {
                             Text("No notebooks yet.").foregroundStyle(p.textMuted.color)
                             Text("Create one").foregroundStyle(p.accent.color)
                         }
-                        .font(.web(12.5))
+                        .font(.web(phone ? 13 : 12.5))
                         .padding(.horizontal, 6)
                     } else if session.loading {
                         Text("Loading…").font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.horizontal, 6)
@@ -132,6 +135,7 @@ struct GroupHeading: View {
     let plus: (() -> Void)?
     var toggle: () -> Void
     let theme = Theme.shared
+    @Environment(\.phoneLayout) private var phone
 
     init(title: String, icon: String?, open: Bool, plus: (() -> Void)?, toggle: @escaping () -> Void) {
         self.title = title
@@ -156,11 +160,11 @@ struct GroupHeading: View {
             .buttonStyle(PressStyle(radius: 4, pressed: p.bgPressed.color))
             Spacer(minLength: 0)
             if let plus {
-                Button(action: plus) { Icon("plus", 15, p.text2.color).frame(width: 24, height: 24) }
+                Button(action: plus) { Icon("plus", 15, p.text2.color).frame(width: phone ? 36 : 24, height: phone ? 36 : 24) }
                     .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
             }
         }
-        .frame(minHeight: 26)
+        .frame(minHeight: phone ? (plus == nil ? 30 : 36) : 26)
     }
 }
 
@@ -169,6 +173,7 @@ struct SectionNode: View {
     let section: CoreSection
     let index: TreeIndex
     let depth: Int
+    @Environment(\.phoneLayout) private var phone
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
@@ -183,14 +188,20 @@ struct SectionNode: View {
                     .frame(width: 14)
                 RoundedRectangle(cornerRadius: 2).fill(UIColor(css: section.color).color).frame(width: 4, height: 14)
                 Text(section.name)
-                    .font(.web(14, selected ? 600 : 400))
+                    .font(.web(phone ? 15 : 14, selected ? 600 : 400))
                     .foregroundStyle(selected ? p.accent.color : p.text2.color)
                     .lineLimit(1)
                 Spacer(minLength: 0)
+                if phone {
+                    Button { shell.notYet("New page") } label: { Icon("plus", 15, p.text2.color).frame(width: 36, height: 36) }
+                        .buttonStyle(.plain)
+                    Button { shell.menu = .section(section.id) } label: { Icon("ellipsis", 15, p.text2.color).frame(width: 36, height: 36) }
+                        .buttonStyle(.plain)
+                }
             }
             .padding(.leading, 6 + 14 * CGFloat(depth))
-            .padding(.trailing, 6)
-            .frame(height: 30)
+            .padding(.trailing, phone ? 2 : 6)
+            .frame(height: phone ? 44 : 30)
             .background(selected ? p.bgActive.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .contentShape(Rectangle())
             .onTapGesture {
@@ -211,11 +222,11 @@ struct SectionNode: View {
                     if pages.isEmpty && index.sections(in: section).isEmpty {
                         HStack(spacing: 6) {
                             Icon("plus", 14, p.textMuted.color)
-                            Text("New page").font(.web(14)).foregroundStyle(p.text2.color)
+                            Text("New page").font(.web(phone ? 15 : 14)).foregroundStyle(p.text2.color)
                             Spacer(minLength: 0)
                         }
-                        .padding(.leading, 6 + 14 * CGFloat(depth + 1) + 20)
-                        .frame(height: 28)
+                        .padding(.leading, phone ? 6 + 14 * CGFloat(depth + 1) + 14 : 6 + 14 * CGFloat(depth + 1) + 20)
+                        .frame(height: phone ? 40 : 28)
                         .contentShape(Rectangle())
                         .onTapGesture { shell.notYet("New page") }
                     }
@@ -242,6 +253,7 @@ struct PageRowView: View {
     let page: PageMeta
     /// The section's depth; -1 in RECENT (no indent).
     let depth: Int
+    @Environment(\.phoneLayout) private var phone
     @Environment(Shell.self) private var shell
     @Environment(SessionModel.self) private var session
     let theme = Theme.shared
@@ -257,11 +269,14 @@ struct PageRowView: View {
                 Icon(page.locked ? "lock" : "file-text", 14, p.textMuted.color)
             }
             Text(page.title.isEmpty ? "Untitled" : page.title)
-                .font(.web(14, active ? 500 : 400))
+                .font(.web(phone ? 15 : 14, active ? 500 : 400))
                 .foregroundStyle(active ? p.accent.color : p.text2.color)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if count > 0 {
+            if phone {
+                Button { shell.menu = .pageRow(page.id) } label: { Icon("ellipsis", 15, p.text2.color).frame(width: 36, height: 36) }
+                    .buttonStyle(.plain)
+            } else if count > 0 {
                 HStack(spacing: 3) {
                     Icon("circle-check", 11, p.textMuted.color)
                     Text("\(count)").font(.web(11))
@@ -271,8 +286,8 @@ struct PageRowView: View {
             }
         }
         .padding(.leading, depth < 0 ? 26 : 6 + 14 * CGFloat(depth + 1) + 20)
-        .padding(.trailing, 6)
-        .frame(height: 28)
+        .padding(.trailing, phone ? 2 : 6)
+        .frame(height: phone ? 40 : 28)
         .background(active ? p.bgActive.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { shell.open(page: page.id) }
@@ -311,7 +326,7 @@ struct TasksPanel: View {
                 ForEach(Shell.TaskList.allCases, id: \.self) { list in
                     let active = shell.route == .tasks(list)
                     let n = counts.count(list)
-                    Button { shell.route = .tasks(list) } label: {
+                    Button { shell.route = .tasks(list); shell.drawerOpen = false } label: {
                         HStack(spacing: 10) {
                             Icon(list.icon, 16, active ? p.accent.color : p.text2.color)
                             Text(list.title).font(.web(14, 500)).foregroundStyle(active ? p.accent.color : p.text2.color)

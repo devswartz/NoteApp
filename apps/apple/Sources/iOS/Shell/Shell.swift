@@ -64,6 +64,10 @@ final class Shell {
     /// Sections open in the tree.
     var expanded: Set<String> = []
     var recentOpen = false
+    /// Phone: the notes drawer is open.
+    var drawerOpen = false
+    /// Phone: the notebook whose sections are listed (Notes → notebook → section → page); nil: all notebooks.
+    var phoneNotebook: String?
     /// Recently opened pages, newest first (the sidebar's RECENT group).
     var recents: [String] = []
     /// The notebook shown in the sidebar when no page says which.
@@ -82,7 +86,7 @@ final class Shell {
             case "tasks-upcoming": route = .tasks(.upcoming)
             case "tasks-my": route = .tasks(.my)
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
-            case "empty-no-page": route = .notes
+            case "empty-no-page", "notes-home": route = .notes
             case "empty-section": route = .section("empty-section")
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))
             default:
@@ -93,6 +97,7 @@ final class Shell {
                 }
             }
             expanded = ["corpus", "empty-section"]
+            notebookId = "look"
             if state != "" && !state.hasSuffix("canvas-boxes") && state != "sidebar" { recents = [LookData.pageId("canvas-boxes")] }
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
         } else {
@@ -104,11 +109,28 @@ final class Shell {
 
     func open(page id: String) {
         route = .page(id)
+        drawerOpen = false
         recents.removeAll { $0 == id }
         recents.insert(id, at: 0)
         if recents.count > 5 { recents.removeLast(recents.count - 5) }
         if !UserDefaults.standard.bool(forKey: "previewSignedIn") {
             UserDefaults.standard.set(recents, forKey: "recentPages")
+        }
+    }
+
+    /// Phone look states that start with the drawer open, and the screen behind it (the references).
+    func configurePhoneLook() {
+        guard UserDefaults.standard.bool(forKey: "previewSignedIn"), let state = LookData.state else { return }
+        switch state {
+        case "sidebar-drawer", "empty-workspace-drawer":
+            drawerOpen = true
+            route = .notes
+        case "menu-workspace", "menu-account", "menu-notebook", "menu-notebook-picker", "menu-section", "menu-page-row":
+            drawerOpen = true
+            route = .section("corpus")
+        case "empty-workspace-notes":
+            route = .notes
+        default: break
         }
     }
 
@@ -140,7 +162,7 @@ extension SessionModel {
     var shownTasks: [CoreTask] { preview ? LookData.tasks : tasks }
     var shownUser: User? { preview ? LookData.user : user }
     var shownWorkspaces: [Workspace] { preview ? LookData.workspaces : workspaces }
-    var shownWorkspace: Workspace? { preview ? LookData.workspaces.first : workspace }
+    var shownWorkspace: Workspace? { preview ? LookData.workspace : workspace }
 
     /// Open tasks written on a page (the sidebar's count chips, the top bar's badge).
     func openTaskCount(page id: String) -> Int {
@@ -208,7 +230,7 @@ struct AppShell: View {
             }
             .frame(width: width, height: geo.size.height)
             .background(chrome.bgSidebar.color)
-            .overlay { MenuLayer(width: width, height: geo.size.height) }
+            .overlay { MenuLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay(alignment: .bottom) { ToastView() }
             .coordinateSpace(name: "shell")
         }
@@ -218,6 +240,7 @@ struct AppShell: View {
         })
         .onAppear {
             theme.systemDark = scheme == .dark
+            if UIScreen.main.bounds.width <= 760 { shell.configurePhoneLook() }
             openLookMenu()
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
