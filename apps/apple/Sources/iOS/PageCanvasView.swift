@@ -118,6 +118,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         accessibilityIdentifier = "page-scroll"
         titleLabel.accessibilityIdentifier = "page-title"
         panGestureRecognizer.addTarget(self, action: #selector(panSeen(_:)))
+        if LookData.state != nil {
+            // Look and test mode: keep the published scroll state fresh (the UI test reads it).
+            Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.publishState() }
+        }
         toolbar.isHidden = true
         toolbar.onCommand = { [weak self] name, args in
             EditorFocus.shared.run(name, args)
@@ -379,6 +383,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     func publishState() {
         titleLabel.accessibilityValue = "contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
             + "scrollEnabled=\(isScrollEnabled) pan=\(panGestureRecognizer.isEnabled) panState=\(panGestureRecognizer.state.rawValue) "
+            + "states=\((gestureRecognizers ?? []).map { $0.state.rawValue }) maxPanTouches=\(panGestureRecognizer.maximumNumberOfTouches) "
             + "hits=\(hitCount) lastHit=\(lastHit) panLog=\(panLog) "
             + "windowHit=\(window.flatMap { w in w.hitTest(convert(CGPoint(x: bounds.midX, y: bounds.midY), to: w), with: nil) }.map { String(describing: type(of: $0)) } ?? "nil") "
             + "stacked=\(stacked) boxes=\(boxViews.count) surface=\(surface.frame) tracking=\(isTracking) dragging=\(isDragging) "
