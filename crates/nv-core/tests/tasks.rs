@@ -132,6 +132,7 @@ fn input(id: &str, title: &str, page: &str) -> NewTaskInput {
         page_id: Some(page.into()),
         parent_id: None,
         done: false,
+        ..Default::default()
     }
 }
 

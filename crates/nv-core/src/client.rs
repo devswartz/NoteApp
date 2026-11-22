@@ -277,6 +277,30 @@ fn auth_error(e: ApiError) -> AuthError {
     }
 }
 
+impl Core {
+    /// `tasks()` before it is turned into the Core API's `Task` (or `TaskDetail`).
+    pub(crate) fn tasks_raw(&self, workspace_id: &str) -> Result<Vec<nv_api::Task>, CoreError> {
+        self.send_queued_quietly();
+        let mut ts = self.fetch(
+            || self.api.tasks(workspace_id),
+            |s, ts| {
+                let _ = s.put_tasks(workspace_id, ts);
+            },
+            |s| s.tasks(workspace_id).ok().flatten(),
+        )?;
+        if self.overlay_queued(workspace_id) {
+            if let Some(stored) = self
+                .store
+                .as_ref()
+                .and_then(|s| s.tasks(workspace_id).ok().flatten())
+            {
+                ts = stored;
+            }
+        }
+        Ok(ts)
+    }
+}
+
 impl nv_sync::Session for CoreSession {
     fn token(&self) -> Result<String, AuthError> {
         self.0.access_token().map_err(auth_error)
@@ -582,24 +606,11 @@ impl Core {
     /// device. Task changes queued offline are sent first, and those still waiting are laid
     /// over the list. Offline (`Network`): the stored copy when there is one.
     pub fn tasks(&self, workspace_id: String) -> Result<Vec<Task>, CoreError> {
-        self.send_queued_quietly();
-        let mut ts = self.fetch(
-            || self.api.tasks(&workspace_id),
-            |s, ts| {
-                let _ = s.put_tasks(&workspace_id, ts);
-            },
-            |s| s.tasks(&workspace_id).ok().flatten(),
-        )?;
-        if self.overlay_queued(&workspace_id) {
-            if let Some(stored) = self
-                .store
-                .as_ref()
-                .and_then(|s| s.tasks(&workspace_id).ok().flatten())
-            {
-                ts = stored;
-            }
-        }
-        Ok(ts.into_iter().map(task).collect())
+        Ok(self
+            .tasks_raw(&workspace_id)?
+            .into_iter()
+            .map(task)
+            .collect())
     }
 
     /// A new task, standalone or on a page (`page_id`), with an id the core makes. Added to the
@@ -618,6 +629,7 @@ impl Core {
                 page_id,
                 parent_id: None,
                 done: false,
+                ..Default::default()
             },
         )
     }

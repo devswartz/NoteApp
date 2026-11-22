@@ -449,6 +449,131 @@ impl Client {
         )
     }
 
+    /// Change some of a task (PATCH /tasks/:id with the set fields; see `TaskPatch`). Answers
+    /// with the task as the server now has it.
+    pub fn patch_task(&self, task_id: &str, patch: &TaskPatch) -> Result<Task, ApiError> {
+        self.update_task(task_id, &patch.to_value())
+    }
+
+    /// Done tasks older than the list's 30 days, newest first (GET /workspaces/:id/tasks/completed):
+    /// at most 100 completed before (an ISO instant: the last one's `completed_at`).
+    pub fn completed_tasks(
+        &self,
+        workspace_id: &str,
+        before: Option<&str>,
+    ) -> Result<Vec<Task>, ApiError> {
+        let mut path = format!(
+            "/workspaces/{}/tasks/completed",
+            encode_component(workspace_id)
+        );
+        if let Some(b) = before {
+            path.push_str(&format!("?before={}", encode_component(b)));
+        }
+        self.call("GET", &path, None)
+    }
+
+    /// The notes written under the task on its page, as Markdown (GET /tasks/:id/notes): bullets,
+    /// checklists (`- [ ] x`) and so on, subtasks left out. Empty without notes or a page.
+    pub fn task_notes(&self, task_id: &str) -> Result<String, ApiError> {
+        let v: Value = self.call(
+            "GET",
+            &format!("/tasks/{}/notes", encode_component(task_id)),
+            None,
+        )?;
+        Ok(v["markdown"].as_str().unwrap_or_default().to_string())
+    }
+
+    /// The workspace's tags, by name (GET /workspaces/:id/tags).
+    pub fn tags(&self, workspace_id: &str) -> Result<Vec<Tag>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/workspaces/{}/tags", encode_component(workspace_id)),
+            None,
+        )
+    }
+
+    /// A tag by name (POST /workspaces/:id/tags; members). A name that exists (any case) returns
+    /// that tag, a leading # is dropped, at most 40 characters. `color` is #rrggbb; none picks one.
+    pub fn create_tag(
+        &self,
+        workspace_id: &str,
+        name: &str,
+        color: Option<&str>,
+    ) -> Result<Tag, ApiError> {
+        let mut body = json!({ "name": name });
+        if let Some(c) = color {
+            body["color"] = json!(c);
+        }
+        self.call(
+            "POST",
+            &format!("/workspaces/{}/tags", encode_component(workspace_id)),
+            Some(&body),
+        )
+    }
+
+    /// The workspace's teams and subteams (GET /workspaces/:id/teams).
+    pub fn teams(&self, workspace_id: &str) -> Result<Vec<Team>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/workspaces/{}/teams", encode_component(workspace_id)),
+            None,
+        )
+    }
+
+    /// The workspace's members (GET /workspaces/:id/members; its pending invites, which only
+    /// admins get, are left out).
+    pub fn members(&self, workspace_id: &str) -> Result<Vec<Member>, ApiError> {
+        let v: Value = self.call(
+            "GET",
+            &format!("/workspaces/{}/members", encode_component(workspace_id)),
+            None,
+        )?;
+        serde_json::from_value(v["members"].clone()).map_err(|e| ApiError::Decode(e.to_string()))
+    }
+
+    /// The caller's reminders on a task (GET /tasks/:id/reminders), oldest first.
+    pub fn reminders(&self, task_id: &str) -> Result<Vec<Reminder>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/tasks/{}/reminders", encode_component(task_id)),
+            None,
+        )
+    }
+
+    /// Add a reminder to a task (POST /tasks/:id/reminders; at most 10 per task).
+    pub fn add_reminder(&self, task_id: &str, spec: &ReminderSpec) -> Result<Reminder, ApiError> {
+        let body = serde_json::to_value(spec).map_err(|e| ApiError::Decode(e.to_string()))?;
+        self.call(
+            "POST",
+            &format!("/tasks/{}/reminders", encode_component(task_id)),
+            Some(&body),
+        )
+    }
+
+    /// Change a reminder (PATCH /reminders/:id).
+    pub fn update_reminder(
+        &self,
+        reminder_id: &str,
+        spec: &ReminderSpec,
+    ) -> Result<Reminder, ApiError> {
+        let body = serde_json::to_value(spec).map_err(|e| ApiError::Decode(e.to_string()))?;
+        self.call(
+            "PATCH",
+            &format!("/reminders/{}", encode_component(reminder_id)),
+            Some(&body),
+        )
+    }
+
+    /// Remove a reminder (DELETE /reminders/:id).
+    pub fn delete_reminder(&self, reminder_id: &str) -> Result<(), ApiError> {
+        let _: Value = self.call(
+            "DELETE",
+            &format!("/reminders/{}", encode_component(reminder_id)),
+            None,
+        )?;
+        Ok(())
+    }
+
     /// Change a task's title (PATCH `{ title }`; the server trims it).
     pub fn set_task_title(&self, task_id: &str, title: &str) -> Result<Task, ApiError> {
         self.update_task(task_id, &json!({ "title": title }))
@@ -463,6 +588,103 @@ impl Client {
             None,
         )?;
         Ok(())
+    }
+
+    /// Full-text search over the workspace's pages and tasks (GET /workspaces/:id/search?q=&limit=).
+    /// The server trims the query to 200 characters, matches each term as a prefix, stemmed, all
+    /// terms required, and `limit` is 1 to 50 (default 20; applies to pages and tasks each).
+    pub fn search(
+        &self,
+        workspace_id: &str,
+        query: &str,
+        limit: Option<u32>,
+    ) -> Result<SearchResult, ApiError> {
+        let mut path = format!(
+            "/workspaces/{}/search?q={}",
+            encode_component(workspace_id),
+            encode_component(query)
+        );
+        if let Some(l) = limit {
+            path.push_str(&format!("&limit={l}"));
+        }
+        self.call("GET", &path, None)
+    }
+
+    /// A page's comment threads with their comments, oldest thread first (GET /pages/:id/comments).
+    pub fn page_comments(&self, page_id: &str) -> Result<Vec<CommentThread>, ApiError> {
+        self.call(
+            "GET",
+            &format!("/pages/{}/comments", encode_component(page_id)),
+            None,
+        )
+    }
+
+    /// Start a thread (POST /pages/:id/comments; members and up). `thread_id` is a UUID the
+    /// caller chose, the id of the `comment` mark; sending it again returns the same thread.
+    pub fn add_comment_thread(
+        &self,
+        page_id: &str,
+        thread_id: &str,
+        quote: &str,
+        body: &str,
+    ) -> Result<CommentThread, ApiError> {
+        self.call(
+            "POST",
+            &format!("/pages/{}/comments", encode_component(page_id)),
+            Some(&json!({ "threadId": thread_id, "quote": quote, "body": body })),
+        )
+    }
+
+    /// Reply to a thread (POST /comment-threads/:id/replies); this reopens a resolved thread.
+    pub fn reply_to_thread(&self, thread_id: &str, body: &str) -> Result<CommentThread, ApiError> {
+        self.call(
+            "POST",
+            &format!("/comment-threads/{}/replies", encode_component(thread_id)),
+            Some(&json!({ "body": body })),
+        )
+    }
+
+    /// Resolve or reopen a thread (PATCH /comment-threads/:id; members and up).
+    pub fn set_thread_resolved(
+        &self,
+        thread_id: &str,
+        resolved: bool,
+    ) -> Result<CommentThread, ApiError> {
+        self.call(
+            "PATCH",
+            &format!("/comment-threads/{}", encode_component(thread_id)),
+            Some(&json!({ "resolved": resolved })),
+        )
+    }
+
+    /// Delete a whole thread (DELETE /comment-threads/:id): its starter or a workspace admin.
+    pub fn delete_comment_thread(&self, thread_id: &str) -> Result<(), ApiError> {
+        let _: Value = self.call(
+            "DELETE",
+            &format!("/comment-threads/{}", encode_component(thread_id)),
+            None,
+        )?;
+        Ok(())
+    }
+
+    /// Edit your own comment (PATCH /comments/:id); answers with its thread.
+    pub fn edit_comment(&self, comment_id: &str, body: &str) -> Result<CommentThread, ApiError> {
+        self.call(
+            "PATCH",
+            &format!("/comments/{}", encode_component(comment_id)),
+            Some(&json!({ "body": body })),
+        )
+    }
+
+    /// Delete one comment (DELETE /comments/:id): its author or an admin. Deleting a thread's
+    /// last comment deletes the thread; answers whether that happened.
+    pub fn delete_comment(&self, comment_id: &str) -> Result<bool, ApiError> {
+        let v: Value = self.call(
+            "DELETE",
+            &format!("/comments/{}", encode_component(comment_id)),
+            None,
+        )?;
+        Ok(v["threadDeleted"].as_bool().unwrap_or(false))
     }
 
     /// A page's stored document (a Yjs update), as the server last saved it.
