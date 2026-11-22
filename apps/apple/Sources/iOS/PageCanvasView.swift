@@ -429,11 +429,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func hideToolbar() { toolbar.hide() }
     private let debugLabel = UILabel()
+    private static var lookSelection = ""
 
     /// CI only (`-lookState edit-selection`): why the toolbar is or isn't shown.
     private static func debugText(_ box: BoxTextView?, _ dragging: Bool, _ menuHidden: Bool) -> String {
         let range = (box?.selectedTextRange as? BoxTextRange).map { "\($0.lo)-\($0.hi)" } ?? "nil"
-        return "editing=\(box != nil) drag=\(dragging) menuHidden=\(menuHidden) sel=\(range) rect=\(String(describing: box?.selectionBounds)) firstResponder=\(box?.isFirstResponder ?? false)"
+        return Self.lookSelection + " " + "editing=\(box != nil) drag=\(dragging) menuHidden=\(menuHidden) sel=\(range) rect=\(String(describing: box?.selectionBounds)) firstResponder=\(box?.isFirstResponder ?? false)"
     }
 
     /// Show the toolbar over the selected text of the box being edited, or hide it.
@@ -634,10 +635,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                     let shown = box.shownText as NSString
                     let nl = shown.range(of: "\n", options: .backwards).location
                     let start = nl == NSNotFound ? 0 : nl + 1
-                    if let a = box.position(from: box.beginningOfDocument, offset: start) {
-                        box.selectedTextRange = box.textRange(from: a, to: box.endOfDocument)
+                    for t in [0.3, 1.0, 2.0] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + t) {
+                            Self.lookSelection = "start=" + String(start) + " len=" + String(shown.length)
+                            box.lookSelect(from: start)
+                            self.updateToolbar()
+                        }
                     }
-                    for t in [0.5, 1.5, 3.0] { DispatchQueue.main.asyncAfter(deadline: .now() + t) { self.updateToolbar() } }
                 }
             }
         }

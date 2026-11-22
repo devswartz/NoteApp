@@ -1005,6 +1005,11 @@ final class BoxTextView: UIView, UITextInput {
         return rects.filter { abs($0.minY - first.minY) < 1 }.reduce(first) { $0.union($1) }
     }
 
+    /// Look mode (CI): select from `lo` to the end of the text through the engine, telling UIKit.
+    func lookSelect(from lo: Int) {
+        selectByPlatform(BoxTextRange(lo, text.length), notify: true)
+    }
+
     /// The selected text's bounds in this view's coordinates; nil for a caret (the floating toolbar).
     var selectionBounds: CGRect? {
         guard editor != nil, marked == nil, sel.hi > sel.lo else { return nil }
