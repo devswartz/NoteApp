@@ -11,12 +11,14 @@ final class ScrollTests: XCTestCase {
         let title = app.staticTexts["page-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 40), "the long page did not open")
         let before = title.frame.minY
+        let stateBefore = String(describing: title.value ?? "nil")
         let window = app.windows.firstMatch
         window.swipeUp()
         window.swipeUp()
         Thread.sleep(forTimeInterval: 1.5)
         // The title has moved up (or scrolled out of the tree altogether).
         let moved = !title.exists || title.frame.minY < before - 80
-        XCTAssertTrue(moved, "swiping the page did not scroll it (title still at y=\(before) -> \(title.frame.minY))")
+        XCTAssertTrue(moved, "swiping the page did not scroll it (title still at y=\(before) -> \(title.frame.minY)); "
+            + "before: \(stateBefore); after: \(String(describing: title.value ?? "nil"))")
     }
 }

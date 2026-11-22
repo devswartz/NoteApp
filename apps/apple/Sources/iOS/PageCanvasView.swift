@@ -344,11 +344,22 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
         contentSize = CGSize(width: size.width * zoomScale, height: size.height * zoomScale)
         layoutHeader()
+        publishState()
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { surface }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateToolbar() }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { publishState() }
+
+    /// The scroll state as the page title's accessibility value (the UI test reads it, and prints it when a swipe does nothing).
+    func publishState() {
+        titleLabel.accessibilityValue = "contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
+            + "scrollEnabled=\(isScrollEnabled) pan=\(panGestureRecognizer.isEnabled) panState=\(panGestureRecognizer.state.rawValue) "
+            + "stacked=\(stacked) boxes=\(boxViews.count) surface=\(surface.frame) tracking=\(isTracking) dragging=\(isDragging) "
+            + "recognizers=\((gestureRecognizers ?? []).map { String(describing: type(of: $0)) })"
+    }
 
     // MARK: Editing
 
