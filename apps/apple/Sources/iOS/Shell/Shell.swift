@@ -61,6 +61,12 @@ final class Shell {
     var ribbonCollapsed = false
     var menu: Menu?
     var toast: String?
+    /// The toast's action ("Undo") and what it does.
+    var toastAction: (label: String, run: () -> Void)?
+    /// The open tree dialog (new section, move, delete notebook …), see `TreeActions.swift`.
+    var dialog: TreeDialog?
+    /// The tree row being renamed in place: `page:<id>`, `section:<id>` or `notebook:<id>`.
+    var renaming: String?
     /// The search palette (Cmd+K, the rail's and the phone's search buttons) and what is typed in it.
     var searchOpen = false
     var searchQuery = ""
@@ -91,8 +97,10 @@ final class Shell {
             case "tasks-upcoming": route = .tasks(.upcoming)
             case "tasks-my": route = .tasks(.my)
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
-            case "empty-no-page", "notes-home": route = .notes
+            case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
+            case "empty-notebook": route = .notes
+            case "page-not-found": route = .page(LookData.pageId("not-found"))
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))
             default:
                 if state.hasPrefix("page-") {
@@ -129,7 +137,7 @@ final class Shell {
     func configurePhoneLook() {
         guard UserDefaults.standard.bool(forKey: "previewSignedIn"), let state = LookData.state else { return }
         switch state {
-        case "sidebar-drawer", "empty-workspace-drawer":
+        case "sidebar-drawer", "empty-workspace-drawer", "empty-notebook", "loading-sidebar", "inline-rename":
             drawerOpen = true
             route = .notes
         case "menu-workspace", "menu-account", "menu-notebook", "menu-notebook-picker", "menu-section", "menu-page-row":
@@ -165,12 +173,13 @@ final class Shell {
     }
 
     /// A short message at the bottom (the web's toast), for things the native preview can't do yet.
-    func say(_ text: String) {
+    func say(_ text: String, undo: (() -> Void)? = nil) {
         toastToken += 1
         let token = toastToken
         toast = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
-            if self?.toastToken == token { self?.toast = nil }
+        toastAction = undo.map { (label: "Undo", run: $0) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (undo == nil ? 2.6 : 6)) { [weak self] in
+            if self?.toastToken == token { self?.toast = nil; self?.toastAction = nil }
         }
     }
 
@@ -182,7 +191,7 @@ final class Shell {
 
 /// What the shell reads from the session: the real data, or the look data in corpus mode.
 extension SessionModel {
-    var shownTree: Tree? { preview ? LookData.tree : tree }
+    var shownTree: Tree? { preview ? (LookData.state == "loading-sidebar" ? nil : LookData.tree) : tree }
     var shownTasks: [CoreTask] { preview ? LookData.tasks : tasks }
     var shownUser: User? { preview ? LookData.user : user }
     var shownWorkspaces: [Workspace] { preview ? LookData.workspaces : workspaces }
@@ -266,6 +275,8 @@ struct AppShell: View {
             .overlay { MenuLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { SearchLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { TaskDetailLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
+            .overlay { DialogLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
+            .overlay(alignment: .bottom) { OfflineBanner().environment(\.phoneLayout, width <= 760) }
             .background { Button("") { shell.openSearch() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true) }
             .overlay(alignment: .bottom) { ToastView() }
             .coordinateSpace(name: "shell")
@@ -294,8 +305,20 @@ struct AppShell: View {
             "ribbon-menu-block": .blockType, "ribbon-menu-text-colour": .textColor, "ribbon-menu-highlight": .highlight,
             "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines,
         ]
-        guard session.preview, let state = LookData.state, let menu = menus[state] else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.menu = menu }
+        guard session.preview, let state = LookData.state else { return }
+        if let menu = menus[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.menu = menu } }
+        // Native-only dialogs (the web's dialogs have no reference shot).
+        let corpus = LookData.pageId("canvas-boxes")
+        let dialogs: [String: () -> Void] = [
+            "dialog-new-section": { shell.newSection(in: "look", parent: nil, session) },
+            "dialog-new-subsection": { shell.newSection(in: "look", parent: session.shownTree?.sections.first(where: { $0.id == "corpus" }), session) },
+            "dialog-new-notebook": { shell.newNotebook(session) },
+            "dialog-move-page": { shell.move(.page, corpus, session) },
+            "dialog-move-section": { shell.move(.section, "empty-section", session) },
+            "dialog-delete-notebook": { shell.delete(.notebook, "look", session) },
+            "inline-rename": { shell.rename(.page, corpus, session) },
+        ]
+        if let open = dialogs[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { open() } }
     }
 }
 
@@ -331,17 +354,27 @@ struct ToastView: View {
     var body: some View {
         if let text = shell.toast {
             let p = theme.chrome
-            Text(text)
-                .font(.web(13.5))
-                .foregroundStyle(p.textInverse.color)
-                .padding(.vertical, 10)
-                .padding(.leading, 16)
-                .padding(.trailing, 16)
-                .background(p.bgInverse.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .shadowLg(p)
-                .padding(.bottom, 20)
-                .transition(.opacity)
-                .allowsHitTesting(false)
+            HStack(spacing: 12) {
+                Text(text).font(.web(13.5)).foregroundStyle(p.textInverse.color)
+                if let action = shell.toastAction {
+                    Button {
+                        action.run()
+                        shell.toast = nil
+                        shell.toastAction = nil
+                    } label: {
+                        Text(action.label).font(.web(13.5, 600)).foregroundStyle(p.accentInverse.color).padding(.horizontal, 6).padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 10)
+            .padding(.leading, 16)
+            .padding(.trailing, shell.toastAction == nil ? 16 : 10)
+            .background(p.bgInverse.color, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .shadowLg(p)
+            .padding(.bottom, 20)
+            .transition(.opacity)
+            .allowsHitTesting(shell.toastAction != nil)
         }
     }
 }

@@ -86,6 +86,8 @@ fn task(id: &str, locked: bool) -> Task {
         recurrence: None,
         reminder_at: None,
         assignee_id: None,
+        assigned_by: None,
+        completed_by: None,
         created_by: "u1".into(),
         page_id: Some("p1".into()),
         parent_id: None,

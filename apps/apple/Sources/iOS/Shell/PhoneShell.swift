@@ -335,7 +335,7 @@ struct PhoneSectionScreen: View {
         PhoneScreen(title: section?.name ?? "Section", back: back(section),
                     lead: { RoundedRectangle(cornerRadius: 2).fill(UIColor(css: section?.color ?? "#6366f1").color).frame(width: 4, height: 22) },
                     action: {
-                        Button { shell.notYet("New page") } label: {
+                        Button { shell.newPage(in: sectionId, session) } label: {
                             HStack(spacing: 6) {
                                 Icon("plus", 15, p.text.color)
                                 Text("New page").font(.web(13, 500)).foregroundStyle(p.text.color)

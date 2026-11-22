@@ -26,10 +26,10 @@ use nv_store::{Store, TaskOp};
 use serde_json::{json, Value};
 
 use crate::client::task;
-use crate::{Core, CoreError, Task, TaskCallbacks};
+use crate::{Core, CoreError, Task, TaskCallbacks, TaskRecurrence};
 
 /// A new task for `Core::create_task_with`.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Default, uniffi::Record)]
 pub struct NewTaskInput {
     /// The task's id, a UUID (`new_task_id()`, or the editor's `TaskCallbacks::new_id`); none:
     /// the core makes one. Creating again with the same id returns the task already made.
@@ -46,6 +46,30 @@ pub struct NewTaskInput {
     /// Create it ticked (an undo bringing back a done task): a second write, after the create.
     #[uniffi(default = false)]
     pub done: bool,
+    /// The fields below are the ones a quick-add line sets (`parse_quick_add`); a task made
+    /// without them has the server's defaults (priority 4, nothing else).
+    #[uniffi(default = None)]
+    pub description: Option<String>,
+    /// 1 urgent … 4 none.
+    #[uniffi(default = None)]
+    pub priority: Option<u8>,
+    /// Local date, YYYY-MM-DD.
+    #[uniffi(default = None)]
+    pub due_date: Option<String>,
+    /// Local time, HH:mm.
+    #[uniffi(default = None)]
+    pub due_time: Option<String>,
+    #[uniffi(default = None)]
+    pub recurrence: Option<TaskRecurrence>,
+    #[uniffi(default = None)]
+    pub reminder_at: Option<String>,
+    #[uniffi(default = None)]
+    pub assignee_id: Option<String>,
+    #[uniffi(default = None)]
+    pub team_id: Option<String>,
+    /// Tag ids (`Core::tags`, `Core::create_tag`).
+    #[uniffi(default = None)]
+    pub tag_ids: Option<Vec<String>>,
 }
 
 /// A new task id: a random UUID (version 4), lower case, as `crypto.randomUUID()` makes them.
@@ -140,6 +164,7 @@ fn optimistic(workspace_id: &str, new: &nv_api::NewTask, user_id: &str) -> Optio
         "description": new.description.clone().unwrap_or_default(), "status": "open",
         "priority": new.priority.unwrap_or(4), "dueDate": new.due_date, "dueTime": new.due_time,
         "recurrence": new.recurrence, "reminderAt": new.reminder_at, "assigneeId": new.assignee_id,
+        "assignedBy": new.assignee_id.as_ref().map(|_| user_id),
         "createdBy": user_id, "pageId": new.page_id, "parentId": new.parent_id, "teamId": new.team_id,
         "tagIds": new.tag_ids.clone().unwrap_or_default(), "completedAt": null,
         "createdAt": now_iso(), "updatedAt": "",
@@ -148,7 +173,7 @@ fn optimistic(workspace_id: &str, new: &nv_api::NewTask, user_id: &str) -> Optio
 }
 
 /// `patch` (TaskPatch fields) laid over a task.
-fn patched(t: &nv_api::Task, patch: &Value) -> Option<nv_api::Task> {
+fn patched(t: &nv_api::Task, patch: &Value, user_id: &str) -> Option<nv_api::Task> {
     let mut v = serde_json::to_value(t).ok()?;
     if let (Some(obj), Some(p)) = (v.as_object_mut(), patch.as_object()) {
         for (k, x) in p {
@@ -161,11 +186,24 @@ fn patched(t: &nv_api::Task, patch: &Value) -> Option<nv_api::Task> {
         match patch.get("status").and_then(Value::as_str) {
             Some("done") if t.status != "done" => {
                 obj.insert("completedAt".into(), Value::String(now_iso()));
+                obj.insert("completedBy".into(), Value::String(user_id.to_string()));
             }
             Some("open") => {
                 obj.insert("completedAt".into(), Value::Null);
+                obj.insert("completedBy".into(), Value::Null);
             }
             _ => {}
+        }
+        // "Assigned by" is whoever changed the assignee, and clears when it is unassigned.
+        if let Some(a) = patch.get("assigneeId") {
+            if a.as_str() != t.assignee_id.as_deref() {
+                let by = if a.is_null() {
+                    Value::Null
+                } else {
+                    Value::String(user_id.to_string())
+                };
+                obj.insert("assignedBy".into(), by);
+            }
         }
     }
     serde_json::from_value(v).ok()
@@ -183,7 +221,7 @@ fn apply_locally(store: &Store, workspace_id: &str, task_id: &str, op: &TaskOp, 
         }
         TaskOp::Update { patch } => {
             if let Some(t) = store.task(task_id).ok().flatten() {
-                if let Some(t) = patched(&t, patch) {
+                if let Some(t) = patched(&t, patch, user_id) {
                     let _ = store.put_task(&t);
                 }
             }
@@ -328,9 +366,12 @@ impl Core {
     }
 
     /// The stored task, or what the server sent for it.
-    fn stored_or(&self, task_id: &str, sent: Option<nv_api::Task>) -> Result<Task, CoreError> {
+    fn stored_or(
+        &self,
+        task_id: &str,
+        sent: Option<nv_api::Task>,
+    ) -> Result<nv_api::Task, CoreError> {
         sent.or_else(|| self.store.as_ref()?.task(task_id).ok().flatten())
-            .map(task)
             .ok_or_else(|| CoreError::Network {
                 message: "the task isn't stored".into(),
             })
@@ -338,6 +379,15 @@ impl Core {
 
     /// An edit of an existing task (PATCH).
     pub(crate) fn edit_task(&self, task_id: &str, patch: Value) -> Result<Task, CoreError> {
+        self.edit_task_raw(task_id, patch).map(task)
+    }
+
+    /// `edit_task`, answering with the task as the server's JSON has it.
+    pub(crate) fn edit_task_raw(
+        &self,
+        task_id: &str,
+        patch: Value,
+    ) -> Result<nv_api::Task, CoreError> {
         let known = self
             .store
             .as_ref()
@@ -373,7 +423,7 @@ impl Core {
         workspace_id: &str,
         new: nv_api::NewTask,
         done: bool,
-    ) -> Result<Task, CoreError> {
+    ) -> Result<nv_api::Task, CoreError> {
         let id = new.id.clone().unwrap_or_default();
         // A subtask lives on its parent's page.
         let page = new.page_id.clone().or_else(|| {
@@ -397,8 +447,8 @@ impl Core {
             }
             Wrote::Queued => self.stored_or(&id, None)?,
         };
-        if done && !t.done {
-            return self.edit_task(&id, json!({ "status": "done" }));
+        if done && t.status != "done" {
+            return self.edit_task_raw(&id, json!({ "status": "done" }));
         }
         Ok(t)
     }
@@ -419,9 +469,19 @@ impl Core {
             title: task.title,
             page_id: task.page_id,
             parent_id: task.parent_id,
-            ..Default::default()
+            description: task.description,
+            priority: task.priority,
+            due_date: task.due_date,
+            due_time: task.due_time,
+            recurrence: task.recurrence.as_ref().map(nv_api::Recurrence::from),
+            reminder_at: task.reminder_at,
+            assignee_id: task.assignee_id,
+            team_id: task.team_id,
+            tag_ids: task.tag_ids,
         };
+        crate::task_detail::validate_new(&new)?;
         self.create(&workspace_id, new, task.done)
+            .map(crate::client::task)
     }
 
     /// Set a task's title (the server trims it). The stored copy is updated; offline the change
@@ -638,6 +698,7 @@ impl PageTasks {
                             page_id: page_id.clone(),
                             parent_id: None,
                             done,
+                            ..Default::default()
                         },
                     )
                     .map(|_| ())

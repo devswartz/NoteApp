@@ -5,15 +5,293 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
-- **Box calls on `LivePage` done** on branch `rewrite/core-boxes` (cut from `rewrite/native`
-  b59c0fa, not merged): apple's request ("needed for boxes"). **Core is paused after this
-  step**; the next queued items are Kotlin bindings with an Android library build in CI, then
-  the CHANGELOG-SYNC.md design. Notes below: "For apple: boxes", "For editor: boxes".
-- Earlier: task calls, live doc plumbing and the fragment reader (branch `rewrite/core-tasks`):
-  "For apple: task calls", "For editor: the live doc".
+- **The whole `rewrite/core-tasks-full` step is done** (cut from `rewrite/native` a625e3c, not
+  merged): the full task model (task details, update, tags, teams, members, reminders, quick add;
+  "For apple: task details"), **full-text search** ("For apple: search") and **comment threads**
+  ("For apple: comments"). That answers all of apple's open requests to core. **Core pauses
+  after this step.**
+- Before that: box calls on `LivePage` (branch `rewrite/core-boxes`, "For apple: boxes", "For
+  editor: boxes"), then task calls, live doc plumbing and the fragment reader (branch
+  `rewrite/core-tasks`: "For apple: task calls", "For editor: the live doc").
 - **Next, in order** (for a fresh session; see the handover below): Kotlin bindings with an
   Android library build in CI (`cargo-ndk`, including the platform verifier's Android init,
   below), then the CHANGELOG-SYNC.md design.
+- **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
+  apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
+  apple: comments").
+
+## For apple: search (2026-11-22, `rewrite/core-tasks-full`)
+
+Answers apple's request "search(workspace_id, q) so the palette finds text inside pages". All
+additions. The truth is the server's `GET /workspaces/:id/search?q=&limit=`
+(`server/routes/search.ts`); the web's use is `PaletteInner` in `src/components/CommandPalette.tsx`
+(asks 150 ms after the last keystroke, no limit given, shows the page snippet with `<mark>`).
+
+```swift
+core.search(workspaceId:, query:, limit: UInt32? = nil) throws -> SearchResults
+parseSnippet(snippet:) -> [SnippetRun]          // pure; search() already applies it
+```
+
+- `SearchResults { pages: [PageSearchHit], tasks: [TaskSearchHit] }`, best match first in each
+  list.
+- `PageSearchHit { pageId, title, icon: String?, snippet: [SnippetRun], notebookName, sectionName,
+  path }`. `path` is the server's "Notebook › Section › Subsection" string, ready to show (the
+  web's crumb).
+- `SnippetRun { text, matched: Bool }`. The server wraps matched terms in « and » (about 14 words
+  of context, `…` at cut ends); `parseSnippet` splits on `«…»` exactly as the web's
+  `highlightSnippet` does (markers dropped, empty runs left out, an unclosed « stays text). An
+  **empty `snippet` array** means a title-only match (nothing to show under the title).
+- `TaskSearchHit { task: TaskDetail, snippet: [SnippetRun]? }`: the snippet is present only when
+  the task's **description** matched (the title is shown anyway).
+- Matching (server): every word is prefix-matched ("plan" finds "planning") and stemmed, all
+  words must match, at most 12 words, the query is cut to 200 characters. Title hits weigh 10x
+  text hits; ties go to the recently edited. Open tasks sort before done ones. `limit` is 1 to 50
+  per list (server default 20). Sub-task occurrences of repeating tasks are not searched.
+- A blank (whitespace) query returns empty results **without a request**.
+- **Locked pages:** the owner finds a locked page by its **title only** (its text is never
+  indexed, so `snippet` is empty); tasks on locked pages are left out. Pages in notebooks the
+  caller cannot see are never returned.
+- **Online only.** Nothing is cached or queued; without a connection `search` throws
+  `CoreError.Network` unchanged, and a rejected sign-in gives `CoreError.SignedOut`. The
+  device's own title search (the tree) is still the offline fallback, apple's to keep.
+- The server has no "recent pages" or quick-switcher endpoint (the web's palette lists recent
+  pages from the tree it already holds), so there is nothing to add for that.
+- Swift names: `SearchResults`, `PageSearchHit`, `TaskSearchHit`, `SnippetRun` do not clash with
+  `apps/apple` (its own `SearchHit` and `SearchLogic` are untouched).
+
+## For apple: comments (2026-11-22, `rewrite/core-tasks-full`)
+
+Answers apple's request for comment threads (list for a page, create on a range, reply, resolve).
+The truth is `server/routes/comments.ts`; the web's use is `src/editor/collabComments.ts`
+(`beginComment`, the store) and `src/editor/collabCommentsPanel.tsx`. All calls **need the
+network**: nothing is cached or queued, and `CoreError.Network` is returned unchanged.
+
+```swift
+core.pageComments(pageId:) throws -> [CommentThread]                         // oldest thread first
+core.addCommentThread(pageId:, threadId:, quote:, body:) throws -> CommentThread
+core.replyToCommentThread(threadId:, body:) throws -> CommentThread
+core.resolveCommentThread(threadId:) throws -> CommentThread
+core.reopenCommentThread(threadId:) throws -> CommentThread
+core.editComment(commentId:, body:) throws -> CommentThread                  // your own only
+core.deleteComment(commentId:) throws -> Bool                                // true: that was the thread's last comment, the thread is gone
+core.deleteCommentThread(threadId:) throws
+newCommentThreadId() -> String                                               // a random UUID
+```
+
+- `CommentThread { id, pageId, workspaceId, quote, createdBy, createdAt, resolved: Bool,
+  resolvedAt: String?, resolvedBy: String?, comments: [ThreadComment] }`; `ThreadComment { id,
+  threadId, authorId, body, createdAt, editedAt: String? }`. Comments are oldest first; the first
+  started the thread. Times are ISO instants (UTC). Authors are user ids: `Core.members(...)` has
+  names and colours (an author may be `deleted-user`). Bodies are plain text, 1 to 10 000
+  characters (the server answers 400 for blank or longer). `quote` is the selected text, cut to 500
+  characters. There is no mention parsing in the API (the server's notification hooks read `@name`
+  from the body; the client sends plain text).
+- **Who may do what** (server): anyone who can open the page can read threads (viewers too).
+  Members and up can start a thread, reply, resolve and reopen (any of them, not only the
+  starter); a viewer gets `CoreError.Server(status: 403, ...)`. Editing a comment: its author
+  only. Deleting a comment: its author or a workspace admin; deleting the last one removes the
+  thread. Deleting a whole thread: its starter or an admin. A reply to a resolved thread reopens it.
+  Locked pages answer 403 until unlocked.
+- **The anchor.** A thread is tied to the page text by a `comment` mark whose attribute
+  `threadId` equals the thread's id (`Mark::Comment { thread_id }` in `content.rs`, so reading
+  existing anchors already works). The server never touches the document: the mark is the client's
+  job, and the server accepts any UUID as the thread id. **The call order the web uses**
+  (`beginComment`, `submitComment`, `cancelComment` in `collabComments.ts`), which apple should
+  follow:
+  1. On Comment with a non-empty selection: `let id = newCommentThreadId()`; keep the selected
+     text (at most 500 characters) as `quote`.
+  2. **Mark the selection with `id` through the editor engine** (the web's `setComment(id)`), so
+     the highlight shows while the composer is open and follows concurrent edits.
+  3. The user types the comment; **then** `core.addCommentThread(pageId:, threadId: id, quote:,
+     body:)`. Retrying with the same id returns the same thread (safe after a timeout); another
+     user's id gives 409.
+  4. If the user cancels, or step 3 fails for good: remove the mark of `id` (`unsetComment(id)`).
+  5. When a thread is deleted (`deleteCommentThread`, or `deleteComment` returned `true`): remove
+     its mark the same way. Resolved threads keep their mark; the web just stops highlighting them
+     (it draws marks only for open threads that `pageComments` returned).
+  **The engine has no such commands today** (`crates/nv-editor` and `EditorSession` have none and
+  nothing in `nv-core` writes the mark), so the editor stream needs to add `set_comment(thread_id)`
+  (mark the current selection) and `unset_comment(thread_id)` (remove every mark of that thread).
+  Until it does, apple can list, create (step 3 alone), reply, resolve and delete threads and show
+  `quote`, but a new thread has no highlight in the page. (The server's header comment in
+  `comments.ts` says "create the thread, then add the mark"; the web does it the other way round,
+  as above.)
+- Live updates: the server publishes an event `{type: 'comments', workspaceId, pageId}` on its
+  event stream when a thread changes; the core has no event stream yet, so refetch with
+  `pageComments` after your own calls and when the page is opened.
+- Swift names: `CommentThread`, `ThreadComment` do not clash with `apps/apple` (no `Comment*` or
+  `Thread*` types there).
+
+## For apple: task details (2026-11-22, `rewrite/core-tasks-full`)
+
+All additions; nothing was renamed or removed, and `apps/apple` constructs `CoreTask(...)`
+(`LookData.swift`), so **`Task` is unchanged** and the full task is a new record, `TaskDetail`.
+Apple's open request ("task fields to write ... to read: `team_id`, `recurrence`, `reminders`,
+`created_by`, `completed_by`, `assigned_by` ... tag, team and member lists with names") is
+answered below. The truth for every field is the server: `server/tasks.ts` (`rowToTask`,
+`validate`, `updateTask`), `shared/types.ts` (`Task`, `TaskPatch`, `Recurrence`, `Reminder`),
+`server/routes/{tasks,reminders,teams,workspaces}.ts`; the web's use is
+`src/components/TaskDetail.tsx` and `src/store/tasks.ts`.
+
+**Reading.**
+
+```swift
+core.cachedTaskDetail(taskId:) -> TaskDetail?                // the stored task, instant
+core.cachedTaskDetails(workspaceId:) -> [TaskDetail]?        // like cachedTasks
+core.taskDetails(workspaceId:) throws -> [TaskDetail]        // like tasks(): sends queued changes first
+```
+
+There is no "get one task" on the server (only the workspace list, PATCH answers and the
+`task` event), so a task's detail is the list's entry. `TaskDetail` = `Task`'s fields plus:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `title`, `description` | String | description is plain text, up to 50 000 characters |
+| `done` | Bool | status `open`/`done` |
+| `priority` | UInt8 | 1 urgent, 2, 3, 4 none (the default) |
+| `dueDate` | String? | **local calendar date `YYYY-MM-DD`, no time zone** ("the 5th" is the 5th wherever you are) |
+| `dueTime` | String? | **local `HH:mm`** (24 h), shown with the date; no zone either |
+| `recurrence` | TaskRecurrence? | the repeat rule, below |
+| `reminderAt` | String? | the original single reminder: an **ISO instant in UTC** (`2026-12-01T08:00:00.000Z`) |
+| `assigneeId`, `assignedBy` | String? | user ids; `assignedBy` is who last set the assignee (server-set; none while unassigned) |
+| `createdBy`, `completedBy` | String / String? | user ids (`createdBy` may be `deleted-user`) |
+| `pageId`, `parentId` | String? | the note it is written on; its parent task (one level deep) |
+| `teamId` | String? | one team |
+| `tagIds` | [String] | no order |
+| `checklistDone`, `checklistTotal` | UInt32? | counts of the plain checklists under the task in its note (server counts them when the page is saved) |
+| `completedAt`, `createdAt`, `updatedAt` | String(?) | ISO instants, UTC |
+| `locked` | Bool | on a locked page not unlocked: title and text withheld |
+
+`TaskRecurrence { freq, interval?, byWeekday?, byMonthDay?, byNthWeekday?, until?, count?,
+basis? }`: `freq` is `day`, `week`, `month`, `year` or `weekday` (Mon to Fri, no interval);
+`interval` 1 to 365; `byWeekday` days 0 Sunday to 6 Saturday (weeks start Monday for "every 2
+weeks on ..."); `byMonthDay` 1 to 31 or -1 (last day); `byNthWeekday { n: 1...5 or -1, weekday }`
+("the 2nd Tuesday"); `until` is a `YYYY-MM-DD` (inclusive); `count` is the series length;
+`basis` is `due` (default) or `completion`. A rule a newer server writes that this core can't
+read comes back as no rule (the task still reads).
+
+Not stored on the task, so not in `TaskDetail`: **subtask order** (the server has no position
+field; the web lists subtasks by `createdAt`, the order in the task list; their order inside the
+note is the note's) and **checklist items** (they are text in the page, only the counts are
+fields; `taskNotes` returns them as Markdown).
+
+**Writing: `core.updateTask(taskId:changes:) throws -> TaskDetail`.** One PATCH with only the
+fields you set (a `TaskChanges` record; every field defaults to "leave it"). The call returns
+the task as the server has it now.
+
+```swift
+TaskChanges(title:, description:, done:, priority:, dueDate:, clearDueDate:, dueTime:, clearDueTime:,
+            recurrence:, clearRecurrence:, reminderAt:, clearReminderAt:, assigneeId:, clearAssignee:,
+            teamId:, clearTeam:, tagIds:, pageId:, clearPage:, parentId:, clearParent:)
+```
+
+- **Set** a field by giving it a value; **clear** one by its `clear…` flag (`dueDate`, `dueTime`,
+  `recurrence`, `reminderAt`, `assigneeId`, `teamId`, `pageId`, `parentId`): the call then sends
+  `null`, exactly what the web sends (`updateTask(id, { dueDate: null })`). A value given with its
+  flag wins. Absent means untouched. `title`, `description` ("" empties it), `priority`, `done`
+  and `tagIds` (the whole list; `[]` clears) can't be null.
+- **Server rules you will meet** (`server/tasks.ts`): only workspace members or editors of the
+  note may edit; a viewer, or a note shared view-only, gets `.Server(status: 403 ...)` (the
+  assignee may still tick or reopen). Teams and tags are for members. The assignee must be a
+  member of the workspace (or someone the page is shared with). A subtask has no subtasks of its
+  own and can't change page without its parent; `parentId` of a task that has subtasks is refused
+  (400). `pageId`/`parentId` set `null` take a task off its note / make it its own task.
+- **Ticking** (`done: true`): a recurring task is not completed: the server leaves a done copy
+  in the history, moves the task's `dueDate` to the next date (and its single reminder by the
+  same offset) and keeps it open. The returned `TaskDetail` is that open task. Offline the
+  stored copy is shown done (the server's roll-forward arrives when the change is sent).
+- **Checked first.** What the server would refuse (`validate`) is refused before anything is
+  sent or queued, as `.Server(status: 400, message: ...)` with the server's own words (`Invalid
+  priority`, `Invalid due date`, `Invalid due time`, `Invalid title` > 1000 characters, `Invalid
+  description` > 50 000, `Invalid tags` > 50, `Invalid recurrence frequency/interval/weekdays/day
+  of month/nth weekday/end date/occurrence count/basis`). Dates must be real dates (the server only
+  checks the shape).
+- **The web's two conveniences are the app's to do** (the core doesn't know your "today"): when
+  it sets a **time** on a task with no due date it also sets `dueDate` to today; when it sets a
+  **rule** on a task with no due date it sets `dueDate` to `firstOccurrence(rule:, from: today)`.
+  Do both in the same `updateTask`.
+
+**Offline.** The same queue as `setTaskTitle`: with a store, a change the server can't be reached
+for is kept in `task_ops` (the stored PATCH body, so no schema change), applied to the stored
+task at once and the call returns the task as it will be (`assignedBy` is you, `completedAt` and
+`completedBy` set when ticking), `unsentTaskChanges()` counts it, `sendTaskChanges()` sends it, and
+`taskDetails`/`tasks` lay waiting changes over the list. Several changes to one task are sent as
+separate PATCHes in order. A refused queued change is dropped and noted in `taskError()`. Not
+queued (the call throws `Network`): no store, a locked page, a task the store doesn't know. Tags,
+teams, members, reminders and notes (below) are **online only**: they throw `Network` offline
+(they are not cached).
+
+**Creating with fields.** `NewTaskInput` has new fields after `done`, all defaulted, so existing
+calls compile: `description`, `priority`, `dueDate`, `dueTime`, `recurrence`, `reminderAt`,
+`assigneeId`, `teamId`, `tagIds`. They are validated like `updateTask`'s.
+
+**The lists a task points into** (all `throws`, online only):
+
+```swift
+core.tags(workspaceId:) -> [TaskTag]                          // id, name, color "#rrggbb"
+core.createTag(workspaceId:, name:, color:) -> TaskTag        // by name; an existing name (any case) returns it; "#" dropped; members and up
+core.teams(workspaceId:) -> [TaskTeam]                        // id, name, color, parentId, memberIds
+core.members(workspaceId:) -> [WorkspaceMember]               // id, name, email, color, role
+core.taskNotes(taskId:) -> String                             // the notes under the task in its page, Markdown ("- [ ] x", "- [x] y"), "" if none
+core.taskReminders(taskId:) -> [TaskReminder]                 // yours only
+core.addReminder(taskId:, spec:) / updateReminder(reminderId:, spec:) / deleteReminder(reminderId:)
+```
+
+`ReminderSpec` is `.at(at: ISO UTC)` or `.before(minutes: 0...86400)` (before the task's due time,
+or the user's default reminder time on a date-only task; it follows the due date when that
+moves). At most 10 per task. `TaskReminder.nextFireAt` is when it fires next (none once fired, no
+due date, or the task is done). Team creation and tag editing/deletion are admin screens and
+aren't in the Core API.
+
+**Quick add.** It is parsed on the client today (`shared/quickadd.ts`, used by
+`src/components/QuickAdd.tsx` and the subtask field), so it is ported:
+
+```swift
+parseQuickAdd(text:, today:) -> QuickAddResult
+// today: the user's LOCAL date "YYYY-MM-DD" ("tomorrow", "friday", "in 2 weeks" count from it;
+// a malformed one means today in UTC). No time zone argument: dates have none.
+QuickAddResult { title, dueDate?, dueTime?, priority?, recurrence?, assignee?, tags: [String], team?, tokens }
+QuickAddToken { start, end, kind }   // UTF-16 offsets (String.utf16, NSRange); kind: .date .time .priority .recurrence .assignee .tag .team
+```
+
+Same words as the web: `today tod tonight tomorrow tmr tmrw`, `next week` (Monday), `next month`
+(the 1st), `in N days|weeks|months`, weekdays (`fri`, `on friday`, `next friday`: the next one
+strictly after today), `Nov 30`, `30 Nov`, `Dec 25th`, `2026-12-01`, times (`3pm`, `at 3:30pm`,
+`at 15:30`, `noon`, `midnight`), `p1`..`p4` or `!p1`, `@name`, `#tag` (several; a letter first),
+`+team`, and repeats (`daily`, `every 2 weeks on mon,thu`, `every month on the 15th`, `every 2nd
+tuesday`, `every weekday`, ... with `until 2026-12-31`, `for 10 times`/`x10`, `after
+completion`); "by", "due", "on", "at" before a date or time go with it. A repeat with no date
+starts on its first matching day; a monthly or yearly rule is pinned to the date's day. It does
+**not** resolve names or create anything: the web then does, and the app does the same:
+
+```swift
+let q = parseQuickAdd(text: line, today: todayLocal)
+let me = core.user()!.id
+let assignee = q.assignee.flatMap { resolveMember(mention: $0, members: members, me: me) } ?? me   // the web defaults to you
+let team = q.team.flatMap { resolveTeam(text: $0, teams: teams) }   // unresolved: the web keeps " +text" in the title
+let tagIds = try q.tags.map { try core.createTag(workspaceId: ws, name: $0, color: nil).id }       // makes missing tags
+try core.createTaskWith(workspaceId: ws, task: NewTaskInput(title: q.title, pageId: page, done: false,
+    priority: q.priority ?? 4, dueDate: q.dueDate, dueTime: q.dueTime, recurrence: q.recurrence,
+    assigneeId: assignee, teamId: team, tagIds: tagIds))
+```
+
+(An `@name` that resolves to nobody stays in the title as `@name`, as the web does.) Also exported,
+for the Repeat row: `describeRecurrence(rule:, dueDate:) -> String` ("Every 2 weeks on Mon,
+Thu", "Every month on the last day", "Every year on Feb 14"; the web's task detail text) and
+`firstOccurrence(rule:, from:) -> String`.
+
+**How it was checked.** `scripts/corpus/quickadd.ts` runs the web's own `parseQuickAdd` over 134
+lines for 4 "today"s (Thu 5 Nov 2026, leap day 2028, year end, month end: 536 results, tokens
+included) and `describeRecurrence`/`firstOccurrence` over 21 rules, committed in
+`tests/corpus/quickadd.json`; `crates/nv-core/tests/quickadd.rs` reproduces every one.
+`crates/nv-core/tests/task_detail.rs` (scripted server: every field, bodies, clears, validation,
+offline queue, lists, reminders) and `crates/nv-api/tests/client.rs` cover the calls; the
+real-server test (`task_details_against_a_running_server`) sets and reads back every field,
+clears them, ticks (plain and recurring), makes and unmakes a subtask, and runs reminders, tags
+and members against `server/index.ts`. **Not run against a real server:** teams (the Core API
+can't create one; `teams()` and `teamId` are tested with the scripted server only), a
+non-member assignee, an edit refused as view-only (403), and the offline queue replaying a task
+change against a server.
 
 ## For apple: boxes (2026-11-22, `rewrite/core-boxes`)
 
@@ -395,6 +673,33 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
   so Intel builds link. The iOS device slice is still arm64 only.
 
 ## Done
+
+- 2026-11-22, search and comment threads (`rewrite/core-tasks-full`): nv-api `search`,
+  `page_comments`, `add_comment_thread`, `reply_to_thread`, `set_thread_resolved`,
+  `delete_comment_thread`, `edit_comment`, `delete_comment` with `SearchResult`/`CommentThread`
+  types; nv-core `search.rs` (`Core.search`, `parseSnippet`/`SnippetRun`, `pageComments`,
+  `addCommentThread`, `replyToCommentThread`, `resolveCommentThread`, `reopenCommentThread`,
+  `editComment`, `deleteComment`, `deleteCommentThread`, `newCommentThreadId`). Tests:
+  `crates/nv-api/tests/search_comments.rs`, `crates/nv-core/tests/search.rs` (scripted transport),
+  the real-server test `search_and_comments_against_a_running_server` (page text written through
+  a live page, found after the server's debounced save; a full thread round trip; passed locally
+  on port 4457), Swift `testSnippetRunsAndThreadIds`. No server changes.
+
+- 2026-11-22, the full task model (`rewrite/core-tasks-full`): nv-api `Task` with every server field
+  (`assigned_by`, `completed_by`; missing and unknown fields tolerated), typed `Recurrence`,
+  `TaskPatch` (`Option<Option<_>>`, `null` to clear), `Client::patch_task`, `completed_tasks`,
+  `task_notes`, `tags`/`create_tag`, `teams`, `members`, `reminders`/`add_reminder`/
+  `update_reminder`/`delete_reminder`; nv-core `task_detail.rs` (`TaskDetail`, `TaskChanges`,
+  `updateTask`, `cachedTaskDetail(s)`, `taskDetails`, lists, reminders, `resolveMember`,
+  `resolveTeam`, `describeRecurrence`, `firstOccurrence`, validation as `server/tasks.ts`),
+  `NewTaskInput` with the quick-add fields, `quickadd.rs` + `recurrence.rs` (the web's quick add
+  and repeat-rule text ported; new dependency `regex`), the offline queue carrying every field
+  (no schema bump; optimistic copy sets `assignedBy`/`completedBy`). Tests: nv-api client tests
+  (all fields, patch bodies, endpoints); `tests/corpus/quickadd.json` from
+  `scripts/corpus/quickadd.ts` (the web's parser, 536 results, plus 21 rules) checked by
+  `crates/nv-core/tests/quickadd.rs`; `crates/nv-core/tests/task_detail.rs`; the real-server test
+  `task_details_against_a_running_server` (passed locally against `server/index.ts` on port
+  4447); Swift `testQuickAddAndTaskFields`.
 
 - 2026-11-22, box calls (`rewrite/core-boxes`): `nv_model::boxes` (create, move, resize, front,
   delete in the web's own format; `box_id_from`; `BoxError`), `crates/nv-core/src/boxes.rs`

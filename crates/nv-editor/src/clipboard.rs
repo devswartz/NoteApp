@@ -1,7 +1,7 @@
 //! The clipboard (EDITOR.md 7): copy as plain text and HTML; paste plain text (with today's inline
 //! Markdown paste rules), HTML (today's parse rules, unsafe links dropped) and URLs over a selection.
 
-use crate::editor::{near_text, Editor};
+use crate::editor::{near_sel, near_text, Editor};
 use crate::node::{add_mark, Mark, Node};
 use crate::schema::Attrs;
 use crate::selection::Selection;
@@ -63,9 +63,27 @@ impl Editor {
                 return true;
             }
         }
+        // Plain text takes the marks around the caret (ProseMirror's `$context.marks()`).
+        let (from, _) = self.range();
+        let ctx = match self.sel {
+            Selection::Text { .. } if self.resolve(from).parent(&self.doc).is_textblock() => {
+                self.marks_at(from)
+            }
+            _ => vec![],
+        };
         let blocks: Vec<Node> = text
             .split('\n')
-            .map(|line| Node::el("paragraph", inline_markdown(line)))
+            .map(|line| {
+                let mut inline = inline_markdown(line);
+                for n in inline.iter_mut().filter(|n| n.is_text()) {
+                    let mut marks = ctx.clone();
+                    for m in &n.marks {
+                        marks = add_mark(&marks, m);
+                    }
+                    n.marks = marks;
+                }
+                Node::el("paragraph", inline)
+            })
             .collect();
         self.paste_blocks(blocks)
     }
@@ -73,6 +91,7 @@ impl Editor {
     /// Put pasted blocks at the caret, ProseMirror style: a single line goes inline; otherwise the
     /// first block's text joins the line before the caret and the last block's the rest of it.
     pub fn paste_blocks(&mut self, mut blocks: Vec<Node>) -> bool {
+        self.node_selection_to_line();
         self.delete_selection();
         let Some(pos) = self.sel.head() else {
             return false;
@@ -101,6 +120,35 @@ impl Editor {
         if self.paste_items_into_item(&r, &blocks, &head, &tail) {
             return true;
         }
+        // A toggle's summary is one line: the first pasted line goes in it, the others become
+        // the first lines of the toggle's content.
+        if block.is("detailsSummary") && blocks.len() > 1 && r.depth() >= 2 {
+            let first = blocks.remove(0);
+            let ins = if first.is_textblock() {
+                first.content
+            } else {
+                vec![]
+            };
+            let mut dpath = path.clone();
+            dpath.pop();
+            let s = self.doc.at_mut(&path);
+            s.content = [head, ins, tail].concat();
+            s.normalize();
+            let count = blocks.len();
+            if let Some(body) = self.doc.at_mut(&dpath).content.get_mut(1) {
+                body.content.splice(0..0, blocks);
+            }
+            let mut last = dpath.clone();
+            last.extend([1, count - 1]);
+            let at = crate::tasks::pos_of_path(&self.doc, &last);
+            let size = self.doc.at(&last).content_size();
+            self.sel = if self.doc.at(&last).is_textblock() {
+                Selection::caret(at + 1 + size)
+            } else {
+                Selection::caret(near_text(&self.doc, at, 1))
+            };
+            return true;
+        }
         let parent = path[..path.len() - 1].to_vec();
         let i = path[path.len() - 1];
         let before = r.before(r.depth());
@@ -126,6 +174,7 @@ impl Editor {
             before + total
         };
         let last_is_tb = out.last().is_some_and(Node::is_textblock);
+        let out_last_is_leaf = out.last().is_some_and(|n| n.is_leaf() && !n.is_inline());
         if !tail.is_empty() {
             if last_is_tb {
                 let l = out.last_mut().unwrap();
@@ -142,7 +191,13 @@ impl Editor {
             0
         };
         let end = if last_is_tb { caret_end - 1 } else { caret_end };
-        self.sel = Selection::caret(near_text(&self.doc, end.min(self.doc.content_size()), -1));
+        let end = end.min(self.doc.content_size());
+        self.sel = if out_last_is_leaf {
+            // A pasted image or card: the caret goes to the line after it, else it is selected.
+            near_sel(&self.doc, end, 1)
+        } else {
+            Selection::caret(near_text(&self.doc, end, -1))
+        };
         let _ = tail_len;
         true
     }
@@ -172,6 +227,11 @@ impl Editor {
                         let a = from.max(p + 1) - (p + 1);
                         let b = to.min(end - 1).saturating_sub(p + 1);
                         parts.push(inline_text(&c.inline_slice(a, b.max(a))));
+                    } else if c.is("fileAttachment") {
+                        parts.push(format!(
+                            "\u{1F4CE} {}",
+                            c.attr("name").as_str().unwrap_or("file")
+                        ));
                     } else if !c.is_leaf() {
                         walk(c, p + 1, from, to, parts, title);
                     }
@@ -390,8 +450,10 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         lists: Vec<(String, Vec<Node>)>,
         /// The open `<li>`'s attributes (a checklist item's `checked`).
         item: Attrs,
-        /// Per open `<span>`: whether it opened a colour (`textStyle`) mark.
-        spans: Vec<bool>,
+        /// Per open `<span>`: the marks it opened (a colour, a comment thread).
+        spans: Vec<Vec<&'static str>>,
+        /// Inside a file card's `<div>`, whose content is ignored.
+        skip: bool,
         /// Open tables: their rows of cells so far.
         tables: Vec<Vec<Vec<Node>>>,
         /// The open cell (`tableHeader` or `tableCell`) and its blocks so far.
@@ -405,6 +467,7 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         lists: Vec::new(),
         item: Attrs::new(),
         spans: Vec::new(),
+        skip: false,
         tables: Vec::new(),
         cell: None,
     };
@@ -484,19 +547,79 @@ pub fn parse_html(html: &str) -> Vec<Node> {
             // Colours are palette names only (src/editor/colors.ts): `<span data-color>` is a
             // text colour, `<mark data-color>` a highlight; anything else stays plain text.
             let color = attr("data-color").filter(|c| nv_model::urls::is_color_name(Some(c)));
+            if b.skip {
+                if name == "div" && closing {
+                    b.skip = false;
+                }
+                continue;
+            }
             if name == "span" {
                 if closing {
-                    if b.spans.pop() == Some(true) {
-                        if let Some(i) = b.marks.iter().rposition(|x| x.kind == "textStyle") {
+                    for kind in b.spans.pop().unwrap_or_default() {
+                        if let Some(i) = b.marks.iter().rposition(|x| x.kind == kind) {
                             b.marks.remove(i);
                         }
                     }
                 } else if !body.ends_with('/') {
-                    b.spans.push(color.is_some());
+                    let mut opened = Vec::new();
                     if let Some(c) = &color {
                         let mut a = Attrs::new();
                         a.insert("color".into(), json!(c));
                         b.marks.push(Mark::new("textStyle", a));
+                        opened.push("textStyle");
+                    }
+                    // A comment anchor (`span[data-thread-id]`) keeps its thread.
+                    if let Some(t) = attr("data-thread-id").filter(|t| !t.is_empty()) {
+                        let mut a = Attrs::new();
+                        a.insert("threadId".into(), json!(t));
+                        b.marks.push(Mark::new("comment", a));
+                        opened.push("comment");
+                    }
+                    b.spans.push(opened);
+                }
+                continue;
+            }
+            // Images and file cards: only links the editor allows (shared/urls.ts); the others are dropped.
+            if (name == "img" || (name == "div" && attr("data-type").as_deref() == Some("file")))
+                && !closing
+            {
+                flush(&mut b);
+                let node = if name == "img" {
+                    let src = nv_model::urls::safe_image_url(attr("src").as_deref());
+                    (!src.is_empty()).then(|| {
+                        let mut a = Attrs::new();
+                        a.insert("src".into(), json!(src));
+                        for k in ["alt", "title"] {
+                            if let Some(v) = attr(k) {
+                                a.insert(k.into(), json!(v));
+                            }
+                        }
+                        Node::new("image", a, vec![])
+                    })
+                } else {
+                    b.skip = !body.ends_with('/');
+                    let url = nv_model::urls::safe_file_url(attr("data-url").as_deref());
+                    (!url.is_empty()).then(|| {
+                        let mut a = Attrs::new();
+                        a.insert("url".into(), json!(url));
+                        a.insert(
+                            "name".into(),
+                            json!(attr("data-name").unwrap_or("file".into())),
+                        );
+                        a.insert(
+                            "size".into(),
+                            json!(attr("data-size")
+                                .and_then(|n| n.parse::<u64>().ok())
+                                .unwrap_or(0)),
+                        );
+                        a.insert("mime".into(), json!(attr("data-mime").unwrap_or_default()));
+                        Node::new("fileAttachment", a, vec![])
+                    })
+                };
+                if let Some(n) = node {
+                    match &mut b.cell {
+                        Some((_, blocks)) => blocks.push(n),
+                        None => b.blocks.push(n),
                     }
                 }
                 continue;
@@ -632,7 +755,7 @@ pub fn parse_html(html: &str) -> Vec<Node> {
                     last_space = false;
                 }
             }
-            if !t.is_empty() {
+            if !t.is_empty() && !b.skip {
                 let mut marks: Vec<Mark> = Vec::new();
                 for m in &b.marks {
                     marks = add_mark(&marks, m);
@@ -701,6 +824,19 @@ pub fn html_of(blocks: &[Node]) -> String {
             "listItem" | "taskItem" => format!("<li>{}</li>", kids()),
             "blockquote" => format!("<blockquote>{}</blockquote>", kids()),
             "horizontalRule" => "<hr>".into(),
+            "image" => format!(
+                "<img src=\"{}\">",
+                esc_html(n.attr("src").as_str().unwrap_or(""))
+            ),
+            "fileAttachment" => {
+                let url = esc_html(n.attr("url").as_str().unwrap_or(""));
+                let name = esc_html(n.attr("name").as_str().unwrap_or("file"));
+                format!(
+                    "<div data-url=\"{url}\" data-name=\"{name}\" data-size=\"{}\" data-mime=\"{}\" data-type=\"file\" class=\"file-card\"><a href=\"{url}\">{name}</a></div>",
+                    n.attr("size").as_u64().unwrap_or(0),
+                    esc_html(n.attr("mime").as_str().unwrap_or(""))
+                )
+            }
             TASK => format!(
                 "<div data-type=\"task-ref\" data-task-id=\"{}\"><div data-task-children>{}</div></div>",
                 n.attr("taskId").as_str().unwrap_or(""),
