@@ -405,7 +405,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     @objc private func recognizerChanged(_ g: UIGestureRecognizer) {
         let name = String(describing: type(of: g)).replacingOccurrences(of: "UIScrollView", with: "SV")
-        let entry = "\(name.prefix(34)):\(g.state.rawValue)@\(String(describing: type(of: g.view ?? UIView())).prefix(14))"
+        let owner: String = g.view.map { String(describing: type(of: $0)) } ?? "nil"
+        let entry: String = String(name.prefix(34)) + ":" + String(g.state.rawValue) + "@" + String(owner.prefix(14))
         if gestureLog.last != entry { gestureLog.append(entry) }
         if gestureLog.count > 80 { gestureLog.removeFirst(40) }
     }
@@ -413,13 +414,16 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// The scroll state as the page title's accessibility value (the UI test reads it, and prints it when a swipe does nothing).
     func publishState() {
         observeRecognizers()
-        titleLabel.accessibilityValue = "gestures=\(gestureLog.suffix(40).joined(separator: ",")) "
-            +"contentSize=\(contentSize) bounds=\(bounds) offset=\(contentOffset) zoom=\(zoomScale) "
-            + "scrollEnabled=\(isScrollEnabled) pan=\(panGestureRecognizer.isEnabled) panState=\(panGestureRecognizer.state.rawValue) "
-            + "states=\((gestureRecognizers ?? []).map { $0.state.rawValue }) maxPanTouches=\(panGestureRecognizer.maximumNumberOfTouches) "
-            + "lastHit=\(lastHit) panLog=\(panLog) windowTouches=\(windowProbe.summary) scrollTouches=\(scrollProbe.summary) "
-            + "stacked=\(stacked) boxes=\(boxViews.count) surface=\(surface.frame) tracking=\(isTracking) dragging=\(isDragging) "
-            + "recognizers=\((gestureRecognizers ?? []).map { String(describing: type(of: $0)) })"
+        var parts: [String] = []
+        let recent: [String] = Array(gestureLog.suffix(40))
+        parts.append("gestures=" + recent.joined(separator: ","))
+        parts.append("contentSize=\(contentSize) offset=\(contentOffset) zoom=\(zoomScale) bounds=\(bounds)")
+        parts.append("panState=\(panGestureRecognizer.state.rawValue) panLog=\(panLog)")
+        parts.append("windowTouches=" + windowProbe.summary)
+        parts.append("scrollTouches=" + scrollProbe.summary)
+        parts.append("lastHit=" + lastHit)
+        parts.append("tracking=\(isTracking) dragging=\(isDragging) stacked=\(stacked) boxes=\(boxViews.count)")
+        titleLabel.accessibilityValue = parts.joined(separator: " ")
     }
 
     // MARK: Editing
