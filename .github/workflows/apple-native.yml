@@ -1,7 +1,7 @@
 name: Apple native
 # The native iPad/iPhone and Mac apps of the rewrite (apps/apple, XcodeGen). Builds both on every push to a rewrite branch
 # that touches them: the core, the iPad/iPhone simulator build and the Mac build (the gate, about 6 min). The look side-by-sides,
-# the scroll test and the typing shots run only on rewrite/native and for commits with [checks]. Uploads the iPad/iPhone build to TestFlight as 1.99.x (prototype builds, docs/rewrite/PLAN.md) when:
+# the scroll test and the typing shots run only for commits with [checks] (or by hand), when chasing a visual bug. Uploads the iPad/iPhone build to TestFlight as 1.99.x (prototype builds, docs/rewrite/PLAN.md) when:
 #   - a pushed commit message contains [testflight], or
 #   - it is run by hand with "testflight" ticked (manual runs need this file on the default branch).
 # Never submits anything to App Review. Signing works like mobile.yml: cloud-managed signing with the App Store Connect key.
@@ -40,7 +40,7 @@ jobs:
     env:
       HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
       UPLOAD: ${{ (github.event_name == 'workflow_dispatch' && inputs.testflight) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[testflight]')) }}
-      CHECKS: ${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/rewrite/native' || contains(github.event.head_commit.message, '[checks]') }}
+      CHECKS: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[checks]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -176,7 +176,7 @@ jobs:
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
         run: echo "::notice::App Store Connect secrets are not set; skipped the TestFlight upload."
 
-      # Checks (about 25 min), only on pushes to rewrite/native, commits with [checks], or by hand: the look side-by-sides,
+      # Checks (about 25 min), only for commits with [checks] or by hand (when chasing a visual bug): the look side-by-sides,
       # the scroll XCUITest and the typing screenshots. Every push gets the build gate above (core, iPad/iPhone, Mac).
       # The look step (docs/rewrite/LOOK.md): the native app in the states of docs/rewrite/look/reference/ at the same
       # viewports (iPad 820×1180 pt portrait and landscape, iPhone 390×844 pt), and side-by-side pictures (reference | native).
