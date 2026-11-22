@@ -1,18 +1,13 @@
 import SwiftUI
 
 struct RootView: View {
-    @Environment(SessionModel.self) private var session
-
     var body: some View {
         #if os(iOS)
-        // iPad/iPhone: the web app's look (LOOK.md), Sources/iOS/Shell.
+        // iPad/iPhone: the web app's look (LOOK.md), Sources/iOS and Shared/Shell.
         NativeRoot()
         #else
-        if session.phase == .signedIn {
-            MainView()
-        } else {
-            SignInView()
-        }
+        // Mac: the same look at desktop width in an AppKit window (Sources/macOS).
+        MacRoot()
         #endif
     }
 }

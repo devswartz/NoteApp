@@ -5,7 +5,7 @@ import SwiftUI
 struct TaskDecor: Equatable {
     var priority: UInt8 = 4
     var assignee: String?
-    var assigneeColor: UIColor?
+    var assigneeColor: PlatformColor?
     var checklist: (done: UInt32, total: UInt32)?
 
     static func == (a: TaskDecor, b: TaskDecor) -> Bool {
@@ -46,7 +46,7 @@ struct PageScreen: View {
             }
             // The phone's bottom sheet (max 55 % of the height).
             .overlay(alignment: .bottom) {
-                if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: UIScreen.main.bounds.height * 0.55) }
+                if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: mainScreenSize.height * 0.55) }
             }
         }
         .background(palette.bg.color)
@@ -101,7 +101,7 @@ struct PageScreen: View {
     }
 
     private func openPage() {
-        BoxTextRenderer.selfMentionIds = session.preview ? ["u1"] : Set([session.shownUser?.id ?? ""])
+        EditorMarks.selfMentionIds = session.preview ? ["u1"] : Set([session.shownUser?.id ?? ""])
         if let name = LookData.caseName(pageId) {
             if sample == nil { sample = SamplePageScreen.Sample(name: name) }
             return
@@ -121,7 +121,7 @@ struct PageScreen: View {
             var d = TaskDecor(priority: t.priority)
             if session.preview || (t.assigneeId != nil && t.assigneeId == me?.id) {
                 d.assignee = me?.name
-                d.assigneeColor = me.map { UIColor(css: $0.color) }
+                d.assigneeColor = me.map { PlatformColor(css: $0.color) }
             }
             if let total = t.checklistTotal, total > 0 { d.checklist = (t.checklistDone ?? 0, total) }
             out[t.id] = d
@@ -129,7 +129,7 @@ struct PageScreen: View {
         if session.preview {
             // Corpus task ids (t1, tb …) aren't the demo tasks: the look seed assigns them all to the demo user.
             for id in ["t1", "t2", "t3", "tb"] {
-                out[id] = TaskDecor(priority: 4, assignee: me?.name, assigneeColor: me.map { UIColor(css: $0.color) },
+                out[id] = TaskDecor(priority: 4, assignee: me?.name, assigneeColor: me.map { PlatformColor(css: $0.color) },
                                     checklist: id == "t1" ? (done: UInt32(1), total: UInt32(2)) : nil)
             }
         }
@@ -143,10 +143,8 @@ struct PageScreen: View {
         } else if let snapshot {
             let title = meta?.title ?? snapshot.title
             let edited = meta.map { "Edited \(Due.ago($0.updatedAt))" + (session.preview ? " by you" : "") } ?? "Edited just now by you"
-            PageCanvasView(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
-                           decor: decor, showAddIcon: phone || ((LookData.state?.hasPrefix("edit") ?? false)), stacked: phone, notify: { shell.say($0) })
-                .ignoresSafeArea(.container, edges: .bottom)
-                .ignoresSafeArea(.keyboard)
+            PageCanvas(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
+                       decor: decor, showAddIcon: phone || ((LookData.state?.hasPrefix("edit") ?? false)), stacked: phone, notify: { shell.say($0) })
         } else if let sample, case .failure = sample.page {
             notFound(palette)
         } else if let live, case .ended = live.state {
@@ -217,7 +215,7 @@ struct PageTopBar: View {
             } else {
             HStack(spacing: 6) {
                 if let notebook {
-                    Circle().fill(UIColor(css: notebook.color).color).frame(width: 8, height: 8)
+                    Circle().fill(PlatformColor(css: notebook.color).color).frame(width: 8, height: 8)
                     Text(notebook.name).lineLimit(1)
                     Icon("chevron-right", 14, p.textMuted.color)
                 }
@@ -272,8 +270,8 @@ struct PageTopBar: View {
         .background(p.bg.withAlphaComponent(0.88).color)
     }
 
-    private var statusColor: UIColor {
-        status == "Offline" ? UIColor.mix(palette.warn, 0.65, palette.text) : palette.text2
+    private var statusColor: PlatformColor {
+        status == "Offline" ? PlatformColor.mix(palette.warn, 0.65, palette.text) : palette.text2
     }
 
     private func iconButton(_ icon: String, badge: Int, active: Bool = false, _ action: @escaping () -> Void) -> some View {
@@ -319,7 +317,11 @@ struct NotesHome: View {
     let theme = Theme.shared
 
     var body: some View {
+        #if os(iOS)
         if phone { PhoneNotes() } else { overview }
+        #else
+        overview
+        #endif
     }
 
     @ViewBuilder private var overview: some View {
@@ -354,7 +356,7 @@ struct NotesHome: View {
                     }
                     ForEach(index.notebooks, id: \.id) { nb in
                         HStack(spacing: 8) {
-                            LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
+                            LetterTile(letter: nb.name, fill: AnyShapeStyle(PlatformColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
                             Text(nb.name).font(.web(14, 650)).foregroundStyle(p.text.color)
                         }
                         .padding(.top, 30).padding(.bottom, 8)
@@ -362,7 +364,7 @@ struct NotesHome: View {
                         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
                         ForEach(index.sections(in: nb), id: \.id) { s in
                             HStack(spacing: 8) {
-                                RoundedRectangle(cornerRadius: 2).fill(UIColor(css: s.color).color).frame(width: 3, height: 14)
+                                RoundedRectangle(cornerRadius: 2).fill(PlatformColor(css: s.color).color).frame(width: 3, height: 14)
                                 Text(s.name).font(.web(13, 600)).foregroundStyle(p.text2.color)
                             }
                             .padding(.top, 14).padding(.bottom, 6)
@@ -407,7 +409,11 @@ struct SectionScreen: View {
     let theme = Theme.shared
 
     var body: some View {
+        #if os(iOS)
         if phone { PhoneSectionScreen(sectionId: sectionId) } else { empty }
+        #else
+        empty
+        #endif
     }
 
     @ViewBuilder private var empty: some View {

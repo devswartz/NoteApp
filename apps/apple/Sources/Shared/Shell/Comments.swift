@@ -64,8 +64,8 @@ final class CommentsModel {
         showResolved = false
         failure = nil
         pageId = nil
-        BoxTextRenderer.resolvedThreads = []
-        BoxTextRenderer.activeThread = nil
+        EditorMarks.resolvedThreads = []
+        EditorMarks.activeThread = nil
     }
 
     func reload() {
@@ -88,8 +88,8 @@ final class CommentsModel {
 
     /// Draw the marks again: resolved threads plain, the open one stronger.
     private func publish() {
-        BoxTextRenderer.resolvedThreads = Set(threads.filter { $0.resolved }.map { $0.id })
-        BoxTextRenderer.activeThread = activeId
+        EditorMarks.resolvedThreads = Set(threads.filter { $0.resolved }.map { $0.id })
+        EditorMarks.activeThread = activeId
         NotificationCenter.default.post(name: Self.changed, object: nil)
     }
 
@@ -100,7 +100,7 @@ final class CommentsModel {
     // MARK: Starting a comment
 
     /// Mark the selection of `box` with a new thread and open the panel for the comment.
-    func begin(box: BoxTextView, quote: String) {
+    func begin(box: EditorTarget, quote: String) {
         guard pageId != nil, !quote.isEmpty else { return }
         cancel()
         let id = newCommentThreadId()
@@ -288,7 +288,7 @@ struct CommentsPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .noEdgeEffect()
-            .scrollDismissesKeyboard(.interactively)
+            .dismissKeyboardOnScroll()
         }
         .frame(width: phone ? nil : 320)
         .frame(maxWidth: phone ? .infinity : nil, maxHeight: phone ? maxHeight : .infinity)
@@ -480,7 +480,7 @@ private struct ThreadCard: View {
         let author = session.member(c.authorId)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                AvatarView(name: author?.name ?? "Former member", color: author.map { UIColor(css: $0.color) } ?? UIColor(css: "#999999"), size: 20)
+                AvatarView(name: author?.name ?? "Former member", color: author.map { PlatformColor(css: $0.color) } ?? PlatformColor(css: "#999999"), size: 20)
                 Text(author?.name ?? "Former member").font(.web(13, 600)).foregroundStyle(p.text.color).lineLimit(1)
                 Text(agoText(c.createdAt) + (c.editedAt != nil ? " · edited" : "")).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
                 Spacer(minLength: 0)

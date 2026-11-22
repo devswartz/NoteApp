@@ -236,9 +236,9 @@ struct MoveCard: View {
                                         let selected = (o.section ?? o.notebook) == current
                                         HStack(spacing: 8) {
                                             if let color = o.color {
-                                                RoundedRectangle(cornerRadius: 2).fill(UIColor(css: color).color).frame(width: 4, height: 14)
+                                                RoundedRectangle(cornerRadius: 2).fill(PlatformColor(css: color).color).frame(width: 4, height: 14)
                                             } else {
-                                                LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
+                                                LetterTile(letter: nb.name, fill: AnyShapeStyle(PlatformColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
                                             }
                                             Text(o.label).font(.web(14)).foregroundStyle((selected ? p.accent : p.text).color).lineLimit(1)
                                             Spacer(minLength: 0)

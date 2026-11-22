@@ -45,7 +45,7 @@ enum Due {
     }
 
     /// The tone of a due date: overdue danger, today success, ≤ 6 days warn, later text-2.
-    static func tone(_ s: String?, _ p: Palette) -> UIColor {
+    static func tone(_ s: String?, _ p: Palette) -> PlatformColor {
         guard let n = days(s) else { return p.text2 }
         if n < 0 { return p.danger }
         if n == 0 { return p.success }
@@ -349,7 +349,7 @@ struct TaskRowView: View {
             }
             Spacer(minLength: 0)
             if let me = session.shownUser, task.assigneeId == me.id {
-                AvatarView(name: me.name, color: UIColor(css: me.color), size: 20)
+                AvatarView(name: me.name, color: PlatformColor(css: me.color), size: 20)
             }
         }
         .padding(.vertical, phone ? 12 : 13).padding(.horizontal, phone ? 12 : 6)
@@ -388,7 +388,7 @@ struct TaskRowView: View {
     }
 }
 
-func priorityColor(_ priority: UInt8, _ p: Palette) -> UIColor {
+func priorityColor(_ priority: UInt8, _ p: Palette) -> PlatformColor {
     switch priority {
     case 1: return p.p1
     case 2: return p.p2

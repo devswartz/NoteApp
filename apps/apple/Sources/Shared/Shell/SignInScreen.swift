@@ -1,47 +1,5 @@
 import SwiftUI
 
-/// The root on iPad/iPhone: sign-in or the shell, in the theme's colours. In look mode (CI) the
-/// status bar is hidden and, with `-lookLandscape YES`, the app is drawn 1180×820 turned a
-/// quarter inside the portrait simulator (CI turns the screenshot back).
-struct NativeRoot: View {
-    @Environment(SessionModel.self) private var session
-    let theme = Theme.shared
-
-    var body: some View {
-        let scheme: ColorScheme? = theme.mode == .system ? nil : (theme.chrome.isDark ? .dark : .light)
-        LookFrame {
-            if session.phase == .signedIn {
-                AppShell()
-            } else {
-                SignInScreen()
-            }
-        }
-        .preferredColorScheme(scheme)
-    }
-}
-
-struct LookFrame<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        if LookData.landscape {
-            GeometryReader { g in
-                content()
-                    .frame(width: g.size.height, height: g.size.width)
-                    .rotationEffect(.degrees(90))
-                    .position(x: g.size.width / 2, y: g.size.height / 2)
-            }
-            .ignoresSafeArea()
-            .statusBarHidden(true)
-            .persistentSystemOverlays(.hidden)
-        } else if LookData.state != nil {
-            content().ignoresSafeArea().statusBarHidden(true).persistentSystemOverlays(.hidden)
-        } else {
-            content().ignoresSafeArea(.container, edges: .bottom)
-        }
-    }
-}
-
 /// Sign in (src/pages/Login.tsx, LOOK.md 4.13): a card on `--bg-subtle` with an accent glow.
 /// Below the card, the version line (press and hold 1.5 s to switch to staging).
 struct SignInScreen: View {
@@ -79,11 +37,11 @@ struct SignInScreen: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(UIColor(hex: 0x5B5BD6).color)
+                    .fill(PlatformColor(hex: 0x5B5BD6).color)
                     .frame(width: 34, height: 34)
                     .overlay(
                         RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Color.white).frame(width: 16, height: 16)
-                            .overlay(Icon("check", 12, UIColor(hex: 0x5B5BD6).color))
+                            .overlay(Icon("check", 12, PlatformColor(hex: 0x5B5BD6).color))
                     )
                     .shadowSm(p)
                 Text("Notivelo").font(.web(17, 700)).foregroundStyle(p.text.color)
@@ -97,8 +55,8 @@ struct SignInScreen: View {
                     field("Email", p) {
                         TextField("", text: $email)
                             .textContentType(.username)
-                            .keyboardType(.emailAddress)
-                            .textInputAutocapitalization(.never)
+                            .emailKeyboard()
+                            .noAutocapitalization()
                             .autocorrectionDisabled()
                     }
                     field("Password", p) {

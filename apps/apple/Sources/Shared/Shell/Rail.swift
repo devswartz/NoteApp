@@ -24,7 +24,7 @@ struct Rail: View {
             foot("bell") { shell.notYet("Notifications") }
             Button { shell.menu = .workspace } label: {
                 LetterTile(letter: session.shownWorkspace?.name ?? "W",
-                           fill: AnyShapeStyle(LinearGradient(colors: [Color(uiColor: UIColor(hex: 0x6366F1)), Color(uiColor: UIColor(hex: 0x8B5CF6))],
+                           fill: AnyShapeStyle(LinearGradient(colors: [PlatformColor(hex: 0x6366F1).color, PlatformColor(hex: 0x8B5CF6).color],
                                                               startPoint: .topLeading, endPoint: .bottomTrailing)),
                            size: 28, radius: 8, fontSize: 14)
                     .frame(width: 40, height: 40)
@@ -32,7 +32,7 @@ struct Rail: View {
             .buttonStyle(PressStyle(radius: 9, pressed: p.bgPressed.color))
             .anchor("rail-workspace", shell)
             Button { shell.menu = .account } label: {
-                AvatarView(name: session.shownUser?.name ?? "?", color: UIColor(css: session.shownUser?.color ?? "#6366f1"), size: 26)
+                AvatarView(name: session.shownUser?.name ?? "?", color: PlatformColor(css: session.shownUser?.color ?? "#6366f1"), size: 26)
                     .frame(width: 40, height: 40)
             }
             .buttonStyle(PressStyle(radius: 9, pressed: p.bgPressed.color))

@@ -60,7 +60,7 @@ struct MenuItem: View {
             HStack(alignment: note == nil ? .center : .top, spacing: 10) {
                 if let tile {
                     LetterTile(letter: tile,
-                               fill: AnyShapeStyle(LinearGradient(colors: [Color(uiColor: UIColor(hex: 0x6366F1)), Color(uiColor: UIColor(hex: 0x8B5CF6))],
+                               fill: AnyShapeStyle(LinearGradient(colors: [PlatformColor(hex: 0x6366F1).color, PlatformColor(hex: 0x8B5CF6).color],
                                                                   startPoint: .topLeading, endPoint: .bottomTrailing)),
                                size: 20, radius: 6, fontSize: 11)
                 } else {
@@ -123,7 +123,7 @@ struct ColorRow: View {
         HStack(spacing: phone ? 12 : 6) {
             ForEach(Self.colors, id: \.self) { c in
                 Button { pick(c) } label: {
-                    Circle().fill(UIColor(css: c).color).frame(width: phone ? 32 : 20, height: phone ? 32 : 20)
+                    Circle().fill(PlatformColor(css: c).color).frame(width: phone ? 32 : 20, height: phone ? 32 : 20)
                         .overlay { if c.lowercased() == selected?.lowercased() { Icon("check", phone ? 16 : 12, .white) } }
                 }
                 .buttonStyle(.plain)
@@ -328,7 +328,7 @@ struct MenuLayer: View {
                     if !phone { shell.route = .notes }
                 } label: {
                     HStack(spacing: 10) {
-                        LetterTile(letter: nb.name, fill: AnyShapeStyle(UIColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
+                        LetterTile(letter: nb.name, fill: AnyShapeStyle(PlatformColor(css: nb.color).color), size: 18, radius: 5, fontSize: 10)
                         Text(nb.name).font(.web(phone ? 15 : 14)).foregroundStyle(p.text.color).lineLimit(1)
                         if nb.id == current?.id { Icon("check", 14, p.accent.color).padding(.leading, 2) }
                         if nb.visibility == "private" { Icon("lock", 13, p.textMuted.color).padding(.leading, 6) }
@@ -424,7 +424,7 @@ struct MenuLayer: View {
                     Text(nb.name).font(.web(11.5, 600)).foregroundStyle(p.textMuted.color).padding(.horizontal, 10).padding(.top, 6)
                     ForEach(index.sections(in: nb).prefix(3), id: \.id) { s in
                         MenuItem(palette: p, title: s.name) { shell.menu = nil; if let id = openPageId { shell.run(.move(.page, id), session, to: s.id) } }
-                            .overlay(alignment: .leading) { Circle().fill(UIColor(css: s.color).color).frame(width: 8, height: 8).padding(.leading, 15) }
+                            .overlay(alignment: .leading) { Circle().fill(PlatformColor(css: s.color).color).frame(width: 8, height: 8).padding(.leading, 15) }
                     }
                 }
             }
@@ -456,7 +456,7 @@ struct MenuLayer: View {
             blockItem(p, "Heading 1", .web(18, 700), "⌘⌥1") { focus.run("setHeading", ["level": 1]) }
             blockItem(p, "Heading 2", .web(16, 650), "⌘⌥2") { focus.run("setHeading", ["level": 2]) }
             blockItem(p, "Heading 3", .web(14.5, 600), "⌘⌥3") { focus.run("setHeading", ["level": 3]) }
-            blockItem(p, "Quote", Font(UIFont.italicSystemFont(ofSize: 14) as CTFont), nil, quote: true) { focus.run("toggleQuote") }
+            blockItem(p, "Quote", Font(WebType.italic(14) as CTFont), nil, quote: true) { focus.run("toggleQuote") }
             blockItem(p, "Code", Font(WebType.mono(13) as CTFont), "⌘⌥C") { focus.run("toggleCodeBlock") }
         }
     }

@@ -1,0 +1,70 @@
+import Foundation
+import NotiveloCore
+import Observation
+
+/// How the Mac's main menu reaches the open window's shell (menu items are built outside the view tree). The shell
+/// attaches itself when it appears. iPad/iPhone don't use it.
+@Observable
+final class ShellBridge {
+    static let shared = ShellBridge()
+    @ObservationIgnored private(set) weak var shell: Shell?
+    @ObservationIgnored private(set) weak var session: SessionModel?
+    private(set) var attached = false
+
+    func attach(_ shell: Shell, _ session: SessionModel) {
+        self.shell = shell
+        self.session = session
+        attached = true
+    }
+
+    func detach(_ shell: Shell) {
+        if self.shell === shell { self.shell = nil; attached = false }
+    }
+
+    // MARK: Create
+
+    /// The section a new page goes in: the open page's or section, else the notebook's first.
+    private var targetSection: String? {
+        guard let shell, let session else { return nil }
+        let tree = session.shownTree
+        if case let .section(id) = shell.route { return id }
+        if case let .page(id) = shell.route, let s = tree?.pages.first(where: { $0.id == id })?.sectionId { return s }
+        guard let nb = currentNotebook(tree, shell), let tree else { return nil }
+        return TreeIndex(tree).sections(in: nb).first?.id
+    }
+
+    func newPage() {
+        guard let shell, let session else { return }
+        guard let section = targetSection else { shell.say("Create a section first."); return }
+        shell.newPage(in: section, session)
+    }
+
+    func newSection() {
+        guard let shell, let session, let nb = currentNotebook(session.shownTree, shell) else { return }
+        shell.newSection(in: nb.id, parent: nil, session)
+    }
+
+    func newNotebook() {
+        guard let shell, let session else { return }
+        shell.newNotebook(session)
+    }
+
+    // MARK: Go
+
+    func showNotes() { shell?.route = .notes }
+    func showTasks(_ list: Shell.TaskList) { shell?.route = .tasks(list) }
+    func showCalendar() { shell?.notYet("The calendar") }
+    func search() { shell?.openSearch() }
+    func toggleSidebar() { shell?.toggleSidebar() }
+    func toggleRibbon() { shell?.ribbonCollapsed.toggle() }
+    func signOut() { session?.signOut() }
+
+    // MARK: Zoom (the page canvas)
+
+    func zoom(by factor: Double) {
+        guard let shell else { return }
+        shell.zoom = min(3, max(0.5, (shell.zoom * factor * 100).rounded() / 100))
+    }
+
+    func zoomActual() { shell?.zoom = 1 }
+}
