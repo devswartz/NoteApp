@@ -3,6 +3,7 @@
 //! text. A page is a Yjs document; this crate reads it with yrs and must agree with the TS code
 //! on every case of the page-format corpus (`tests/corpus/`, checked by `tests/corpus.rs`).
 
+pub mod boxes;
 pub mod js;
 pub mod lists;
 pub mod markdown;

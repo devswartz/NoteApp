@@ -1,0 +1,86 @@
+{
+  "about": "The canvas-boxes page after the web code made a box at a click (300,212), moved a to (111,222.6), set the wide box top to width 500, brought c to front and removed empty. boxes = the raw `boxes` map as JSON.",
+  "boxes": {
+    "c": {
+      "x": 500,
+      "y": 300,
+      "w": 300,
+      "z": 8
+    },
+    "a": {
+      "x": 111,
+      "y": 223,
+      "w": 300,
+      "z": 2
+    },
+    "b": {
+      "x": 20,
+      "y": 300,
+      "w": 250,
+      "z": 5
+    },
+    "top": {
+      "x": 900,
+      "y": -40.5,
+      "w": 500,
+      "z": 1
+    },
+    "blank": {
+      "x": 0,
+      "y": 1200,
+      "w": 400,
+      "z": 6
+    },
+    "new1": {
+      "x": 300,
+      "y": 200,
+      "w": 360,
+      "z": 7
+    }
+  },
+  "geoms": [
+    {
+      "id": "a",
+      "x": 111,
+      "y": 223,
+      "w": 300,
+      "z": 2
+    },
+    {
+      "id": "b",
+      "x": 20,
+      "y": 300,
+      "w": 250,
+      "z": 5
+    },
+    {
+      "id": "blank",
+      "x": 0,
+      "y": 1200,
+      "w": 400,
+      "z": 6
+    },
+    {
+      "id": "c",
+      "x": 500,
+      "y": 300,
+      "w": 300,
+      "z": 8
+    },
+    {
+      "id": "new1",
+      "x": 300,
+      "y": 200,
+      "w": 360,
+      "z": 7
+    },
+    {
+      "id": "top",
+      "x": 900,
+      "y": -40.5,
+      "w": 500,
+      "z": 1
+    }
+  ],
+  "fragmentCount": 7
+}

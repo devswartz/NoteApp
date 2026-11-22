@@ -5,14 +5,90 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
-- **Task calls, live doc plumbing and the fragment reader done** on branch `rewrite/core-tasks`,
-  ready to merge: apple's task request (create with the client's id, rename, delete, restore,
-  queued offline, plus `Core.pageTasks` as a ready-made `TaskCallbacks`), the editor's two
-  requests (the live doc and remote hooks for `EditorSession::open_live`; `Page::fragment` /
-  `tree::read_fragment`). Notes below: "For apple: task calls", "For editor: the live doc".
+- **Box calls on `LivePage` done** on branch `rewrite/core-boxes` (cut from `rewrite/native`
+  b59c0fa, not merged): apple's request ("needed for boxes"). **Core is paused after this
+  step**; the next queued items are Kotlin bindings with an Android library build in CI, then
+  the CHANGELOG-SYNC.md design. Notes below: "For apple: boxes", "For editor: boxes".
+- Earlier: task calls, live doc plumbing and the fragment reader (branch `rewrite/core-tasks`):
+  "For apple: task calls", "For editor: the live doc".
 - **Next, in order** (for a fresh session; see the handover below): Kotlin bindings with an
   Android library build in CI (`cargo-ndk`, including the platform verifier's Android init,
   below), then the CHANGELOG-SYNC.md design.
+
+## For apple: boxes (2026-11-22, `rewrite/core-boxes`)
+
+All additions (a new `BoxError` and new `LivePage` methods; nothing renamed), so today's Swift
+compiles unchanged. Each call is **one local edit** on the live page, written in the web app's
+own format (below), so it goes out like typing does: sent at once, kept in the store and resent
+after a restart if offline. Units are the page's own: points from the page origin (what
+`BoxGeometryStore` calls "from the surface origin").
+
+```swift
+LivePage.createBox(x: Double, y: Double, w: Double, z: Double) throws -> String   // the new id
+LivePage.createBoxWithId(id: String, x:, y:, w:, z:) throws                       // your id; exists on a repeat
+LivePage.moveBox(id: String, x: Double, y: Double) throws
+LivePage.resizeBox(id: String, w: Double) throws                                  // also clears `wide`
+LivePage.bringToFront(id: String) throws -> Double                                // the box's z afterwards
+LivePage.deleteBox(id: String) throws                                             // empty boxes only
+LivePage.deleteBoxWithContent(id: String) throws                                  // whatever it holds
+newBoxId() -> String                                                              // free function
+// enum BoxError (cases capitalised in Swift, as CoreError's): .NoSuchBox(id), .Exists(id), .NotEmpty(id), .Invalid(message), .Closed
+```
+
+- **Values.** x and y are rounded to whole points and clamped to 0...20000; `w` to 120...2400
+  (the web's `clampPos`/`clampWidth`), so `moveBox` to a negative point puts the box at 0. `z` is
+  stored as given. NaN or infinity is `invalid`. The web also snaps to the grid on ruled pages
+  and starts a box 12 pt above a click: both stay the app's job (apple already does the 12 pt).
+- **z.** "Front" is one above the highest z on the page; a box already alone on top stays where
+  it is (nothing is written, the call returns its z); a tie at the top counts as not in front.
+  For `createBox`, pass `z` = (highest z on the page) + 1 (0 if none), as the web does:
+  `(page.info().boxes.map(\.z).max() ?? 0) + 1`.
+- **A new box is empty**: an entry in `boxes` and an empty `box:<id>` fragment, like the web's
+  `createBox`; the editor adds the first paragraph when it opens the box. It exists in the live
+  document at once, so `EditorSession.openLive(page:, field: "box:" + id, ...)` works right after
+  `createBox`, and so does `EditorSession.open` on `page.document()`; typing goes out through the
+  session. Checked in `crates/nv-core/tests/boxes.rs` (typing reaches the stand-in server).
+- **Deleting.** The web removes a box the user left empty without asking, and deletes a box with
+  content only when the user selects it and presses Delete (with an undo toast; the core has no
+  undo). So `deleteBox` refuses a box with content with `.NotEmpty` and changes nothing (empty
+  paragraphs count as empty, as the web's `fragmentIsEmpty` does); for a user-chosen delete use
+  `deleteBoxWithContent`. Neither deletes tasks on the box's task lines (the web does, through
+  the task calls): read `readPage(document:).taskIds` first and `deleteTask` them.
+- **Errors.** An id not on the page is `.NoSuchBox` (someone may have deleted it: drop it
+  locally). After `close()` every call is `.Closed` and writes nothing. Locked pages: ordinary
+  local edits, so they follow the existing rule (a locked page's edits stay in memory, nothing
+  is queued in the store).
+- **Implementing `BoxGeometryStore`**: `savesToServer = true`; `createBox(x:y:width:front:)` →
+  `try page.createBox(x: x, y: y, w: width, z: front)`, return the id (no more `local-` ids);
+  `moveBox` → `moveBox`; `resizeBox(_, width:)` → `resizeBox(id:w:)`; `bringToFront(_, z:)` →
+  `bringToFront(id:)` (core computes z; the `z` argument isn't needed, or use the returned
+  value); `deleteBox` → `deleteBox` (`deleteBoxWithContent` when the user chose to delete a box
+  with text). Others' box changes arrive through `LivePageListener.onChange` (`PageInfo.boxes`)
+  as before; a local call does not fire `onChange` for itself (like local typing), so redraw
+  after the call.
+- **The format, as the web writes it** (listed with sources in the header of
+  `crates/nv-model/src/boxes.rs`): a box is a nested Y.Map in `boxes` with `x`, `y`, `w`, `z`
+  numbers and `wide: true` only when set; moves and resizes set those keys on that map, and a
+  resize deletes `wide`; ids are 16 base-36 characters (8 random bytes, two characters each,
+  `newBoxId` in `src/editor/canvasGeom.ts`). A legacy plain-object entry is converted to a map
+  the first time it is edited (the web ignores such entries).
+- **How it was checked.** `scripts/corpus/box-ops.ts` runs today's web code (`newBoxMap`,
+  `boxAtClick`, `frontZ`, `clampPos`/`clampWidth`, `boxGeoms`; `setGeom` and `removeBox` are
+  copied from `CanvasEditor.tsx` because that file is React) on the `canvas-boxes` page and
+  commits the result in `tests/corpus/box-ops/`; `crates/nv-model/tests/box_ops.rs` makes the
+  same five edits through the Rust calls and compares the raw `boxes` map (after an
+  encode/decode) and `Page::read` field by field. **Not run:** the web app reading bytes
+  written by Rust (the structure is the same as the web's own, so it should); worth a look on a
+  real page.
+
+## For editor: boxes (2026-11-22)
+
+Nothing to change. `EditorSession::open` / `open_live` read boxes through `Page::read` (their
+`check_field`), which sees a box made by `LivePage::create_box` at once (its entry exists and its
+fragment is empty), and opening an empty fragment adds the trailing paragraph as for any box.
+`crates/nv-core/tests/boxes.rs` opens a new box by both routes and types in it. For later:
+`nv_model::boxes::{create_box, move_box, resize_box, bring_to_front, delete_box}` take a
+`yrs::Doc`, so a web-style box edit can be made on any doc, not only a `LivePage`'s.
 
 ## For apple: task calls (2026-11-21, `rewrite/core-tasks`)
 
@@ -320,6 +396,16 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
 
 ## Done
 
+- 2026-11-22, box calls (`rewrite/core-boxes`): `nv_model::boxes` (create, move, resize, front,
+  delete in the web's own format; `box_id_from`; `BoxError`), `crates/nv-core/src/boxes.rs`
+  (`LivePage.createBox`/`createBoxWithId`/`moveBox`/`resizeBox`/`bringToFront`/`deleteBox`/
+  `deleteBoxWithContent`, `newBoxId`, `BoxError`). Tests: nv-model unit tests (each call
+  round-trips through `Page::read`, one update per call, clamping, plain-object entries),
+  `crates/nv-model/tests/box_ops.rs` against `tests/corpus/box-ops/` (made by
+  `scripts/corpus/box-ops.ts` with the web's code), `crates/nv-core/tests/boxes.rs` (create,
+  `EditorSession` opens it and types, everything reaches the stand-in server), the real-server
+  test extended (a box made on one sign-in, typed in, moved and widened; seen by the other and in
+  the server's saved copy; passed locally on port 4437), Swift `testBoxCallsOnALivePage`.
 - 2026-11-21, task calls and live-doc plumbing (`rewrite/core-tasks`): nv-api `delete_task`,
   `set_task_title`, `NewTask` with every TaskPatch field (and `Deserialize`); nv-store schema 3
   (`task_ops` queue with the locked-page rule, `task(id)` with an index, `remove_task` with

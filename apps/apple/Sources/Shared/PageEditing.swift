@@ -16,6 +16,11 @@ protocol PageEditHost: AnyObject {
     var onRemoteChange: (() -> Void)? { get set }
     /// The page is in sync again after a (re)connect (main thread): editors send all they have.
     var onSynced: (() -> Void)? { get set }
+    /// Do box changes (create, move, resize, front, delete) reach a server?
+    var savesBoxes: Bool { get }
+    /// Run a box call on the live page, in order with the edits sent before it, then show the page
+    /// as it is. `done(nil)` on success, else the error. Main thread; `done` too.
+    func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void)
 }
 
 enum BoxEditorError: Error {
@@ -179,6 +184,9 @@ final class CorpusEditHost: PageEditHost {
     let taskCallbacks: TaskCallbacks
     var onRemoteChange: (() -> Void)?
     var onSynced: (() -> Void)?
+    let savesBoxes = false
+
+    func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) { done(nil) }
 
     init(document: Data, tasks: [String: TaskLine]) {
         self.document = document

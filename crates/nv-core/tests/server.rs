@@ -251,6 +251,49 @@ fn core_against_a_running_server() {
             .map(|p| p.text.contains(&marker) && p.text.contains(&reply))
             .unwrap_or(false)
     });
+
+    // Boxes: one created on the second sign-in appears on the first, takes typing through an
+    // editor session, and is moved and widened; the server saves all of it as the web would.
+    let box_id = live2.create_box(210.0, 330.0, 360.0, 1000.0).unwrap();
+    wait_for("the first sign-in to see the new box", 10, || {
+        live.info().boxes.iter().any(|b| b.id == box_id)
+    });
+    let session = EditorSession::open_live(
+        live2.clone(),
+        format!("box:{box_id}"),
+        Arc::new(NoTaskCallbacks),
+    )
+    .unwrap();
+    for c in format!("Boxed {stamp}").chars() {
+        session.insert_text(c.to_string());
+    }
+    live2.move_box(box_id.clone(), 250.0, 400.0).unwrap();
+    live2.resize_box(box_id.clone(), 480.0).unwrap();
+    live2.bring_to_front(box_id.clone()).unwrap();
+    wait_for("the server's receipt for the box", 10, || {
+        live2.unsent_updates() == 0
+    });
+    wait_for("the first sign-in to see the box moved", 10, || {
+        live.info()
+            .boxes
+            .iter()
+            .any(|b| b.id == box_id && b.x == 250.0 && b.y == 400.0 && b.w == 480.0)
+    });
+    wait_for("the server to save the box", 15, || {
+        read_page(core.page_document(page.id.clone()).unwrap())
+            .map(|p| {
+                p.boxes
+                    .iter()
+                    .any(|b| b.id == box_id && b.x == 250.0 && b.w == 480.0 && !b.wide)
+                    && p.text.contains(&format!("Boxed {stamp}"))
+            })
+            .unwrap_or(false)
+    });
+    drop(session);
+    live2.delete_box_with_content(box_id.clone()).unwrap();
+    wait_for("the first sign-in to see the box deleted", 10, || {
+        !live.info().boxes.iter().any(|b| b.id == box_id)
+    });
     live.close();
     live2.close();
     assert!(matches!(
@@ -278,4 +321,21 @@ fn core_against_a_running_server() {
         Core::new(url).restore_session(rotated).unwrap_err(),
         CoreError::SignedOut
     );
+}
+
+/// No tasks are made in the box test above.
+struct NoTaskCallbacks;
+impl TaskCallbacks for NoTaskCallbacks {
+    fn new_id(&self) -> String {
+        new_task_id()
+    }
+    fn create(&self, _: String, _: String, _: bool) {}
+    fn delete(&self, _: String) {}
+    fn restore(&self, _: String) -> bool {
+        true
+    }
+    fn title(&self, _: String) -> Option<String> {
+        None
+    }
+    fn set_title(&self, _: String, _: String) {}
 }
