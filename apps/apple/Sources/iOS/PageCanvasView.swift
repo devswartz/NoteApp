@@ -74,8 +74,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private let toolbar = FloatingToolbarView()
     private let linkEditor = LinkEditorView()
     var notify: ((String) -> Void)?
-    private var geometry = LocalBoxGeometry()
-    private var movedNotice = false
+    private var geometry: BoxGeometryStore = LocalBoxGeometry()
+    private var needsGeometry = true
+    private var lastPage: PageSnapshot?
+    private var lastCommit = Date.distantPast
     /// The boxes as the page document has them (before local changes).
     private var pageBoxes: [PageBox] = []
     private enum Drag { case move(id: String, start: CGPoint, x: Double, y: Double), resize(id: String, start: CGPoint, w: Double) }
@@ -202,8 +204,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             boxViews = [:]
             editors = [:]
             shownID = page.id
-            geometry = LocalBoxGeometry()
-            movedNotice = false
+            needsGeometry = true
             hideToolbar()
             demoDone = false
             lookDone = false
@@ -214,7 +215,16 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             self.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
             host?.onSynced = { [weak self] in self?.editors.values.forEach { $0.send(all: true) } }
+            needsGeometry = true
         }
+        if needsGeometry {
+            needsGeometry = false
+            let store: BoxGeometryStore
+            if let host, host.savesBoxes { store = LiveBoxGeometry(host: host) } else { store = LocalBoxGeometry() }
+            store.onFailure = { [weak self] id, message in self?.boxFailed(id, message) }
+            geometry = store
+        }
+        lastPage = page
         let tasksChanged = page.tasks != shownTasks || page.pageTitles != shownTitles || decor != shownDecor
         shownTasks = page.tasks
         shownTitles = page.pageTitles
@@ -366,6 +376,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     // MARK: Creating, moving and resizing boxes
 
     /// A tap on empty canvas: a box 360 wide, 12 pt above the tap, in front (the web's click-to-create).
+    /// On a live page the box exists on the server at once and is opened in the editor, so it can be typed in.
     private func createBox(at p: CGPoint) {
         let x = max(Double(p.x - Self.originX), 0)
         let y = max(Double(p.y - Self.originY - 12), 0)
@@ -376,22 +387,58 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.show(content: [])
         view.setWidth(360)
         relayout()
-        // The core can't write a new box yet, so there is no editor to open: the box is drawn as
-        // the web draws a new one (editing frame) and goes again when it is left empty.
-        editing = view
-        view.chrome = true
-        surface.bringSubviewToFront(view)
-        EditorFocus.shared.set(nil)
-        notify?("New boxes can\u{2019}t be saved or typed in yet (the core has no box calls).")
+        if geometry.savesToServer {
+            beginEditing(view, at: nil)
+        } else {
+            // No server (look states): the box is drawn as the web draws a new one, without an editor.
+            editing = view
+            view.chrome = true
+            surface.bringSubviewToFront(view)
+            EditorFocus.shared.set(nil)
+        }
     }
 
-    /// A box left empty and made here goes away again (the web removes an empty box on leaving).
-    private func removeIfEmptyLocal(_ box: BoxTextView) {
-        guard geometry.isLocal(box.boxId), box.editor == nil else { return }
+    /// The server refused a box change (the store has taken it back): say so and draw the page as it is.
+    private func boxFailed(_ id: String, _ message: String?) {
+        if let message { notify?(message) }
+        if let view = boxViews[id], !geometry.apply(to: pageBoxes).contains(where: { $0.id == id }) {
+            if view === editing { stopEditing(drop: false) }
+            view.removeFromSuperview()
+            boxViews[id] = nil
+            editors[id] = nil
+        }
+        if let lastPage {
+            show(lastPage, host: host)
+        } else {
+            boxes = geometry.apply(to: pageBoxes)
+            relayout()
+        }
+    }
+
+    /// A box left empty goes away (the web removes an empty box on leaving it): at once on screen, on
+    /// the server by `deleteBox`, which refuses a box that has anything in it.
+    private func removeIfEmpty(_ box: BoxTextView) {
+        guard !stacked, box.boxId != "default", box.shownText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if geometry.savesToServer {
+            if box.editor == nil && !geometry.isLocal(box.boxId) { return } // never opened: not ours to remove
+        } else if !geometry.isLocal(box.boxId) {
+            return
+        }
         geometry.deleteBox(box.boxId)
         boxes.removeAll { $0.id == box.boxId }
         boxViews[box.boxId] = nil
+        editors[box.boxId] = nil
         box.removeFromSuperview()
+    }
+
+    /// The box is being edited or dragged: in front of the others (the web does on focus and on drag start).
+    private func bringToFront(_ id: String) {
+        guard !stacked, let mine = boxes.first(where: { $0.id == id }) else { return }
+        let others = boxes.filter { $0.id != id }.map(\.z).max() ?? -1
+        guard mine.z <= others else { return }
+        geometry.bringToFront(id, z: others + 1)
+        boxes = geometry.apply(to: pageBoxes)
+        relayout()
     }
 
     private func moveHit(_ p: CGPoint) -> Drag? {
@@ -412,7 +459,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         switch pan.state {
         case .began:
             drag = moveHit(pan.location(in: surface))
-            if drag != nil { hideToolbar() }
+            if let drag {
+                hideToolbar()
+                switch drag {
+                case let .move(id, _, _, _), let .resize(id, _, _): bringToFront(id)
+                }
+            }
         case .changed:
             guard let drag else { return }
             switch drag {
@@ -423,17 +475,17 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             }
             boxes = geometry.apply(to: pageBoxes)
             relayout()
+            if Date().timeIntervalSince(lastCommit) > 0.15 {
+                lastCommit = Date()
+                switch drag {
+                case let .move(id, _, _, _), let .resize(id, _, _): geometry.commit(id)
+                }
+            }
         case .ended, .cancelled, .failed:
             guard let finished = drag else { return }
             drag = nil
-            if case let .move(id, _, _, _) = finished, let z = boxes.map(\.z).max(), let mine = boxes.first(where: { $0.id == id }), mine.z < z {
-                geometry.bringToFront(id, z: z + 1)
-                boxes = geometry.apply(to: pageBoxes)
-                relayout()
-            }
-            if !geometry.savesToServer, !movedNotice, !geometry.isLocal(editing?.boxId ?? "") {
-                movedNotice = true
-                notify?("Moving and resizing boxes isn\u{2019}t saved to the server yet (the core has no box calls).")
+            switch finished {
+            case let .move(id, _, _, _), let .resize(id, _, _): geometry.commit(id)
             }
             updateToolbar()
         default: break
@@ -521,6 +573,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             self.editing = box
             box.chrome = true
             self.surface.bringSubviewToFront(box)
+            self.bringToFront(box.boxId)
             _ = box.becomeFirstResponder()
             if let point { box.placeCaret(at: point) } else { box.placeCaretAtEnd() }
             if let point { box.beginTitleEdit(at: point) }
@@ -544,12 +597,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
-    private func stopEditing() {
+    private func stopEditing(drop: Bool = true) {
         guard let box = editing else { return }
         editing = nil
         hideToolbar()
         if linkEditor.isShown { linkEditor.dismiss() }
-        removeIfEmptyLocal(box)
+        if drop { removeIfEmpty(box) }
         box.endTitleEdit()
         box.chrome = false
         _ = box.resignFirstResponder()
@@ -661,6 +714,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 self.createBox(at: CGPoint(x: Self.originX + 300, y: Self.originY + 80))
                 if let id = self.boxes.last?.id {
                     self.geometry.moveBox(id, x: 420, y: 110)
+                    self.geometry.commit(id)
                     self.boxes = self.geometry.apply(to: self.pageBoxes)
                     self.relayout()
                 }
