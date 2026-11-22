@@ -200,11 +200,7 @@ struct SearchLayer: View {
         return Button { run(hit) } label: {
             HStack(spacing: 10) {
                 Icon(hit.icon, 16, (hit.done ? p.success : p.textMuted).color).frame(width: 16)
-                label(hit, p, size)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(maxWidth: rowWidth * 0.6, alignment: .leading)
-                    .clipped()
+                CapWidth(cap: rowWidth * 0.6) { label(hit, p, size).lineLimit(1) }
                 Spacer(minLength: 0)
                 if let sub = hit.sub {
                     Text(SearchLogic.marked(sub, mark: Color(red: 250 / 255, green: 204 / 255, blue: 21 / 255).opacity(0.35)))
@@ -259,4 +255,19 @@ struct SearchLayer: View {
 private struct SearchHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// One child as wide as it wants, but no wider than `cap` (the web's `flex: none; max-width: 60%`).
+private struct CapWidth: Layout {
+    let cap: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let v = subviews.first else { return .zero }
+        let s = v.sizeThatFits(.unspecified)
+        return CGSize(width: min(s.width, cap), height: s.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
 }
