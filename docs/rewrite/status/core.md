@@ -32,7 +32,7 @@ LivePage.bringToFront(id: String) throws -> Double                              
 LivePage.deleteBox(id: String) throws                                             // empty boxes only
 LivePage.deleteBoxWithContent(id: String) throws                                  // whatever it holds
 newBoxId() -> String                                                              // free function
-// enum BoxError: noSuchBox(id), exists(id), notEmpty(id), invalid(message), closed
+// enum BoxError (cases capitalised in Swift, as CoreError's): .NoSuchBox(id), .Exists(id), .NotEmpty(id), .Invalid(message), .Closed
 ```
 
 - **Values.** x and y are rounded to whole points and clamped to 0...20000; `w` to 120...2400
@@ -50,12 +50,12 @@ newBoxId() -> String                                                            
   session. Checked in `crates/nv-core/tests/boxes.rs` (typing reaches the stand-in server).
 - **Deleting.** The web removes a box the user left empty without asking, and deletes a box with
   content only when the user selects it and presses Delete (with an undo toast; the core has no
-  undo). So `deleteBox` refuses a box with content with `notEmpty` and changes nothing (empty
+  undo). So `deleteBox` refuses a box with content with `.NotEmpty` and changes nothing (empty
   paragraphs count as empty, as the web's `fragmentIsEmpty` does); for a user-chosen delete use
   `deleteBoxWithContent`. Neither deletes tasks on the box's task lines (the web does, through
   the task calls): read `readPage(document:).taskIds` first and `deleteTask` them.
-- **Errors.** An id not on the page is `noSuchBox` (someone may have deleted it: drop it
-  locally). After `close()` every call is `closed` and writes nothing. Locked pages: ordinary
+- **Errors.** An id not on the page is `.NoSuchBox` (someone may have deleted it: drop it
+  locally). After `close()` every call is `.Closed` and writes nothing. Locked pages: ordinary
   local edits, so they follow the existing rule (a locked page's edits stay in memory, nothing
   is queued in the store).
 - **Implementing `BoxGeometryStore`**: `savesToServer = true`; `createBox(x:y:width:front:)` →

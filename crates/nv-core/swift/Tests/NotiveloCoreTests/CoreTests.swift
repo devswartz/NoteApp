@@ -115,14 +115,14 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual([box.x, box.y, box.w, box.z], [100, 200, 500, 1])
         XCTAssertFalse(box.wide)
         XCTAssertThrowsError(try page.moveBox(id: "nope", x: 1, y: 1)) { error in
-            guard case BoxError.noSuchBox(let missing) = error else { return XCTFail("\(error)") }
+            guard case BoxError.NoSuchBox(let missing) = error else { return XCTFail("\(error)") }
             XCTAssertEqual(missing, "nope")
         }
         try page.deleteBox(id: id)
         XCTAssertTrue(page.info().boxes.isEmpty)
         page.close()
         XCTAssertThrowsError(try page.createBox(x: 0, y: 0, w: 300, z: 1)) { error in
-            guard case BoxError.closed = error else { return XCTFail("\(error)") }
+            guard case BoxError.Closed = error else { return XCTFail("\(error)") }
         }
     }
 }
