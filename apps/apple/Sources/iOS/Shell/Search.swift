@@ -13,8 +13,8 @@ struct SearchHit: Identifiable {
     var done = false
 }
 
-/// What the web's palette finds (CommandPalette.tsx): pages by title (and, from the server's search, by their text),
-/// tasks by title, and "Create task …". The core has no search call yet (requested), so page text isn't searched.
+/// What the web's palette finds (CommandPalette.tsx): pages by title (from the tree) and by their text (the core's
+/// `search`, with the matching words marked), tasks by title and description, and "Create task …".
 enum SearchLogic {
     static func crumb(_ sectionId: String, _ tree: Tree) -> String {
         let notebooks = Dictionary(tree.notebooks.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
@@ -68,7 +68,20 @@ enum SearchLogic {
                 tasks.append(taskHit(id: e.id, title: e.title, due: LookData.day(e.due), done: false))
             }
         } else {
-            let found = session.shownTasks.filter { !$0.locked && $0.title.lowercased().contains(needle) }
+            // What the server found in page text and task descriptions (asked 150 ms after the last key; only
+            // used while it is the answer to what is typed now).
+            let remote = session.searchedQuery == q.trimmingCharacters(in: .whitespacesAndNewlines) ? session.searchResults : nil
+            let seen = Set(pages.map { $0.id })
+            for hit in remote?.pages ?? [] where !seen.contains("p:\(hit.pageId)") {
+                let snippet = hit.snippet.map { $0.matched ? "«\($0.text)»" : $0.text }.joined()
+                let sub = [hit.path, snippet].filter { !$0.isEmpty }.joined(separator: " · ")
+                pages.append(SearchHit(id: "p:\(hit.pageId)", kind: .page(hit.pageId), icon: "file-text",
+                                       title: hit.title.isEmpty ? "Untitled" : hit.title, sub: sub.isEmpty ? nil : sub))
+            }
+            var found = session.shownTasks.filter { !$0.locked && $0.title.lowercased().contains(needle) }
+            for hit in remote?.tasks ?? [] where !found.contains(where: { $0.id == hit.task.id }) {
+                if let local = session.shownTasks.first(where: { $0.id == hit.task.id }) { found.append(local) }
+            }
             let ordered = found.filter { !session.isDone($0) } + found.filter { session.isDone($0) }
             tasks = ordered.prefix(8).map { taskHit(id: $0.id, title: $0.title, due: $0.dueDate, done: session.isDone($0)) }
         }
@@ -188,7 +201,11 @@ struct SearchLayer: View {
         .overlay(shape.stroke(p.border.color, lineWidth: 1))
         .clipShape(shape)
         .shadowLg(p)
-        .onChange(of: shell.searchQuery) { index = 0 }
+        .onChange(of: shell.searchQuery) {
+            index = 0
+            session.search(shell.searchQuery)
+        }
+        .onDisappear { session.clearSearch() }
         .onAppear { if LookData.state == nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { focused = true } } }
         .background {
             Button("") {

@@ -151,7 +151,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Subtasks (one level, progress 2/5) | ● | ● | ● | ● | ● | ● | |
 | Checklist under a task (not tasks) | ● | ● | ● | ● | ● | ● | |
 | Tasks on this page panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/tasks` |
-| Task detail: title, description, due date/time, priority, assignee, tags, team, assigned-by, reminders, recurrence, From the note | ● | ● | ● | ● | ● | ● | `TaskDetail.tsx`, `GET /tasks/:id/notes` |
+| Task detail: title, description, due date/time, priority, assignee, tags, team, assigned-by, reminders, recurrence, From the note | ● | ● | ● | ● | ● | ● | `TaskDetail.tsx`, `GET /tasks/:id/notes`. Native: every field editable (apple-wire); "From the note" not yet |
 | Quick add (Q) with natural language (dates, times, p1–p4, repeats, @assignee) | ● | ● | ● | ● | ● | ● | `QuickAdd.tsx`; phone via + tab |
 | Views: Today (progress strip, streak, 7 days), My Tasks, Upcoming, Team, All tasks (status Open/Completed/All) | ● | ◐ | ● | ● | ◐ | ● | phones: Today and My Tasks tabs, rest via Notes/Tasks menu *(verify)* |
 | Calendar: month / week, drag to reschedule or onto No date, double-click to add, Mine / Everyone | ● | ◐ | ● | ● | ◐ | ● | `CalendarView.tsx`, `CalendarPanel.tsx`, `MiniCalendar.tsx` |
@@ -162,7 +162,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
 | Bulk select and bulk bar (complete, reschedule, assign, priority, delete; one Undo) | ● | ◐ | ● | ● | ◐ | ● | `BulkBar.tsx`, `selection.ts` |
 | Inline rename, complete with Undo | ● | ● | ● | ● | ● | ● | |
-| Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● | ● | ● | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
+| Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● ✓ | ● ✓ | ● | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
 | Print task view (⌘P) | ● | ● | ● | ● | ● | ● | |
 | Tags: create, rename, colour, delete | ● | ● | ● | ● | ● | ● | `Labels.tsx`, `/tags` |
 | Teams and subteams, members | ● | ● | ● | ● | ● | ● | `TeamsSettings.tsx`, `/teams` |
@@ -172,7 +172,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Reminders: fixed time or N minutes before; default time for date-only tasks | ● | ● | ● | ● | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
+| Reminders: fixed time or N minutes before; default time for date-only tasks | ● ✓ | ● ✓ | ● | ● | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
 | Push reminders with snooze actions (10 min, 1 h, tomorrow) | ● | ● | ◐ | ◐ | ● | ● | iOS APNs, Android FCM (`SnoozeReceiver`), web push; desktop *(verify: webview notifications)* |
 | Local notifications | ● | ● | ○ | ○ | ● | — | `@capacitor/local-notifications` |
 | App icon badge: due today | ● | ● | ● | ◐ | ● | ○ | Mac Dock badge; Windows tray count |
@@ -184,8 +184,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Comment on selected text (thread anchored in the doc) | ● | ● | ● | ● | ● | ● | `collabComments.ts` |
-| Comments panel: reply, edit, delete, resolve, reopen | ● | ● | ● | ● | ● | ● | `collabCommentsPanel.tsx`, `/comment-threads` |
+| Comment on selected text (thread anchored in the doc) | ● ✓ | ● ✓ | ● | ● | ● | ● | `collabComments.ts` |
+| Comments panel: reply, edit, delete, resolve, reopen | ● ✓ | ● ✓ | ● | ● | ● | ● | `collabCommentsPanel.tsx`, `/comment-threads` |
 | @mentions in comments (and pages) with notifications | ● | ● | ● | ● | ● | ● | `collabMentions.ts` |
 
 ## 9. Workspace, members and roles
@@ -203,7 +203,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Search page titles, text, tasks (best first) | ● | ● | ● | ● | ● | ● | `GET /workspaces/:id/search`; phone Search tab |
+| Search page titles, text, tasks (best first) | ● ✓ | ● ✓ | ● | ● | ● | ● | `GET /workspaces/:id/search`; phone Search tab |
 
 ## 11. Locked pages
 

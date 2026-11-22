@@ -2,13 +2,15 @@ import UIKit
 
 /// The floating formatting toolbar over a text selection (FormattingMenu in src/editor/NoteEditor.tsx;
 /// LOOK.md 4.6): Heading 1-3, Quote | Bold, Italic, Underline, Strikethrough, Code, Link, Text colour,
-/// Highlight | Task (Comment is left out: the core has no comment threads yet). Padding 3, gap 1, `--bg-elevated`, 1 pt border, radius 10, buttons 30x30.
+/// Highlight | Task, Comment. Padding 3, gap 1, `--bg-elevated`, 1 pt border, radius 10, buttons 30x30.
 /// Buttons run the same engine commands as the ribbon (`EditorFocus.run`).
 final class FloatingToolbarView: UIView {
     /// An engine command: name and arguments.
     var onCommand: ((String, [String: Any]) -> Void)?
     /// The Link button: the canvas shows the link editor.
     var onLink: (() -> Void)?
+    /// The Comment button: the canvas marks the selection and asks for the comment in the panel.
+    var onComment: (() -> Void)?
     private var palette = Palette.light
     private let swatches = UIView()
     private let bar = UIView()
@@ -103,6 +105,7 @@ final class FloatingToolbarView: UIView {
         icon("highlighter", "Highlight") { [weak self] in self?.toggleSwatches("highlight") }
         separator()
         word("circle-check", "Task") { [weak self] in self?.run("convertToTask") }
+        word("message-square", "Comment") { [weak self] in self?.onComment?() }
         x += 2
         right = max(right, x)
         barSize = CGSize(width: y > 3 ? min(maxWidth, right + 1) : right, height: y + h + 3)

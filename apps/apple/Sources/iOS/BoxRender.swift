@@ -56,6 +56,8 @@ struct BoxDecoration {
 extension NSAttributedString.Key {
     /// A link's address, on the text it covers (the link editor and taps read it back).
     static let nvHref = NSAttributedString.Key("nvHref")
+    /// A comment mark's thread id, on the text it covers.
+    static let nvThread = NSAttributedString.Key("nvThread")
 }
 
 struct BoxRendering {
@@ -107,6 +109,9 @@ struct BoxTextRenderer {
     static let object = "\u{FFFC}"
     /// Mention ids that are the signed-in person (drawn yellow, as "yourself").
     static var selfMentionIds: Set<String> = []
+    /// Comment threads that are resolved (their text is drawn plain) and the one open in the comments panel (drawn stronger).
+    static var resolvedThreads: Set<String> = []
+    static var activeThread: String?
     /// Phones: task lines show only the checklist count, due chip, the Add checklist icon and open (LOOK.md 2.4).
     static var phoneChips = false
     /// List indent: 1.6 em.
@@ -781,9 +786,16 @@ struct BoxTextRenderer {
                 attrs[.foregroundColor] = palette.accent
                 attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
             case "comment":
-                attrs[.backgroundColor] = UIColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: 0.28)
-                attrs[.underlineStyle] = NSUnderlineStyle.thick.rawValue
-                attrs[.underlineColor] = UIColor(red: 234 / 255, green: 179 / 255, blue: 8 / 255, alpha: 0.8)
+                // The anchor of an open thread (`CommentHighlights`): background and a 2 pt line; the thread open in the
+                // panel is stronger. A resolved thread's text looks plain.
+                let thread = mark.attrs["threadId"] as? String ?? ""
+                attrs[.nvThread] = thread
+                if !Self.resolvedThreads.contains(thread) {
+                    let active = thread == Self.activeThread
+                    attrs[.backgroundColor] = UIColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: active ? 0.55 : 0.28)
+                    attrs[.underlineStyle] = NSUnderlineStyle.thick.rawValue
+                    attrs[.underlineColor] = UIColor(red: 234 / 255, green: 179 / 255, blue: 8 / 255, alpha: 0.8)
+                }
             default:
                 break
             }
