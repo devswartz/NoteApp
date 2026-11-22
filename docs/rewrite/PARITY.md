@@ -88,7 +88,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● | ◐ | ● | ● | ◐ | ● | phones stack boxes one under another with "Add a text box" |
+| Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● | ◐ | ● ✓ | ● | ◐ | ● | phones stack boxes one under another with "Add a text box" |
 | See-through boxes (only active box opaque) | ● | — | ● | ● | — | ● | |
 | Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● | ◐ | ● | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
@@ -96,29 +96,29 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● | ● | ● | ● | ● | ● | phone hides ✓ when saved |
 | Page title | ● | ● | ● | ● | ● | ● | title change refused unless current title known |
 | Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● | ● | ● | ● | ● | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
-| Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● | ● | ● | ● | ● | ● | |
-| Links: ⌘K, editor with Text + Address | ● | ● | ● | ● | ● | ● | `LinkEditor.tsx` |
-| Headings 1–3 | ● | ● | ● | ● | ● | ● | `#`, Ctrl+Alt+1/2/3 |
-| Bulleted lists (Ctrl+.) | ● | ● | ● | ● | ● | ● | |
+| Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● | ● | ● ✓ | ● | ● | ● | |
+| Links: ⌘K, editor with Text + Address | ● | ● | ● ✓ | ● | ● | ● | `LinkEditor.tsx` |
+| Headings 1–3 | ● | ● | ● ✓ | ● | ● | ● | `#`, Ctrl+Alt+1/2/3 |
+| Bulleted lists (Ctrl+.) | ● | ● | ● ✓ | ● | ● | ● | |
 | Word-style numbered outlines (1 → a → i; `1.`, `a.`, `i.`, `1)`) | ● | ● | ● | ● | ● | ● | Tab / Shift+Tab |
-| Plain checklist | ● | ● | ● | ● | ● | ● | |
+| Plain checklist | ● | ● | ● ✓ | ● | ● | ● | |
 | Tables: insert/delete rows and columns, header row, merge/split | ● | ◐ | ● | ● | ◐ | ● | Table ribbon group on wide layout |
 | Callout, toggle, quote, code block (highlighting), divider | ● | ● | ● | ● | ● | ● | `blocks.tsx`, `codeHighlight.ts` |
 | Backspace/Enter leave a block (Word-outline style) | ● | ● | ● | ● | ● | ● | `blockExit.ts` |
 | Images (insert, resize by corner) | ● | ● | ● | ● | ● | ● | `upload.ts`, `POST /uploads` |
 | File attachments (≤25 MB, type rules, signed short-lived links) | ● | ● | ● | ● | ● | ● | `/files/:id`, `/files/key` |
-| Slash menu (/) | ● | ● | ● | ● | ● | ● | `SlashMenu.tsx` |
-| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● | ● | ● | ● | ● | |
-| Page links `[[`, create page from link | ● | ● | ● | ● | ● | ● | `PageLink.tsx` |
+| Slash menu (/) | ● | ● | ● ✓ | ● | ● | ● | `SlashMenu.tsx` |
+| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● | ● ✓ | ● | ● | ● | |
+| Page links `[[`, create page from link | ● | ● | ● ✓ | ● | ● | ● | `PageLink.tsx` |
 | Linked from (backlinks) panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/backlinks` |
 | Drag handle: move a block with its nested lines, drop anywhere; keeps numbering | ● | ◐ | ● | ● | ◐ | ● | `blockMove.ts`, `listDrop.ts`, `handleReach.ts` |
 | Word-style multi-selection (Ctrl/⌘ + click/drag/double-click lines) | ● | — | ● | ● | — | ● | `linePicks*.ts` |
-| Copy keeps formatting; paste rich text and Markdown | ● | ● | ● | ● | ● | ● | `clipboardOut.ts`, `markdownUtils.ts` |
+| Copy keeps formatting; paste rich text and Markdown | ● | ● | ● ✓ | ● | ● | ● | `clipboardOut.ts`, `markdownUtils.ts` |
 | Outline / table of contents beside long pages | ● | ○ | ● | ● | ○ | ● | `Outline.tsx` *(verify phone)* |
 | Full width option | ● | — | ● | ● | — | ● | |
 | Page colour | ● | ● | ● | ● | ● | ● | syncs, in templates and versions |
 | Rule lines / grid with snapping | ● | ● | ● | ● | ● | ● | `ruleGrid.ts` |
-| Spellcheck | ● | ● | ● | ◐ | ● | ● | Mac app: native spelling (`spelling.rs`); else system/browser |
+| Spellcheck | ● | ● | ● ✓ | ◐ | ● | ● | Mac app: native spelling (`spelling.rs`); else system/browser |
 | Print page, print selection; Save as PDF | ● | ● | ● | ● | ● | ● | `print/`, `PrintSelectionMenu.tsx`; iOS via native `print` plugin method |
 | Export page (Markdown / PDF) | ● | ● | ● | ● | ● | ● | `exportPage.ts`, `collabExport.ts` |
 | Version history: list, preview, restore (undoable) | ● | ● | ● | ● | ● | ● | `VersionHistory.tsx`, `/pages/:id/versions` |
@@ -184,8 +184,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Comment on selected text (thread anchored in the doc) | ● ✓ | ● ✓ | ● | ● | ● | ● | `collabComments.ts` |
-| Comments panel: reply, edit, delete, resolve, reopen | ● ✓ | ● ✓ | ● | ● | ● | ● | `collabCommentsPanel.tsx`, `/comment-threads` |
+| Comment on selected text (thread anchored in the doc) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `collabComments.ts` |
+| Comments panel: reply, edit, delete, resolve, reopen | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `collabCommentsPanel.tsx`, `/comment-threads` |
 | @mentions in comments (and pages) with notifications | ● | ● | ● | ● | ● | ● | `collabMentions.ts` |
 
 ## 9. Workspace, members and roles

@@ -52,6 +52,9 @@ final class MacSurfaceView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// The window is dragged by its background (MacRoot): a press on the page is the page's.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override func mouseDown(with event: NSEvent) { onMouseDown?(event) }
 
     func configure(rules: String, originY: CGFloat) {

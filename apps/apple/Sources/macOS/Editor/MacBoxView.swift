@@ -344,6 +344,9 @@ final class MacBoxView: NSTextView, EditorTarget {
         return nil
     }
 
+    /// The window is dragged by its background (MacRoot): a press in a box is the box's, not the window's.
+    override var mouseDownCanMoveWindow: Bool { false }
+
     override func mouseDown(with event: NSEvent) {
         if let onMouseDown, onMouseDown(self, event) { return }
         super.mouseDown(with: event)
@@ -661,6 +664,8 @@ final class MacBoxView: NSTextView, EditorTarget {
 
     /// Show the engine's selection in the text view.
     private func pushSelection() {
+        // While composing, the input method owns the text view's selection (moving it would discard the marked text).
+        guard marked == nil else { return }
         let want = NSRange(location: sel.lo, length: sel.hi - sel.lo)
         guard selectedRanges.first?.rangeValue != want else { return }
         syncing = true
