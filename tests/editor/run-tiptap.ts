@@ -68,6 +68,9 @@ const COMMANDS: Record<string, (a: Record<string, unknown>) => [string, unknown[
   unsetColor: () => ['unsetColor', []],
   setHighlight: (a) => ['setHighlight', [{ color: a.color }]],
   unsetHighlight: () => ['unsetHighlight', []],
+  // The comment anchor (collabComments.ts): beginComment marks the selection with a fresh thread id.
+  setComment: (a) => ['setComment', [a.threadId]],
+  unsetComment: (a) => ['unsetComment', [a.threadId]],
   setParagraph: () => ['setParagraph', []],
   setHeading: (a) => ['setHeading', [{ level: a.level }]],
   toggleHeading: (a) => ['toggleHeading', [{ level: a.level }]],
