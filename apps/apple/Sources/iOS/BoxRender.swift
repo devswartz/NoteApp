@@ -72,6 +72,10 @@ struct BoxRendering {
     var bottomMargin: CGFloat = 0
     /// Where each task line's title is drawn (the title field of a task being edited goes there).
     var taskTitles: [BoxTaskTitle] = []
+    /// The document is no blocks, or one empty paragraph (the web's lone empty line: the only box that shows the
+    /// placeholder unfocused). Decided from the tree, not the drawn text: a task line or an image draws only an
+    /// object character and is not blank.
+    var blank = false
 
     static let empty = BoxRendering(string: NSAttributedString(), markers: [], decorations: [], length: 0, topMargin: 0)
 }
@@ -163,8 +167,9 @@ struct BoxTextRenderer {
             if let style = out.lastStyle { attrs[.paragraphStyle] = style }
             out.string.append(NSAttributedString(string: "\u{200B}", attributes: attrs))
         }
+        let blank = doc.content.isEmpty || (doc.content.count == 1 && doc.content[0].type == "paragraph" && doc.content[0].content.isEmpty)
         return BoxRendering(string: out.string, markers: out.markers, decorations: out.decorations, length: length, topMargin: out.topMargin,
-                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf, taskTitles: out.taskTitles)
+                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf, taskTitles: out.taskTitles, blank: blank)
     }
 
     // MARK: Blocks (the same walk as nv-editor's `ViewText::blocks`)

@@ -76,12 +76,12 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
     shoot "$UDID" $L 1 $theme page-settings-and-ink
   done
   for state in edit-selection edit-new-box edit-link page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
-               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed search task-detail; do
+               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed search task-detail page-box-task-open page-box-task-done page-box-task-hidden page-box-empty page-empty; do
     shoot "$UDID" $L 1 light "$state"
   done
   P=ipad-portrait
   shoot "$UDID" $P 0 light sign-in signed-out
-  for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page search task-detail; do
+  for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page search task-detail page-box-task-open page-box-task-done page-box-empty page-empty; do
     shoot "$UDID" $P 0 light "$state"
   done
   xcrun simctl shutdown "$UDID" || true
@@ -102,7 +102,7 @@ if PHONE="$(pick "iPhone 16e" "iPhone 14" "iPhone 13" "iPhone 12")"; then
       shoot "$UDID" $V 0 $theme "$state"
     done
   done
-  for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail; do
+  for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail page-box-task-open page-box-task-done page-box-task-hidden page-box-empty page-empty; do
     shoot "$UDID" $V 0 light "$state"
   done
   xcrun simctl shutdown "$UDID" || true

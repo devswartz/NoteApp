@@ -221,8 +221,7 @@ final class BoxTextView: UIView, UITextInput {
 
     /// An empty box on a phone: the web shows "Type '/' for commands…" in it.
     private func emptyOnPhone(_ r: BoxRendering) -> Bool {
-        BoxTextRenderer.phoneChips && !chrome
-            && r.string.string.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "​￼"))).isEmpty
+        BoxTextRenderer.phoneChips && !chrome && r.blank
     }
 
     override func draw(_ rect: CGRect) {
@@ -233,6 +232,11 @@ final class BoxTextView: UIView, UITextInput {
             let f = renderer.font(16.5)
             NSAttributedString(string: "Type '/' for commands…", attributes: [.font: f, .foregroundColor: p.textPlaceholder])
                 .draw(at: CGPoint(x: Self.pad.left, y: Self.pad.top + (28 - f.lineHeight) / 2))
+        } else if rendering.blank, let line = lineBox(0) {
+            // iPad boxes, and a box being edited: the lone empty line shows it too (LOOK.md 2.3), on the line's baseline.
+            let f = renderer.font(renderer.bodySize)
+            NSAttributedString(string: "Type '/' for commands…", attributes: [.font: f, .foregroundColor: p.textPlaceholder])
+                .draw(at: CGPoint(x: inset.left, y: line.baseline - f.ascender))
         }
         if chrome {
             let box = UIBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 6)
