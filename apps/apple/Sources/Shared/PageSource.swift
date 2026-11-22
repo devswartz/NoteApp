@@ -268,6 +268,25 @@ extension LivePageModel: PageEditHost {
         }
     }
 
+    var savesBoxes: Bool { true }
+
+    func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) {
+        guard let live, !isClosed else {
+            done(BoxError.Closed)
+            return
+        }
+        editQueue.async {
+            var failure: Error?
+            do { try call(live) } catch { failure = error }
+            // A local call doesn't tell the page's listener: show the page as it is now.
+            let page = live.info()
+            DispatchQueue.main.async { [weak self] in
+                if let self, !self.isClosed, self.live === live { self.info = page }
+                done(failure)
+            }
+        }
+    }
+
     func send(_ update: Data, _ done: @escaping (Bool) -> Void) {
         guard let live, !isClosed else {
             done(false)
