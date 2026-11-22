@@ -18,8 +18,12 @@
 //!   creates, edits and deletes made while the server couldn't be reached, in order, replayed by
 //!   the Core. A change to a task on a page is kept only when a stored tree shows the page
 //!   unlocked (its title is the user's text); `put_tree` drops those of pages now locked.
-//! - Tasks are stored as the server sent them. Tasks on a locked page arrive with `locked: true`
-//!   and their title and text already withheld, so they are safe to keep (as the web app does).
+//! - Tasks are stored as the server sent them, except **tasks on a page a stored tree shows
+//!   locked**: those are redacted before they are written (`redact_locked_task`: title "Locked
+//!   task", no text, no tags, `locked: true`, as the server's `redactTask` does). The server
+//!   sends such tasks in full while the sign-in has the locked pages unlocked, so this rule is
+//!   what keeps a locked page's task titles off the disk. `put_tree` and `mark_page_locked`
+//!   redact the already stored tasks of a page that has become locked.
 //! - `clear()` on sign-out drops everything; `set_account` clears too when another user signs in.
 //!
 //! Records are JSON columns (the `nv-api` types) keyed by id and workspace. The schema has a
@@ -226,6 +230,65 @@ fn unlocked_page(tx: &Transaction, page_id: &str) -> rusqlite::Result<Option<Str
         |r| r.get(0),
     )
     .optional()
+}
+
+/// What the server's `redactTask` leaves of a task on a locked page nobody has unlocked.
+pub const LOCKED_TASK_TITLE: &str = "Locked task";
+
+/// Withhold a task's text as the server does for a locked page: the title, description and tags
+/// go, everything else (status, dates, assignee, checklist counts) stays.
+pub fn redact_locked_task(t: &mut Task) {
+    t.title = LOCKED_TASK_TITLE.into();
+    t.description = String::new();
+    t.tag_ids = Vec::new();
+    t.locked = true;
+}
+
+/// Whether a stored tree marks this page locked.
+fn page_locked(tx: &Transaction, page_id: &str) -> rusqlite::Result<bool> {
+    Ok(tx
+        .query_row(
+            "SELECT locked FROM nodes WHERE kind = 'page' AND id = ?1",
+            [page_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .optional()?
+        == Some(1))
+}
+
+/// Redact a task to be stored if its page is locked in a stored tree.
+fn redacted_for_store(tx: &Transaction, t: &Task) -> rusqlite::Result<Option<Task>> {
+    match &t.page_id {
+        Some(p) if !(t.locked && t.title == LOCKED_TASK_TITLE) && page_locked(tx, p)? => {
+            let mut r = t.clone();
+            redact_locked_task(&mut r);
+            Ok(Some(r))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Redact the stored tasks (of one workspace, or all) that sit on a locked page.
+fn redact_stored_tasks(tx: &Transaction, workspace_id: Option<&str>) -> Result<()> {
+    let rows: Vec<(String, String, String)> = {
+        let mut st = tx.prepare(
+            "SELECT workspace_id, id, json FROM tasks WHERE (?1 IS NULL OR workspace_id = ?1)",
+        )?;
+        let rows = st.query_map([workspace_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    for (ws, id, json) in rows {
+        let Ok(t) = from_json::<Task>(&json) else {
+            continue;
+        };
+        if let Some(r) = redacted_for_store(tx, &t)? {
+            tx.execute(
+                "UPDATE tasks SET json = ?3 WHERE workspace_id = ?1 AND id = ?2",
+                params![ws, id, to_json(&r)?],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn schema_version(conn: &Connection) -> rusqlite::Result<u32> {
@@ -503,9 +566,52 @@ impl Store {
                         AND ((kind = 'page' AND locked = 0) OR kind = 'trashed_page'))",
                 [workspace_id],
             )?;
+            // A page that has become locked: its stored tasks hold full titles until now.
+            if tree.pages.iter().any(|p| p.locked) {
+                redact_stored_tasks(tx, Some(workspace_id))?;
+            }
             mark_stored(tx, "tree", workspace_id)?;
             Ok(())
         })
+    }
+
+    /// A page was just locked (by this device, or the server said so): mark it locked in the
+    /// stored tree at once, without waiting for the next tree load, and drop what was stored
+    /// of it: its document, queued edits and queued task changes; its stored tasks are
+    /// redacted. Returns false when no stored tree has the page.
+    pub fn mark_page_locked(&self, page_id: &str) -> Result<bool> {
+        let found = self.write(|tx| {
+            let json: Option<String> = tx
+                .query_row(
+                    "SELECT json FROM nodes WHERE kind = 'page' AND id = ?1",
+                    [page_id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let Some(json) = json else {
+                // Not in a stored tree: nothing is stored for it either, by the other rules.
+                tx.execute("DELETE FROM page_docs WHERE page_id = ?1", [page_id])?;
+                tx.execute("DELETE FROM outbox WHERE page_id = ?1", [page_id])?;
+                tx.execute("DELETE FROM task_ops WHERE page_id = ?1", [page_id])?;
+                return Ok(false);
+            };
+            let mut meta: PageMeta = from_json(&json)?;
+            meta.locked = true;
+            tx.execute(
+                "UPDATE nodes SET locked = 1, json = ?2 WHERE kind = 'page' AND id = ?1",
+                params![page_id, to_json(&meta)?],
+            )?;
+            tx.execute("DELETE FROM page_docs WHERE page_id = ?1", [page_id])?;
+            tx.execute("DELETE FROM outbox WHERE page_id = ?1", [page_id])?;
+            tx.execute("DELETE FROM task_ops WHERE page_id = ?1", [page_id])?;
+            redact_stored_tasks(tx, None)?;
+            Ok(true)
+        })?;
+        // The old text must not linger in the write-ahead log: fold it into the database file.
+        let _ = self
+            .conn()
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
+        Ok(found)
     }
 
     fn nodes<T: DeserializeOwned>(
@@ -581,7 +687,11 @@ impl Store {
                 "INSERT OR REPLACE INTO tasks (workspace_id, id, ord, json) VALUES (?1, ?2, ?3, ?4)",
             )?;
             for (i, t) in tasks.iter().enumerate() {
-                insert.execute(params![workspace_id, t.id, i as i64, to_json(t)?])?;
+                let json = match redacted_for_store(tx, t)? {
+                    Some(r) => to_json(&r)?,
+                    None => to_json(t)?,
+                };
+                insert.execute(params![workspace_id, t.id, i as i64, json])?;
             }
             drop(insert);
             mark_stored(tx, "tasks", workspace_id)?;
@@ -610,9 +720,13 @@ impl Store {
                     },
                     Ok,
                 )?;
+            let json = match redacted_for_store(tx, task)? {
+                Some(r) => to_json(&r)?,
+                None => to_json(task)?,
+            };
             tx.execute(
                 "INSERT OR REPLACE INTO tasks (workspace_id, id, ord, json) VALUES (?1, ?2, ?3, ?4)",
-                params![task.workspace_id, task.id, ord, to_json(task)?],
+                params![task.workspace_id, task.id, ord, json],
             )?;
             Ok(())
         })

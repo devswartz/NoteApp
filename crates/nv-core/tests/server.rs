@@ -12,7 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use nv_core::*;
 use nv_model::yrs::updates::decoder::Decode;
 use nv_model::yrs::{
-    ReadTxn, Transact, Update, WriteTxn, XmlElementPrelim, XmlFragment, XmlTextPrelim,
+    ReadTxn, Transact, Update, WriteTxn, Xml, XmlElementPrelim, XmlFragment, XmlTextPrelim,
 };
 
 #[derive(Default)]
@@ -1200,4 +1200,773 @@ fn tree_management_against_a_running_server() {
     let server_tree = core.tree(ws.clone()).unwrap();
     assert_eq!(server_tree, cached());
     let _ = std::fs::remove_dir_all(db.parent().unwrap());
+}
+
+// ───────── Sharing, version history and locked pages ─────────
+
+/// Every byte of a store on disk: the database, its write-ahead log and shared memory.
+fn disk_bytes(db: &std::path::Path) -> Vec<u8> {
+    let mut all = Vec::new();
+    for ext in ["", "-wal", "-shm"] {
+        if let Ok(b) = std::fs::read(format!("{}{ext}", db.display())) {
+            all.extend(b);
+        }
+    }
+    assert!(all.len() > 1000, "no store file at {}", db.display());
+    all
+}
+
+fn on_disk(db: &std::path::Path, needle: &str) -> bool {
+    let all = disk_bytes(db);
+    all.windows(needle.len()).any(|w| w == needle.as_bytes())
+}
+
+fn server_status(e: CoreError) -> (u16, Option<String>) {
+    match e {
+        CoreError::Server { status, code, .. } => (status, code),
+        e => panic!("not a server refusal: {e:?}"),
+    }
+}
+
+fn open_live(core: &Core, page: &str) -> (Arc<LivePage>, Arc<LiveEvents>) {
+    let ev = Arc::new(LiveEvents::default());
+    let live = core.open_live_page(page.into(), ev.clone()).unwrap();
+    wait_for("the page to sync", 10, || {
+        ev.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
+    (live, ev)
+}
+
+fn type_in(live: &LivePage, text: &str) {
+    live.apply_update(add_paragraph(&live.document(), "box:main", text))
+        .unwrap();
+}
+
+fn short_id(url_or_token: &str) -> String {
+    url_or_token.rsplit('/').next().unwrap().to_string()
+}
+
+#[test]
+fn sharing_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("nv-core-share-server-{stamp}"));
+    let pw = "correct horse battery staple 1";
+    let (ea, eb, ec) = (
+        format!("share-a-{stamp}@example.com"),
+        format!("share-b-{stamp}@example.com"),
+        format!("share-c-{stamp}@example.com"),
+    );
+    let a = Core::with_store(url.clone(), dir.join("a.db").to_string_lossy().into_owned());
+    let b = Core::with_store(url.clone(), dir.join("b.db").to_string_lossy().into_owned());
+    let ua = a
+        .register("Share A".into(), ea.clone(), pw.into())
+        .unwrap()
+        .user;
+    let ub = b
+        .register("Share B".into(), eb.clone(), pw.into())
+        .unwrap()
+        .user;
+    let wa = a.workspaces().unwrap()[0].id.clone();
+    b.workspaces().unwrap();
+
+    // Members: A alone, no invites.
+    let p = a.workspace_people(wa.clone()).unwrap();
+    assert_eq!((p.members.len(), p.invites.len()), (1, 0));
+    assert_eq!(p.members[0].role, "owner");
+
+    // B has an account: added at once, as a viewer. The test server sends no mail.
+    let r = a
+        .invite_member(wa.clone(), eb.clone(), Some("viewer".into()))
+        .unwrap();
+    assert_eq!(
+        (r.status.as_str(), r.emailed, r.invite_url),
+        ("added", false, None)
+    );
+    assert_eq!(
+        server_status(a.invite_member(wa.clone(), eb.clone(), None).unwrap_err()).0,
+        409,
+        "already a member"
+    );
+    assert!(b
+        .workspaces()
+        .unwrap()
+        .iter()
+        .any(|w| w.id == wa && w.role == "viewer"));
+    // What a viewer may and may not do.
+    let seen_by_b = b.workspace_people(wa.clone()).unwrap();
+    assert_eq!((seen_by_b.members.len(), seen_by_b.invites.len()), (2, 0));
+    let refusals = [
+        b.invite_member(wa.clone(), format!("x-{stamp}@example.com"), None)
+            .map(|_| ()),
+        b.set_member_role(wa.clone(), ub.id.clone(), "owner".into()),
+        b.remove_member(wa.clone(), ua.id.clone()),
+        b.revoke_invite(wa.clone(), "nobody@example.com".into()),
+    ];
+    for refused in refusals {
+        assert_eq!(server_status(refused.unwrap_err()).0, 403);
+    }
+
+    // An address with no account: an invite link, readable before it is accepted.
+    let r = a
+        .invite_member(wa.clone(), ec.clone(), Some("member".into()))
+        .unwrap();
+    assert_eq!((r.status.as_str(), r.emailed), ("invited", false));
+    let link = r.invite_url.expect("with no mail, the link is returned");
+    let token = short_id(&link);
+    let info = a.invite_info(token.clone()).unwrap();
+    assert_eq!(
+        (info.email.as_str(), info.role.as_str(), info.expired),
+        (ec.as_str(), "member", false)
+    );
+    assert_eq!(info.workspace_id, wa);
+    assert_eq!(a.workspace_people(wa.clone()).unwrap().invites[0].email, ec);
+    // Someone else cannot use it.
+    assert_eq!(
+        server_status(b.accept_invite(token.clone()).unwrap_err()).0,
+        403
+    );
+    // Resend: a fresh link; the old one stops working.
+    let r2 = a.resend_invite(wa.clone(), ec.clone()).unwrap();
+    let token2 = short_id(&r2.invite_url.unwrap());
+    assert_ne!(token, token2);
+    assert_eq!(server_status(a.invite_info(token).unwrap_err()).0, 404);
+    // Revoke it.
+    a.revoke_invite(wa.clone(), ec.clone()).unwrap();
+    assert!(a.workspace_people(wa.clone()).unwrap().invites.is_empty());
+    assert_eq!(server_status(a.invite_info(token2).unwrap_err()).0, 404);
+    // An invited address that then signs up joins on sign-up (accounts are confirmed at once
+    // here, so the server applies the pending invite itself).
+    a.invite_member(wa.clone(), ec.clone(), None).unwrap();
+    let c = Core::new(url.clone());
+    let uc = c
+        .register("Share C".into(), ec.clone(), pw.into())
+        .unwrap()
+        .user;
+    assert!(c
+        .workspaces()
+        .unwrap()
+        .iter()
+        .any(|w| w.id == wa && w.role == "member"));
+    assert!(a.workspace_people(wa.clone()).unwrap().invites.is_empty());
+
+    // Roles: the owner promotes B; an admin cannot make an owner; the last owner cannot go.
+    a.set_member_role(wa.clone(), ub.id.clone(), "admin".into())
+        .unwrap();
+    assert!(b
+        .workspaces()
+        .unwrap()
+        .iter()
+        .any(|w| w.id == wa && w.role == "admin"));
+    assert_eq!(
+        server_status(
+            b.set_member_role(wa.clone(), ub.id.clone(), "owner".into())
+                .unwrap_err()
+        )
+        .0,
+        403
+    );
+    assert_eq!(
+        server_status(
+            a.set_member_role(wa.clone(), ua.id.clone(), "member".into())
+                .unwrap_err()
+        )
+        .0,
+        400,
+        "a workspace needs an owner"
+    );
+    assert_eq!(
+        server_status(a.leave_workspace(wa.clone()).unwrap_err()).0,
+        400
+    );
+    // An admin removes members, but not an owner.
+    assert_eq!(
+        server_status(b.remove_member(wa.clone(), ua.id.clone()).unwrap_err()).0,
+        403
+    );
+    b.remove_member(wa.clone(), uc.id.clone()).unwrap();
+    assert!(c.workspaces().unwrap().iter().all(|w| w.id != wa));
+    // B leaves: the workspace goes from B's stored list and tree.
+    b.tree(wa.clone()).unwrap();
+    assert!(b.cached_tree(wa.clone()).is_some());
+    b.leave_workspace(wa.clone()).unwrap();
+    assert!(b.cached_workspaces().unwrap().iter().all(|w| w.id != wa));
+    assert!(b.cached_tree(wa.clone()).is_none());
+    assert_eq!(a.workspace_people(wa.clone()).unwrap().members.len(), 1);
+
+    // B back in as a member, to share things with.
+    a.invite_member(wa.clone(), eb.clone(), Some("member".into()))
+        .unwrap();
+    assert!(b
+        .workspaces()
+        .unwrap()
+        .iter()
+        .any(|w| w.id == wa && w.role == "member"));
+
+    // A private notebook shared with B, then not.
+    let ta = a.tree(wa.clone()).unwrap();
+    let nb = a
+        .create_notebook(wa.clone(), "Private".into(), None, Some("private".into()))
+        .unwrap();
+    assert!(!b
+        .tree(wa.clone())
+        .unwrap()
+        .notebooks
+        .iter()
+        .any(|n| n.id == nb.id));
+    let sh = a.notebook_shares(nb.id.clone()).unwrap();
+    assert_eq!(
+        (
+            sh.visibility.as_str(),
+            sh.created_by.as_str(),
+            sh.user_ids.len()
+        ),
+        ("private", ua.id.as_str(), 0)
+    );
+    assert_eq!(
+        a.set_notebook_shares(nb.id.clone(), vec![ub.id.clone()])
+            .unwrap(),
+        std::slice::from_ref(&ub.id)
+    );
+    assert!(b
+        .tree(wa.clone())
+        .unwrap()
+        .notebooks
+        .iter()
+        .any(|n| n.id == nb.id));
+    assert_eq!(
+        server_status(b.set_notebook_shares(nb.id.clone(), vec![]).unwrap_err()).0,
+        403,
+        "only the creator"
+    );
+    assert_eq!(
+        server_status(
+            a.set_notebook_shares(nb.id.clone(), vec!["nobody".into()])
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+    a.set_notebook_shares(nb.id.clone(), vec![]).unwrap();
+    assert!(!b
+        .tree(wa.clone())
+        .unwrap()
+        .notebooks
+        .iter()
+        .any(|n| n.id == nb.id));
+
+    // A page in a shared notebook: shared with B (a member), changed, shared by email with
+    // someone outside (owners and admins only), revoked, and removed by B itself.
+    let page = ta.pages[0].id.clone();
+    let r = a
+        .share_page_with_member(page.clone(), ub.id.clone(), false)
+        .unwrap();
+    assert_eq!(r.status, "shared");
+    assert!(r
+        .shares
+        .shares
+        .iter()
+        .any(|s| s.user_id == ub.id && !s.can_edit && s.member));
+    assert!(b
+        .shared_pages()
+        .unwrap()
+        .iter()
+        .any(|p| p.id == page && p.member && !p.can_edit));
+    let l = a
+        .set_page_share_edit(page.clone(), ub.id.clone(), true)
+        .unwrap();
+    assert!(l.shares.iter().any(|s| s.user_id == ub.id && s.can_edit));
+    let outside = format!("outside-{stamp}@example.com");
+    let r = a
+        .share_page_by_email(page.clone(), outside.clone(), true)
+        .unwrap();
+    assert_eq!((r.status.as_str(), r.emailed), ("invited", false));
+    assert!(r.invite_url.unwrap().contains("/invite/"));
+    assert_eq!(r.shares.invites[0].email, outside);
+    assert_eq!(
+        server_status(
+            b.share_page_by_email(page.clone(), format!("o2-{stamp}@example.com"), false)
+                .unwrap_err()
+        )
+        .0,
+        403,
+        "a member who is not an admin may not share outside the workspace"
+    );
+    let l = a.revoke_page_invite(page.clone(), outside).unwrap();
+    assert!(l.invites.is_empty());
+    let l = b.remove_page_share(page.clone(), ub.id.clone()).unwrap();
+    assert!(l.shares.iter().all(|s| s.user_id != ub.id));
+    assert!(!b.shared_pages().unwrap().iter().any(|p| p.id == page));
+    assert!(a.page_shares(page).unwrap().shares.is_empty());
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn version_history_and_restore_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("nv-core-ver-server-{stamp}"));
+    let pw = "correct horse battery staple 1";
+    let (ea, eb) = (
+        format!("ver-a-{stamp}@example.com"),
+        format!("ver-b-{stamp}@example.com"),
+    );
+    let a = Core::with_store(url.clone(), dir.join("a.db").to_string_lossy().into_owned());
+    let b = Core::with_store(url.clone(), dir.join("b.db").to_string_lossy().into_owned());
+    a.register("Ver A".into(), ea.clone(), pw.into()).unwrap();
+    b.register("Ver B".into(), eb.clone(), pw.into()).unwrap();
+    let wa = a.workspaces().unwrap()[0].id.clone();
+    a.invite_member(wa.clone(), eb, Some("member".into()))
+        .unwrap();
+    b.workspaces().unwrap();
+
+    let t = a.tree(wa.clone()).unwrap();
+    let page = a
+        .create_page(t.sections[0].id.clone(), Some("History".into()))
+        .unwrap();
+    b.tree(wa.clone()).unwrap();
+    // A separate client takes snapshots the way the web's history dialog does (the Core has no
+    // "save a version" call: the server saves versions by itself every few minutes of editing).
+    let snap = nv_api::Client::new(&url);
+    snap.login(&ea, pw).unwrap();
+
+    let (la, _ea) = open_live(&a, &page);
+    let (lb, _eb) = open_live(&b, &page);
+    la.create_box_with_id("main".into(), 0.0, 0.0, 600.0, 1.0)
+        .unwrap();
+    type_in(&la, "FIRST version text");
+    let text = |l: &LivePage| l.info().text;
+    wait_for("B to have it", 10, || {
+        text(&lb).contains("FIRST version text")
+    });
+    wait_for("receipt", 10, || la.unsent_updates() == 0);
+    let v1 = snap.snapshot_page(&page, "manual").unwrap().unwrap();
+
+    // More edits by both.
+    type_in(&la, "SECOND text by A");
+    type_in(&lb, "THIRD text by B");
+    wait_for("both to have all", 10, || {
+        text(&la).contains("THIRD") && text(&lb).contains("SECOND")
+    });
+    wait_for("receipts", 10, || {
+        la.unsent_updates() == 0 && lb.unsent_updates() == 0
+    });
+    let v2 = snap.snapshot_page(&page, "manual").unwrap().unwrap();
+    assert_ne!(v1, v2);
+
+    // The list, newest first, and a preview of the first version.
+    let list = a.page_versions(page.clone()).unwrap();
+    assert_eq!(list[0].id, v2);
+    assert!(list.iter().any(|v| v.id == v1 && v.reason == "manual"));
+    let prev = a.page_version(page.clone(), v1.clone()).unwrap();
+    let info = read_page(prev.document.clone()).unwrap();
+    assert!(info.text.contains("FIRST") && !info.text.contains("SECOND"));
+    assert!(!page_content(prev.document).unwrap().is_empty());
+
+    // Restore the first version into A's open page. An old copy of the page is kept to merge in later.
+    let stale = la.document();
+    let before = a
+        .restore_version(la.clone(), v1.clone())
+        .unwrap()
+        .expect("a 'before restore' version");
+    let only_first = |t: &str| t.contains("FIRST") && !t.contains("SECOND") && !t.contains("THIRD");
+    assert!(only_first(&text(&la)), "{}", text(&la));
+    // The other open copy converges on its own, and so does the server's saved page.
+    wait_for("B to converge", 10, || only_first(&text(&lb)));
+    wait_for("receipt", 10, || la.unsent_updates() == 0);
+    let server_text = || {
+        read_page(a.page_document(page.clone()).unwrap())
+            .unwrap()
+            .text
+    };
+    wait_for("the server's copy", 10, || only_first(&server_text()));
+    // Nothing changed since the second snapshot, so the server did not make a new one: the
+    // "before restore" version is that one, and it has what was replaced.
+    assert_eq!(before, v2);
+    let kept = a.page_version(page.clone(), before.clone()).unwrap();
+    assert!(read_page(kept.document).unwrap().text.contains("THIRD"));
+
+    // An old copy merged into the open pages brings nothing back.
+    la.apply_update(stale.clone()).unwrap();
+    lb.apply_update(stale).unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    for l in [&la, &lb] {
+        assert!(only_first(&text(l)), "{}", text(l));
+    }
+    wait_for("receipts", 10, || {
+        la.unsent_updates() == 0 && lb.unsent_updates() == 0
+    });
+    assert!(only_first(&server_text()));
+
+    // Typing goes on from the restored page; and the restore itself is undone by restoring the
+    // 'before restore' version.
+    type_in(&lb, "AFTER restore by B");
+    wait_for("A to see it", 10, || {
+        text(&la).contains("AFTER restore by B")
+    });
+    // This time the page has changed since the last snapshot: a new "before restore" version.
+    let undo_point = a.restore_version(la.clone(), before).unwrap().unwrap();
+    assert_ne!(undo_point, v2);
+    let list = a.page_versions(page.clone()).unwrap();
+    assert!(list
+        .iter()
+        .any(|v| v.id == undo_point && v.reason == "restore"));
+    wait_for("B to see the undo", 10, || {
+        let t = text(&lb);
+        t.contains("SECOND") && t.contains("THIRD") && !t.contains("AFTER")
+    });
+    wait_for("the server", 10, || {
+        let t = server_text();
+        t.contains("THIRD") && !t.contains("AFTER")
+    });
+    wait_for("receipts", 10, || {
+        la.unsent_updates() == 0 && lb.unsent_updates() == 0
+    });
+    la.close();
+    lb.close();
+    assert!(a.unsent_pages().is_empty() && b.unsent_pages().is_empty());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn locked_pages_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("nv-core-lock-server-{stamp}"));
+    let db = dir.join("a.db");
+    let pw = "correct horse battery staple 1";
+    let lock_pw = "vault-pass-4471";
+    let new_lock_pw = "vault-pass-9082";
+    let a = Core::with_store(url.clone(), db.to_string_lossy().into_owned());
+    a.register(
+        "Lock A".into(),
+        format!("lock-a-{stamp}@example.com"),
+        pw.into(),
+    )
+    .unwrap();
+    let wa = a.workspaces().unwrap()[0].id.clone();
+    a.tree(wa.clone()).unwrap();
+
+    // A private notebook with a page, some text and a task on it.
+    let nb = a
+        .create_notebook(wa.clone(), "Vault".into(), None, Some("private".into()))
+        .unwrap();
+    let page = a
+        .create_page(nb.section_id.clone(), Some("Vault page".into()))
+        .unwrap();
+    let (live, _ev) = open_live(&a, &page);
+    live.create_box_with_id("main".into(), 0.0, 0.0, 600.0, 1.0)
+        .unwrap();
+    type_in(&live, "VAULTBODY-one");
+    let task = a
+        .create_task_with(
+            wa.clone(),
+            NewTaskInput {
+                id: Some(new_task_id()),
+                title: "VAULTTASK-title".into(),
+                page_id: Some(page.clone()),
+                description: Some("VAULTDESC-text".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // The task is on the page once the page's document refers to it (the server reads it there).
+    {
+        let doc = nv_model::doc_from_update(&live.document()).unwrap();
+        let before = doc.transact().state_vector();
+        {
+            let mut txn = doc.transact_mut();
+            let frag = txn.get_or_insert_xml_fragment("box:main");
+            let len = frag.len(&txn);
+            let r = frag.insert(&mut txn, len, XmlElementPrelim::empty("taskRef"));
+            r.insert_attribute(&mut txn, "taskId", task.id.as_str());
+        }
+        live.apply_update(doc.transact().encode_state_as_update_v1(&before))
+            .unwrap();
+    }
+    wait_for("receipt", 10, || live.unsent_updates() == 0);
+    wait_for("the task to be on the page", 10, || {
+        a.tasks(wa.clone())
+            .unwrap()
+            .iter()
+            .any(|t| t.id == task.id && t.page_id.as_deref() == Some(page.as_str()))
+    });
+    live.close();
+    a.page_document(page.clone()).unwrap();
+    assert!(
+        a.cached_page_document(page.clone()).is_some(),
+        "stored while the page is ordinary"
+    );
+
+    // No locked-notes password yet.
+    let st = a.locked_notes_status().unwrap();
+    assert_eq!(
+        (st.has_password, st.unlocked, st.locked_pages),
+        (false, false, 0)
+    );
+    assert_eq!(
+        server_status(a.lock_page(page.clone()).unwrap_err()),
+        (409, Some("no_lock_password".into()))
+    );
+    assert_eq!(
+        server_status(a.unlock_locked_notes(lock_pw.into()).unwrap_err()).0,
+        409
+    );
+    assert_eq!(
+        server_status(
+            a.set_locked_notes_password("short".into(), None)
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+    // Setting it unlocks this sign-in.
+    assert!(a
+        .set_locked_notes_password(lock_pw.into(), None)
+        .unwrap()
+        .is_some());
+    let st = a.locked_notes_status().unwrap();
+    assert_eq!(
+        (st.has_password, st.unlocked, st.idle_ms),
+        (true, true, 300_000)
+    );
+    // Changing it needs the current one.
+    assert_eq!(
+        server_status(
+            a.set_locked_notes_password("another-pass-1".into(), None)
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+
+    // Lock the page: its stored document goes, and its stored task is withheld, though the
+    // sign-in is unlocked and the server still sends the task in full.
+    a.lock_page(page.clone()).unwrap();
+    assert!(a
+        .cached_tree(wa.clone())
+        .unwrap()
+        .pages
+        .iter()
+        .any(|p| p.id == page && p.locked));
+    assert!(a.cached_page_document(page.clone()).is_none());
+    let full = a.tasks(wa.clone()).unwrap();
+    let t = full.iter().find(|x| x.id == task.id).unwrap();
+    assert_eq!(
+        (t.title.as_str(), t.locked),
+        ("VAULTTASK-title", false),
+        "unlocked: in full"
+    );
+    let stored = a.cached_tasks(wa.clone()).unwrap();
+    let t = stored.iter().find(|x| x.id == task.id).unwrap();
+    assert_eq!(
+        (t.title.as_str(), t.description.as_str(), t.locked),
+        ("Locked task", "", true)
+    );
+    // Readable while unlocked, and never stored.
+    let doc = a.page_document(page.clone()).unwrap();
+    assert!(read_page(doc).unwrap().text.contains("VAULTBODY-one"));
+    assert!(a.cached_page_document(page.clone()).is_none());
+    a.page_versions(page.clone()).unwrap();
+
+    // Live editing while unlocked: in memory only.
+    let (live, _ev) = open_live(&a, &page);
+    assert!(live.info().text.contains("VAULTBODY-one"));
+    type_in(&live, "VAULTTYPED-two");
+    wait_for("receipt", 10, || live.unsent_updates() == 0);
+    assert!(a.unsent_pages().is_empty());
+    live.close();
+    assert_eq!(a.store_error(), None);
+
+    // Lock now: the content is withheld again, tasks are the server's "Locked task", and an
+    // open page ends with NoAccess.
+    let (_live, ev2) = open_live(&a, &page);
+    a.lock_locked_notes().unwrap();
+    assert!(!a.locked_notes_status().unwrap().unlocked);
+    wait_for("the page to end", 10, || {
+        matches!(
+            ev2.statuses.lock().unwrap().last(),
+            Some(LiveStatus::Ended {
+                reason: LiveEnd::NoAccess,
+                ..
+            })
+        )
+    });
+    // The server answers as if the page were not there (404), for the document and the history.
+    assert_eq!(
+        server_status(a.page_document(page.clone()).unwrap_err()).0,
+        404
+    );
+    assert_eq!(
+        server_status(a.page_versions(page.clone()).unwrap_err()).0,
+        404
+    );
+    let t = a
+        .tasks(wa.clone())
+        .unwrap()
+        .into_iter()
+        .find(|x| x.id == task.id)
+        .unwrap();
+    assert_eq!((t.title.as_str(), t.locked), ("Locked task", true));
+    assert!(!a.keep_locked_notes_unlocked().unwrap().unlocked);
+
+    // Unlock: wrong password (with the tries left), right password. (The refused change of the
+    // password above, without the current one, already counted as one wrong try.)
+    let tries_before = a.locked_notes_status().unwrap().failures;
+    match a
+        .unlock_locked_notes("not-the-password".into())
+        .unwrap_err()
+    {
+        CoreError::Server {
+            status,
+            code,
+            message,
+        } => {
+            assert_eq!((status, code.as_deref()), (400, Some("wrong_password")));
+            assert!(message.contains("tries left"), "{message}");
+            assert!(!message.contains("not-the-password"));
+        }
+        e => panic!("{e:?}"),
+    }
+    assert_eq!(a.locked_notes_status().unwrap().failures, tries_before + 1);
+    a.unlock_locked_notes(lock_pw.into()).unwrap();
+    let st = a.locked_notes_status().unwrap();
+    assert_eq!(
+        (st.unlocked, st.failures, st.tries_before_lockout),
+        (true, 0, 5)
+    );
+    assert!(a.keep_locked_notes_unlocked().unwrap().unlocked);
+    let t = a
+        .tasks(wa.clone())
+        .unwrap()
+        .into_iter()
+        .find(|x| x.id == task.id)
+        .unwrap();
+    assert_eq!(t.title, "VAULTTASK-title");
+
+    // Face ID: set up while unlocked, lock, unlock with the secret; a wrong install is refused.
+    let install = "install-id-0123456789abcdef".to_string();
+    let dev = a
+        .register_unlock_device(install.clone(), Some("Test phone".into()))
+        .unwrap();
+    let dev_secret = dev.secret.clone();
+    assert!(a
+        .locked_notes_status()
+        .unwrap()
+        .devices
+        .iter()
+        .any(|d| d.id == dev.id));
+    a.lock_locked_notes().unwrap();
+    assert_eq!(
+        server_status(a.register_unlock_device(install.clone(), None).unwrap_err()),
+        (403, Some("locked".into())),
+        "needs an unlocked sign-in"
+    );
+    assert_eq!(
+        server_status(
+            a.unlock_locked_notes_with_device(
+                dev.id.clone(),
+                dev.secret.clone(),
+                "other-install-0123456789".into()
+            )
+            .unwrap_err()
+        ),
+        (401, Some("device_revoked".into()))
+    );
+    assert_eq!(
+        a.locked_notes_status().unwrap().failures,
+        1,
+        "one refusal counted once: a 401 here is not retried after a refresh"
+    );
+    a.unlock_locked_notes_with_device(dev.id.clone(), dev.secret.clone(), install.clone())
+        .unwrap();
+    assert!(a.locked_notes_status().unwrap().unlocked);
+
+    // Changing the password: devices are gone, the old password is not the password any more,
+    // this sign-in stays unlocked.
+    a.set_locked_notes_password(new_lock_pw.into(), Some(lock_pw.into()))
+        .unwrap();
+    assert!(a.locked_notes_status().unwrap().devices.is_empty());
+    a.lock_locked_notes().unwrap();
+    assert_eq!(
+        server_status(a.unlock_locked_notes(lock_pw.into()).unwrap_err()).0,
+        400
+    );
+    assert_eq!(
+        server_status(
+            a.unlock_locked_notes_with_device(dev.id, dev.secret, install)
+                .unwrap_err()
+        )
+        .0,
+        401
+    );
+    a.unlock_locked_notes(new_lock_pw.into()).unwrap();
+
+    // Everything the session did with this page, its tasks and the passwords: not on disk.
+    let (live, _e) = open_live(&a, &page);
+    type_in(&live, "VAULTTYPED-three");
+    wait_for("receipt", 10, || live.unsent_updates() == 0);
+    live.close();
+    a.tasks(wa.clone()).unwrap();
+    assert!(a.cached_page_document(page.clone()).is_none());
+    for marker in [
+        "VAULTBODY",
+        "VAULTTYPED",
+        "VAULTTASK",
+        "VAULTDESC",
+        lock_pw,
+        new_lock_pw,
+        "not-the-password",
+        dev_secret.as_str(),
+    ] {
+        assert!(!on_disk(&db, marker), "{marker} is on disk");
+    }
+    assert!(
+        on_disk(&db, "Vault page"),
+        "the page's title is stored (the owner sees it while locked)"
+    );
+
+    // Remove the lock: a wrong password is refused, the right one makes it an ordinary page.
+    assert_eq!(
+        server_status(
+            a.remove_page_lock(page.clone(), "nope-nope-nope".into())
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+    a.remove_page_lock(page.clone(), new_lock_pw.into())
+        .unwrap();
+    assert!(!a
+        .cached_tree(wa.clone())
+        .unwrap()
+        .pages
+        .iter()
+        .any(|p| p.id == page && p.locked));
+    assert_eq!(a.locked_notes_status().unwrap().locked_pages, 0);
+    a.page_document(page.clone()).unwrap();
+    assert!(
+        a.cached_page_document(page).is_some(),
+        "stored again as an ordinary page"
+    );
+    std::fs::remove_dir_all(&dir).ok();
 }

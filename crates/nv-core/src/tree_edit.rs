@@ -141,13 +141,13 @@ pub fn drop_index(sibling_ids: Vec<String>, target_id: String, after: bool) -> u
 
 impl Core {
     /// The workspace a stored tree shows a notebook, section or page in.
-    fn workspace_of(&self, kind: &str, id: &str) -> Option<String> {
+    pub(crate) fn workspace_of(&self, kind: &str, id: &str) -> Option<String> {
         self.store.as_ref()?.workspace_of(kind, id).ok().flatten()
     }
 
     /// After a tree write: fetch the tree again and store it. `workspace` is the one that
     /// changed; when it is not known (the id is in no stored tree), every stored tree is fetched.
-    fn refresh_tree(&self, workspace: Option<String>) {
+    pub(crate) fn refresh_tree(&self, workspace: Option<String>) {
         let Some(store) = &self.store else { return };
         let workspaces = match workspace {
             Some(w) => vec![w],
