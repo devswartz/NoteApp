@@ -391,7 +391,8 @@ struct BoxTextRenderer {
         var lineCtx = ctx
         let folded = Self.collapsedTasks.contains(id)
         if !c.content.isEmpty && tasks[id] != nil && tasks[id] != .hidden { lineCtx.marker = .fold(collapsed: folded, taskId: id) }
-        line(attachment(image, height: image.size.height), lineCtx, out, lineHeight: image.size.height, raise: false)
+        // Task rows sat about 11 pt higher in their line than the web's (chips over the heading above).
+        line(attachment(image, height: image.size.height, drop: titleWidth == nil ? 0 : 11), lineCtx, out, lineHeight: image.size.height, raise: false)
         if let titleWidth, !ctx.hidden { out.taskTitles.append(BoxTaskTitle(offset: out.string.length - 1, id: id, x: ctx.left + 26, width: titleWidth)) }
         guard !c.content.isEmpty else { return }
         var notes = ctx
@@ -508,11 +509,11 @@ struct BoxTextRenderer {
     }
 
     /// One U+FFFC drawn as `image`, sitting at the top of a line as tall as the image.
-    private func attachment(_ image: UIImage, height: CGFloat) -> NSAttributedString {
+    private func attachment(_ image: UIImage, height: CGFloat, drop: CGFloat = 0) -> NSAttributedString {
         let a = NSTextAttachment(image: image)
         a.allowsTextAttachmentView = false
         let body = font(bodySize)
-        a.bounds = CGRect(x: 0, y: body.descender, width: image.size.width, height: height)
+        a.bounds = CGRect(x: 0, y: body.descender - drop, width: image.size.width, height: height)
         let s = NSMutableAttributedString(attributedString: NSAttributedString(attachment: a))
         s.addAttribute(.font, value: body, range: NSRange(location: 0, length: s.length))
         return s

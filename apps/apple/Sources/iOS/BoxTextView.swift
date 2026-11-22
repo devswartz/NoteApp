@@ -392,7 +392,7 @@ final class BoxTextView: UIView, UITextInput {
     func titleHit(at p: CGPoint) -> String? {
         for t in rendering.taskTitles {
             guard let line = lineBox(t.offset) else { continue }
-            if CGRect(x: inset.left + t.x, y: line.top, width: max(t.width, 30), height: 34).contains(p) { return t.id }
+            if CGRect(x: inset.left + t.x, y: line.top + 11, width: max(t.width, 30), height: 34).contains(p) { return t.id }
         }
         return nil
     }
@@ -438,7 +438,7 @@ final class BoxTextView: UIView, UITextInput {
         field.tintColor = palette.accent
         field.backgroundColor = palette.bg
         field.attributedPlaceholder = NSAttributedString(string: "Task", attributes: [.foregroundColor: palette.textPlaceholder, .font: WebType.ui(16)])
-        field.frame = CGRect(x: inset.left + t.x, y: line.top + 5, width: max(t.width, 60), height: 24)
+        field.frame = CGRect(x: inset.left + t.x, y: line.top + 16, width: max(t.width, 60), height: 24)
         if titleTask != id {
             titleTask = id
             field.text = editor?.tasks?.title(id: id) ?? ""
@@ -503,10 +503,10 @@ final class BoxTextView: UIView, UITextInput {
             let l = CALayer()
             l.contentsScale = UIScreen.main.scale
             l.contents = UIImage.lucide(collapsed ? "chevron-right" : "chevron-down", size: 14, color: palette.textMuted)?.cgImage
-            l.frame = CGRect(x: x, y: line.top + 10, width: 14, height: 14)
+            l.frame = CGRect(x: x, y: line.top + 21, width: 14, height: 14)
             layer.addSublayer(l)
             foldLayers.append(l)
-            foldHits.append((CGRect(x: x - 6, y: line.top, width: 20, height: 34), id))
+            foldHits.append((CGRect(x: x - 6, y: line.top + 11, width: 20, height: 34), id))
         }
     }
 
