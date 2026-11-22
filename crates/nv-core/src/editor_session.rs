@@ -2,20 +2,32 @@
 //! `nv-editor` engine. The native view sends input (text, key chords, commands, IME
 //! composition, clipboard) and draws what `state()` returns: the box's tree as ProseMirror-style
 //! JSON, the selection, the open suggestion menu, the marked text and other people's carets.
-//! Edits are written into the session's yrs doc of the page, so they sync: send
-//! `encode_update_since(their_state_vector)` to the server, and feed other people's updates to
-//! `apply_update`.
+//! Edits are written into the session's yrs doc of the page, so they sync.
+//!
+//! - `open_live(page, field, tasks)` opens a box of a `LivePage`: the session's edits go into the
+//!   live page (and so to the server and the store) and others' changes on the live page reach
+//!   the session, with no bytes through the app. The view redraws when the live page's listener
+//!   says it changed (`on_change`), or whenever `revision()` moves.
+//! - `open(update, field, tasks)` opens a box of a page document the app keeps in sync itself:
+//!   send `encode_update_since(their_state_vector)` to the server, and feed other people's
+//!   updates to `apply_update`.
+//!
+//! A native view draws one frame from one call, `view_render()` (EDITOR.md 10.1).
 //!
 //! Owned by the editor stream; core owns `lib.rs`, which has `mod editor_session;` and
 //! `pub use editor_session::*;` for it.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use nv_editor::bind::Clock;
-use nv_editor::suggest::{filter_slash, slash_details, Trigger};
-use nv_editor::{Editor, Focus, Selection, TaskHost};
+use nv_editor::bind::{Clock, REMOTE};
+use nv_editor::input::ViewText;
+use nv_editor::suggest::{slash_details, Trigger};
+use nv_editor::{Editor, Focus, Node, Selection, TaskHost};
 use nv_model::yrs::updates::decoder::Decode;
-use nv_model::yrs::{ReadTxn, StateVector, Transact};
+use nv_model::yrs::{Doc, Origin, ReadTxn, StateVector, Transact, Update};
+
+use crate::LivePage;
 
 /// Why an editor call failed.
 #[derive(Debug, Clone, PartialEq, uniffi::Error)]
@@ -245,16 +257,211 @@ fn pos(p: usize) -> u32 {
     p.min(u32::MAX as usize) as u32
 }
 
+/// Someone else's caret in this box, as offsets in the view's text.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ViewCursor {
+    pub user_id: String,
+    pub anchor: u32,
+    pub head: u32,
+}
+
+/// Everything a native view needs for one frame, in view offsets (EDITOR.md 10.1): one call
+/// per redraw. Skip the work when `revision` hasn't moved since the last frame, and the text
+/// layout when `text_revision` hasn't.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct ViewRender {
+    /// `revision()` when this was read.
+    pub revision: u64,
+    /// Moves only when `text` or `lines` changed (relayout); a selection move doesn't move it.
+    pub text_revision: u64,
+    /// The text, its length (UTF-16 units), the line table, the selection and the marked text,
+    /// as `view_state()` gives them.
+    pub view: ViewState,
+    /// The open suggestion menu (`view_from` / `view_to` anchor the popup).
+    pub suggestion: Option<EditorSuggestion>,
+    /// The task line whose title has the keyboard, when not the box's text.
+    pub focus_task_id: Option<String>,
+    pub remote_cursors: Vec<ViewCursor>,
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
+fn origin_is(txn: &nv_model::yrs::TransactionMut, name: &[u8]) -> bool {
+    txn.origin().map(|o| o.as_ref()) == Some(name)
+}
+
+fn locked<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// The bridge between the session's doc and a live page's doc. Others' changes on the page are
+/// queued by an observer (on whatever thread made them, the sync thread mostly) and merged into
+/// the editor at the start of the next session call; the session's own writes are queued by an
+/// observer on its doc and written into the page at the end of the call. Each side skips what
+/// came from the other, so nothing echoes.
+struct Live {
+    page: Doc,
+    doc: Doc,
+    /// The observers' key, and the origin of the session's writes into the page
+    /// (`nv-editor-live:<n>`, one per session: other sessions on the page take them as others'
+    /// changes; nv-sync sends them like any local edit).
+    key: Origin,
+    inbox: Arc<Mutex<Vec<Vec<u8>>>>,
+    outbox: Arc<Mutex<Vec<Vec<u8>>>>,
+}
+
+impl Live {
+    fn start(page: Doc, doc: Doc) -> Result<Live, EditorError> {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let key = Origin::from(
+            format!("nv-editor-live:{}", NEXT.fetch_add(1, Ordering::Relaxed)).as_str(),
+        );
+        let inbox: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+        let outbox: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+        {
+            let (inbox, mine) = (inbox.clone(), key.clone());
+            page.observe_update_v1(key.clone(), move |txn, e| {
+                if !origin_is(txn, mine.as_ref()) {
+                    locked(&inbox).push(e.update.clone());
+                }
+            })
+            .map_err(invalid)?;
+        }
+        {
+            let outbox = outbox.clone();
+            let observed = doc.observe_update_v1(key.clone(), move |txn, e| {
+                if !origin_is(txn, REMOTE.as_bytes()) {
+                    locked(&outbox).push(e.update.clone());
+                }
+            });
+            if let Err(e) = observed {
+                let _ = page.unobserve_update_v1(key.clone());
+                return Err(invalid(e));
+            }
+        }
+        Ok(Live {
+            page,
+            doc,
+            key,
+            inbox,
+            outbox,
+        })
+    }
+
+    /// Others' changes since the last call, as one update.
+    fn take_inbox(&self) -> Option<Vec<u8>> {
+        let updates = std::mem::take(&mut *locked(&self.inbox));
+        match updates.len() {
+            0 => None,
+            1 => updates.into_iter().next(),
+            _ => nv_model::yrs::merge_updates_v1(&updates).ok(),
+        }
+    }
+
+    /// Write the session's new changes into the page.
+    fn flush(&self) {
+        let updates = std::mem::take(&mut *locked(&self.outbox));
+        if updates.is_empty() {
+            return;
+        }
+        let mut txn = self.page.transact_mut_with(self.key.clone());
+        for u in updates {
+            if let Ok(u) = Update::decode_v1(&u) {
+                let _ = txn.apply_update(u);
+            }
+        }
+    }
+}
+
+impl Drop for Live {
+    fn drop(&mut self) {
+        let _ = self.page.unobserve_update_v1(self.key.clone());
+        let _ = self.doc.unobserve_update_v1(self.key.clone());
+    }
+}
+
+struct Inner {
+    ed: Editor,
+    live: Option<Live>,
+    revision: u64,
+    text_revision: u64,
+    /// The last view text, the tree it was built from, and the revision it was checked at.
+    view: Option<(u64, Node, Arc<ViewText>)>,
+}
+
+impl Inner {
+    /// Others' changes on the live page, into the editor.
+    fn pull(&mut self) {
+        if let Some(update) = self.live.as_ref().and_then(Live::take_inbox) {
+            let _ = self.ed.apply_update(&update);
+            self.revision += 1;
+        }
+    }
+
+    /// The view text, built again only when the tree changed.
+    fn view(&mut self) -> Arc<ViewText> {
+        if let Some((rev, tree, v)) = &mut self.view {
+            if *rev == self.revision {
+                return v.clone();
+            }
+            if *tree == self.ed.doc {
+                *rev = self.revision;
+                return v.clone();
+            }
+        }
+        let v = Arc::new(self.ed.text_for_view());
+        if self.view.as_ref().is_none_or(|(_, _, old)| **old != *v) {
+            self.text_revision += 1;
+        }
+        self.view = Some((self.revision, self.ed.doc.clone(), v.clone()));
+        v
+    }
+}
+
 /// One text box of a page, open for editing.
 #[derive(uniffi::Object)]
 pub struct EditorSession {
-    editor: Mutex<Editor>,
+    inner: Mutex<Inner>,
 }
 
 impl EditorSession {
+    fn new(ed: Editor, live: Option<Live>) -> Arc<EditorSession> {
+        let inner = Inner {
+            ed,
+            live,
+            revision: 1,
+            text_revision: 0,
+            view: None,
+        };
+        if let Some(l) = &inner.live {
+            l.flush();
+        }
+        Arc::new(EditorSession {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    /// The session, with others' changes on a live page brought in.
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+        let mut inner = locked(&self.inner);
+        inner.pull();
+        inner
+    }
+
+    /// A call that only reads.
+    fn read<R>(&self, f: impl FnOnce(&mut Inner) -> R) -> R {
+        f(&mut self.lock())
+    }
+
+    /// A call that may change something: the revision moves, and a live page gets the edits.
     fn with<R>(&self, f: impl FnOnce(&mut Editor) -> R) -> R {
-        let mut ed = self.editor.lock().unwrap_or_else(|e| e.into_inner());
-        f(&mut ed)
+        let mut inner = self.lock();
+        let r = f(&mut inner.ed);
+        inner.revision += 1;
+        if let Some(l) = &inner.live {
+            l.flush();
+        }
+        r
     }
 
     /// Run a local edit: an open composition is committed first, and the result is written.
@@ -268,6 +475,21 @@ impl EditorSession {
     }
 }
 
+fn check_field(doc: &Doc, field: &str) -> Result<(), EditorError> {
+    if field != "default" {
+        let page = nv_model::Page::read(doc);
+        let known = field
+            .strip_prefix("box:")
+            .is_some_and(|id| page.boxes.iter().any(|b| b.id == id));
+        if !known {
+            return Err(EditorError::NoSuchBox {
+                field: field.into(),
+            });
+        }
+    }
+    Ok(())
+}
+
 impl EditorSession {
     /// `open` with the clock undo groups by (`Clock::manual()` in tests; `open` uses the
     /// monotonic clock). Not in the foreign API.
@@ -278,19 +500,34 @@ impl EditorSession {
         clock: Clock,
     ) -> Result<Arc<EditorSession>, EditorError> {
         let doc = nv_model::doc_from_update(&update).map_err(invalid)?;
-        if field != "default" {
-            let page = nv_model::Page::read(&doc);
-            let known = field
-                .strip_prefix("box:")
-                .is_some_and(|id| page.boxes.iter().any(|b| b.id == id));
-            if !known {
-                return Err(EditorError::NoSuchBox { field });
-            }
-        }
+        check_field(&doc, &field)?;
         let ed = Editor::open(doc, &field, Box::new(Host(tasks)), clock);
-        Ok(Arc::new(EditorSession {
-            editor: Mutex::new(ed),
-        }))
+        Ok(EditorSession::new(ed, None))
+    }
+
+    /// `open_live` with the clock undo groups by. Not in the foreign API.
+    pub fn open_live_with_clock(
+        page: &LivePage,
+        field: String,
+        tasks: Arc<dyn TaskCallbacks>,
+        clock: Clock,
+    ) -> Result<Arc<EditorSession>, EditorError> {
+        let page = page.doc().clone();
+        // The session works on its own copy of the page, so the engine's tree never moves under
+        // it mid-call: others' changes come in at its calls. Observe first, then copy: a change
+        // in between is in both, and applying it twice changes nothing.
+        let doc = nv_model::new_doc();
+        let live = Live::start(page.clone(), doc.clone())?;
+        let full = page
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let u = Update::decode_v1(&full).map_err(invalid)?;
+        doc.transact_mut_with(REMOTE)
+            .apply_update(u)
+            .map_err(invalid)?;
+        check_field(&doc, &field)?;
+        let ed = Editor::open(doc, &field, Box::new(Host(tasks)), clock);
+        Ok(EditorSession::new(ed, Some(live)))
     }
 }
 
@@ -306,6 +543,57 @@ impl EditorSession {
         tasks: Arc<dyn TaskCallbacks>,
     ) -> Result<Arc<EditorSession>, EditorError> {
         EditorSession::open_with_clock(update, field, tasks, Clock::default())
+    }
+
+    /// Open `field` of a page open live (`Core::open_live_page`), once the box is there (after
+    /// `Synced`, or a stored copy). The session's edits go into the live page as they are made,
+    /// so they are sent and kept like `LivePage::apply_update`'s, and others' changes on the
+    /// live page come into the session at its next call (the selection follows its text): on
+    /// the live page's `on_change`, redraw from `view_render()`. No `apply_update` or
+    /// `encode_update_since` round trips. Undo takes back only this session's edits. Other
+    /// sessions on the page take this one's edits as others' changes, and the other way round.
+    #[uniffi::constructor]
+    pub fn open_live(
+        page: Arc<LivePage>,
+        field: String,
+        tasks: Arc<dyn TaskCallbacks>,
+    ) -> Result<Arc<EditorSession>, EditorError> {
+        EditorSession::open_live_with_clock(&page, field, tasks, Clock::default())
+    }
+
+    /// Moves whenever something to draw may have changed: a call that edits, moves the
+    /// selection or composes, or others' changes arriving on a live page. Cheap: a view polls
+    /// it, or compares `view_render().revision`, and skips the frame when it hasn't moved.
+    pub fn revision(&self) -> u64 {
+        self.read(|i| i.revision)
+    }
+
+    /// One frame: text, line table, selection, marked text, suggestion menu, remote carets and
+    /// undo state, all in view offsets (EDITOR.md 10.1). The line table is built again only
+    /// when the text changed (`text_revision`).
+    pub fn view_render(&self) -> ViewRender {
+        self.read(|i| {
+            let v = i.view();
+            let ed = &i.ed;
+            ViewRender {
+                revision: i.revision,
+                text_revision: i.text_revision,
+                view: view_state(ed, &v),
+                suggestion: suggestion(ed, &v),
+                focus_task_id: focus_task(ed),
+                remote_cursors: ed
+                    .remote_cursors
+                    .iter()
+                    .map(|c| ViewCursor {
+                        user_id: c.user_id.clone(),
+                        anchor: pos(v.to_offset(c.anchor)),
+                        head: pos(v.to_offset(c.head)),
+                    })
+                    .collect(),
+                can_undo: ed.can_undo(),
+                can_redo: ed.can_redo(),
+            }
+        })
     }
 
     /// Typed text (runs input rules). While composing, it replaces the marked text (as an IME
@@ -386,11 +674,11 @@ impl EditorSession {
     /// Whether `undo` would change something. Typing within 500 ms of the last change (on a
     /// monotonic clock) is one step with it.
     pub fn can_undo(&self) -> bool {
-        self.with(|ed| ed.can_undo())
+        self.read(|i| i.ed.can_undo())
     }
 
     pub fn can_redo(&self) -> bool {
-        self.with(|ed| ed.can_redo())
+        self.read(|i| i.ed.can_redo())
     }
 
     /// Put the caret or a text selection in the box's text (positions are clamped).
@@ -460,61 +748,33 @@ impl EditorSession {
     /// (joined by line feeds), U+FFFC for nodes without text. Offsets in it are UTF-16 units; map them
     /// with `view_offset_to_pos` and `pos_to_view_offset` (EDITOR.md 10).
     pub fn text_for_view(&self) -> String {
-        self.with(|ed| ed.text_for_view().text)
+        self.read(|i| i.view().text.clone())
     }
 
     pub fn view_offset_to_pos(&self, offset: u32) -> u32 {
-        self.with(|ed| pos(ed.view_offset_to_pos(offset as usize)))
+        self.read(|i| pos(i.view().to_pos(offset as usize)))
     }
 
     pub fn pos_to_view_offset(&self, pos_: u32) -> u32 {
-        self.with(|ed| pos(ed.pos_to_view_offset(pos_ as usize)))
+        self.read(|i| pos(i.view().to_offset(pos_ as usize)))
     }
 
     /// The view's text with its line table, the selection and the marked text, all in view
     /// offsets: what a UITextInput / TextKit 2 view lays out and answers the input system from.
-    /// Rects are the view's (its layout of these lines).
+    /// Rects are the view's (its layout of these lines). `view_render()` has this and the rest
+    /// of a frame.
     pub fn view_state(&self) -> ViewState {
-        self.with(|ed| {
-            let v = ed.text_for_view();
-            let (anchor, head) = ed.view_selection();
-            ViewState {
-                len: pos(v.len()),
-                lines: v
-                    .lines
-                    .iter()
-                    .map(|l| ViewLine {
-                        offset: pos(l.offset),
-                        len: pos(l.len),
-                        pos: pos(l.pos),
-                        is_text: l.text,
-                        kind: l.kind.clone(),
-                        level: l.level,
-                        containers: l.containers.clone(),
-                        marker: l.marker.clone(),
-                        checked: l.checked,
-                        task_id: l.task_id.clone(),
-                    })
-                    .collect(),
-                text: v.text,
-                selection: ViewRange {
-                    anchor: pos(anchor),
-                    head: pos(head),
-                },
-                marked: ed.view_composition().map(|((f, t), (a, b))| ViewMarked {
-                    from: pos(f),
-                    to: pos(t),
-                    sel_from: pos(a),
-                    sel_to: pos(b),
-                }),
-            }
+        self.read(|i| {
+            let v = i.view();
+            view_state(&i.ed, &v)
         })
     }
 
     /// The selection as offsets in `text_for_view()` (`selectedTextRange`'s getter).
     pub fn view_selection(&self) -> ViewRange {
-        self.with(|ed| {
-            let (a, h) = ed.view_selection();
+        self.read(|i| {
+            let v = i.view();
+            let (a, h) = i.ed.view_selection_in(&v);
             ViewRange {
                 anchor: pos(a),
                 head: pos(h),
@@ -531,11 +791,11 @@ impl EditorSession {
 
     /// `replace_range` with offsets in `text_for_view()` (`replace(_:withText:)`).
     pub fn replace_view_range(&self, from: u32, to: u32, text: String) -> bool {
-        self.edit(|ed| {
-            let v = ed.text_for_view();
-            let (f, t) = (v.to_pos(from as usize), v.to_pos(to as usize));
-            ed.replace_range(f, t, &text)
-        })
+        let (f, t) = self.read(|i| {
+            let v = i.view();
+            (v.to_pos(from as usize), v.to_pos(to as usize))
+        });
+        self.edit(|ed| ed.replace_range(f, t, &text))
     }
 
     /// Move the slash menu's highlight by `delta` rows, wrapping. False when no slash menu is
@@ -555,9 +815,11 @@ impl EditorSession {
         self.with(|ed| ed.dismiss_suggestion())
     }
 
-    /// What to draw now.
+    /// What to draw now, in positions (`view_render()` is the same in view offsets).
     pub fn state(&self) -> EditorState {
-        self.with(|ed| {
+        self.read(|i| {
+            let v = i.view();
+            let ed = &i.ed;
             let selection = match ed.sel {
                 Selection::Text { anchor, head } => EditorSelection::Text {
                     anchor: pos(anchor),
@@ -566,48 +828,11 @@ impl EditorSession {
                 Selection::Node { pos: p } => EditorSelection::Node { pos: pos(p) },
                 Selection::All => EditorSelection::All,
             };
-            let suggestion = ed.suggestion().map(|s| {
-                let titles = if s.trigger == Trigger::Slash {
-                    filter_slash(&s.query)
-                } else {
-                    Vec::new()
-                };
-                let v = ed.text_for_view();
-                EditorSuggestion {
-                    trigger: match s.trigger {
-                        Trigger::Slash => SuggestionTrigger::Slash,
-                        Trigger::PageLink => SuggestionTrigger::PageLink,
-                        Trigger::Mention => SuggestionTrigger::Mention,
-                    },
-                    items: titles
-                        .iter()
-                        .map(|t| {
-                            let (description, icon) = slash_details(t);
-                            SuggestionItem {
-                                id: t.to_string(),
-                                label: t.to_string(),
-                                description: description.into(),
-                                icon: icon.into(),
-                            }
-                        })
-                        .collect(),
-                    slash_items: titles.into_iter().map(String::from).collect(),
-                    highlighted: ed.slash_highlight().map(pos),
-                    query: s.query,
-                    view_from: pos(v.to_offset(s.from)),
-                    view_to: pos(v.to_offset(s.to)),
-                    from: pos(s.from),
-                    to: pos(s.to),
-                }
-            });
             EditorState {
                 doc_json: ed.doc.to_json().to_string(),
                 selection,
-                focus_task_id: match &ed.focus {
-                    Focus::Doc => None,
-                    Focus::TaskTitle(id) => Some(id.clone()),
-                },
-                suggestion,
+                focus_task_id: focus_task(ed),
+                suggestion: suggestion(ed, &v),
                 composing: ed.composition.as_ref().map(|c| TextRange {
                     from: pos(c.from),
                     to: pos(c.to),
@@ -620,14 +845,16 @@ impl EditorSession {
     }
 
     /// Apply someone else's change (a Yjs update for the page). The selection and remote
-    /// cursors follow the text they were in; an open composition stays open.
+    /// cursors follow the text they were in; an open composition stays open. A session from
+    /// `open_live` doesn't need it (others' changes come from the live page), and what it
+    /// applies doesn't go to the live page.
     pub fn apply_update(&self, update: Vec<u8>) -> Result<(), EditorError> {
         self.with(|ed| ed.apply_update(&update)).map_err(invalid)
     }
 
     /// The page doc's state vector (for a peer to answer with what this session lacks).
     pub fn state_vector(&self) -> Vec<u8> {
-        self.with(|ed| match &ed.binding {
+        self.read(|i| match &i.ed.binding {
             Some(b) => {
                 use nv_model::yrs::updates::encoder::Encode;
                 b.doc.transact().state_vector().encode_v1()
@@ -644,7 +871,7 @@ impl EditorSession {
         } else {
             StateVector::decode_v1(&state_vector).map_err(invalid)?
         };
-        Ok(self.with(|ed| match &ed.binding {
+        Ok(self.read(|i| match &i.ed.binding {
             Some(b) => b.doc.transact().encode_state_as_update_v1(&sv),
             None => Vec::new(),
         }))
@@ -668,7 +895,86 @@ impl EditorSession {
     }
 
     pub fn remote_cursors(&self) -> Vec<RemoteCursor> {
-        self.with(|ed| remote_cursors(ed))
+        self.read(|i| remote_cursors(&i.ed))
+    }
+}
+
+fn view_state(ed: &Editor, v: &ViewText) -> ViewState {
+    let (anchor, head) = ed.view_selection_in(v);
+    ViewState {
+        len: pos(v.len()),
+        lines: v
+            .lines
+            .iter()
+            .map(|l| ViewLine {
+                offset: pos(l.offset),
+                len: pos(l.len),
+                pos: pos(l.pos),
+                is_text: l.text,
+                kind: l.kind.clone(),
+                level: l.level,
+                containers: l.containers.clone(),
+                marker: l.marker.clone(),
+                checked: l.checked,
+                task_id: l.task_id.clone(),
+            })
+            .collect(),
+        text: v.text.clone(),
+        selection: ViewRange {
+            anchor: pos(anchor),
+            head: pos(head),
+        },
+        marked: ed
+            .view_composition_in(v)
+            .map(|((f, t), (a, b))| ViewMarked {
+                from: pos(f),
+                to: pos(t),
+                sel_from: pos(a),
+                sel_to: pos(b),
+            }),
+    }
+}
+
+fn suggestion(ed: &Editor, v: &ViewText) -> Option<EditorSuggestion> {
+    ed.suggestion().map(|s| {
+        let titles = if s.trigger == Trigger::Slash {
+            ed.slash_items()
+        } else {
+            Vec::new()
+        };
+        EditorSuggestion {
+            trigger: match s.trigger {
+                Trigger::Slash => SuggestionTrigger::Slash,
+                Trigger::PageLink => SuggestionTrigger::PageLink,
+                Trigger::Mention => SuggestionTrigger::Mention,
+            },
+            items: titles
+                .iter()
+                .map(|t| {
+                    let (description, icon) = slash_details(t);
+                    SuggestionItem {
+                        id: t.to_string(),
+                        label: t.to_string(),
+                        description: description.into(),
+                        icon: icon.into(),
+                    }
+                })
+                .collect(),
+            slash_items: titles.into_iter().map(String::from).collect(),
+            highlighted: ed.slash_highlight().map(pos),
+            query: s.query,
+            view_from: pos(v.to_offset(s.from)),
+            view_to: pos(v.to_offset(s.to)),
+            from: pos(s.from),
+            to: pos(s.to),
+        }
+    })
+}
+
+fn focus_task(ed: &Editor) -> Option<String> {
+    match &ed.focus {
+        Focus::Doc => None,
+        Focus::TaskTitle(id) => Some(id.clone()),
     }
 }
 

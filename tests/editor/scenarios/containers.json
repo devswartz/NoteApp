@@ -31,6 +31,10 @@
     {"name": "- in a callout makes a bullet inside it", "doc": "<callout><paragraph>|</paragraph></callout><paragraph/>", "steps": [{"type": "- a"}], "expect": {"doc": "<callout><bulletList><listItem><paragraph>a|</paragraph></listItem></bulletList></callout><paragraph/>"}},
     {"name": "Backspace at the start of a quote unwraps it", "doc": "<blockquote><paragraph>|q</paragraph></blockquote><paragraph/>", "steps": [{"key": "Backspace"}], "expect": {"doc": "<paragraph>|q</paragraph><paragraph/>"}},
     {"name": "Mod+Shift+b in a quote unwraps it", "doc": "<blockquote><paragraph>q|</paragraph></blockquote><paragraph/>", "steps": [{"key": "Mod+Shift+b"}], "expect": {"doc": "<paragraph>q|</paragraph><paragraph/>"}},
-    {"name": "typing in a toggle's summary", "doc": "<details><detailsSummary>T|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>", "steps": [{"type": "ab"}], "expect": {"doc": "<details><detailsSummary>Tab|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>"}}
+    {"name": "typing in a toggle's summary", "doc": "<details><detailsSummary>T|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>", "steps": [{"type": "ab"}], "expect": {"doc": "<details><detailsSummary>Tab|</detailsSummary><detailsContent><paragraph/></detailsContent></details><paragraph/>"}},
+    {"name": "Mod+a in a callout then Backspace", "doc": "<callout><paragraph>a|b</paragraph></callout><paragraph>c</paragraph>", "steps": [{"key": "Mod+a"}, {"key": "Backspace"}], "expect": {"doc": "<paragraph>|</paragraph>"}},
+    {"name": "Mod+a in a quote then typing", "doc": "<blockquote><paragraph>a|b</paragraph></blockquote>", "steps": [{"key": "Mod+a"}, {"type": "x"}], "expect": {"doc": "<paragraph>x|</paragraph>"}},
+    {"name": "Mod+a in a table cell then typing", "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell><tableCell><paragraph>b</paragraph></tableCell></tableRow></table><paragraph/>", "steps": [{"key": "Mod+a"}, {"type": "x"}], "expect": {"doc": "<paragraph>x|</paragraph>"}},
+    {"name": "Mod+a in a code block then typing replaces everything with a paragraph", "doc": "<codeBlock>a|b</codeBlock><paragraph>c</paragraph>", "steps": [{"key": "Mod+a"}, {"type": "x"}], "expect": {"doc": "<paragraph>x|</paragraph>"}}
   ]
 }

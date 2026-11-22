@@ -63,6 +63,7 @@ function seedStore(tasks: Record<string, TaskIn>) {
       pages: [
         { id: PAGE, sectionId: 's1', title: 'This page', icon: null, kind: 'canvas', position: 1, updatedAt: now, updatedBy: null },
         { id: 'p2', sectionId: 's1', title: 'Project plan', icon: null, kind: 'canvas', position: 2, updatedAt: now, updatedBy: null },
+        { id: 'p3', sectionId: 's1', title: 'Project notes', icon: null, kind: 'canvas', position: 3, updatedAt: now, updatedBy: null },
       ],
     },
     tasks: all,

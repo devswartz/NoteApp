@@ -261,7 +261,11 @@ impl Editor {
     /// The selection as (anchor, head) offsets in `text_for_view()`: a text selection maps its
     /// ends, a node selection is its U+FFFC (`offset..offset + 1`), select-all is `0..len`.
     pub fn view_selection(&self) -> (usize, usize) {
-        let v = self.text_for_view();
+        self.view_selection_in(&self.text_for_view())
+    }
+
+    /// `view_selection` over a `ViewText` the caller already has (it must be this tree's).
+    pub fn view_selection_in(&self, v: &ViewText) -> (usize, usize) {
         match self.sel {
             Selection::Text { anchor, head } => (v.to_offset(anchor), v.to_offset(head)),
             Selection::Node { pos } => {
@@ -317,8 +321,13 @@ impl Editor {
     /// While composing: the marked text's range and the selection inside it, as offsets in
     /// `text_for_view()` ((from, to), (sel_from, sel_to)), for `markedTextRange` and the like.
     pub fn view_composition(&self) -> Option<((usize, usize), (usize, usize))> {
+        self.composition.as_ref()?;
+        self.view_composition_in(&self.text_for_view())
+    }
+
+    /// `view_composition` over a `ViewText` the caller already has (it must be this tree's).
+    pub fn view_composition_in(&self, v: &ViewText) -> Option<((usize, usize), (usize, usize))> {
         let c = self.composition.as_ref()?;
-        let v = self.text_for_view();
         let from = v.to_offset(c.from);
         let to = v.to_offset(c.to);
         let (s, e) = c.sel_in_text;

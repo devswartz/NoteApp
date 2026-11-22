@@ -98,6 +98,9 @@ impl Editor {
             self.sel = Selection::caret(pos + n);
             return true;
         }
+        if self.paste_items_into_item(&r, &blocks, &head, &tail) {
+            return true;
+        }
         let parent = path[..path.len() - 1].to_vec();
         let i = path[path.len() - 1];
         let before = r.before(r.depth());
@@ -196,6 +199,67 @@ impl Editor {
             p = end;
         }
         out
+    }
+
+    /// A pasted list into the first line of an item of the same kind of list (ProseMirror fits
+    /// the slice's open list into the one at the caret): the first pasted item's text joins the
+    /// line before the caret, the other items follow as siblings, and the rest of the line (and
+    /// of the item) ends up after the last pasted text.
+    fn paste_items_into_item(
+        &mut self,
+        r: &crate::pos::ResolvedPos,
+        blocks: &[Node],
+        head: &[Node],
+        tail: &[Node],
+    ) -> bool {
+        let d = r.depth();
+        if blocks.len() != 1 || !blocks[0].is_list() || d < 3 || r.index_at(d - 1) != 0 {
+            return false;
+        }
+        let cur = r.node(&self.doc, d - 1).clone();
+        let items = &blocks[0].content;
+        let fits = cur.is_list_item()
+            && !items.is_empty()
+            && items.iter().all(|it| {
+                it.kind == cur.kind && it.content.first().is_some_and(Node::is_textblock)
+            });
+        if !fits {
+            return false;
+        }
+        let line = r.parent(&self.doc).clone();
+        let mut new_items: Vec<Node> = items.clone();
+        let first = &mut new_items[0];
+        let mut para = line.copy([head.to_vec(), first.content[0].content.clone()].concat());
+        para.normalize();
+        first.content[0] = para;
+        *first = cur.copy(std::mem::take(&mut first.content));
+        let n = new_items.len();
+        let last = &mut new_items[n - 1];
+        let k = last.content.len() - 1;
+        let caret_in_last = last.content[k].is_textblock();
+        let caret_off = if caret_in_last {
+            let end = last.content[k].content_size();
+            last.content[k].content.extend(tail.iter().cloned());
+            last.content[k].normalize();
+            end
+        } else {
+            0
+        };
+        if !caret_in_last && !tail.is_empty() {
+            last.content.push(Node::el("paragraph", tail.to_vec()));
+        }
+        last.content.extend(cur.content[1..].iter().cloned());
+        let list_path = r.path_to(d - 2);
+        let idx = r.index_at(d - 2);
+        self.doc
+            .at_mut(&list_path)
+            .content
+            .splice(idx..=idx, new_items);
+        let mut last_path = list_path.clone();
+        last_path.extend([idx + n - 1, k]);
+        let before = crate::tasks::pos_of_path(&self.doc, &last_path);
+        self.sel = Selection::caret(near_text(&self.doc, before + 1 + caret_off, -1));
+        true
     }
 }
 
@@ -328,6 +392,10 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         item: Attrs,
         /// Per open `<span>`: whether it opened a colour (`textStyle`) mark.
         spans: Vec<bool>,
+        /// Open tables: their rows of cells so far.
+        tables: Vec<Vec<Vec<Node>>>,
+        /// The open cell (`tableHeader` or `tableCell`) and its blocks so far.
+        cell: Option<(String, Vec<Node>)>,
     }
     let mut b = B {
         blocks: Vec::new(),
@@ -337,6 +405,8 @@ pub fn parse_html(html: &str) -> Vec<Node> {
         lists: Vec::new(),
         item: Attrs::new(),
         spans: Vec::new(),
+        tables: Vec::new(),
+        cell: None,
     };
     fn flush(b: &mut B) {
         let has = b
@@ -365,7 +435,21 @@ pub fn parse_html(html: &str) -> Vec<Node> {
                 items.push(Node::new("taskItem", b.item.clone(), vec![node]))
             }
             Some((_, items)) => items.push(Node::el("listItem", vec![node])),
-            None => b.blocks.push(node),
+            None => match &mut b.cell {
+                Some((_, blocks)) => blocks.push(node),
+                None => b.blocks.push(node),
+            },
+        }
+    }
+    fn end_cell(b: &mut B) {
+        flush(b);
+        if let Some((kind, mut blocks)) = b.cell.take() {
+            if blocks.is_empty() {
+                blocks.push(Node::el("paragraph", vec![]));
+            }
+            if let Some(row) = b.tables.last_mut().and_then(|t| t.last_mut()) {
+                row.push(Node::el(&kind, blocks));
+            }
         }
     }
     let mut rest = html;
@@ -450,10 +534,14 @@ pub fn parse_html(html: &str) -> Vec<Node> {
                             b.item.insert("checked".into(), json!(true));
                         }
                     }
-                    if let Some(level) = name.strip_prefix('h').and_then(|l| l.parse::<u64>().ok())
+                    // Headings are levels 1 to 3; h4 to h6 are paragraphs (TipTap's parseHTML).
+                    if let Some(level) = name
+                        .strip_prefix('h')
+                        .and_then(|l| l.parse::<u64>().ok())
+                        .filter(|l| *l <= 3)
                     {
                         let mut a = Attrs::new();
-                        a.insert("level".into(), json!(level.min(3)));
+                        a.insert("level".into(), json!(level));
                         b.block_kind = Some(("heading".into(), a));
                     } else if name == "pre" {
                         b.block_kind = Some(("codeBlock".into(), Attrs::new()));
@@ -484,6 +572,39 @@ pub fn parse_html(html: &str) -> Vec<Node> {
                                 Some(item) => item.content.push(list),
                                 None => b.blocks.push(list),
                             }
+                        }
+                    }
+                }
+                ("table", false) => {
+                    flush(&mut b);
+                    b.tables.push(Vec::new());
+                }
+                ("tr", false) => {
+                    end_cell(&mut b);
+                    if let Some(t) = b.tables.last_mut() {
+                        t.push(Vec::new());
+                    }
+                }
+                ("th" | "td", false) => {
+                    end_cell(&mut b);
+                    let kind = if name == "th" {
+                        "tableHeader"
+                    } else {
+                        "tableCell"
+                    };
+                    b.cell = Some((kind.into(), Vec::new()));
+                }
+                ("th" | "td" | "tr", true) => end_cell(&mut b),
+                ("table", true) => {
+                    end_cell(&mut b);
+                    if let Some(rows) = b.tables.pop() {
+                        let rows: Vec<Node> = rows
+                            .into_iter()
+                            .filter(|r| !r.is_empty())
+                            .map(|r| Node::el("tableRow", r))
+                            .collect();
+                        if !rows.is_empty() {
+                            b.blocks.push(Node::el("table", rows));
                         }
                     }
                 }

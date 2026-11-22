@@ -1,11 +1,21 @@
 //! Editor sessions through the Core API (src/editor_session.rs): typing writes into the page
-//! doc, undo, IME composition, two sessions converging, and tasks through the app's callbacks.
+//! doc, undo, IME composition, two sessions converging, tasks through the app's callbacks, the
+//! one-call view frame, and sessions on a live page (against the stand-in collab server,
+//! crates/nv-sync/tests/support).
 
+#[path = "../../nv-sync/tests/support/mod.rs"]
+mod support;
+
+use std::collections::VecDeque;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use nv_core::*;
+use nv_model::yrs::updates::decoder::Decode;
+use nv_model::yrs::{ReadTxn, StateVector, Transact, Update};
+use support::{wait_for, TestServer};
 
 fn page(name: &str) -> Vec<u8> {
     fs::read(
@@ -67,7 +77,12 @@ fn open(update: Vec<u8>, field: &str) -> (Arc<EditorSession>, Arc<FakeTasks>) {
 
 /// The box's text as the page doc holds it (read back through `read_page`).
 fn box_text(s: &EditorSession, id: &str) -> String {
-    let info = read_page(s.encode_update_since(Vec::new()).unwrap()).unwrap();
+    text_in(s.encode_update_since(Vec::new()).unwrap(), id)
+}
+
+/// The text of box `id` in a page document, a line per block.
+fn text_in(update: Vec<u8>, id: &str) -> String {
+    let info = read_page(update).unwrap();
     let c = info
         .content
         .iter()
@@ -157,6 +172,33 @@ fn slash_menu_in_the_state() {
         .command("pickSlash".into(), r#"{"title":"Heading 2"}"#.into())
         .unwrap());
     assert!(s.state().suggestion.is_none());
+}
+
+#[test]
+fn add_checklist_is_offered_next_to_a_task() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    s.key("Mod+a".into());
+    s.insert_text("/add".into());
+    let rows = |s: &EditorSession| {
+        s.state()
+            .suggestion
+            .map(|g| g.slash_items)
+            .unwrap_or_default()
+    };
+    assert!(!rows(&s).contains(&"Add checklist".to_string()));
+    s.key("Mod+a".into());
+    s.insert_text("Pack".into());
+    assert!(s.key("Mod+Enter".into()));
+    // The task line (an empty one is two positions), then the line below it.
+    s.set_selection(3, 3);
+    s.insert_text("/add".into());
+    let sug = s.state().suggestion.unwrap();
+    assert_eq!(sug.slash_items, vec!["Add checklist".to_string()]);
+    assert_eq!(sug.items[0].icon, "list-plus");
+    assert!(s.key("Enter".into()));
+    let doc = s.state().doc_json;
+    assert!(doc.contains("taskList"), "{doc}");
+    assert!(!doc.contains("/add"), "{doc}");
 }
 
 #[test]
@@ -626,4 +668,208 @@ fn undo_groups_on_the_real_clock() {
     assert!(s.undo());
     assert_eq!(box_text(&s, "a"), before);
     assert!(!s.can_undo());
+}
+
+#[test]
+fn one_call_per_frame_and_revisions() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    let first = s.view_render();
+    assert_eq!(first.view, s.view_state());
+    assert_eq!(first.revision, s.revision());
+    // Reading doesn't move anything.
+    let again = s.view_render();
+    assert_eq!(again, first);
+    // A selection move: a new revision, the same text.
+    s.set_view_selection(1, 1);
+    s.set_view_selection(0, 0);
+    let moved = s.view_render();
+    assert!(moved.revision > first.revision);
+    assert_eq!(moved.text_revision, first.text_revision);
+    assert_eq!(moved.view.selection, ViewRange { anchor: 0, head: 0 });
+    // Typing: new text.
+    s.insert_text("/".into());
+    let typed = s.view_render();
+    assert!(typed.revision > moved.revision);
+    assert!(typed.text_revision > moved.text_revision);
+    assert_eq!(typed.view.text, s.text_for_view());
+    assert!(typed.can_undo && !typed.can_redo);
+    let sug = typed.suggestion.unwrap();
+    assert_eq!(sug.trigger, SuggestionTrigger::Slash);
+    assert_eq!((sug.view_from, sug.view_to), (0, 1));
+    // Composing shows the marked text in the frame.
+    s.dismiss_suggestion();
+    s.set_composition("k".into(), 1, 1);
+    let marked = s.view_render().view.marked.unwrap();
+    assert_eq!((marked.from, marked.to), (1, 2));
+    s.cancel_composition();
+    // Remote carets in view offsets.
+    s.set_remote_cursors(vec![RemoteCursor {
+        user_id: "u2".into(),
+        anchor: 1,
+        head: 1,
+    }]);
+    let r = s.view_render();
+    assert_eq!(
+        r.remote_cursors,
+        [ViewCursor {
+            user_id: "u2".into(),
+            anchor: 0,
+            head: 0
+        }]
+    );
+    assert_eq!(r.focus_task_id, None);
+}
+
+#[derive(Clone, Default)]
+struct Script(Arc<Mutex<VecDeque<serde_json::Value>>>);
+impl nv_api::Transport for Script {
+    fn send(&self, req: &nv_api::Request) -> Result<nv_api::Response, String> {
+        let body = self
+            .0
+            .lock()
+            .unwrap()
+            .pop_front()
+            .ok_or_else(|| format!("unscripted: {} {}", req.method, req.url))?;
+        Ok(nv_api::Response {
+            status: 200,
+            body: body.to_string(),
+            request_id: None,
+        })
+    }
+}
+
+#[derive(Default)]
+struct Events {
+    synced: Mutex<u32>,
+    changes: Mutex<u32>,
+}
+impl LivePageListener for Events {
+    fn on_status(&self, s: LiveStatus) {
+        if s == LiveStatus::Synced {
+            *self.synced.lock().unwrap() += 1;
+        }
+    }
+    fn on_change(&self, _: PageInfo) {
+        *self.changes.lock().unwrap() += 1;
+    }
+}
+
+/// Apply a full page document (or an update) to a doc.
+fn apply(doc: &nv_model::yrs::Doc, update: &[u8]) {
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(update).unwrap())
+        .unwrap();
+}
+
+fn full(doc: &nv_model::yrs::Doc) -> Vec<u8> {
+    doc.transact()
+        .encode_state_as_update_v1(&StateVector::default())
+}
+
+#[test]
+fn a_live_session_edits_the_live_page_and_sees_others_changes() {
+    let server = TestServer::start(&["acc"]);
+    apply(server.room.doc(), &page("canvas-boxes"));
+    let script = Script::default();
+    script.0.lock().unwrap().push_back(serde_json::json!({
+        "accessToken": "acc", "expiresIn": 900, "refreshToken": "ref",
+        "user": { "id": "u1", "email": "a@b.c", "name": "Ann", "color": "#123456", "emailVerified": true }
+    }));
+    let core = Core::with_transport(&server.base, Box::new(script), None);
+    core.sign_in("a@b.c".into(), "pw".into()).unwrap();
+    let ev = Arc::new(Events::default());
+    let live = core.open_live_page("page-1".into(), ev.clone()).unwrap();
+    wait_for("sync", || *ev.synced.lock().unwrap() == 1);
+    let before = text_in(live.document(), "a");
+
+    let tasks = Arc::new(FakeTasks::default());
+    let s = EditorSession::open_live(live.clone(), "box:a".into(), tasks.clone()).unwrap();
+    for c in "Hi ".chars() {
+        s.insert_text(c.to_string());
+    }
+    // In the live page at once, and on the server soon after: no bytes through the app.
+    assert_eq!(text_in(live.document(), "a"), format!("Hi {before}"));
+    wait_for("the server to get the typing", || {
+        text_in(full(server.room.doc()), "a") == format!("Hi {before}")
+    });
+    wait_for("the receipt", || live.unsent_updates() == 0);
+    // The server's echo of our own edit isn't taken as someone else's change.
+    std::thread::sleep(Duration::from_millis(100));
+    let rev = s.revision();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(s.revision(), rev);
+
+    // Someone else types at the start of the box, on the server.
+    let (other, _) = open(full(server.room.doc()), "box:a");
+    let sv = other.state_vector();
+    other.insert_text("Yo ".into());
+    apply(server.room.doc(), &other.encode_update_since(sv).unwrap());
+    wait_for("the change to reach the session", || {
+        s.view_render().view.text.starts_with("Yo Hi ")
+    });
+    assert!(s.revision() > rev);
+    assert!(*ev.changes.lock().unwrap() > 0, "the app hears it too");
+    // The caret stayed after our "Hi ".
+    assert_eq!(
+        s.state().selection,
+        EditorSelection::Text { anchor: 7, head: 7 }
+    );
+
+    // Undo takes back only this session's typing; the other person's stays.
+    assert!(s.undo());
+    assert_eq!(text_in(live.document(), "a"), format!("Yo {before}"));
+    wait_for("the server to get the undo", || {
+        text_in(full(server.room.doc()), "a") == format!("Yo {before}")
+    });
+    assert!(!s.can_undo());
+
+    // Tasks still go through the app's callbacks.
+    assert!(s
+        .command("insertTask".into(), r#"{"title":"Buy milk"}"#.into())
+        .unwrap());
+    assert_eq!(
+        tasks.log.lock().unwrap().clone(),
+        ["create task-0 \"Buy milk\" false"]
+    );
+    wait_for("the task line on the server", || {
+        read_page(full(server.room.doc()))
+            .unwrap()
+            .task_ids
+            .contains(&"task-0".to_string())
+    });
+
+    // A second session on the page: each takes the other's edits as others' changes.
+    let s2 = EditorSession::open_live(live.clone(), "box:a".into(), Arc::new(FakeTasks::default()))
+        .unwrap();
+    s2.insert_text("Q".into());
+    assert!(s.text_for_view().starts_with("Q"), "{}", s.text_for_view());
+    drop(s2);
+
+    // Closing the page leaves the session usable (its edits just aren't sent).
+    live.close();
+    s.insert_text("z".into());
+    drop(s);
+}
+
+#[test]
+fn a_live_session_needs_the_box() {
+    let server = TestServer::start(&["acc"]);
+    let script = Script::default();
+    script.0.lock().unwrap().push_back(serde_json::json!({
+        "accessToken": "acc", "expiresIn": 900, "refreshToken": "ref",
+        "user": { "id": "u1", "email": "a@b.c", "name": "Ann", "color": "#123456", "emailVerified": true }
+    }));
+    let core = Core::with_transport(&server.base, Box::new(script), None);
+    core.sign_in("a@b.c".into(), "pw".into()).unwrap();
+    let ev = Arc::new(Events::default());
+    let live = core.open_live_page("page-1".into(), ev.clone()).unwrap();
+    wait_for("sync", || *ev.synced.lock().unwrap() == 1);
+    let t: Arc<dyn TaskCallbacks> = Arc::new(FakeTasks::default());
+    assert_eq!(
+        EditorSession::open_live(live.clone(), "box:a".into(), t).err(),
+        Some(EditorError::NoSuchBox {
+            field: "box:a".into()
+        })
+    );
+    live.close();
 }

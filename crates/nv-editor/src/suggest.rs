@@ -108,15 +108,14 @@ pub fn slash_details(title: &str) -> (&'static str, &'static str) {
 
 /// Slash items for a query: title prefix first, then a word prefix in title or keywords, then a substring.
 ///
-/// "Add checklist" is left out: today's menu offers it only on a line in a task's notes or just
-/// below a task, and the engine can't run it yet (a follow-up, with the session passing the
-/// caret's context; docs/rewrite/status/editor.md).
-pub fn filter_slash(query: &str) -> Vec<&'static str> {
+/// "Add checklist" is offered only next to a task (`task_near`: on a line in a task's notes or
+/// just below a task), as today's menu does; `Editor::slash_items` passes the caret's context.
+pub fn filter_slash(query: &str, task_near: bool) -> Vec<&'static str> {
     let q = query.trim().to_lowercase();
     let mut scored: Vec<(usize, usize, &str)> = SLASH_ITEMS
         .iter()
         .enumerate()
-        .filter(|(_, (title, _))| *title != "Add checklist")
+        .filter(|(_, (title, _))| task_near || *title != "Add checklist")
         .filter_map(|(n, (title, kw))| {
             let t = title.to_lowercase();
             let all = format!("{t} {}", kw.to_lowercase());
@@ -197,11 +196,66 @@ impl Editor {
         })
     }
 
-    /// The highlighted item of the open slash menu (an index into `filter_slash(query)`), or
+    /// The items of the open slash menu, in menu order (empty when none is open): what
+    /// `filter_slash` offers for its query at the caret.
+    pub fn slash_items(&self) -> Vec<&'static str> {
+        match self.suggestion().filter(|s| s.trigger == Trigger::Slash) {
+            Some(s) => filter_slash(&s.query, self.task_near(s.from).is_some()),
+            None => Vec::new(),
+        }
+    }
+
+    /// The task a line belongs with, for "Add checklist" (taskChildren.ts `taskNear`): the
+    /// innermost task whose notes `pos` is in, else the task just above its line. Its path.
+    pub fn task_near(&self, pos: usize) -> Option<Vec<usize>> {
+        let r = self.resolve(pos);
+        if let Some(d) = r.find(&self.doc, |n| n.is(crate::tasks::TASK)) {
+            return Some(r.path_to(d));
+        }
+        let d = r.depth();
+        if d < 1 {
+            return None;
+        }
+        let i = r.index_at(d - 1);
+        let parent = r.path_to(d - 1);
+        let prev = i.checked_sub(1)?;
+        self.doc.at(&parent).content[prev]
+            .is(crate::tasks::TASK)
+            .then(|| [parent, vec![prev]].concat())
+    }
+
+    /// "Add checklist": an empty plain checklist at the top of the task's notes, caret in it
+    /// (taskChildren.ts `addChecklistToTask`). The line typed on goes when it's now empty and
+    /// sits just below the task or right in its notes.
+    fn add_checklist(&mut self, at: usize) -> bool {
+        let Some(task) = self.task_near(at) else {
+            return false;
+        };
+        let r = self.resolve(at);
+        let d = r.depth();
+        let line = r.path_to(d);
+        let (lp, li) = line.split_at(d - 1);
+        let beside = lp == task.as_slice() || (li[0] > 0 && [lp, &[li[0] - 1]].concat() == task);
+        let empty_para =
+            r.parent(&self.doc).is("paragraph") && r.parent(&self.doc).content.is_empty();
+        if beside && empty_para {
+            self.doc.at_mut(lp).content.remove(li[0]);
+        }
+        let item = Node::el("taskItem", vec![Node::el("paragraph", vec![])]);
+        self.doc
+            .at_mut(&task)
+            .content
+            .insert(0, Node::el("taskList", vec![item]));
+        let before = crate::tasks::pos_of_path(&self.doc, &task);
+        self.sel = Selection::caret(before + 4);
+        true
+    }
+
+    /// The highlighted item of the open slash menu (an index into `slash_items()`), or
     /// None when no slash menu is open or nothing matches.
     pub fn slash_highlight(&self) -> Option<usize> {
         let s = self.suggestion().filter(|s| s.trigger == Trigger::Slash)?;
-        let n = filter_slash(&s.query).len();
+        let n = self.slash_items().len();
         if n == 0 {
             return None;
         }
@@ -219,7 +273,7 @@ impl Editor {
         let Some(s) = self.suggestion() else {
             return false;
         };
-        let n = filter_slash(&s.query).len() as i64;
+        let n = self.slash_items().len() as i64;
         let j = (i as i64 + delta).rem_euclid(n) as usize;
         self.highlight = Some((s.from, s.query, j));
         true
@@ -230,10 +284,7 @@ impl Editor {
         let Some(i) = self.slash_highlight() else {
             return false;
         };
-        let Some(s) = self.suggestion() else {
-            return false;
-        };
-        let title = filter_slash(&s.query)[i];
+        let title = self.slash_items()[i];
         self.pick_slash(title)
     }
 
@@ -253,9 +304,13 @@ impl Editor {
         let Some(s) = self.suggestion().filter(|s| s.trigger == Trigger::Slash) else {
             return false;
         };
+        if title == "Add checklist" && self.task_near(s.from).is_none() {
+            return false;
+        }
         self.delete_range(s.from, s.to);
         self.sel = Selection::caret(s.from);
         match title {
+            "Add checklist" => self.add_checklist(s.from),
             "Task" => self.insert_task(""),
             "Text" => self.set_block_type("paragraph", Attrs::new()),
             "Heading 1" | "Heading 2" | "Heading 3" => {

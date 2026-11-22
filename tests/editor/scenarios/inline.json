@@ -20,6 +20,18 @@
       "expect": { "doc": "<paragraph>a|</paragraph>" } },
     { "name": "typing at the end of a link extends it (autolink links are inclusive)", "doc": "<paragraph><link href=\"https://example.com\">ab|</link></paragraph>",
       "steps": [{ "type": "c" }],
-      "expect": { "doc": "<paragraph><link href=\"https://example.com\">abc|</link></paragraph>" } }
+      "expect": { "doc": "<paragraph><link href=\"https://example.com\">abc|</link></paragraph>" } },
+    {"name": "@ ArrowDown Enter picks the second person", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "@"}, {"wait": 50}, {"key": "ArrowDown"}, {"key": "Enter"}], "expect": {"doc": "<paragraph><mention id=\"u2\" label=\"Sam Lee\"/> |</paragraph>"}},
+    {"name": "@ ArrowUp wraps to the last person", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "@"}, {"wait": 50}, {"key": "ArrowUp"}, {"key": "Enter"}], "expect": {"doc": "<paragraph><mention id=\"u2\" label=\"Sam Lee\"/> |</paragraph>"}},
+    {"name": "@ Tab picks the highlighted person", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "@te"}, {"wait": 50}, {"key": "Tab"}], "expect": {"doc": "<paragraph><mention id=\"u1\" label=\"Tess Tester\"/> |</paragraph>"}},
+    {"name": "@ with no match: Enter is a new line", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "@zz"}, {"wait": 50}, {"key": "Enter"}], "expect": {"doc": "<paragraph>@zz</paragraph><paragraph>|</paragraph>"}},
+    {"name": "@ then Escape: Enter is a new line", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "@sa"}, {"wait": 50}, {"key": "Escape"}, {"key": "Enter"}], "expect": {"doc": "<paragraph>@sa</paragraph><paragraph>|</paragraph>"}},
+    {"name": "@ typing after ArrowDown starts the highlight again at the top", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "@"}, {"wait": 50}, {"key": "ArrowDown"}, {"type": "s"}, {"wait": 50}, {"key": "Enter"}], "expect": {"doc": "<paragraph><mention id=\"u2\" label=\"Sam Lee\"/> |</paragraph>"}},
+    {"name": "@ in a code block does not open mentions", "doc": "<codeBlock>|</codeBlock>", "steps": [{"type": "@sa"}, {"wait": 50}, {"key": "Enter"}], "skip": {"tiptap": "today the @ menu opens in a code block and picking a person empties the code block and puts the mention on a new line after it (README Findings)"}, "expect": {"doc": "<codeBlock>@sa\n|</codeBlock><paragraph/>"}},
+    {"name": "[[ ArrowDown Enter picks the second page", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "[[proj"}, {"wait": 50}, {"key": "ArrowDown"}, {"key": "Enter"}], "expect": {"doc": "<paragraph><pageLink pageId=\"p3\"/> |</paragraph>"}},
+    {"name": "[[ ArrowUp wraps to the last page", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "[["}, {"wait": 50}, {"key": "ArrowUp"}, {"key": "Enter"}], "expect": {"doc": "<paragraph><pageLink pageId=\"p3\"/> |</paragraph>"}},
+    {"name": "[[ query with a space", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "[[project n"}, {"wait": 50}, {"key": "Enter"}], "expect": {"doc": "<paragraph><pageLink pageId=\"p3\"/> |</paragraph>"}},
+    {"name": "[[ then Escape: Enter is a new line", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "[[proj"}, {"wait": 50}, {"key": "Escape"}, {"key": "Enter"}], "expect": {"doc": "<paragraph>\\[\\[proj</paragraph><paragraph>|</paragraph>"}},
+    {"name": "[[ typing after ArrowDown starts the highlight again at the top", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "[[pro"}, {"wait": 50}, {"key": "ArrowDown"}, {"type": "j"}, {"wait": 50}, {"key": "Enter"}], "expect": {"doc": "<paragraph><pageLink pageId=\"p2\"/> |</paragraph>"}}
   ]
 }

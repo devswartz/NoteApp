@@ -70,7 +70,7 @@ How the runners deliver the text-input steps:
 
 ## Fixtures
 
-The harness seeds the app store: user `u1` (Tess Tester) in workspace `w1`; members `u1` and `u2` (Sam Lee) for `@` mentions; pages `page-1` ("This page", the page being edited) and `p2` ("Project plan") for `[[` links. The task API is faked in the runner (create / update / delete succeed and echo the task).
+The harness seeds the app store: user `u1` (Tess Tester) in workspace `w1`; members `u1` and `u2` (Sam Lee) for `@` mentions; pages `page-1` ("This page", the page being edited), `p2` ("Project plan") and `p3` ("Project notes") for `[[` links. The `[[` and `@` menus' rows and highlight are the view's (the core has the pages and people): the Rust runner models them from these fixtures as today's menus do (`pageItems.ts`, `matchMembers`; ArrowUp / ArrowDown wrap, typing goes back to the top, Enter / Tab pick). The task API is faked in the runner (create / update / delete succeed and echo the task).
 
 ## Quirks of today's editor (kept, so the engine matches)
 
@@ -81,6 +81,9 @@ The harness seeds the app store: user `u1` (Tess Tester) in workspace `w1`; memb
 - **Selection after converting to a task** (Mod+Enter / Mod+1) and after undoing one is select-all, which looks incidental: those scenarios use `ignoreSelection`, and the engine may leave a better selection.
 - **Select-all, then typing** gives a paragraph, whatever the first block was (ProseMirror replaces an all-selection with the default block).
 - **Backspace after a divider** (or an image) with text on the line deletes the divider; on an empty line it deletes the line and selects the divider. After a task line it selects the task line (deleting it is a second Backspace).
+- **Backspace right after an input rule** takes the rule back and keeps the typed text (`**b**` Backspace gives `**b**`), except after a block rule on the box's last line: the trailing paragraph it brings ends TipTap's `undoInputRule`, so `# ` then Backspace on the last line makes the heading a paragraph instead.
+- **Selection after undoing an input rule** is wherever y-undo puts it (the line start for `# `, the end for `**b**`), which looks incidental: those scenarios use `ignoreSelection`.
+- **Block input rules on a list item's first line** don't apply (`# `, `1. `, `> ` stay text): the line must stay a paragraph.
 - **Toggles** open and close as view state, not in the doc (`persist: false`), and a loaded toggle is closed: Enter in its summary makes a line after it.
 
 ## Findings (possible bugs in today's editor)
@@ -88,8 +91,9 @@ The harness seeds the app store: user `u1` (Tess Tester) in workspace `w1`; memb
 - Type, undo, type something else, then redo: the redo removes the new typing (expected: nothing to redo). Scenario `undo/a new edit clears redo`, skipped on TipTap.
 - A replacement (autocorrect, spell-check, a dictation correction) runs input rules in today's editor, because ProseMirror reads the DOM change as typed text (`handleTextInput`): replacing `x` in `-x` with a space makes a list. The native contract doesn't run rules on replacements. Scenario `input/replacement doesn't run input rules`, skipped on TipTap.
 - Delete at the end of a paragraph just above a bulleted list lifts the first bullet out to a plain paragraph; only a second Delete joins its text (expected: one Delete joins, as Backspace from the other side does). Scenario `blocks/Delete at the end of a paragraph before a bullet joins the bullet's text`, skipped on TipTap.
+- The `@` menu opens in a code block (the slash and `[[` menus don't), and picking a person there empties the code block and puts the mention on a new line after it. Scenario `inline/@ in a code block does not open mentions`, skipped on TipTap.
 - After Tab in a task's title (making it a subtask), the title loses focus in the harness; Shift+Tab keeps it. Not yet checked in the app.
 
 ## Not covered yet
 
-Merging and splitting table cells (needs a cell selection, which the notation can't write), Shift+Tab in a table's first cell (not handled: focus leaves the box, which is the view's), the slash menu's "Add checklist" (offered next to a task; the engine doesn't offer or run it yet), the link editor's popup itself (only its result, `editLink`), page-wide undo across several boxes (`src/editor/pageUndo.ts`), box-level clipboard (`boxClipboard.ts`), images and files, comments, line picks, block drag and drop, task title natural-language parsing, collaborative merges (two editors on one doc).
+Merging and splitting table cells (needs a cell selection: the notation could take a cell marker, but the engine has no cell selection, and adding one changes the session's `EditorSelection` in nv-core, and merged cells need a span-aware table map), `[[`'s "Create" row (makes a page on the server), Shift+Tab in a table's first cell (not handled: focus leaves the box, which is the view's), the link editor's popup itself (only its result, `editLink`), page-wide undo across several boxes (`src/editor/pageUndo.ts`), box-level clipboard (`boxClipboard.ts`), images and files, comments, line picks, block drag and drop, task title natural-language parsing, collaborative merges (two editors on one doc).

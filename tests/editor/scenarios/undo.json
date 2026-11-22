@@ -30,6 +30,16 @@
       "expect": { "doc": "<paragraph>x|</paragraph>" } },
     { "name": "undo a paste", "doc": "<paragraph>a|</paragraph>",
       "steps": [{ "paste": { "text/plain": "XY" } }, { "key": "Mod+z" }],
-      "expect": { "doc": "<paragraph>a|</paragraph>" } }
+      "expect": { "doc": "<paragraph>a|</paragraph>" } },
+    {"name": "undo a heading input rule gives back the typed text", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "# "}, {"key": "Mod+z"}], "expect": {"doc": "<paragraph># </paragraph>", "ignoreSelection": true}},
+    {"name": "undo a bold input rule gives back the asterisks", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "**b**"}, {"key": "Mod+z"}], "expect": {"doc": "<paragraph>**b**</paragraph>", "ignoreSelection": true}},
+    {"name": "Backspace right after a bold input rule undoes it", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "**b**"}, {"key": "Backspace"}], "expect": {"doc": "<paragraph>**b**|</paragraph>"}},
+    {"name": "undo a Tab indent", "doc": "<bulletList><listItem><paragraph>a</paragraph></listItem><listItem><paragraph>|b</paragraph></listItem></bulletList>", "steps": [{"key": "Tab"}, {"key": "Mod+z"}], "expect": {"doc": "<bulletList><listItem><paragraph>a</paragraph></listItem><listItem><paragraph>|b</paragraph></listItem></bulletList><paragraph></paragraph>"}},
+    {"name": "undo then redo bold", "doc": "<paragraph>[ab]</paragraph>", "steps": [{"key": "Mod+b"}, {"key": "Mod+z"}, {"key": "Mod+Shift+z"}], "expect": {"doc": "<paragraph><bold>[ab</bold>]</paragraph>"}},
+    {"name": "undo a table insert", "doc": "<paragraph>|</paragraph>", "steps": [{"command": "insertTable", "args": {"rows": 2, "cols": 2}}, {"key": "Mod+z"}], "expect": {"doc": "<paragraph>|</paragraph>"}},
+    {"name": "undo adding a table row", "doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell><tableCell><paragraph>b</paragraph></tableCell></tableRow></table><paragraph/>", "steps": [{"command": "addRowAfter"}, {"key": "Mod+z"}], "expect": {"doc": "<table><tableRow><tableCell><paragraph>a|</paragraph></tableCell><tableCell><paragraph>b</paragraph></tableCell></tableRow></table><paragraph></paragraph>"}},
+    {"name": "undo after converting two lines removes both tasks", "doc": "<paragraph>[a</paragraph><paragraph>b]</paragraph>", "steps": [{"key": "Mod+Enter"}, {"wait": 50}, {"key": "Mod+z"}, {"wait": 100}], "expect": {"ignoreSelection": true, "doc": "<paragraph>a</paragraph><paragraph>b</paragraph>"}},
+    {"name": "undo then redo an HTML paste", "doc": "<paragraph>|</paragraph>", "steps": [{"paste": {"text/html": "<ul><li>a</li><li>b</li></ul>"}}, {"key": "Mod+z"}, {"key": "Mod+y"}], "expect": {"doc": "<bulletList><listItem><paragraph>a</paragraph></listItem><listItem><paragraph>b|</paragraph></listItem></bulletList><paragraph></paragraph>"}},
+    {"name": "undo twice takes back a bullet rule and its typing", "doc": "<paragraph>|</paragraph>", "steps": [{"type": "- "}, {"wait": 700}, {"type": "a"}, {"key": "Mod+z"}, {"key": "Mod+z"}], "expect": {"doc": "<paragraph>- |</paragraph>"}}
   ]
 }
