@@ -319,6 +319,8 @@ struct DuePick: View {
         _date = State(initialValue: Due.date(value) ?? Date())
     }
 
+    private func s(_ d: Date) -> String { SessionModel.dayString(d) }
+    private func short(_ d: Date) -> String { Due.format(d, "EEE") }
     private func day(_ offset: Int) -> Date { Calendar.current.date(byAdding: .day, value: offset, to: Calendar.current.startOfDay(for: Date())) ?? Date() }
 
     var body: some View {
@@ -329,8 +331,6 @@ struct DuePick: View {
         let weekend = day(toSaturday)
         let toMonday = (9 - cal.component(.weekday, from: today)) % 7
         let nextWeek = day(toMonday == 0 ? 7 : toMonday)
-        func s(_ d: Date) -> String { SessionModel.dayString(d) }
-        func short(_ d: Date) -> String { Due.format(d, "EEE") }
         VStack(alignment: .leading, spacing: 0) {
             iconPickRow(p, "sun", "Today", hint: short(today), checked: value == s(today)) { onPick(s(today)) }
             iconPickRow(p, "sunrise", "Tomorrow", hint: short(day(1)), checked: value == s(day(1))) { onPick(s(day(1))) }
@@ -527,7 +527,7 @@ private struct CustomRule: View {
     private func chip(_ text: String, on: Bool, _ action: @escaping () -> Void) -> some View {
         let p = palette
         return Button(action: action) {
-            Text(text).font(.web(13, 500)).foregroundStyle((on ? p.accentInverse : p.text2).color)
+            Text(text).font(.web(13, 500)).foregroundStyle(on ? Color.white : p.text2.color)
                 .padding(.horizontal, 10).frame(height: 30)
                 .background((on ? p.accentSolid : p.bgHover).color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
@@ -579,7 +579,7 @@ private struct CustomRule: View {
                             if days.contains(d) { days.remove(d) } else { days.insert(d) }
                         } label: {
                             Text(String(RuleLogic.weekShort[d].prefix(2))).font(.web(12, 600))
-                                .foregroundStyle((days.contains(d) ? p.accentInverse : p.text2).color)
+                                .foregroundStyle(days.contains(d) ? Color.white : p.text2.color)
                                 .frame(width: 32, height: 32)
                                 .background((days.contains(d) ? p.accentSolid : p.bgHover).color, in: Circle())
                         }
@@ -637,7 +637,7 @@ private struct CustomRule: View {
                 }
                 .buttonStyle(.plain)
                 Button { onSave(rule) } label: {
-                    Text("Save").font(.web(13, 500)).foregroundStyle(p.accentInverse.color).padding(.horizontal, 14).frame(height: 30)
+                    Text("Save").font(.web(13, 500)).foregroundStyle(.white).padding(.horizontal, 14).frame(height: 30)
                         .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
@@ -733,7 +733,7 @@ struct ReminderPick: View {
                     .datePickerStyle(.graphical).labelsHidden().tint(p.accent.color)
                     .frame(width: width - 12)
                 Button { onAdd(.at(at: ReminderLogic.iso(at))) } label: {
-                    Text("Add").font(.web(13, 500)).foregroundStyle(p.accentInverse.color)
+                    Text("Add").font(.web(13, 500)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 34)
                         .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }

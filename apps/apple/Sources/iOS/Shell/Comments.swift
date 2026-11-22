@@ -367,7 +367,7 @@ private struct Composer: View {
                 .buttonStyle(.plain)
                 let ready = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.busy
                 Button { model.submit(text) } label: {
-                    Text("Comment").font(.web(13, 500)).foregroundStyle(p.accentInverse.color).padding(.horizontal, 12).frame(height: 30)
+                    Text("Comment").font(.web(13, 500)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 30)
                         .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .opacity(ready ? 1 : 0.5)
                 }
@@ -458,7 +458,7 @@ private struct ThreadCard: View {
                         HStack {
                             Spacer(minLength: 0)
                             Button { model.reply(t.id, reply) { reply = "" } } label: {
-                                Text("Reply").font(.web(13, 500)).foregroundStyle(p.accentInverse.color).padding(.horizontal, 12).frame(height: 30)
+                                Text("Reply").font(.web(13, 500)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 30)
                                     .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                             }
                             .buttonStyle(.plain)
@@ -509,7 +509,7 @@ private struct ThreadCard: View {
                         Button { editing = nil } label: { Text("Cancel").font(.web(13, 500)).foregroundStyle(p.text.color).padding(.horizontal, 12).frame(height: 30) }
                             .buttonStyle(.plain)
                         Button { model.edit(c.id, draft) { editing = nil } } label: {
-                            Text("Save").font(.web(13, 500)).foregroundStyle(p.accentInverse.color).padding(.horizontal, 12).frame(height: 30)
+                            Text("Save").font(.web(13, 500)).foregroundStyle(.white).padding(.horizontal, 12).frame(height: 30)
                                 .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
