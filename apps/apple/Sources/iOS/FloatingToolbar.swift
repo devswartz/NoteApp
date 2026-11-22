@@ -2,13 +2,13 @@ import UIKit
 
 /// The floating formatting toolbar over a text selection (FormattingMenu in src/editor/NoteEditor.tsx;
 /// LOOK.md 4.6): Heading 1-3, Quote | Bold, Italic, Underline, Strikethrough, Code, Link, Text colour,
-/// Highlight | Task, Comment. Padding 3, gap 1, `--bg-elevated`, 1 pt border, radius 10, buttons 30x30.
+/// Highlight | Task (Comment is left out: the core has no comment threads yet). Padding 3, gap 1, `--bg-elevated`, 1 pt border, radius 10, buttons 30x30.
 /// Buttons run the same engine commands as the ribbon (`EditorFocus.run`).
 final class FloatingToolbarView: UIView {
     /// An engine command: name and arguments.
     var onCommand: ((String, [String: Any]) -> Void)?
-    /// Something the native app can't do yet.
-    var onNotYet: ((String) -> Void)?
+    /// The Link button: the canvas shows the link editor.
+    var onLink: (() -> Void)?
     private var palette = Palette.light
     private let swatches = UIView()
     private let bar = UIView()
@@ -86,12 +86,11 @@ final class FloatingToolbarView: UIView {
         icon("underline", "Underline") { [weak self] in self?.run("toggleMark", ["mark": "underline"]) }
         icon("strikethrough", "Strikethrough") { [weak self] in self?.run("toggleMark", ["mark": "strike"]) }
         icon("code-xml", "Code") { [weak self] in self?.run("toggleMark", ["mark": "code"]) }
-        icon("link-2", "Link") { [weak self] in self?.onNotYet?("Links") }
+        icon("link-2", "Link") { [weak self] in self?.onLink?() }
         icon("baseline", "Text colour") { [weak self] in self?.toggleSwatches("color") }
         icon("highlighter", "Highlight") { [weak self] in self?.toggleSwatches("highlight") }
         separator()
         word("circle-check", "Task") { [weak self] in self?.run("convertToTask") }
-        word("message-square", "Comment") { [weak self] in self?.onNotYet?("Comments") }
         x += 2
         barSize = CGSize(width: x, height: 36)
         bar.backgroundColor = p.bgElevated
