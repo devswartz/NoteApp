@@ -118,17 +118,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             return self.moveHit(touch.location(in: self.surface)) != nil
         }
         addGestureRecognizer(boxPan)
-        // The page's own pan never waits on the box pan (a pan that must fail first can leave the page stuck);
-        // `gestureRecognizerShouldBegin` keeps them apart: a pan that starts on a box's bar or handle is the box's.
+        // The page's own pan never waits on the box pan; `gestureRecognizerShouldBegin` and the box pan failing
+        // at touch-down keep them apart: a pan that starts on a box's bar or handle is the box's.
         isScrollEnabled = true
         isUserInteractionEnabled = true
         accessibilityIdentifier = "page-scroll"
         titleLabel.accessibilityIdentifier = "page-title"
-        panGestureRecognizer.addTarget(self, action: #selector(panSeen(_:)))
-        if LookData.state != nil {
-            // Look and test mode: keep the published scroll state fresh (the UI test reads it).
-            Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in self?.publishState() }
-        }
         toolbar.isHidden = true
         toolbar.onCommand = { [weak self] name, args in
             EditorFocus.shared.run(name, args)
@@ -356,81 +351,11 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
         contentSize = CGSize(width: size.width * zoomScale, height: size.height * zoomScale)
         layoutHeader()
-        publishState()
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { surface }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateToolbar() }
-
-    func scrollViewDidScroll(_ scrollView: UIScrollView) { publishState() }
-
-    // Diagnostics for the scroll test: how many touches reached the page, and what the pan did.
-    private var panLog: [Int] = []
-    private var lastHit = ""
-    private let windowProbe = TouchProbe()
-    private let scrollProbe = TouchProbe()
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        guard LookData.state != nil else { return }
-        if let window, windowProbe.view == nil { window.addGestureRecognizer(windowProbe) }
-        if scrollProbe.view == nil { addGestureRecognizer(scrollProbe) }
-    }
-
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let v = super.hitTest(point, with: event)
-        var chain: [String] = []
-        var cur = v
-        while let c = cur, chain.count < 4 { chain.append(String(describing: type(of: c))); cur = c.superview }
-        lastHit = chain.joined(separator: ">")
-        return v
-    }
-
-    @objc private func panSeen(_ g: UIPanGestureRecognizer) {
-        panLog.append(g.state.rawValue)
-        if panLog.count > 12 { panLog.removeFirst() }
-        publishState()
-    }
-
-    private var observed = Set<ObjectIdentifier>()
-    private var gestureLog: [String] = []
-
-    /// Logs the state changes of every gesture recognizer from here up to the window (who takes a swipe?).
-    private func observeRecognizers() {
-        guard LookData.state != nil else { return }
-        var v: UIView? = self
-        while let view = v {
-            for g in view.gestureRecognizers ?? [] where !observed.contains(ObjectIdentifier(g)) && !(g is TouchProbe) {
-                observed.insert(ObjectIdentifier(g))
-                g.addTarget(self, action: #selector(recognizerChanged(_:)))
-            }
-            v = view.superview
-        }
-    }
-
-    @objc private func recognizerChanged(_ g: UIGestureRecognizer) {
-        let name = String(describing: type(of: g)).replacingOccurrences(of: "UIScrollView", with: "SV")
-        let owner: String = g.view.map { String(describing: type(of: $0)) } ?? "nil"
-        let entry: String = String(name.prefix(34)) + ":" + String(g.state.rawValue) + "@" + String(owner.prefix(14))
-        if gestureLog.last != entry { gestureLog.append(entry) }
-        if gestureLog.count > 80 { gestureLog.removeFirst(40) }
-    }
-
-    /// The scroll state as the page title's accessibility value (the UI test reads it, and prints it when a swipe does nothing).
-    func publishState() {
-        observeRecognizers()
-        var parts: [String] = []
-        let recent: [String] = Array(gestureLog.suffix(40))
-        parts.append("gestures=" + recent.joined(separator: ","))
-        parts.append("contentSize=\(contentSize) offset=\(contentOffset) zoom=\(zoomScale) bounds=\(bounds)")
-        parts.append("panState=\(panGestureRecognizer.state.rawValue) panLog=\(panLog)")
-        parts.append("windowTouches=" + windowProbe.summary)
-        parts.append("scrollTouches=" + scrollProbe.summary)
-        parts.append("lastHit=" + lastHit)
-        parts.append("tracking=\(isTracking) dragging=\(isDragging) stacked=\(stacked) boxes=\(boxViews.count)")
-        titleLabel.accessibilityValue = parts.joined(separator: " ")
-    }
 
     // MARK: Editing
 
@@ -863,29 +788,6 @@ final class BoxDragRecognizer: UIPanGestureRecognizer {
         }
         super.touchesBegan(touches, with: event)
     }
-}
-
-/// Counts the touches that reach a view (the scroll test's diagnostics); never recognizes, never blocks.
-final class TouchProbe: UIGestureRecognizer {
-    private var began = 0, moved = 0, ended = 0, cancelled = 0
-    private var last = CGPoint.zero
-    var summary: String { "began=\(began) moved=\(moved) ended=\(ended) cancelled=\(cancelled) last=\(Int(last.x)),\(Int(last.y))" }
-
-    override init(target: Any?, action: Selector?) {
-        super.init(target: target, action: action)
-        cancelsTouchesInView = false
-        delaysTouchesBegan = false
-        delaysTouchesEnded = false
-    }
-    convenience init() { self.init(target: nil, action: nil) }
-
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        began += 1
-        if let t = touches.first { last = t.location(in: nil) }
-    }
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) { moved += 1; if let t = touches.first { last = t.location(in: nil) } }
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) { ended += 1 }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { cancelled += 1 }
 }
 
 final class PageSurfaceView: UIView {

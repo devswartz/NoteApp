@@ -11,7 +11,6 @@ final class ScrollTests: XCTestCase {
         let title = app.staticTexts["page-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 40), "the long page did not open")
         let before = title.frame.minY
-        let stateBefore = String(describing: title.value ?? "nil")
         let window = app.windows.firstMatch
 
         func moved() -> Bool { !title.exists || title.frame.minY < before - 80 }
@@ -28,8 +27,6 @@ final class ScrollTests: XCTestCase {
             Thread.sleep(forTimeInterval: 1.0)
             tried.append("pressDrag=\(moved())")
         }
-        let ok = moved()
-        XCTAssertTrue(ok, "swiping the page did not scroll it (title y=\(before) -> \(title.frame.minY)); tried \(tried); "
-            + "before: \(stateBefore); after: \(String(describing: title.value ?? "nil"))")
+        XCTAssertTrue(moved(), "swiping the page did not scroll it (title y=\(before) -> \(title.frame.minY)); tried \(tried)")
     }
 }
