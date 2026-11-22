@@ -91,11 +91,11 @@ Ribbon buttons that work (the focused box, `EditorSession.command`): block type 
 
 ### TestFlight so far (all VALID unless noted)
 
-1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · 1.99.20 (130.20) M5 basics (run 44920271305) · 1.99.27 (130.27) iPad editing (run 44941240434) · **1.99.39 (130.39) the look** (run 44963633073).
+1.99.2 (130.2) skeleton · 1.99.4 (130.4) core linked · 1.99.5 (130.5) corpus page view · 1.99.8 (130.8) task-line indent fix · 1.99.20 (130.20) M5 basics (run 44920271305) · 1.99.27 (130.27) iPad editing (run 44941240434) · 1.99.39 (130.39) the look (run 44963633073) · **1.99.42 (130.42) menus and server tasks** (run 44971156600).
 
 ## How Devon tests this build
 
-- **1.99.x (this build, see TestFlight list)**, menus and tasks, on the iPad. Use a test page; edits and tasks are real.
+- **1.99.42 (130.42)**, menus and tasks, on the iPad. Use a test page; edits and tasks are real.
   1. Tap a box, type `/`: a menu "Insert block" with Task, Text, Heading 1-3, Checklist, ... appears under the caret. Type to filter (`/head`); Up/Down (hardware keyboard) move the highlight, Enter picks, Esc closes; tap a row picks. Pick Heading 1, Table, Callout.
   2. Type `[[` then part of a page title: "Link to page" with matching pages (notebook › section under each); pick one: a page link appears. `@`: shows you (members of the workspace aren't available yet); pick: a mention.
   3. Tasks: `/task` (or the ribbon Task button, or Cmd+Return on a line): a task row appears and the cursor goes into its title; type a title, wait a second. Open the web app: the task exists there, on this page, with that title (also in Tasks, All tasks). Edit the title on the iPad (tap it): the web shows the change. Delete the task line: the task is deleted on the web (Cmd+Z brings it back).
