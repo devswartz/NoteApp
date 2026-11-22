@@ -51,6 +51,21 @@ impl Editor {
                 self.remove_mark_range(f, t, kind);
                 true
             }
+            // The comment anchor (collabComments.ts): the selection gets the thread's mark; a thread
+            // is taken off the whole document.
+            "setComment" => {
+                let (f, t) = self.range();
+                self.add_mark_range(f, t, &Mark::new("comment", one("threadId", &a["threadId"])));
+                true
+            }
+            "unsetComment" => {
+                let id = a["threadId"].clone();
+                let end = self.doc.content_size();
+                self.remove_mark_where(0, end, "comment", "threadId", &id);
+                true
+            }
+            // View state (an open toggle): nothing in the engine, the suite sends it for TipTap.
+            "openToggles" => true,
             "editLink" => self.edit_link(a["text"].as_str(), s(a, "href")),
             "selectAll" => self.select_all(),
             "insertTable" => self.insert_table(

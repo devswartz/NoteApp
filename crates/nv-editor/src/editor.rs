@@ -707,6 +707,16 @@ impl Editor {
         });
     }
 
+    /// Remove the marks of `kind` whose attribute `attr` is `value` from `from..to`.
+    pub fn remove_mark_where(&mut self, from: usize, to: usize, kind: &str, attr: &str, value: &serde_json::Value) {
+        self.map_inline(from, to, &|n| {
+            let mut n = n;
+            n.marks
+                .retain(|m| !(m.kind == kind && m.attrs.get(attr) == Some(value)));
+            n
+        });
+    }
+
     /// Apply `f` to the inline content in `from..to`, splitting text at the ends.
     fn map_inline(&mut self, from: usize, to: usize, f: &dyn Fn(Node) -> Node) {
         for (p, path) in textblocks_between(&self.doc, from, to) {
