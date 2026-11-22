@@ -223,10 +223,10 @@ struct MenuLayer: View {
             }
         case let .pageRow(id):
             if phone {
-                sheet(pageRowMenu(p))
+                sheet(pageRowMenu(p, id))
             } else {
                 let f = anchorFrame("page:\(id)")
-                at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, pageRowMenu(p))
+                at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, pageRowMenu(p, id))
             }
         case .pageOptions:
             let f = anchorFrame("page-options")
@@ -339,21 +339,21 @@ struct MenuLayer: View {
                 .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
             }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "New notebook", icon: "book-plus") { shell.notYet("New notebook") }
+            MenuItem(palette: p, title: "New notebook", icon: "book-plus") { shell.newNotebook(session) }
         }
     }
 
     private func notebookOptions(_ p: Palette) -> some View {
         let nb = currentNotebook(session.shownTree, shell)
         return MenuCard(palette: p, width: phone ? width - 16 : 230, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
-            MenuItem(palette: p, title: "New section", icon: "folder-plus") { shell.notYet("New section") }
-            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
+            MenuItem(palette: p, title: "New section", icon: "folder-plus") { if let nb { shell.newSection(in: nb.id, parent: nil, session) } }
+            MenuItem(palette: p, title: "Rename", icon: "pencil") { if let nb { shell.rename(.notebook, nb.id, session) } }
             MenuItem(palette: p, title: "Share with people…", icon: "user-plus") { shell.notYet("Sharing") }
             MenuItem(palette: p, title: nb?.visibility == "private" ? "Share with workspace" : "Make private", icon: "lock") { shell.notYet("Changing who sees a notebook") }
             MenuItem(palette: p, title: "Print…", icon: "printer") { shell.notYet("Printing") }
             ColorRow(palette: p, selected: nb?.color) { _ in shell.notYet("Notebook colours") }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "Delete notebook", icon: "trash", danger: true) { shell.notYet("Deleting notebooks") }
+            MenuItem(palette: p, title: "Delete notebook", icon: "trash", danger: true) { if let nb { shell.delete(.notebook, nb.id, session) } }
         }
     }
 
@@ -361,32 +361,32 @@ struct MenuLayer: View {
         let section = session.shownTree?.sections.first { $0.id == id }
         return MenuCard(palette: p, width: phone ? width - 16 : 236, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             Group {
-            MenuItem(palette: p, title: "New page", icon: "file-plus") { shell.notYet("New page") }
+            MenuItem(palette: p, title: "New page", icon: "file-plus") { shell.newPage(in: id, session) }
             MenuItem(palette: p, title: "New page from template", icon: "layout-template", trailingChevron: true) { shell.notYet("Templates") }
             MenuItem(palette: p, title: "Default template…", icon: "file-cog") { shell.notYet("Templates") }
-            MenuItem(palette: p, title: "New subsection", icon: "folder-plus") { shell.notYet("New subsection") }
-            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
-            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.notYet("Duplicating") }
-            MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.notYet("Moving") }
+            MenuItem(palette: p, title: "New subsection", icon: "folder-plus") { shell.newSection(in: section?.notebookId ?? "", parent: section, session) }
+            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.rename(.section, id, session) }
+            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.duplicate(.section, id, session) }
+            MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.move(.section, id, session) }
             }
             MenuItem(palette: p, title: "Print…", icon: "printer") { shell.notYet("Printing") }
             ColorRow(palette: p, selected: section?.color) { _ in shell.notYet("Section colours") }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "Delete section", icon: "trash", danger: true) { shell.notYet("Deleting sections") }
+            MenuItem(palette: p, title: "Delete section", icon: "trash", danger: true) { shell.delete(.section, id, session) }
         }
     }
 
-    private func pageRowMenu(_ p: Palette) -> some View {
+    private func pageRowMenu(_ p: Palette, _ id: String) -> some View {
         MenuCard(palette: p, width: phone ? width - 16 : 236, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             MenuItem(palette: p, title: "Add to favourites", icon: "star") { shell.notYet("Favourites") }
             MenuItem(palette: p, title: "Copy link", icon: "link-2") { shell.notYet("Copying links") }
-            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.notYet("Renaming") }
+            MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.rename(.page, id, session) }
             MenuItem(palette: p, title: "Lock page", icon: "lock",
                      note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
-            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.notYet("Duplicating") }
-            MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.notYet("Moving") }
+            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.duplicate(.page, id, session) }
+            MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.move(.page, id, session) }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { shell.notYet("Deleting pages") }
+            MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { shell.delete(.page, id, session) }
         }
     }
 
@@ -399,7 +399,7 @@ struct MenuLayer: View {
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "Lock page", icon: "lock",
                      note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
-            MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.notYet("Duplicating") }
+            MenuItem(palette: p, title: "Duplicate", icon: "copy") { if let id = openPageId { shell.duplicate(.page, id, session) } }
             MenuItem(palette: p, title: "Save as template…", icon: "layout-template") { shell.notYet("Templates") }
             MenuItem(palette: p, title: "Version history", icon: "rotate-ccw-clock") { shell.notYet("Version history") }
             MenuSeparator(palette: p)
@@ -423,14 +423,20 @@ struct MenuLayer: View {
                 ForEach(index.notebooks.prefix(2), id: \.id) { nb in
                     Text(nb.name).font(.web(11.5, 600)).foregroundStyle(p.textMuted.color).padding(.horizontal, 10).padding(.top, 6)
                     ForEach(index.sections(in: nb).prefix(3), id: \.id) { s in
-                        MenuItem(palette: p, title: s.name) { shell.notYet("Moving pages") }
+                        MenuItem(palette: p, title: s.name) { shell.menu = nil; if let id = openPageId { shell.run(.move(.page, id), session, to: s.id) } }
                             .overlay(alignment: .leading) { Circle().fill(UIColor(css: s.color).color).frame(width: 8, height: 8).padding(.leading, 15) }
                     }
                 }
             }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { shell.notYet("Deleting pages") }
+            MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { if let id = openPageId { shell.delete(.page, id, session) } }
         }
+    }
+
+    /// The page open in the main area (the page options menu belongs to it).
+    private var openPageId: String? {
+        if case let .page(id) = shell.route { return id }
+        return nil
     }
 
     private func segment(_ p: Palette, _ title: String, _ icon: String, active: Bool) -> some View {

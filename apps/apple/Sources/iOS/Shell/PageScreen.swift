@@ -80,6 +80,7 @@ struct PageScreen: View {
     }
 
     private var status: String {
+        if LookData.state == "offline-banner" { return "Offline" }
         guard let live else { return "Saved" }
         switch live.state {
         case .live: return "Saved"
@@ -135,16 +136,36 @@ struct PageScreen: View {
                            decor: decor, showAddIcon: phone || ((LookData.state?.hasPrefix("edit") ?? false)), stacked: phone, notify: { shell.say($0) })
                 .ignoresSafeArea(.container, edges: .bottom)
                 .ignoresSafeArea(.keyboard)
-        } else if let sample, case let .failure(error) = sample.page {
-            message("Page not found", String(describing: error), palette)
-        } else if let live, case let .ended(text) = live.state {
-            message("Page not found", text, palette)
+        } else if let sample, case .failure = sample.page {
+            notFound(palette)
+        } else if let live, case .ended = live.state {
+            notFound(palette)
         } else if let live, case let .offline(text) = live.state {
             message("Offline", "\(text)\nTrying again…", palette)
         } else {
-            Text("Opening…").font(.web(13)).foregroundStyle(palette.textMuted.color)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // `.page-loading`: an empty page until the document is there.
+            Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// `.empty-page`: "Page not found", why, and a way out (PageView.tsx).
+    private func notFound(_ p: Palette) -> some View {
+        VStack(spacing: 8) {
+            Text("Page not found").font(.web(20, 700)).foregroundStyle(p.text.color)
+            Text("It may have been deleted, moved to a private notebook, or you don’t have access.")
+                .font(.web(14)).foregroundStyle(p.textMuted.color).multilineTextAlignment(.center)
+            Button { shell.route = .tasks(.today) } label: {
+                Text("Go to Today").font(.web(14, 500)).foregroundStyle(p.text.color)
+                    .padding(.horizontal, 12).frame(height: 32)
+                    .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+                    .shadowSm(p)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .padding(.horizontal, 24).padding(.top, 80)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func message(_ title: String, _ text: String, _ p: Palette) -> some View {
@@ -373,7 +394,7 @@ struct SectionScreen: View {
             Icon("file-text", 28, p.textMuted.color)
             Text(section?.name ?? "Section").font(.web(22, 700)).foregroundStyle(p.text.color)
             Text("This section has no pages yet.").font(.web(14)).foregroundStyle(p.textMuted.color)
-            Button { shell.notYet("New page") } label: {
+            Button { shell.newPage(in: sectionId, session) } label: {
                 HStack(spacing: 6) {
                     Icon("file-plus", 15, .white)
                     Text("New page").font(.web(14, 500)).foregroundStyle(.white)

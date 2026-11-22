@@ -45,7 +45,7 @@ shoot() {
   [ "$theme" != light ] && name="$theme-$state"
   [ -z "$signedout" ] && args+=(-previewSignedIn YES)
   [ "$land" = 1 ] && args+=(-lookLandscape YES)
-  case "$state" in edit-*|menu-*|ribbon-menu-*|slash-menu|*-drawer) wait=7 ;; esac
+  case "$state" in edit-*|menu-*|ribbon-menu-*|slash-menu|*-drawer|dialog-*|inline-rename) wait=7 ;; esac
   mkdir -p "$OUT/native/$vp"
   xcrun simctl terminate "$udid" "$BUNDLE" > /dev/null 2>&1 || true
   if ! xcrun simctl launch "$udid" "$BUNDLE" "${args[@]}" > /dev/null; then
@@ -76,12 +76,16 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
     shoot "$UDID" $L 1 $theme page-settings-and-ink
   done
   for state in edit-selection edit-new-box edit-link page-blocks page-lists page-tasks empty-no-page empty-section empty-tasks-today tasks-my \
-               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed search task-detail; do
+               slash-menu menu-page-options menu-section menu-notebook ribbon-menu-block ribbon-menu-text-colour ribbon-collapsed search task-detail                empty-workspace-notes; do
+    shoot "$UDID" $L 1 light "$state"
+  done
+  # Native-only states (no web reference): the tree dialogs, inline rename, loading, offline, empty notebook, empty page, page not found.
+  for state in dialog-new-section dialog-new-subsection dialog-new-notebook dialog-move-page dialog-move-section dialog-delete-notebook inline-rename                empty-notebook loading-sidebar offline-banner page-empty page-not-found; do
     shoot "$UDID" $L 1 light "$state"
   done
   P=ipad-portrait
   shoot "$UDID" $P 0 light sign-in signed-out
-  for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page search task-detail; do
+  for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page empty-section empty-workspace-notes search task-detail; do
     shoot "$UDID" $P 0 light "$state"
   done
   xcrun simctl shutdown "$UDID" || true
@@ -103,6 +107,9 @@ if PHONE="$(pick "iPhone 16e" "iPhone 14" "iPhone 13" "iPhone 12")"; then
     done
   done
   for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail; do
+    shoot "$UDID" $V 0 light "$state"
+  done
+  for state in dialog-new-section dialog-new-notebook dialog-move-page dialog-delete-notebook inline-rename empty-notebook loading-sidebar offline-banner                page-empty page-not-found; do
     shoot "$UDID" $V 0 light "$state"
   done
   xcrun simctl shutdown "$UDID" || true
