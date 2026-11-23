@@ -31,23 +31,51 @@ struct MacRoot: View {
 struct WindowChrome: NSViewRepresentable {
     let background: NSColor
 
+    final class Coordinator { var observing = false }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        DispatchQueue.main.async { configure(view.window) }
+        DispatchQueue.main.async { configure(view.window, context.coordinator) }
         return view
     }
 
     func updateNSView(_ view: NSView, context: Context) {
-        DispatchQueue.main.async { configure(view.window) }
+        DispatchQueue.main.async { configure(view.window, context.coordinator) }
     }
 
-    private func configure(_ window: NSWindow?) {
+
+    private func configure(_ window: NSWindow?, _ coordinator: Coordinator) {
         guard let window else { return }
+        WindowInsets.shared.measureFrom(window)
+        if !coordinator.observing {
+            coordinator.observing = true
+            for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification, NSWindow.didResizeNotification] {
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { note in
+                    if let w = note.object as? NSWindow { WindowInsets.shared.measureFrom(w) }
+                }
+            }
+        }
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = true
         window.backgroundColor = background
         window.minSize = NSSize(width: 960, height: 600)
+    }
+}
+
+extension WindowInsets {
+    /// The ribbon starts after the traffic lights: the zoom button's right edge plus a gap; none in full screen.
+    func measureFrom(_ window: NSWindow) {
+        let inset: CGFloat
+        if window.styleMask.contains(.fullScreen) {
+            inset = 0
+        } else if let zoom = window.standardWindowButton(.zoomButton), zoom.superview != nil {
+            inset = zoom.convert(zoom.bounds, to: nil).maxX + 12
+        } else {
+            inset = 92
+        }
+        if abs(leading - inset) > 0.5 { leading = inset }
     }
 }
