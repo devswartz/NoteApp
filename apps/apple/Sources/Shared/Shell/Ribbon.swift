@@ -8,8 +8,11 @@ final class EditorFocus {
     static let shared = EditorFocus()
     @ObservationIgnored private(set) weak var box: EditorTarget?
     private(set) var active = false
-    private(set) var canUndo = false
-    private(set) var canRedo = false
+    private(set) var boxCanUndo = false
+    private(set) var boxCanRedo = false
+    /// The ribbon's Undo and Redo, Cmd-Z: a step of the box being edited's text, or of the page's ink (`InkHistory`).
+    var canUndo: Bool { boxCanUndo || InkHistory.shared.canUndo }
+    var canRedo: Bool { boxCanRedo || InkHistory.shared.canRedo }
     /// The link editor of the canvas showing the focused box.
     @ObservationIgnored var onLink: (() -> Void)?
 
@@ -20,8 +23,8 @@ final class EditorFocus {
     }
 
     func refresh() {
-        canUndo = box?.engineCanUndo ?? false
-        canRedo = box?.engineCanRedo ?? false
+        boxCanUndo = box?.engineCanUndo ?? false
+        boxCanRedo = box?.engineCanRedo ?? false
     }
 
     /// An engine command for the focused box (`EditorSession.command`, EDITOR.md 4).
@@ -34,13 +37,31 @@ final class EditorFocus {
 
     func openLinkEditor() { onLink?() }
 
+    /// Whose step an undo (or redo) is: core's ink undo covers the page's strokes only, text undo the box's
+    /// (core.md "For apple: ink undo"). With a pen tool chosen the ink goes first; else the box being edited, and the ink
+    /// when the box has nothing left to undo (or none is being edited).
+    private func inkFirst(redo: Bool) -> Bool {
+        let ink = redo ? InkHistory.shared.canRedo : InkHistory.shared.canUndo
+        guard ink else { return false }
+        let boxHas = redo ? boxCanRedo : boxCanUndo
+        return InkTool.shared.inking || !boxHas
+    }
+
     func undo() {
-        box?.engineUndo()
+        if inkFirst(redo: false) {
+            InkHistory.shared.undo()
+        } else {
+            box?.engineUndo()
+        }
         refresh()
     }
 
     func redo() {
-        box?.engineRedo()
+        if inkFirst(redo: true) {
+            InkHistory.shared.redo()
+        } else {
+            box?.engineRedo()
+        }
         refresh()
     }
 }
@@ -145,9 +166,7 @@ struct Ribbon: View {
                 case .notes, .section: NotesRibbon(m: m)
                 }
                 Spacer(minLength: 0)
-                #if os(iOS)
                 if case .page = shell.route { DrawToggle(m: m) }
-                #endif
                 if case .page = shell.route { HistoryGroup(m: m) }
                 Button { shell.ribbonCollapsed = true } label: {
                     Icon("chevron-up", 16, p.text2.color).padding(.horizontal, 5).frame(minWidth: 28).frame(height: 28)
@@ -158,9 +177,7 @@ struct Ribbon: View {
             .padding(.leading, m.padLeft + WindowInsets.shared.leading)
             .padding(.trailing, m.padRight)
             .padding(.vertical, 5)
-            #if os(iOS)
             if case .page = shell.route, InkTool.shared.barOpen { InkBar(m: m) }
-            #endif
         }
         .frame(maxWidth: .infinity)
         .background(p.bgSidebar.color)
@@ -285,8 +302,8 @@ struct HistoryGroup: View {
     let focus = EditorFocus.shared
 
     var body: some View {
-        RibbonButton(icon: "undo-2", m: m, enabled: focus.active && focus.canUndo) { focus.undo() }
-        RibbonButton(icon: "redo-2", m: m, enabled: focus.active && focus.canRedo) { focus.redo() }
+        RibbonButton(icon: "undo-2", m: m, enabled: focus.canUndo) { focus.undo() }
+        RibbonButton(icon: "redo-2", m: m, enabled: focus.canRedo) { focus.redo() }
     }
 }
 

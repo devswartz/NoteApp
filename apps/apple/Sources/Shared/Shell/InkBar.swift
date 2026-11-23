@@ -1,7 +1,6 @@
-#if os(iOS)
 import SwiftUI
 
-/// The Draw button at the right of the page ribbon: opens and closes the ink bar.
+/// The Draw button at the right of the page ribbon (iPad and Mac): opens and closes the ink bar.
 struct DrawToggle: View {
     let m: RibbonMetrics
     private let ink = InkTool.shared
@@ -14,8 +13,9 @@ struct DrawToggle: View {
 }
 
 /// The pen toolbar (src/ink/InkToolbar.tsx) as a second ribbon row on the iPad: select, pen, highlighter, stroke eraser,
-/// partial eraser, lasso; for the pen and highlighter the web's colours and three widths. The Pencil draws; a finger
-/// scrolls and zooms the page.
+/// partial eraser, lasso; for the pen and highlighter the web's colours and three widths; on the iPad the web's "Draw with
+/// a finger" (a hand, off by default: only the Pencil draws and a finger scrolls and zooms; on: a finger draws and two
+/// fingers scroll and zoom). On the Mac the mouse and trackpad draw.
 struct InkBar: View {
     let m: RibbonMetrics
     private let ink = InkTool.shared
@@ -60,6 +60,13 @@ struct InkBar: View {
                     .accessibilityLabel(InkTool.widthNames[i])
                 }
             }
+            #if os(iOS)
+            RibbonSeparator(m: m)
+            RibbonButton(icon: "hand", m: m, pressed: ink.fingerDrawing) { ink.setFingerDrawing(!ink.fingerDrawing) }
+                .accessibilityLabel("Draw with a finger")
+                .accessibilityValue(ink.fingerDrawing ? "On, a finger draws" : "Off, a finger scrolls")
+                .accessibilityIdentifier("ink-finger")
+            #endif
             if ink.kind == .lasso && ink.selectionCount > 0 {
                 RibbonSeparator(m: m)
                 RibbonButton(icon: "trash", m: m) { ink.deleteSelection?() }
@@ -84,4 +91,3 @@ struct InkBar: View {
         Color(red: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255)
     }
 }
-#endif

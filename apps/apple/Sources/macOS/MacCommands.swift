@@ -8,6 +8,15 @@ struct MacCommands: Commands {
     private var bridge: ShellBridge { .shared }
     private var focus: EditorFocus { .shared }
 
+    private func undoRedo(redo: Bool) {
+        let typing = !focus.active && NSApp.keyWindow?.firstResponder is NSText
+        if !typing, redo ? focus.canRedo : focus.canUndo {
+            if redo { focus.redo() } else { focus.undo() }
+        } else {
+            NSApp.sendAction(Selector((redo ? "redo:" : "undo:")), to: nil, from: nil)
+        }
+    }
+
     var body: some Commands {
         // App > Settings
         CommandGroup(replacing: .appSettings) {
@@ -30,13 +39,11 @@ struct MacCommands: Commands {
         }
 
         // Edit
+        // Undo and Redo: the box being edited's text or the page's ink (`EditorFocus`, core's `inkUndo`). A text field that has
+        // the keyboard (the sidebar's rename, search) keeps its own.
         CommandGroup(replacing: .undoRedo) {
-            Button("Undo") {
-                if focus.active { focus.undo() } else { NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) }
-            }.keyboardShortcut("z", modifiers: .command)
-            Button("Redo") {
-                if focus.active { focus.redo() } else { NSApp.sendAction(Selector(("redo:")), to: nil, from: nil) }
-            }.keyboardShortcut("z", modifiers: [.command, .shift])
+            Button("Undo") { undoRedo(redo: false) }.keyboardShortcut("z", modifiers: .command)
+            Button("Redo") { undoRedo(redo: true) }.keyboardShortcut("z", modifiers: [.command, .shift])
         }
         CommandGroup(after: .textEditing) {
             // Find is the search palette over every page (the boxes have no find bar of their own yet).

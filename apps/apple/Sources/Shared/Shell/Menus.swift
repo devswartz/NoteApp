@@ -147,7 +147,7 @@ struct MenuLayer: View {
     private func isSheet(_ menu: Shell.Menu) -> Bool {
         guard phone else { return false }
         switch menu {
-        case .notebookOptions, .section, .pageRow: return true
+        case .notebookOptions, .section, .pageRow, .pageIcon: return true
         default: return false
         }
     }
@@ -228,6 +228,13 @@ struct MenuLayer: View {
                 let f = anchorFrame("page:\(id)")
                 at(CGPoint(x: f.minX + 24, y: f.maxY + 6), .topLeading, pageRowMenu(p, id))
             }
+        case let .pageIcon(id):
+            if phone {
+                sheet(iconPicker(p, id))
+            } else {
+                let f = anchorFrame("page-icon")
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, iconPicker(p, id))
+            }
         case .pageOptions:
             let f = anchorFrame("page-options")
             at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, pageOptions(p))
@@ -249,6 +256,15 @@ struct MenuLayer: View {
         case .ruleLines:
             let f = anchorFrame("rb-rule-lines")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, ruleMenu(p))
+        }
+    }
+
+    /// The page icon's emoji picker (the web's `IconPicker`).
+    private func iconPicker(_ p: Palette, _ id: String) -> some View {
+        let has = !(session.shownTree?.pages.first { $0.id == id }?.icon ?? "").isEmpty
+        return IconPickerCard(palette: p, hasIcon: has) { emoji in
+            shell.menu = nil
+            shell.setPageIcon(id, emoji, session)
         }
     }
 
