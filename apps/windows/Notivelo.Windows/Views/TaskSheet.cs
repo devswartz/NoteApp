@@ -43,7 +43,7 @@ internal sealed class TaskSheet
 
     private void Open()
     {
-        var body = new StackPanel { Padding = new Thickness(24, 14, 24, 24), Spacing = 10 };
+        var body = new StackPanel { Padding = new Thickness(24, 19, 24, 24), Spacing = 10 };
 
         // title row: tick + title
         var tr = new Grid { ColumnSpacing = 2, Margin = new Thickness(0, 0, 0, 22) };
@@ -53,7 +53,7 @@ internal sealed class TaskSheet
         AutomationProperties.SetAutomationId(_tick, "task-sheet-tick");
         _tick.Click += (_, _) => { if (_d is { } d) _h.Source.UpdateTask(_id, new TaskPatch(Done: !d.Done)); };
         tr.Children.Add(_tick);
-        _title.FontSize = 20; _title.FontWeight = new FontWeight(600); _title.BorderThickness = new Thickness(0); _title.Background = new SolidColorBrush(Colors.Transparent);
+        _title.FontSize = 19; _title.FontWeight = new FontWeight(600); _title.BorderThickness = new Thickness(0); _title.Background = new SolidColorBrush(Colors.Transparent);
         _title.TextWrapping = TextWrapping.Wrap; _title.AcceptsReturn = false; _title.PlaceholderText = "Task title"; _title.Padding = new Thickness(6, 4, 6, 4);
         AutomationProperties.SetAutomationId(_title, "task-sheet-title");
         AutomationProperties.SetName(_title, "Title");

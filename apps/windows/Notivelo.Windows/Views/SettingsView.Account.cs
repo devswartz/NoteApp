@@ -16,9 +16,10 @@ internal sealed partial class SettingsView
     {
         t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, 10, 0, 0);
         AutomationProperties.SetAutomationId(t, id);
+        t.Visibility = Visibility.Collapsed;   // takes no room until it has something to say
     });
 
-    private static void Say(TextBlock t, string text, Brush brush) { t.Text = text; t.Foreground = brush; AutomationProperties.SetName(t, text); }
+    private static void Say(TextBlock t, string text, Brush brush) { t.Text = text; t.Foreground = brush; t.Visibility = text.Length == 0 ? Visibility.Collapsed : Visibility.Visible; AutomationProperties.SetName(t, text); }
 
     private void SayFail(TextBlock t, bool offline, string? error) =>
         Say(t, offline ? AccountRules.OfflineDetail : error ?? "Something went wrong.", offline ? B("TextMuted") : B("Danger"));
@@ -36,7 +37,7 @@ internal sealed partial class SettingsView
     private static TextBox Box(string value) => new() { Text = value, Height = 36, FontSize = 14, Padding = new Thickness(10, 7, 10, 7), CornerRadius = new CornerRadius(8) };
     private static PasswordBox Secret() => new() { Height = 36, FontSize = 14, Padding = new Thickness(10, 7, 10, 7), CornerRadius = new CornerRadius(8) };
 
-    private FrameworkElement Profile()
+    private FrameworkElement Profile(bool toPassword = false)
     {
         var w = _source.Workspace;
         var p = Page("Profile", "How you appear to your team, and how you sign in.");
@@ -45,7 +46,7 @@ internal sealed partial class SettingsView
         var color = "#f59e0b";
         var avatar = new ContentControl { VerticalAlignment = VerticalAlignment.Top };
         void DrawAvatar() => avatar.Content = Ui.Avatar(AccountRules.Initials(name.Text, w.UserEmail), 56, color);
-        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 };
+        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         void DrawSwatches()
         {
             swatches.Children.Clear();
@@ -59,10 +60,10 @@ internal sealed partial class SettingsView
                 };
                 var ring = new Border
                 {
-                    Width = 28, Height = 28, CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(2),
+                    Width = 26, Height = 26, CornerRadius = new CornerRadius(13), BorderThickness = new Thickness(2),
                     BorderBrush = chosen ? B("Text") : new SolidColorBrush(Colors.Transparent), Child = dot,
                 };
-                var b = new Button { Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(0), CornerRadius = new CornerRadius(14), Content = ring };
+                var b = new Button { Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(0), CornerRadius = new CornerRadius(13), Content = ring };
                 AutomationProperties.SetAutomationId(b, "settings-color-" + hex.TrimStart('#'));
                 AutomationProperties.SetName(b, "Avatar colour " + hex + (chosen ? " (selected)" : ""));
                 b.Click += (_, _) => { color = hex; DrawSwatches(); DrawAvatar(); _dirty?.Invoke(); };
@@ -122,6 +123,11 @@ internal sealed partial class SettingsView
             Dirty();
         };
 
+        var pw = PasswordCard();
+        pw.Margin = new Thickness(0, 17, 0, 0);
+        p.Children.Add(pw);
+        if (toPassword) pw.Loaded += (_, _) => pw.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
+
         if (_signOut is not null)
         {
             var out_ = Dialogs.Btn(_h(), "Sign out", false, id: "settings-signout");
@@ -132,28 +138,38 @@ internal sealed partial class SettingsView
         return p;
     }
 
-    private FrameworkElement PasswordSection()
+    /// <summary>settings.png: the Password card under Profile on the same page: title, one line, three fields, a footer under a line with "Change password" at the right.</summary>
+    private FrameworkElement PasswordCard()
     {
-        var p = Page("Password", "Changing it signs you out everywhere else and disconnects your connected apps.");
-        var cur = Secret(); var next = Secret();
+        var cur = Secret(); var next = Secret(); var again = Secret();
         var sp = new StackPanel { Spacing = 14 };
+        sp.Children.Add(Ui.Text("Password", 15, B("Text"), 700, lineHeight: 22));
+        sp.Children.Add(Ui.Text("Changing it signs you out on every other device.", 13, B("TextMuted"), lineHeight: 18).With(t => { t.Margin = new Thickness(0, -12, 0, 0); t.TextWrapping = TextWrapping.Wrap; }));
         sp.Children.Add(Labeled("Current password", cur, "settings-password-current"));
-        sp.Children.Add(Labeled("New password (at least 8 characters)", next, "settings-password-new"));
+        sp.Children.Add(Labeled("New password", next, "settings-password-new"));
+        sp.Children.Add(Labeled("Confirm new password", again, "settings-password-confirm"));
         var status = Note("settings-password-status");
+        sp.Children.Add(status);
         var go = Dialogs.Btn(_h(), "Change password", true, id: "settings-password-change");
-        go.HorizontalAlignment = HorizontalAlignment.Left;
-        sp.Children.Add(go); sp.Children.Add(status);
-        p.Children.Add(Card(sp));
+        go.HorizontalAlignment = HorizontalAlignment.Right;
+        var body = new Border { Padding = new Thickness(20), Child = sp };
+        var footer = new Grid { Padding = new Thickness(20, 12, 20, 12) };
+        footer.Children.Add(go);
+        var inner = new StackPanel();
+        inner.Children.Add(body); inner.Children.Add(Ui.HLine(B("Border"))); inner.Children.Add(footer);
         go.Click += async (_, _) =>
         {
             if (AccountRules.PasswordProblem(cur.Password, next.Password) is { } bad) { Say(status, bad, B("Danger")); return; }
+            if (next.Password != again.Password) { Say(status, "The new passwords don\u2019t match.", B("Danger")); return; }
             go.IsEnabled = false; Say(status, "Changing...", B("TextMuted"));
             var r = await _source.ChangePassword(cur.Password, next.Password);
             go.IsEnabled = true;
-            if (r.Ok) { cur.Password = ""; next.Password = ""; Say(status, "Password changed. Other devices are signed out.", B("TextMuted")); }
+            if (r.Ok) { cur.Password = ""; next.Password = ""; again.Password = ""; Say(status, "Password changed. Other devices are signed out.", B("TextMuted")); }
             else SayFail(status, r.Offline, r.Error);   // a wrong current password arrives as its own sentence
         };
-        return p;
+        var card = new Border { Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Child = inner };
+        AutomationProperties.SetAutomationId(card, "settings-password-card");
+        return card;
     }
 
     private FrameworkElement Notifications()

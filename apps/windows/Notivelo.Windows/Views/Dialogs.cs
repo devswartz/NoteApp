@@ -17,7 +17,7 @@ internal static class Dialogs
         Brush B(string k) => ThemeBrushes.Get(k, host);
         var b = new Button
         {
-            Style = Ui.Style("GhostButtonStyle"), Height = 32, Padding = new Thickness(14, 0, 14, 0), CornerRadius = new CornerRadius(8),
+            Style = Ui.Style(primary ? "SolidButtonStyle" : "GhostButtonStyle"), Height = 32, Padding = new Thickness(14, 0, 14, 0), CornerRadius = new CornerRadius(8),
             Content = Ui.Text(text, 13.5, primary || danger ? B("TextOnAccent") : B("Text"), 600),
             Background = danger ? B("Danger") : primary ? B("AccentSolid") : B("BgElevated"),
             BorderBrush = primary || danger ? B("Border") : B("Border"), BorderThickness = new Thickness(primary || danger ? 0 : 1),

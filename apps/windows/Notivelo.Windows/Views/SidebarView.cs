@@ -395,7 +395,7 @@ internal sealed class SidebarView : ThemedControl
         var today = DateOnly.FromDateTime(DateTime.Now);
         var due = new HashSet<string>(_source.CalendarTasks().Where(t => t.Due is not null).Select(t => t.Due!));
         var head = Cols(Star, Auto, Auto);
-        head.Margin = new Thickness(2, 0, 0, 6);
+        head.Margin = new Thickness(10, 0, 6, 6);
         head.Children.Add(Ui.Text(_mini.ToString("MMMM yyyy", System.Globalization.CultureInfo.CurrentCulture), 12.5, B("Text"), 600));
         var prev = Ui.IconButton("chevron-left", 14, 24, 24, "Previous month", 6);
         var next = Ui.IconButton("chevron-right", 14, 24, 24, "Next month", 6);
@@ -405,7 +405,7 @@ internal sealed class SidebarView : ThemedControl
         head.Children.Add(prev); head.Children.Add(next);
         root.Children.Add(head);
 
-        var grid = new Grid { Margin = new Thickness(2, 0, 2, 0) };
+        var grid = new Grid { Margin = new Thickness(5, 0, 4, 0) };
         for (var c = 0; c < 7; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var lead = ((int)_mini.DayOfWeek + 6) % 7;
         var start = _mini.AddDays(-lead);

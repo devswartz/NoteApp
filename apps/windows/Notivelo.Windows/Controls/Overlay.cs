@@ -32,10 +32,10 @@ internal sealed class OverlayHost : Grid
 
     public bool IsOpen => _layers.Count > 0;
 
-    /// <summary>Show content over the shell. <paramref name="dim"/> draws the backdrop (rgba(10,10,20,.18) in LOOK); a click outside the content closes it.</summary>
+    /// <summary>Show content over the shell. <paramref name="dim"/> draws the backdrop (the --bg-overlay token, LOOK 2); a click outside the content closes it.</summary>
     public Layer Show(FrameworkElement content, HorizontalAlignment h, VerticalAlignment v, Thickness margin, bool dim = true, Action? closed = null, bool closeOnScrim = true)
     {
-        var root = new Grid { Background = new SolidColorBrush(dim ? global::Windows.UI.Color.FromArgb(0x2E, 10, 10, 20) : Colors.Transparent), IsTabStop = false };
+        var root = new Grid { Background = dim ? ThemeBrushes.Get("BgOverlay", this) : (Brush)new SolidColorBrush(Colors.Transparent), IsTabStop = false };
         var layer = new Layer { Root = root, Closed = closed, Host = this };
         if (closeOnScrim) root.PointerPressed += (s, e) => { if (ReferenceEquals(e.OriginalSource, root)) layer.Close(); };
         root.KeyDown += (_, e) => { if (e.Key == VirtualKey.Escape) { e.Handled = true; layer.Close(); } };

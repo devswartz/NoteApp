@@ -47,6 +47,7 @@
             <SolidColorBrush x:Key="AccentHover" Color="#4338CA" />
             <SolidColorBrush x:Key="AccentSoft" Color="#1A4F46E5" />
             <SolidColorBrush x:Key="AccentSolid" Color="#4F46E5" />
+            <SolidColorBrush x:Key="AccentSolidDisabled" Color="#A7A2F2" />
             <SolidColorBrush x:Key="AccentSolidHover" Color="#4338CA" />
             <SolidColorBrush x:Key="Danger" Color="#DC2626" />
             <SolidColorBrush x:Key="DangerSoft" Color="#14DC2626" />
@@ -92,6 +93,7 @@
             <SolidColorBrush x:Key="AccentHover" Color="#A5B4FC" />
             <SolidColorBrush x:Key="AccentSoft" Color="#268B95F9" />
             <SolidColorBrush x:Key="AccentSolid" Color="#5B5BD6" />
+            <SolidColorBrush x:Key="AccentSolidDisabled" Color="#404080" />
             <SolidColorBrush x:Key="AccentSolidHover" Color="#4B4BC4" />
             <SolidColorBrush x:Key="Danger" Color="#F87171" />
             <SolidColorBrush x:Key="DangerSoft" Color="#1FF87171" />

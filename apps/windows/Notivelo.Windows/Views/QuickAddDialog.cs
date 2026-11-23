@@ -25,7 +25,7 @@ internal sealed class QuickAddDialog
     private readonly Seed _seed;
     private readonly TextBox _text = new();
     private readonly TextBox _desc = new();
-    private readonly WrapPanel _chips = new() { HorizontalSpacing = 6, VerticalSpacing = 6 };
+    private readonly WrapPanel _chips = new() { HorizontalSpacing = 8, VerticalSpacing = 8 };
     private readonly TextBlock _error = new();
     private Button _ok = null!;
     private OverlayHost.Layer? _layer;
@@ -63,7 +63,7 @@ internal sealed class QuickAddDialog
     {
         _text.Style = Ui.Style("PlainTextBoxStyle"); _desc.Style = Ui.Style("PlainTextBoxStyle");
         _text.PlaceholderText = "e.g. Review proposal tomorrow 3pm p1 @alex every week";
-        _text.FontSize = 17; _text.FontWeight = new global::Windows.UI.Text.FontWeight(500);
+        _text.FontSize = 17; _text.FontWeight = new global::Windows.UI.Text.FontWeight(600);
         _text.BorderThickness = new Thickness(0); _text.Background = new SolidColorBrush(Colors.Transparent); _text.CornerRadius = new CornerRadius(0);
         _text.Padding = new Thickness(0, 5, 0, 5); _text.Text = _seed.Text;
         AutomationProperties.SetAutomationId(_text, "quickadd-input");
@@ -78,6 +78,7 @@ internal sealed class QuickAddDialog
         var cancel = Dialogs.Btn(_o, "Cancel", false, id: "quickadd-cancel");
         _ok = Dialogs.Btn(_o, "Add task", true, id: "quickadd-ok");
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Padding = new Thickness(0, 12, 0, 0) };
+        cancel.Height = 44; _ok.Height = 44; row.Spacing = 6;
         row.Children.Add(cancel); row.Children.Add(_ok);
         var footer = new Border { BorderBrush = B("Border"), BorderThickness = new Thickness(0, 1, 0, 0), Margin = new Thickness(0, 12, 0, 0), Child = row };
 
@@ -91,7 +92,7 @@ internal sealed class QuickAddDialog
         card.Padding = new Thickness(16, 12, 16, 12);
         AutomationProperties.SetAutomationId(panel, "quickadd-card");
         AutomationProperties.SetName(panel, "Quick add");
-        _layer = _o.Show(card, HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, 100, 0, 0));
+        _layer = _o.Show(card, HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, 98, 0, 0));
 
         cancel.Click += (_, _) => _layer?.Close();
         _ok.Click += (_, _) => Submit(false);
@@ -116,7 +117,6 @@ internal sealed class QuickAddDialog
     {
         _q = Parse(_text.Text);
         _ok.IsEnabled = Ready;
-        _ok.Opacity = Ready ? 1 : 0.5;
         _chips.Children.Clear();
         var due = Due;
         Chip("quickadd-due", "calendar-days", due is null ? "Due date" : DueWords(due, _q.DueTime), due is not null, DueMenu);
@@ -151,11 +151,11 @@ internal sealed class QuickAddDialog
         var fg = active ? B("Accent") : B("Text2");
         var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         sp.Children.Add(new Icon(icon, 13, iconBrush ?? fg) { VerticalAlignment = VerticalAlignment.Center });
-        sp.Children.Add(Ui.Text(label, 12.5, fg, 500));
+        sp.Children.Add(Ui.Text(label, 13, fg, 600));
         sp.MaxWidth = 220;
         var b = new Button
         {
-            Style = Ui.Style("GhostButtonStyle"), Height = 28, Padding = new Thickness(9, 0, 9, 0), CornerRadius = new CornerRadius(8), Content = sp,
+            Style = Ui.Style("GhostButtonStyle"), Height = 42, Padding = new Thickness(10, 0, 10, 0), CornerRadius = new CornerRadius(8), Content = sp,
             Background = active ? B("AccentSoft") : B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(active ? 0 : 1),
         };
         AutomationProperties.SetAutomationId(b, id);
@@ -168,10 +168,10 @@ internal sealed class QuickAddDialog
     {
         var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         sp.Children.Add(Ui.Avatar(_h.Source.Workspace.UserInitials, 14));
-        sp.Children.Add(Ui.Text("Me", 12.5, B("Text2"), 500));
+        sp.Children.Add(Ui.Text("Me", 13, B("Text2"), 600));
         var b = new Button
         {
-            Style = Ui.Style("GhostButtonStyle"), Height = 28, Padding = new Thickness(9, 0, 9, 0), CornerRadius = new CornerRadius(8), Content = sp,
+            Style = Ui.Style("GhostButtonStyle"), Height = 42, Padding = new Thickness(10, 0, 10, 0), CornerRadius = new CornerRadius(8), Content = sp,
             Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1),
         };
         AutomationProperties.SetAutomationId(b, "quickadd-assignee");

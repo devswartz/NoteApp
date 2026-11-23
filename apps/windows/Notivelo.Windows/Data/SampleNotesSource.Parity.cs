@@ -273,7 +273,7 @@ public sealed partial class SampleNotesSource
         if (t is null) return null;
         var ex = _extra.GetValueOrDefault(id);
         return new TaskDetailItem(t.Id, t.Title, _desc.GetValueOrDefault(id, ""), t.Done, t.Priority == 0 ? 4 : t.Priority, ex.Due, t.DueLabel, t.Tone,
-            t.Assignee is null ? null : "u1", t.Assignee is null ? null : "Devon", null, t.PageTitle, "Created by Devon · 13m ago");
+            t.Assignee is null ? null : "u1", t.Assignee is null ? null : "Demo User", null, t.PageTitle, "Created by Demo User · 13m ago");
     }
 
     public void UpdateTask(string id, TaskPatch p)

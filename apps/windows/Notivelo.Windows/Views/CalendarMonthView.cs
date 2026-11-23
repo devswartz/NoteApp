@@ -34,14 +34,14 @@ internal sealed class CalendarMonthView : ThemedControl
         var byDay = tasks.Where(t => t.Due is not null).GroupBy(t => t.Due!).ToDictionary(g => g.Key, g => g.ToList());
         var undated = tasks.Where(t => t.Due is null).ToList();
 
-        var root = new Grid { Padding = new Thickness(40, 23, 40, 24), ColumnSpacing = 16 };
+        var root = new Grid { Padding = new Thickness(40, 26, 40, 24), ColumnSpacing = 16 };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         // header: month title
-        var head = new Grid { Margin = new Thickness(0, 0, 0, 22), ColumnSpacing = 8 };
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 23), ColumnSpacing = 8 };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var title = Ui.Text(_month.ToString("MMMM yyyy", CultureInfo.CurrentCulture), 24, B("Text"), 700, lineHeight: 32, tracking: -0.02);
         AutomationProperties.SetAutomationId(title, "calendar-title");
@@ -55,7 +55,7 @@ internal sealed class CalendarMonthView : ThemedControl
         Grid.SetRow(grid, 1);
         root.Children.Add(grid);
         var tray = Tray(undated);
-        Grid.SetRow(tray, 1); Grid.SetColumn(tray, 1);
+        Grid.SetRow(tray, 1); Grid.SetColumn(tray, 1); tray.Margin = new Thickness(0, -6, 0, 0);
         root.Children.Add(tray);
         return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }

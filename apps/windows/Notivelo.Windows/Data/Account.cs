@@ -30,8 +30,8 @@ public static class AccountRules
 
     public static readonly string[] Swatches =
     {
-        "#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#14b8a6",
-        "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#64748b",
+        // settings.png order: indigo, sky, emerald, amber, red, pink, violet, teal
+        "#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6", "#14b8a6",
     };
 
     public static string Initials(string name, string email)
