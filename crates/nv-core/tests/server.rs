@@ -2022,7 +2022,7 @@ fn ink_against_a_running_server() {
     let r = lb
         .erase_ink(vec![80.0, 30.0, 80.0, 90.0], 6.0, true)
         .unwrap();
-    assert_eq!(r.removed, [drawn.id.clone()]);
+    assert_eq!(r.removed, std::slice::from_ref(&drawn.id));
     assert!(!r.added.is_empty());
     wait_for("A to see the cut", 10, || {
         let ids: Vec<String> = la.ink_strokes().into_iter().map(|s| s.id).collect();
