@@ -313,6 +313,16 @@ struct PhoneNotes: View {
                 } else if tree != nil {
                     Text("No notebooks yet.").font(.web(15)).foregroundStyle(p.textMuted.color)
                 }
+                if !session.preview && !session.sharedPages.isEmpty {
+                    groupTitle("Shared with me", p)
+                    ForEach(session.sharedPages, id: \.id) { e in
+                        drillRow(p, e.title.isEmpty ? "Untitled" : e.title, leading: {
+                            Icon("file-text", 15, p.textMuted.color)
+                        }, trailing: {
+                            Icon("chevron-right", 17, p.textMuted.color)
+                        }) { shell.open(page: e.id) }
+                    }
+                }
             }
         }
     }

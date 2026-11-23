@@ -287,6 +287,17 @@ struct MenuLayer: View {
             MenuItem(palette: p, title: "Settings", icon: "settings") { shell.notYet("Settings") }
             MenuItem(palette: p, title: "Keyboard shortcuts", icon: "keyboard", hint: "?") { shell.notYet("The shortcuts list") }
             MenuItem(palette: p, title: "Get the apps", icon: "download") { shell.notYet("The app downloads") }
+            if !session.preview {
+                MenuItem(palette: p, title: session.lockStatus?.hasPassword == true ? "Change locked pages password…" : "Set a locked pages password…", icon: "lock") {
+                    shell.openSheet(.lock(session.lockStatus?.hasPassword == true ? .changePassword : .setPassword), session, "Locked pages")
+                }
+                if session.locksOpen {
+                    MenuItem(palette: p, title: "Lock pages now", icon: "lock") {
+                        shell.menu = nil
+                        session.lockNow()
+                    }
+                }
+            }
             if session.isStaging {
                 MenuItem(palette: p, title: "Server: \(session.host)", icon: "globe", disabled: true) {}
             }
@@ -311,7 +322,7 @@ struct MenuLayer: View {
             MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.notYet("New workspace") }
             MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.notYet("Workspace settings") }
             MenuItem(palette: p, title: "Activity", icon: "activity") { shell.notYet("Activity") }
-            MenuItem(palette: p, title: "Trash", icon: "trash") { shell.notYet("Trash") }
+            MenuItem(palette: p, title: "Trash", icon: "trash") { shell.openSheet(.trash, session, "Trash") }
         }
     }
 
@@ -348,10 +359,12 @@ struct MenuLayer: View {
         return MenuCard(palette: p, width: phone ? width - 16 : 230, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             MenuItem(palette: p, title: "New section", icon: "folder-plus") { if let nb { shell.newSection(in: nb.id, parent: nil, session) } }
             MenuItem(palette: p, title: "Rename", icon: "pencil") { if let nb { shell.rename(.notebook, nb.id, session) } }
-            MenuItem(palette: p, title: "Share with people…", icon: "user-plus") { shell.notYet("Sharing") }
-            MenuItem(palette: p, title: nb?.visibility == "private" ? "Share with workspace" : "Make private", icon: "lock") { shell.notYet("Changing who sees a notebook") }
+            MenuItem(palette: p, title: "Share with people…", icon: "user-plus") { if let nb { shell.openSheet(.shareNotebook(nb.id), session, "Sharing") } }
+            MenuItem(palette: p, title: nb?.visibility == "private" ? "Share with workspace" : "Make private", icon: "lock") {
+                if let nb { if session.preview { shell.notYet("Changing who sees a notebook") } else { shell.setVisibility(nb.id, private: nb.visibility != "private", session) } }
+            }
             MenuItem(palette: p, title: "Print…", icon: "printer") { shell.notYet("Printing") }
-            ColorRow(palette: p, selected: nb?.color) { _ in shell.notYet("Notebook colours") }
+            ColorRow(palette: p, selected: nb?.color) { c in if let nb { if session.preview { shell.notYet("Notebook colours") } else { shell.recolour(.notebook, nb.id, c, session) } } }
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "Delete notebook", icon: "trash", danger: true) { if let nb { shell.delete(.notebook, nb.id, session) } }
         }
@@ -370,7 +383,7 @@ struct MenuLayer: View {
             MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.move(.section, id, session) }
             }
             MenuItem(palette: p, title: "Print…", icon: "printer") { shell.notYet("Printing") }
-            ColorRow(palette: p, selected: section?.color) { _ in shell.notYet("Section colours") }
+            ColorRow(palette: p, selected: section?.color) { c in if session.preview { shell.notYet("Section colours") } else { shell.recolour(.section, id, c, session) } }
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "Delete section", icon: "trash", danger: true) { shell.delete(.section, id, session) }
         }
@@ -381,8 +394,7 @@ struct MenuLayer: View {
             MenuItem(palette: p, title: "Add to favourites", icon: "star") { shell.notYet("Favourites") }
             MenuItem(palette: p, title: "Copy link", icon: "link-2") { shell.notYet("Copying links") }
             MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.rename(.page, id, session) }
-            MenuItem(palette: p, title: "Lock page", icon: "lock",
-                     note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
+            lockItem(p, id)
             MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.duplicate(.page, id, session) }
             MenuItem(palette: p, title: "Move to…", icon: "folder-input") { shell.move(.page, id, session) }
             MenuSeparator(palette: p)
@@ -395,13 +407,12 @@ struct MenuLayer: View {
         let index = tree.map(TreeIndex.init)
         return MenuCard(palette: p, width: 300, maxHeight: phone ? 492 : nil) {
             Group {
-            MenuItem(palette: p, title: "Share…", icon: "user-plus") { shell.notYet("Sharing") }
+            MenuItem(palette: p, title: "Share…", icon: "user-plus") { if let id = openPageId { shell.openSheet(.sharePage(id), session, "Sharing") } }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "Lock page", icon: "lock",
-                     note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
+            if let id = openPageId { lockItem(p, id) }
             MenuItem(palette: p, title: "Duplicate", icon: "copy") { if let id = openPageId { shell.duplicate(.page, id, session) } }
             MenuItem(palette: p, title: "Save as template…", icon: "layout-template") { shell.notYet("Templates") }
-            MenuItem(palette: p, title: "Version history", icon: "rotate-ccw-clock") { shell.notYet("Version history") }
+            MenuItem(palette: p, title: "Version history", icon: "rotate-ccw-clock") { if let id = openPageId { shell.openSheet(.history(id), session, "Version history") } }
             MenuSeparator(palette: p)
             }
             Group {
@@ -430,6 +441,25 @@ struct MenuLayer: View {
             }
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "Delete page", icon: "trash", danger: true) { if let id = openPageId { shell.delete(.page, id, session) } }
+        }
+    }
+
+    /// "Lock page" (a private notebook's page, once there is a locked pages password or one is chosen here), or "Remove lock".
+    @ViewBuilder private func lockItem(_ p: Palette, _ id: String) -> some View {
+        let tree = session.shownTree
+        let meta = tree?.pages.first { $0.id == id }
+        let section = tree?.sections.first { $0.id == meta?.sectionId }
+        let notebook = tree?.notebooks.first { $0.id == section?.notebookId }
+        if session.preview || meta == nil {
+            MenuItem(palette: p, title: "Lock page", icon: "lock",
+                     note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
+        } else if meta?.locked == true {
+            MenuItem(palette: p, title: "Remove lock", icon: "lock-open") { shell.openSheet(.lock(.removeLock(id)), session, "Locked pages") }
+        } else if notebook?.visibility == "private" {
+            MenuItem(palette: p, title: "Lock page", icon: "lock") { shell.openSheet(.lock(.lockPage(id)), session, "Locked pages") }
+        } else {
+            MenuItem(palette: p, title: "Lock page", icon: "lock",
+                     note: "Only pages only you can see can be locked. Move it to a private notebook first.", disabled: true) {}
         }
     }
 

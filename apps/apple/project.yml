@@ -60,6 +60,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
+        NSFaceIDUsageDescription: Unlock your locked pages with Face ID.
         LSRequiresIPhoneOS: true
         UILaunchScreen:
           UIColorName: AccentColor

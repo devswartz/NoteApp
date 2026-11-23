@@ -130,6 +130,7 @@ struct NotesPanel: View {
                     } else if session.loadError == nil {
                         TreeSkeleton()
                     }
+                    SharedWithMeGroup()
                     if let error = session.loadError {
                         Text(error).font(.web(12.5)).foregroundStyle(p.danger.color).padding(.horizontal, 6)
                     }

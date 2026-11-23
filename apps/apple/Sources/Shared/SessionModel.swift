@@ -29,7 +29,7 @@ final class SessionModel {
 
     private(set) var workspaces: [Workspace] = []
     private(set) var workspaceId: String?
-    private(set) var tree: Tree?
+    var tree: Tree?
     private(set) var tasks: [CoreTask] = []
     /// Ticks not yet confirmed by the server (task id → done).
     private(set) var pendingDone: [String: Bool] = [:]
@@ -48,6 +48,12 @@ final class SessionModel {
     /// What the search palette last found, and for which words.
     private(set) var searchResults: SearchResults?
     private(set) var searchedQuery = ""
+    /// Pages shared with this person one by one ("Shared with me").
+    var sharedPages: [SharedPageEntry] = []
+    /// What the server says about the locked pages (password set, unlocked, tries).
+    var lockStatus: LockedNotesStatus?
+    /// This sign-in has unlocked the locked pages (they stay open until 5 minutes without activity).
+    var locksOpen = false
 
     @ObservationIgnored fileprivate var searchWork: DispatchWorkItem?
     @ObservationIgnored fileprivate var core: Core
@@ -195,6 +201,9 @@ final class SessionModel {
         details = [:]
         reminders = [:]
         searchResults = nil
+        sharedPages = []
+        lockStatus = nil
+        locksOpen = false
         loadError = nil
         loading = false
         busy = false
@@ -325,6 +334,8 @@ final class SessionModel {
                 self.tasks = tasks
                 self.loadError = nil
                 self.loadLookups()
+                self.loadShared()
+                self.loadLockStatus()
             case let .failure(e):
                 if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
             }

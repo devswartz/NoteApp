@@ -58,8 +58,28 @@ struct PageScreen: View {
         )
         .padding(.top, hybrid ? 6 : 0).padding(.horizontal, hybrid ? 6 : 0)
         .onAppear(perform: openPage)
+        .onChange(of: session.locksOpen) { _, open in
+            if open {
+                openPage()
+            } else if meta?.locked == true {
+                // Locked again: the page closes and the unlock prompt comes back.
+                comments.detach(pageId: pageId)
+                live?.close()
+                live = nil
+            }
+        }
+        // While a locked page is open, ask the server about once a minute so it stays unlocked.
+        .task(id: session.locksOpen && meta?.locked == true) {
+            guard session.locksOpen, meta?.locked == true else { return }
+            while !_Concurrency.Task.isCancelled {
+                try? await _Concurrency.Task.sleep(nanoseconds: 60_000_000_000)
+                if _Concurrency.Task.isCancelled { break }
+                session.keepLocksAlive()
+            }
+        }
         .onDisappear {
             comments.detach(pageId: pageId)
+            if shell.openLive === live { shell.openLive = nil }
             live?.close()
             live = nil
             EditorFocus.shared.set(nil)
@@ -106,12 +126,15 @@ struct PageScreen: View {
             if sample == nil { sample = SamplePageScreen.Sample(name: name) }
             return
         }
-        guard let meta, !meta.locked, live == nil else { return }
-        let m = LivePageModel(pageId: meta.id, title: meta.title, session: session)
+        // A page of the tree, or one shared with this person from another workspace ("Shared with me").
+        let shared = session.sharedPages.first { $0.id == pageId }
+        guard meta != nil || shared != nil, meta?.locked != true || session.locksOpen, live == nil else { return }
+        let m = LivePageModel(pageId: pageId, title: meta?.title ?? shared?.title ?? "", session: session)
         live = m
+        shell.openLive = m
         m.open()
         session.refreshTasks()
-        if !session.preview { comments.attach(session, pageId: meta.id) }
+        if !session.preview { comments.attach(session, pageId: pageId) }
     }
 
     private var decor: [String: TaskDecor] {
@@ -138,8 +161,8 @@ struct PageScreen: View {
 
     @ViewBuilder
     private func content(_ snapshot: PageSnapshot?, _ palette: Palette) -> some View {
-        if let meta, meta.locked {
-            message("Locked page", "Locked pages open in the web app for now.", palette)
+        if let meta, meta.locked, !session.locksOpen {
+            UnlockPrompt(palette: palette)
         } else if let snapshot {
             let title = meta?.title ?? snapshot.title
             let edited = meta.map { "Edited \(Due.ago($0.updatedAt))" + (session.preview ? " by you" : "") } ?? "Edited just now by you"
@@ -247,7 +270,9 @@ struct PageTopBar: View {
                         model.reload()
                     }
                 }
-                Button { shell.notYet("Sharing") } label: {
+                Button {
+                    if case let .page(id) = shell.route { shell.openSheet(.sharePage(id), session, "Sharing") }
+                } label: {
                     HStack(spacing: 6) {
                         Icon("user-plus", 14, p.text.color)
                         Text("Share").font(.web(13, 500)).foregroundStyle(p.text.color)

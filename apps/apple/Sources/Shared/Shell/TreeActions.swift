@@ -1,16 +1,15 @@
 import NotiveloCore
 import SwiftUI
 
-/// Changes to the notebook tree: new page / section / notebook, rename, duplicate, move, delete.
+/// Changes to the notebook tree: new page / section / notebook, rename, recolour, duplicate, move, delete.
 ///
-/// The core has no tree-writing calls yet (`Core` has `tree`, but no create/rename/move/copy/delete;
-/// see "Requests" in docs/rewrite/status/apple.md). The dialogs and inline rename are built and look
-/// like the web's; until the core has the calls, `canEditTree` is false: outside corpus mode a menu
-/// item shows the "isn't in the native preview yet" toast, and in corpus mode (the CI look shots)
-/// the dialogs open and their buttons end in the same toast. When the calls arrive, `Shell.run` is
-/// the one place that changes: call the core, `await session.refresh()`, open the new page.
+/// They are the core's tree calls (`createPage`, `renameSection`, `movePage`, `copySection`, `deleteNotebook` …,
+/// docs/rewrite/status/core.md "For apple: tree management"). `Shell.run` is the one place that calls them. After every
+/// write the core fetches the workspace's tree again and stores it, and `SessionModel.changeTree` shows that tree.
+/// In corpus mode (the CI look shots) the dialogs open and their buttons end in the "isn't in the native preview" toast.
 extension SessionModel {
-    var canEditTree: Bool { false }
+    /// Members and up may change the tree; a viewer only reads it. Corpus mode has no server.
+    var canEditTree: Bool { !preview && workspace != nil && workspace?.role != "viewer" }
 }
 
 enum TreeKind: String, Equatable {
@@ -25,6 +24,7 @@ enum TreeOp: Equatable {
     case duplicate(TreeKind, String)
     case move(TreeKind, String)
     case delete(TreeKind, String)
+    case leaveShare(String)
 
     /// "New page", "Moving" … as the toast says it.
     var label: String {
@@ -35,6 +35,7 @@ enum TreeOp: Equatable {
         case .rename: return "Renaming"
         case .duplicate: return "Duplicating"
         case .move: return "Moving"
+        case .leaveShare: return "Removing"
         case .delete(let kind, _): return kind == .page ? "Deleting pages" : kind == .section ? "Deleting sections" : "Deleting notebooks"
         }
     }
@@ -114,17 +115,21 @@ enum SectionRules {
 }
 
 extension Shell {
-    /// Corpus mode shows the dialogs; the real app waits for the core's calls.
+    /// Why a change can't be made: the corpus preview has no server; a viewer may only read.
+    private func refuse(_ op: TreeOp, _ session: SessionModel) {
+        if session.preview { notYet(op.label) } else { say("You can only view this workspace.") }
+    }
+
     private func available(_ op: TreeOp, _ session: SessionModel) -> Bool {
         if session.canEditTree || session.preview { return true }
-        notYet(op.label)
+        refuse(op, session)
         return false
     }
 
     func newPage(in sectionId: String, _ session: SessionModel) {
         menu = nil
         // The web makes an "Untitled" page and opens it; there is no dialog to show.
-        guard session.canEditTree else { notYet("New page"); return }
+        guard session.canEditTree else { refuse(.newPage(section: sectionId), session); return }
         run(.newPage(section: sectionId), session)
     }
 
@@ -190,14 +195,243 @@ extension Shell {
         }
     }
 
+    /// "Remove from Shared with me" asks first (the web's confirm).
+    func leaveShare(_ pageId: String, _ session: SessionModel) {
+        let title = session.sharedPages.first { $0.id == pageId }?.title ?? ""
+        dialog = TreeDialog(body: .confirm(
+            title: "Remove “\(title.isEmpty ? "Untitled" : title)” from Shared with me?",
+            message: "You will lose access until it is shared with you again.",
+            confirm: "Remove"), op: .leaveShare(pageId))
+    }
+
+    /// A notebook's or section's colour (the colour row of its menu).
+    func recolour(_ kind: TreeKind, _ id: String, _ color: String, _ session: SessionModel) {
+        menu = nil
+        guard session.canEditTree else { refuse(.rename(kind, id), session); return }
+        session.changeTree({ core, _ -> Void in
+            if kind == .notebook {
+                try core.setNotebookColor(notebookId: id, color: color)
+            } else {
+                try core.setSectionColor(sectionId: id, color: color)
+            }
+        }) { result in
+            if case let .failure(e) = result { self.failed(e) }
+        }
+    }
+
+    /// "Make private" / "Share with workspace" in the notebook's menu (only its creator may; the server says so otherwise).
+    func setVisibility(_ notebookId: String, private makePrivate: Bool, _ session: SessionModel) {
+        menu = nil
+        guard session.canEditTree else { refuse(.rename(.notebook, notebookId), session); return }
+        session.changeTree({ core, _ in
+            try core.setNotebookVisibility(notebookId: notebookId, visibility: makePrivate ? "private" : "shared")
+        }) { result in
+            switch result {
+            case let .success(ended):
+                var text = makePrivate ? "Notebook is now private." : "Notebook is shared with the workspace."
+                if makePrivate, ended > 0 { text += " \(ended) page \(ended == 1 ? "share" : "shares") ended." }
+                self.say(text)
+            case let .failure(e):
+                self.failed(e)
+            }
+        }
+    }
+
     /// The dialog's confirm button.
     func submit(_ dialog: TreeDialog, text: String = "", destination: String? = nil, _ session: SessionModel) {
         self.dialog = nil
         run(dialog.op, session, name: text, to: destination)
     }
 
-    /// The one place the tree is changed. No core call yet: say so.
+    fileprivate func failed(_ error: Error) {
+        if error is CancellationError { return }
+        say(SessionModel.plainMessage(error))
+    }
+
+    /// After a delete: leave a page or section that is no longer in the tree.
+    fileprivate func settleRoute(openPage: String?, _ session: SessionModel) {
+        guard let tree = session.tree else { return }
+        switch route {
+        case let .page(id) where id == openPage:
+            if !tree.pages.contains(where: { $0.id == id }) { route = .notes }
+        case let .section(id):
+            if !tree.sections.contains(where: { $0.id == id }) { route = .notes }
+        default:
+            break
+        }
+        if let nb = phoneNotebook, !tree.notebooks.contains(where: { $0.id == nb }) { phoneNotebook = nil }
+        if let nb = notebookId, !tree.notebooks.contains(where: { $0.id == nb }) { notebookId = nil }
+    }
+
+    /// Undo of a delete: out of the Trash again.
+    func restoreFromTrash(_ kind: TreeKind, _ id: String, _ session: SessionModel) {
+        let trashKind: TrashKind = kind == .page ? .page : kind == .section ? .section : .notebook
+        session.changeTree({ core, ws in try core.restoreFromTrash(workspaceId: ws, kind: trashKind, id: id) }) { result in
+            switch result {
+            case let .success(place):
+                self.say(place.map { "Restored to \($0)" } ?? "Restored")
+                session.scheduleTaskRefresh()
+            case let .failure(e):
+                self.failed(e)
+            }
+        }
+    }
+
+    /// The one place the tree is changed: the core's calls, then the tree it stored.
     func run(_ op: TreeOp, _ session: SessionModel, name: String? = nil, to: String? = nil) {
-        say("\(op.label) isn’t in the native preview yet.")
+        guard !session.preview else {
+            say("\(op.label) isn’t in the native preview yet.")
+            return
+        }
+        if case let .leaveShare(pageId) = op {
+            session.leaveShare(pageId: pageId) { problem in
+                if let problem { self.say(problem) } else { self.say("Removed from Shared with me") }
+                if self.route == .page(pageId) { self.route = .notes }
+            }
+            return
+        }
+        guard session.canEditTree else {
+            say("You can only view this workspace.")
+            return
+        }
+        let text = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let openPage: String? = {
+            if case let .page(id) = route, session.tree?.pages.contains(where: { $0.id == id }) == true { return id }
+            return nil
+        }()
+        switch op {
+        case let .newPage(section):
+            session.changeTree({ core, _ in try core.createPage(sectionId: section, title: nil) }) { result in
+                switch result {
+                case let .success(id):
+                    self.expanded.insert(section)
+                    self.open(page: id)
+                case let .failure(e):
+                    self.failed(e)
+                }
+            }
+
+        case let .newSection(notebook, parent):
+            guard !text.isEmpty else { return }
+            session.changeTree({ core, _ in
+                try core.createSection(notebookId: notebook, name: text, parentId: parent, color: nil)
+            }) { result in
+                switch result {
+                case let .success(id):
+                    if let parent { self.expanded.insert(parent) }
+                    self.expanded.insert(id)
+                    self.notebookId = notebook
+                    self.route = .section(id)
+                case let .failure(e):
+                    self.failed(e)
+                }
+            }
+
+        case let .newNotebook(template):
+            guard !text.isEmpty else { return }
+            let t = NotebookTemplate.all.first { $0.id == (to ?? template) } ?? NotebookTemplate.all[0]
+            session.changeTree({ core, ws -> [String] in
+                // The server makes the notebook with one section ("General"); the starting structure is ours.
+                let nb = try core.createNotebook(workspaceId: ws, name: text, color: nil, visibility: nil)
+                if t.id != "blank", let first = t.sections.first {
+                    try core.renameSection(sectionId: nb.sectionId, name: first)
+                    for extra in t.sections.dropFirst() {
+                        _ = try core.createSection(notebookId: nb.id, name: extra, parentId: nil, color: nil)
+                    }
+                }
+                let page = try core.createPage(sectionId: nb.sectionId, title: nil)
+                return [nb.id, nb.sectionId, page]
+            }) { result in
+                switch result {
+                case let .success(ids):
+                    self.notebookId = ids[0]
+                    self.phoneNotebook = nil
+                    self.expanded.insert(ids[1])
+                    self.open(page: ids[2])
+                case let .failure(e):
+                    self.failed(e)
+                }
+            }
+
+        case let .rename(kind, id):
+            if text.isEmpty && kind != .page { return }
+            session.changeTree({ core, _ -> Void in
+                switch kind {
+                case .page: try core.renamePage(pageId: id, title: text)
+                case .section: try core.renameSection(sectionId: id, name: text)
+                case .notebook: try core.renameNotebook(notebookId: id, name: text)
+                }
+            }) { result in
+                if case let .failure(e) = result { self.failed(e) }
+            }
+
+        case let .duplicate(kind, id):
+            session.changeTree({ core, _ -> String in
+                if kind == .page { return try core.copyPage(pageId: id, sectionId: nil, title: nil) }
+                return try core.copySection(sectionId: id, notebookId: nil, name: nil)
+            }) { result in
+                switch result {
+                case let .success(copy):
+                    session.scheduleTaskRefresh()
+                    if kind == .page {
+                        self.say("Page duplicated")
+                        self.open(page: copy)
+                    } else {
+                        self.say("Section duplicated")
+                        self.expanded.insert(copy)
+                    }
+                case let .failure(e):
+                    self.failed(e)
+                }
+            }
+
+        case let .move(kind, id):
+            guard let destination = to, let tree = session.tree else { return }
+            // A page goes to a section. A section goes under a section (that one's notebook wins) or to a notebook's top level.
+            let parent = tree.sections.first { $0.id == destination }
+            session.changeTree({ core, _ -> Void in
+                if kind == .page {
+                    _ = try core.movePage(pageId: id, sectionId: destination, index: nil)
+                } else if let parent {
+                    _ = try core.moveSection(sectionId: id, notebookId: parent.notebookId, parentId: parent.id, index: nil)
+                } else {
+                    _ = try core.moveSection(sectionId: id, notebookId: destination, parentId: nil, index: nil)
+                }
+            }) { result in
+                switch result {
+                case .success:
+                    if parent != nil { self.expanded.insert(destination) }
+                    self.say(kind == .page ? "Page moved" : "Section moved")
+                case let .failure(e):
+                    self.failed(e)
+                }
+            }
+
+        case let .delete(kind, id):
+            session.changeTree({ core, _ -> Trashed in
+                switch kind {
+                case .page: return try core.deletePage(pageId: id)
+                case .section: return try core.deleteSection(sectionId: id)
+                case .notebook: return try core.deleteNotebook(notebookId: id)
+                }
+            }) { result in
+                switch result {
+                case let .success(trashed):
+                    self.settleRoute(openPage: openPage, session)
+                    let noun = kind == .page ? "Page" : kind == .section ? "Section" : "Notebook"
+                    var message = "\(noun) moved to Trash"
+                    if trashed.tasks > 0 {
+                        message += ". \(trashed.tasks == 1 ? "Its task stays" : "Its \(trashed.tasks) tasks stay") in your task list."
+                    }
+                    self.say(message, undo: { self.restoreFromTrash(kind, id, session) })
+                    session.scheduleTaskRefresh()
+                case let .failure(e):
+                    self.failed(e)
+                }
+            }
+
+        case .leaveShare:
+            break
+        }
     }
 }

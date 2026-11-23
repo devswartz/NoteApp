@@ -65,6 +65,10 @@ final class Shell {
     var toastAction: (label: String, run: () -> Void)?
     /// The open tree dialog (new section, move, delete notebook …), see `TreeActions.swift`.
     var dialog: TreeDialog?
+    /// The open sharing, version history, Trash or lock dialog (`Sheets.swift`).
+    var sheet: ShellSheet?
+    /// The live page on screen (version history restores into it).
+    @ObservationIgnored weak var openLive: LivePageModel?
     /// The tree row being renamed in place: `page:<id>`, `section:<id>` or `notebook:<id>`.
     var renaming: String?
     /// The search palette (Cmd+K, the rail's and the phone's search buttons) and what is typed in it.
@@ -185,6 +189,12 @@ final class Shell {
         }
     }
 
+    /// Open one of the sheets (sharing, history, Trash, lock). The corpus preview has no server: it says so.
+    func openSheet(_ sheet: ShellSheet, _ session: SessionModel, _ what: String) {
+        menu = nil
+        if session.preview { notYet(what) } else { self.sheet = sheet }
+    }
+
     func notYet(_ what: String) {
         menu = nil
         say("\(what) isn’t in the native preview yet.")
@@ -242,6 +252,7 @@ extension View {
 struct AppShell: View {
     @Environment(SessionModel.self) private var session
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.scenePhase) private var scenePhase
     @State var shell = Shell()
     let theme = Theme.shared
 
@@ -289,6 +300,12 @@ struct AppShell: View {
             openLookMenu()
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
+        #if os(iOS)
+        // Locked pages lock when the app goes to the background (as the web locks on background).
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { session.lockNow() }
+        }
+        #endif
         .onChange(of: session.workspaceId) {
             if case .page = shell.route, !session.preview { shell.route = .notes }
         }
