@@ -269,7 +269,7 @@ struct SearchLayer: View {
             }
         case .create:
             shell.closeSearch()
-            shell.notYet("Adding tasks")
+            shell.openQuickAdd(session, text: shell.searchQuery)
         }
     }
 }

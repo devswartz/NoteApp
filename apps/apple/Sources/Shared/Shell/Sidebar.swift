@@ -11,6 +11,8 @@ struct Sidebar: View {
         Group {
             if case .tasks = shell.route {
                 TasksPanel()
+            } else if shell.route == .calendar {
+                CalendarPanel()
             } else {
                 NotesPanel()
             }
@@ -338,7 +340,7 @@ struct TasksPanel: View {
             Text("Tasks").font(.web(15, 650)).foregroundStyle(p.text.color)
                 .padding(.horizontal, 16).frame(height: 52, alignment: .center).padding(.bottom, 4)
             VStack(alignment: .leading, spacing: 2) {
-                Button { shell.notYet("Adding tasks") } label: {
+                Button { shell.openQuickAdd(session) } label: {
                     HStack(spacing: 10) {
                         Icon("plus", 16, p.accent.color)
                         Text("Add task").font(.web(14, 500)).foregroundStyle(p.accent.color)

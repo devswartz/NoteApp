@@ -160,6 +160,7 @@ struct DialogLayer: View {
         case let .history(id): VersionHistoryCard(pageId: id, width: min(560, width - 32), listHeight: h * 0.3, previewHeight: h * 0.35)
         case .trash: TrashCard(width: w, listHeight: h * 0.6)
         case let .lock(mode): LockCard(mode: mode, width: min(400, width - 32))
+        case let .quickAdd(seed): QuickAddCard(seed: seed, width: min(560, width - 32))
         }
     }
 

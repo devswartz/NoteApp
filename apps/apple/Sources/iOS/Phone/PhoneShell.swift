@@ -39,6 +39,8 @@ struct PhoneShell: View {
         return false
     }
 
+    private var isCalendar: Bool { shell.route == .calendar }
+
     private var isPage: Bool {
         if case .page = shell.route { return true }
         return false
@@ -46,7 +48,7 @@ struct PhoneShell: View {
 
     private var showsFab: Bool {
         switch shell.route {
-        case .page: return false
+        case .page, .settings: return false
         default: return true
         }
     }
@@ -109,12 +111,12 @@ struct PhoneShell: View {
 
     private func tabBar(_ p: Palette) -> some View {
         HStack(spacing: 0) {
-            tab("Notes", "book-open", active: !isTasks && !shell.searchOpen) {
+            tab("Notes", "book-open", active: !isTasks && !isCalendar && !shell.searchOpen) {
                 shell.route = .notes
                 shell.phoneNotebook = nil
             }
             tab("Tasks", "list-checks", active: isTasks && !shell.searchOpen) { if !isTasks { shell.route = .tasks(.today) } }
-            tab("Calendar", "calendar-days", active: false) { shell.notYet("The calendar") }
+            tab("Calendar", "calendar-days", active: isCalendar && !shell.searchOpen) { shell.route = .calendar }
             tab("Search", "search", active: shell.searchOpen) { shell.openSearch() }
         }
         .frame(height: 60)
@@ -123,7 +125,7 @@ struct PhoneShell: View {
     }
 
     private func fab(_ p: Palette) -> some View {
-        Button { shell.notYet("Adding tasks") } label: {
+        Button { shell.openQuickAdd(session) } label: {
             Icon("plus", 26, .white)
                 .frame(width: 56, height: 56)
                 .background(p.accentSolid.color, in: Circle())

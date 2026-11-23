@@ -10,13 +10,13 @@ struct Rail: View {
         let p = theme.chrome
         VStack(spacing: 4) {
             view("Notes", "book-open", active: isNotes) {
-                if case .tasks = shell.route { shell.route = .notes }
+                if !isNotes { shell.route = .notes }
             }
             view("Tasks", "list-checks", active: isTasks) {
                 if !isTasks { shell.route = .tasks(.today) }
             }
-            view("Calendar", "calendar-days", active: false) {
-                shell.notYet("The calendar")
+            view("Calendar", "calendar-days", active: isCalendar) {
+                shell.route = .calendar
             }
             Spacer(minLength: 0)
             foot((shell.sidebarOpen ?? true) ? "panel-left-close" : "panel-left-open") { shell.toggleSidebar() }
@@ -50,7 +50,14 @@ struct Rail: View {
         return false
     }
 
-    private var isNotes: Bool { !isTasks }
+    private var isCalendar: Bool { shell.route == .calendar }
+
+    private var isNotes: Bool {
+        switch shell.route {
+        case .notes, .page, .section: return true
+        default: return false
+        }
+    }
 
     private func view(_ label: String, _ icon: String, active: Bool, _ action: @escaping () -> Void) -> some View {
         let p = theme.chrome

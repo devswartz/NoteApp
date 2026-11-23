@@ -20,7 +20,7 @@ struct MacCommands: Commands {
     var body: some Commands {
         // App > Settings
         CommandGroup(replacing: .appSettings) {
-            Button("Settings…") { bridge.shell?.notYet("Settings") }.keyboardShortcut(",", modifiers: .command)
+            Button("Settings…") { bridge.openSettings() }.keyboardShortcut(",", modifiers: .command)
         }
 
         // File
@@ -28,7 +28,7 @@ struct MacCommands: Commands {
             Button("New Page") { bridge.newPage() }.keyboardShortcut("n", modifiers: .command)
             Button("New Section") { bridge.newSection() }.keyboardShortcut("n", modifiers: [.command, .shift])
             Button("New Notebook…") { bridge.newNotebook() }.keyboardShortcut("n", modifiers: [.command, .option])
-            Button("New Task") { bridge.shell?.notYet("Adding tasks") }.keyboardShortcut("t", modifiers: [.command, .shift])
+            Button("New Task") { bridge.newTask() }.keyboardShortcut("t", modifiers: [.command, .shift])
             Divider()
             Button("Share Page…") { bridge.sharePage() }
             Button("Version History…") { bridge.versionHistory() }

@@ -300,7 +300,7 @@ struct MenuLayer: View {
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
             .padding(.horizontal, 4).padding(.bottom, 2)
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "Settings", icon: "settings") { shell.notYet("Settings") }
+            MenuItem(palette: p, title: "Settings", icon: "settings") { shell.openSettings() }
             MenuItem(palette: p, title: "Keyboard shortcuts", icon: "keyboard", hint: "?") { shell.notYet("The shortcuts list") }
             MenuItem(palette: p, title: "Get the apps", icon: "download") { shell.notYet("The app downloads") }
             if !session.preview {

@@ -269,15 +269,25 @@ struct PageTopBar: View {
                 .foregroundStyle(statusColor.color)
                 .padding(.horizontal, 6)
                 }
-                iconButton("list-todo", badge: taskCount) { shell.notYet("Tasks on this page") }
-                iconButton("message-square", badge: CommentsModel.shared.openThreads.count, active: CommentsModel.shared.open) {
+                iconButton("list-todo", badge: taskCount, active: CommentsModel.shared.open && shell.pageTasksTab) {
                     let model = CommentsModel.shared
-                    if model.pageId == nil {
-                        shell.notYet("Comments")
-                    } else if model.open {
+                    if model.open && shell.pageTasksTab {
                         model.cancel()
                         model.open = false
                     } else {
+                        shell.pageTasksTab = true
+                        model.open = true
+                    }
+                }
+                iconButton("message-square", badge: CommentsModel.shared.openThreads.count, active: CommentsModel.shared.open && !shell.pageTasksTab) {
+                    let model = CommentsModel.shared
+                    if model.pageId == nil {
+                        shell.notYet("Comments")
+                    } else if model.open && !shell.pageTasksTab {
+                        model.cancel()
+                        model.open = false
+                    } else {
+                        shell.pageTasksTab = false
                         model.open = true
                         model.reload()
                     }

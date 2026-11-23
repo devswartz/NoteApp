@@ -201,7 +201,7 @@ struct TasksScreen: View {
                                 .padding(.top, 8).padding(.bottom, 6)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
-                            Button { shell.notYet("Adding tasks") } label: {
+                            Button { shell.openQuickAdd(session, due: SessionModel.todayString) } label: {
                                 HStack(spacing: 8) {
                                     Icon("plus", 15, p.textMuted.color)
                                     Text("Add task").font(.web(13.5)).foregroundStyle(p.textMuted.color)
@@ -227,7 +227,7 @@ struct TasksScreen: View {
                                 .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
                                 ForEach(g.tasks, id: \.id) { t in TaskRowView(task: t) }
                                 if !g.overdue {
-                                    Button { shell.notYet("Adding tasks") } label: {
+                                    Button { shell.openQuickAdd(session, due: g.title == "No date" ? nil : g.tasks.first?.dueDate) } label: {
                                         HStack(spacing: 8) {
                                             Icon("plus", 15, p.textMuted.color)
                                             Text("Add task").font(.web(13.5)).foregroundStyle(p.textMuted.color)

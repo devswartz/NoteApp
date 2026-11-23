@@ -164,6 +164,8 @@ struct Ribbon: View {
                 case .page: NoteRibbon(m: m)
                 case let .tasks(list): TasksRibbon(m: m, list: list)
                 case .notes, .section: NotesRibbon(m: m)
+                case .calendar: CalendarRibbon(m: m)
+                case .settings: SettingsRibbon(m: m)
                 }
                 Spacer(minLength: 0)
                 if case .page = shell.route { DrawToggle(m: m) }
@@ -197,6 +199,8 @@ struct CollapsedRibbon: View {
             switch shell.route {
             case .page: return "Text · Lists · Insert · Page · View · History"
             case .tasks: return "New · Show · Organise · Filter · Views · Print"
+            case .calendar: return "New · Navigate · View · Filter"
+            case .settings: return ""
             default: return "New · Import"
             }
         }()
@@ -312,11 +316,12 @@ struct TasksRibbon: View {
     let m: RibbonMetrics
     let list: Shell.TaskList
     @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
 
     var body: some View {
         let fixed = list == .today
         Group {
-        RibbonButton(icon: "plus", m: m) { shell.notYet("Adding tasks") }
+        RibbonButton(icon: "plus", m: m) { shell.openQuickAdd(session) }
         RibbonSeparator(m: m)
         RibbonButton(icon: "sun", m: m, pressed: list == .today) { shell.route = .tasks(.today) }
         RibbonButton(icon: "calendar-range", m: m, pressed: list == .upcoming) { shell.route = .tasks(.upcoming) }
