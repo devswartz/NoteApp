@@ -7,6 +7,7 @@
 //!
 //! The client is blocking: the core calls it from its own threads, never the UI thread.
 
+mod account;
 mod locks;
 mod share;
 mod tree;
@@ -228,6 +229,10 @@ impl Client {
         ));
         t.refresh = Some(s.refresh_token.clone());
         t.user = Some(s.user.clone());
+    }
+
+    fn set_user(&self, u: &User) {
+        self.tokens.lock().unwrap().user = Some(u.clone());
     }
 
     /// The signed-in user, if any.
