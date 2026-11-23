@@ -38,6 +38,14 @@ public interface INotesSource
     string? EmojiOfPage(string pageId);
     /// <summary>The signed-in user's id, so a mention of yourself can be drawn yellow.</summary>
     string? UserId { get; }
+    /// <summary>A task made from a box line (Ctrl+Enter, the Task button, the slash menu): the editor chose its id and wants it created in the workspace, on this page.</summary>
+    void CreateTask(string id, string title, bool done, string? pageId);
+    /// <summary>The task line was removed from the box for good.</summary>
+    void DeleteTask(string id);
+    /// <summary>Pages whose title contains the query, for the [[ menu (at most <paramref name="max"/>).</summary>
+    IReadOnlyList<(string Id, string Title)> SearchPages(string query, int max);
+    /// <summary>People that can be mentioned with @ (the signed-in user until the workspace member list is exposed).</summary>
+    IReadOnlyList<(string Id, string Label)> People(string query);
 
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();

@@ -339,6 +339,39 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     public string? EmojiOfPage(string pageId) => null;
     public string? UserId => _user.Id;
 
+    public IReadOnlyList<(string Id, string Title)> SearchPages(string query, int max) =>
+        _tree is null ? Array.Empty<(string, string)>()
+            : _tree.Pages.Where(p => !p.Locked && (query.Length == 0 || p.Title.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(p => p.UpdatedAt, StringComparer.Ordinal).Take(max).Select(p => (p.Id, p.Title.Length == 0 ? "Untitled" : p.Title)).ToList();
+
+    public IReadOnlyList<(string Id, string Label)> People(string query) =>
+        _user.Name is { Length: > 0 } n && (query.Length == 0 || n.Contains(query, StringComparison.OrdinalIgnoreCase)) ? new[] { (_user.Id, n) } : Array.Empty<(string, string)>();
+
+    public async void CreateTask(string id, string title, bool done, string? pageId)
+    {
+        var ws = _wsId;
+        if (ws is null) return;
+        try
+        {
+            var made = await _session.CallAsync(c => c.CreateTaskWith(ws, new N.NewTaskInput(title, id, pageId, null, done)));
+            if (ws != _wsId) return;
+            _tasks = _tasks.Where(t => t.Id != made.Id).Append(made).ToArray();
+            Raise();
+        }
+        catch (Exception) { }
+    }
+
+    public async void DeleteTask(string id)
+    {
+        try
+        {
+            await _session.CallAsync(c => { c.DeleteTask(id); return 0; });
+            _tasks = _tasks.Where(t => t.Id != id).ToArray();
+            Raise();
+        }
+        catch (Exception) { }
+    }
+
     public NotePage? GetPage(string pageId)
     {
         var meta = _tree?.Pages.FirstOrDefault(p => p.Id == pageId);

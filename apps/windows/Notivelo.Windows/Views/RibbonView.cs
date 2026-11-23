@@ -14,6 +14,71 @@ public enum RibbonMode { Smallest, Compact, Full }
 /// <summary>Ribbon (LOOK 4.1): one per route, no tabs, buttons are placeholders. Smallest (&lt;= 1023), compact (&lt;= 1279) and full (&gt;= 1280, with group names and words).</summary>
 internal sealed class RibbonView : ThemedControl
 {
+    public RibbonView() => BoxTextView.FocusedStateChanged += RefreshStates;
+
+    /// <summary>What an editing button does: the engine command and arguments, how its pressed state is read from the active marks, and whether it needs a focused box.</summary>
+    private sealed record Spec(string Command, string Args = "{}", Func<Notivelo.Native.ViewActive, bool>? Active = null);
+
+    private static bool Mark(Notivelo.Native.ViewActive a, Notivelo.Native.ViewMarkKind k) => a.Marks.Any(m => m.Kind == k);
+
+    private static readonly Dictionary<string, Spec> Specs = new()
+    {
+        ["Bold"] = new("toggleMark", "{\"mark\":\"bold\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Bold)),
+        ["Italic"] = new("toggleMark", "{\"mark\":\"italic\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Italic)),
+        ["Underline"] = new("toggleMark", "{\"mark\":\"underline\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Underline)),
+        ["Strikethrough"] = new("toggleMark", "{\"mark\":\"strike\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Strike)),
+        ["Highlight"] = new("toggleMark", "{\"mark\":\"highlight\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Highlight)),
+        ["Bulleted list"] = new("toggleBulletList", "{}", a => a.List == "bulletList"),
+        ["Numbered list"] = new("toggleOrderedList", "{}", a => a.List == "orderedList"),
+        ["Decrease indent"] = new("outdent"),
+        ["Increase indent"] = new("indent"),
+        ["Task"] = new("convertToTask"),
+        ["Table"] = new("insertTable", "{\"rows\":3,\"cols\":3,\"header\":true}"),
+    };
+
+    private readonly List<(ButtonBase Button, string Tip, Spec? Spec)> _bound = new();
+    private Button? _blockButton;
+    private TextBlock? _blockLabel;
+
+    /// <summary>Enabled and pressed states from the focused box's active marks and undo state (no box focused: the editing buttons are off).</summary>
+    private void RefreshStates()
+    {
+        if (Route != AppRoute.Notes) return;
+        var box = BoxTextView.Focused;
+        var act = box?.Active;
+        foreach (var (b, tip, spec) in _bound)
+        {
+            if (tip == "Undo") { b.IsEnabled = box?.CanUndo ?? false; continue; }
+            if (tip == "Redo") { b.IsEnabled = box?.CanRedo ?? false; continue; }
+            b.IsEnabled = box is not null;
+            if (b is ToggleButton t && spec?.Active is { } f) t.IsChecked = act is not null && f(act);
+        }
+        if (_blockButton is not null) _blockButton.IsEnabled = box is not null;
+        if (_blockLabel is not null)
+            _blockLabel.Text = act is null ? "Normal" : act.Block switch
+            {
+                "heading" => "Heading " + act.HeadingLevel, "codeBlock" => "Code", "blockquote" => "Quote", _ => act.InQuote ? "Quote" : "Normal",
+            };
+    }
+
+    private void BlockTypeMenu(Button b)
+    {
+        var f = new MenuFlyout();
+        void Add(string text, string cmd, string args = "{}")
+        {
+            var it = new MenuFlyoutItem { Text = text };
+            it.Click += (_, _) => { BoxTextView.Focused?.RunCommand(cmd, args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            f.Items.Add(it);
+        }
+        Add("Normal", "setParagraph");
+        Add("Heading 1", "setHeading", "{\"level\":1}");
+        Add("Heading 2", "setHeading", "{\"level\":2}");
+        Add("Heading 3", "setHeading", "{\"level\":3}");
+        Add("Quote", "toggleQuote");
+        Add("Code block", "toggleCodeBlock");
+        b.Flyout = f;
+    }
+
     public AppRoute Route { get; private set; } = AppRoute.Notes;
     public RibbonMode Mode { get; private set; } = RibbonMode.Compact;
     public TaskViewKind TaskView { get; private set; } = TaskViewKind.Today;
@@ -82,6 +147,14 @@ internal sealed class RibbonView : ThemedControl
         : Array.Empty<Item>();
 
     protected override UIElement Build()
+    {
+        _bound.Clear(); _blockButton = null; _blockLabel = null;
+        var host = BuildCore();
+        RefreshStates();
+        return host;
+    }
+
+    private UIElement BuildCore()
     {
         var full = Mode == RibbonMode.Full;
         var small = Mode == RibbonMode.Smallest;
@@ -161,7 +234,8 @@ internal sealed class RibbonView : ThemedControl
         if (it.BlockType)
         {
             var sp0 = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
-            sp0.Children.Add(new TextBlock { Text = "Normal", FontSize = 13, FontWeight = new FontWeight(500), VerticalAlignment = VerticalAlignment.Center, FontFamily = Ui.Font });
+            _blockLabel = new TextBlock { Text = "Normal", FontSize = 13, FontWeight = new FontWeight(500), VerticalAlignment = VerticalAlignment.Center, FontFamily = Ui.Font };
+            sp0.Children.Add(_blockLabel);
             sp0.Children.Add(new Icon("chevron-down", 14));
             var bt = new Button
             {
@@ -170,6 +244,7 @@ internal sealed class RibbonView : ThemedControl
                 IsEnabled = !it.Disabled, Margin = new Thickness(0, 0, small ? 2 : 4, 0),
             };
             ToolTipService.SetToolTip(bt, it.Tip);
+            if (Route == AppRoute.Notes) { bt.AllowFocusOnInteraction = false; bt.IsTabStop = false; _blockButton = bt; BlockTypeMenu(bt); }
             return bt;
         }
 
@@ -193,14 +268,25 @@ internal sealed class RibbonView : ThemedControl
             content.Children.Add(new Icon("chevron-down", it.Word is not null && !full ? 14 : 12) { Opacity = 0.7, Margin = new Thickness(it.Word is not null ? 0 : -2, 0, 0, 0) });
 
         ButtonBase b;
-        if (it.Pressed)
-            b = new ToggleButton { Style = Ui.Style("RibbonToggleStyle"), IsChecked = true };
+        Specs.TryGetValue(it.Tip, out var spec);
+        var editing = Route == AppRoute.Notes && (spec is not null || it.Tip is "Undo" or "Redo");
+        if (it.Pressed || spec?.Active is not null)
+            b = new ToggleButton { Style = Ui.Style("RibbonToggleStyle"), IsChecked = it.Pressed };
         else
             b = new Button { Style = Ui.Style("GhostButtonStyle") };
         b.Height = h; b.MinWidth = minW; b.Padding = pad; b.CornerRadius = new CornerRadius(6);
         b.Content = content;
         b.IsEnabled = !it.Disabled;
         ToolTipService.SetToolTip(b, it.Tip);
+        if (editing)
+        {
+            // the box keeps the keyboard (and the IME): these buttons never take the focus
+            b.AllowFocusOnInteraction = false; b.IsTabStop = false;
+            _bound.Add((b, it.Tip, spec));
+            if (it.Tip == "Undo") b.Click += (_, _) => BoxTextView.Focused?.DoUndo();
+            else if (it.Tip == "Redo") b.Click += (_, _) => BoxTextView.Focused?.DoRedo();
+            else if (spec is not null) b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+        }
         return b;
     }
 }

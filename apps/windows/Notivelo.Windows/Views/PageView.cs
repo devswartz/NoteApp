@@ -79,7 +79,9 @@ internal sealed class PageView : ThemedControl
     {
         _scroll = null;
         var page = PageId is null ? null : _source.GetPage(PageId);
-        var root = new Grid();
+        var root = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
+        // a click on the page outside any box gives the keyboard back to the page
+        root.PointerPressed += (_, _) => BoxTextView.Focused?.Unfocus();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         if (page is null)
@@ -281,8 +283,8 @@ internal sealed class PageView : ThemedControl
             if (_views.ContainsKey(box.Field)) continue;
             try
             {
-                var session = Notivelo.Native.EditorSession.OpenLive(live, box.Field, new BoxTasks(_source));
-                _views[box.Field] = new BoxTextView(session, _source);
+                var session = Notivelo.Native.EditorSession.OpenLive(live, box.Field, new BoxTasks(_source, DispatcherQueue, () => PageId));
+                _views[box.Field] = new BoxTextView(session, _source) { PageId = PageId };
             }
             catch (Exception e) { BoxTextView.Log("open " + box.Field, e); }
         }
@@ -291,20 +293,37 @@ internal sealed class PageView : ThemedControl
             _seeded = true;
             _views.Values.First().RunScript(File.ReadAllLines(seed));
         }
+        // dev hook: NOTIVELO_FOCUS=1 gives the first box the keyboard (loopback servers only), to exercise the text services without a pointer
+        if (Environment.GetEnvironmentVariable("NOTIVELO_FOCUS") is not null && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") && _views.Count > 0)
+            _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); BoxTextView.Trace("focus hook " + ok); }));
         foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); }
     }
 
-    /// <summary>The session's view of the task list. Titles come from the source; the box is read-only for now, so nothing is written.</summary>
+    /// <summary>The session's view of the task list. The core calls these on the session's thread with the session locked: they only note
+    /// the change and hand the real work to the UI thread (never back into the session).</summary>
     private sealed class BoxTasks : Notivelo.Native.TaskCallbacks
     {
         private readonly INotesSource _src;
-        public BoxTasks(INotesSource src) => _src = src;
+        private readonly Microsoft.UI.Dispatching.DispatcherQueue _ui;
+        private readonly Func<string?> _page;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _titles = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _gone = new();
+        public BoxTasks(INotesSource src, Microsoft.UI.Dispatching.DispatcherQueue ui, Func<string?> page) { _src = src; _ui = ui; _page = page; }
         public string NewId() => Guid.NewGuid().ToString();
-        public void Create(string id, string title, bool done) { }
-        public void Delete(string id) { }
-        public bool Restore(string id) => false;
-        public string? Title(string id) => _src.FindTask(id)?.Title;
-        public void SetTitle(string id, string title) { }
+        public void Create(string id, string title, bool done)
+        {
+            _titles[id] = title; _gone.TryRemove(id, out _);
+            var page = _page();
+            _ui.TryEnqueue(() => _src.CreateTask(id, title, done, page));
+        }
+        public void Delete(string id)
+        {
+            _gone[id] = true;
+            _ui.TryEnqueue(() => _src.DeleteTask(id));
+        }
+        public bool Restore(string id) { _gone.TryRemove(id, out _); return _titles.ContainsKey(id) || _src.FindTask(id) is not null; }
+        public string? Title(string id) => _gone.ContainsKey(id) ? null : _titles.TryGetValue(id, out var t) ? t : _src.FindTask(id)?.Title;
+        public void SetTitle(string id, string title) => _titles[id] = title;
     }
 
     private UIElement Box(CanvasBox box)

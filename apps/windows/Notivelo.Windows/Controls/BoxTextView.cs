@@ -21,7 +21,7 @@ namespace Notivelo.Windows.Controls;
 /// layouts (Win2D), with marks, lists, quotes, callouts, code, tables, toggles, atoms and the selection drawn under and over them.
 /// Task rows are XAML laid over the canvas. This part only draws; input comes next.
 /// </summary>
-internal sealed class BoxTextView : UserControl
+internal sealed partial class BoxTextView : UserControl
 {
     private readonly N.EditorSession _session;
     private readonly INotesSource _source;
@@ -41,7 +41,7 @@ internal sealed class BoxTextView : UserControl
     private readonly List<Deco> _decos = new();
     private double _height;
 
-    /// <summary>Draw the caret and the selection (no input yet, so only set by a dev hook).</summary>
+    /// <summary>Draw the caret and the selection without focus (dev hook for screenshots).</summary>
     public bool ShowSelection { get; set; }
 
     public BoxTextView(N.EditorSession session, INotesSource source)
@@ -58,6 +58,7 @@ internal sealed class BoxTextView : UserControl
         _root.Children.Add(_canvas);
         _root.Children.Add(_chrome);
         ActualThemeChanged += (_, _) => { _textRev = ulong.MaxValue; Render(); };
+        InitInput();
     }
 
     public double LaidOutHeight => _height;
@@ -117,6 +118,7 @@ internal sealed class BoxTextView : UserControl
                         if (at >= 0) _session.SetViewSelection((uint)at, (uint)(at + arg.Length));
                         break;
                     }
+                    case "start": _session.SetViewSelection(0, 0); break;
                     case "end": { var n = (uint)_session.ViewRender().View.Text.Length; _session.SetViewSelection(n, n); break; }
                 }
             }
@@ -157,6 +159,7 @@ internal sealed class BoxTextView : UserControl
         Trace("invalidate");
         _canvas.Invalidate();
         Trace("invalidated");
+        AfterRender(prev, r);
     }
 
     // ---- palette ------------------------------------------------------------------------------------------------
@@ -757,7 +760,7 @@ internal sealed class BoxTextView : UserControl
             if (b.Hidden || b.Text is null) continue;
             foreach (var back in b.Backs) DrawBack(ds, b, back);
         }
-        if (ShowSelection) DrawSelection(ds, r);
+        if (ShowSelection || _focused) DrawSelection(ds, r);
 
         foreach (var b in _boxes)
         {
@@ -803,7 +806,8 @@ internal sealed class BoxTextView : UserControl
             }
         }
 
-        if (ShowSelection) DrawCaret(ds, r);
+        DrawIme(ds, r);
+        if (ShowSelection || (_focused && _caretOn)) DrawCaret(ds, r);
     }
 
     private static Rect Inset(Rect r, double d) => new(r.X + d, r.Y + d, Math.Max(0, r.Width - 2 * d), Math.Max(0, r.Height - 2 * d));
@@ -916,7 +920,7 @@ internal sealed class BoxTextView : UserControl
         var sel = r.View.Selection;
         if (sel.Anchor == sel.Head) return;
         int a = (int)Math.Min(sel.Anchor, sel.Head), e = (int)Math.Max(sel.Anchor, sel.Head);
-        var fill = Alpha(C("Accent"), _dark ? 0.35 : 0.25);
+        var fill = C("AccentSoft");   // LOOK 4.4: ::selection is --accent-soft (accent at 10 %, 15 % dark), text colour unchanged
         foreach (var b in _boxes)
         {
             if (b.Hidden) continue;

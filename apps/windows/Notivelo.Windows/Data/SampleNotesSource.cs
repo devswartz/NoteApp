@@ -100,6 +100,10 @@ public sealed class SampleNotesSource : INotesSource
     public string? PageTitleOf(string pageId) => null;
     public string? EmojiOfPage(string pageId) => null;
     public string? UserId => null;
+    public void CreateTask(string id, string title, bool done, string? pageId) { }
+    public void DeleteTask(string id) { }
+    public IReadOnlyList<(string Id, string Title)> SearchPages(string query, int max) => Array.Empty<(string, string)>();
+    public IReadOnlyList<(string Id, string Label)> People(string query) => Array.Empty<(string, string)>();
     public NotePage? GetPage(string pageId) => _pages.GetValueOrDefault(pageId);
 
     public TaskCounts GetTaskCounts() => new(3, true, 15, 7);

@@ -31,6 +31,8 @@ public sealed partial class MainWindow : Window
         }
 
         var hwnd = WindowNative.GetWindowHandle(this);
+        Controls.BoxTextView.WindowHandle = hwnd;
+        Controls.DevShot.Arm(hwnd);
         var scale = GetDpiForWindow(hwnd) / 96.0;
         AppWindow.ResizeClient(new global::Windows.Graphics.SizeInt32((int)(1180 * scale), (int)(820 * scale)));
         if (AppWindowTitleBar.IsCustomizationSupported())
