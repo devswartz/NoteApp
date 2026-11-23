@@ -1309,6 +1309,23 @@ impl Editor {
         self.composition.is_none() && self.binding.as_ref().is_some_and(|b| b.can_redo())
     }
 
+    /// Join a page's undo (`bind::PageSeq`): this editor's undo steps are stamped from it.
+    pub fn set_page_seq(&mut self, seq: std::sync::Arc<crate::bind::PageSeq>) {
+        if let Some(b) = &mut self.binding {
+            b.set_page_seq(seq);
+        }
+    }
+
+    /// The page stamp of the newest undo step (see `Binding::top_undo_seq`). An open composition
+    /// counts as newest.
+    pub fn top_undo_seq(&self) -> Option<u64> {
+        self.binding.as_ref()?.top_undo_seq()
+    }
+
+    pub fn top_redo_seq(&self) -> Option<u64> {
+        self.binding.as_ref()?.top_redo_seq()
+    }
+
     pub fn undo(&mut self) -> bool {
         self.end_composition();
         let Some(b) = &mut self.binding else {

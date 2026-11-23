@@ -65,6 +65,32 @@ impl Clock {
     }
 }
 
+/// A page's change counter, shared by every undo history on the page (page-level undo): each
+/// undo or redo step is stamped with the next number, so the newest of several histories can be
+/// told. `last_change` is the stamp of the newest new change (not an undo or redo): a redo step
+/// stamped before it was made redoable earlier than that change and is gone, as in a single history.
+#[derive(Debug, Default)]
+pub struct PageSeq {
+    next: AtomicU64,
+    last_change: AtomicU64,
+}
+
+impl PageSeq {
+    /// The next stamp; `new_change` marks it as a new change (every redo step before it is dropped).
+    pub fn stamp(&self, new_change: bool) -> u64 {
+        let n = self.next.fetch_add(1, Ordering::SeqCst) + 1;
+        if new_change {
+            self.last_change.fetch_max(n, Ordering::SeqCst);
+        }
+        n
+    }
+
+    /// Whether a redo step stamped `seq` can still be redone.
+    pub fn redo_live(&self, seq: u64) -> bool {
+        seq > self.last_change.load(Ordering::SeqCst)
+    }
+}
+
 pub struct Binding {
     pub doc: Doc,
     pub field: String,
@@ -74,6 +100,11 @@ pub struct Binding {
     /// Selections (before, after) for each undo / redo stack item, kept beside yrs's stacks.
     undo_sel: Vec<(Selection, Selection)>,
     redo_sel: Vec<(Selection, Selection)>,
+    /// The page's counter and the stamps of the undo / redo steps (parallel to the stacks), when
+    /// the binding is on a page with a page-level undo.
+    page_seq: Option<Arc<PageSeq>>,
+    undo_seq: Vec<u64>,
+    redo_seq: Vec<u64>,
     /// Opened on a doc that already holds the content (`new_lazy`) and not written since: the
     /// first write also carries what opening adds (the trailing paragraph), outside undo.
     lazy: bool,
@@ -120,6 +151,9 @@ impl Binding {
             clock,
             undo_sel: Vec::new(),
             redo_sel: Vec::new(),
+            page_seq: None,
+            undo_seq: Vec::new(),
+            redo_seq: Vec::new(),
             lazy,
         }
     }
@@ -164,13 +198,22 @@ impl Binding {
             write_children(&mut txn, &self.fragment, &old, &tree.content);
         }
         let m = self.undo.undo_stack().len();
+        let stamp = self.page_seq.as_ref().map_or(0, |p| p.stamp(true));
         if m > n {
             self.undo_sel.push((before.clone(), after.clone()));
-        } else if let Some(last) = self.undo_sel.last_mut() {
-            last.1 = after.clone();
+            self.undo_seq.push(stamp);
+        } else {
+            if let Some(last) = self.undo_sel.last_mut() {
+                last.1 = after.clone();
+            }
+            if let Some(last) = self.undo_seq.last_mut() {
+                *last = stamp;
+            }
         }
         self.undo_sel.truncate(m);
+        self.undo_seq.truncate(m);
         self.redo_sel.clear();
+        self.redo_seq.clear();
     }
 
     /// The next change starts a new undo step, however soon it comes.
@@ -180,6 +223,26 @@ impl Binding {
 
     pub fn can_undo(&self) -> bool {
         self.undo.can_undo()
+    }
+
+    /// Join a page's undo: from now on every step is stamped from `seq`.
+    pub fn set_page_seq(&mut self, seq: Arc<PageSeq>) {
+        self.page_seq = Some(seq);
+    }
+
+    /// The stamp of the newest undo step (`None`: nothing to undo or the binding isn't on a page).
+    pub fn top_undo_seq(&self) -> Option<u64> {
+        self.page_seq.as_ref()?;
+        self.undo
+            .can_undo()
+            .then(|| self.undo_seq.last().copied())?
+    }
+
+    /// The stamp of the newest redo step that a later change hasn't dropped.
+    pub fn top_redo_seq(&self) -> Option<u64> {
+        let p = self.page_seq.as_ref()?;
+        let s = self.redo_seq.last().copied()?;
+        (self.undo.can_redo() && p.redo_live(s)).then_some(s)
     }
 
     pub fn can_redo(&self) -> bool {
@@ -196,6 +259,9 @@ impl Binding {
         if let Some(s) = &sel {
             self.redo_sel.push(s.clone());
         }
+        self.undo_seq.pop();
+        self.redo_seq
+            .push(self.page_seq.as_ref().map_or(0, |p| p.stamp(false)));
         Some((self.read(), sel.map_or(Selection::caret(1), |s| s.0)))
     }
 
@@ -208,6 +274,9 @@ impl Binding {
         if let Some(s) = &sel {
             self.undo_sel.push(s.clone());
         }
+        self.redo_seq.pop();
+        self.undo_seq
+            .push(self.page_seq.as_ref().map_or(0, |p| p.stamp(false)));
         Some((self.read(), sel.map_or(Selection::caret(1), |s| s.1)))
     }
 }

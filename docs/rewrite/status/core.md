@@ -5,6 +5,10 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **Page undo is done on `rewrite/core-pageundo`** (cut from `rewrite/native` e175c64, not merged;
+  **core pauses**): `LivePage.undo()` / `redo()` / `can_undo()` / `can_redo()` take back this
+  client's newest change on the page across box geometry, ink and box text, as the web's
+  `pageUndo.ts` does ("For apple, windows and android: page undo").
 - **The Android core is done on `rewrite/core-android`** (cut from `rewrite/native` c4a599d, not
   merged; **core pauses**): `libnv_core.so` for arm64-v8a, armeabi-v7a and x86_64 (API 24),
   uniffi Kotlin bindings, the platform verifier's JNI init, a Gradle library module with an `.aar`,
@@ -44,6 +48,38 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For apple, windows and android: page undo (2026-11-23, `rewrite/core-pageundo`)
+
+One undo for the page, like the web's Ctrl+Z. On `LivePage` (Swift `undo()`, `redo()`,
+`canUndo()`, `canRedo()`; C# and Kotlin the same in their casing):
+
+- `undo() -> Result<bool, PageUndoError>` and `redo()`: take back / bring back this client's
+  newest change on the page. True if something changed; `PageUndoError::Closed` after `close()`.
+  Undo edits are ordinary local edits and go out to the server.
+- `can_undo()` / `can_redo()` for the ribbon buttons.
+
+**What is in the stack:** box create, move, resize, bring to front and delete (undoing a delete
+brings the box **and its text** back); ink (each gesture one step, as `ink_undo`); and the text of
+every box whose `EditorSession` was opened live (`open_live`). The newest step wins, across
+kinds; any new change anywhere (also typing) drops all redo steps. Only this client's changes:
+others' are never undone, and nothing from before the page was opened here.
+
+**How apps switch:** ribbon Undo/Redo and Cmd-Z / Ctrl-Z call `livePage.undo()` / `redo()`
+instead of `EditorSession.undo` / `inkUndo`. Nothing is notified (local edits aren't reported
+through `on_change`), so afterwards re-read `inkStrokes()`, `info()` and each open session's
+`view_render()` (an undone text step puts the caret back in its box, as before). `inkUndo`,
+`inkRedo`, `inkCanUndo` and `inkCanRedo` still work; they now cover ink **and box** steps (one
+manager, as the web), not text. `EditorSession.undo` still works on its own (text only).
+
+**What isn't covered:**
+- A box's text steps live in its `EditorSession` and end with it: when the app drops the session
+  (the box's editor closes), those steps leave the page's stack. The web keeps them. Keep the
+  sessions of boxes the user has edited alive for the page's lifetime if that matters.
+- Typing in one box within 500 ms of its last step joins that step (the engine's grouping), even
+  if something else was done in between.
+- `undo()` doesn't say what it undid (no box id / kind), so the app can't scroll to it yet.
+- Not run on a device; the Swift/C#/Kotlin bindings are generated from the same exports.
 
 ## For android (2026-11-23, `rewrite/core-android`)
 

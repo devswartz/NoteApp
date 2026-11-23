@@ -601,7 +601,7 @@ impl LivePage {
         // Held across the edit so an undo on another thread can't interleave with it (the
         // manager's own observer isn't synchronised with the caller).
         let mut guard = self.ink_undo.lock().unwrap();
-        guard.get_or_insert_with(|| new_ink_undo(self.doc()));
+        guard.get_or_insert_with(|| new_ink_undo(self.doc(), self.page_undo.seq.clone()));
         f(self.doc())
     }
 
@@ -642,26 +642,41 @@ fn ink_origin() -> nv_model::yrs::Origin {
     nv_model::yrs::Origin::from(INK_ORIGIN)
 }
 
-/// The page's ink undo manager, made at the first ink edit (so only edits made through this
-/// `LivePage` can be undone, never what the page held when it opened).
+/// The page's undo manager for box geometry and ink, made at the first ink or box edit (so only
+/// edits made through this `LivePage` can be undone, never what the page held when it opened).
 ///
-/// Scope is the `ink` map. The web's `canvasUndo.ts` has one manager over `boxes` and `ink` with
-/// origins GEOM_ORIGIN and INK_ORIGIN; box geometry can join this one later with
-/// `expand_scope(doc, &boxes_map)` plus `include_origin` for the geometry edits' origin.
+/// As the web's `canvasUndo.ts`: one manager over the `boxes` and `ink` maps, tracking the ink
+/// origin and the box origin (`boxes::GEOM_ORIGIN`). Deleting a box brings its text back too,
+/// because `delete_box_with_content` adds the box's fragment to the scope first. Every stack
+/// item carries a page-wide stamp (`PageSeq`) as its meta, for `LivePage::undo`.
 ///
 /// Capture timeout is 0 (the web merges edits within 500 ms): the web's pointer events write many
 /// small edits per gesture, which the timeout groups; the apps call once per gesture, so each
 /// call must be exactly one step, even two quick calls.
-fn new_ink_undo(doc: &Doc) -> nv_model::yrs::undo::UndoManager<()> {
-    use nv_model::yrs::undo::{Options, UndoManager};
-    let options = Options::<()> {
+pub(crate) fn new_ink_undo(
+    doc: &Doc,
+    seq: Arc<nv_editor::bind::PageSeq>,
+) -> nv_model::yrs::undo::UndoManager<u64> {
+    use nv_model::yrs::undo::{Event, Options, UndoManager};
+    let options = Options::<u64> {
         capture_timeout_millis: 0,
-        tracked_origins: [ink_origin()].into_iter().collect(),
+        tracked_origins: [ink_origin(), crate::boxes::geom_origin()]
+            .into_iter()
+            .collect(),
         ..Default::default()
     };
     let mut mgr = UndoManager::with_options(options);
-    let ink = doc.get_or_insert_map(nv_model::page::INK_KEY);
-    mgr.expand_scope(doc, &ink);
+    mgr.expand_scope(doc, &doc.get_or_insert_map(nv_model::page::INK_KEY));
+    mgr.expand_scope(doc, &doc.get_or_insert_map(nv_model::page::BOXES_KEY));
+    // Our own edits are new changes; the manager's undo and redo (its own origin) are not.
+    let stamp = move |txn: &nv_model::yrs::TransactionMut, e: &mut Event<u64>| {
+        let from = txn.origin().map(|o| o.as_ref());
+        let new_change = from == Some(INK_ORIGIN.as_bytes())
+            || from == Some(crate::boxes::GEOM_ORIGIN.as_bytes());
+        *e.meta_mut() = seq.stamp(new_change);
+    };
+    mgr.observe_item_added("nv-core:seq", stamp.clone());
+    mgr.observe_item_updated("nv-core:seq", stamp);
     mgr
 }
 
@@ -762,9 +777,10 @@ impl LivePage {
         self.ink_edit(|doc| Ok(delete(doc, &ids)))
     }
 
-    /// Undo the last ink edit made through this page (an add, a whole erase gesture, a move, a
-    /// delete: one step each). Remote changes and other local edits (text, boxes) are never
-    /// undone. The result is an ordinary local edit, sent like any other; it is not reported
+    /// Undo the last ink or box-geometry edit made through this page (an add, a whole erase
+    /// gesture, a move, a delete: one step each; boxes: create, move, resize, front, delete). Not
+    /// text (`EditorSession::undo`) and not remote changes. `undo()` is the one call for all of
+    /// them; this is for apps that haven't switched. The result is an ordinary local edit, sent like any other; it is not reported
     /// through a change listener (local edits aren't), so re-read `ink_strokes()` afterwards.
     /// A move's undo brings back the old stroke ids. True if something was undone.
     pub fn ink_undo(&self) -> Result<bool, InkError> {
