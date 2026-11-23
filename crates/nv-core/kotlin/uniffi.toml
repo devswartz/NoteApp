@@ -1,5 +1,6 @@
-# Config for uniffi's own Kotlin generator (https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
-[bindings.kotlin]
+# Config for uniffi 0.32's own Kotlin generator, passed as --config (a global config file: [defaults.bindings.kotlin]).
+# https://mozilla.github.io/uniffi-rs/kotlin/configuration.html
+[defaults.bindings.kotlin]
 package_name = "com.notivelo.core"
 # libnv_core.so (jniLibs/<abi>/); JNA loads it by this name.
 cdylib_name = "nv_core"

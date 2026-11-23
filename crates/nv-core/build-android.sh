@@ -36,8 +36,7 @@ TRIPLES=()
 for a in "${ABIS[@]}"; do TRIPLES+=("$(triple "$a")"); done
 if command -v rustup >/dev/null; then rustup target add "${TRIPLES[@]}"; fi
 
-# Stripped, and 16 KB page alignment (required by Android 15 devices with 16 KB pages).
-export CARGO_PROFILE_FFI_STRIP=symbols
+# 16 KB page alignment (required by Android 15 devices with 16 KB pages).
 export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-Wl,-z,max-page-size=16384"
 
 rm -rf "$OUT"
@@ -58,6 +57,10 @@ KT="$OUT/src/main/kotlin"
 mkdir -p "$KT"
 cp -R "$OUT/gen/com" "$KT/"
 rm -rf "$OUT/gen"
+
+# The metadata the generator reads is in the symbols, so strip only now (the .dynsym that JNI and JNA use stays).
+STRIP=$(ls "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/bin/llvm-strip | head -1)
+for so in "$OUT"/src/main/jniLibs/*/libnv_core.so; do "$STRIP" --strip-unneeded "$so"; done
 cp -R crates/nv-core/kotlin/NotiveloCore/src/main/kotlin/com "$KT/"
 cp crates/nv-core/kotlin/NotiveloCore/src/main/AndroidManifest.xml "$OUT/src/main/"
 cp crates/nv-core/kotlin/NotiveloCore/{build.gradle.kts,settings.gradle.kts,consumer-rules.pro} "$OUT/"

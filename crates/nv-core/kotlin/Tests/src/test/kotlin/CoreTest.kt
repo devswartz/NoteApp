@@ -31,7 +31,7 @@ class CoreTest {
     fun readsADocumentPage() {
         val info = readPage(page("document-page"))
         val expected = corpus("document-page", "expected.json").readText()
-        val kind = Regex("\"kind\"\s*:\s*\"(\w+)\"").find(expected)!!.groupValues[1]
+        val kind = Regex("\"kind\"\\s*:\\s*\"(\\w+)\"").find(expected)!!.groupValues[1]
         assertEquals(kind, info.kind.name.lowercase())
         assertFalse(info.newerFormat)
         assertEquals(corpus("document-page", "page.txt").readText(), info.text)
