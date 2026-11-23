@@ -29,6 +29,16 @@ public interface INotesSource
     /// <summary>Newest first, for the Notes overview.</summary>
     IReadOnlyList<(PageSummary Page, string Where, string Edited)> RecentPages(int count);
 
+    /// <summary>The open page's live connection once it has synced (null for a source with none, or while connecting). The box views open editor sessions on it.</summary>
+    Notivelo.Native.LivePage? LivePageOf(string pageId);
+    /// <summary>A task by id for task lines in a box (null: missing or not visible).</summary>
+    TaskItem? FindTask(string taskId);
+    /// <summary>The title of a page by id, or null when it isn't in the tree (a missing page link).</summary>
+    string? PageTitleOf(string pageId);
+    string? EmojiOfPage(string pageId);
+    /// <summary>The signed-in user's id, so a mention of yourself can be drawn yellow.</summary>
+    string? UserId { get; }
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

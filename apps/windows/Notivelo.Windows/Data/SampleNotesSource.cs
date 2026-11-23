@@ -95,6 +95,11 @@ public sealed class SampleNotesSource : INotesSource
     private static TaskItem Task(string id, string title, int priority, string? due, DueTone tone, string? page, string? team, bool done = false)
         => new(id, title, done, priority, due, tone, false, page, team, "DU", Array.Empty<string>(), 0, 0);
 
+    public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
+    public TaskItem? FindTask(string taskId) => null;
+    public string? PageTitleOf(string pageId) => null;
+    public string? EmojiOfPage(string pageId) => null;
+    public string? UserId => null;
     public NotePage? GetPage(string pageId) => _pages.GetValueOrDefault(pageId);
 
     public TaskCounts GetTaskCounts() => new(3, true, 15, 7);

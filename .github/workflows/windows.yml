@@ -62,6 +62,9 @@ jobs:
       - name: Build nv_core.dll (x64, arm64) and the C# bindings
         run: bash crates/nv-core/build-windows.sh
 
+      - name: Unit tests (box text view model)
+        run: dotnet test apps/windows/Notivelo.Windows.Tests/Notivelo.Windows.Tests.csproj -c Release
+
       - name: Restore
         run: |
           dotnet restore apps/windows/Notivelo.Windows.sln
