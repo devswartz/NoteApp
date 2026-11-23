@@ -89,4 +89,29 @@ public class OfflineSessionTests
         Assert.Single(t.Made);
         Assert.Equal("buy milk", t.Made[0]);
     }
+
+    [Fact]
+    public void EditLink_links_the_selection_and_unsetLink_removes_it()
+    {
+        var (s, _) = Open();
+        s.InsertText("see docs now");
+        s.SetViewSelection(4, 8);
+        Assert.True(s.Command("editLink", "{\"text\":\"docs\",\"href\":\"https://example.com\"}"));
+        var run = s.ViewRender().View.Lines[0].Runs.First(r => r.Marks.Any(m => m.Kind == ViewMarkKind.Link));
+        Assert.Equal((uint)4, run.From);
+        Assert.Equal("https://example.com", run.Marks.First(m => m.Kind == ViewMarkKind.Link).Value);
+        s.SetViewSelection(4, 8);
+        Assert.True(s.Command("unsetLink", "{}"));
+        Assert.DoesNotContain(s.ViewRender().View.Lines[0].Runs, r => r.Marks.Any(m => m.Kind == ViewMarkKind.Link));
+    }
+
+    [Fact]
+    public void EditLink_with_a_new_text_inserts_a_link()
+    {
+        var (s, _) = Open();
+        s.InsertText("go ");
+        Assert.True(s.Command("editLink", "{\"text\":\"home\",\"href\":\"example.com/notes\"}"));
+        Assert.Equal("go home", Text(s));
+        Assert.Contains(s.ViewRender().View.Lines[0].Runs, r => r.Marks.Any(m => m.Kind == ViewMarkKind.Link));
+    }
 }

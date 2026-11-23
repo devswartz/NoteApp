@@ -3,7 +3,12 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.Geometry;
+using Microsoft.Graphics.Canvas.UI.Xaml;
+using Windows.Foundation;
 using Notivelo.Windows.Controls;
 using Notivelo.Windows.Data;
 
@@ -16,7 +21,25 @@ internal sealed class PageView : ThemedControl
     private readonly INotesSource _source;
     public string? PageId { get; private set; }
 
-    public PageView(INotesSource source) => _source = source;
+    public PageView(INotesSource source)
+    {
+        _source = source;
+        Loaded += (_, _) => BoxTextView.FocusedStateChanged += FocusChanged;
+        Unloaded += (_, _) => BoxTextView.FocusedStateChanged -= FocusChanged;
+    }
+
+    // Box frames (chrome) per field, the canvas surface and the ink layers of the page shown.
+    private readonly Dictionary<string, BoxFrame> _frames = new();
+    private Canvas? _surface;
+    private InkLayer? _inkUnder, _inkOver;
+    private BoxFrame? _dragging;
+    /// <summary>A box just made by a click: it takes the keyboard when it is on the page.</summary>
+    private string? _focusField;
+
+    private void FocusChanged()
+    {
+        foreach (var f in _frames.Values) f.SetEditing(ReferenceEquals(BoxTextView.Focused, f.View) || f.View.LinkEditorOpen);
+    }
 
     private ScrollViewer? _scroll;
     private double _offset;
@@ -42,6 +65,7 @@ internal sealed class PageView : ThemedControl
     {
         foreach (var v in _views.Values) { try { v.Release(); } catch { } }
         _views.Clear();
+        _frames.Clear();
         _viewsFor = null;
     }
 
@@ -59,9 +83,12 @@ internal sealed class PageView : ThemedControl
         {
             _offset = _scroll.VerticalOffset;
             // A live page whose boxes are session views: a remote edit only needs those views to read their sessions again.
+            if (_dragging is not null) return;
             if (_views.Count > 0 && _source.GetPage(PageId) is { } page && Signature(page) == _sig)
             {
                 foreach (var v in _views.Values) v.OnPageChanged();
+                ApplyGeometry(page);
+                UpdateInk(page);
                 return;
             }
         }
@@ -73,7 +100,7 @@ internal sealed class PageView : ThemedControl
     /// <summary>What a full rebuild shows besides the text inside session-backed boxes.</summary>
     private static string Signature(NotePage p) =>
         string.Join("|", p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked,
-            string.Join(";", p.Boxes.Select(b => $"{b.Field}@{b.X},{b.Y},{b.Width},{b.Wide}")));
+            string.Join(";", p.Boxes.Select(b => b.Field + (b.Field is null ? $"@{b.X},{b.Y},{b.Width},{b.Wide}" : ""))));
 
     protected override UIElement Build()
     {
@@ -81,7 +108,7 @@ internal sealed class PageView : ThemedControl
         var page = PageId is null ? null : _source.GetPage(PageId);
         var root = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
         // a click on the page outside any box gives the keyboard back to the page
-        root.PointerPressed += (_, _) => BoxTextView.Focused?.Unfocus();
+        root.PointerPressed += (_, _) => { BoxTextView.CloseLinkEditor(); BoxTextView.Focused?.Unfocus(); BoxTextView.LeaveEditing(); };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         if (page is null)
@@ -125,12 +152,33 @@ internal sealed class PageView : ThemedControl
         else article.Children.Add(sub);
 
         _sig = Signature(page);
-        DisposeViews();
         SyncViews(page);
-        var surfaceH = Math.Max(320, (page.Boxes.Count == 0 ? 0 : page.Boxes.Max(b => b.Y)) + 320);
-        var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 15, 0, 0) };
+        var ink = PageId is null ? Array.Empty<InkStroke>() : _source.InkOf(PageId);
+        var surfaceH = Math.Max(320, Math.Max((page.Boxes.Count == 0 ? 0 : page.Boxes.Max(b => b.Y)) + 320, ink.Count == 0 ? 0 : ink.Max(i => i.MaxY) + 40));
+        // the canvas surface: clicks on it make a box (the web's click-to-create); highlighters sit under the boxes, pens over them
+        var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 15, 0, 0), Background = new SolidColorBrush(Colors.Transparent) };
+        _surface = canvas;
+        canvas.PointerPressed += OnSurfacePressed;
+        _inkUnder = new InkLayer(true) { Height = surfaceH };
+        _inkOver = new InkLayer(false) { Height = surfaceH };
+        Canvas.SetZIndex(_inkUnder, -1);
+        Canvas.SetZIndex(_inkOver, 1_000_000);
+        var under = _inkUnder; var over = _inkOver;
+        canvas.SizeChanged += (_, e) => { under.Width = e.NewSize.Width; over.Width = e.NewSize.Width; };
+        canvas.Children.Add(_inkUnder);
+        canvas.Children.Add(_inkOver);
+        UpdateInk(page);
         _firstBox = page.Boxes.FirstOrDefault();
-        foreach (var box in page.Boxes) canvas.Children.Add(Box(box));
+        var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
+        foreach (var box in page.Boxes) { var el = Box(box); Canvas.SetZIndex(el, rank[box]); canvas.Children.Add(el); }
+        if (_focusField is { } ff && _frames.TryGetValue(ff, out var nf))
+        {
+            _focusField = null;
+            var v = nf.View;
+            void Go() { try { v.Focus(FocusState.Programmatic); } catch { } }
+            if (v.IsLoaded) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Go);
+            else { RoutedEventHandler? once = null; once = (_, _) => { v.Loaded -= once; DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Go); }; v.Loaded += once; }
+        }
         Grid.SetRow(canvas, 3);
         article.Children.Add(canvas);
 
@@ -301,7 +349,7 @@ internal sealed class PageView : ThemedControl
         // dev hook: NOTIVELO_FOCUS=1 gives the first box the keyboard (loopback servers only), to exercise the text services without a pointer
         if (Environment.GetEnvironmentVariable("NOTIVELO_FOCUS") is not null && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") && _views.Count > 0)
             _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); BoxTextView.Trace("focus hook " + ok); }));
-        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); }
+        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); _frames.Remove(gone); }
     }
 
     /// <summary>The session's view of the task list. The core calls these on the session's thread with the session locked: they only note
@@ -334,34 +382,303 @@ internal sealed class PageView : ThemedControl
     private UIElement Box(CanvasBox box)
     {
         var width = box.Wide ? 819 : box.Width;
-        Border b;
         if (box.Field is not null && _views.TryGetValue(box.Field, out var view))
         {
-            // the view lives in its own host border, which moves into each rebuilt canvas
-            b = view.Host;
-            view.SetWidth(Math.Max(40, width - 22));
+            // the view lives in its own host border inside a frame (chrome: hover border, move bar, width handle), which moves into each rebuilt canvas
+            if (!_frames.TryGetValue(box.Field, out var frame))
+            {
+                frame = new BoxFrame(view, box.Id is not null && _source.CanEditBoxes(PageId ?? ""), B);
+                WireFrame(frame);
+                _frames[box.Field] = frame;
+            }
+            if (frame.Parent is Panel old) old.Children.Remove(frame);
+            frame.Box = box;
             view.OnPageChanged();
             if (SelectHook is { } sh && ReferenceEquals(box, _firstBox)) { view.ShowSelection = true; view.SetSelection(sh.A, sh.H); }
-            b.Width = width;
+            frame.SetGeometry(box.X, box.Y, width);
+            frame.SetEditing(ReferenceEquals(BoxTextView.Focused, view));
+            return frame;
         }
-        else
+        var sp = new StackPanel();
+        var first = true;
+        foreach (var blk in box.Blocks)
         {
-            var sp = new StackPanel();
-            var first = true;
-            foreach (var blk in box.Blocks)
-            {
-                sp.Children.Add(Block(blk, first));
-                first = false;
-            }
-            b = new Border
-            {
-                Width = width, Padding = new Thickness(10, 6, 10, 6), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
-                BorderBrush = new SolidColorBrush(Colors.Transparent), Child = sp,
-            };
+            sp.Children.Add(Block(blk, first));
+            first = false;
         }
+        var b = new Border
+        {
+            Width = width, Padding = new Thickness(10, 6, 10, 6), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+            BorderBrush = new SolidColorBrush(Colors.Transparent), Child = sp,
+        };
         Canvas.SetLeft(b, box.X);
         Canvas.SetTop(b, box.Y);
         return b;
+    }
+
+    // ---- canvas boxes: make, move, resize, remove -----------------------------------------------------------------------
+
+    /// <summary>Boxes moved, resized or reordered by someone (or by us) show in place; the views keep their sessions and focus.</summary>
+    private void ApplyGeometry(NotePage page)
+    {
+        var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
+        foreach (var box in page.Boxes)
+            if (box.Field is not null && _frames.TryGetValue(box.Field, out var f))
+            {
+                f.Box = box;
+                f.SetGeometry(box.X, box.Y, box.Wide ? 819 : box.Width);
+                Canvas.SetZIndex(f, rank[box]);
+            }
+        if (_surface is not null)
+        {
+            var ink = PageId is null ? Array.Empty<InkStroke>() : _source.InkOf(PageId);
+            var h = Math.Max(320, Math.Max((page.Boxes.Count == 0 ? 0 : page.Boxes.Max(b => b.Y)) + 320, ink.Count == 0 ? 0 : ink.Max(i => i.MaxY) + 40));
+            _surface.Height = h;
+            if (_inkUnder is not null) _inkUnder.Height = h;
+            if (_inkOver is not null) _inkOver.Height = h;
+        }
+    }
+
+    private void UpdateInk(NotePage page)
+    {
+        var strokes = PageId is null ? Array.Empty<InkStroke>() : _source.InkOf(PageId);
+        var dark = ActualTheme == ElementTheme.Dark;
+        _inkUnder?.Set(strokes, dark);
+        _inkOver?.Set(strokes, dark);
+    }
+
+    /// <summary>A click on empty canvas: while a box is being edited it only stops that (and removes the box if it was left empty);
+    /// else it makes a box 360 wide, 12 pt above the click, in front, and opens it for typing (LOOK 4.5.1, Apple's createBox).</summary>
+    private void OnSurfacePressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, sender) || PageId is null) return;
+        var pt = e.GetCurrentPoint((UIElement)sender);
+        if (!pt.Properties.IsLeftButtonPressed) return;
+        e.Handled = true;
+        var wasEditing = BoxTextView.Focused is not null || BoxTextView.AnyLinkEditorOpen;
+        BoxTextView.CloseLinkEditor();
+        BoxTextView.Focused?.Unfocus();
+        BoxTextView.LeaveEditing();
+        if (wasEditing || !_source.CanEditBoxes(PageId)) return;
+        var front = (_source.GetPage(PageId)?.Boxes.Select(b => b.Z).DefaultIfEmpty(0).Max() ?? 0) + 1;
+        var id = _source.CreateBox(PageId, Math.Max(pt.Position.X, 0), Math.Max(pt.Position.Y - 12, 0), 360, front);
+        if (id is not null) _focusField = "box:" + id;
+    }
+
+    /// <summary>A box left empty goes away (the web removes an empty box on leaving it); the core refuses one that holds anything.</summary>
+    private void RemoveIfEmpty(string field)
+    {
+        if (PageId is null || !field.StartsWith("box:") || !_views.TryGetValue(field, out var v) || !v.IsEmptyBox) return;
+        if (_dragging is not null) return;
+        _source.DeleteBox(PageId, field["box:".Length..]);
+    }
+
+    private void WireFrame(BoxFrame f)
+    {
+        f.View.PageLinkOpened += id => PageOpened?.Invoke(id);
+        f.View.Left += () => RemoveIfEmpty(f.Box?.Field ?? "");
+        if (!f.CanDrag) return;
+        // the move bar and the width handle: drag, then send the geometry once at the end (and bring the box to the front)
+        Point start = default; (double X, double Y, double W) orig = default; var moved = false;
+        void Hook(UIElement el, bool resize)
+        {
+            el.PointerPressed += (_, e) =>
+            {
+                if (_surface is null || !e.GetCurrentPoint(el).Properties.IsLeftButtonPressed) return;
+                BoxTextView.CloseLinkEditor();
+                start = e.GetCurrentPoint(_surface).Position; orig = (f.X, f.Y, f.BoxWidth); moved = false;
+                el.CapturePointer(e.Pointer); _dragging = f; e.Handled = true;
+            };
+            el.PointerMoved += (_, e) =>
+            {
+                if (!ReferenceEquals(_dragging, f) || _surface is null) return;
+                var p = e.GetCurrentPoint(_surface).Position;
+                var dx = p.X - start.X; var dy = p.Y - start.Y;
+                if (Math.Abs(dx) + Math.Abs(dy) >= 1) moved = true;
+                if (resize) f.SetGeometry(f.X, f.Y, Math.Min(Math.Max(orig.W + dx, 120), 2400));
+                else f.SetGeometry(Math.Max(orig.X + dx, 0), Math.Max(orig.Y + dy, 0), f.BoxWidth);
+                e.Handled = true;
+            };
+            void End(PointerRoutedEventArgs e)
+            {
+                if (!ReferenceEquals(_dragging, f)) return;
+                _dragging = null;
+                try { el.ReleasePointerCapture(e.Pointer); } catch { }
+                if (PageId is null || f.Box?.Id is not { } id) return;
+                if (moved)
+                {
+                    if (resize) _source.ResizeBox(PageId, id, Math.Round(f.BoxWidth)); else _source.MoveBox(PageId, id, Math.Round(f.X), Math.Round(f.Y));
+                    _source.BringBoxToFront(PageId, id);
+                }
+            }
+            el.PointerReleased += (_, e) => { End(e); e.Handled = true; };
+            el.PointerCaptureLost += (_, _) => { if (ReferenceEquals(_dragging, f)) _dragging = null; };
+        }
+        Hook(f.Bar, false);
+        Hook(f.Handle, true);
+    }
+
+    /// <summary>A box on the canvas with its chrome (LOOK 4.5.2): the host border (idle transparent; hover --border; editing opaque --bg with
+    /// --border-strong), the move bar (12 high from 9 above the box, --bg-pressed) and the width handle (3 x 24 bar on the right edge, 9 wide hit strip).</summary>
+    private sealed class BoxFrame : Grid
+    {
+        private readonly Func<string, Brush> _b;
+        public readonly BoxTextView View;
+        public readonly Grid Bar, Handle;
+        private readonly Border _bar3;
+        public CanvasBox? Box;
+        public bool CanDrag { get; }
+        public double X { get; private set; }
+        public double Y { get; private set; }
+        public double BoxWidth { get; private set; }
+        private bool _hover, _editing;
+
+        private sealed class CursorBorder : Grid
+        {
+            public CursorBorder(Microsoft.UI.Input.InputSystemCursorShape shape) => ProtectedCursor = Microsoft.UI.Input.InputSystemCursor.Create(shape);
+        }
+
+        public BoxFrame(BoxTextView view, bool canDrag, Func<string, Brush> b)
+        {
+            View = view; _b = b; CanDrag = canDrag;
+            RowDefinitions.Add(new RowDefinition { Height = new GridLength(9) });
+            RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            HorizontalAlignment = HorizontalAlignment.Left; VerticalAlignment = VerticalAlignment.Top;
+            var host = view.Host;
+            host.HorizontalAlignment = HorizontalAlignment.Left;
+            host.Background = new SolidColorBrush(Colors.Transparent);
+            SetRow(host, 1);
+            Children.Add(host);
+            Bar = new CursorBorder(Microsoft.UI.Input.InputSystemCursorShape.SizeAll)
+            {
+                Height = 12, VerticalAlignment = VerticalAlignment.Top, HorizontalAlignment = HorizontalAlignment.Left,
+                CornerRadius = new CornerRadius(6, 6, 0, 0), Visibility = Visibility.Collapsed,
+            };
+            SetRowSpan(Bar, 2);
+            Handle = new CursorBorder(Microsoft.UI.Input.InputSystemCursorShape.SizeWestEast)
+            {
+                Width = 9, Height = 40, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Background = new SolidColorBrush(Colors.Transparent),
+                Visibility = Visibility.Collapsed,
+            };
+            _bar3 = new Border { Width = 3, Height = 24, CornerRadius = new CornerRadius(2), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) };
+            Handle.Children.Add(_bar3);
+            SetRow(Handle, 1);
+            if (canDrag) { Children.Add(Bar); Children.Add(Handle); }
+            PointerEntered += (_, _) => { _hover = true; Apply(); };
+            PointerExited += (_, _) => { _hover = false; Apply(); };
+            // a press in the padding of the box (outside the text) puts the caret in it
+            PointerPressed += (_, e) => { if (!e.Handled && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) { view.Focus(FocusState.Pointer); e.Handled = true; } };
+            ActualThemeChanged += (_, _) => Apply();
+            Apply();
+        }
+
+        public void SetEditing(bool on) { if (on == _editing) return; _editing = on; Apply(); }
+
+        public void SetGeometry(double x, double y, double w)
+        {
+            X = x; Y = y; BoxWidth = w;
+            Canvas.SetLeft(this, x);
+            Canvas.SetTop(this, y - 9);
+            Width = w + 4;
+            View.Host.Width = w;
+            Bar.Width = w;
+            View.SetWidth(Math.Max(40, w - 22));
+        }
+
+        private void Apply()
+        {
+            var show = _hover || _editing;
+            var host = View.Host;
+            host.BorderBrush = _editing ? _b("BorderStrong") : _hover ? _b("Border") : new SolidColorBrush(Colors.Transparent);
+            host.Background = _editing ? _b("Bg") : new SolidColorBrush(Colors.Transparent);
+            if (!CanDrag) return;
+            Bar.Background = _b("BgPressed");
+            _bar3.Background = _b("BorderStrong");
+            Bar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+            Handle.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>One layer of the page's ink (LOOK 4.5; the web's InkRenderer layers): the core's outlines filled with the nonzero rule, highlighters under
+    /// the boxes and pens over them. Read-only: it never takes a click. In the dark theme near-black ink is drawn near-white.</summary>
+    private sealed class InkLayer : Grid
+    {
+        private readonly CanvasControl _c = new() { IsHitTestVisible = false };
+        private readonly bool _highlighters;
+        private List<InkStroke> _items = new();
+        private readonly Dictionary<string, CanvasGeometry> _geo = new();
+        private bool _dark;
+        public InkLayer(bool highlighters)
+        {
+            _highlighters = highlighters;
+            IsHitTestVisible = false;
+            HorizontalAlignment = HorizontalAlignment.Left; VerticalAlignment = VerticalAlignment.Top;
+            Children.Add(_c);
+            _c.Draw += Draw;
+            _c.CreateResources += (_, _) => { foreach (var g in _geo.Values) g.Dispose(); _geo.Clear(); };
+            Unloaded += (_, _) => { try { _c.RemoveFromVisualTree(); } catch { } };
+        }
+
+        public void Set(IReadOnlyList<InkStroke> all, bool dark)
+        {
+            var next = all.Where(s => s.Highlighter == _highlighters).ToList();
+            if (_dark == dark && next.Count == _items.Count && next.Zip(_items).All(p => p.First.Id == p.Second.Id && ReferenceEquals(p.First.Ops, p.Second.Ops))) return;
+            _dark = dark; _items = next;
+            _c.Visibility = next.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            _c.Invalidate();
+        }
+
+        private static CanvasGeometry Build(ICanvasResourceCreator rc, float[] ops)
+        {
+            using var pb = new CanvasPathBuilder(rc);
+            pb.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Winding);
+            var open = false; var i = 0;
+            while (i < ops.Length)
+            {
+                switch ((int)ops[i])
+                {
+                    case 0:
+                        if (i + 2 >= ops.Length) { i = ops.Length; break; }
+                        if (open) pb.EndFigure(CanvasFigureLoop.Closed);
+                        pb.BeginFigure(ops[i + 1], ops[i + 2]); open = true; i += 3; break;
+                    case 1:
+                        if (i + 2 >= ops.Length) { i = ops.Length; break; }
+                        if (open) pb.AddLine(ops[i + 1], ops[i + 2]);
+                        i += 3; break;
+                    case 2:
+                    {
+                        if (i + 3 >= ops.Length) { i = ops.Length; break; }
+                        if (open) { pb.EndFigure(CanvasFigureLoop.Closed); open = false; }
+                        float cx = ops[i + 1], cy = ops[i + 2], r = ops[i + 3];
+                        pb.BeginFigure(cx + r, cy);
+                        pb.AddArc(new System.Numerics.Vector2(cx - r, cy), r, r, 0, CanvasSweepDirection.Clockwise, CanvasArcSize.Small);
+                        pb.AddArc(new System.Numerics.Vector2(cx + r, cy), r, r, 0, CanvasSweepDirection.Clockwise, CanvasArcSize.Small);
+                        pb.EndFigure(CanvasFigureLoop.Closed);
+                        i += 4; break;
+                    }
+                    default:
+                        if (open) { pb.EndFigure(CanvasFigureLoop.Closed); open = false; }
+                        i += 1; break;
+                }
+            }
+            if (open) pb.EndFigure(CanvasFigureLoop.Closed);
+            return CanvasGeometry.CreatePath(pb);
+        }
+
+        private void Draw(CanvasControl sender, CanvasDrawEventArgs args)
+        {
+            foreach (var s in _items)
+            {
+                try
+                {
+                    if (!_geo.TryGetValue(s.Id, out var g)) _geo[s.Id] = g = Build(args.DrawingSession, s.Ops);
+                    var r = (byte)(s.Color >> 24); var gr = (byte)(s.Color >> 16); var b = (byte)(s.Color >> 8); var a = (byte)s.Color;
+                    if (_dark && (0.2126 * r + 0.7152 * gr + 0.0722 * b) / 255 < 0.25) { r = 0xE6; gr = 0xE6; b = 0xE6; }
+                    args.DrawingSession.FillGeometry(g, global::Windows.UI.Color.FromArgb(a, r, gr, b));
+                }
+                catch (Exception) { }
+            }
+        }
     }
 
     private UIElement Block(BoxBlock blk, bool first)

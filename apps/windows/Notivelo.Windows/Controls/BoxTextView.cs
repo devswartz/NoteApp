@@ -204,6 +204,7 @@ internal sealed partial class BoxTextView : UserControl
         public string Label = "";
         public bool Me, Missing;
         public string? Emoji;
+        public string? PageId;
     }
 
     private static string? _mono;
@@ -466,6 +467,7 @@ internal sealed partial class BoxTextView : UserControl
                     var pid = Get("pageId") ?? a.Label;
                     var title = _source.PageTitleOf(pid);
                     d.Missing = title is null;
+                    d.PageId = pid;
                     d.Label = title is { Length: > 0 } ? title : d.Missing ? "Missing page" : "Untitled";
                     d.Emoji = Get("emoji");
                     cw = TextWidth(d.Label, m.Size, d.Missing ? 400 : 500) + 6 + (d.Emoji is { Length: > 0 } ? TextWidth(d.Emoji, m.Size * 0.95, 400) + 3 : 0);
