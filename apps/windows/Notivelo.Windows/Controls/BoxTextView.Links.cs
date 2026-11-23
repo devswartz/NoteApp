@@ -94,7 +94,7 @@ internal sealed partial class BoxTextView
     private void OpenLinkEditor(string text, string href, Rect anchor)
     {
         var hasLink = href.Length > 0;
-        TextBox Field(string prompt, string value)
+        TextBox Field(string prompt, string value, string id)
         {
             var t = new TextBox
             {
@@ -102,6 +102,7 @@ internal sealed partial class BoxTextView
                 CornerRadius = new CornerRadius(8), Background = C2("Bg"), Foreground = C2("Text"), BorderBrush = C2("Border"), BorderThickness = new Thickness(1),
                 VerticalContentAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch,
             };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(t, id);
             // the focused field: accent border (the 3 pt soft ring is the template's)
             t.GotFocus += (_, _) => t.BorderBrush = C2("Accent");
             t.LostFocus += (_, _) => t.BorderBrush = C2("Border");
@@ -114,8 +115,8 @@ internal sealed partial class BoxTextView
         }
         TextBlock Label(string s) => new() { Text = s, FontSize = 12, FontFamily = Ui.Font, Foreground = C2("Text"), Opacity = 0.7, Width = 56, VerticalAlignment = VerticalAlignment.Center };
 
-        _linkText = Field("Text to display", text);
-        _linkAddress = Field("Paste or type a link…", href);
+        _linkText = Field("Text to display", text, "link-text");
+        _linkAddress = Field("Paste or type a link…", href, "link-address");
         var grid = new Grid { RowSpacing = 4, ColumnSpacing = 4, Width = 348 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });

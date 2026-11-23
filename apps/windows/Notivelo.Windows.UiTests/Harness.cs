@@ -15,14 +15,14 @@ namespace Notivelo.Windows.UiTests;
 
 /// <summary>What the box exposes through UIA: the Value pattern is the view text, ItemStatus the rest
 /// (<c>block=paragraph;sel=A,H;focus=1;menu=slash:2/18;undo=1;redo=0;marked=0</c>).</summary>
-internal sealed record BoxState(string Text, int Anchor, int Head, string Block, bool Focus, string Menu, bool Undo, bool Redo)
+internal sealed record BoxState(string Text, int Anchor, int Head, string Block, bool Focus, string Menu, bool Undo, bool Redo, string Link = "", bool Editor = false)
 {
     public static BoxState Parse(string text, string status)
     {
         var kv = status.Split(';').Select(p => p.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0], p => p[1]);
         var sel = kv.GetValueOrDefault("sel", "-1,-1")!.Split(',');
         return new BoxState(text, int.Parse(sel[0]), int.Parse(sel[1]), kv.GetValueOrDefault("block", "?")!, kv.GetValueOrDefault("focus") == "1",
-            kv.GetValueOrDefault("menu", "?")!, kv.GetValueOrDefault("undo") == "1", kv.GetValueOrDefault("redo") == "1");
+            kv.GetValueOrDefault("menu", "?")!, kv.GetValueOrDefault("undo") == "1", kv.GetValueOrDefault("redo") == "1", kv.GetValueOrDefault("link", "")!, kv.GetValueOrDefault("editor") == "1");
     }
     public override string ToString() => $"text={Text.Replace("\n", "\\n")} sel={Anchor},{Head} block={Block} focus={Focus} menu={Menu} undo={Undo} redo={Redo}";
 }
@@ -36,6 +36,8 @@ internal sealed class Box
 
     private AutomationElement Element => AppHost.Wait(
         () => _host.Window.FindFirstDescendant(_host.Window.ConditionFactory.ByAutomationId("box-box-" + Id)), "box " + Id + " in the UIA tree");
+
+    public System.Drawing.Rectangle Bounds => Element.BoundingRectangle;
 
     public BoxState State
     {

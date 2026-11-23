@@ -19,7 +19,7 @@ public sealed class SampleNotesSource : INotesSource
 
     public IReadOnlyList<Notebook> Notebooks { get; }
 
-    public string? InitialPageId => Offline ? "uitest" : "canvas";
+    public string? InitialPageId => Offline ? "uitest" : Environment.GetEnvironmentVariable("NOTIVELO_SAMPLE_PAGE") is { Length: > 0 } p && _pages.ContainsKey(p) ? p : "canvas";
 
     private readonly Dictionary<string, NotePage> _pages = new();
     private readonly Dictionary<TaskViewKind, IReadOnlyList<TaskGroup>> _groups;

@@ -33,8 +33,6 @@ internal sealed class PageView : ThemedControl
     private Canvas? _surface;
     private InkLayer? _inkUnder, _inkOver;
     private BoxFrame? _dragging;
-    /// <summary>A box just made by a click: it takes the keyboard when it is on the page.</summary>
-    private string? _focusField;
 
     private void FocusChanged()
     {
@@ -65,6 +63,7 @@ internal sealed class PageView : ThemedControl
     {
         foreach (var v in _views.Values) { try { v.Release(); } catch { } }
         _views.Clear();
+        foreach (var f in _frames.Values) if (f.Parent is Panel fp) fp.Children.Remove(f);
         _frames.Clear();
         _viewsFor = null;
     }
@@ -86,6 +85,11 @@ internal sealed class PageView : ThemedControl
             if (_dragging is not null) return;
             if (_views.Count > 0 && _source.GetPage(PageId) is { } page && Signature(page) == _sig)
             {
+                // boxes made or removed show in place (the views keep their sessions and focus); moved ones too
+                SyncViews(page);
+                if (_surface is not null)
+                    foreach (var box in page.Boxes)
+                        if (box.Field is not null && _views.ContainsKey(box.Field) && !_frames.ContainsKey(box.Field)) _surface.Children.Add(Box(box));
                 foreach (var v in _views.Values) v.OnPageChanged();
                 ApplyGeometry(page);
                 UpdateInk(page);
@@ -100,7 +104,7 @@ internal sealed class PageView : ThemedControl
     /// <summary>What a full rebuild shows besides the text inside session-backed boxes.</summary>
     private static string Signature(NotePage p) =>
         string.Join("|", p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked,
-            string.Join(";", p.Boxes.Select(b => b.Field + (b.Field is null ? $"@{b.X},{b.Y},{b.Width},{b.Wide}" : ""))));
+            string.Join(";", p.Boxes.Where(b => b.Field is null).Select(b => $"@{b.X},{b.Y},{b.Width},{b.Wide}")));
 
     protected override UIElement Build()
     {
@@ -159,26 +163,13 @@ internal sealed class PageView : ThemedControl
         var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 15, 0, 0), Background = new SolidColorBrush(Colors.Transparent) };
         _surface = canvas;
         canvas.PointerPressed += OnSurfacePressed;
-        _inkUnder = new InkLayer(true) { Height = surfaceH };
-        _inkOver = new InkLayer(false) { Height = surfaceH };
-        Canvas.SetZIndex(_inkUnder, -1);
-        Canvas.SetZIndex(_inkOver, 1_000_000);
-        var under = _inkUnder; var over = _inkOver;
-        canvas.SizeChanged += (_, e) => { under.Width = e.NewSize.Width; over.Width = e.NewSize.Width; };
-        canvas.Children.Add(_inkUnder);
-        canvas.Children.Add(_inkOver);
+        // the ink layers are made when the page has ink (a canvas control per layer)
+        _inkUnder = null; _inkOver = null;
+        canvas.SizeChanged += (_, e) => { if (_inkUnder is not null) _inkUnder.Width = e.NewSize.Width; if (_inkOver is not null) _inkOver.Width = e.NewSize.Width; };
         UpdateInk(page);
         _firstBox = page.Boxes.FirstOrDefault();
         var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
         foreach (var box in page.Boxes) { var el = Box(box); Canvas.SetZIndex(el, rank[box]); canvas.Children.Add(el); }
-        if (_focusField is { } ff && _frames.TryGetValue(ff, out var nf))
-        {
-            _focusField = null;
-            var v = nf.View;
-            void Go() { try { v.Focus(FocusState.Programmatic); } catch { } }
-            if (v.IsLoaded) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Go);
-            else { RoutedEventHandler? once = null; once = (_, _) => { v.Loaded -= once; DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Go); }; v.Loaded += once; }
-        }
         Grid.SetRow(canvas, 3);
         article.Children.Add(canvas);
 
@@ -348,8 +339,8 @@ internal sealed class PageView : ThemedControl
         }
         // dev hook: NOTIVELO_FOCUS=1 gives the first box the keyboard (loopback servers only), to exercise the text services without a pointer
         if (Environment.GetEnvironmentVariable("NOTIVELO_FOCUS") is not null && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") && _views.Count > 0)
-            _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); BoxTextView.Trace("focus hook " + ok); }));
-        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); _frames.Remove(gone); }
+            _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); if (Environment.GetEnvironmentVariable("NOTIVELO_LINKEDITOR") is not null) v.ShowLinkEditor(); BoxTextView.Trace("focus hook " + ok); }));
+        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); if (_frames.Remove(gone, out var fr) && fr.Parent is Panel gp) gp.Children.Remove(fr); }
     }
 
     /// <summary>The session's view of the task list. The core calls these on the session's thread with the session locked: they only note
@@ -443,6 +434,16 @@ internal sealed class PageView : ThemedControl
     {
         var strokes = PageId is null ? Array.Empty<InkStroke>() : _source.InkOf(PageId);
         var dark = ActualTheme == ElementTheme.Dark;
+        if (strokes.Count > 0 && _surface is not null && _inkUnder is null)
+        {
+            var h = _surface.Height; var w = _surface.ActualWidth;
+            _inkUnder = new InkLayer(true) { Height = h, Width = w };
+            _inkOver = new InkLayer(false) { Height = h, Width = w };
+            Canvas.SetZIndex(_inkUnder, -1);
+            Canvas.SetZIndex(_inkOver, 1_000_000);
+            _surface.Children.Add(_inkUnder);
+            _surface.Children.Add(_inkOver);
+        }
         _inkUnder?.Set(strokes, dark);
         _inkOver?.Set(strokes, dark);
     }
@@ -462,7 +463,17 @@ internal sealed class PageView : ThemedControl
         if (wasEditing || !_source.CanEditBoxes(PageId)) return;
         var front = (_source.GetPage(PageId)?.Boxes.Select(b => b.Z).DefaultIfEmpty(0).Max() ?? 0) + 1;
         var id = _source.CreateBox(PageId, Math.Max(pt.Position.X, 0), Math.Max(pt.Position.Y - 12, 0), 360, front);
-        if (id is not null) _focusField = "box:" + id;
+        if (id is not null) FocusBox("box:" + id);
+    }
+
+    /// <summary>A box just made by a click takes the keyboard once it is on the page.</summary>
+    private void FocusBox(string field)
+    {
+        if (!_frames.TryGetValue(field, out var f)) return;
+        var v = f.View;
+        void Go() { try { v.Focus(FocusState.Programmatic); } catch { } }
+        if (v.IsLoaded) DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Go);
+        else { RoutedEventHandler? once = null; once = (_, _) => { v.Loaded -= once; DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Go); }; v.Loaded += once; }
     }
 
     /// <summary>A box left empty goes away (the web removes an empty box on leaving it); the core refuses one that holds anything.</summary>
@@ -476,7 +487,8 @@ internal sealed class PageView : ThemedControl
     private void WireFrame(BoxFrame f)
     {
         f.View.PageLinkOpened += id => PageOpened?.Invoke(id);
-        f.View.Left += () => RemoveIfEmpty(f.Box?.Field ?? "");
+        // left empty: gone (after the event that left it is over)
+        f.View.Left += () => DispatcherQueue.TryEnqueue(() => RemoveIfEmpty(f.Box?.Field ?? ""));
         if (!f.CanDrag) return;
         // the move bar and the width handle: drag, then send the geometry once at the end (and bring the box to the front)
         Point start = default; (double X, double Y, double W) orig = default; var moved = false;
@@ -616,7 +628,6 @@ internal sealed class PageView : ThemedControl
             Children.Add(_c);
             _c.Draw += Draw;
             _c.CreateResources += (_, _) => { foreach (var g in _geo.Values) g.Dispose(); _geo.Clear(); };
-            Unloaded += (_, _) => { try { _c.RemoveFromVisualTree(); } catch { } };
         }
 
         public void Set(IReadOnlyList<InkStroke> all, bool dark)

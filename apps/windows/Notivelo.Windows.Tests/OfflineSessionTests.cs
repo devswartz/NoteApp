@@ -114,4 +114,19 @@ public class OfflineSessionTests
         Assert.Equal("go home", Text(s));
         Assert.Contains(s.ViewRender().View.Lines[0].Runs, r => r.Marks.Any(m => m.Kind == ViewMarkKind.Link));
     }
+
+    [Fact]
+    public void Ink_builder_gives_an_outline_of_path_commands()
+    {
+        using var b = new InkStrokeBuilder(0, 0x1D4ED8FF, 4f, false, false);
+        var samples = new List<double>();
+        for (var i = 0; i < 20; i++) samples.AddRange(new[] { 20.0 + i * 6, 100 + 20 * Math.Sin(i / 3.0), 0.5, 1.2, 0, i * 8.0 });
+        b.PushMany(samples.ToArray());
+        var ops = b.Preview(Array.Empty<float>());
+        Assert.NotEmpty(ops);
+        var at = 0;                 // path commands: 0 x y, 1 x y, 2 cx cy r, 3
+        while (at < ops.Length) { var n = (int)ops[at] switch { 0 or 1 => 3, 2 => 4, 3 => 1, _ => -1 }; Assert.True(n > 0, "op " + ops[at]); at += n; }
+        Assert.Equal(ops.Length, at);
+        Assert.DoesNotContain(ops, float.IsNaN);
+    }
 }
