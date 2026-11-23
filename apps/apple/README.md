@@ -33,3 +33,5 @@ The page icon row (Add icon, emoji picker) is in the shared page header; it save
 Calendar (month and week, drag a task to another day), quick add (natural-language line), Settings (theme, accent colour, locked pages password) and the page panel's Tasks tab are in the shared SwiftUI shell, so iPad, iPhone and the Mac have them.
 
 Create account, Check your email, invite links, Members and Export as Markdown (2026-11-23).
+
+Page-level undo and the calendar Status, tag and person filters are in this build.
