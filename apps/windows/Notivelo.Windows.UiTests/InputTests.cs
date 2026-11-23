@@ -71,7 +71,8 @@ public class InputTests
         h.A.WaitFor(x => x.Menu.StartsWith("slash:2/"), "the third item highlighted");
         h.Press(ENTER);
         var after = h.A.WaitFor(x => x.Menu == "none", "the menu closed");
-        Assert.Equal("", after.Text);
+        Assert.Equal("", after.Text.TrimEnd('
+'));      // the heading, then the box's trailing paragraph
         Assert.StartsWith("heading", after.Block);
         h.Type("Title");
         h.A.WaitText("Title");
@@ -85,7 +86,7 @@ public class InputTests
         h.A.WaitFor(x => x.Menu.StartsWith("slash:"), "the slash menu with a query");
         h.Press(ENTER);
         var s = h.A.WaitFor(x => x.Menu == "none", "the menu closed");
-        Assert.Contains("list", s.Block);
+        Assert.Equal("paragraph/•", s.Block);        // a bulleted list item
         h.Type("item");
         h.A.WaitText("item");
     });
