@@ -696,6 +696,13 @@ final class MacBoxView: NSTextView, EditorTarget {
         }
     }
 
+    /// Look mode (CI): select from `lo` to the end of the text through the engine, telling AppKit.
+    func lookSelect(from lo: Int) {
+        let len = text.length
+        selectByPlatform(lo: lo, hi: len)
+        pushSelection()
+    }
+
     /// One object line's U+FFFC (a task line, a rule, an image): selecting it selects the node.
     private func isObjectLine(_ o: Int) -> Bool {
         guard o < text.length, text.character(at: o) == 0xFFFC else { return false }

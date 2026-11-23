@@ -11,7 +11,9 @@ struct NotiveloApp: App {
                 .environment(session)
         }
         #if os(macOS)
-        .defaultSize(width: 1280, height: 800)
+        // The CI runner's screen is 1024x768: in corpus preview the window fits it (WindowChrome puts it at the top left).
+        .defaultSize(width: UserDefaults.standard.bool(forKey: "previewSignedIn") ? 1024 : 1280,
+                     height: UserDefaults.standard.bool(forKey: "previewSignedIn") ? 740 : 800)
         .windowStyle(.hiddenTitleBar)
         .commands { MacCommands() }
         #endif

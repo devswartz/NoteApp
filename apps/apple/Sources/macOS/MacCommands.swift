@@ -21,6 +21,11 @@ struct MacCommands: Commands {
             Button("New Notebook…") { bridge.newNotebook() }.keyboardShortcut("n", modifiers: [.command, .option])
             Button("New Task") { bridge.shell?.notYet("Adding tasks") }.keyboardShortcut("t", modifiers: [.command, .shift])
             Divider()
+            Button("Share Page…") { bridge.sharePage() }
+            Button("Version History…") { bridge.versionHistory() }
+            Button("Trash…") { bridge.showTrash() }
+            Button("Lock Pages Now") { bridge.lockPagesNow() }
+            Divider()
             Button("Sign Out") { bridge.signOut() }
         }
 
@@ -34,9 +39,8 @@ struct MacCommands: Commands {
             }.keyboardShortcut("z", modifiers: [.command, .shift])
         }
         CommandGroup(after: .textEditing) {
-            Button("Find…") { findAction(.showFindInterface) }.keyboardShortcut("f", modifiers: .command)
-            Button("Find Next") { findAction(.nextMatch) }.keyboardShortcut("g", modifiers: .command)
-            Button("Find Previous") { findAction(.previousMatch) }.keyboardShortcut("g", modifiers: [.command, .shift])
+            // Find is the search palette over every page (the boxes have no find bar of their own yet).
+            Button("Find…") { bridge.search() }.keyboardShortcut("f", modifiers: .command)
         }
 
         // Format
@@ -100,12 +104,5 @@ struct MacCommands: Commands {
             }
             Button("Keyboard Shortcuts") { bridge.shell?.notYet("The shortcuts list") }.keyboardShortcut("/", modifiers: .command)
         }
-    }
-
-    /// NSTextView's find bar (`performTextFinderAction:` with the action in the sender's tag).
-    private func findAction(_ action: NSTextFinder.Action) {
-        let item = NSMenuItem()
-        item.tag = action.rawValue
-        NSApp.sendAction(#selector(NSResponder.performTextFinderAction(_:)), to: nil, from: item)
     }
 }

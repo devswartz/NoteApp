@@ -231,6 +231,7 @@ struct SectionNode: View {
                 if open { shell.expanded.remove(section.id) } else { shell.expanded.insert(section.id) }
             }
             .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .section(section.id) }
+            .onSecondaryClick { shell.menu = .section(section.id) }
             .anchor("section:\(section.id)", shell)
 
             if open {
@@ -319,6 +320,7 @@ struct PageRowView: View {
         .contentShape(Rectangle())
         .onTapGesture { shell.open(page: page.id) }
         .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .pageRow(page.id) }
+        .onSecondaryClick { shell.menu = .pageRow(page.id) }
         .anchor("page:\(page.id)", shell)
     }
 }

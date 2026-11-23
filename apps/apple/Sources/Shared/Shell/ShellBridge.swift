@@ -49,6 +49,31 @@ final class ShellBridge {
         shell.newNotebook(session)
     }
 
+    // MARK: The open page and the workspace (File menu)
+
+    func sharePage() {
+        guard let shell, let session else { return }
+        guard case let .page(id) = shell.route else { shell.say("Open a page first."); return }
+        shell.openSheet(.sharePage(id), session, "Sharing")
+    }
+
+    func versionHistory() {
+        guard let shell, let session else { return }
+        guard case let .page(id) = shell.route else { shell.say("Open a page first."); return }
+        shell.openSheet(.history(id), session, "Version history")
+    }
+
+    func showTrash() {
+        guard let shell, let session else { return }
+        shell.openSheet(.trash, session, "Trash")
+    }
+
+    func lockPagesNow() {
+        guard let session else { return }
+        session.lockNow()
+        shell?.say("Locked pages are locked.")
+    }
+
     // MARK: Go
 
     func showNotes() { shell?.route = .notes }
