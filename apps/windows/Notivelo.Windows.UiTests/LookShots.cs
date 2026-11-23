@@ -1,14 +1,19 @@
 using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Capturing;
+using System.Drawing;
+using System.Runtime.InteropServices;
 using Xunit;
 using static FlaUI.Core.WindowsAPI.VirtualKeyShort;
 
 namespace Notivelo.Windows.UiTests;
 
-/// <summary>Screenshots of every screen for the look comparison (artifact windows-look-screenshots): the offline sample data, the app window at 1180x820, once per theme.
+/// <summary>Screenshots of every screen for the look comparison (artifact windows-look-screenshots): the offline sample data, the app window (client 1180x820 under the title bar), once per theme.
 /// Files are <c>screen-theme.png</c> in LOOK_SHOTS. Never fails: a screen that can't be opened is logged to look-log.txt and skipped.</summary>
 public class LookShots
 {
+    [DllImport("dwmapi.dll")] private static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out Rect rect, int size);
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+
     private static string Dir => Environment.GetEnvironmentVariable("LOOK_SHOTS") is { Length: > 0 } d ? d : Path.Combine(Path.GetTempPath(), "look-shots");
 
     private static void Log(string line)
@@ -22,7 +27,7 @@ public class LookShots
     private static void Run(string theme)
     {
         AppHost host;
-        try { host = AppHost.Launch(new Dictionary<string, string> { ["NOTIVELO_THEME"] = theme }, 1180, 820); }
+        try { host = AppHost.Launch(new Dictionary<string, string> { ["NOTIVELO_THEME"] = theme }, 1196, 859); }   // outer size: the visible frame is then 1180 wide and 851 high (31 of it the title bar, so the client is 1180x820)
         catch (Exception e) { Log($"[{theme}] launch failed: {e.Message}"); return; }
         using var h = host;
         var w = h.Window;
@@ -44,7 +49,11 @@ public class LookShots
             try
             {
                 Directory.CreateDirectory(Dir);
-                Capture.Element(w).ToFile(Path.Combine(Dir, $"{name}-{theme}.png"));
+                // the visible frame only (DWM extended bounds), not the invisible resize border that GetWindowRect adds
+                var file = Path.Combine(Dir, $"{name}-{theme}.png");
+                if (DwmGetWindowAttribute(w.Properties.NativeWindowHandle.Value, 9, out var fr, Marshal.SizeOf<Rect>()) == 0 && fr.Right > fr.Left)
+                    Capture.Rectangle(new Rectangle(fr.Left, fr.Top, fr.Right - fr.Left, fr.Bottom - fr.Top)).ToFile(file);
+                else Capture.Element(w).ToFile(file);
             }
             catch (Exception e) { Log($"[{theme}] {name}: capture failed: {e.Message}"); }
         }
@@ -88,7 +97,8 @@ public class LookShots
         Step("notebook-picker", () => { Invoke("notebook-picker"); Find("menu-notebook-picker"); Snap("notebook-picker"); });
         Step("account-menu", () => { Invoke("rail-account"); Find("menu-account"); Snap("account-menu"); });
         Step("section-menu", () => { Invoke("section-more-corpus"); Find("menu-section"); Snap("section-menu"); });
-        Step("quick-add", () => { Invoke("sidebar-add-task"); Find("quickadd-card"); Snap("quick-add"); });
+        Step("quick-add", () => {   // the Add task row is in the Tasks panel
+            Find("rail-tasks")!.Click(); Settle(700); Invoke("sidebar-add-task"); Find("quickadd-card"); Snap("quick-add"); });
         Step("search-palette", () =>
         {
             Invoke("rail-search"); Find("search-input")!.AsTextBox().Text = "launch"; Settle(900); Snap("search-palette");

@@ -40,11 +40,12 @@ internal sealed partial class SettingsView
     {
         var w = _source.Workspace;
         var p = Page("Profile", "How you appear to your team, and how you sign in.");
+        Action? _dirty = null;
         var name = Box(w.UserName);
         var color = "#f59e0b";
         var avatar = new ContentControl { VerticalAlignment = VerticalAlignment.Top };
         void DrawAvatar() => avatar.Content = Ui.Avatar(AccountRules.Initials(name.Text, w.UserEmail), 56, color);
-        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0 };
         void DrawSwatches()
         {
             swatches.Children.Clear();
@@ -53,18 +54,18 @@ internal sealed partial class SettingsView
                 var chosen = string.Equals(hex, color, StringComparison.OrdinalIgnoreCase);
                 var dot = new Border
                 {
-                    Width = 22, Height = 22, CornerRadius = new CornerRadius(11), Background = Ui.Hex(hex), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                    Child = chosen ? new Icon("check", 13, new SolidColorBrush(Colors.White)) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center } : null,
+                    Width = 20, Height = 20, CornerRadius = new CornerRadius(10), Background = Ui.Hex(hex), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    
                 };
                 var ring = new Border
                 {
-                    Width = 30, Height = 30, CornerRadius = new CornerRadius(15), BorderThickness = new Thickness(2),
-                    BorderBrush = chosen ? Ui.Hex(hex) : new SolidColorBrush(Colors.Transparent), Child = dot,
+                    Width = 28, Height = 28, CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(2),
+                    BorderBrush = chosen ? B("Text") : new SolidColorBrush(Colors.Transparent), Child = dot,
                 };
-                var b = new Button { Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(0), CornerRadius = new CornerRadius(15), Content = ring };
+                var b = new Button { Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(0), CornerRadius = new CornerRadius(14), Content = ring };
                 AutomationProperties.SetAutomationId(b, "settings-color-" + hex.TrimStart('#'));
                 AutomationProperties.SetName(b, "Avatar colour " + hex + (chosen ? " (selected)" : ""));
-                b.Click += (_, _) => { color = hex; DrawSwatches(); DrawAvatar(); };
+                b.Click += (_, _) => { color = hex; DrawSwatches(); DrawAvatar(); _dirty?.Invoke(); };
                 swatches.Children.Add(b);
             }
         }
@@ -74,6 +75,7 @@ internal sealed partial class SettingsView
         var fields = new StackPanel { Spacing = 14 };
         fields.Children.Add(Labeled("Name", name, "settings-name"));
         fields.Children.Add(Field("Email", w.UserEmail, "settings-email"));
+        fields.Children.Add(Ui.Text("Your sign-in email can’t be changed yet.", 12, B("TextMuted")).With(t => t.Margin = new Thickness(0, -8, 0, 0)));
         var sw = new StackPanel { Spacing = 6 };
         sw.Children.Add(Ui.Text("Avatar colour", 13, B("Text"), 600));
         sw.Children.Add(swatches);
@@ -86,19 +88,28 @@ internal sealed partial class SettingsView
         row.Children.Add(fields);
 
         var status = Note("settings-profile-status");
-        var save = Dialogs.Btn(_h(), "Save profile", true, id: "settings-profile-save");
-        save.Margin = new Thickness(0, 16, 0, 0);
-        save.HorizontalAlignment = HorizontalAlignment.Left;
+        var save = Dialogs.Btn(_h(), "Save changes", true, id: "settings-profile-save");
+        save.HorizontalAlignment = HorizontalAlignment.Right;
+        // settings.png: the card's body, then a footer under a 1 pt line with "Save changes" at the right (dim until something changed)
+        string savedName = w.UserName, savedColor = color;
+        void Dirty() => save.IsEnabled = name.Text != savedName || !string.Equals(color, savedColor, StringComparison.OrdinalIgnoreCase);
+        var body = new StackPanel { Padding = new Thickness(20) };
+        body.Children.Add(row); body.Children.Add(status);
+        var footer = new Grid { Padding = new Thickness(20, 12, 20, 12) };
+        footer.Children.Add(save);
         var inner = new StackPanel();
-        inner.Children.Add(row); inner.Children.Add(save); inner.Children.Add(status);
-        p.Children.Add(Card(inner));
+        inner.Children.Add(body); inner.Children.Add(Ui.HLine(B("Border"))); inner.Children.Add(footer);
+        p.Children.Add(new Border { Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Child = inner });
+        name.TextChanged += (_, _) => Dirty();
+        _dirty = Dirty;
+        Dirty();
 
         // the server's copy of the name and colour; offline keeps what is shown
         _ = Fill();
         async Task Fill()
         {
             var r = await _source.LoadProfile();
-            if (r is { Ok: true, Value: { } v }) { name.Text = v.Name; color = v.Color; DrawSwatches(); DrawAvatar(); }
+            if (r is { Ok: true, Value: { } v }) { name.Text = v.Name; color = v.Color; savedName = v.Name; savedColor = v.Color; DrawSwatches(); DrawAvatar(); Dirty(); }
             else if (r.Offline) Say(status, AccountRules.OfflineText, B("TextMuted"));
         }
         save.Click += async (_, _) =>
@@ -106,8 +117,9 @@ internal sealed partial class SettingsView
             if (AccountRules.NameProblem(name.Text) is { } bad) { Say(status, bad, B("Danger")); return; }
             save.IsEnabled = false; Say(status, "Saving...", B("TextMuted"));
             var r = await _source.UpdateProfile(name.Text.Trim(), color);
-            save.IsEnabled = true;
-            if (r.Ok) Say(status, "Saved.", B("TextMuted")); else SayFail(status, r.Offline, r.Error);
+            if (r.Ok) { savedName = name.Text.Trim(); savedColor = color; Say(status, "Saved.", B("TextMuted")); }
+            else SayFail(status, r.Offline, r.Error);
+            Dirty();
         };
 
         if (_signOut is not null)

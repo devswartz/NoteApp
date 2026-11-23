@@ -61,6 +61,7 @@ internal sealed class QuickAddDialog
 
     private void Open()
     {
+        _text.Style = Ui.Style("PlainTextBoxStyle"); _desc.Style = Ui.Style("PlainTextBoxStyle");
         _text.PlaceholderText = "e.g. Review proposal tomorrow 3pm p1 @alex every week";
         _text.FontSize = 17; _text.FontWeight = new global::Windows.UI.Text.FontWeight(500);
         _text.BorderThickness = new Thickness(0); _text.Background = new SolidColorBrush(Colors.Transparent); _text.CornerRadius = new CornerRadius(0);

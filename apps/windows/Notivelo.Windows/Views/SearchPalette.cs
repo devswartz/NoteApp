@@ -41,7 +41,7 @@ internal sealed class SearchPalette
         _timer = new DispatcherTimerLite(150, () => _ = SearchCore());
         _input = new TextBox
         {
-            PlaceholderText = "Search pages and tasks…", FontSize = 16, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent),
+            Style = Ui.Style("PlainTextBoxStyle"), PlaceholderText = "Search pages and tasks…", FontSize = 16, BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent),
             VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0, 12, 0, 12), CornerRadius = new CornerRadius(0),
         };
         AutomationProperties.SetAutomationId(_input, "search-input");

@@ -166,6 +166,15 @@ jobs:
           "languages: " + ((Get-WinUserLanguageList | ForEach-Object { $_.LanguageTag }) -join ",")
           (Get-Service TabletInputService -ErrorAction SilentlyContinue | Out-String)
 
+      # The runner desktop is 1024x768: the 1180x820 app window would be cut off. Never fails the job.
+      - name: Raise the display resolution
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try { Set-DisplayResolution -Width 1920 -Height 1080 -Force } catch { "Set-DisplayResolution failed: $_" }
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "$($_.DeviceName) $($_.Bounds)" }
+
       - name: UI tests
         timeout-minutes: 25
         run: dotnet test apps/windows/Notivelo.Windows.UiTests/Notivelo.Windows.UiTests.csproj -c Release --filter "FullyQualifiedName!~LookShots" --logger "console;verbosity=normal"

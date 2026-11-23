@@ -33,7 +33,7 @@ internal static class PopupMenu
     public static string Slug(string text) => System.Text.RegularExpressions.Regex.Replace(new string(text.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()), "-+", "-").Trim('-');
 
     /// <summary>Open the menu under <paramref name="anchor"/> (end-aligned for "..." buttons) or, with <paramref name="at"/>, at a point in the host's coordinates.</summary>
-    public static void Show(OverlayHost host, IReadOnlyList<MenuEntry> items, FrameworkElement? anchor, bool endAlign = false, Point? at = null, string? id = null, double width = 240)
+    public static void Show(OverlayHost host, IReadOnlyList<MenuEntry> items, FrameworkElement? anchor, bool endAlign = false, Point? at = null, string? id = null, double width = 252)
     {
         Brush B(string k) => ThemeBrushes.Get(k, host);
         var list = new StackPanel();

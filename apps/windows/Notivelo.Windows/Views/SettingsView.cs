@@ -29,21 +29,21 @@ internal sealed partial class SettingsView : ThemedControl
 
     protected override UIElement Build()
     {
-        var root = new Grid { Padding = new Thickness(40, 30, 40, 24), ColumnSpacing = 40 };
+        var root = new Grid { Padding = new Thickness(40, 37, 40, 24), ColumnSpacing = 40 };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         AutomationProperties.SetAutomationId(root, "settings-root");
         AutomationProperties.SetName(root, "Settings");
 
         var nav = new StackPanel { Spacing = 2 };
-        nav.Children.Add(Ui.Text("Settings", 20, B("Text"), 700, lineHeight: 28).With(t => t.Margin = new Thickness(0, 0, 0, 14)));
+        nav.Children.Add(Ui.Text("Settings", 20, B("Text"), 700, lineHeight: 28).With(t => t.Margin = new Thickness(0, 0, 0, 20)));
         nav.Children.Add(Ui.Text("Account", 12, B("TextMuted"), 600).With(t => t.Margin = new Thickness(8, 0, 0, 4)));
         nav.Children.Add(NavRow("profile", "user", "Profile"));
-        nav.Children.Add(NavRow("password", "lock", "Password"));
+        nav.Children.Add(NavRow("appearance", "palette", "Appearance"));
+        nav.Children.Add(NavRow("password", "lock", "Security"));
         nav.Children.Add(NavRow("notifications", "bell", "Notifications"));
         nav.Children.Add(NavRow("apps", "plug", "Connected apps"));
-        nav.Children.Add(NavRow("appearance", "palette", "Appearance"));
-        nav.Children.Add(Ui.Text("App", 12, B("TextMuted"), 600).With(t => t.Margin = new Thickness(8, 14, 0, 4)));
+        nav.Children.Add(Ui.Text("App", 12, B("TextMuted"), 600).With(t => t.Margin = new Thickness(8, 18, 0, 4)));
         nav.Children.Add(NavRow("about", "info", "About"));
         root.Children.Add(nav);
 

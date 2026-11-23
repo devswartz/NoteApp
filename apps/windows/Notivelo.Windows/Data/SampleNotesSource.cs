@@ -16,7 +16,7 @@ public sealed partial class SampleNotesSource : INotesSource
     public string? LoadError => null;
     public void OpenPage(string? pageId) { }
     public IReadOnlyList<(PageSummary Page, string Where, string Edited)> RecentPages(int count) =>
-        Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p, $"{n.Name} › {s.Name}", "2h ago")))).Take(count).ToList();
+        Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p, $"{n.Name} Â· {s.Name}", "2h ago")))).Take(count).ToList();
 
     public IReadOnlyList<Notebook> Notebooks { get; private set; }
 
