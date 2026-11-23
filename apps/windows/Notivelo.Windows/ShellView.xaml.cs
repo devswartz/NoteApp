@@ -23,6 +23,8 @@ public sealed partial class ShellView : UserControl
     private readonly RibbonView _ribbon = new();
     private readonly PageView _page;
     private readonly TasksView _tasks;
+    private readonly OverlayHost _overlay = new();
+    private readonly ShellHost _host;
     private AppRoute _route = AppRoute.Notes;
     private string? _pageId;
     private TaskViewKind _taskView = TaskViewKind.Today;
@@ -39,6 +41,17 @@ public sealed partial class ShellView : UserControl
         _sidebar = new SidebarView(source);
         _page = new PageView(source);
         _tasks = new TasksView(source);
+        Root.Children.Add(_overlay);
+        Grid.SetRowSpan(_overlay, 2);
+        _host = new ShellHost(source, _overlay)
+        {
+            OpenPage = id => { _overlay.CloseAll(); _pageId = id; _route = AppRoute.Notes; Refresh(); },
+            OpenTask = id => TaskSheet.Show(_host!, id),
+            OpenSearch = () => { if (!_overlay.IsOpen) SearchPalette.Show(_host!); },
+            OpenTrash = () => TrashDialog.Show(_host!),
+        };
+        _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host;
+        KeyDown += OnShellKey;
 
         RibbonHost.Child = _ribbon;
         RailHost.Child = _rail;
@@ -55,6 +68,7 @@ public sealed partial class ShellView : UserControl
         _rail.ToggleSidebar += () => { _sidebarOpen = !_sidebarOpen; ApplySidebar(); _rail.SetSidebarOpen(_sidebarOpen); };
         _rail.ThemeCycle += () => { _theme = (ThemeMode)(((int)_theme + 1) % 3); ApplyTheme(); };
         _sidebar.PageSelected += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
+        _page.TaskOpened += id => _host.OpenTask(id);
         _page.PageOpened += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
         _rail.WorkspaceSelected += id => { if (id == _source.CurrentWorkspaceId) return; _pageId = null; _source.SelectWorkspace(id); Refresh(); };
         // The source loads and syncs in the background and says so here (always on the UI thread).
@@ -66,6 +80,32 @@ public sealed partial class ShellView : UserControl
         ApplyTheme();
         ApplySidebar();
         Refresh();
+        DevShow();
+    }
+
+    /// <summary>Dev hook for passive screenshots (NOTIVELO_SHOW=search:text | trash | task:id | menu-section:id | menu-page:id | menu-notebook; loopback NOTIVELO_SERVER only):
+    /// opens that overlay once the window has settled. No input is synthesised.</summary>
+    private async void DevShow()
+    {
+        var spec = Environment.GetEnvironmentVariable("NOTIVELO_SHOW");
+        if (string.IsNullOrEmpty(spec) || !(Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1")) return;
+        await Task.Delay(2500);
+        var i = spec.IndexOf(':');
+        var kind = i < 0 ? spec : spec[..i]; var arg = i < 0 ? "" : spec[(i + 1)..];
+        var at = new global::Windows.Foundation.Point(150, 190);
+        switch (kind)
+        {
+            case "search": SearchPalette.Show(_host, arg); break;
+            case "trash": await _source.Delete(TreeKind.Page, "geometry"); await _source.Delete(TreeKind.Page, "converted"); TrashDialog.Show(_host); break;
+            case "task": TaskSheet.Show(_host, arg); break;
+            case "menu-notebook": if (_source.Notebooks.FirstOrDefault() is { } nb) _host.Tree.NotebookMenu(_sidebar, nb); break;
+            case "menu-section":
+                foreach (var n in _source.Notebooks) foreach (var s in n.Sections) if (s.Id == arg) _host.Tree.SectionMenu(null, n, s, at);
+                break;
+            case "menu-page":
+                foreach (var n in _source.Notebooks) foreach (var s in n.Sections) foreach (var p in s.Pages) if (p.Id == arg) _host.Tree.PageMenu(null, p, at);
+                break;
+        }
     }
 
     /// <summary>Dev/test hook (NOTIVELO_ROUTE=tasks|calendar|notes): start on another route.</summary>
@@ -83,6 +123,8 @@ public sealed partial class ShellView : UserControl
             var hit = _source.RecentPages(500).FirstOrDefault(r => r.Page.Title.Contains(_devPage, StringComparison.OrdinalIgnoreCase));
             if (hit.Page is not null) { _pageId = hit.Page.Id; _route = AppRoute.Notes; _devPage = null; }
         }
+        // a page that was deleted (or moved to the Trash) is no longer the one shown
+        if (_pageId is not null && _source.CanEditTree && !_source.Loading && _source.PageTitleOf(_pageId) is null) _pageId = null;
         // The page is open (a live page) only while it is shown; leaving the Notes view closes it.
         _source.OpenPage(_route == AppRoute.Notes ? _pageId : null);
         _rail.SetRoute(_route);
@@ -93,6 +135,20 @@ public sealed partial class ShellView : UserControl
         TasksHost.Visibility = _route == AppRoute.Tasks ? Visibility.Visible : Visibility.Collapsed;
         CalendarHost.Visibility = _route == AppRoute.Calendar ? Visibility.Visible : Visibility.Collapsed;
         ApplyBreakpoints(ActualWidth);
+    }
+
+    /// <summary>Ctrl+K (and Ctrl+Shift+F, Apple's Search shortcut) open the search palette. A focused box handles Ctrl+K itself (the link editor) and never lets it get here.</summary>
+    private void OnShellKey(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Handled) return;
+        var ctrl = InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Control).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down);
+        var shift = InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Shift).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down);
+        if (!ctrl) return;
+        if ((e.Key == global::Windows.System.VirtualKey.K && !shift) || (e.Key == global::Windows.System.VirtualKey.F && shift))
+        {
+            e.Handled = true;
+            _host.OpenSearch();
+        }
     }
 
     private void ApplyBreakpoints(double width)

@@ -18,6 +18,8 @@ internal sealed class SidebarView : ThemedControl
     public TaskViewKind TaskView { get; private set; } = TaskViewKind.Today;
     public event Action<string>? PageSelected;
     public event Action<TaskViewKind>? TaskViewSelected;
+    internal ShellHost? Host { get; set; }
+    private Notebook? _nb;
 
     public SidebarView(INotesSource source) { _source = source; SelectedPageId = source.InitialPageId; }
 
@@ -72,6 +74,7 @@ internal sealed class SidebarView : ThemedControl
     {
         var nb = _source.Notebooks.FirstOrDefault(n => n.Id == _source.CurrentNotebookId) ?? _source.Notebooks.FirstOrDefault();
         if (nb is null) return NoNotebooks();
+        _nb = nb;
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = Star });
@@ -107,17 +110,28 @@ internal sealed class SidebarView : ThemedControl
             item.Click += (_, _) => { _source.SelectNotebook(id); Rebuild(); };
             menu.Items.Add(item);
         }
+        if (_source.CanEditTree)
+        {
+            menu.Items.Add(new MenuFlyoutSeparator());
+            var nn = new MenuFlyoutItem { Text = "New notebook" };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(nn, "new-notebook");
+            nn.Click += (_, _) => Host?.Tree.NewNotebook();
+            menu.Items.Add(nn);
+        }
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(picker, "notebook-picker");
         picker.Flyout = menu;
         head.Children.Add(picker);
         var more = Ui.IconButton("ellipsis", 15, 24, 24, "Notebook options");
         more.Margin = new Thickness(4, 0, 0, 0);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(more, "notebook-more");
+        more.Click += (_, _) => Host?.Tree.NotebookMenu(more, nb);
         Grid.SetColumn(more, 1);
         head.Children.Add(more);
         root.Children.Add(head);
 
         // scroll area: SECTIONS
         var list = new StackPanel { Padding = new Thickness(8, 3, 8, 16) };
-        list.Children.Add(GroupHeading("Sections", true));
+        list.Children.Add(GroupHeading("Sections", true, () => Host?.Tree.NewSection(nb.Id, null)));
         foreach (var s in nb.Sections) AddSection(list, s, 0);
         if (nb.Sections.Count == 0) list.Children.Add(Ui.Text("No sections yet.", 12.5, B("TextMuted")).With(t => t.Margin = new Thickness(10, 6, 0, 0)));
         var sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Disabled, Content = list };
@@ -144,7 +158,7 @@ internal sealed class SidebarView : ThemedControl
         return root;
     }
 
-    private UIElement GroupHeading(string text, bool plus)
+    private UIElement GroupHeading(string text, bool plus, Action? onPlus = null)
     {
         var g = Cols(Star, Auto);
         g.MinHeight = 26;
@@ -155,6 +169,8 @@ internal sealed class SidebarView : ThemedControl
         if (plus)
         {
             var b = Ui.IconButton("plus", 15, 24, 24, "New section");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "new-section");
+            b.Click += (_, _) => onPlus?.Invoke();
             Grid.SetColumn(b, 1);
             b.Margin = new Thickness(0, 0, 0, 0);
             g.Children.Add(b);
@@ -168,6 +184,7 @@ internal sealed class SidebarView : ThemedControl
         var open = !_collapsed.Contains(s.Id);
         var g = Cols(Px(14), Px(4), Star, Auto);
         g.ColumnSpacing = 6;
+        var canEdit = _source.CanEditTree && Host is not null;
         var chevron = new Icon(open ? "chevron-down" : "chevron-right", 13, B("TextMuted")) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         g.Children.Add(chevron);
         var tab = new Border { Width = 4, Height = 14, CornerRadius = new CornerRadius(2), Background = Ui.Hex(s.ColorHex), VerticalAlignment = VerticalAlignment.Center };
@@ -176,7 +193,28 @@ internal sealed class SidebarView : ThemedControl
         var nameTb = Ui.Text(s.Name, 14, selectedHere ? B("Accent") : B("Text2"), selectedHere ? 600 : 400);
         Grid.SetColumn(nameTb, 2);
         g.Children.Add(nameTb);
-        var row = Row(30, 6, selectedHere, () => { if (open) _collapsed.Add(s.Id); else _collapsed.Remove(s.Id); Rebuild(); }, g, new Thickness(6 + 14 * depth, 0, 6, 0));
+        var row = Row(30, 6, selectedHere, () => { if (open) _collapsed.Add(s.Id); else _collapsed.Remove(s.Id); Rebuild(); }, g, new Thickness(6 + 14 * depth, 0, 4, 0));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "section-row-" + s.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, s.Name);
+        if (canEdit)
+        {
+            // hover actions: "+" New page, "..." Section options (always there for the UI tests, drawn on hover)
+            var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Opacity = 0 };
+            var add = Ui.IconButton("plus", 15, 24, 24, "New page");
+            var more = Ui.IconButton("ellipsis", 15, 24, 24, "Section options");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(add, "section-add-" + s.Id);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(more, "section-more-" + s.Id);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, "Section options: " + s.Name);
+            add.Tapped += (_, e) => e.Handled = true; more.Tapped += (_, e) => e.Handled = true;
+            add.Click += (_, _) => Host!.Tree.NewPage(s.Id);
+            more.Click += (_, _) => Host!.Tree.SectionMenu(more, _nb, s);
+            actions.Children.Add(add); actions.Children.Add(more);
+            Grid.SetColumn(actions, 3);
+            g.Children.Add(actions);
+            row.PointerEntered += (_, _) => actions.Opacity = 1;
+            row.PointerExited += (_, _) => actions.Opacity = 0;
+            row.RightTapped += (_, e) => { e.Handled = true; Host!.Tree.SectionMenu(null, _nb, s, e.GetPosition(null)); };
+        }
         parent.Children.Add(row);
 
         if (!open) return;
@@ -195,7 +233,9 @@ internal sealed class SidebarView : ThemedControl
             var t = Ui.Text("New page", 14, B("Text2"));
             Grid.SetColumn(t, 1);
             g2.Children.Add(t);
-            kids.Children.Add(Row(28, 6, false, null, g2, new Thickness(6 + 14 * (depth + 1) + 20, 0, 6, 0)));
+            var emptyRow = Row(28, 6, false, canEdit ? () => Host!.Tree.NewPage(s.Id) : null, g2, new Thickness(6 + 14 * (depth + 1) + 20, 0, 6, 0));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(emptyRow, "new-page-" + s.Id);
+            kids.Children.Add(emptyRow);
         }
         parent.Children.Add(kids);
     }
@@ -203,7 +243,7 @@ internal sealed class SidebarView : ThemedControl
     private UIElement PageRow(PageSummary p, int depth)
     {
         var selected = p.Id == SelectedPageId;
-        var g = Cols(Px(14), Star, Auto);
+        var g = Cols(Px(14), Star, Auto, Auto);
         g.ColumnSpacing = 6;
         g.Children.Add(new Icon("file-text", 14, selected ? B("Text2") : B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
         var t = Ui.Text(p.Title, 14, selected ? B("Accent") : B("Text2"), selected ? 500 : 400);
@@ -217,7 +257,24 @@ internal sealed class SidebarView : ThemedControl
             Grid.SetColumn(c, 2);
             g.Children.Add(c);
         }
-        return Row(28, 6, selected, () => PageSelected?.Invoke(p.Id), g, new Thickness(6 + 14 * (depth + 1) + 20 - 6 * 0, 0, 6, 0));
+        var row = Row(28, 6, selected, () => PageSelected?.Invoke(p.Id), g, new Thickness(6 + 14 * (depth + 1) + 20 - 6 * 0, 0, 4, 0));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "page-row-" + p.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, p.Title);
+        if (_source.CanEditTree && Host is not null)
+        {
+            var more = Ui.IconButton("ellipsis", 15, 24, 24, "Page options");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(more, "page-more-" + p.Id);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, "Page options: " + p.Title);
+            more.Opacity = selected ? 1 : 0;
+            more.Tapped += (_, e) => e.Handled = true;
+            more.Click += (_, _) => Host!.Tree.PageMenu(more, p);
+            Grid.SetColumn(more, 3);
+            g.Children.Add(more);
+            row.PointerEntered += (_, _) => more.Opacity = 1;
+            row.PointerExited += (_, _) => more.Opacity = selected ? 1 : 0;
+            row.RightTapped += (_, e) => { e.Handled = true; Host!.Tree.PageMenu(null, p, e.GetPosition(null)); };
+        }
+        return row;
     }
 
     // ---- Tasks panel ------------------------------------------------------------------------------------------

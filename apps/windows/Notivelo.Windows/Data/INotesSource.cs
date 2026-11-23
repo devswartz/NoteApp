@@ -43,13 +43,54 @@ public interface INotesSource
     /// <summary>The task line was removed from the box for good.</summary>
     void DeleteTask(string id);
     /// <summary>Pages whose title contains the query, for the [[ menu (at most <paramref name="max"/>).</summary>
-    IReadOnlyList<(string Id, string Title)> SearchPages(string query, int max);
+    IReadOnlyList<(string Id, string Title, string Crumb)> SearchPages(string query, int max);
     /// <summary>People that can be mentioned with @ (the signed-in user until the workspace member list is exposed).</summary>
-    IReadOnlyList<(string Id, string Label)> People(string query);
+    IReadOnlyList<(string Id, string Label, string Detail, string? ColorHex)> People(string query);
 
     /// <summary>Offline test mode (NOTIVELO_SOURCE=offline): the source opens the boxes' editor sessions over local documents, with no live page.</summary>
     bool OffersOfflineBoxes => false;
     Notivelo.Native.EditorSession? OpenOfflineBox(string pageId, string field, Notivelo.Native.TaskCallbacks tasks) => null;
+
+    // ---- canvas boxes and ink (the core's box and ink calls on the open page; Apple's BoxGeometryStore / MacInkView) ----
+    /// <summary>Boxes can be made, moved, resized and removed on this page.</summary>
+    bool CanEditBoxes(string pageId) => false;
+    /// <summary>A new empty box (x, y from the surface origin, w wide, z in front); returns its id, or null when refused.</summary>
+    string? CreateBox(string pageId, double x, double y, double w, double z) => null;
+    void MoveBox(string pageId, string boxId, double x, double y) { }
+    void ResizeBox(string pageId, string boxId, double w) { }
+    void BringBoxToFront(string pageId, string boxId) { }
+    /// <summary>Remove a box that holds nothing (the core refuses one that does); true when it is gone.</summary>
+    bool DeleteBox(string pageId, string boxId) => false;
+    /// <summary>The page's ink in drawing order (empty for a source without a live page).</summary>
+    IReadOnlyList<InkStroke> InkOf(string pageId) => Array.Empty<InkStroke>();
+
+
+    // ---- parity B: tree actions (the core's create/rename/move/delete/trash calls; each refreshes the tree), search, task detail ----
+    /// <summary>The tree can be changed (a signed-in core source, or the sample).</summary>
+    bool CanEditTree => false;
+    Task<TreeResult> CreateNotebook(string name) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> CreateSection(string notebookId, string? parentId, string name) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> CreatePage(string sectionId, string title) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> Rename(TreeKind kind, string id, string name) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Copy a page or section next to the original (Apple's Duplicate).</summary>
+    Task<TreeResult> Duplicate(TreeKind kind, string id) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Move a page (to <paramref name="sectionId"/>) or a section (to a notebook, optionally under a section).</summary>
+    Task<TreeResult> Move(TreeKind kind, string id, string notebookId, string? sectionId) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Delete moves to the Trash (kept 60 days).</summary>
+    Task<TreeResult> Delete(TreeKind kind, string id) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TrashList> LoadTrash() => Task.FromResult(new TrashList(Array.Empty<TrashItem>(), "Not available."));
+    Task<TreeResult> Restore(TrashItem item) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> DeleteForever(TrashItem item) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> EmptyTrash() => Task.FromResult(new TreeResult(Error: "Not available."));
+
+    /// <summary>The core's content search (page text, task titles and descriptions); null when it can't be asked (offline): the caller keeps the title matches.</summary>
+    Task<SearchOutcome?> SearchAsync(string query) => Task.FromResult<SearchOutcome?>(null);
+
+    /// <summary>Raised at each change to the task list, so views that draw task lines draw them again.</summary>
+    long TasksVersion => 0;
+    TaskDetailItem? GetTaskDetail(string taskId) => null;
+    /// <summary>Change a task (shown at once, then sent to the core). A tick is <c>new TaskPatch(Done: true)</c>.</summary>
+    void UpdateTask(string taskId, TaskPatch patch) { }
 
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();

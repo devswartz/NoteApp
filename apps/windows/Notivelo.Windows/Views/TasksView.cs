@@ -13,6 +13,7 @@ internal sealed class TasksView : ThemedControl
 {
     private readonly INotesSource _source;
     public TaskViewKind View { get; private set; } = TaskViewKind.Today;
+    internal ShellHost? Host { get; set; }
 
     public TasksView(INotesSource source) => _source = source;
 
@@ -138,9 +139,21 @@ internal sealed class TasksView : ThemedControl
         row.PointerEntered += (_, _) => row.Background = sub;
         row.PointerExited += (_, _) => row.Background = normal;
 
-        var circle = TaskParts.Circle(B, t.Priority, t.Done);
-        ((FrameworkElement)circle).Margin = new Thickness(0, 1, 0, 0);
+        // the check circle ticks the task (written through the core's update_task); a click elsewhere on the row opens the detail sheet
+        var circle = new Button
+        {
+            Style = Ui.Style("GhostButtonStyle"), Width = 26, Height = 26, Padding = new Thickness(0), CornerRadius = new CornerRadius(13), VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(-4, -3, 0, 0), Content = TaskParts.Circle(B, t.Priority, t.Done),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(circle, "task-circle-" + t.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(circle, (t.Done ? "Mark not done: " : "Mark done: ") + t.Title);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(circle, t.Done ? "done=1" : "done=0");
+        circle.Tapped += (_, e) => e.Handled = true;
+        circle.Click += (_, _) => _source.UpdateTask(t.Id, new TaskPatch(Done: !t.Done));
         row.Children.Add(circle);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "task-row-" + t.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, t.Title);
+        row.Tapped += (_, _) => Host?.OpenTask(t.Id);
 
         var body = new StackPanel();
         var title = Ui.Text(t.Title, 14, t.Done ? B("TextMuted") : B("Text"), lineHeight: 19.6);

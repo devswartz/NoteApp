@@ -204,6 +204,7 @@ internal sealed partial class BoxTextView : UserControl
         public string Label = "";
         public bool Me, Missing;
         public string? Emoji;
+        public string? PageId;
     }
 
     private static string? _mono;
@@ -466,6 +467,7 @@ internal sealed partial class BoxTextView : UserControl
                     var pid = Get("pageId") ?? a.Label;
                     var title = _source.PageTitleOf(pid);
                     d.Missing = title is null;
+                    d.PageId = pid;
                     d.Label = title is { Length: > 0 } ? title : d.Missing ? "Missing page" : "Untitled";
                     d.Emoji = Get("emoji");
                     cw = TextWidth(d.Label, m.Size, d.Missing ? 400 : 500) + 6 + (d.Emoji is { Length: > 0 } ? TextWidth(d.Emoji, m.Size * 0.95, 400) + 3 : 0);
@@ -581,6 +583,9 @@ internal sealed partial class BoxTextView : UserControl
     private static string SizeText(double bytes) =>
         bytes <= 0 ? "" : bytes < 1024 ? $"{bytes:0} B" : bytes < 1048576 ? $"{bytes / 1024:0.#} KB" : $"{bytes / 1048576:0.#} MB";
 
+    /// <summary>Open the detail sheet of a task line's task (set by the page).</summary>
+    public Action<string>? TaskOpened { get; set; }
+
     private UIElement TaskRow(string? id, double x, double w)
     {
         var t = id is null ? null : _source.FindTask(id);
@@ -602,9 +607,17 @@ internal sealed partial class BoxTextView : UserControl
             g.Children.Add(sp);
             return g;
         }
-        var circle = TaskParts.Circle(B, t.Priority, t.Done);
-        ((FrameworkElement)circle).VerticalAlignment = VerticalAlignment.Top;
-        ((FrameworkElement)circle).Margin = new Thickness(0, 5, 0, 0);
+        // the circle ticks the task (written through the core's update_task); the open icon and a click on the title open the detail sheet
+        var taskId = t.Id; var wasDone = t.Done;
+        var circle = new Button
+        {
+            Style = (Style)Application.Current.Resources["GhostButtonStyle"], Width = 26, Height = 26, Padding = new Thickness(0), CornerRadius = new CornerRadius(13),
+            VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(-4, 1, 0, 0), Content = TaskParts.Circle(B, t.Priority, t.Done),
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(circle, "task-line-circle-" + taskId);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(circle, wasDone ? "Mark not done" : "Mark done");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(circle, wasDone ? "done=1" : "done=0");
+        circle.Click += (_, _) => _source.UpdateTask(taskId, new TaskPatch(Done: !wasDone));
         g.Children.Add(circle);
         var title = Ui.Text(t.Title.Length == 0 ? "Untitled task" : t.Title, 16, t.Done ? B("TextMuted") : B("Text"), lineHeight: 24);
         title.TextWrapping = TextWrapping.Wrap;
@@ -626,7 +639,11 @@ internal sealed partial class BoxTextView : UserControl
             meta.Children.Add(Chip(TaskParts.IconText("calendar-days", 13, due, 11.5, TaskParts.ToneBrush(B, t.Tone), TaskParts.ToneBrush(B, t.Tone), 400)));
         if (t.Assignee is { } who) meta.Children.Add(Ui.Avatar(who, 20));
         meta.Children.Add(new Icon("list-plus", 13, B("Text2")) { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
-        meta.Children.Add(new Icon("maximize-2", 13, B("Text2")) { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 0, 0) });
+        var open = Ui.IconButton("maximize-2", 13, 24, 24, "Open task details", 6);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(open, "task-line-open-" + taskId);
+        open.Click += (_, _) => TaskOpened?.Invoke(taskId);
+        meta.Children.Add(open);
+        title.Tapped += (_, _) => TaskOpened?.Invoke(taskId);
         Grid.SetColumn(meta, 2);
         g.Children.Add(meta);
         return g;

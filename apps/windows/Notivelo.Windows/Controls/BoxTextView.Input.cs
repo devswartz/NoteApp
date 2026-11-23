@@ -87,10 +87,24 @@ internal sealed partial class BoxTextView
 
     // ---- focus and the caret --------------------------------------------------------------------------------------------
 
+    /// <summary>The box was left (Escape, a click on the page, or another box taking the keyboard): the page removes it when it is empty.
+    /// Not raised when focus only moves to the link editor or the ribbon.</summary>
+    public event Action? Left;
+    private static BoxTextView? _lastEdited;
+
+    /// <summary>A click on the page outside every box.</summary>
+    public static void LeaveEditing()
+    {
+        var b = _lastEdited; _lastEdited = null;
+        b?.Left?.Invoke();
+    }
+
     private void OnGotFocus()
     {
         Trace("got focus interactive=" + Interactive);
         if (!Interactive) return;
+        if (_lastEdited is { } prev && !ReferenceEquals(prev, this)) prev.Left?.Invoke();
+        _lastEdited = this;
         _focused = true;
         Focused = this;
         EnsureContext();
@@ -119,6 +133,9 @@ internal sealed partial class BoxTextView
     /// <summary>Escape or a click outside: give the keyboard to the page.</summary>
     public void Unfocus()
     {
+        if (ReferenceEquals(_lastEdited, this)) _lastEdited = null;
+        HideLinkEditor(false);
+        Left?.Invoke();
         DependencyObject? p = this;
         while (p is not null)
         {
@@ -500,6 +517,7 @@ internal sealed partial class BoxTextView
         var pt = e.GetCurrentPoint(_root);
         var right = pt.Properties.IsRightButtonPressed;
         if (!pt.Properties.IsLeftButtonPressed && !right) return;
+        var wasFocused = _focused;
         Focus(FocusState.Pointer);
         try
         {
@@ -524,6 +542,8 @@ internal sealed partial class BoxTextView
                 e.Handled = true;
                 return;
             }
+            // a page link opens its page; a link opens with Ctrl, or when the box was not being edited
+            if (TryOpenAt(pt.Position, off, Down(VirtualKey.Control), wasFocused)) { e.Handled = true; return; }
             var line = _r.View.Lines.Length > 0 ? _r.View.Lines[Math.Max(0, RunMap.LineAt(_r.View.Lines, off))] : null;
             if (line is not null && !line.IsText)
             {
@@ -659,6 +679,7 @@ internal sealed partial class BoxTextView
                 case "v": _ = PasteAsync(shift); return true;
                 case "z": if (shift) _session.Redo(); else _session.Undo(); Render(); return true;
                 case "y": _session.Redo(); Render(); return true;
+                case "k": if (!shift) { ShowLinkEditor(); return true; } break;
             }
         }
         var menuOpen = _r!.Suggestion is not null;
@@ -886,6 +907,7 @@ internal sealed partial class BoxTextView
         var s = _r?.Suggestion;
         if (s is null || !_focused) { HideMenu(); return; }
         var items = new List<(string Id, string Label, string Desc, string Icon)>();
+        var dots = new Dictionary<string, string?>();
         int hi;
         if (s.Trigger == N.SuggestionTrigger.Slash)
         {
@@ -896,26 +918,32 @@ internal sealed partial class BoxTextView
         {
             if (s.Query != _appQuery) { _appQuery = s.Query; _appHi = 0; }
             var list = s.Trigger == N.SuggestionTrigger.PageLink
-                ? _source.SearchPages(s.Query, 8).Select(p => (p.Id, p.Title, "")).ToList()
-                : _source.People(s.Query).Select(p => (p.Id, p.Label, "")).ToList();
+                ? _source.SearchPages(s.Query, 8).Select(p => (p.Id, p.Title, p.Crumb)).ToList()
+                : _source.People(s.Query).Select(p => (p.Id, p.Label, p.Detail)).ToList();
+            if (s.Trigger != N.SuggestionTrigger.PageLink) foreach (var p in _source.People(s.Query)) dots[p.Id] = p.ColorHex;
             _appItems = list;
             _appHi = Math.Clamp(_appHi, 0, Math.Max(0, list.Count - 1));
-            items.AddRange(list.Select(i => (i.Item1, i.Item2, i.Item3, s.Trigger == N.SuggestionTrigger.PageLink ? "file-text" : "at-sign")));
+            items.AddRange(list.Select(i => (i.Item1, i.Item2, i.Item3, s.Trigger == N.SuggestionTrigger.PageLink ? "file-text" : "")));
             hi = _appHi;
         }
         var sig = $"{s.Trigger}|{s.ViewFrom}|{hi}|{string.Join(",", items.Select(i => i.Id))}";
         if (!force && sig == _menuSig && _menu is { IsOpen: true }) return;
         _menuSig = sig;
-        if (items.Count == 0 && s.Trigger != N.SuggestionTrigger.Slash) { if (_menu is { IsOpen: true }) _menu.IsOpen = false; return; }
         var panel = new StackPanel { Spacing = 0 };
         if (s.Trigger == N.SuggestionTrigger.Slash)
             panel.Children.Add(new TextBlock { Text = "INSERT BLOCK", FontSize = 11, FontWeight = new global::Windows.UI.Text.FontWeight(600), Foreground = C2("TextMuted"), Margin = new Thickness(8, 4, 8, 6), FontFamily = Ui.Font, CharacterSpacing = 40 });
-        else if (items.Count == 0) panel.Children.Add(new TextBlock { Text = "No matches", FontSize = 13, Foreground = C2("TextMuted"), Margin = new Thickness(8, 6, 8, 6), FontFamily = Ui.Font });
+        else
+        {
+            // "Link to page" has a header like the slash menu; people have none (Apple's MacPopups)
+            if (s.Trigger == N.SuggestionTrigger.PageLink)
+                panel.Children.Add(new TextBlock { Text = "LINK TO PAGE", FontSize = 11, FontWeight = new global::Windows.UI.Text.FontWeight(600), Foreground = C2("TextMuted"), Margin = new Thickness(8, 4, 8, 6), FontFamily = Ui.Font, CharacterSpacing = 40 });
+            if (items.Count == 0) panel.Children.Add(new TextBlock { Text = s.Trigger == N.SuggestionTrigger.PageLink ? "Type a page title…" : "No matching people", FontSize = 12.5, Foreground = C2("TextMuted"), Margin = new Thickness(8, 6, 8, 6), FontFamily = Ui.Font });
+        }
         Border? active = null;
         for (var i = 0; i < items.Count; i++)
         {
             var (id, label, desc, icon) = items[i];
-            var row = MenuRow(label, desc, icon, i == hi, s.Trigger == N.SuggestionTrigger.Slash);
+            var row = MenuRow(label, desc, icon, i == hi, s.Trigger == N.SuggestionTrigger.Slash, dots.TryGetValue(id, out var dot) ? dot : null);
             var idx = i; var itemId = id; var itemLabel = label;
             row.PointerPressed += (_, e) => { e.Handled = true; if (s.Trigger == N.SuggestionTrigger.Slash) RunCommand("pickSlash", JsonSerializer.Serialize(new { title = itemId })); else PickApp(idx); Focus(FocusState.Programmatic); };
             if (i == hi) active = row;
@@ -951,7 +979,7 @@ internal sealed partial class BoxTextView
         if (active is not null) { try { active.StartBringIntoView(); } catch { } }
     }
 
-    private Border MenuRow(string title, string desc, string icon, bool active, bool tile)
+    private Border MenuRow(string title, string desc, string icon, bool active, bool tile, string? dotHex = null)
     {
         var g = new Grid { ColumnSpacing = 10 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -971,6 +999,16 @@ internal sealed partial class BoxTextView
         Grid.SetColumn(col, tile ? 1 : 0);
         if (!tile) Grid.SetColumnSpan(col, 2);
         g.Children.Add(col);
+        if (!tile && dotHex is not null)
+        {
+            // a person: a colour dot before the name
+            var dot = new Border { Width = 10, Height = 10, CornerRadius = new CornerRadius(5), Background = Ui.Hex(dotHex), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+            col.Orientation = Orientation.Vertical;
+            Grid.SetColumnSpan(col, 1); Grid.SetColumn(col, 1);
+            g.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Star);
+            Grid.SetColumn(dot, 0);
+            g.Children.Add(dot);
+        }
         return new Border { Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(7), Background = active ? C2("BgHover") : new SolidColorBrush(Colors.Transparent), Child = g };
     }
 
