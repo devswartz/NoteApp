@@ -2,6 +2,12 @@ package com.notivelo.app.data
 
 import com.notivelo.core.Core
 import com.notivelo.core.CoreException
+import com.notivelo.core.LiveEnd
+import com.notivelo.core.LivePage
+import com.notivelo.core.LivePageListener
+import com.notivelo.core.LiveStatus
+import com.notivelo.core.PageInfo
+import com.notivelo.core.readPage
 import com.notivelo.core.SignedIn
 import com.notivelo.core.Task
 import com.notivelo.core.Tree
@@ -23,7 +29,29 @@ interface Backend {
     fun cachedTree(workspaceId: String): Tree?
     fun tree(workspaceId: String): Tree
     fun tasks(workspaceId: String): List<Task>
+
+    /** Tick or untick a task; returns it as the server has it. */
+    fun setTaskDone(taskId: String, done: Boolean): Task
+
+    /** The page as last stored on the device, if any (instant). */
+    fun cachedPage(pageId: String): PageInfo?
+
+    /** Open a page live: [events] are called on a core thread. [PageHandle.close] ends it. */
+    fun openPage(pageId: String, events: PageEvents): PageHandle
     fun signOut()
+}
+
+interface PageEvents {
+    fun onStatus(status: PageStatus)
+    fun onChange(info: PageInfo)
+}
+
+interface PageHandle {
+    fun info(): PageInfo
+
+    /** The strokes in drawing order, with their outlines. */
+    fun ink(): List<InkShape>
+    fun close()
 }
 
 /** The failures the screens tell apart. */
@@ -83,7 +111,59 @@ class CoreBackend(private val storePath: String) : Backend {
     override fun tree(workspaceId: String): Tree = call { current().tree(workspaceId) }
     override fun tasks(workspaceId: String): List<Task> = call { current().tasks(workspaceId) }
 
+    override fun setTaskDone(taskId: String, done: Boolean): Task = call { current().setTaskDone(taskId, done) }
+
+    override fun cachedPage(pageId: String): PageInfo? = try {
+        core?.cachedPageDocument(pageId)?.let { readPage(it) }
+    } catch (e: Exception) {
+        null
+    }
+
+    override fun openPage(pageId: String, events: PageEvents): PageHandle {
+        val page = call {
+            current().openLivePage(pageId, object : LivePageListener {
+                override fun onStatus(status: LiveStatus) {
+                    events.onStatus(
+                        when (status) {
+                            is LiveStatus.Synced -> PageStatus.Synced
+                            is LiveStatus.Reconnecting -> PageStatus.Offline
+                            is LiveStatus.Ended -> if (status.reason == LiveEnd.NO_ACCESS) PageStatus.NoAccess else PageStatus.Ended
+                            else -> PageStatus.Connecting
+                        },
+                    )
+                }
+
+                override fun onChange(page: PageInfo) = events.onChange(page)
+            })
+        }
+        return CorePageHandle(page)
+    }
+
     override fun signOut() {
         core?.signOut()
+    }
+}
+
+private class CorePageHandle(private val page: LivePage) : PageHandle {
+    override fun info(): PageInfo = page.info()
+
+    override fun ink(): List<InkShape> = page.inkStrokes().filter { it.readable }.mapNotNull { s ->
+        val ops = page.inkOutline(s.id)
+        if (ops.isEmpty()) {
+            null
+        } else {
+            val c = s.color.toLong()
+            // 0xRRGGBBAA as stored to ARGB.
+            val argb = (((c and 0xFF) shl 24) or ((c shr 8) and 0xFFFFFF)).toInt()
+            InkShape(s.id, s.tool.toInt() == 1, argb, ops.toFloatArray())
+        }
+    }
+
+    override fun close() {
+        try {
+            page.shutdown()
+        } finally {
+            page.close()
+        }
     }
 }

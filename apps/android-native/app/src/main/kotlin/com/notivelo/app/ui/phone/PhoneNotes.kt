@@ -29,7 +29,6 @@ import com.notivelo.app.look.parseHex
 import com.notivelo.app.look.pal
 import com.notivelo.app.ui.InitialTile
 import com.notivelo.app.ui.LocalNow
-import com.notivelo.app.ui.PagePlaceholder
 import com.notivelo.app.ui.SecondaryButton
 import com.notivelo.app.ui.hairline
 import com.notivelo.app.ui.relativeTime
@@ -40,13 +39,13 @@ import com.notivelo.core.Section
 
 /** The Notes tab: notebooks, then a notebook's sections, then a section's pages, then the page. */
 @Composable
-fun NotesContent(state: AppState, index: TreeIndex?, actions: ShellActions, onNotYet: (String) -> Unit) {
+fun NotesContent(state: AppState, index: TreeIndex?, actions: ShellActions, onNotYet: (String) -> Unit, scrollPx: Int = 0) {
     val page = index?.page(state.pageId)
     val notebook = index?.notebook(state.phoneNotebookId)
     // The drill-down is phoneNotebookId; sectionId alone (the drawer's highlight) leaves the list behind the drawer.
     val section = if (notebook != null) index?.section(state.sectionId) else null
     when {
-        page != null -> PagePlaceholder(page, Modifier.fillMaxSize())
+        page != null && index != null -> com.notivelo.app.ui.page.PageScreen(state, page, index, phone = true, scrollPx = scrollPx)
         section != null && index != null -> SectionScreen(index, section, state, actions, onNotYet)
         notebook != null && index != null -> NotebookScreen(index, notebook, actions, onNotYet)
         else -> NotebooksScreen(index, state.treeLoading, actions)

@@ -29,6 +29,13 @@ import androidx.compose.ui.unit.dp
 import com.notivelo.app.data.AppState
 import com.notivelo.app.data.ShellActions
 import com.notivelo.app.data.TreeIndex
+import com.notivelo.app.data.Tab
+import com.notivelo.app.ui.tasks.TaskDetailContent
+import com.notivelo.app.ui.tasks.TasksScreen
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import com.notivelo.app.look.Ic
 import com.notivelo.app.look.LIcon
 import com.notivelo.app.look.LocalPhone
@@ -50,13 +57,15 @@ fun PhoneShell(
     drawerOpen: Boolean,
     onDrawerChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    scrollPx: Int = 0,
 ) {
     val p = pal()
     val index = remember(state.tree) { state.tree?.let(::TreeIndex) }
     var toast by remember { mutableStateOf<String?>(null) }
     val notYet: (String) -> Unit = { toast = "$it is not in the native preview yet." }
-    val onPage = state.pageId != null
-    val inSection = state.sectionId != null && !onPage
+    val tasksTab = state.tab == Tab.Tasks
+    val onPage = state.pageId != null && !tasksTab
+    val inSection = state.sectionId != null && !onPage && !tasksTab
 
     CompositionLocalProvider(LocalPhone provides true) {
         Box(modifier.fillMaxSize().background(p.bg)) {
@@ -70,20 +79,67 @@ fun PhoneShell(
                     onNotYet = notYet,
                 )
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    NotesContent(state, index, actions, notYet)
+                    if (tasksTab) TasksScreen(state, actions, phone = true, onNotYet = notYet) else NotesContent(state, index, actions, notYet, scrollPx)
                     if (!onPage) Fab(Modifier.align(Alignment.BottomEnd)) { notYet("Adding a task") }
                 }
-                TabBar(onNotYet = notYet)
+                TabBar(state.tab, actions, onNotYet = notYet)
+            }
+            if (!drawerOpen && state.taskDetailId == null) {
+                // A swipe from the left edge opens the drawer (all at once: no following the finger yet).
+                var dragged by remember { mutableStateOf(0f) }
+                Box(
+                    Modifier.align(Alignment.CenterStart).fillMaxHeight().width(24.dp).pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragged = 0f },
+                            onDragEnd = { dragged = 0f },
+                            onDragCancel = { dragged = 0f },
+                        ) { _, dx ->
+                            dragged += dx
+                            if (dragged > 48.dp.toPx()) {
+                                dragged = 0f
+                                onDrawerChange(true)
+                            }
+                        }
+                    },
+                )
+            }
+            if (state.taskDetailId != null) {
+                Box(Modifier.fillMaxSize().background(p.bgOverlay).tappable { actions.openTask(null) })
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.92f)
+                        .shadow(24.dp, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp), clip = false, ambientColor = p.shadowLg, spotColor = p.shadowLg)
+                        .background(p.bg, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+                ) { TaskDetailContent(state, actions, phone = true) }
             }
             if (drawerOpen) {
-                Box(Modifier.fillMaxSize().background(p.bgOverlay).tappable { onDrawerChange(false) })
+                var closing by remember { mutableStateOf(0f) }
+                Box(
+                    Modifier.fillMaxSize().background(p.bgOverlay).tappable { onDrawerChange(false) }.pointerInput(Unit) {
+                        detectHorizontalDragGestures(onDragStart = { closing = 0f }, onDragEnd = { closing = 0f }, onDragCancel = { closing = 0f }) { _, dx ->
+                            closing += dx
+                            if (closing < -48.dp.toPx()) {
+                                closing = 0f
+                                onDrawerChange(false)
+                            }
+                        }
+                    },
+                )
                 PhoneDrawer(
                     state = state, index = index, actions = actions,
                     onClose = { onDrawerChange(false) }, onNotYet = notYet,
-                    modifier = Modifier.align(Alignment.CenterStart),
+                    modifier = Modifier.align(Alignment.CenterStart).pointerInput(Unit) {
+                        detectHorizontalDragGestures(onDragStart = { closing = 0f }, onDragEnd = { closing = 0f }, onDragCancel = { closing = 0f }) { _, dx ->
+                            closing += dx
+                            if (closing < -48.dp.toPx()) {
+                                closing = 0f
+                                onDrawerChange(false)
+                            }
+                        }
+                    },
                 )
             }
-            NotYetToast(toast, { toast = null }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 76.dp))
+            NotYetToast(state.notice ?: toast, { toast = null; actions.clearNotice() }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 76.dp))
         }
     }
 }
@@ -137,7 +193,7 @@ private fun IconButton44(icon: Int, size: Int, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TabBar(onNotYet: (String) -> Unit) {
+private fun TabBar(tab: Tab, actions: ShellActions, onNotYet: (String) -> Unit) {
     val p = pal()
     Row(
         Modifier
@@ -147,15 +203,15 @@ private fun TabBar(onNotYet: (String) -> Unit) {
             .navigationBarsPadding()
             .height(60.dp),
     ) {
-        Tab("Notes", Ic.bookOpen, Ic.bookOpenS23, active = true, Modifier.weight(1f)) {}
-        Tab("Tasks", Ic.listChecks, Ic.listChecksS23, active = false, Modifier.weight(1f)) { onNotYet("Tasks") }
-        Tab("Calendar", Ic.calendarDays, Ic.calendarDaysS23, active = false, Modifier.weight(1f)) { onNotYet("Calendar") }
-        Tab("Search", Ic.search, Ic.searchS23, active = false, Modifier.weight(1f)) { onNotYet("Search") }
+        TabItem("Notes", Ic.bookOpen, Ic.bookOpenS23, active = tab == com.notivelo.app.data.Tab.Notes, Modifier.weight(1f)) { actions.goNotes() }
+        TabItem("Tasks", Ic.listChecks, Ic.listChecksS23, active = tab == com.notivelo.app.data.Tab.Tasks, Modifier.weight(1f)) { actions.goTasks() }
+        TabItem("Calendar", Ic.calendarDays, Ic.calendarDaysS23, active = false, Modifier.weight(1f)) { onNotYet("Calendar") }
+        TabItem("Search", Ic.search, Ic.searchS23, active = false, Modifier.weight(1f)) { onNotYet("Search") }
     }
 }
 
 @Composable
-private fun Tab(label: String, icon: Int, activeIcon: Int, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun TabItem(label: String, icon: Int, activeIcon: Int, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val p = pal()
     val color = if (active) p.accent else p.textMuted
     Column(

@@ -3,6 +3,7 @@ package com.notivelo.app.data
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.notivelo.core.PageInfo
 import com.notivelo.core.SignedIn
 import com.notivelo.core.Tree
 import kotlinx.coroutines.CoroutineDispatcher
@@ -10,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -27,8 +30,14 @@ class AppViewModel(
     private val _state = MutableStateFlow(AppState(server = store.server))
     val state: StateFlow<AppState> = _state.asStateFlow()
 
+    private var handle: PageHandle? = null
+
     init {
         restore()
+        // A page is open live while it is the one chosen; leaving it closes the connection.
+        viewModelScope.launch {
+            _state.map { it.pageId }.distinctUntilChanged().collect { openPageHandle(it) }
+        }
     }
 
     private suspend fun <T> blocking(block: () -> T): T = withContext(io) { block() }
@@ -132,7 +141,7 @@ class AppViewModel(
     private suspend fun switchTo(id: String) {
         _state.update {
             it.copy(
-                workspaceId = id, tree = null, taskCounts = emptyMap(), treeLoading = true,
+                workspaceId = id, tree = null, taskCounts = emptyMap(), tasks = emptyList(), taskDetailId = null, treeLoading = true,
                 notebookId = null, phoneNotebookId = null, sectionId = null, pageId = null,
             )
         }
@@ -149,8 +158,8 @@ class AppViewModel(
             _state.update { if (it.workspaceId == id) it.copy(treeLoading = false) else it }
         }
         try {
-            val counts = openTaskCounts(blocking { backend.tasks(id) })
-            _state.update { if (it.workspaceId == id) it.copy(taskCounts = counts) else it }
+            val tasks = blocking { backend.tasks(id) }
+            _state.update { if (it.workspaceId == id) it.copy(tasks = tasks, taskCounts = openTaskCounts(tasks)) else it }
         } catch (e: BackendError) {
             // Counts are a nicety.
         }
@@ -191,7 +200,7 @@ class AppViewModel(
     }
 
     override fun openPhoneNotebook(id: String) {
-        _state.update { it.copy(phoneNotebookId = id, notebookId = id, sectionId = null, pageId = null) }
+        _state.update { it.copy(tab = Tab.Notes, phoneNotebookId = id, notebookId = id, sectionId = null, pageId = null) }
     }
 
     override fun openSection(id: String) {
@@ -199,6 +208,7 @@ class AppViewModel(
             val index = s.tree?.let(::TreeIndex)
             val section = index?.section(id)
             s.copy(
+                tab = Tab.Notes,
                 sectionId = id,
                 pageId = null,
                 notebookId = section?.notebookId ?: s.notebookId,
@@ -213,6 +223,7 @@ class AppViewModel(
             val page = index?.page(id)
             val section = index?.section(page?.sectionId)
             s.copy(
+                tab = Tab.Notes,
                 pageId = id,
                 sectionId = page?.sectionId ?: s.sectionId,
                 notebookId = section?.notebookId ?: s.notebookId,
@@ -235,7 +246,110 @@ class AppViewModel(
     }
 
     override fun goNotes() {
-        _state.update { it.copy(phoneNotebookId = null, sectionId = null, pageId = null) }
+        _state.update { it.copy(tab = Tab.Notes, phoneNotebookId = null, sectionId = null, pageId = null) }
+    }
+
+    // Tasks
+
+    override fun goTasks() {
+        _state.update { it.copy(tab = Tab.Tasks) }
+        refreshTasks()
+    }
+
+    override fun selectTaskList(list: TaskList) {
+        _state.update { it.copy(tab = Tab.Tasks, taskList = list) }
+    }
+
+    override fun setEveryone(everyone: Boolean) {
+        _state.update { it.copy(everyone = everyone) }
+    }
+
+    override fun openTask(id: String?) {
+        _state.update { it.copy(taskDetailId = id) }
+    }
+
+    override fun clearNotice() {
+        _state.update { it.copy(notice = null) }
+    }
+
+    private fun refreshTasks() {
+        val ws = _state.value.workspaceId ?: return
+        viewModelScope.launch {
+            try {
+                val tasks = blocking { backend.tasks(ws) }
+                _state.update { if (it.workspaceId == ws) it.copy(tasks = tasks, taskCounts = openTaskCounts(tasks)) else it }
+            } catch (e: BackendError) {
+                // The list on screen stays.
+            }
+        }
+    }
+
+    /** Ticks a task at once and asks the server; a refusal puts it back and says so. */
+    override fun toggleTask(id: String) {
+        val before = _state.value.tasks.firstOrNull { it.id == id } ?: return
+        if (before.locked) return
+        val done = !before.done
+        setTasks { it.withDone(id, done, java.time.Instant.now().toString()) }
+        viewModelScope.launch {
+            try {
+                val saved = blocking { backend.setTaskDone(id, done) }
+                setTasks { list -> list.map { if (it.id == id) saved else it } }
+            } catch (e: BackendError) {
+                setTasks { list -> list.map { if (it.id == id) before else it } }
+                _state.update { it.copy(notice = "Could not update the task.") }
+            }
+        }
+    }
+
+    private fun setTasks(f: (List<com.notivelo.core.Task>) -> List<com.notivelo.core.Task>) {
+        _state.update { val t = f(it.tasks); it.copy(tasks = t, taskCounts = openTaskCounts(t)) }
+    }
+
+    // The open page
+
+    private suspend fun openPageHandle(id: String?) {
+        val old = handle
+        handle = null
+        if (old != null) blocking { try { old.close() } catch (e: Exception) { } }
+        if (id == null) {
+            _state.update { it.copy(page = null) }
+            return
+        }
+        val cached = blocking { backend.cachedPage(id) }
+        _state.update { it.copy(page = PageView(id, cached)) }
+        val locked = _state.value.tree?.pages?.firstOrNull { it.id == id }?.locked == true
+        if (locked) return
+        val events = object : PageEvents {
+            override fun onStatus(status: PageStatus) {
+                viewModelScope.launch { editPage(id) { it.copy(status = status) } }
+            }
+
+            override fun onChange(info: PageInfo) {
+                viewModelScope.launch { applyPage(id, info) }
+            }
+        }
+        try {
+            val h = blocking { backend.openPage(id, events) }
+            if (_state.value.pageId == id) {
+                handle = h
+            } else {
+                blocking { h.close() }
+            }
+        } catch (e: BackendError.SignedOut) {
+            expire()
+        } catch (e: BackendError) {
+            editPage(id) { it.copy(status = PageStatus.Offline) }
+        }
+    }
+
+    private suspend fun applyPage(id: String, info: PageInfo) {
+        val h = handle ?: return
+        val (fresh, ink) = blocking { info to h.ink() }
+        editPage(id) { it.copy(info = fresh, ink = ink) }
+    }
+
+    private fun editPage(id: String, f: (PageView) -> PageView) {
+        _state.update { s -> val pv = s.page; if (pv != null && pv.pageId == id) s.copy(page = f(pv)) else s }
     }
 
     class Factory(private val backend: Backend, private val store: SessionStore) : ViewModelProvider.Factory {

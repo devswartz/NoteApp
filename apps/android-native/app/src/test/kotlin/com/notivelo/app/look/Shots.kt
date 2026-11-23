@@ -34,7 +34,43 @@ private fun tablet(landscape: Boolean) = DeviceConfig.PIXEL_5.copy(
     orientation = if (landscape) ScreenOrientation.LANDSCAPE else ScreenOrientation.PORTRAIT,
 )
 
-class PhoneShots : ShotsBase(phone) {
+/** The states with a page or a task list: the same set in the three viewports where the web has a reference. */
+abstract class DataShots(config: DeviceConfig) : ShotsBase(config) {
+    @Test fun page_canvas_boxes() = shot("page-canvas-boxes")
+    @Test fun page_canvas_boxes_2() = shot("page-canvas-boxes-2")
+    @Test fun page_blocks() = shot("page-blocks")
+    @Test fun page_blocks_2() = shot("page-blocks-2")
+    @Test fun page_lists() = shot("page-lists")
+    @Test fun page_lists_2() = shot("page-lists-2")
+    @Test fun page_tasks() = shot("page-tasks")
+    @Test fun page_tasks_2() = shot("page-tasks-2")
+    @Test fun page_settings_and_ink() = shot("page-settings-and-ink")
+    @Test fun page_meeting() = shot("page-meeting")
+    @Test fun page_meeting_2() = shot("page-meeting-2")
+    @Test fun page_roadmap() = shot("page-roadmap")
+    @Test fun page_roadmap_2() = shot("page-roadmap-2")
+    @Test fun tasks_today() = shot("tasks-today")
+    @Test fun tasks_upcoming() = shot("tasks-upcoming")
+    @Test fun tasks_my() = shot("tasks-my")
+    @Test fun tasks_all() = shot("tasks-all")
+    @Test fun empty_tasks_today() = shot("empty-tasks-today")
+    @Test fun empty_tasks_all() = shot("empty-tasks-all")
+    @Test fun task_detail() = shot("task-detail")
+}
+
+/** Dark and Hybrid variants (iphone and ipad-landscape have them). */
+abstract class ThemedDataShots(config: DeviceConfig) : DataShots(config) {
+    @Test fun dark_page_canvas_boxes() = shot("dark-page-canvas-boxes")
+    @Test fun dark_page_meeting() = shot("dark-page-meeting")
+    @Test fun dark_page_settings_and_ink() = shot("dark-page-settings-and-ink")
+    @Test fun dark_tasks_today() = shot("dark-tasks-today")
+    @Test fun hybrid_page_canvas_boxes() = shot("hybrid-page-canvas-boxes")
+    @Test fun hybrid_page_meeting() = shot("hybrid-page-meeting")
+    @Test fun hybrid_page_settings_and_ink() = shot("hybrid-page-settings-and-ink")
+    @Test fun hybrid_tasks_today() = shot("hybrid-tasks-today")
+}
+
+class PhoneShots : ThemedDataShots(phone) {
     @Test fun sign_in() = shot("sign-in")
     @Test fun dark_sign_in() = shot("dark-sign-in")
     @Test fun hybrid_sign_in() = shot("hybrid-sign-in")
@@ -47,7 +83,7 @@ class PhoneShots : ShotsBase(phone) {
     @Test fun empty_section() = shot("empty-section")
 }
 
-class TabletPortraitShots : ShotsBase(tablet(false)) {
+class TabletPortraitShots : DataShots(tablet(false)) {
     @Test fun sign_in() = shot("sign-in")
     @Test fun empty_no_page() = shot("empty-no-page")
     @Test fun empty_section() = shot("empty-section")
@@ -55,7 +91,7 @@ class TabletPortraitShots : ShotsBase(tablet(false)) {
     @Test fun sidebar() = shot("sidebar")
 }
 
-class TabletLandscapeShots : ShotsBase(tablet(true)) {
+class TabletLandscapeShots : ThemedDataShots(tablet(true)) {
     @Test fun sign_in() = shot("sign-in")
     @Test fun dark_sign_in() = shot("dark-sign-in")
     @Test fun hybrid_sign_in() = shot("hybrid-sign-in")

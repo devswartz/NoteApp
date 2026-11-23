@@ -41,6 +41,7 @@ fun NotiveloRoot(
     initialSidebarOpen: Boolean? = null,
     emailFocusedLook: Boolean = false,
     handleBack: Boolean = true,
+    scrollPx: Int = 0,
 ) {
     val p = pal()
     BoxWithConstraints(modifier.fillMaxSize().background(p.bg)) {
@@ -55,16 +56,17 @@ fun NotiveloRoot(
             }
             Phase.SignedIn -> if (tablet) {
                 var sidebarOpen by rememberSaveable { mutableStateOf(initialSidebarOpen ?: (maxWidth >= SIDEBAR_OPEN_MIN_WIDTH.dp)) }
-                TabletShell(state, actions, sidebarOpen, { sidebarOpen = it })
+                TabletShell(state, actions, sidebarOpen, { sidebarOpen = it }, scrollPx = scrollPx)
             } else {
                 var drawerOpen by rememberSaveable { mutableStateOf(initialDrawerOpen) }
                 if (handleBack) {
-                    val canGoBack = state.pageId != null || state.sectionId != null || state.phoneNotebookId != null
+                    val notes = state.tab == com.notivelo.app.data.Tab.Notes
+                    val canGoBack = state.taskDetailId != null || (notes && (state.pageId != null || state.sectionId != null || state.phoneNotebookId != null))
                     BackHandler(enabled = drawerOpen || canGoBack) {
-                        if (drawerOpen) drawerOpen = false else actions.back()
+                        if (drawerOpen) drawerOpen = false else if (state.taskDetailId != null) actions.openTask(null) else actions.back()
                     }
                 }
-                PhoneShell(state, actions, drawerOpen, { drawerOpen = it })
+                PhoneShell(state, actions, drawerOpen, { drawerOpen = it }, scrollPx = scrollPx)
             }
         }
     }

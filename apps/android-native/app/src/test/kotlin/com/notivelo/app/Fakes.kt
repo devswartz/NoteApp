@@ -2,6 +2,9 @@ package com.notivelo.app
 
 import com.notivelo.app.data.Backend
 import com.notivelo.app.data.BackendError
+import com.notivelo.app.data.InkShape
+import com.notivelo.app.data.PageEvents
+import com.notivelo.app.data.PageHandle
 import com.notivelo.app.data.SessionStore
 import com.notivelo.core.Notebook
 import com.notivelo.core.PageMeta
@@ -79,6 +82,31 @@ class FakeBackend : Backend {
     }
 
     override fun tasks(workspaceId: String): List<Task> = tasks
+
+    var failSetDone: BackendError? = null
+    val doneCalls = mutableListOf<Pair<String, Boolean>>()
+
+    override fun setTaskDone(taskId: String, done: Boolean): Task {
+        doneCalls += taskId to done
+        failSetDone?.let { throw it }
+        return tasks.first { it.id == taskId }.copy(done = done, completedAt = if (done) "2026-11-21T12:00:00Z" else null)
+    }
+
+    val openedPages = mutableListOf<String>()
+    val closedPages = mutableListOf<String>()
+
+    override fun cachedPage(pageId: String): com.notivelo.core.PageInfo? = null
+
+    override fun openPage(pageId: String, events: PageEvents): PageHandle {
+        openedPages += pageId
+        return object : PageHandle {
+            override fun info(): com.notivelo.core.PageInfo = error("no page content in the fake")
+            override fun ink(): List<InkShape> = emptyList()
+            override fun close() {
+                closedPages += pageId
+            }
+        }
+    }
 
     override fun signOut() {
         signedOut = true

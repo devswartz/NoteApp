@@ -39,7 +39,14 @@ import com.notivelo.app.look.WText
 import com.notivelo.app.look.pal
 import com.notivelo.app.ui.Avatar
 import com.notivelo.app.ui.NotYetToast
-import com.notivelo.app.ui.PagePlaceholder
+import com.notivelo.app.data.Tab
+import com.notivelo.app.ui.leftRule
+import com.notivelo.app.ui.page.PageScreen
+import com.notivelo.app.ui.tasks.TaskDetailContent
+import com.notivelo.app.ui.tasks.TasksPanel
+import com.notivelo.app.ui.tasks.TasksScreen
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.RectangleShape
 import com.notivelo.app.ui.WorkspaceLogo
 import com.notivelo.app.ui.hairline
 import com.notivelo.app.ui.rightRule
@@ -60,6 +67,7 @@ fun TabletShell(
     sidebarOpen: Boolean,
     onSidebarChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    scrollPx: Int = 0,
 ) {
     val p = pal()
     val index = remember(state.tree) { state.tree?.let(::TreeIndex) }
@@ -68,67 +76,32 @@ fun TabletShell(
     BoxWithConstraints(modifier.fillMaxSize().background(p.bg)) {
         val width = maxWidth
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            NotesRibbon(width, index, state, notYet)
+            Ribbon(width, state, actions, index, notYet)
             Row(Modifier.weight(1f).fillMaxWidth()) {
                 Rail(state, actions, sidebarOpen, onSidebarChange, notYet)
-                if (sidebarOpen) TabletSidebar(state, index, actions, notYet)
+                if (sidebarOpen) {
+                    if (state.tab == Tab.Tasks) {
+                        Column(Modifier.width(217.dp).fillMaxHeight().background(p.bgSidebar).rightRule(p.border)) {
+                            TasksPanel(state, actions, notYet)
+                        }
+                    } else {
+                        TabletSidebar(state, index, actions, notYet)
+                    }
+                }
                 Box(Modifier.weight(1f).fillMaxHeight().background(p.bg)) {
-                    TabletMain(state, index, actions, width, sidebarOpen, notYet)
+                    TabletMain(scrollPx, state, index, actions, width, sidebarOpen, notYet)
                 }
             }
         }
-        NotYetToast(toast, { toast = null }, Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp))
-    }
-}
-
-// Ribbon -------------------------------------------------------------------------------------------------------
-
-/** The Notes ribbon (LOOK.md 4.1): New page, From template, New section, New notebook, Import. One row, never wraps. */
-@Composable
-private fun NotesRibbon(width: Dp, index: TreeIndex?, state: AppState, onNotYet: (String) -> Unit) {
-    val p = pal()
-    val small = width <= 1023.dp
-    val hasNotebooks = index?.notebooks?.isNotEmpty() == true
-    val hasNotebook = hasNotebooks && state.notebookId != null
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(p.bgSidebar)
-            .hairline(p.border)
-            .padding(start = if (small) 6.dp else 12.dp, end = if (small) 4.dp else 10.dp, top = 5.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        RibbonButton(Ic.filePlus, small, hasNotebook) { onNotYet("New page") }
-        RibbonButton(Ic.layoutTemplate, small, hasNotebook, chevron = true) { onNotYet("Page templates") }
-        RibbonButton(Ic.folderPlus, small, hasNotebook) { onNotYet("New section") }
-        RibbonButton(Ic.bookPlus, small, true) { onNotYet("New notebook") }
-        Box(Modifier.padding(horizontal = if (small) 2.dp else 4.dp).width(1.dp).height(22.dp).background(p.border))
-        RibbonButton(Ic.upload, small, true, chevron = true) { onNotYet("Import") }
-        Spacer(Modifier.weight(1f))
-        Box(Modifier.size(28.dp).tappable { onNotYet("Collapsing the ribbon") }, contentAlignment = Alignment.Center) {
-            LIcon(Ic.chevronUp, 16.dp, p.text2)
+        if (state.taskDetailId != null) {
+            Box(Modifier.fillMaxSize().background(p.bgOverlay).tappable { actions.openTask(null) })
+            Box(
+                Modifier.align(Alignment.CenterEnd).width(480.dp).fillMaxHeight()
+                    .shadow(24.dp, RectangleShape, clip = false, ambientColor = p.shadowLg, spotColor = p.shadowLg)
+                    .background(p.bg).leftRule(p.border),
+            ) { TaskDetailContent(state, actions, phone = false) }
         }
-    }
-}
-
-@Composable
-private fun RibbonButton(icon: Int, small: Boolean, enabled: Boolean, chevron: Boolean = false, onClick: () -> Unit) {
-    val p = pal()
-    Row(
-        Modifier
-            .height(if (small) 30.dp else 36.dp)
-            .width(if (chevron) (if (small) 36.dp else 48.dp) else (if (small) 25.dp else 36.dp))
-            .alpha(if (enabled) 1f else 0.4f)
-            .then(if (enabled) Modifier.tappable(onClick) else Modifier),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        LIcon(icon, if (small) 16.dp else 18.dp, p.text2)
-        if (chevron) {
-            Spacer(Modifier.width(1.dp))
-            LIcon(Ic.chevronDown, 12.dp, p.text2, Modifier.alpha(0.7f))
-        }
+        NotYetToast(state.notice ?: toast, { toast = null; actions.clearNotice() }, Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp))
     }
 }
 
@@ -153,8 +126,8 @@ private fun Rail(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            RailButton("Notes", Ic.bookOpen, active = true) { actions.goNotes() }
-            RailButton("Tasks", Ic.listChecks, active = false) { onNotYet("Tasks") }
+            RailButton("Notes", Ic.bookOpen, active = state.tab == Tab.Notes) { actions.goNotes() }
+            RailButton("Tasks", Ic.listChecks, active = state.tab == Tab.Tasks) { actions.goTasks() }
             RailButton("Calendar", Ic.calendarDays, active = false) { onNotYet("Calendar") }
         }
         Spacer(Modifier.weight(1f))
@@ -262,6 +235,7 @@ internal fun MenuRow(label: String, selected: Boolean, danger: Boolean = false, 
 
 @Composable
 private fun TabletMain(
+    scrollPx: Int,
     state: AppState,
     index: TreeIndex?,
     actions: ShellActions,
@@ -272,10 +246,8 @@ private fun TabletMain(
     val page = index?.page(state.pageId)
     val section = index?.section(state.sectionId)
     when {
-        page != null && index != null -> Column(Modifier.fillMaxSize()) {
-            PageTopBar(index, page)
-            PagePlaceholder(page, Modifier.weight(1f).fillMaxWidth())
-        }
+        state.tab == Tab.Tasks -> TasksScreen(state, actions, phone = false, onNotYet = onNotYet)
+        page != null && index != null -> PageScreen(state, page, index, phone = false, scrollPx = scrollPx)
         section != null && index != null && index.pages(section).isEmpty() && index.sections(section).isEmpty() ->
             EmptySection(section, onNotYet)
         else -> {
@@ -283,25 +255,6 @@ private fun TabletMain(
             val mainWidth = width - 64.dp - (if (sidebarOpen) 217.dp else 0.dp)
             NotesOverview(index, mainWidth, actions)
         }
-    }
-}
-
-@Composable
-private fun PageTopBar(index: TreeIndex, page: PageMeta) {
-    val p = pal()
-    val section: Section? = index.section(page.sectionId)
-    val notebook = section?.let { index.notebookOf(it) }
-    Row(
-        Modifier.fillMaxWidth().height(48.dp).background(p.bg.copy(alpha = 0.88f)).hairline(p.border).padding(start = 20.dp, end = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        if (notebook != null) {
-            Box(Modifier.size(8.dp).background(parseHex(notebook.color), CircleShape))
-            WText(notebook.name, 13f, p.text2, lineHeight = 1.5f)
-            LIcon(Ic.chevronRight, 14.dp, p.textMuted)
-        }
-        if (section != null) WText(section.name, 13f, p.text2, lineHeight = 1.5f)
     }
 }
 

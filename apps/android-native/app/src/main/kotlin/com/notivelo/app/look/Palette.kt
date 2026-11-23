@@ -147,3 +147,53 @@ fun initialsOf(name: String): String {
         else -> (parts.first().take(1) + parts.last().take(1)).uppercase()
     }
 }
+
+/** The page's palette variants (Theme.swift `hybridPage`, `tinted`): Hybrid's page is the light palette on #fcfcfa. */
+object PagePalettes {
+    fun hybrid(): Palette = Palettes.light.recolor(bg = Color(0xFFFCFCFA), bgSubtle = Color(0xFFF9F9F7))
+
+    /** The page colour (none, yellow, green, blue, purple, pink, grey) replaces `--bg`; muted text becomes `--page-text-muted`. */
+    fun tinted(base: Palette, name: String): Palette {
+        val t = mapOf(
+            "yellow" to (0xFDF8E3 to 0x221F1A), "green" to (0xEFF7F0 to 0x1A1F1C), "blue" to (0xEEF4FB to 0x1A1D24),
+            "purple" to (0xF5F1FB to 0x1E1B24), "pink" to (0xFCF1F5 to 0x221B1F), "grey" to (0xF4F4F5 to 0x1F1F22),
+        )[name] ?: return base
+        val muted = if (base.dark) Color(0xFFA3A3AC) else Color(0xFF5C5C65)
+        return base.recolor(bg = Color(0xFF000000L or (if (base.dark) t.second else t.first).toLong()), textMuted = muted, textPlaceholder = muted)
+    }
+
+    /** `--page-rule`: the rule lines and grid. */
+    fun rule(base: Palette): Color = if (base.dark) Color(150 / 255f, 170 / 255f, 220 / 255f, .12f) else Color(70 / 255f, 110 / 255f, 180 / 255f, .15f)
+
+    /** Text colours (`--tc-*`), src/styles/colors.css. */
+    fun textColor(base: Palette, name: String): Color? {
+        val t = mapOf(
+            "gray" to (0x6B6B74 to 0xA3A3AD), "grey" to (0x6B6B74 to 0xA3A3AD), "red" to (0xC42B2B to 0xF47C7C), "orange" to (0xB4500C to 0xF5A05A),
+            "yellow" to (0x8C6400 to 0xE9C53A), "green" to (0x22783A to 0x5FCF80), "blue" to (0x1F62C4 to 0x6EA8F7),
+            "purple" to (0x7A3FD6 to 0xB893F5), "pink" to (0xBB2A75 to 0xF07FB6),
+        )[name] ?: return null
+        return Color(0xFF000000L or (if (base.dark) t.second else t.first).toLong())
+    }
+
+    /** Highlights (`--hl-*`); none is yellow. */
+    fun highlight(base: Palette, name: String?): Color {
+        val h = mapOf(
+            "gray" to (0xE9E9EC to 0x3A3A41), "grey" to (0xE9E9EC to 0x3A3A41), "red" to (0xFDE0DE to 0x5B2727), "orange" to (0xFDE6CF to 0x563318),
+            "yellow" to (0xFCF0B0 to 0x4F4313), "green" to (0xD9F2DC to 0x1F4529), "blue" to (0xDBE8FD to 0x1E3A5C),
+            "purple" to (0xEBE2FC to 0x3C2B5E), "pink" to (0xFBDEEC to 0x552240),
+        )
+        val v = h[name ?: "yellow"] ?: h.getValue("yellow")
+        return Color(0xFF000000L or (if (base.dark) v.second else v.first).toLong())
+    }
+}
+
+fun Palette.recolor(
+    bg: Color = this.bg,
+    bgSubtle: Color = this.bgSubtle,
+    textMuted: Color = this.textMuted,
+    textPlaceholder: Color = this.textPlaceholder,
+): Palette = Palette(
+    dark, bg, bgSubtle, bgSidebar, bgHover, bgPressed, bgActive, bgElevated, bgOverlay, bgInverse, border, borderStrong,
+    text, text2, textMuted, textPlaceholder, textInverse, textOnAccent, accent, accentHover, accentSoft, accentSolid,
+    accentSolidHover, accentInverse, danger, success, warn, p1, p2, p3, shadow, shadowLg,
+)

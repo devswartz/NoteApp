@@ -37,6 +37,9 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** "Today" for due dates; the look scenes pin it too. */
+val LocalToday = compositionLocalOf { LocalDate.now() }
+
 /** "Now" for relative times; the look scenes pin it so their screenshots are the same every run. */
 val LocalNow = compositionLocalOf { Instant.now() }
 

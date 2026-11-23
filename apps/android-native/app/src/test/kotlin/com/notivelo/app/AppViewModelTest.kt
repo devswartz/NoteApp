@@ -229,4 +229,67 @@ class AppViewModelTest {
         )
         assertEquals(mapOf("p1" to 2, "p2" to 1), counts)
     }
+
+    private fun aTask(id: String, done: Boolean = false) = Task(
+        id = id, workspaceId = "w1", title = id, description = "", done = done, priority = 4.toUByte(),
+        dueDate = null, dueTime = null, assigneeId = "u1", pageId = "p1", parentId = null, tagIds = emptyList(),
+        checklistDone = null, checklistTotal = null, completedAt = null, createdAt = "", updatedAt = "", locked = false,
+    )
+
+    @Test
+    fun ticksATaskAtOnceAndKeepsTheServersAnswer() {
+        store.refreshToken = "t"
+        backend.tasks = listOf(aTask("a"), aTask("b"))
+        val vm = model()
+        assertEquals(2, vm.state.value.taskCounts["p1"])
+        vm.toggleTask("a")
+        assertEquals(listOf("a" to true), backend.doneCalls)
+        assertTrue(vm.state.value.tasks.first { it.id == "a" }.done)
+        assertEquals(1, vm.state.value.taskCounts["p1"])
+        // Unticking again.
+        backend.tasks = vm.state.value.tasks
+        vm.toggleTask("a")
+        assertFalse(vm.state.value.tasks.first { it.id == "a" }.done)
+    }
+
+    @Test
+    fun aRefusedTickPutsTheTaskBackAndSaysSo() {
+        store.refreshToken = "t"
+        backend.tasks = listOf(aTask("a"))
+        val vm = model()
+        backend.failSetDone = BackendError.Offline("down")
+        vm.toggleTask("a")
+        assertFalse(vm.state.value.tasks.first { it.id == "a" }.done)
+        assertEquals("Could not update the task.", vm.state.value.notice)
+        vm.clearNotice()
+        assertNull(vm.state.value.notice)
+    }
+
+    @Test
+    fun aPageIsOpenLiveOnlyWhileItIsChosen() {
+        store.refreshToken = "t"
+        val vm = model()
+        vm.openPage("p1")
+        assertEquals(listOf("p1"), backend.openedPages)
+        assertEquals("p1", vm.state.value.page?.pageId)
+        vm.back()
+        assertEquals(listOf("p1"), backend.closedPages)
+        assertNull(vm.state.value.page)
+    }
+
+    @Test
+    fun taskViewsAreChosenFromTheTab() {
+        store.refreshToken = "t"
+        val vm = model()
+        vm.goTasks()
+        assertEquals(com.notivelo.app.data.Tab.Tasks, vm.state.value.tab)
+        vm.selectTaskList(com.notivelo.app.data.TaskList.Upcoming)
+        vm.setEveryone(true)
+        assertEquals(com.notivelo.app.data.TaskList.Upcoming, vm.state.value.taskList)
+        assertTrue(vm.state.value.everyone)
+        vm.openTask("a")
+        assertEquals("a", vm.state.value.taskDetailId)
+        vm.goNotes()
+        assertEquals(com.notivelo.app.data.Tab.Notes, vm.state.value.tab)
+    }
 }

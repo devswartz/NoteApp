@@ -26,6 +26,9 @@ enum class ThemeMode { Light, Dark, Hybrid, System }
 
 val LocalPalette = staticCompositionLocalOf { Palettes.light }
 
+/** The note page's palette: the chrome's, except Hybrid (light page on dark chrome). */
+val LocalPagePalette = staticCompositionLocalOf { Palettes.light }
+
 /** Phone sizes (LOOK.md 3.2): body 15 instead of 14, which the web's em-sized text follows. */
 val LocalPhone = compositionLocalOf { false }
 
@@ -47,7 +50,8 @@ fun NotiveloTheme(mode: ThemeMode = ThemeMode.Hybrid, content: @Composable () ->
     } else {
         lightColorScheme(primary = p.accentSolid, background = p.bg, surface = p.bg, onSurface = p.text, onBackground = p.text)
     }
-    CompositionLocalProvider(LocalPalette provides p) {
+    val page = if (mode == ThemeMode.Hybrid) PagePalettes.hybrid() else p
+    CompositionLocalProvider(LocalPalette provides p, LocalPagePalette provides page) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

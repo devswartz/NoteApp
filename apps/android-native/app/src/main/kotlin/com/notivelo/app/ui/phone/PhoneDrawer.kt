@@ -74,7 +74,9 @@ fun PhoneDrawer(
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).statusBarsPadding()) {
             WorkspaceSwitcher(state, actions)
             Spacer(Modifier.height(8.5.dp))
-            if (notebook == null || index == null) {
+            if (state.tab == com.notivelo.app.data.Tab.Tasks) {
+                com.notivelo.app.ui.tasks.TasksPanel(state, actions, onNotYet, onPicked = onClose)
+            } else if (notebook == null || index == null) {
                 NoNotebooks(onNotYet)
             } else {
                 NotebookHead(state, index, notebook, actions, onNotYet)
