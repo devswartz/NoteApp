@@ -271,6 +271,7 @@ internal sealed partial class BoxTextView
 
     private void OnTextUpdating(CoreTextTextUpdatingEventArgs a)
     {
+        _textUpdates++;
         Trace("TextUpdating \"" + a.Text + "\" interactive=" + Interactive);
         if (!Interactive) { a.Result = CoreTextTextUpdatingResult.Failed; return; }
         _inPlatformCall = true;
@@ -635,10 +636,13 @@ internal sealed partial class BoxTextView
 
     private bool HandleKey(KeyRoutedEventArgs e)
     {
+        // characters held back for the text-services check go in before this key acts
+        if (_pendingChars.Length > 0) { _charTimer?.Stop(); FlushPendingChars(); }
         // while the IME is composing it gets Enter, arrows and Esc first
         if (_composing || _r?.View.Marked is not null) return false;
         var name = KeyName(e.Key);
         Trace("KeyDown " + e.Key + " name=" + name);
+        if (_pendingChars.Length == 0) _textUpdatesAtKey = _textUpdates;
         if (name is null) return false;
         var ctrl = Down(VirtualKey.Control);
         var alt = Down(VirtualKey.Menu);
@@ -753,11 +757,42 @@ internal sealed partial class BoxTextView
     private void OnCharacter(UIElement sender, CharacterReceivedRoutedEventArgs e)
     {
         Trace("CharacterReceived " + (int)e.Character + " ctx=" + (_ctx is not null) + " focused=" + _focused);
-        if (_ctx is not null || !Interactive || !_focused) return;
+        if (!Interactive || !_focused) return;
         var c = e.Character;
         if (char.IsControl(c)) return;
+        if (_ctx is not null)
+        {
+            // The text services normally deliver the typed text (TextUpdating) before or with the key's character. Where they don't
+            // (found on the CI runner: a context that never raises TextUpdating, with the characters still arriving here), type the
+            // characters ourselves once no TextUpdating has come for this key. Never while an IME is composing.
+            if (_composing || _r?.View.Marked is not null) return;
+            _pendingChars.Append(c);
+            if (_charTimer is null)
+            {
+                _charTimer = (_dq ?? DispatcherQueue.GetForCurrentThread()).CreateTimer();
+                _charTimer.IsRepeating = false;
+                _charTimer.Interval = TimeSpan.FromMilliseconds(60);
+                _charTimer.Tick += (_, _) => FlushPendingChars();
+            }
+            _charTimer.Stop(); _charTimer.Start();
+            return;
+        }
         try { _session.InsertText(c.ToString()); Render(); e.Handled = true; }
         catch (Exception ex) { Log("char", ex); }
+    }
+
+    private readonly System.Text.StringBuilder _pendingChars = new();
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _charTimer;
+    private int _textUpdates, _textUpdatesAtKey;
+
+    private void FlushPendingChars()
+    {
+        var text = _pendingChars.ToString();
+        _pendingChars.Clear();
+        if (text.Length == 0 || !Interactive || !_focused) return;
+        if (_textUpdates != _textUpdatesAtKey) { Trace("chars delivered by the text services: " + text); return; }
+        Trace("chars typed by the fallback: " + text);
+        try { _session.InsertText(text); Render(); } catch (Exception ex) { Log("char fallback", ex); }
     }
 
     // ---- ribbon ---------------------------------------------------------------------------------------------------------------
