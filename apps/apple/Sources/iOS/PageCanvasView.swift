@@ -44,6 +44,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     static let originX: CGFloat = 40
     static let originY: CGFloat = 32 + 28 + 4 + 43.2 + 6 + 18.75 + 22 + 14
     private let surface = PageSurfaceView()
+    private var ink: InkController!
     private let titleLabel = UILabel()
     private let subLabel = UILabel()
     private let addIcon = UILabel()
@@ -64,6 +65,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private weak var host: PageEditHost?
     private weak var editing: BoxTextView?
     private var opening: String?
+    private var needsInk = false
     private var demoDone = false
     private var lookDone = false
     private var laidOutWidth: CGFloat = 0
@@ -98,6 +100,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         surface.isOpaque = false
         surface.backgroundColor = .clear
         addSubview(surface)
+        ink = InkController(scroll: self, surface: surface)
+        ink.notify = { [weak self] in self?.notify?($0) }
+        surface.onReorder = { [weak self] in self?.ink.layout() }
         titleLabel.numberOfLines = 0
         subLabel.numberOfLines = 1
         surface.addSubview(titleLabel)
@@ -166,6 +171,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if key != paletteKey {
             paletteKey = key
             self.palette = palette
+            ink.dark = palette.isDark
+            ink.accent = palette.accent
             for view in boxViews.values {
                 view.palette = palette
                 view.rerender()
@@ -219,6 +226,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             boxViews = [:]
             editors = [:]
             shownID = page.id
+            ink.reset()
+            needsInk = true
             needsGeometry = true
             hideToolbar()
             demoDone = false
@@ -229,7 +238,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if self.host !== host {
             self.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
-            host?.onSynced = { [weak self] in self?.editors.values.forEach { $0.send(all: true) } }
+            host?.onSynced = { [weak self] in
+                self?.editors.values.forEach { $0.send(all: true) }
+                self?.ink.reload()
+            }
+            ink.host = host
+            needsInk = true
             needsGeometry = true
         }
         if needsGeometry {
@@ -275,6 +289,11 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             editors[id] = nil
         }
         relayout()
+        ink.drawingAllowed = !stacked
+        if needsInk {
+            needsInk = false
+            ink.reload()
+        }
         runDemoIfAsked()
         runLookIfAsked()
     }
@@ -345,6 +364,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             surface.bringSubviewToFront(view)
         }
         if let editing { surface.bringSubviewToFront(editing) }
+        ink.origin = stacked ? CGPoint(x: 0, y: Self.phoneOriginY) : CGPoint(x: ox, y: oy)
+        ink.layout()
         let visible = CGSize(width: max(bounds.width, 1) / max(zoomScale, 0.01), height: max(bounds.height, 1) / max(zoomScale, 0.01))
         let size = stacked
             ? CGSize(width: visible.width, height: max(maxY + visible.height * 0.4, visible.height))
@@ -363,6 +384,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     // MARK: Editing
 
     @objc private func tapped(_ tap: UITapGestureRecognizer) {
+        // With a pen tool chosen a finger only scrolls and zooms: it neither creates nor opens boxes.
+        if InkTool.shared.inking { return }
         let p = tap.location(in: surface)
         // A task's fold arrow (in the gutter, outside the box's own frame).
         for view in boxViews.values {
@@ -668,6 +691,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// Someone else changed the page: every open box merges the page document again (the
     /// read-only boxes redraw from the snapshot in `show`).
     private func remoteChanged() {
+        ink.reload()
         guard !editors.isEmpty, let host else { return }
         host.fetchDocument { [weak self] document in
             guard let self, let document else { return }
@@ -840,6 +864,13 @@ final class PageSurfaceView: UIView {
     var separatorInset: CGFloat = 20
     private var rules = "none"
     private var originY: CGFloat = 0
+    /// The ink layers keep their places (highlighters at the back, pens in front of the boxes) when a box is brought forward.
+    var onReorder: (() -> Void)?
+
+    override func bringSubviewToFront(_ view: UIView) {
+        super.bringSubviewToFront(view)
+        onReorder?()
+    }
 
     func configure(rules: String, originY: CGFloat) {
         guard rules != self.rules || originY != self.originY else { return }

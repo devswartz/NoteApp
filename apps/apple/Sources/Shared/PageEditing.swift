@@ -21,6 +21,9 @@ protocol PageEditHost: AnyObject {
     /// Run a box call on the live page, in order with the edits sent before it, then show the page
     /// as it is. `done(nil)` on success, else the error. Main thread; `done` too.
     func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void)
+    /// The page's ink strokes in drawing order (core's `inkStrokes()`), read off the main thread and in order with the
+    /// edits sent before it; nil when the page can't be read now (not open). Main thread; `done` too.
+    func loadInk(_ done: @escaping ([InkStrokeInfo]?) -> Void)
 }
 
 enum BoxEditorError: Error {
@@ -187,6 +190,10 @@ final class CorpusEditHost: PageEditHost {
     let savesBoxes = false
 
     func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) { done(nil) }
+
+    func loadInk(_ done: @escaping ([InkStrokeInfo]?) -> Void) {
+        done(try? readInk(document: document))
+    }
 
     init(document: Data, tasks: [String: TaskLine]) {
         self.document = document

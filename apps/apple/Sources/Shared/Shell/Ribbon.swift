@@ -45,14 +45,18 @@ final class EditorFocus {
     }
 }
 
-/// Room for the Mac window's traffic lights at the ribbon's left (the window has no title bar of its own).
-let windowControlsInset: CGFloat = {
+/// Room for the Mac window's traffic lights at the ribbon's left (the window has no title bar of its own). It is
+/// measured from the window's real buttons (`WindowChrome`) and is 0 in full screen, where the lights are gone.
+@Observable
+final class WindowInsets {
+    static let shared = WindowInsets()
     #if os(macOS)
-    return 72
+    /// Until the window reports its buttons: past the zoom button on macOS 15 and on the larger lights of macOS 26.
+    var leading: CGFloat = 92
     #else
-    return 0
+    var leading: CGFloat = 0
     #endif
-}()
+}
 
 /// Ribbon sizes by window width (src/styles/toolbar.css): ≤ 1023 the smallest buttons; ≤ 1279
 /// compact (no group names, no words). Wider windows get the compact ribbon too for now.
@@ -132,23 +136,31 @@ struct Ribbon: View {
     var body: some View {
         let p = theme.chrome
         let m = RibbonMetrics(width: width)
-        HStack(spacing: m.gap) {
-            switch shell.route {
-            case .page: NoteRibbon(m: m)
-            case let .tasks(list): TasksRibbon(m: m, list: list)
-            case .notes, .section: NotesRibbon(m: m)
+        VStack(spacing: 0) {
+            HStack(spacing: m.gap) {
+                switch shell.route {
+                case .page: NoteRibbon(m: m)
+                case let .tasks(list): TasksRibbon(m: m, list: list)
+                case .notes, .section: NotesRibbon(m: m)
+                }
+                Spacer(minLength: 0)
+                #if os(iOS)
+                if case .page = shell.route { DrawToggle(m: m) }
+                #endif
+                if case .page = shell.route { HistoryGroup(m: m) }
+                Button { shell.ribbonCollapsed = true } label: {
+                    Icon("chevron-up", 16, p.text2.color).padding(.horizontal, 5).frame(minWidth: 28).frame(height: 28)
+                }
+                .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+                .padding(.leading, 4)
             }
-            Spacer(minLength: 0)
-            if case .page = shell.route { HistoryGroup(m: m) }
-            Button { shell.ribbonCollapsed = true } label: {
-                Icon("chevron-up", 16, p.text2.color).padding(.horizontal, 5).frame(minWidth: 28).frame(height: 28)
-            }
-            .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
-            .padding(.leading, 4)
+            .padding(.leading, m.padLeft + WindowInsets.shared.leading)
+            .padding(.trailing, m.padRight)
+            .padding(.vertical, 5)
+            #if os(iOS)
+            if case .page = shell.route, InkTool.shared.barOpen { InkBar(m: m) }
+            #endif
         }
-        .padding(.leading, m.padLeft + windowControlsInset)
-        .padding(.trailing, m.padRight)
-        .padding(.vertical, 5)
         .frame(maxWidth: .infinity)
         .background(p.bgSidebar.color)
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
@@ -183,7 +195,7 @@ struct CollapsedRibbon: View {
             }
             .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
         }
-        .padding(.leading, 16 + windowControlsInset).padding(.trailing, 10)
+        .padding(.leading, 16 + WindowInsets.shared.leading).padding(.trailing, 10)
         .frame(height: 30)
         .frame(maxWidth: .infinity)
         .background(p.bgSidebar.color)

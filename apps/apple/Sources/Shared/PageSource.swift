@@ -297,6 +297,17 @@ extension LivePageModel: PageEditHost {
 
     var savesBoxes: Bool { true }
 
+    func loadInk(_ done: @escaping ([InkStrokeInfo]?) -> Void) {
+        guard let live, !isClosed else {
+            done(nil)
+            return
+        }
+        editQueue.async {
+            let strokes = live.inkStrokes()
+            DispatchQueue.main.async { done(strokes) }
+        }
+    }
+
     func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) {
         guard let live, !isClosed else {
             done(BoxError.Closed)
