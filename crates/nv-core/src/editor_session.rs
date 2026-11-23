@@ -194,6 +194,80 @@ pub struct ViewLine {
     pub checked: Option<bool>,
     /// On a task's title line: the task's id (its title comes from the task list).
     pub task_id: Option<String>,
+    /// A text line's formatting. The runs cover the line's text contiguously and in order
+    /// (unmarked stretches are runs with empty `marks`; an empty line has no runs). Empty on
+    /// object lines. Changes only with `text_revision`.
+    pub runs: Vec<ViewRun>,
+    /// The inline atoms (one U+FFFC each) of a text line. Empty on object lines.
+    pub atoms: Vec<ViewAtom>,
+    /// On an object line (rule, image, file attachment, task reference, ...): the node's
+    /// attributes as a JSON object. None on text lines.
+    pub attrs_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ViewMarkKind {
+    Bold,
+    Italic,
+    Underline,
+    Strike,
+    Code,
+    Link,
+    TextColor,
+    Highlight,
+    Comment,
+    Unknown,
+}
+
+/// One mark. `value`: the href of a link; the colour name of a text colour or highlight (None
+/// on a highlight: the default one); the thread id of a comment; the mark's name for
+/// `Unknown`. Marks of one kind can overlap (several comments): all appear.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ViewMark {
+    pub kind: ViewMarkKind,
+    pub value: Option<String>,
+}
+
+/// A stretch of a line's text with one set of marks. `from` and `len` are UTF-16 units,
+/// relative to the line's start. An atom (U+FFFC) in the line is covered too, with its own
+/// marks.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ViewRun {
+    pub from: u32,
+    pub len: u32,
+    pub marks: Vec<ViewMark>,
+}
+
+/// An inline atom in a text line. "Is me" for a mention and "missing" for a page link are the
+/// app's to decide (it knows its user id and its page tree).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ViewAtom {
+    /// Line-relative UTF-16 offset of the atom's U+FFFC.
+    pub offset: u32,
+    /// The node type: `mention`, `pageLink`, `image`, ...
+    pub kind: String,
+    /// A mention's label; a page link's title if the node stores one, else its page id; an
+    /// image's alt text; otherwise the kind.
+    pub label: String,
+    /// The node's attributes as a JSON object (`id`/`label` of a mention, `pageId`, ...).
+    pub attrs_json: String,
+}
+
+/// What is on at the selection, for a ribbon's pressed states.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ViewActive {
+    /// A caret: the stored marks (a toggle waiting for the next typed text) if any, else the
+    /// marks before the caret. A range: the marks present on all its text.
+    pub marks: Vec<ViewMark>,
+    /// The node type of the selection's block (`paragraph`, `heading`, `codeBlock`, ...; the
+    /// selected node's type for a node selection).
+    pub block: String,
+    /// The heading's level, 0 when the block is not a heading.
+    pub heading_level: u8,
+    /// The innermost list around the block: `bulletList`, `orderedList` or `taskList`.
+    pub list: Option<String>,
+    pub in_quote: bool,
+    pub in_code: bool,
 }
 
 /// The marked text while composing, as offsets in `text_for_view()`.
@@ -284,6 +358,9 @@ pub struct ViewRender {
     pub remote_cursors: Vec<ViewCursor>,
     pub can_undo: bool,
     pub can_redo: bool,
+    /// Marks and block type at the selection. Moves with `revision`, not `text_revision`
+    /// (a caret move or a stored-mark toggle changes it with no text change).
+    pub active: ViewActive,
 }
 
 fn origin_is(txn: &nv_model::yrs::TransactionMut, name: &[u8]) -> bool {
@@ -592,6 +669,7 @@ impl EditorSession {
                     .collect(),
                 can_undo: ed.can_undo(),
                 can_redo: ed.can_redo(),
+                active: view_active(ed),
             }
         })
     }
@@ -899,6 +977,37 @@ impl EditorSession {
     }
 }
 
+fn view_mark(m: &nv_editor::input::ViewMark) -> ViewMark {
+    use nv_editor::input::ViewMarkKind as K;
+    ViewMark {
+        kind: match m.kind {
+            K::Bold => ViewMarkKind::Bold,
+            K::Italic => ViewMarkKind::Italic,
+            K::Underline => ViewMarkKind::Underline,
+            K::Strike => ViewMarkKind::Strike,
+            K::Code => ViewMarkKind::Code,
+            K::Link => ViewMarkKind::Link,
+            K::TextColor => ViewMarkKind::TextColor,
+            K::Highlight => ViewMarkKind::Highlight,
+            K::Comment => ViewMarkKind::Comment,
+            K::Unknown => ViewMarkKind::Unknown,
+        },
+        value: m.value.clone(),
+    }
+}
+
+fn view_active(ed: &Editor) -> ViewActive {
+    let a = ed.view_active();
+    ViewActive {
+        marks: a.marks.iter().map(view_mark).collect(),
+        block: a.block,
+        heading_level: a.heading_level,
+        list: a.list,
+        in_quote: a.in_quote,
+        in_code: a.in_code,
+    }
+}
+
 fn view_state(ed: &Editor, v: &ViewText) -> ViewState {
     let (anchor, head) = ed.view_selection_in(v);
     ViewState {
@@ -917,6 +1026,26 @@ fn view_state(ed: &Editor, v: &ViewText) -> ViewState {
                 marker: l.marker.clone(),
                 checked: l.checked,
                 task_id: l.task_id.clone(),
+                runs: l
+                    .runs
+                    .iter()
+                    .map(|r| ViewRun {
+                        from: pos(r.from),
+                        len: pos(r.len),
+                        marks: r.marks.iter().map(view_mark).collect(),
+                    })
+                    .collect(),
+                atoms: l
+                    .atoms
+                    .iter()
+                    .map(|a| ViewAtom {
+                        offset: pos(a.offset),
+                        kind: a.kind.clone(),
+                        label: a.label.clone(),
+                        attrs_json: a.attrs_json.clone(),
+                    })
+                    .collect(),
+                attrs_json: l.attrs_json.clone(),
             })
             .collect(),
         text: v.text.clone(),

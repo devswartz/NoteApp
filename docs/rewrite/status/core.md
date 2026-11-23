@@ -5,6 +5,11 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **View runs, active marks, atoms (R1–R3) and ink undo are done on `rewrite/core-viewruns`**
+  (cut from `rewrite/native` 6f396b8, not merged; **core pauses**): the Windows text view's gating
+  requests R1–R3 (WINDOWS-TEXT-VIEW.md section 11), in `nv-editor` and `EditorSession`, so Swift
+  gets them too ("For windows and apple: view runs, active marks, atoms"), and apple's ink undo
+  hook ("For apple: ink undo"). Still queued: Kotlin/Android and the M7 server work.
 - **Windows core is done on `rewrite/core-windows`** (cut from `rewrite/native` cf8cee0, not
   merged; **core pauses**): `nv_core.dll` for x64 and arm64, C# bindings from `uniffi-bindgen-cs`
   `v0.12.0+v0.32.0`, a `Notivelo.Core` project and NuGet package, an xunit smoke test; see "For
@@ -35,6 +40,68 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For windows and apple: view runs, active marks, atoms (2026-11-23, `rewrite/core-viewruns`)
+
+Answers WINDOWS-TEXT-VIEW.md R1, R2 and R3. Only additions: no existing field changed. Built in
+`nv-editor` (`ViewText::of`, `Editor::view_active`, `Editor::range_marks`) and exposed by
+`EditorSession` (`crates/nv-core/src/editor_session.rs`). Swift sees camelCase fields and
+lowerCamel enum cases (`.bold`, `.textColor`); C# sees PascalCase.
+
+- **R1, `ViewLine.runs: [ViewRun { from, len, marks }]`**: line-relative UTF-16 units. The runs
+  cover a text line contiguously: an unmarked stretch is a run with empty `marks`; neighbours with
+  equal marks are merged. An empty line and an object line have no runs. An atom (U+FFFC) and a
+  hard break each get a one-unit run with their own marks.
+  `ViewMark { kind: ViewMarkKind, value: String? }`, kinds `Bold, Italic, Underline, Strike, Code,
+  Link, TextColor, Highlight, Comment, Unknown`; `value` is the href (Link), the palette colour
+  name (TextColor; Highlight, where none means the default yellow), the thread id (Comment), or
+  the mark's name (Unknown). Overlapping comments all appear. Same mapping as `pageContent`
+  (`content.rs`). A mark toggle with no text change moves `text_revision` (the runs are part of the
+  line table), so relayout on `text_revision` stays the rule.
+- **R2, `ViewRender.active: ViewActive { marks, block, headingLevel, list, inQuote, inCode }`**
+  for the ribbon's pressed state. At a caret, the stored marks if any, else the marks before the
+  caret (ProseMirror's rule); over a range, the marks on all of its text (the start's marks if it
+  has none). `block` is the selection's block type (`paragraph`, `heading`, `codeBlock`, ...; the
+  selected node's type for a node selection), `list` the innermost list (`bulletList`,
+  `orderedList`, `taskList`). A caret move or a stored-mark toggle moves `revision` only. It
+  doesn't follow a task title that has the keyboard (`focusTaskId`; that is R6).
+- **R3, `ViewLine.atoms: [ViewAtom { offset, kind, label, attrsJson }]`** per U+FFFC in a text
+  line (line-relative offset; kind is the node type: `mention`, `pageLink`, `image`, ...). Label:
+  a mention's `label`; a page link's `title`, else its `pageId` (no title is stored today, so
+  the app looks the page up in the tree); an image's `alt`; otherwise the kind. `attrsJson` is the
+  node's attributes as a JSON object. **Object lines** carry `ViewLine.attrsJson` (None on text
+  lines): image, file card, rule, and `taskRef` title lines. "Is me" for a mention and "missing"
+  for a page link are the app's (it knows the user id and the tree).
+
+Tests: nv-editor `input.rs` (`runs_cover_the_line_in_line_relative_units` with an emoji before a
+bold word, `a_mark_toggle_changes_the_line_table`, `atoms_and_object_lines`,
+`active_marks_and_blocks`); nv-core `tests/editor_session.rs` (`view_runs_active_marks_and_atoms`,
+`view_active_blocks`). C# bindings regenerated and the xunit tests pass (x64); no C# or Swift test
+reads the view yet. An image object line is tested at the engine level only.
+
+## For apple: ink undo (2026-11-23, `rewrite/core-viewruns`)
+
+On `LivePage`: `inkUndo() throws -> Bool`, `inkRedo() throws -> Bool` (true when a step was
+undone or redone), `inkCanUndo() -> Bool`, `inkCanRedo() -> Bool`.
+
+- **Steps:** every ink call that writes (`addInkStroke`, `addInkStrokeFromSamples`, `eraseInk`
+  whole or partial, `moveInkStrokes`, `deleteInkStrokes`) is one step: the apps call once per
+  gesture, so there is no 500 ms merge as on the web. A new edit drops the redo steps. Undoing a
+  move brings back the old ids and places; undoing a partial erase brings back the stroke and
+  removes the pieces.
+- **Only your own ink:** a yrs `UndoManager` over the page's `ink` map, tracking the origin
+  `nv-core:ink` that all ink edits now use. Others' strokes and text or box edits are never
+  undone. It starts at the page's first ink edit, so strokes already there when it opened can't be
+  undone (as on the web after a reload). Box geometry can join the same manager later.
+- **Sync:** an undo or redo is an ordinary local edit: it goes to the outbox and the server like
+  any stroke. Like other local ink calls it does **not** call the page listener: re-read
+  `inkStrokes()` after `inkUndo`/`inkRedo`.
+- **Undo button:** the iPad's undo should go to ink while a pen tool is chosen (the web's canvas
+  undo covers both), and to the box's engine undo when a box is being edited.
+
+Tests: `crates/nv-core/tests/ink_undo.rs` (5: add/undo/redo and the flags, partial erase, move,
+delete with the server and a second copy converging, others' strokes and text left alone). Not
+tested: undo while the connection is down.
 
 ## For windows (2026-11-22, `rewrite/core-windows`)
 
