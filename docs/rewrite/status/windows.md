@@ -2,6 +2,10 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-22: box text view design (branch `rewrite/windows-shell`)
+
+`docs/rewrite/WINDOWS-TEXT-VIEW.md` is the design for step 3: one `BoxTextView` per canvas box drawing with Win2D/DirectWrite (`CanvasTextLayout` per line-table line) plus XAML chrome, input through `CoreTextEditContext` over the single view string, no hidden `RichEditBox`. It maps every event to `EditorSession` calls, and covers keys, menus, clipboard, undo, live sessions and threading, UIA, hit testing and testing. Requests to core and editor (R1-R12) are at its end; R1 (formatting runs in `ViewLine`), R2 (active marks) and R3 (atom payload) gate rendering. Nothing built; waits on `rewrite/core-windows` (C# bindings, `nv_core.dll`) being merged.
+
 ## 2026-11-22: shell in today's look (branch `rewrite/windows-shell`)
 
 Wide layout (LOOK 3.1/3.3) built in WinUI 3 with sample data; no phone layout. Verified by running an unpackaged Debug build locally at 150% DPI (client 1180x820 DIP) and comparing with `reference/ipad-landscape/*` (hybrid and light).
