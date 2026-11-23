@@ -41,7 +41,7 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 ## Differences from the references (known)
 
 - Font: system sans (Roboto). LOOK.md's stack lists Roboto after SF Pro, Inter and Segoe UI, none of which ship on Android; the references are Segoe UI, so widths and glyph shapes differ a little.
-- Step B: no team chip or tags on task rows, no Team and Repeat rows in the task detail (the core's `Task` has none); no "Add a text box", "Add a task to this page" or "Linked from" under a page; images are a placeholder with the alt text (uploads need an authenticated fetch); the page outline bars at the top right are not drawn; ink strokes are not in the look shots (no host core to decode them) but are drawn from the core in the app; the page bar shows the page title over the workspace name when scrolled on the web, not here; a due time reads "09:30" where the web writes "9:30" and the recurrence icon is missing; the web's text is Segoe UI, ours the system sans.
+- Step B: no team chip or tags on task rows, no Team and Repeat rows in the task detail (not read yet: they come from `taskDetails`, see Requests); no "Add a text box", "Add a task to this page" or "Linked from" under a page; images are a placeholder with the alt text (uploads need an authenticated fetch); the page outline bars at the top right are not drawn; ink strokes are not in the look shots (no host core to decode them) but are drawn from the core in the app; the page bar shows the page title over the workspace name when scrolled on the web, not here; a due time reads "09:30" where the web writes "9:30" and the recurrence icon is missing; the web's text is Segoe UI, ours the system sans.
 - The phone drawer shows no open-task counts (the reference has none); the tablet tree does.
 - Paparazzi caps snapshots at 1000 px high, so the iphone and ipad-portrait shots are scaled down (and the side-by-side scales them back up).
 - Emoji page icons depend on the renderer's emoji font.
@@ -52,7 +52,7 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 ## Requests
 
 - android -> core: a change notification for `Core.tasks` (a tick or edit on another device or page does not redraw the task views; the app re-reads when the Tasks tab opens and after its own tick).
-- android -> core: `Task` team and recurrence (rows in the detail), and the assignee's name/colour for rows of other people (needs `members` per workspace; not used yet).
+- ~~android -> core: `Task` team and recurrence~~ Not a core gap (core, 2026-11-23): `Core.taskDetails(workspaceId)` returns `TaskDetail` with `teamId`, `recurrence`, tags, reminders and created/completed/assigned by, and `Core.members(workspaceId)` / `teams` / `tags` give the names and colours. Next android step: read those for the team chip, tags, Team and Repeat rows and other people's avatars.
 - android -> core: an authenticated image/file fetch (`/uploads/..`) so images and file cards can open.
 
 - android -> core (low priority): `Core.tasks` is used only to count open tasks per page row; a per-page count in `Tree` would save the call.
