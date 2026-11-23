@@ -24,7 +24,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
 | Sign in (email + password) | ● ✓ | ● | ● ✓ | ● | ● | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
-| Create account (open sign-up) | ● | ● | ● | ● | ● | ● | `/auth/register`; `/login?mode=register&email=…` prefill (web) |
+| Create account (open sign-up) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/auth/register`; `/login?mode=register&email=…` prefill (web) |
 | Email confirmation screen (Check your email, Resend, I've verified, Sign out) | ● | ● | ● | ● | ● | ● | `CheckEmail.tsx`, `VerifyEmail.tsx`; unconfirmed accounts deleted after 7 days |
 | Forgot / reset password | ● | ● | ● | ● | ● | ● | email link opens web `ResetPassword` |
 | Sign-in kept securely | ● ✓ | ● | ● | ● | ● | ◐ | mobile: secure storage plugin (Keychain/Keystore); desktop: system keychain (`secure.rs`); web: browser storage |
@@ -35,7 +35,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● | ● | ● | ● | ● | ● | sign-in screen and Settings → About |
 | Sign out | ● ✓ | ● | ● ✓ | ● | ● | ● | |
-| Invite link: open, accept, join workspace | ● | ● | ● | ● | ● | ● | `/invites/:token`; universal links on iOS |
+| Invite link: open, accept, join workspace | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/invites/:token`; universal links on iOS |
 
 ## 2. Navigation and shell
 
@@ -194,8 +194,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 |---|---|---|---|---|---|---|---|
 | Workspace settings: General, Members, Teams, Tags, Activity, Trash | ● | ● | ● | ● | ● | ● | separate from personal settings (v0.4.10) |
 | Rename / delete workspace (owner) | ● | ● | ● | ● | ● | ● | |
-| Invite by email; copy, resend, revoke pending invites; invite link shown | ● | ● | ● | ● | ● | ● | `MembersPanel.tsx`, `InvitePage.tsx` |
-| Roles: owner, admin, member, viewer; change role, remove member | ● | ● | ● | ● | ● | ● | |
+| Invite by email; copy, resend, revoke pending invites; invite link shown | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `MembersPanel.tsx`, `InvitePage.tsx` |
+| Roles: owner, admin, member, viewer; change role, remove member | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Access changes take effect immediately (open pages too) | ● | ● | ● | ● | ● | ● | server-driven |
 | Admin stats (server admins) | ○ | ○ | ○ | ○ | ○ | ● | `/admin/me`, `/admin/stats` *(verify where shown)* |
 
