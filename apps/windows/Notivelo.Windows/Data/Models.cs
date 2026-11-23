@@ -18,13 +18,24 @@ public enum RuleLines { None, Lines, Grid }
 /// <summary>A text box on the canvas. X/Y are page points from the canvas surface origin.</summary>
 public sealed record CanvasBox(double X, double Y, double Width, bool Wide, IReadOnlyList<BoxBlock> Blocks);
 
-public enum BlockKind { Paragraph, Heading1, Heading2, Heading3, Task }
+public enum BlockKind { Paragraph, Heading1, Heading2, Heading3, Task, ListItem, CheckItem, Quote, Code, Rule }
 
-public sealed record BoxBlock(BlockKind Kind, string Text, TaskItem? Task = null);
+/// <summary>A run of text with its marks (read-only rich text from the core's box content).</summary>
+public sealed record TextSpan(string Text, bool Bold = false, bool Italic = false, bool Underline = false, bool Strike = false,
+    bool Code = false, string? Href = null, string? ColorHex = null, string? HighlightHex = null);
+
+/// <summary>One block of a box. Spans (when set) carry the marks; Text is the plain text. Marker is a list bullet/number, Indent the list depth.</summary>
+public sealed record BoxBlock(BlockKind Kind, string Text, TaskItem? Task = null, IReadOnlyList<TextSpan>? Spans = null,
+    string? Marker = null, int Indent = 0, bool Checked = false);
+
+public enum PageState { Live, Connecting, Offline, Ended }
+
+public sealed record WorkspaceInfo(string Id, string Name, string Role);
 
 public sealed record NotePage(
     string Id, string Title, string EditedLine, string NotebookName, string NotebookColorHex, IReadOnlyList<string> SectionPath,
-    PageColour Colour, RuleLines Rules, IReadOnlyList<CanvasBox> Boxes, int OpenTasks, int Comments);
+    PageColour Colour, RuleLines Rules, IReadOnlyList<CanvasBox> Boxes, int OpenTasks, int Comments,
+    PageState State = PageState.Live, string? StateMessage = null, bool Locked = false);
 
 public enum DueTone { None, Overdue, Today, Soon, Later }
 

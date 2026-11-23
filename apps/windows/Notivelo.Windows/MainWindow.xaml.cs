@@ -17,11 +17,18 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "Notivelo";
-        var theme = Environment.GetEnvironmentVariable("NOTIVELO_THEME");
-        var shell = new ShellView(new SampleNotesSource());
-        if (Enum.TryParse<ThemeMode>(theme, true, out var mode)) shell.SetTheme(mode);
-        if (Enum.TryParse<AppRoute>(Environment.GetEnvironmentVariable("NOTIVELO_ROUTE"), true, out var route)) shell.Navigate(route);
-        Host.Children.Add(shell);
+        // NOTIVELO_SOURCE=sample: the fake data of the reference captures, no sign-in (offline screenshots). Default: the Rust core.
+        if (string.Equals(Environment.GetEnvironmentVariable("NOTIVELO_SOURCE"), "sample", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowShell(new SampleNotesSource(), null);
+        }
+        else
+        {
+            _session = new AppSession();
+            _session.Changed += ShowPhase;
+            ShowPhase();
+            _session.Restore();
+        }
 
         var hwnd = WindowNative.GetWindowHandle(this);
         var scale = GetDpiForWindow(hwnd) / 96.0;
@@ -48,6 +55,45 @@ public sealed partial class MainWindow : Window
         };
         SetWindowSubclass(hwnd, _subclass, 1, 0);
     }
+
+    private AppSession? _session;
+    private SessionPhase? _shown;
+    private SignInView? _signIn;
+
+    /// <summary>Sign-in screen while signed out or restoring, the shell once signed in (a new shell per sign-in).</summary>
+    private void ShowPhase()
+    {
+        var s = _session!;
+        var signedIn = s.Phase == SessionPhase.SignedIn && s.Source is not null;
+        if (signedIn)
+        {
+            if (_shown == SessionPhase.SignedIn) return;
+            _shown = SessionPhase.SignedIn;
+            ShowShell(s.Source!, s.SignOut);
+        }
+        else
+        {
+            if (_shown == SessionPhase.SignedOut) return; // the sign-in view follows the session by itself
+            _shown = SessionPhase.SignedOut;
+            _signIn = new SignInView(s);
+            Host.Children.Clear();
+            Host.Children.Add(_signIn);
+            ApplyTheme(ThemeMode.Hybrid);
+        }
+    }
+
+    private void ShowShell(INotesSource source, Action? signOut)
+    {
+        var shell = new ShellView(source, signOut);
+        if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode);
+        if (Enum.TryParse<AppRoute>(Environment.GetEnvironmentVariable("NOTIVELO_ROUTE"), true, out var route)) shell.Navigate(route);
+        Host.Children.Clear();
+        Host.Children.Add(shell);
+    }
+
+    /// <summary>The sign-in screen follows the theme: Hybrid and Dark use the dark palette (as the reference does), Light the light one.</summary>
+    private void ApplyTheme(ThemeMode mode) =>
+        Host.RequestedTheme = mode == ThemeMode.Light ? ElementTheme.Light : ElementTheme.Dark;
 
     private readonly SubclassProc _subclass;
     private delegate IntPtr SubclassProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, nuint id, nuint data);

@@ -36,13 +36,37 @@ internal sealed class TasksView : ThemedControl
         root.Children.Add(sub);
         if (View == TaskViewKind.Today) root.Children.Add(StatsCard());
 
-        foreach (var g in _source.GetTaskGroups(View)) root.Children.Add(GroupBlock(g));
+        var groups = _source.GetTaskGroups(View);
+        foreach (var g in groups) root.Children.Add(GroupBlock(g));
+        if (_source.LoadError is { } err && groups.Count == 0)
+            root.Children.Add(Ui.Text(err, 13.5, B("Danger")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, 24, 0, 24); }));
+        else if (groups.Count == 0 && _source.Loading)
+            root.Children.Add(Ui.Text("Loading…", 13.5, B("TextMuted")).With(t => t.Margin = new Thickness(0, 24, 0, 24)));
+        else if (groups.Count == 0) root.Children.Add(EmptyState());
 
         var add = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(6, 8, 6, 8), Margin = new Thickness(0, 0, 0, 0) };
         add.Children.Add(new Icon("plus", 15, B("TextMuted")));
         add.Children.Add(Ui.Text("Add task", 13.5, B("TextMuted")));
         root.Children.Add(add);
         return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    }
+
+    /// <summary>LOOK 4.14: Today has the sun and "You're all caught up"; the others a muted line.</summary>
+    private UIElement EmptyState()
+    {
+        var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, Spacing = 6, Padding = new Thickness(0, 40, 0, 40) };
+        if (View == TaskViewKind.Today)
+        {
+            sp.Children.Add(Ui.Text("☀️", 34, B("Text")).With(t => { t.HorizontalAlignment = HorizontalAlignment.Center; t.FontFamily = new FontFamily("Segoe UI Emoji"); }));
+            sp.Children.Add(Ui.Text("You’re all caught up", 15, B("Text"), 700).With(t => t.HorizontalAlignment = HorizontalAlignment.Center));
+            sp.Children.Add(Ui.Text("Nothing due today. Enjoy it — or plan ahead in Upcoming.", 14, B("TextMuted")).With(t => t.HorizontalAlignment = HorizontalAlignment.Center));
+        }
+        else
+        {
+            var text = View switch { TaskViewKind.MyTasks => "No tasks assigned to you.", TaskViewKind.Upcoming => "Nothing scheduled.", TaskViewKind.Team => "No tasks for your teams.", _ => "No tasks match these filters." };
+            sp.Children.Add(Ui.Text(text, 14, B("TextMuted")).With(t => t.HorizontalAlignment = HorizontalAlignment.Center));
+        }
+        return sp;
     }
 
     private UIElement StatsCard()

@@ -21,6 +21,10 @@
     <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
     <AppxBundle>Never</AppxBundle>
     <UseRidGraph>true</UseRidGraph>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The core's generated bindings (crates/nv-core/build-windows.sh) are compiled in; their warnings are not ours. -->
+    <NoWarn>$(NoWarn);CS1591;CS8981;CS0108;CS0109;CS8618;CS0169;CS0649;CS8600;CS8601;CS8602;CS8603;CS8604;CS8625;CS8765;CS8767</NoWarn>
+    <NvCoreDir>$(MSBuildThisFileDirectory)..\..\..\target\windows\NotiveloCore\</NvCoreDir>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Platform)' == 'ARM64'">
@@ -33,6 +37,17 @@
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
     <Content Include="Assets\**" />
+  </ItemGroup>
+
+  <!-- The Rust core: bindings compiled into the app, nv_core.dll for the build's RID copied next to the exe (and into the MSIX).
+       Run `bash crates/nv-core/build-windows.sh` first (NV_TARGETS="x86_64-pc-windows-msvc" for x64 only). -->
+  <Target Name="NvCoreCheck" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(NvCoreDir)generated\nv_core.cs')" Text="The Rust core is not built: run 'bash crates/nv-core/build-windows.sh' (see docs/rewrite/status/windows.md)." />
+    <Error Condition="!Exists('$(NvCoreDir)runtimes\$(RuntimeIdentifier)\native\nv_core.dll')" Text="Missing $(NvCoreDir)runtimes\$(RuntimeIdentifier)\native\nv_core.dll: build the core for this platform." />
+  </Target>
+  <ItemGroup>
+    <Compile Include="$(NvCoreDir)generated\nv_core.cs" Link="Native\nv_core.cs" />
+    <Content Include="$(NvCoreDir)runtimes\$(RuntimeIdentifier)\native\nv_core.dll" Link="nv_core.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

@@ -30,12 +30,12 @@ public sealed partial class ShellView : UserControl
     private bool _sidebarOpen = true;
     private ThemeMode _theme = ThemeMode.Hybrid;
 
-    public ShellView(INotesSource source)
+    public ShellView(INotesSource source, Action? signOut = null)
     {
         _source = source;
         InitializeComponent();
         _pageId = source.InitialPageId;
-        _rail = new RailView(source.Workspace);
+        _rail = new RailView(source, signOut);
         _sidebar = new SidebarView(source);
         _page = new PageView(source);
         _tasks = new TasksView(source);
@@ -55,6 +55,11 @@ public sealed partial class ShellView : UserControl
         _rail.ToggleSidebar += () => { _sidebarOpen = !_sidebarOpen; ApplySidebar(); _rail.SetSidebarOpen(_sidebarOpen); };
         _rail.ThemeCycle += () => { _theme = (ThemeMode)(((int)_theme + 1) % 3); ApplyTheme(); };
         _sidebar.PageSelected += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
+        _page.PageOpened += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
+        _rail.WorkspaceSelected += id => { if (id == _source.CurrentWorkspaceId) return; _pageId = null; _source.SelectWorkspace(id); Refresh(); };
+        // The source loads and syncs in the background and says so here (always on the UI thread).
+        _source.Changed += (_, _) => Refresh();
+        Unloaded += (_, _) => _source.OpenPage(null);
         _sidebar.TaskViewSelected += v => { _taskView = v; Refresh(); };
 
         SizeChanged += (_, e) => ApplyBreakpoints(e.NewSize.Width);
@@ -70,9 +75,11 @@ public sealed partial class ShellView : UserControl
 
     private void Refresh()
     {
+        // The page is open (a live page) only while it is shown; leaving the Notes view closes it.
+        _source.OpenPage(_route == AppRoute.Notes ? _pageId : null);
         _rail.SetRoute(_route);
         _sidebar.Update(_route, _pageId, _taskView);
-        _page.SetPage(_pageId);
+        if (_page.PageId == _pageId) _page.Refresh(); else _page.SetPage(_pageId);
         _tasks.SetView(_taskView);
         PageCard.Visibility = _route == AppRoute.Notes ? Visibility.Visible : Visibility.Collapsed;
         TasksHost.Visibility = _route == AppRoute.Tasks ? Visibility.Visible : Visibility.Collapsed;

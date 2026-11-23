@@ -21,6 +21,8 @@ internal sealed class SidebarView : ThemedControl
 
     public SidebarView(INotesSource source) { _source = source; SelectedPageId = source.InitialPageId; }
 
+    public void Refresh() => Rebuild();
+
     public void Update(AppRoute route, string? pageId, TaskViewKind view)
     {
         Route = route; SelectedPageId = pageId; TaskView = view; Rebuild();
@@ -68,7 +70,8 @@ internal sealed class SidebarView : ThemedControl
 
     private UIElement BuildNotes()
     {
-        var nb = _source.Notebooks[0];
+        var nb = _source.Notebooks.FirstOrDefault(n => n.Id == _source.CurrentNotebookId) ?? _source.Notebooks.FirstOrDefault();
+        if (nb is null) return NoNotebooks();
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = Star });
@@ -95,6 +98,16 @@ internal sealed class SidebarView : ThemedControl
         Grid.SetColumn(chev, 2);
         pg.Children.Add(chev);
         picker.Content = pg;
+        var menu = new MenuFlyout();
+        foreach (var n in _source.Notebooks)
+        {
+            var id = n.Id;
+            var item = new MenuFlyoutItem { Text = n.Name };
+            if (id == nb.Id) item.Icon = new FontIcon { Glyph = "", FontSize = 12 };
+            item.Click += (_, _) => { _source.SelectNotebook(id); Rebuild(); };
+            menu.Items.Add(item);
+        }
+        picker.Flyout = menu;
         head.Children.Add(picker);
         var more = Ui.IconButton("ellipsis", 15, 24, 24, "Notebook options");
         more.Margin = new Thickness(4, 0, 0, 0);
@@ -106,9 +119,28 @@ internal sealed class SidebarView : ThemedControl
         var list = new StackPanel { Padding = new Thickness(8, 3, 8, 16) };
         list.Children.Add(GroupHeading("Sections", true));
         foreach (var s in nb.Sections) AddSection(list, s, 0);
+        if (nb.Sections.Count == 0) list.Children.Add(Ui.Text("No sections yet.", 12.5, B("TextMuted")).With(t => t.Margin = new Thickness(10, 6, 0, 0)));
         var sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Disabled, Content = list };
         Grid.SetRow(sv, 1);
         root.Children.Add(sv);
+        return root;
+    }
+
+    /// <summary>No notebook to show: still loading, a load error, or an empty workspace (LOOK 4.14).</summary>
+    private UIElement NoNotebooks()
+    {
+        var root = new StackPanel { Padding = new Thickness(18, 20, 18, 16), Spacing = 6 };
+        if (_source.LoadError is { } err)
+        {
+            root.Children.Add(Ui.Text("Couldn't load", 14, B("Text"), 650));
+            root.Children.Add(Ui.Text(err, 12.5, B("Danger")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; }));
+        }
+        else if (_source.Loading) root.Children.Add(Ui.Text("Loading…", 12.5, B("TextMuted")));
+        else
+        {
+            root.Children.Add(Ui.Text("Notebooks", 14, B("Text"), 650));
+            root.Children.Add(Ui.Text("No notebooks yet. Create one in the web app.", 12.5, B("TextMuted")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; }));
+        }
         return root;
     }
 

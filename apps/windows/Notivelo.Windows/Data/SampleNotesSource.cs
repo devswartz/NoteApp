@@ -6,6 +6,16 @@ public sealed class SampleNotesSource : INotesSource
     public event EventHandler? Changed { add { } remove { } }
 
     public Workspace Workspace { get; } = new("Workspace", "D", "DU", "Devon", "devon@example.com");
+    public IReadOnlyList<WorkspaceInfo> Workspaces { get; } = new WorkspaceInfo[] { new("sample", "Workspace", "owner") };
+    public string? CurrentWorkspaceId => "sample";
+    public void SelectWorkspace(string id) { }
+    public string? CurrentNotebookId => Notebooks.Count > 0 ? Notebooks[0].Id : null;
+    public void SelectNotebook(string id) { }
+    public bool Loading => false;
+    public string? LoadError => null;
+    public void OpenPage(string? pageId) { }
+    public IReadOnlyList<(PageSummary Page, string Where, string Edited)> RecentPages(int count) =>
+        Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p, $"{n.Name} › {s.Name}", "2h ago")))).Take(count).ToList();
 
     public IReadOnlyList<Notebook> Notebooks { get; }
 
