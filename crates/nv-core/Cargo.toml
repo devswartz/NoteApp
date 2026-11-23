@@ -35,3 +35,9 @@ regex = "1"
 [dev-dependencies]
 # For the stand-in collab server (crates/nv-sync/tests/support) in tests/live.rs.
 tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+
+# Android only: the certificate verifier (rustls-platform-verifier) calls into the JVM, so the app
+# hands it a Context once at start-up (src/android.rs, NotiveloCore.initAndroid in kotlin/).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.22", default-features = false }
+rustls-platform-verifier = "0.7"

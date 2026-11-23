@@ -1,0 +1,21 @@
+# Config for uniffi 0.32's own Kotlin generator, passed as --config (a global config file: [defaults.bindings.kotlin]).
+# https://mozilla.github.io/uniffi-rs/kotlin/configuration.html
+[defaults.bindings.kotlin]
+package_name = "com.notivelo.core"
+# libnv_core.so (jniLibs/<abi>/); JNA loads it by this name.
+cdylib_name = "nv_core"
+# The Android build: object cleanup goes through android.system.SystemCleaner (API 33+, a fallback
+# below) instead of java.lang.ref.Cleaner, which older Androids lack.
+android = true
+
+# Kotlin clashes: an error variant's `message` field collides with Throwable.message, and LivePage.close()
+# with the generated AutoCloseable.close() (which frees the object). The Rust names are unchanged.
+[defaults.bindings.kotlin.rename]
+"BoxError.Invalid.message" = "details"
+"CoreError.InvalidPage.message" = "details"
+"CoreError.Network.message" = "details"
+"CoreError.Server.message" = "details"
+"EditorError.InvalidPage.message" = "details"
+"EditorError.InvalidArgs.message" = "details"
+"InkError.Invalid.message" = "details"
+"LivePage.close" = "shutdown"

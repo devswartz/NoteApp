@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::{DocKind, Page, TaskLine};
 
+#[cfg(target_os = "android")]
+mod android;
 mod boxes;
 mod client;
 mod content;
