@@ -852,6 +852,65 @@ fn a_live_session_edits_the_live_page_and_sees_others_changes() {
 }
 
 #[test]
+fn opening_a_session_sends_no_update() {
+    let server = TestServer::start(&["acc"]);
+    apply(server.room.doc(), &page("canvas-boxes"));
+    let script = Script::default();
+    script.0.lock().unwrap().push_back(serde_json::json!({
+        "accessToken": "acc", "expiresIn": 900, "refreshToken": "ref",
+        "user": { "id": "u1", "email": "a@b.c", "name": "Ann", "color": "#123456", "emailVerified": true }
+    }));
+    let core = Core::with_transport(&server.base, Box::new(script), None);
+    core.sign_in("a@b.c".into(), "pw".into()).unwrap();
+    let ev = Arc::new(Events::default());
+    let live = core.open_live_page("page-1".into(), ev.clone()).unwrap();
+    wait_for("sync", || *ev.synced.lock().unwrap() == 1);
+    wait_for("the receipt", || live.unsent_updates() == 0);
+    let sv = |u: Vec<u8>| {
+        nv_model::doc_from_update(&u)
+            .unwrap()
+            .transact()
+            .state_vector()
+    };
+    let before = sv(live.document());
+
+    // Every box, opened and drawn: nothing is written, whether or not it ends in a paragraph.
+    for b in nv_model::Page::read(&nv_model::doc_from_update(&live.document()).unwrap()).boxes {
+        let s = EditorSession::open_live(
+            live.clone(),
+            format!("box:{}", b.id),
+            Arc::new(FakeTasks::default()),
+        )
+        .unwrap();
+        let v = s.view_render();
+        assert!(
+            v.view.lines.last().is_some_and(|l| l.kind == "paragraph"),
+            "the view always ends in a paragraph: {:?}",
+            v.view.lines.last().map(|l| l.kind.clone())
+        );
+        s.set_view_selection(0, 0);
+    }
+    assert_eq!(live.unsent_updates(), 0);
+    assert_eq!(
+        sv(live.document()),
+        before,
+        "opening wrote to the live page"
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        sv(full(server.room.doc())),
+        before,
+        "opening sent an update"
+    );
+
+    // The first real edit writes the trailing paragraph with it.
+    let s = EditorSession::open_live(live.clone(), "box:a".into(), Arc::new(FakeTasks::default()))
+        .unwrap();
+    s.insert_text("x".into());
+    assert_ne!(sv(live.document()), before);
+}
+
+#[test]
 fn a_live_session_needs_the_box() {
     let server = TestServer::start(&["acc"]);
     let script = Script::default();

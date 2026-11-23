@@ -42,7 +42,10 @@ impl Editor {
         }
         let sticks = b.stick(&self.doc, &positions);
         b.apply_remote(update)?;
-        let doc = b.read();
+        let mut doc = b.read();
+        if b.is_lazy() {
+            crate::editor::normalize_loaded(&mut doc);
+        }
         let mapped = b.unstick(&doc, &sticks);
         let size = doc.content_size();
         let at = |i: usize| -> usize {

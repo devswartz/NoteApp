@@ -74,11 +74,30 @@ pub struct Binding {
     /// Selections (before, after) for each undo / redo stack item, kept beside yrs's stacks.
     undo_sel: Vec<(Selection, Selection)>,
     redo_sel: Vec<(Selection, Selection)>,
+    /// Opened on a doc that already holds the content (`new_lazy`) and not written since: the
+    /// first write also carries what opening adds (the trailing paragraph), outside undo.
+    lazy: bool,
 }
 
 impl Binding {
     /// Bind to `field` of `doc`, writing `tree` there first (not undoable).
     pub fn new(doc: Doc, field: &str, tree: &Node, clock: Clock) -> Binding {
+        let b = Binding::build(doc, field, clock, false);
+        let old = read_children(&b.doc, field);
+        {
+            let mut txn = b.doc.transact_mut_with(LOAD);
+            write_children(&mut txn, &b.fragment, &old, &tree.content);
+        }
+        b
+    }
+
+    /// Bind to `field` of `doc` without writing anything: the editor's tree is what the doc
+    /// holds plus what opening adds, and the first change writes that too.
+    pub fn new_lazy(doc: Doc, field: &str, clock: Clock) -> Binding {
+        Binding::build(doc, field, clock, true)
+    }
+
+    fn build(doc: Doc, field: &str, clock: Clock, lazy: bool) -> Binding {
         let fragment = doc.get_or_insert_xml_fragment(field);
         let c = clock.clone();
         let mut tracked = HashSet::new();
@@ -93,7 +112,7 @@ impl Binding {
         };
         let mut undo = UndoManager::with_options(options);
         undo.expand_scope(&doc, &fragment);
-        let b = Binding {
+        Binding {
             doc,
             field: field.to_string(),
             fragment,
@@ -101,13 +120,13 @@ impl Binding {
             clock,
             undo_sel: Vec::new(),
             redo_sel: Vec::new(),
-        };
-        let old = read_children(&b.doc, field);
-        {
-            let mut txn = b.doc.transact_mut_with(LOAD);
-            write_children(&mut txn, &b.fragment, &old, &tree.content);
+            lazy,
         }
-        b
+    }
+
+    /// Opened lazily and not written since: the editor's tree has what opening added, the doc not.
+    pub fn is_lazy(&self) -> bool {
+        self.lazy
     }
 
     /// The fragment's content as a tree.
@@ -119,7 +138,23 @@ impl Binding {
 
     /// Write a new tree (after a local change), recording the selections around it for undo.
     pub fn write(&mut self, tree: &Node, before: &Selection, after: &Selection) {
-        let old = read_children(&self.doc, &self.field);
+        let mut old = read_children(&self.doc, &self.field);
+        if self.lazy {
+            if old == tree.content {
+                return;
+            }
+            // The first real change: what opening added goes in first, outside undo.
+            self.lazy = false;
+            let mut base = Node::el("doc", old.clone());
+            base.normalize();
+            crate::editor::normalize_loaded(&mut base);
+            if base.content != old {
+                let mut txn = self.doc.transact_mut_with(LOAD);
+                write_children(&mut txn, &self.fragment, &old, &base.content);
+                drop(txn);
+                old = read_children(&self.doc, &self.field);
+            }
+        }
         if old == tree.content {
             return;
         }
