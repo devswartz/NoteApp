@@ -34,13 +34,14 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Restore
-        run: dotnet restore apps/windows/Notivelo.Windows.sln
+        run: |
+          dotnet restore apps/windows/Notivelo.Windows.sln
 
       - name: Build x64 Release
-        run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=x64 --no-restore
+        run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=x64
 
       - name: Build arm64 Release
-        run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=ARM64 --no-restore
+        run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=ARM64
 
       - name: Package MSIX (x64, unsigned)
         run: >
