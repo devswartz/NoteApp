@@ -1,0 +1,103 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Design tokens from docs/rewrite/LOOK.md section 1 (colour), 2.1 (type scale) and 4.x (radii).
+         Light = :root, Dark = :root[data-theme='dark']. Accent = Blue (default). Alpha colours are #AARRGGBB. -->
+
+    <FontFamily x:Key="UiFont">Segoe UI</FontFamily>
+    <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
+
+    <x:Double x:Key="Text2xs">10.5</x:Double>
+    <x:Double x:Key="TextXs">11.5</x:Double>
+    <x:Double x:Key="TextSm">12.5</x:Double>
+    <x:Double x:Key="TextBase">14</x:Double>
+    <x:Double x:Key="TextMd">15</x:Double>
+    <x:Double x:Key="TextLg">17</x:Double>
+    <x:Double x:Key="TextXl">20</x:Double>
+    <x:Double x:Key="Text2xl">24</x:Double>
+    <x:Double x:Key="Text3xl">32</x:Double>
+
+    <CornerRadius x:Key="RadiusXs">4</CornerRadius>
+    <CornerRadius x:Key="RadiusSm">6</CornerRadius>
+    <CornerRadius x:Key="RadiusMd">8</CornerRadius>
+    <CornerRadius x:Key="RadiusLg">12</CornerRadius>
+
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="Bg" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="BgSubtle" Color="#F9F9FB" />
+            <SolidColorBrush x:Key="BgSidebar" Color="#F7F7F8" />
+            <SolidColorBrush x:Key="BgHover" Color="#0D0F0F1E" />
+            <SolidColorBrush x:Key="BgPressed" Color="#170F0F1E" />
+            <SolidColorBrush x:Key="BgActive" Color="#174F46E5" />
+            <SolidColorBrush x:Key="BgElevated" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="BgOverlay" Color="#520A0A14" />
+            <SolidColorBrush x:Key="BgInverse" Color="#1F1F23" />
+            <SolidColorBrush x:Key="Border" Color="#E7E7EA" />
+            <SolidColorBrush x:Key="BorderStrong" Color="#D4D4D8" />
+            <SolidColorBrush x:Key="Text" Color="#1F1F23" />
+            <SolidColorBrush x:Key="Text2" Color="#52525B" />
+            <SolidColorBrush x:Key="TextMuted" Color="#686871" />
+            <SolidColorBrush x:Key="TextPlaceholder" Color="#75757F" />
+            <SolidColorBrush x:Key="TextInverse" Color="#FAFAFA" />
+            <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="Accent" Color="#4F46E5" />
+            <SolidColorBrush x:Key="AccentHover" Color="#4338CA" />
+            <SolidColorBrush x:Key="AccentSoft" Color="#1A4F46E5" />
+            <SolidColorBrush x:Key="AccentSolid" Color="#4F46E5" />
+            <SolidColorBrush x:Key="AccentSolidHover" Color="#4338CA" />
+            <SolidColorBrush x:Key="Danger" Color="#DC2626" />
+            <SolidColorBrush x:Key="DangerSoft" Color="#14DC2626" />
+            <SolidColorBrush x:Key="Success" Color="#16A34A" />
+            <SolidColorBrush x:Key="SuccessSoft" Color="#1A16A34A" />
+            <SolidColorBrush x:Key="Warn" Color="#D97706" />
+            <SolidColorBrush x:Key="WarnSoft" Color="#1AD97706" />
+            <SolidColorBrush x:Key="P1" Color="#DC2626" />
+            <SolidColorBrush x:Key="P2" Color="#EA8C00" />
+            <SolidColorBrush x:Key="P3" Color="#2563EB" />
+            <SolidColorBrush x:Key="P1Soft" Color="#1ADC2626" />
+            <SolidColorBrush x:Key="P2Soft" Color="#1AEA8C00" />
+            <SolidColorBrush x:Key="P3Soft" Color="#1A2563EB" />
+            <SolidColorBrush x:Key="PageTextMuted" Color="#5C5C65" />
+            <SolidColorBrush x:Key="PageRule" Color="#26466EB4" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="Bg" Color="#18181B" />
+            <SolidColorBrush x:Key="BgSubtle" Color="#1D1D21" />
+            <SolidColorBrush x:Key="BgSidebar" Color="#141416" />
+            <SolidColorBrush x:Key="BgHover" Color="#0FFFFFFF" />
+            <SolidColorBrush x:Key="BgPressed" Color="#1AFFFFFF" />
+            <SolidColorBrush x:Key="BgActive" Color="#268B95F9" />
+            <SolidColorBrush x:Key="BgElevated" Color="#232328" />
+            <SolidColorBrush x:Key="BgOverlay" Color="#80000000" />
+            <SolidColorBrush x:Key="BgInverse" Color="#F4F4F5" />
+            <SolidColorBrush x:Key="Border" Color="#2C2C32" />
+            <SolidColorBrush x:Key="BorderStrong" Color="#3A3A42" />
+            <SolidColorBrush x:Key="Text" Color="#ECECEF" />
+            <SolidColorBrush x:Key="Text2" Color="#B4B4BC" />
+            <SolidColorBrush x:Key="TextMuted" Color="#9D9DA6" />
+            <SolidColorBrush x:Key="TextPlaceholder" Color="#8E8E98" />
+            <SolidColorBrush x:Key="TextInverse" Color="#18181B" />
+            <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="Accent" Color="#8B95F9" />
+            <SolidColorBrush x:Key="AccentHover" Color="#A5B4FC" />
+            <SolidColorBrush x:Key="AccentSoft" Color="#268B95F9" />
+            <SolidColorBrush x:Key="AccentSolid" Color="#5B5BD6" />
+            <SolidColorBrush x:Key="AccentSolidHover" Color="#4B4BC4" />
+            <SolidColorBrush x:Key="Danger" Color="#F87171" />
+            <SolidColorBrush x:Key="DangerSoft" Color="#1FF87171" />
+            <SolidColorBrush x:Key="Success" Color="#4ADE80" />
+            <SolidColorBrush x:Key="SuccessSoft" Color="#1F4ADE80" />
+            <SolidColorBrush x:Key="Warn" Color="#FBBF24" />
+            <SolidColorBrush x:Key="WarnSoft" Color="#1FFBBF24" />
+            <SolidColorBrush x:Key="P1" Color="#F87171" />
+            <SolidColorBrush x:Key="P2" Color="#FB923C" />
+            <SolidColorBrush x:Key="P3" Color="#60A5FA" />
+            <SolidColorBrush x:Key="P1Soft" Color="#1AF87171" />
+            <SolidColorBrush x:Key="P2Soft" Color="#1AFB923C" />
+            <SolidColorBrush x:Key="P3Soft" Color="#1A60A5FA" />
+            <SolidColorBrush x:Key="PageTextMuted" Color="#A3A3AC" />
+            <SolidColorBrush x:Key="PageRule" Color="#1F96AADC" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

@@ -1,0 +1,57 @@
+name: Windows native
+# The native Windows app of the rewrite (apps/windows, WinUI 3, .NET 8, single-project MSIX). Builds x64 Release and packages an
+# unsigned MSIX on every push to a rewrite branch (and PRs) that touches it, then uploads it as a short-lived artifact.
+# No signing, no Store identity, no upload anywhere: the package is for sideloading after test-signing it by hand.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['rewrite/**']
+    paths: ['apps/windows/**', '.github/workflows/windows.yml']
+  pull_request:
+    paths: ['apps/windows/**', '.github/workflows/windows.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-native-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  windows:
+    name: windows (x64 + arm64 build, unsigned MSIX)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: |
+          dotnet restore apps/windows/Notivelo.Windows.sln
+
+      - name: Build x64 Release
+        run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=x64
+
+      - name: Build arm64 Release
+        run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=ARM64
+
+      - name: Package MSIX (x64, unsigned)
+        run: >
+          dotnet build apps/windows/Notivelo.Windows/Notivelo.Windows.csproj -c Release -p:Platform=x64
+          -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false
+          -p:AppxPackageDir="$GITHUB_WORKSPACE/msix/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notivelo-windows-x64-msix-unsigned
+          path: msix/**/*.msix
+          if-no-files-found: error
+          retention-days: 7
