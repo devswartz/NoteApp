@@ -5,6 +5,10 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **Windows core is done on `rewrite/core-windows`** (cut from `rewrite/native` cf8cee0, not
+  merged; **core pauses**): `nv_core.dll` for x64 and arm64, C# bindings from `uniffi-bindgen-cs`
+  `v0.12.0+v0.32.0`, a `Notivelo.Core` project and NuGet package, an xunit smoke test; see "For
+  windows". Still queued: Kotlin/Android and the M7 server work.
 - **Ink is done on `rewrite/core-ink`** (cut from `rewrite/native` add315c, not merged; **core
   pauses**): read, add, erase, move, delete and lasso and eraser hit tests for a native page's
   strokes, in the web's own format ("For apple: ink"). Still queued as below: Kotlin/Android and
@@ -31,6 +35,114 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For windows (2026-11-22, `rewrite/core-windows`)
+
+The core for WinUI 3 (M8): `nv_core.dll` for x64 and arm64, uniffi C# bindings, a `Notivelo.Core`
+project that packs into a NuGet package, and an xunit smoke test. Built by
+`crates/nv-core/build-windows.sh` (Git Bash) and by `.github/workflows/windows-core.yml`.
+
+### The binding route: `uniffi-bindgen-cs` (NordSecurity), pinned
+
+- **A release matches uniffi 0.32.** `uniffi-bindgen-cs` tags are `v<generator>+v<uniffi>`. The
+  releases (`gh api repos/NordSecurity/uniffi-bindgen-cs/releases`, and the README's table) are
+  `v0.12.0+v0.32.0` (2026-11-09, the newest), `v0.11.1+v0.31.0`, `v0.11.0+v0.31.0`,
+  `v0.10.0+v0.29.4`, `v0.9.x+v0.28.3`. nv-core is on uniffi 0.32 (Cargo.lock: 0.32.2; the
+  generator is built on 0.32.0, the same minor, and the library loads: checksums match). So there
+  is no downgrade and no C ABI crate.
+- Installed pinned: `cargo install uniffi-bindgen-cs --locked --git
+  https://github.com/NordSecurity/uniffi-bindgen-cs --tag v0.12.0+v0.32.0` (CI caches the binary,
+  keyed on the tag). **When nv-core moves to a new uniffi minor, bump `UNIFFI_BINDGEN_CS_TAG` in
+  `windows-core.yml` and the header of `build-windows.sh` in the same commit.** Bindings from
+  another uniffi version refuse to load (API checksums), so a mismatch fails loudly.
+- Why this and not a hand-written C ABI: the generator reads the same proc-macro metadata from the
+  built DLL (library mode, like `build-xcframework.sh` does for Swift), so the whole API (about
+  22k lines of C#: `Core`, `LivePage`, `EditorSession`, all records and enums) comes for free and
+  stays in step with the Rust API. A C ABI with JSON would need every call written twice.
+  **How the rest of the API is exposed: it already is**; nothing is left to add per call. The
+  config is `crates/nv-core/csharp/uniffi.toml` (namespace `Notivelo.Native`; the free functions on
+  the static class `NvCore`; `public` access, since the generator's default is `internal`).
+- Fallback, if the generator ever lags uniffi again: uniffi's own C scaffolding called through
+  P/Invoke (the `RustBuffer` plumbing is small), not a downgrade. Not needed now.
+
+### What the C# bindings support (checked by the tests)
+
+- **Objects**: yes. `Core`, `LivePage`, `EditorSession` are `IDisposable` classes (dispose, or the
+  finalizer frees the Rust handle; `LivePage.Close()` is still how a page stops syncing).
+- **Callbacks (foreign traits)**: yes. `LivePageListener`, `PageListener`, `TaskCallbacks` are C#
+  interfaces; implement them and pass them in. A test implements `LivePageListener` and gets
+  `OnStatus` from the page's thread.
+- **Async**: none, and none needed: the core exports no `async` calls. Calls that touch the
+  network simply block.
+- **Records, enums, errors**: records are C# `record`s with PascalCase members (`info.Text`,
+  `box.Id`); enums with data are record hierarchies (`NodeKind.BulletList`; test with `is`);
+  plain enums are C# enums; `CoreError` is `CoreException` with nested `SignedOut` etc.
+  Methods are PascalCase (`NvCore.ReadPage`, `core.Workspaces()`); arguments are positional in the
+  Rust declaration order (Swift's labels are not there); options are nullable, `Vec<u8>` is `byte[]`.
+- Limits: strings, byte arrays and lists are capped at 2^31 bytes (page documents are far smaller);
+  .NET 8 or newer; `AllowUnsafeBlocks` (set in the project).
+
+### Layout and the smoke test
+
+```
+target/windows/NotiveloCore/            (CI artifact `NotiveloCoreWindows`)
+  runtimes/win-x64/native/nv_core.dll
+  runtimes/win-arm64/native/nv_core.dll
+  generated/nv_core.cs                  uniffi-bindgen-cs output (not committed, as Swift's is not)
+  Notivelo.Core/Notivelo.Core.csproj    net8.0, compiles generated/nv_core.cs
+  Tests/Notivelo.Core.Tests/            xunit
+  nupkg/Notivelo.Core.0.1.0.nupkg       lib/net8.0/Notivelo.Core.dll + runtimes/<rid>/native/nv_core.dll (CI only)
+```
+
+- By hand (Windows, Git Bash, .NET 8+ SDK, `uniffi-bindgen-cs` installed):
+  `bash crates/nv-core/build-windows.sh` (`NV_TARGETS=x86_64-pc-windows-msvc` for x64 only), then in
+  `target/windows/NotiveloCore`: `NV_CORPUS_DIR=<repo>/tests/corpus dotnet test Tests/Notivelo.Core.Tests`.
+- The 8 tests: `CoreVersion` and `PageFormatVersion`; `ReadPage` on `document-page` (kind and
+  newerFormat from `expected.json`, text from `page.txt`, first node a heading) and `canvas-boxes`;
+  box content (`lists`, marks on runs; the twin of Swift's `testBoxContent`); an error and a list
+  marker; a `Core` with no session (`CoreException.SignedOut`); a `Core` with a store file; a live
+  page with a C# listener. x64 runs them; arm64 is build-only (windows-latest is x64).
+- The DLL is built with `-C target-feature=+crt-static` (set in the script, with `--target`, so
+  only the target is affected): it imports only system DLLs (kernel32, advapi32, ws2_32, bcrypt,
+  crypt32, ntdll), no `VCRUNTIME140.dll`, so no Visual C++ Redistributable is needed.
+
+### For windows: using it from a WinUI 3 app
+
+1. **Reference.** A package: add the artifact's `nupkg/` folder as a local NuGet source and
+   `<PackageReference Include="Notivelo.Core" Version="0.1.0" />`. Or the project:
+   `<ProjectReference Include="..\NotiveloCore\Notivelo.Core\Notivelo.Core.csproj" />` (it copies the
+   DLL for the build's architecture next to the output). Then `using Notivelo.Native;`.
+2. **Platforms.** In the app's csproj: `<RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>`
+   (the WinUI 3 template lists `win-x86` too: **there is no win-x86 DLL**, remove it) and build per
+   platform (`-p:Platform=x64` / `ARM64`). With the package, NuGet copies the matching
+   `runtimes/<rid>/native/nv_core.dll` beside the exe (and MSIX packaging includes it); the
+   generated `[DllImport("nv_core")]` finds it there. No loader code.
+3. **Threads.** Core calls block (HTTP, the store's SQLite): never on the UI thread. Use
+   `await Task.Run(() => core.Workspaces())` or a worker. The core is thread-safe (tokens behind a
+   mutex, refreshes serialised, one thread-safe HTTP agent, the store behind its mutex; see
+   "Answers to apple's requests"), so concurrent calls from several tasks are fine and need no lock
+   of your own. Local-only calls (`NvCore.ReadPage` on bytes you hold, `core.Cached*`,
+   `LivePage.Info()`) are quick; `Workspaces`, `Tree` and every write are not. Editor sessions
+   follow the editor stream's notes.
+4. **Callbacks.** `LivePageListener`, `PageListener` and `TaskCallbacks` arrive **on core threads**
+   (a live page's own thread; `TaskCallbacks` from the editor's thread, which holds the session's
+   lock, so do not call the session back from inside). No UI work there: copy what you need and
+   `dispatcherQueue.TryEnqueue(() => ...)` (take `DispatcherQueue.GetForCurrentThread()` on the UI
+   thread first). Do not throw out of a callback, and keep `OnChange` short: it runs on the thread
+   that also reads the page's socket.
+5. **The store path.** `Core.WithStore(serverUrl, dbPath)`: for a packaged app
+   `Path.Combine(ApplicationData.Current.LocalFolder.Path, "store.db")` (the folder exists; the core
+   makes the file, with its `-wal`/`-shm` files beside it); unpackaged, a folder under
+   `Environment.SpecialFolder.LocalApplicationData` (create it first). One account per store;
+   sign-out clears it.
+6. **TLS.** `rustls-platform-verifier` (nv-api's ureq and nv-sync's collab socket) uses the Windows
+   certificate store and the OS's chain building and revocation, so a corporate or user-installed
+   root works. **No init call on Windows** (the Android init is the only one): `with_platform_verifier()`
+   is called inside the core. Checked in `nv-sync/src/live.rs` and `nv-api/Cargo.toml`; the CI test
+   makes no TLS connection, so a live HTTPS call from the DLL is **unverified** on Windows.
+7. **Unverified.** The arm64 DLL is built, not loaded (no arm64 runner). No WinUI 3 app has used the
+   package yet (the project is plain `net8.0`; a `net8.0-windows10.0.19041.0` app can reference it).
+   No HTTPS call or real sign-in has been made through the DLL.
 
 ## For apple: ink (2026-11-22, `rewrite/core-ink`)
 
@@ -1235,6 +1347,11 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
   so Intel builds link. The iOS device slice is still arm64 only.
 
 ## Done
+
+- 2026-11-22, windows (`rewrite/core-windows`): `crates/nv-core/build-windows.sh`,
+  `crates/nv-core/csharp/` (`uniffi.toml`, `Notivelo.Core` project and NuGet pack, xunit tests),
+  `.github/workflows/windows-core.yml` (x64 and arm64 DLLs, bindings, x64 tests, artifact
+  `NotiveloCoreWindows`). No Rust source changed.
 
 - 2026-11-22, ink (`rewrite/core-ink`): nv-model `ink.rs` (the `ink` map's one-transaction
   writes, opaque blobs), nv-core `ink.rs` (strokes read with points and bounds, outline as path

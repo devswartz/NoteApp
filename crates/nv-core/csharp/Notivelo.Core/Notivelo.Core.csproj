@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The Notivelo core for .NET (WinUI 3). Assembled by crates/nv-core/build-windows.sh into
+       target/windows/NotiveloCore/, where this file sits in Notivelo.Core/ beside generated/nv_core.cs
+       (uniffi-bindgen-cs output) and runtimes/<rid>/native/nv_core.dll. Reference it as a project, or
+       `dotnet pack` it into a local NuGet package (Notivelo.Core.<version>.nupkg). -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>Notivelo.Core</AssemblyName>
+    <RootNamespace>Notivelo.Native</RootNamespace>
+    <PackageId>Notivelo.Core</PackageId>
+    <Version>0.1.0</Version>
+    <Description>The Notivelo core (Rust) for .NET: uniffi bindings and nv_core.dll for win-x64 and win-arm64.</Description>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Generated code. -->
+    <NoWarn>$(NoWarn);CS1591;CS8981;CS0108;CS0109;CS8618;CS0169;CS0649</NoWarn>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\generated\nv_core.cs" Link="nv_core.cs" />
+  </ItemGroup>
+
+  <!-- NuGet: the native libraries go under runtimes/<rid>/native/, where NuGet restore and the .NET
+       host look for them (an app built for a RuntimeIdentifier gets the matching one next to its exe). -->
+  <ItemGroup>
+    <None Include="..\runtimes\win-x64\native\nv_core.dll" Pack="true" PackagePath="runtimes/win-x64/native/" Condition="Exists('..\runtimes\win-x64\native\nv_core.dll')" />
+    <None Include="..\runtimes\win-arm64\native\nv_core.dll" Pack="true" PackagePath="runtimes/win-arm64/native/" Condition="Exists('..\runtimes\win-arm64\native\nv_core.dll')" />
+  </ItemGroup>
+
+  <!-- Project references: copy the DLL for the build's architecture next to the output, so the loader
+       finds it. (A package reference needs none of this; NuGet does it.) -->
+  <PropertyGroup>
+    <NvRid>$(RuntimeIdentifier)</NvRid>
+    <NvRid Condition="'$(NvRid)' == '' and '$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">win-arm64</NvRid>
+    <NvRid Condition="'$(NvRid)' == ''">win-x64</NvRid>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\runtimes\$(NvRid)\native\nv_core.dll" Link="nv_core.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\runtimes\$(NvRid)\native\nv_core.dll')" />
+  </ItemGroup>
+</Project>

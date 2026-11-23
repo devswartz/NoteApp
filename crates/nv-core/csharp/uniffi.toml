@@ -1,0 +1,7 @@
+# Config for uniffi-bindgen-cs (docs/CONFIGURATION.md in NordSecurity/uniffi-bindgen-cs).
+[bindings.csharp]
+namespace = "Notivelo.Native"
+# The free functions (readPage, coreVersion, ...) become static methods of NvCore.
+global_methods_class_name = "NvCore"
+# The generator defaults to internal; the app is another assembly.
+access_modifier = "public"
