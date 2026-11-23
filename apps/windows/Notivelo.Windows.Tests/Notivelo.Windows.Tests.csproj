@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Plain xunit tests for the XAML-free half of the box text view (Notivelo.Windows/Text): offset and run mapping, type scale,
+       indentation, gaps, table shapes. Compiles those sources and the core's generated bindings directly, so no WinUI is needed.
+       Run `bash crates/nv-core/build-windows.sh` first (the bindings), then `dotnet test apps/windows/Notivelo.Windows.Tests`. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CS1591;CS8981;CS0108;CS0109;CS8618;CS0169;CS0649;CS8600;CS8601;CS8602;CS8603;CS8604;CS8625;CS8765;CS8767</NoWarn>
+    <NvCoreDir>$(MSBuildThisFileDirectory)..\..\..\target\windows\NotiveloCore\</NvCoreDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Notivelo.Windows\Text\*.cs" Link="Text\%(Filename)%(Extension)" />
+    <Compile Include="$(NvCoreDir)generated\nv_core.cs" Link="Native\nv_core.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+</Project>

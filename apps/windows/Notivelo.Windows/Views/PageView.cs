@@ -21,9 +21,33 @@ internal sealed class PageView : ThemedControl
     private ScrollViewer? _scroll;
     private double _offset;
 
+    // One session-backed text view per box of the live page being shown; kept across rebuilds (live updates) so sessions aren't reopened.
+    private readonly Dictionary<string, BoxTextView> _views = new();
+    private object? _viewsFor;
+    private CanvasBox? _firstBox;
+    /// <summary>Set NOTIVELO_TEXTVIEW=0 to fall back to the static TextBlock path.</summary>
+    private static readonly bool UseTextView = Environment.GetEnvironmentVariable("NOTIVELO_TEXTVIEW") != "0";
+    /// <summary>Dev hook: NOTIVELO_SELECT=anchor,head selects that view range in the first box and draws the caret/selection.</summary>
+    private static readonly (int A, int H)? SelectHook = ParseSelect(Environment.GetEnvironmentVariable("NOTIVELO_SELECT"));
+
+    /// <summary>Dev hook: NOTIVELO_SEED=<script file> fills the first box of the first live page shown (loopback servers only).</summary>
+    private static readonly string? SeedScript = Environment.GetEnvironmentVariable("NOTIVELO_SEED") is { } sf && File.Exists(sf)
+        && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") ? sf : null;
+    private bool _seeded;
+
+    private static (int, int)? ParseSelect(string? s) =>
+        s?.Split(',') is { Length: 2 } p && int.TryParse(p[0], out var a) && int.TryParse(p[1], out var h) ? (a, h) : null;
+
+    private void DisposeViews()
+    {
+        foreach (var v in _views.Values) { try { v.Release(); } catch { } }
+        _views.Clear();
+        _viewsFor = null;
+    }
+
     public void SetPage(string? id)
     {
-        if (id != PageId) _offset = 0;
+        if (id != PageId) { _offset = 0; DisposeViews(); }
         PageId = id;
         Rebuild();
     }
@@ -31,15 +55,33 @@ internal sealed class PageView : ThemedControl
     /// <summary>Rebuild for new data, keeping the scroll position (live pages change under the reader).</summary>
     public void Refresh()
     {
-        if (_scroll is not null && PageId is not null) _offset = _scroll.VerticalOffset;
+        if (_scroll is not null && PageId is not null)
+        {
+            _offset = _scroll.VerticalOffset;
+            // A live page whose boxes are session views: a remote edit only needs those views to read their sessions again.
+            if (_views.Count > 0 && _source.GetPage(PageId) is { } page && Signature(page) == _sig)
+            {
+                foreach (var v in _views.Values) v.OnPageChanged();
+                return;
+            }
+        }
         Rebuild();
     }
+
+    private string _sig = "";
+
+    /// <summary>What a full rebuild shows besides the text inside session-backed boxes.</summary>
+    private static string Signature(NotePage p) =>
+        string.Join("|", p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked,
+            string.Join(";", p.Boxes.Select(b => $"{b.Field}@{b.X},{b.Y},{b.Width},{b.Wide}")));
 
     protected override UIElement Build()
     {
         _scroll = null;
         var page = PageId is null ? null : _source.GetPage(PageId);
-        var root = new Grid();
+        var root = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
+        // a click on the page outside any box gives the keyboard back to the page
+        root.PointerPressed += (_, _) => BoxTextView.Focused?.Unfocus();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         if (page is null)
@@ -52,7 +94,7 @@ internal sealed class PageView : ThemedControl
 
         root.Children.Add(TopBar(page));
 
-        var article = new Grid { Padding = new Thickness(0, 32, 40, 0) };
+        var article = new Grid { Padding = new Thickness(0, 37, 40, 0) };
         article.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28) });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -64,7 +106,7 @@ internal sealed class PageView : ThemedControl
         article.Children.Add(title);
 
         var sub = Ui.Text(page.EditedLine, 12.5, B("PageTextMuted"), lineHeight: 18.75);
-        sub.Margin = new Thickness(51, 6, 0, 22);
+        sub.Margin = new Thickness(51, 4, 0, 22);
         Grid.SetRow(sub, 2);
         if (page.State != PageState.Live)
         {
@@ -74,7 +116,7 @@ internal sealed class PageView : ThemedControl
                 PageState.Offline => ((page.StateMessage ?? "Offline") + " Trying again…", B("Warn")),
                 _ => (page.StateMessage ?? "This page can't be shown.", B("Danger")),
             };
-            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(51, 6, 0, 22) };
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(51, 4, 0, 22) };
             line.Children.Add(Ui.Text(page.EditedLine + " · ", 12.5, B("PageTextMuted"), lineHeight: 18.75));
             line.Children.Add(Ui.Text(text, 12.5, brush, 600, lineHeight: 18.75));
             Grid.SetRow(line, 2);
@@ -82,8 +124,12 @@ internal sealed class PageView : ThemedControl
         }
         else article.Children.Add(sub);
 
+        _sig = Signature(page);
+        DisposeViews();
+        SyncViews(page);
         var surfaceH = Math.Max(320, (page.Boxes.Count == 0 ? 0 : page.Boxes.Max(b => b.Y)) + 320);
-        var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 10, 0, 0) };
+        var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 15, 0, 0) };
+        _firstBox = page.Boxes.FirstOrDefault();
         foreach (var box in page.Boxes) canvas.Children.Add(Box(box));
         Grid.SetRow(canvas, 3);
         article.Children.Add(canvas);
@@ -221,20 +267,93 @@ internal sealed class PageView : ThemedControl
 
     // ---- canvas boxes -----------------------------------------------------------------------------------------
 
+    /// <summary>Open (or keep) a session-backed view for each box of a live page; drop them when the page's connection changes.</summary>
+    private void SyncViews(NotePage page)
+    {
+        if (!UseTextView || PageId is null) { DisposeViews(); return; }
+        var live = _source.LivePageOf(PageId);
+        if (!ReferenceEquals(live, _viewsFor)) DisposeViews();
+        if (live is null) return;
+        _viewsFor = live;
+        var wanted = new HashSet<string>();
+        foreach (var box in page.Boxes)
+        {
+            if (box.Field is null) continue;
+            wanted.Add(box.Field);
+            if (_views.ContainsKey(box.Field)) continue;
+            try
+            {
+                var session = Notivelo.Native.EditorSession.OpenLive(live, box.Field, new BoxTasks(_source, DispatcherQueue, () => PageId));
+                _views[box.Field] = new BoxTextView(session, _source) { PageId = PageId };
+            }
+            catch (Exception e) { BoxTextView.Log("open " + box.Field, e); }
+        }
+        if (SeedScript is { } seed && _views.Count > 0 && !_seeded)
+        {
+            _seeded = true;
+            _views.Values.First().RunScript(File.ReadAllLines(seed));
+        }
+        // dev hook: NOTIVELO_FOCUS=1 gives the first box the keyboard (loopback servers only), to exercise the text services without a pointer
+        if (Environment.GetEnvironmentVariable("NOTIVELO_FOCUS") is not null && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") && _views.Count > 0)
+            _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); BoxTextView.Trace("focus hook " + ok); }));
+        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); }
+    }
+
+    /// <summary>The session's view of the task list. The core calls these on the session's thread with the session locked: they only note
+    /// the change and hand the real work to the UI thread (never back into the session).</summary>
+    private sealed class BoxTasks : Notivelo.Native.TaskCallbacks
+    {
+        private readonly INotesSource _src;
+        private readonly Microsoft.UI.Dispatching.DispatcherQueue _ui;
+        private readonly Func<string?> _page;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _titles = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _gone = new();
+        public BoxTasks(INotesSource src, Microsoft.UI.Dispatching.DispatcherQueue ui, Func<string?> page) { _src = src; _ui = ui; _page = page; }
+        public string NewId() => Guid.NewGuid().ToString();
+        public void Create(string id, string title, bool done)
+        {
+            _titles[id] = title; _gone.TryRemove(id, out _);
+            var page = _page();
+            _ui.TryEnqueue(() => _src.CreateTask(id, title, done, page));
+        }
+        public void Delete(string id)
+        {
+            _gone[id] = true;
+            _ui.TryEnqueue(() => _src.DeleteTask(id));
+        }
+        public bool Restore(string id) { _gone.TryRemove(id, out _); return _titles.ContainsKey(id) || _src.FindTask(id) is not null; }
+        public string? Title(string id) => _gone.ContainsKey(id) ? null : _titles.TryGetValue(id, out var t) ? t : _src.FindTask(id)?.Title;
+        public void SetTitle(string id, string title) => _titles[id] = title;
+    }
+
     private UIElement Box(CanvasBox box)
     {
-        var sp = new StackPanel();
-        var first = true;
-        foreach (var blk in box.Blocks)
+        var width = box.Wide ? 819 : box.Width;
+        Border b;
+        if (box.Field is not null && _views.TryGetValue(box.Field, out var view))
         {
-            sp.Children.Add(Block(blk, first));
-            first = false;
+            // the view lives in its own host border, which moves into each rebuilt canvas
+            b = view.Host;
+            view.SetWidth(Math.Max(40, width - 22));
+            view.OnPageChanged();
+            if (SelectHook is { } sh && ReferenceEquals(box, _firstBox)) { view.ShowSelection = true; view.SetSelection(sh.A, sh.H); }
+            b.Width = width;
         }
-        var b = new Border
+        else
         {
-            Width = box.Wide ? 819 : box.Width, Padding = new Thickness(10, 6, 10, 6), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
-            BorderBrush = new SolidColorBrush(Colors.Transparent), Child = sp,
-        };
+            var sp = new StackPanel();
+            var first = true;
+            foreach (var blk in box.Blocks)
+            {
+                sp.Children.Add(Block(blk, first));
+                first = false;
+            }
+            b = new Border
+            {
+                Width = width, Padding = new Thickness(10, 6, 10, 6), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(6),
+                BorderBrush = new SolidColorBrush(Colors.Transparent), Child = sp,
+            };
+        }
         Canvas.SetLeft(b, box.X);
         Canvas.SetTop(b, box.Y);
         return b;

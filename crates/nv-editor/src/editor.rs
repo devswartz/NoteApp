@@ -1276,7 +1276,9 @@ impl Editor {
         let caret = Selection::caret(near_text(&tree, 0, 1));
         let mut ed = Editor::new(tree, caret);
         ed.tasks = tasks;
-        ed.bind(doc, field, clock);
+        // The trailing paragraph lives in the editor's tree only: opening writes nothing, and the
+        // first real edit writes it (`Binding::write`).
+        ed.binding = Some(crate::bind::Binding::new_lazy(doc, field, clock));
         ed
     }
 
@@ -1409,6 +1411,14 @@ pub fn near_sel(doc: &Node, pos: usize, dir: i32) -> Selection {
         }
     }
     Selection::caret(near_text(doc, pos, dir))
+}
+
+/// What opening a box adds to its tree: a toggle's missing parts and the trailing paragraph.
+pub(crate) fn normalize_loaded(doc: &mut Node) {
+    fill_toggles(doc);
+    if !doc.content.last().is_some_and(|n| n.is("paragraph")) {
+        doc.content.push(Node::el("paragraph", vec![]));
+    }
 }
 
 /// A toggle always has its summary and a content with a line in it (the schema's fill).

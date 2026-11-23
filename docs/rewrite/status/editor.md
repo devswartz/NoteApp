@@ -2,6 +2,10 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-23: opening a session writes nothing (branch `rewrite/windows-text`)
+
+`Editor::open` no longer writes to the doc: `Binding::new_lazy` keeps the doc untouched, the trailing paragraph (and toggle fill) lives in the editor's own tree and view, and the first real write puts it in (outside undo; a remote update before that keeps it in the tree). New test `opening_a_session_sends_no_update` (every box of a live page opened, no update on the page or the server). Ratchet unchanged.
+
 ## 2026-11-22: parity scenarios, round 3 (branch `rewrite/editor-parity-3`)
 
 Branched from `origin/rewrite/native` (contains a625e3c, not merged). Comment anchors, toggles, images and file cards as atoms, colours and highlights, proved on TipTap, then passed in nv-editor.

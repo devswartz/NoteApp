@@ -16,7 +16,7 @@ public enum PageColour { None, Yellow, Green, Blue, Purple, Pink, Grey }
 public enum RuleLines { None, Lines, Grid }
 
 /// <summary>A text box on the canvas. X/Y are page points from the canvas surface origin.</summary>
-public sealed record CanvasBox(double X, double Y, double Width, bool Wide, IReadOnlyList<BoxBlock> Blocks);
+public sealed record CanvasBox(double X, double Y, double Width, bool Wide, IReadOnlyList<BoxBlock> Blocks, string? Field = null);
 
 public enum BlockKind { Paragraph, Heading1, Heading2, Heading3, Task, ListItem, CheckItem, Quote, Code, Rule }
 

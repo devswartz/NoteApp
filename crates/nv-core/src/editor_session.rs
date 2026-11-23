@@ -611,8 +611,8 @@ impl EditorSession {
 #[uniffi::export]
 impl EditorSession {
     /// Open `field` (`box:<id>`, or `default` on an old single-column page) of a page document
-    /// (a full Yjs update). Opening adds the trailing paragraph if the box lacks one: send
-    /// `encode_update_since` afterwards like any edit.
+    /// (a full Yjs update). Opening writes nothing: a box without a trailing
+    /// paragraph shows one, and it goes into the document with the first edit.
     #[uniffi::constructor]
     pub fn open(
         update: Vec<u8>,

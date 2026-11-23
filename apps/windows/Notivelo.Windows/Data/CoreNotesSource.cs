@@ -86,11 +86,17 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         }
     }
 
+    private bool _hookDone, _nbHookDone;
+
     private void PickWorkspace()
     {
         if (_workspaces.Length == 0) return;
         var saved = AppSettings.Workspace(_session.ServerUrl);
-        var pick = _workspaces.FirstOrDefault(w => w.Id == _wsId) ?? _workspaces.FirstOrDefault(w => w.Id == saved) ?? _workspaces[0];
+        // dev hook: NOTIVELO_WORKSPACE=<part of a name> picks that workspace at startup (loopback servers only, like the sign-in hook)
+        var hook = Environment.GetEnvironmentVariable("NOTIVELO_WORKSPACE");
+        var hooked = hook is not null && _session.ServerUrl.Contains("127.0.0.1") && !_hookDone ? _workspaces.FirstOrDefault(w => w.Name.Contains(hook, StringComparison.OrdinalIgnoreCase)) : null;
+        if (hooked is not null) _hookDone = true;
+        var pick = hooked ?? _workspaces.FirstOrDefault(w => w.Id == _wsId) ?? _workspaces.FirstOrDefault(w => w.Id == saved) ?? _workspaces[0];
         if (pick.Id != _wsId || _tree is null) SelectWorkspace(pick.Id);
     }
 
@@ -151,6 +157,9 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             n.Id, n.Name, n.Name.Length > 0 ? n.Name[..1].ToUpperInvariant() : "N", n.Color, n.Visibility == "private",
             _tree.Sections.Where(s => s.NotebookId == n.Id && s.ParentId is null).OrderBy(s => s.Position).Select(Build).ToList())).ToList();
         if (_notebookId is null || _notebooks.All(n => n.Id != _notebookId)) _notebookId = _notebooks.FirstOrDefault()?.Id;
+        // dev hook: NOTIVELO_NOTEBOOK=<part of a name> shows that notebook first (loopback servers only)
+        if (Environment.GetEnvironmentVariable("NOTIVELO_NOTEBOOK") is { } nbHook && !_nbHookDone && _session.ServerUrl.Contains("127.0.0.1")
+            && _notebooks.FirstOrDefault(n => n.Name.Contains(nbHook, StringComparison.OrdinalIgnoreCase)) is { } nbPick) { _notebookId = nbPick.Id; _nbHookDone = true; }
     }
 
     private string PageTitle(string id)
@@ -324,6 +333,45 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         }
     }
 
+    public N.LivePage? LivePageOf(string pageId) => pageId == _openId && _state == PageState.Live && _info is not null ? _live : null;
+    public TaskItem? FindTask(string taskId) => TaskLine(taskId);
+    public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title;
+    public string? EmojiOfPage(string pageId) => null;
+    public string? UserId => _user.Id;
+
+    public IReadOnlyList<(string Id, string Title)> SearchPages(string query, int max) =>
+        _tree is null ? Array.Empty<(string, string)>()
+            : _tree.Pages.Where(p => !p.Locked && (query.Length == 0 || p.Title.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(p => p.UpdatedAt, StringComparer.Ordinal).Take(max).Select(p => (p.Id, p.Title.Length == 0 ? "Untitled" : p.Title)).ToList();
+
+    public IReadOnlyList<(string Id, string Label)> People(string query) =>
+        _user.Name is { Length: > 0 } n && (query.Length == 0 || n.Contains(query, StringComparison.OrdinalIgnoreCase)) ? new[] { (_user.Id, n) } : Array.Empty<(string, string)>();
+
+    public async void CreateTask(string id, string title, bool done, string? pageId)
+    {
+        var ws = _wsId;
+        if (ws is null) return;
+        try
+        {
+            var made = await _session.CallAsync(c => c.CreateTaskWith(ws, new N.NewTaskInput(title, id, pageId, null, done)));
+            if (ws != _wsId) return;
+            _tasks = _tasks.Where(t => t.Id != made.Id).Append(made).ToArray();
+            Raise();
+        }
+        catch (Exception) { }
+    }
+
+    public async void DeleteTask(string id)
+    {
+        try
+        {
+            await _session.CallAsync(c => { c.DeleteTask(id); return 0; });
+            _tasks = _tasks.Where(t => t.Id != id).ToArray();
+            Raise();
+        }
+        catch (Exception) { }
+    }
+
     public NotePage? GetPage(string pageId)
     {
         var meta = _tree?.Pages.FirstOrDefault(p => p.Id == pageId);
@@ -354,7 +402,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         return boxes.Select(b =>
         {
             var content = info.Kind == N.PageKind.Canvas ? info.Content.FirstOrDefault(c => c.BoxId == b.Id) : info.Content.FirstOrDefault(c => c.BoxId is null);
-            return new CanvasBox(b.X, b.Y, b.W, b.Wide, mapper.Blocks(content?.Nodes ?? Array.Empty<N.ContentNode>()));
+            return new CanvasBox(b.X, b.Y, b.W, b.Wide, mapper.Blocks(content?.Nodes ?? Array.Empty<N.ContentNode>()), info.Kind == N.PageKind.Canvas ? "box:" + b.Id : "default");
         }).ToList();
     }
 
