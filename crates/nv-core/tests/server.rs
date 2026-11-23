@@ -1970,3 +1970,79 @@ fn locked_pages_against_a_running_server() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn ink_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let (email, pw) = (
+        format!("ink-{stamp}@example.com"),
+        "correct horse battery staple 1",
+    );
+    let a = Core::new(url.clone());
+    a.register("Ink".into(), email.clone(), pw.into()).unwrap();
+    let ws = a.workspaces().unwrap()[0].id.clone();
+    let t = a.tree(ws).unwrap();
+    let page = a
+        .create_page(t.sections[0].id.clone(), Some("Ink".into()))
+        .unwrap();
+    // A second sign-in of the same account.
+    let b = Core::new(url.clone());
+    b.sign_in(email, pw.into()).unwrap();
+
+    let (la, _ea) = open_live(&a, &page);
+    let (lb, _eb) = open_live(&b, &page);
+    let samples: Vec<f64> = (0..30)
+        .flat_map(|i| {
+            [
+                20.0 + i as f64 * 6.0,
+                60.0 + (i as f64 / 4.0).sin() * 20.0,
+                0.4 + i as f64 / 60.0,
+                1.2,
+                0.5,
+                100.0 + i as f64 * 5.0,
+            ]
+        })
+        .collect();
+    let drawn = la
+        .add_ink_stroke_from_samples(0, 0x1d4ed8ff, 2.5, true, true, samples)
+        .unwrap()
+        .unwrap();
+    wait_for("B to see the stroke", 10, || {
+        lb.ink_strokes().iter().any(|s| s.data == drawn.data)
+    });
+    wait_for("receipt", 10, || la.unsent_updates() == 0);
+    // Erase a piece from B; A sees the pieces.
+    let r = lb
+        .erase_ink(vec![80.0, 30.0, 80.0, 90.0], 6.0, true)
+        .unwrap();
+    assert_eq!(r.removed, std::slice::from_ref(&drawn.id));
+    assert!(!r.added.is_empty());
+    wait_for("A to see the cut", 10, || {
+        let ids: Vec<String> = la.ink_strokes().into_iter().map(|s| s.id).collect();
+        ids.len() == r.added.len() && r.added.iter().all(|i| ids.contains(i))
+    });
+    wait_for("receipt", 10, || lb.unsent_updates() == 0);
+    // The server's saved copy has the pieces (the same blobs), and they read through the core.
+    wait_for("the saved copy", 20, || {
+        let strokes = read_ink(a.page_document(page.clone()).unwrap()).unwrap();
+        strokes.len() == r.added.len() && strokes.iter().all(|s| s.readable)
+    });
+    let mut theirs: Vec<Vec<u8>> = read_ink(a.page_document(page.clone()).unwrap())
+        .unwrap()
+        .into_iter()
+        .map(|s| s.data)
+        .collect();
+    let mut mine: Vec<Vec<u8>> = la.ink_strokes().into_iter().map(|s| s.data).collect();
+    theirs.sort();
+    mine.sort();
+    assert_eq!(theirs, mine);
+    la.close();
+    lb.close();
+}

@@ -5,6 +5,10 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **Ink is done on `rewrite/core-ink`** (cut from `rewrite/native` add315c, not merged; **core
+  pauses**): read, add, erase, move, delete and lasso and eraser hit tests for a native page's
+  strokes, in the web's own format ("For apple: ink"). Still queued as below: Kotlin/Android and
+  the M7 server work.
 - **The whole `rewrite/core-tree` step is done** (cut from `rewrite/native` 501dcbf, not merged;
   **core pauses**): tree management (create, rename, recolour, move, duplicate and delete
   notebooks, sections and pages, the Trash; "For apple: tree management"), then **sharing**
@@ -27,6 +31,140 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For apple: ink (2026-11-22, `rewrite/core-ink`)
+
+All additions (new records, an `InkError`, an `InkStrokeBuilder` object, new `LivePage` methods
+and free functions; nothing renamed; `apps/apple` grepped for every new name). Each write is
+**one local edit** on the live page, like the box calls, so it goes out through the live doc and
+the offline queue and is kept in the store; a local call does not fire `onChange` for itself, so
+redraw after it. After `close()` the writes throw `InkError.Closed`; locked pages follow the
+existing rule (edits stay in memory, nothing is queued in the store).
+
+```swift
+// read
+page.inkStrokes() -> [InkStrokeInfo]                      // drawing order: z key, then id
+readInk(document: Data) throws -> [InkStrokeInfo]         // the same from a document (a version preview, the store)
+page.inkOutline(id:) -> [Float]                           // one stroke's path commands
+inkOutlineOps(data: Data) -> [Float]                      // path commands of any blob
+inkOutlineSvg(data: Data) -> String                       // SVG path d
+inkOutlineTriangles(data: Data) -> [Float]                // x, y per vertex, 3 per triangle
+// draw a stroke live, add it when the pen lifts
+InkStrokeBuilder(tool: UInt8, color: UInt32, width: Float, pressure: Bool, tilt: Bool)
+builder.push(x:y:pressure:altitude:azimuth:tMs:)          // t in ms (Double), any clock that only runs forwards
+builder.pushMany(samples: [Double])                       // coalesced samples, 6 numbers each
+builder.pointCount() -> UInt32
+builder.preview(predicted: [Float]) -> [Float]            // path commands of the stroke so far + predicted x, y, pressure
+page.addInkStroke(builder:) throws -> InkStrokeInfo?      // nil when it has no points; spends the builder
+page.addInkStrokeFromSamples(tool:color:width:pressure:tilt:samples: [Double]) throws -> InkStrokeInfo?
+// edit
+page.eraseInk(track: [Float], radius: Float, partial: Bool) throws -> InkEraseResult   // {removed, added}
+page.moveInkStrokes(ids: [String], dx: Float, dy: Float) throws -> [InkMovedStroke]    // {oldId, newId}
+page.deleteInkStrokes(ids: [String]) throws -> [String]                                 // the ids that were there
+// hit tests (read only)
+page.inkHitLasso(polygon: [Float], minFraction: Float) throws -> [String]
+page.inkHitPath(track: [Float], radius: Float) throws -> [String]
+page.inkHitPoint(x: Float, y: Float, radius: Float) throws -> [String]
+// enum InkError: .Invalid(message), .Closed
+```
+
+`InkStrokeInfo { id, readable, tool, color, width, z, flags, createdMs, pointCount, bounds:
+InkBounds?, points: [Float], data: Data }`; `InkBounds { minX, minY, maxX, maxY }`.
+
+- **Units and space.** Everything is **page points from the page origin, the same space as box
+  x and y** (the canvas surface; a box's own origin is not used). Stored to 1/8 point; widths
+  to 1/16. Colour is 0xRRGGBBAA as stored (a highlighter has its alpha in it; the web's is
+  0x59 = 0.35). Tool 0 is the pen, 1 the highlighter. `width` is the width at pressure 0.5 (the
+  web's choices: pen 1.5, 2.5, 4; highlighter 12, 18, 26). `flags`: bit 0 tilt recorded, bit 1
+  the pressure came from a device. Time is ms. Altitude and azimuth are radians (pi/2 and 0
+  without tilt).
+- **Flat arrays.** `points` is six floats per point: x, y, pressure (0 to 1), altitude,
+  azimuth, t (ms since the stroke began). `track`, `polygon` and `predicted` are flat
+  (x, y, ...; predicted is x, y, pressure). `samples` for the builder is `Double`, six per sample:
+  x, y, pressure, altitude, azimuth, t (the clock's ms: a `Double` keeps them exact).
+- **What is smoothed where.** Smoothing happens **once, at capture**, in the builder (nv-ink's
+  `StrokeBuilder`, as the web's): a one-euro filter on x and y (min cutoff 4 Hz, beta 0.04), points
+  less than half a point from the last kept one dropped (unless the pressure changed by more than
+  0.1), the last sample always kept. What is stored is those filtered points. **Rendering**
+  then fits a curve through the stored points (centripetal Catmull-Rom, sampled every 1.5
+  points) and gives each sample a radius from its pressure (pen: `width / 2 * (0.35 + 1.3 *
+  pressure)`; highlighter: even `width / 2`); the outline is the union of the capsules between
+  samples. Pressure is not filtered. Without `pressure: true` the stroke's pressure is a constant
+  0.5.
+- **How to draw.** Fill the **outline**, not the points: `inkOutline(id:)` (or
+  `inkOutlineOps(data:)` for a blob you hold) returns commands: `0 x y` move, `1 x y` line, `2
+  cx cy r` a whole circle (`arc(0, 2 pi)`), `3` close. Fill the whole path once with the
+  **nonzero** rule (overlaps are then painted once, so a translucent highlighter stays even).
+  Colour from `color`; the web draws near-black ink near-white in the dark theme (luminance
+  below 0.25 becomes 0xe6e6e6; `displayColor` in `src/ink/render.ts`), print uses the stored
+  colour. Highlighters are drawn **under** the text boxes, pens **over** them; within a layer in
+  `inkStrokes()` order (that order is already z then id). Cache the path per stroke id: strokes
+  never change (a move or erase makes new ids). For the stroke being drawn, call
+  `builder.preview(predicted:)` each frame (it re-fits the whole stroke, fine for a few
+  thousand points) and draw it on a live layer; `predicted` (UIKit's predicted touches) are
+  drawn but not kept.
+- **Adding.** Create a builder when the pencil touches down, `push` (or `pushMany` with the
+  coalesced touches) as samples arrive, and call `addInkStroke(builder:)` **once**, when it
+  lifts: that is the one edit that is sent. Drop the builder to cancel. The call picks the id (12
+  base-36 characters), the creation time (now) and the z key (one after the highest key among the
+  strokes on its layer: highlighters are a layer of their own), and returns the stored stroke.
+  `addInkStrokeFromSamples` does the same from a finished list.
+- **Erasing.** `eraseInk(track:radius:partial:)`: the web's eraser is a disc of radius **8**
+  points dragged along the finger or pencil path. `partial: false` (the web's "eraser") deletes
+  **every stroke whose ink the disc touches along the track**. `partial: true` (the web's "partial
+  eraser") cuts each touched stroke where the disc reaches its ink and adds what is left as
+  **new strokes with new ids** (same style, z and creation time; pieces of fewer than two points
+  are dropped), deleting the original. Both are one edit. The web collects a whole gesture and
+  writes it once when the pointer lifts (one undo step); do the same (pass the whole track at the
+  end, or call per segment: each call is an edit of its own). A single point is a tap. Show what
+  would go with `inkHitPath(track:radius:)` while dragging (same rule as the stroke eraser).
+- **Lasso, move, delete.** The web has **no lasso, move, resize or recolour yet** (PLAN_INK phase I5;
+  its select tool only picks boxes), so these are new, not a copy:
+  - `inkHitLasso(polygon:minFraction:)` selects strokes with **at least `minFraction` of their
+    stored points inside the polygon (even-odd rule), and at least one point**: the engine's
+    rule, whose wrapper defaults to **0.5** (use 0.5). The closing edge is implied (3 or more
+    vertices). Unreadable strokes are never selected. `inkHitPoint` is the tap test: any stroke
+    whose ink is within `radius` of the point (the exact outline, not the bounds).
+  - `moveInkStrokes(ids:dx:dy:)` shifts the stored points (quantised to 1/8 point again) and
+    writes them as **new ids** (old deleted, same z), in one edit; it returns the id pairs so
+    the selection can follow. Missing and unreadable ids are skipped. Call it **once when the
+    drag ends**; move the cached paths yourself during the drag.
+  - `deleteInkStrokes(ids:)` deletes by id and returns the ones that were there (ids someone
+    else deleted already are skipped, as on the web).
+  - Recolour and resize are **not built**: the web offers neither. A recolour would be one
+    more delete-and-add with a different colour.
+- **Unknown and newer data.** `inkStrokes()` lists **every** blob in the page's `ink` map,
+  including ones this build can't decode (a newer format version, a damaged blob):
+  `readable: false`, `data` holds the exact bytes, header fields are filled when the header
+  decodes, `points` is empty and `bounds` nil. Draw nothing for them; keep them. They are
+  never rewritten: erase, move and the lasso skip them, and only an explicit
+  `deleteInkStrokes` removes one. Values in `ink` that are not byte blobs (or are empty or over
+  512 KB) are not listed, as on the web (`pageInk`), and are left in the map. A readable stroke
+  that is moved or cut is re-encoded by this build (flags and tilt kept, the box recomputed).
+- **Performance.** One call per stroke end, per erase gesture end, per drag end, never per
+  point. `inkStrokes()` decodes every stroke (points, flat) each call: read it when the page
+  opens and after remote changes, then keep a dictionary by id; a stroke that appears or
+  disappears is a new id. The hit tests decode the page too, so run them on a drag's moves at
+  most every frame, with a bounds prefilter on your side if you have thousands of strokes.
+  Encoding is about 5 bytes a point: a long stroke is a few KB.
+- **Format and checking.** The blob is nv-ink's (`crates/nv-ink/src/blob.rs`, version 1); the
+  `ink` root map holds id -> bytes (`Y.Map`, values `Uint8Array` on the web), so the web reads
+  strokes from here and the other way round with no conversion. `scripts/corpus/ink-ops.ts` runs
+  today's web ink code (the engine WASM's builder, `erase`, `hitPath`, `hitLasso`, `encode`;
+  `commitStroke`, `commitErase`, `EraseSession`, `zAfter`, `topZ`) on the `settings-and-ink`
+  page: a pen arc, a highlighter and a red line added, a partial erase over two of them, a
+  stroke erase of the third, a move (the engine's decode, shift and encode: the web has no
+  move) and three lasso queries, and commits the blobs after every step in
+  `tests/corpus/ink-ops/`. `crates/nv-core/tests/ink_ops.rs` makes the same edits through the Rust
+  functions and matches **every blob byte for byte** after every step, and the lasso picks.
+  Copied rather than imported: the layer rule of `InkRenderer.zKeys` (`render.ts`) and the
+  loop in `eraseGesture` (`InkSurface.tsx`), both in React-side files; the script says so.
+  `crates/nv-core/tests/ink.rs` checks add, erase, move and delete through two copies of a
+  `LivePage` on the stand-in server (they converge, each reaches the server, an unreadable
+  stroke survives), and `ink_against_a_running_server` in `server.rs` checks a stroke drawn on
+  one sign-in, cut from another, and the server's saved copy (real server, port 4487, passed).
+  **Not run:** the web app drawing a stroke the Rust core wrote (byte-identical to the web's own
+  blobs, so it should); a pencil on a device; the speed of a page with thousands of strokes.
 
 ## For apple: sharing (2026-11-22, `rewrite/core-tree`)
 
@@ -1098,6 +1236,13 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
 
 ## Done
 
+- 2026-11-22, ink (`rewrite/core-ink`): nv-model `ink.rs` (the `ink` map's one-transaction
+  writes, opaque blobs), nv-core `ink.rs` (strokes read with points and bounds, outline as path
+  commands, SVG and triangles, `InkStrokeBuilder` with the web's capture smoothing, add, erase
+  whole and partial, move, delete, lasso, path and point hit tests on `LivePage`; z keys and ids
+  as the web's); `nv-ink` itself unchanged (the web's WASM is untouched). Corpus:
+  `scripts/corpus/ink-ops.ts` and `tests/corpus/ink-ops/`. Tests: `crates/nv-core/tests/{ink_ops,ink}.rs`,
+  unit tests in `ink.rs` and `nv-model/src/ink.rs`, `ink_against_a_running_server` (port 4487, passed).
 - 2026-11-22, sharing, version history and locked-page unlock (`rewrite/core-tree`): nv-api
   `share.rs`, `versions.rs`, `locks.rs` (members and invites, notebook and page shares, shared
   pages, versions and the restore snapshot, locked-notes calls) with their types, `Request`'s

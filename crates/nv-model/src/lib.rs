@@ -4,6 +4,7 @@
 //! on every case of the page-format corpus (`tests/corpus/`, checked by `tests/corpus.rs`).
 
 pub mod boxes;
+pub mod ink;
 pub mod js;
 pub mod lists;
 pub mod markdown;

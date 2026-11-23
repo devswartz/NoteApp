@@ -17,6 +17,7 @@ mod boxes;
 mod client;
 mod content;
 mod editor_session;
+pub mod ink;
 mod locked;
 mod quickadd;
 mod recurrence;
@@ -30,6 +31,10 @@ pub use boxes::*;
 pub use client::*;
 pub use content::*;
 pub use editor_session::*;
+pub use ink::{
+    ink_outline_ops, ink_outline_svg, ink_outline_triangles, read_ink, InkBounds, InkEraseResult,
+    InkError, InkMovedStroke, InkStrokeBuilder, InkStrokeInfo,
+};
 pub use locked::*;
 pub use quickadd::{QuickAddKind, QuickAddResult, QuickAddToken};
 pub use search::*;
