@@ -25,3 +25,5 @@ Tree edits, sharing, version history, the Trash and locked pages call the core f
 The Mac build also goes to TestFlight (macOS) with the iPad/iPhone build, as the same 1.99.x version and build number.
 
 Pencil ink on iPad pages: pen tools are in the ribbon's Draw button.
+
+Mac parity: ink is shown read-only on Mac pages; right-click tree menus, Esc closes dialogs, Cmd-F opens the search.
