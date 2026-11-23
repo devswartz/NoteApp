@@ -103,8 +103,8 @@ internal fun ContentNode.bool(name: String): Boolean? = (attr(name) as? AttrValu
 /** CSS margins (top, bottom) of a block at 16 px, as `BoxTextRenderer.margins`. */
 internal fun margins(n: ContentNode, body: Float): Pair<Float, Float> = when (n.kind) {
     NodeKind.Heading -> when (n.num("level")?.toInt() ?: 1) {
-        1 -> 33.6f to (if (body > 16f) 3.9f else 8.4f)
-        2 -> 23.76f to (if (body > 16f) 0f else 5.4f)
+        1 -> 33.6f to 8.4f
+        2 -> 23.76f to 5.4f
         else -> 17.92f to 3.58f
     }
     NodeKind.BulletList, NodeKind.OrderedList, NodeKind.TaskList -> 4.8f to 4.8f
@@ -125,9 +125,13 @@ fun BlockList(
 ) {
     Column(modifier) {
         var prevBottom = 0f
+        var prevTable = false
         for (n in nodes) {
             val (top, bottom) = margins(n, env.body)
-            val gap = maxOf(prevBottom, top)
+            // A table sits in a wrapper on the web, so its margins do not collapse with its neighbours'.
+            val isTable = n.kind == NodeKind.Table
+            val gap = if (isTable || prevTable) prevBottom + top else maxOf(prevBottom, top)
+            prevTable = isTable
             if (gap > 0f) Spacer(Modifier.height(gap.dp))
             Block(n, env, ctx)
             prevBottom = bottom
@@ -348,7 +352,7 @@ private fun Toggle(n: ContentNode, env: PageEnv, ctx: BlockCtx) {
                 path.close()
                 drawPath(path, p.textMuted, style = Fill)
             }
-            if (summary != null) InlineText(summary.children, env, ctx, env.body, 500, 1.7f, modifier = Modifier.weight(1f))
+            if (summary != null) InlineText(summary.children, env, ctx, env.body, 500, 1.7f, modifier = Modifier.weight(1f).padding(top = 2.dp, bottom = 4.dp))
         }
         if (open && content != null) BlockList(content.children, env, ctx, Modifier.padding(start = 26.dp))
     }
@@ -619,13 +623,13 @@ private fun TaskLine(n: ContentNode, env: PageEnv, ctx: BlockCtx) {
                 n.children, env, ctx,
                 Modifier
                     .drawBehind {
-                        val x = 27.dp.toPx()
+                        val x = 15.dp.toPx()
                         drawLine(
                             guide, Offset(x, -4.dp.toPx()), Offset(x, size.height + 4.dp.toPx()), strokeWidth = 2.dp.toPx(),
                             pathEffect = if (done) PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())) else null,
                         )
                     }
-                    .padding(start = 38.dp),
+                    .padding(start = 20.dp),
             )
         }
     }
@@ -641,7 +645,7 @@ private fun MissingTask(env: PageEnv) {
                 Spacer(Modifier.width(8.dp))
                 WText("This task was deleted or is not visible to you.", 12.5f, p.textMuted, lineHeight = 1.3f, maxLines = 2)
             }
-            WText("Remove from page", 13f, p.text2, Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp), weight = 500, lineHeight = 1.3f)
+            WText("Remove from page", 13f, p.text2, Modifier.padding(start = 14.dp, top = 16.5.dp, bottom = 13.5.dp), weight = 500, lineHeight = 1.3f)
         }
     } else {
         Row(Modifier.height(40.dp), verticalAlignment = Alignment.CenterVertically) {

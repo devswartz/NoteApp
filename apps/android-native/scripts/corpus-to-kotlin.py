@@ -68,7 +68,10 @@ def node(n, frag, path, markers):
         return None
     tag = n["type"]
     kind = ("NodeKind." + KINDS[tag]) if tag in KINDS else "NodeKind.Unknown(%s)" % q(tag)
-    attrs = ", ".join("a(%s, %s)" % (q(k), attr_value(v)) for k, v in sorted(n.get("attrs", {}).items()))
+    at = dict(n.get("attrs", {}))
+    if tag == "mention" and "id" in at:  # seed.ts: u1 is the demo user, any other id Sam
+        at["id"] = "demo" if at["id"] == "u1" else "sam"
+    attrs = ", ".join("a(%s, %s)" % (q(k), attr_value(v)) for k, v in sorted(at.items()))
     kids = []
     for i, c in enumerate(n.get("content", [])):
         k = node(c, frag, path + [i], markers)

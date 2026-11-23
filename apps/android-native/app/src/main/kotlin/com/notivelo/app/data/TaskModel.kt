@@ -88,7 +88,12 @@ class TaskBuckets(
     }
 
     /** The count beside a view in the sidebar (All has none). */
-    fun count(l: TaskList): Int = if (l == TaskList.All) 0 else list(l).size
+    fun count(l: TaskList): Int = when (l) {
+        TaskList.All -> 0
+        // The sidebar counts what is still ahead (tomorrow to two weeks), not what is overdue or due today.
+        TaskList.Upcoming -> mine.count { t -> Due.days(t.dueDate, today)?.let { it in 1..14 } ?: false }
+        else -> list(l).size
+    }
 
     val doneToday: Int
         get() = tasks.count { t ->

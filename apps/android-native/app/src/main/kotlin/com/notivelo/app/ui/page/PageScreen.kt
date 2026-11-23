@@ -399,7 +399,7 @@ private fun PhoneCanvas(
         Spacer(Modifier.height((22f + 6f - PageLayout.BOX_PAD_Y + PageLayout.phoneTopGap(stacked.size)).dp))
         for (b in stacked) {
             BoxView(byId[b.id], env, Modifier.padding(horizontal = 9.dp).fillMaxWidth())
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(3.5.dp))
             Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(p.border))
             Spacer(Modifier.height(5.dp))
         }

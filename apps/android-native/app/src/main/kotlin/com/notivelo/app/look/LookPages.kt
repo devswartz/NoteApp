@@ -30,7 +30,7 @@ internal object LookPages {
             el(NodeKind.Image, listOf(a("alt", "A picture"), a("src", "/uploads/0123456789abcdef0123456789abcdef.png")), listOf(), listOf()),
             el(NodeKind.Image, listOf(a("src", "https://example.com/i.jpg")), listOf(), listOf()),
             el(NodeKind.FileAttachment, listOf(a("mime", "application/pdf"), a("name", "report.pdf"), a("size", 12345.0), a("url", "/files/report.pdf")), listOf(), listOf()),
-            el(NodeKind.Paragraph, listOf(), listOf(txt(r("Hi ")), el(NodeKind.Mention, listOf(a("id", "u1"), a("label", "Devon")), listOf(), listOf()), txt(r(" and ")), el(NodeKind.Mention, listOf(a("id", "u2"), a("label", "")), listOf(), listOf()), txt(r(", see ")), el(NodeKind.PageLink, listOf(a("pageId", "page-2")), listOf(), listOf()), txt(r("."))), listOf()),
+            el(NodeKind.Paragraph, listOf(), listOf(txt(r("Hi ")), el(NodeKind.Mention, listOf(a("id", "demo"), a("label", "Devon")), listOf(), listOf()), txt(r(" and ")), el(NodeKind.Mention, listOf(a("id", "sam"), a("label", "")), listOf(), listOf()), txt(r(", see ")), el(NodeKind.PageLink, listOf(a("pageId", "page-2")), listOf(), listOf()), txt(r("."))), listOf()),
             el(NodeKind.Heading, listOf(a("level", 1.0)), listOf(txt(r("   "))), listOf())))),
         color = "none", rules = "none",
     )

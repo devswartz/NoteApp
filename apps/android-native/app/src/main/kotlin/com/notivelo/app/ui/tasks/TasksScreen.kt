@@ -77,9 +77,9 @@ fun TasksScreen(state: AppState, actions: ShellActions, phone: Boolean, modifier
     Column(
         modifier
             .verticalScroll(rememberScrollState())
-            .padding(top = if (phone) 20.dp else 36.dp, start = if (phone) 16.dp else 40.dp, end = if (phone) 16.dp else 40.dp, bottom = if (phone) 96.dp else 120.dp),
+            .padding(top = if (phone) 20.dp else 42.dp, start = if (phone) 16.dp else 40.dp, end = if (phone) 16.dp else 40.dp, bottom = if (phone) 96.dp else 120.dp),
     ) {
-        WText(list.title, if (phone) 24f else 26f, p.text, Modifier.height(if (phone) 38.dp else 34.dp), weight = 700, lineHeight = 1.3f, tracking = -0.02f)
+        WText(list.title, if (phone) 24f else 26f, p.text, Modifier.height(if (phone) 38.dp else 34.dp), weight = 700, lineHeight = if (phone) 38f / 24f else 34f / 26f, tracking = -0.02f)
         WText(list.subtitle, 14f, p.textMuted, Modifier.padding(top = 4.dp).height(21.dp), lineHeight = 1.5f, maxLines = 2)
         if (phone) {
             AddFilter(Modifier.padding(top = 16.dp)) { onNotYet("Filters") }
@@ -229,7 +229,7 @@ private fun StatsCard(done: Int, left: Int, modifier: Modifier) {
 private fun Stat(n: String, label: String) {
     val p = pal()
     Column {
-        WText(n, 22f, p.text, weight = 700, lineHeight = 1.25f)
+        WText(n, 22f, p.text, weight = 700, lineHeight = 1.45f)
         WText(label, 12f, p.textMuted, lineHeight = 1.3f)
     }
 }
