@@ -34,6 +34,7 @@ internal sealed class SettingsView : ThemedControl
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         AutomationProperties.SetAutomationId(root, "settings-root");
+        AutomationProperties.SetName(root, "Settings");
 
         var nav = new StackPanel { Spacing = 2 };
         nav.Children.Add(Ui.Text("Settings", 20, B("Text"), 700, lineHeight: 28).With(t => t.Margin = new Thickness(0, 0, 0, 14)));

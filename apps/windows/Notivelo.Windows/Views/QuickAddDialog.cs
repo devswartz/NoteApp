@@ -88,7 +88,8 @@ internal sealed class QuickAddDialog
         panel.Children.Add(footer);
         var card = Dialogs.Card(_o, 560, panel);
         card.Padding = new Thickness(16, 12, 16, 12);
-        AutomationProperties.SetAutomationId(card, "quickadd-card");
+        AutomationProperties.SetAutomationId(panel, "quickadd-card");
+        AutomationProperties.SetName(panel, "Quick add");
         _layer = _o.Show(card, HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, 100, 0, 0));
 
         cancel.Click += (_, _) => _layer?.Close();

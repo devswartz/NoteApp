@@ -117,7 +117,8 @@ internal sealed partial class BoxTextView
         {
             Padding = new Thickness(3), CornerRadius = new CornerRadius(10), Background = C2("BgElevated"), BorderBrush = C2("Border"), BorderThickness = new Thickness(1), Child = row,
         };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(card, "floating-toolbar");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "floating-toolbar");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, "Formatting");
         try { card.Shadow = new ThemeShadow(); card.Translation = new System.Numerics.Vector3(0, 0, 24); } catch { }
         return card;
     }

@@ -101,7 +101,7 @@ internal static class PopupMenu
             Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(6),
             MinWidth = Math.Min(220, width), Child = list,
         };
-        if (id is not null) AutomationProperties.SetAutomationId(card, id);
+        if (id is not null) { AutomationProperties.SetAutomationId(list, id); AutomationProperties.SetName(list, id); }   // on the StackPanel: a Border has no UIA peer
         var height = items.Sum(i => i.Height) + 14;
         card.Width = Math.Max(card.MinWidth, width);
         var hw = host.XamlRoot.Size.Width; var hh = host.XamlRoot.Size.Height;
