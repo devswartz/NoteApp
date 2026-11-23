@@ -314,11 +314,11 @@ private fun EmptySection(section: Section, onNotYet: (String) -> Unit) {
         verticalArrangement = Arrangement.Center,
     ) {
         LIcon(Ic.fileText, 28.dp, p.textMuted)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(19.dp))
         WText(section.name, 22f, p.text, weight = 700, lineHeight = 1.3f, tracking = -0.02f)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(23.dp))
         WText("This section has no pages yet.", 13f, p.textMuted, lineHeight = 1.5f)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(21.dp))
         Row(
             Modifier
                 .height(32.dp)
