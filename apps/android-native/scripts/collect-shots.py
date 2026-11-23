@@ -17,8 +17,10 @@ VIEWPORTS = {
     "TabletPortraitShots": "ipad-portrait",
     "TabletLandscapeShots": "ipad-landscape",
 }
-# `sidebar` reference width in CSS px (rail 64 + sidebar 217 + 1)
+# `sidebar` reference width in CSS px (rail 64 + sidebar 217 + 1) and the viewports' heights in CSS px
+# (Paparazzi caps a snapshot at 1000 px high, so crop in proportion).
 SIDEBAR_CROP = 282
+HEIGHT = {"ipad-portrait": 1180, "ipad-landscape": 820}
 
 
 def main():
@@ -33,7 +35,7 @@ def main():
         state = m.group(2).replace("_", "-").lower()
         img = Image.open(os.path.join(src, name)).convert("RGB")
         if state == "sidebar" and viewport != "iphone":
-            img = img.crop((0, 0, SIDEBAR_CROP, img.height))
+            img = img.crop((0, 0, round(SIDEBAR_CROP * img.height / HEIGHT[viewport]), img.height))
         dest = os.path.join(out, viewport)
         os.makedirs(dest, exist_ok=True)
         img.save(os.path.join(dest, state + ".png"))

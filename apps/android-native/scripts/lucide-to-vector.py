@@ -53,13 +53,58 @@ def rect(x, y, w, h, rx, ry):
             f"v{fmt(-(h - 2 * ry))}a{fmt(rx)},{fmt(ry)} 0 0 1 {fmt(rx)},{fmt(-ry)}z")
 
 
+NUM = re.compile(r"[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
+ARGS = {"m": 2, "l": 2, "h": 1, "v": 1, "c": 6, "s": 4, "q": 4, "t": 2, "a": 7, "z": 0}
+SEP = " ,\t\r\n"
+
+
+def normalize(d):
+    """Path data with every command written out and arc flags separated: Android's parser does not read
+    glued flags ("a2 2 0 0022 17") or repeated arcs the way SVG does."""
+    out = []
+    i = 0
+    n = len(d)
+    while i < n:
+        cmd = d[i]
+        i += 1
+        if cmd in SEP:
+            continue
+        k = ARGS[cmd.lower()]
+        if k == 0:
+            out.append(cmd)
+            continue
+        first = True
+        while True:
+            vals = []
+            for j in range(k):
+                while i < n and d[i] in SEP:
+                    i += 1
+                if cmd.lower() == "a" and j in (3, 4):
+                    vals.append(d[i])
+                    i += 1
+                else:
+                    m = NUM.match(d, i)
+                    if not m:
+                        raise ValueError("bad path data: " + d)
+                    vals.append(m.group(0))
+                    i = m.end()
+            c = cmd if first else {"m": "l", "M": "L"}.get(cmd, cmd)
+            out.append(c + " ".join(vals))
+            first = False
+            while i < n and d[i] in SEP:
+                i += 1
+            if i >= n or d[i].isalpha():
+                break
+    return "".join(out)
+
+
 def paths(svg_file):
     out = []
     for el in ET.parse(svg_file).getroot().iter():
         tag = el.tag.replace(NS, "")
         a = el.attrib
         if tag == "path":
-            out.append(a["d"])
+            out.append(normalize(a["d"]))
         elif tag == "circle":
             out.append(circle(num(a.get("cx")), num(a.get("cy")), num(a["r"]), num(a["r"])))
         elif tag == "ellipse":

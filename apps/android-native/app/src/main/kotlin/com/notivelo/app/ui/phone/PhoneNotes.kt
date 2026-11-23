@@ -42,8 +42,9 @@ import com.notivelo.core.Section
 @Composable
 fun NotesContent(state: AppState, index: TreeIndex?, actions: ShellActions, onNotYet: (String) -> Unit) {
     val page = index?.page(state.pageId)
-    val section = index?.section(state.sectionId)
     val notebook = index?.notebook(state.phoneNotebookId)
+    // The drill-down is phoneNotebookId; sectionId alone (the drawer's highlight) leaves the list behind the drawer.
+    val section = if (notebook != null) index?.section(state.sectionId) else null
     when {
         page != null -> PagePlaceholder(page, Modifier.fillMaxSize())
         section != null && index != null -> SectionScreen(index, section, state, actions, onNotYet)

@@ -202,7 +202,7 @@ class AppViewModel(
                 sectionId = id,
                 pageId = null,
                 notebookId = section?.notebookId ?: s.notebookId,
-                phoneNotebookId = if (s.phoneNotebookId != null) section?.notebookId ?: s.phoneNotebookId else null,
+                phoneNotebookId = section?.notebookId ?: s.phoneNotebookId,
             )
         }
     }
@@ -216,6 +216,7 @@ class AppViewModel(
                 pageId = id,
                 sectionId = page?.sectionId ?: s.sectionId,
                 notebookId = section?.notebookId ?: s.notebookId,
+                phoneNotebookId = section?.notebookId ?: s.phoneNotebookId,
             )
         }
     }

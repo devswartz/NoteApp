@@ -122,7 +122,7 @@ fun SignInScreen(
                     WText("Notivelo", 17f, p.text, weight = 700)
                 }
                 WText(
-                    "Welcome back", 22f, p.text, Modifier.padding(top = 20.dp, bottom = 4.dp),
+                    "Welcome back", 22f, p.text, Modifier.padding(top = if (phone) 23.dp else 20.dp, bottom = if (phone) 17.dp else 4.dp),
                     weight = 700, lineHeight = 1.3f, tracking = -0.02f,
                 )
                 WText(
@@ -168,6 +168,7 @@ fun SignInScreen(
                     "Privacy · Terms · Support", 12.5f * k, p.textMuted,
                     Modifier.fillMaxWidth().padding(top = 14.dp), align = TextAlign.Center,
                 )
+                if (phone) androidx.compose.foundation.layout.Spacer(Modifier.height(14.dp))
             }
         }
     }

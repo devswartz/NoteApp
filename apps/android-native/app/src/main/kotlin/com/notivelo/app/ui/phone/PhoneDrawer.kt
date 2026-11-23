@@ -73,11 +73,12 @@ fun PhoneDrawer(
     ) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).statusBarsPadding()) {
             WorkspaceSwitcher(state, actions)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.5.dp))
             if (notebook == null || index == null) {
                 NoNotebooks(onNotYet)
             } else {
                 NotebookHead(state, index, notebook, actions, onNotYet)
+                Spacer(Modifier.height(5.dp))
                 RecentHeading()
                 Spacer(Modifier.height(20.dp))
                 SectionsHeading(onNotYet)

@@ -107,7 +107,7 @@ object LookData {
         "hybrid-sign-in" -> LookScene(signedOut, ThemeMode.Hybrid)
         // Phone
         "notes-home" -> LookScene(signedIn("demo-team", demoTeamTree))
-        "sidebar-drawer" -> LookScene(signedIn("demo-team", demoTeamTree) { copy(notebookId = "product") }, drawerOpen = true)
+        "sidebar-drawer" -> LookScene(signedIn("demo-team", demoTeamTree) { copy(notebookId = "product", sectionId = "roadmap") }, drawerOpen = true)
         "dark-sidebar-drawer" ->
             LookScene(signedIn("demo-team", demoTeamTree) { copy(sectionId = "corpus", phoneNotebookId = "look") }, ThemeMode.Dark, drawerOpen = true)
         "hybrid-sidebar-drawer" ->

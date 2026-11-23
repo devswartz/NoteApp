@@ -64,7 +64,7 @@ fun PhoneShell(
                 TopBar(
                     title = state.workspace?.name ?: "Notes",
                     subtitled = inSection,
-                    back = onPage || inSection || state.phoneNotebookId != null,
+                    back = onPage,
                     onMenu = { onDrawerChange(true) },
                     onBack = actions::back,
                     onNotYet = notYet,

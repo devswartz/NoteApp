@@ -27,14 +27,14 @@
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
-        android:pathData="m3 17 2 2 4-4"
+        android:pathData="m3 17l2 2l4 -4"
         android:fillColor="#00000000"
         android:strokeColor="#FF000000"
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
-        android:pathData="m3 7 2 2 4-4"
+        android:pathData="m3 7l2 2l4 -4"
         android:fillColor="#00000000"
         android:strokeColor="#FF000000"
         android:strokeWidth="2"

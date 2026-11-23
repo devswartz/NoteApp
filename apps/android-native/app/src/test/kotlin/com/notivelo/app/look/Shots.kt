@@ -3,6 +3,7 @@ package com.notivelo.app.look
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.resources.Density
+import com.android.resources.ScreenOrientation
 import org.junit.Rule
 import org.junit.Test
 
@@ -27,8 +28,10 @@ private val phone = DeviceConfig.PIXEL_5.copy(
     screenWidth = 780, screenHeight = 1688, xdpi = 320, ydpi = 320, density = Density.XHIGH, softButtons = false,
 )
 
-private fun tablet(w: Int, h: Int) = DeviceConfig.PIXEL_5.copy(
-    screenWidth = w, screenHeight = h, xdpi = 160, ydpi = 160, density = Density.MEDIUM, softButtons = false,
+/** Portrait values; [landscape] turns the device (Paparazzi swaps the two), so 820x1180 becomes 1180x820. */
+private fun tablet(landscape: Boolean) = DeviceConfig.PIXEL_5.copy(
+    screenWidth = 820, screenHeight = 1180, xdpi = 160, ydpi = 160, density = Density.MEDIUM, softButtons = false,
+    orientation = if (landscape) ScreenOrientation.LANDSCAPE else ScreenOrientation.PORTRAIT,
 )
 
 class PhoneShots : ShotsBase(phone) {
@@ -44,7 +47,7 @@ class PhoneShots : ShotsBase(phone) {
     @Test fun empty_section() = shot("empty-section")
 }
 
-class TabletPortraitShots : ShotsBase(tablet(820, 1180)) {
+class TabletPortraitShots : ShotsBase(tablet(false)) {
     @Test fun sign_in() = shot("sign-in")
     @Test fun empty_no_page() = shot("empty-no-page")
     @Test fun empty_section() = shot("empty-section")
@@ -52,7 +55,7 @@ class TabletPortraitShots : ShotsBase(tablet(820, 1180)) {
     @Test fun sidebar() = shot("sidebar")
 }
 
-class TabletLandscapeShots : ShotsBase(tablet(1180, 820)) {
+class TabletLandscapeShots : ShotsBase(tablet(true)) {
     @Test fun sign_in() = shot("sign-in")
     @Test fun dark_sign_in() = shot("dark-sign-in")
     @Test fun hybrid_sign_in() = shot("hybrid-sign-in")
