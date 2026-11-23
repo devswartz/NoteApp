@@ -56,3 +56,9 @@ editor stores it. Add a case when the editor gains a block, mark or attribute.
   the `fragments` again, `ink` (valid stroke ids) and `inkKeys` (every key left in `ink`).
 
 Files here are compared byte for byte (`.gitattributes`: no line-ending conversion).
+
+`ink-ops/`: the `settings-and-ink` page after today's web ink code adds three strokes, erases
+(partial and whole), moves them and lasso-tests them (`node --import tsx scripts/corpus/ink-ops.ts`;
+it needs the committed WASM in `src/ink/generated`). `expected.json` lists every blob in the `ink` map
+after each step (base64, sorted: stroke ids are random). Checked byte for byte by
+`crates/nv-core/tests/ink_ops.rs`.
