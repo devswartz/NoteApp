@@ -71,6 +71,15 @@ jobs:
             echo "- \`$(basename "$(dirname "$f")")\`: $(wc -c < "$f") bytes" >> "$GITHUB_STEP_SUMMARY"
           done
 
+      - name: The JNI entry point is exported (the platform-verifier init)
+        run: |
+          NM=$(ls "$ANDROID_NDK_LATEST_HOME"/toolchains/llvm/prebuilt/*/bin/llvm-nm | head -1)
+          for f in target/android/NotiveloCore/src/main/jniLibs/*/libnv_core.so; do
+            "$NM" -D --defined-only "$f" | grep -q Java_com_notivelo_core_NotiveloCore_initAndroid
+            echo "$f exports Java_com_notivelo_core_NotiveloCore_initAndroid"
+          done
+          test "$(ls target/android/NotiveloCore/src/main/jniLibs/*/ | grep -c libnv_ink)" = 0
+
       - name: Assemble the .aar
         working-directory: target/android/NotiveloCore
         run: |

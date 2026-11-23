@@ -47,6 +47,9 @@ for a in "${ABIS[@]}"; do NDK_ARGS+=(-t "$a"); done
 cargo ndk "${NDK_ARGS[@]}" --platform "$API" -o "$OUT/src/main/jniLibs" \
   build -p nv-core --lib --profile "$PROFILE" --locked
 
+# cargo-ndk also copies the other cdylib in the build (nv-ink, the web engine's WASM crate): not needed, nv-core links it in.
+rm -f "$OUT"/src/main/jniLibs/*/libnv_ink.so
+
 # Library mode reads the exported API from a built library (any ABI's: the API is the same).
 # The generator is a host binary: build it without cargo-ndk's environment.
 cargo run -p nv-core --features bindgen --bin uniffi-bindgen --locked -- \

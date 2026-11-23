@@ -5,6 +5,10 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **The Android core is done on `rewrite/core-android`** (cut from `rewrite/native` c4a599d, not
+  merged; **core pauses**): `libnv_core.so` for arm64-v8a, armeabi-v7a and x86_64 (API 24),
+  uniffi Kotlin bindings, the platform verifier's JNI init, a Gradle library module with an `.aar`,
+  and a JVM smoke test; see "For android". Still queued: the M7 server work (needs Devon's OK).
 - **View runs, active marks, atoms (R1–R3) and ink undo are done on `rewrite/core-viewruns`**
   (cut from `rewrite/native` 6f396b8, not merged; **core pauses**): the Windows text view's gating
   requests R1–R3 (WINDOWS-TEXT-VIEW.md section 11), in `nv-editor` and `EditorSession`, so Swift
@@ -40,6 +44,113 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For android (2026-11-23, `rewrite/core-android`)
+
+The core builds for Android: `libnv_core.so` for three ABIs, uniffi's own Kotlin bindings, and a
+Gradle library module that makes an `.aar`. Built by `crates/nv-core/build-android.sh`
+(Linux/macOS with the NDK; CI: `.github/workflows/android-core.yml`, artifact `NotiveloCoreAndroid`).
+
+**Route and versions.** uniffi 0.32.2's own Kotlin generator (library mode, the repo's
+`uniffi-bindgen` bin: `cargo run -p nv-core --features bindgen --bin uniffi-bindgen -- generate
+--library <libnv_core.so> --language kotlin --config crates/nv-core/kotlin/uniffi.toml`), package
+`com.notivelo.core`, library name `nv_core`. Native libraries by `cargo-ndk` (4.x, NDK from the
+runner's `$ANDROID_NDK_LATEST_HOME`), `ffi` profile (release, panics unwind), 16 KB page alignment
+(`max-page-size=16384`). **ABIs:** `arm64-v8a`, `armeabi-v7a`, `x86_64` (x86_64 is for
+emulators). **Minimum API 24** (Android 7.0): nothing needed more; the platform verifier's
+revocation checks also need 24. TLS stays on `ring` (no aws-lc, no cmake): `ring` and the bundled
+SQLite compile with the NDK's clang, which `cargo-ndk` sets as `CC`. No other platform's build
+changed (the Android-only code and its two dependencies, `jni` 0.22 and
+`rustls-platform-verifier`, are behind `cfg(target_os = "android")`).
+
+**Sizes** (stripped, as built in CI): `arm64-v8a` 9,068,664 bytes, `armeabi-v7a` 6,601,628,
+`x86_64` 10,175,016 (a Play download is compressed, roughly a third of that). Stripping is
+`llvm-strip --strip-unneeded` after the bindings are generated, because the generator reads its
+metadata from the library's symbols.
+
+**Using it from an app (Kotlin, Gradle).** Take the artifact (or run the script) and either:
+
+- include the folder as a module: in `settings.gradle.kts`
+  `include(":NotiveloCore"); project(":NotiveloCore").projectDir = file("path/to/NotiveloCore")`,
+  then `implementation(project(":NotiveloCore"))`; or
+- build the `.aar` there (`gradle assembleRelease`, output `build/outputs/aar/`; CI does this and
+  the artifact has it as `aar/NotiveloCore.aar`) and add it as a file dependency. An `.aar`
+  carries no Maven metadata, so then also add the dependencies below by hand.
+
+The module's `build.gradle.kts` declares what the bindings need: `net.java.dev.jna:jna:5.17.0@aar`
+(uniffi's Kotlin calls the library through JNA; the `@aar` carries JNA's own native stubs),
+`androidx.annotation` and `org.rustls:rustls-platform-verifier:<ver>` (below). The app's
+repositories need Google, Maven Central and
+`https://github.com/rustls/rustls-platform-verifier/raw/maven-archive/android-release-support/maven/`
+(see the module's `settings.gradle.kts`); the verifier's version must equal the
+`rustls-platform-verifier-android` crate's version in `Cargo.lock` (0.2.0 today; the script writes
+it to the module's `gradle.properties`). The libraries sit in `src/main/jniLibs/<abi>/`, so Gradle
+packages them; `abiFilters` can drop ABIs. **R8/ProGuard:** `consumer-rules.pro` ships with the
+module and is applied to the app automatically: it keeps `com.sun.jna.**`, classes extending
+`com.sun.jna.*`, the generated `com.notivelo.core.**`, and the verifier's
+`org.rustls.platformverifier.**` (called from Rust through JNI, so it looks dead to R8). With an
+`.aar` as a file dependency, copy those rules into the app's own file.
+
+**Kotlin API names.** `coreVersion()`, `readPage(bytes)`, `Core(url)`, `Core.withStore(url, path)`
+and so on, as in Swift with Kotlin spellings: unit-only enums are `enum class` (`PageKind.CANVAS`),
+enums with data are sealed classes (`Mark.Bold`, `LiveStatus.Ended`), unsigned ints are
+`UInt`/`ULong`, errors are `CoreException.SignedOut` and the like (subclasses of `Exception`). Two
+renames, because the generated code would not compile otherwise (set in `uniffi.toml`, Rust names
+unchanged): the `message` field of error variants (`CoreError.Network`, `CoreError.Server`,
+`CoreError.InvalidPage`, `EditorError.InvalidPage`/`InvalidArgs`, `BoxError.Invalid`,
+`InkError.Invalid`) is **`details`** in Kotlin (it clashes with `Throwable.message`, which still
+returns the whole text), and `LivePage.close()` is **`shutdown()`** (`close()` is the generated
+`AutoCloseable` that frees the object; call `shutdown()`, then `close()` or use `use {}`).
+
+**The certificate verifier's init (do this first).** `ureq` and the live-page WebSocket check
+certificates with `rustls-platform-verifier`, which on Android calls the system trust manager
+through the JVM, so it needs a `Context` once. `crates/nv-core/src/android.rs` exports the JNI
+function `Java_com_notivelo_core_NotiveloCore_initAndroid` (it calls
+`rustls_platform_verifier::android::init_with_env`), and the module's `NotiveloCore.kt` wraps it:
+
+```kotlin
+class App : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        NotiveloCore.init(this)   // before any Core call that touches the network
+    }
+}
+```
+
+It loads `libnv_core.so` itself (`System.loadLibrary("nv_core")`), takes the application context,
+and is safe to call twice. Without it the first TLS handshake fails (the verifier panics; the
+`ffi` profile unwinds, so the core should report an error rather than abort, but that path is
+untested). CI checks that all three `.so` export the symbol.
+
+**Threading.** Core calls block (HTTP, SQLite): never on the main thread; use a coroutine on
+`Dispatchers.IO`. `LivePageListener` and `PageListener` are called on a core thread (the page's
+own): post to the main looper (`Handler(Looper.getMainLooper())`, or a coroutine on
+`Dispatchers.Main`) before touching UI. `Core`, `LivePage` and the other objects are thread-safe
+handles.
+
+**Where to keep things.** The store: `Core.withStore(url, File(context.filesDir, "notivelo.db").path)`
+(app-private, deleted with the app; exclude it in `android:fullBackupContent` and
+`dataExtractionRules` if the notes shouldn't leave the device by backup). One store file per
+install.
+
+**Smoke test, no emulator** (`crates/nv-core/test-kotlin-jvm.sh`, CI job "kotlin smoke test
+(JVM)"): builds the core for the Linux host (`ffi`), generates the Kotlin with
+`Tests/uniffi-jvm.toml` (same package, no Android classes), and runs JUnit 5 + JNA
+(`crates/nv-core/kotlin/Tests/`, Gradle 8.10, JDK 17) against `libnv_core.so`. Eight tests mirror
+the C# ones: `coreVersion` and the page format version; `readPage` on `document-page` against its
+`expected.json` and `page.txt`; a canvas page's boxes and headings; box content on `lists` with
+ordered markers `1.`, `2.`, `3.` and a bold run; an invalid page and `listMarker`; `Core` signed
+out (`CoreException.SignedOut`); `Core.withStore` creating its file; and a live page without a
+session, where a Kotlin `LivePageListener` is called from a core thread (`Connecting`, then
+`Ended`). All eight pass in CI.
+
+**Not verified.** Nothing ran on a device or emulator: the Android `.so` files are built and their
+exports checked, and the `.aar` assembles, but loading them in an app, `NotiveloCore.init` (the
+JNI call into the verifier) and a real TLS handshake to the server through the Android trust store
+are untested; so are R8 on a release app and the `SystemCleaner` path on API 33+ (the generated
+Android cleanup). The JVM test runs the host build, so it proves the bindings and the core agree,
+not the Android packaging. The first thing the Android app session should do is a debug build that
+signs in against staging on an emulator and a phone.
 
 ## For windows and apple: view runs, active marks, atoms (2026-11-23, `rewrite/core-viewruns`)
 
