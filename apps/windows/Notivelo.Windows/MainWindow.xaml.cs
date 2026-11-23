@@ -18,9 +18,12 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Title = "Notivelo";
         // NOTIVELO_SOURCE=sample: the fake data of the reference captures, no sign-in (offline screenshots). Default: the Rust core.
-        if (string.Equals(Environment.GetEnvironmentVariable("NOTIVELO_SOURCE"), "sample", StringComparison.OrdinalIgnoreCase))
+        // NOTIVELO_SOURCE=offline: the UI tests' mode: sample data plus a page of editable boxes over local documents, no server.
+        var sourceMode = Environment.GetEnvironmentVariable("NOTIVELO_SOURCE");
+        var offline = string.Equals(sourceMode, "offline", StringComparison.OrdinalIgnoreCase);
+        if (offline || string.Equals(sourceMode, "sample", StringComparison.OrdinalIgnoreCase))
         {
-            ShowShell(new SampleNotesSource(), null);
+            ShowShell(new SampleNotesSource(offline), null);
         }
         else
         {

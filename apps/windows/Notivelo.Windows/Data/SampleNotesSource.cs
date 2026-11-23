@@ -19,13 +19,34 @@ public sealed class SampleNotesSource : INotesSource
 
     public IReadOnlyList<Notebook> Notebooks { get; }
 
-    public string? InitialPageId => "canvas";
+    public string? InitialPageId => Offline ? "uitest" : "canvas";
 
     private readonly Dictionary<string, NotePage> _pages = new();
     private readonly Dictionary<TaskViewKind, IReadOnlyList<TaskGroup>> _groups;
 
-    public SampleNotesSource()
+    /// <summary>Offline test mode (NOTIVELO_SOURCE=offline): a fixed page "uitest" with two editable boxes, each an editor session over a
+    /// local document; tasks made from box lines are kept here (and logged to NOTIVELO_OFFLINE_LOG). Never used in normal startup.</summary>
+    public bool Offline { get; }
+    public bool OffersOfflineBoxes => Offline;
+    private readonly Dictionary<string, TaskItem> _made = new();
+
+    public Notivelo.Native.EditorSession? OpenOfflineBox(string pageId, string field, Notivelo.Native.TaskCallbacks tasks)
     {
+        if (!Offline) return null;
+        // [0, 0] is the empty Yjs update; the "default" field needs no box record in the document
+        var s = Notivelo.Native.EditorSession.Open(new byte[] { 0, 0 }, "default", tasks);
+        if (field == "box:b") s.InsertText("Second box");
+        return s;
+    }
+
+    private void Log(string line)
+    {
+        try { if (Environment.GetEnvironmentVariable("NOTIVELO_OFFLINE_LOG") is { Length: > 0 } f) File.AppendAllText(f, line + Environment.NewLine); } catch { }
+    }
+
+    public SampleNotesSource(bool offline = false)
+    {
+        Offline = offline;
         var corpus = new Section("corpus", "Corpus", "#ec4899", new PageSummary[]
         {
             new("canvas", "Canvas", 1), new("sandbox", "Sandbox", 1), new("blocks", "Blocks", 0), new("lists", "Lists", 0),
@@ -48,6 +69,14 @@ public sealed class SampleNotesSource : INotesSource
                 new(20, 381, 240, false, new BoxBlock[] { new(BlockKind.Paragraph, "Box a") }),
                 new(500, 330, 260, false, new BoxBlock[] { new(BlockKind.Heading2, "Right lower"), new(BlockKind.Paragraph, "Box c") }),
             }, 1, 0);
+
+        if (offline)
+            _pages["uitest"] = new NotePage("uitest", "UI test", "Edited just now", "Look reference", "#ec4899", new[] { "Corpus" },
+                PageColour.None, RuleLines.None, new CanvasBox[]
+                {
+                    new(40, 40, 420, false, new BoxBlock[] { new(BlockKind.Paragraph, "") }, "box:a"),
+                    new(40, 220, 420, false, new BoxBlock[] { new(BlockKind.Paragraph, "Second box") }, "box:b"),
+                }, 0, 0);
 
         foreach (var s in corpus.Pages.Skip(1))
             _pages[s.Id] = new NotePage(s.Id, s.Title, "Edited 2h ago by you", "Look reference", "#ec4899", new[] { "Corpus" },
@@ -96,12 +125,17 @@ public sealed class SampleNotesSource : INotesSource
         => new(id, title, done, priority, due, tone, false, page, team, "DU", Array.Empty<string>(), 0, 0);
 
     public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
-    public TaskItem? FindTask(string taskId) => null;
+    public TaskItem? FindTask(string taskId) => _made.GetValueOrDefault(taskId);
     public string? PageTitleOf(string pageId) => null;
     public string? EmojiOfPage(string pageId) => null;
     public string? UserId => null;
-    public void CreateTask(string id, string title, bool done, string? pageId) { }
-    public void DeleteTask(string id) { }
+    public void CreateTask(string id, string title, bool done, string? pageId)
+    {
+        if (!Offline) return;
+        _made[id] = Task(id, title, 0, null, DueTone.None, null, null, done);
+        Log($"create {id} {title}");
+    }
+    public void DeleteTask(string id) { if (Offline) { _made.Remove(id); Log($"delete {id}"); } }
     public IReadOnlyList<(string Id, string Title)> SearchPages(string query, int max) => Array.Empty<(string, string)>();
     public IReadOnlyList<(string Id, string Label)> People(string query) => Array.Empty<(string, string)>();
     public NotePage? GetPage(string pageId) => _pages.GetValueOrDefault(pageId);
