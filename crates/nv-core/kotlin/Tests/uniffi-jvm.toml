@@ -1,0 +1,4 @@
+# The same bindings for a plain JVM (the smoke test on a Linux host): no Android classes.
+[bindings.kotlin]
+package_name = "com.notivelo.core"
+cdylib_name = "nv_core"

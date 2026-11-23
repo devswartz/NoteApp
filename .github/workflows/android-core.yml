@@ -1,0 +1,111 @@
+name: Android core
+
+# The Rust core for Android (docs/rewrite/PLAN.md M9): libnv_core.so for arm64-v8a, armeabi-v7a and x86_64
+# (ffi profile, API 24, cargo-ndk), the uniffi Kotlin bindings (uniffi 0.32's own generator), and a Gradle
+# library module NotiveloCore with an .aar. crates/nv-core/build-android.sh makes the layout; it is the same
+# script to run by hand. A second job runs the Kotlin bindings on a plain JVM (JUnit 5, JNA) against the core
+# built for the host, on the page corpus: crates/nv-core/test-kotlin-jvm.sh. No emulator.
+on:
+  pull_request:
+  push:
+    paths:
+      - 'crates/**'
+      - 'tests/corpus/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/android-core.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-core-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # The same toolchain as rust.yml.
+  RUST_TOOLCHAIN: '1.99.1'
+  GRADLE_VERSION: '8.10.2'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android:
+    name: android core
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Cache cargo-ndk
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-v1-${{ env.RUST_TOOLCHAIN }}
+      - name: Install cargo-ndk
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk --locked
+
+      - name: Build libnv_core.so (arm64-v8a, armeabi-v7a, x86_64) and the Kotlin bindings
+        run: bash crates/nv-core/build-android.sh
+
+      - name: Sizes
+        run: |
+          for f in target/android/NotiveloCore/src/main/jniLibs/*/libnv_core.so; do
+            echo "$f: $(wc -c < "$f") bytes"
+            echo "- \`$(basename "$(dirname "$f")")\`: $(wc -c < "$f") bytes" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Assemble the .aar
+        working-directory: target/android/NotiveloCore
+        run: |
+          gradle --no-daemon --console=plain assembleRelease
+          mkdir -p aar && cp build/outputs/aar/*-release.aar aar/NotiveloCore.aar
+          unzip -l aar/NotiveloCore.aar | grep -E 'libnv_core.so|classes.jar'
+          # Build outputs are not part of the artifact.
+          rm -rf build .gradle
+
+      - name: Upload the module layout
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotiveloCoreAndroid
+          path: target/android/NotiveloCore/
+          retention-days: 14
+
+  jvm:
+    name: kotlin smoke test (JVM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: kotlin-jvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Build the core for the host, generate the Kotlin, run the tests
+        run: bash crates/nv-core/test-kotlin-jvm.sh

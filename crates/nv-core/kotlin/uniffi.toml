@@ -1,0 +1,8 @@
+# Config for uniffi's own Kotlin generator (https://mozilla.github.io/uniffi-rs/kotlin/configuration.html).
+[bindings.kotlin]
+package_name = "com.notivelo.core"
+# libnv_core.so (jniLibs/<abi>/); JNA loads it by this name.
+cdylib_name = "nv_core"
+# The Android build: object cleanup goes through android.system.SystemCleaner (API 33+, a fallback
+# below) instead of java.lang.ref.Cleaner, which older Androids lack.
+android = true
