@@ -356,8 +356,10 @@ private fun inkPath(ops: FloatArray): Path {
 private fun DrawScope.drawInk(shapes: List<InkShape>, originX: Float, originY: Float) {
     if (shapes.isEmpty()) return
     val d = density
+    val ox = originX.dp.toPx()
+    val oy = originY.dp.toPx()
     withTransform({
-        translate(originX.dp.toPx(), originY.dp.toPx())
+        translate(ox, oy)
         scale(d, d, Offset.Zero)
     }) {
         for (s in shapes) drawPath(inkPath(s.ops), Color(s.argb))
