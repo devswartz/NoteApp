@@ -7,3 +7,6 @@ BundleArtifacts/
 *.pfx
 *.cer
 *.snk
+
+# The repo-wide ignore of "data" also matches the Data folder (source code here).
+!Data/

@@ -1,0 +1,479 @@
+using System.Globalization;
+using N = Notivelo.Native;
+
+namespace Notivelo.Windows.Data;
+
+/// <summary>
+/// <see cref="INotesSource"/> over the Rust core: workspaces, the notebook/section/page tree and the task list are loaded in the
+/// background (the on-device copy first, then the server's) and the open page is a core <c>LivePage</c>. Everything here runs on the UI
+/// thread except the core calls themselves (<see cref="AppSession.CallAsync"/>) and the live page's listener, which hops back through
+/// <see cref="AppSession.Post"/>. <see cref="Changed"/> is raised on the UI thread.
+/// </summary>
+internal sealed class CoreNotesSource : INotesSource, IDisposable
+{
+    private readonly AppSession _session;
+    private readonly N.User _user;
+    private N.Workspace[] _workspaces = Array.Empty<N.Workspace>();
+    private string? _wsId;
+    private N.Tree? _tree;
+    private N.Task[] _tasks = Array.Empty<N.Task>();
+    private IReadOnlyList<Notebook> _notebooks = Array.Empty<Notebook>();
+    private string? _notebookId;
+    private bool _disposed;
+
+    // the open page
+    private string? _openId;
+    private N.LivePage? _live;
+    private N.PageInfo? _info;
+    private PageState _state = PageState.Connecting;
+    private string? _stateMessage;
+    private int _gen, _attempts;
+
+    public event EventHandler? Changed;
+
+    public CoreNotesSource(AppSession session, N.User user)
+    {
+        _session = session;
+        _user = user;
+        Workspace = new Workspace("Workspace", "W", Initials(user.Name, user.Email), user.Name, user.Email);
+        Loading = true;
+    }
+
+    public Workspace Workspace { get; private set; }
+    public IReadOnlyList<WorkspaceInfo> Workspaces => _workspaces.Select(w => new WorkspaceInfo(w.Id, w.Name, w.Role)).ToList();
+    public string? CurrentWorkspaceId => _wsId;
+    public IReadOnlyList<Notebook> Notebooks => _notebooks;
+    public string? CurrentNotebookId => _notebookId;
+    public bool Loading { get; private set; }
+    public string? LoadError { get; private set; }
+    public string? InitialPageId => null;
+
+    private void Raise() { if (!_disposed) Changed?.Invoke(this, EventArgs.Empty); }
+
+    private static string Initials(string name, string email)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2) return (parts[0][..1] + parts[^1][..1]).ToUpperInvariant();
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return string.IsNullOrEmpty(email) ? "?" : email[..1].ToUpperInvariant();
+    }
+
+    // ---- loading ----------------------------------------------------------------------------------------------
+
+    /// <summary>Workspaces (the stored copy first), then the chosen workspace's tree and tasks.</summary>
+    public async void Start()
+    {
+        try
+        {
+            if (_workspaces.Length == 0)
+            {
+                var cached = await Task.Run(() => _session.Core.CachedWorkspaces());
+                if (cached is { Length: > 0 } && !_disposed) { _workspaces = cached; PickWorkspace(); }
+            }
+            var list = await _session.CallAsync(c => c.Workspaces());
+            _workspaces = list;
+            LoadError = list.Length == 0 ? "No workspaces yet. Create one in the web app." : null;
+            Loading = false;
+            PickWorkspace();
+            Raise();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            Loading = false;
+            LoadError = ErrorText.Message(e);
+            Raise();
+        }
+    }
+
+    private void PickWorkspace()
+    {
+        if (_workspaces.Length == 0) return;
+        var saved = AppSettings.Workspace(_session.ServerUrl);
+        var pick = _workspaces.FirstOrDefault(w => w.Id == _wsId) ?? _workspaces.FirstOrDefault(w => w.Id == saved) ?? _workspaces[0];
+        if (pick.Id != _wsId || _tree is null) SelectWorkspace(pick.Id);
+    }
+
+    public async void SelectWorkspace(string id)
+    {
+        if (_disposed) return;
+        var changed = id != _wsId;
+        _wsId = id;
+        AppSettings.SetWorkspace(_session.ServerUrl, id);
+        var ws = _workspaces.FirstOrDefault(w => w.Id == id);
+        if (ws is not null) Workspace = Workspace with { Name = ws.Name, Initial = ws.Name.Length > 0 ? ws.Name[..1].ToUpperInvariant() : "W" };
+        if (changed) { _tree = null; _tasks = Array.Empty<N.Task>(); _notebookId = null; _notebooks = Array.Empty<Notebook>(); OpenPage(null); }
+        Loading = _tree is null;
+        Raise();
+        try
+        {
+            if (_tree is null)
+            {
+                var (t, ts) = await Task.Run(() => (_session.Core.CachedTree(id), _session.Core.CachedTasks(id)));
+                if (id == _wsId && _tree is null && t is not null) { _tree = t; _tasks = ts ?? Array.Empty<N.Task>(); Rebuild(); Raise(); }
+            }
+            var (tree, tasks) = await _session.CallAsync(c => (c.Tree(id), c.Tasks(id)));
+            if (id != _wsId) return;
+            _tree = tree; _tasks = tasks; LoadError = null; Loading = false;
+            Rebuild();
+            Raise();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            if (id != _wsId) return;
+            Loading = false; LoadError = ErrorText.Message(e);
+            Raise();
+        }
+    }
+
+    public void SelectNotebook(string id)
+    {
+        if (_notebooks.All(n => n.Id != id)) return;
+        _notebookId = id;
+        Raise();
+    }
+
+    // ---- tree -------------------------------------------------------------------------------------------------
+
+    private void Rebuild()
+    {
+        if (_tree is null) { _notebooks = Array.Empty<Notebook>(); return; }
+        var open = _tasks.Where(t => !t.Done && t.PageId is not null).GroupBy(t => t.PageId!).ToDictionary(g => g.Key, g => g.Count());
+        Section Build(N.Section s)
+        {
+            var pages = _tree.Pages.Where(p => p.SectionId == s.Id).OrderBy(p => p.Position)
+                .Select(p => new PageSummary(p.Id, p.Title.Length == 0 ? "Untitled" : p.Title, open.GetValueOrDefault(p.Id), p.Icon, p.Locked)).ToList();
+            var kids = _tree.Sections.Where(c => c.ParentId == s.Id).OrderBy(c => c.Position).Select(Build).ToList();
+            return new Section(s.Id, s.Name, s.Color, pages, kids);
+        }
+        _notebooks = _tree.Notebooks.OrderBy(n => n.Position).Select(n => new Notebook(
+            n.Id, n.Name, n.Name.Length > 0 ? n.Name[..1].ToUpperInvariant() : "N", n.Color, n.Visibility == "private",
+            _tree.Sections.Where(s => s.NotebookId == n.Id && s.ParentId is null).OrderBy(s => s.Position).Select(Build).ToList())).ToList();
+        if (_notebookId is null || _notebooks.All(n => n.Id != _notebookId)) _notebookId = _notebooks.FirstOrDefault()?.Id;
+    }
+
+    private string PageTitle(string id)
+    {
+        var t = _tree?.Pages.FirstOrDefault(p => p.Id == id)?.Title;
+        return string.IsNullOrEmpty(t) ? "Untitled" : t;
+    }
+
+    public IReadOnlyList<(PageSummary Page, string Where, string Edited)> RecentPages(int count)
+    {
+        if (_tree is null) return Array.Empty<(PageSummary, string, string)>();
+        var sections = _tree.Sections.ToDictionary(s => s.Id);
+        var notebooks = _tree.Notebooks.ToDictionary(n => n.Id);
+        string Where(string sectionId)
+        {
+            var names = new List<string>();
+            var cur = sections.GetValueOrDefault(sectionId);
+            for (var i = 0; cur is not null && i < 12; i++)
+            {
+                names.Insert(0, cur.Name);
+                if (cur.ParentId is { } p) cur = sections.GetValueOrDefault(p);
+                else { if (notebooks.TryGetValue(cur.NotebookId, out var nb)) names.Insert(0, nb.Name); cur = null; }
+            }
+            return string.Join(" › ", names);
+        }
+        var open = _tasks.Where(t => !t.Done && t.PageId is not null).GroupBy(t => t.PageId!).ToDictionary(g => g.Key, g => g.Count());
+        return _tree.Pages.OrderByDescending(p => p.UpdatedAt, StringComparer.Ordinal).Take(count)
+            .Select(p => (new PageSummary(p.Id, p.Title.Length == 0 ? "Untitled" : p.Title, open.GetValueOrDefault(p.Id), p.Icon, p.Locked), Where(p.SectionId), Ago(p.UpdatedAt)))
+            .ToList();
+    }
+
+    private static string Ago(string iso)
+    {
+        if (!DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var t)) return "";
+        var d = DateTimeOffset.UtcNow - t;
+        if (d.TotalMinutes < 1) return "just now";
+        if (d.TotalMinutes < 60) return $"{(int)d.TotalMinutes}m ago";
+        if (d.TotalHours < 24) return $"{(int)d.TotalHours}h ago";
+        if (d.TotalDays < 7) return $"{(int)d.TotalDays}d ago";
+        return t.ToLocalTime().ToString("d MMM yyyy", CultureInfo.CurrentCulture);
+    }
+
+    // ---- the open page (core LivePage) ------------------------------------------------------------------------
+
+    public void OpenPage(string? pageId)
+    {
+        if (pageId == _openId) return;
+        CloseLive();
+        _openId = pageId;
+        _info = null; _attempts = 0; _stateMessage = null;
+        _state = PageState.Connecting;
+        _gen++;
+        if (pageId is not null) StartOpen();
+    }
+
+    /// <summary>Close the page's connection off the UI thread (close may wait for the socket thread).</summary>
+    private void CloseLive()
+    {
+        _gen++;
+        var live = _live;
+        _live = null;
+        if (live is not null) CloseInBackground(live);
+    }
+
+    private static void CloseInBackground(N.LivePage page) => _ = Task.Run(() => { try { page.Close(); } catch { } });
+
+    private async void StartOpen()
+    {
+        var id = _openId;
+        if (id is null || _live is not null || _disposed) return;
+        var gen = ++_gen;
+        var listener = new Listener(this, gen);
+        try
+        {
+            var live = await _session.CallAsync(c => c.OpenPage(id, listener));
+            if (gen != _gen || _disposed) { CloseInBackground(live); return; }
+            _live = live;
+            // Synced may have been heard before this hop (an empty page sends no change).
+            if (_info is null && _state == PageState.Live) { _info = await Task.Run(() => live.Info()); Raise(); }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            if (gen != _gen) return;
+            if (e is N.CoreException.Server s && (s.status == 403 || s.status == 404))
+            {
+                _state = PageState.Ended; _stateMessage = s.status == 404 ? "This page was deleted." : "You don't have access to this page.";
+                Raise(); return;
+            }
+            _state = PageState.Offline; _stateMessage = ErrorText.Message(e);
+            Raise();
+            RetryLater();
+        }
+    }
+
+    private async void RetryLater()
+    {
+        _attempts++;
+        var gen = _gen;
+        await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, Math.Min(_attempts, 5)))));
+        _session.Post(() => { if (gen == _gen && _live is null && !_disposed) StartOpen(); });
+    }
+
+    private void DropConnection() { CloseLive(); }
+
+    private void Heard(N.SyncStatus status, int gen)
+    {
+        if (gen != _gen || _disposed) return;
+        switch (status)
+        {
+            case N.SyncStatus.Synced:
+                _attempts = 0; _state = PageState.Live; _stateMessage = null;
+                if (_info is null && _live is { } live) { _ = ReadInfoAsync(live, gen); return; }
+                Raise();
+                break;
+            case N.SyncStatus.Closed c:
+                DropConnection();
+                if (c.Code == 4403) { _state = PageState.Ended; _stateMessage = "You no longer have access to this page."; Raise(); }
+                else if (c.Code == 4401 && _attempts < 3) { _attempts++; StartOpen(); }
+                else { _state = PageState.Offline; _stateMessage = c.Reason.Length == 0 ? $"Disconnected ({c.Code})." : c.Reason; Raise(); RetryLater(); }
+                break;
+            case N.SyncStatus.Failed f:
+                DropConnection();
+                _state = PageState.Offline; _stateMessage = f.Message;
+                Raise(); RetryLater();
+                break;
+        }
+    }
+
+    private async Task ReadInfoAsync(N.LivePage live, int gen)
+    {
+        var info = await Task.Run(() => live.Info());
+        if (gen == _gen && _info is null) { _info = info; Raise(); }
+    }
+
+    private void Changed_(N.PageInfo page, int gen)
+    {
+        if (gen != _gen || _disposed) return;
+        _info = page;
+        if (_state == PageState.Connecting) _state = PageState.Live;
+        Raise();
+    }
+
+    /// <summary>Hears a live page on the core's sync thread; changes are coalesced (a newer one replaces one still waiting for the UI thread).</summary>
+    private sealed class Listener : N.PageListener
+    {
+        private readonly CoreNotesSource _owner;
+        private readonly int _gen;
+        private readonly object _lock = new();
+        private N.PageInfo? _pending;
+
+        public Listener(CoreNotesSource owner, int gen) { _owner = owner; _gen = gen; }
+
+        public void OnStatus(N.SyncStatus status)
+        {
+            try { _owner._session.Post(() => { Flush(); _owner.Heard(status, _gen); }); } catch { }
+        }
+
+        public void OnChange(N.PageInfo page)
+        {
+            bool schedule;
+            lock (_lock) { schedule = _pending is null; _pending = page; }
+            if (schedule) { try { _owner._session.Post(Flush); } catch { } }
+        }
+
+        private void Flush()
+        {
+            N.PageInfo? page;
+            lock (_lock) { page = _pending; _pending = null; }
+            if (page is not null) _owner.Changed_(page, _gen);
+        }
+    }
+
+    public NotePage? GetPage(string pageId)
+    {
+        var meta = _tree?.Pages.FirstOrDefault(p => p.Id == pageId);
+        if (meta is null) return null;
+        var sec = _tree!.Sections.FirstOrDefault(s => s.Id == meta.SectionId);
+        var path = new List<string>();
+        for (var cur = sec; cur is not null;) { path.Insert(0, cur.Name); cur = cur.ParentId is { } p ? _tree.Sections.FirstOrDefault(s => s.Id == p) : null; }
+        var nb = sec is null ? null : _tree.Notebooks.FirstOrDefault(n => n.Id == sec.NotebookId);
+        var live = pageId == _openId;
+        var boxes = live && _info is not null ? BoxesOf(_info) : Array.Empty<CanvasBox>();
+        var settings = live ? _info?.Settings : null;
+        return new NotePage(
+            pageId, meta.Title.Length == 0 ? "Untitled" : meta.Title, "Edited " + Ago(meta.UpdatedAt), nb?.Name ?? "", nb?.Color ?? "#6366f1", path,
+            ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, _tasks.Count(t => !t.Done && t.PageId == pageId), 0,
+            live ? _state : PageState.Connecting, live ? _stateMessage : null, meta.Locked);
+    }
+
+    private static PageColour ParseColour(string? c) => Enum.TryParse<PageColour>(c, true, out var v) ? v : PageColour.None;
+    private static RuleLines ParseRules(string? r) => Enum.TryParse<RuleLines>(r, true, out var v) ? v : RuleLines.None;
+
+    private IReadOnlyList<CanvasBox> BoxesOf(N.PageInfo info)
+    {
+        var mapper = new ContentMapper(TaskLine, PageTitle);
+        // A document page is one wide box at the origin (as the web app shows an old single-column page).
+        var boxes = info.Kind == N.PageKind.Canvas
+            ? info.Boxes
+            : new[] { new N.PageBox("default", 0, 0, 686, 0, true) };
+        return boxes.Select(b =>
+        {
+            var content = info.Kind == N.PageKind.Canvas ? info.Content.FirstOrDefault(c => c.BoxId == b.Id) : info.Content.FirstOrDefault(c => c.BoxId is null);
+            return new CanvasBox(b.X, b.Y, b.W, b.Wide, mapper.Blocks(content?.Nodes ?? Array.Empty<N.ContentNode>()));
+        }).ToList();
+    }
+
+    // ---- tasks ------------------------------------------------------------------------------------------------
+
+    private TaskItem? TaskLine(string id)
+    {
+        var t = _tasks.FirstOrDefault(x => x.Id == id);
+        return t is null || t.Locked ? null : ToItem(t, Today());
+    }
+
+    private static DateOnly Today() => DateOnly.FromDateTime(DateTime.Now);
+
+    private static DateOnly? Due(N.Task t) => t.DueDate is { } d && DateOnly.TryParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var v) ? v : null;
+
+    private TaskItem ToItem(N.Task t, DateOnly today)
+    {
+        var due = Due(t);
+        var (label, tone) = DueText(due, today);
+        var page = t.PageId is null ? null : _tree?.Pages.FirstOrDefault(p => p.Id == t.PageId)?.Title;
+        return new TaskItem(t.Id, t.Title, t.Done, t.Priority, label, tone, false, string.IsNullOrEmpty(page) ? null : page, null,
+            t.AssigneeId == _user.Id ? Workspace.UserInitials : null, Array.Empty<string>(), (int)(t.ChecklistDone ?? 0), (int)(t.ChecklistTotal ?? 0));
+    }
+
+    private static (string? Label, DueTone Tone) DueText(DateOnly? due, DateOnly today)
+    {
+        if (due is not { } d) return (null, DueTone.None);
+        var diff = d.DayNumber - today.DayNumber;
+        if (diff < 0) return (diff == -1 ? "Yesterday" : d.ToString("d MMM", CultureInfo.CurrentCulture), DueTone.Overdue);
+        if (diff == 0) return ("Today", DueTone.Today);
+        if (diff == 1) return ("Tomorrow", DueTone.Soon);
+        if (diff < 7) return (d.ToString("ddd", CultureInfo.CurrentCulture), DueTone.Soon);
+        return (d.ToString("d MMM", CultureInfo.CurrentCulture), DueTone.Later);
+    }
+
+    /// <summary>Top-level tasks this person can see.</summary>
+    private IEnumerable<N.Task> Visible() => _tasks.Where(t => !t.Locked && t.ParentId is null);
+    private IEnumerable<N.Task> Mine() => Visible().Where(t => t.AssigneeId == _user.Id);
+
+    public TaskCounts GetTaskCounts()
+    {
+        var today = Today();
+        var open = Mine().Where(t => !t.Done).ToList();
+        var todayList = open.Where(t => Due(t) is { } d && d <= today).ToList();
+        var week = today.AddDays(7);
+        return new TaskCounts(todayList.Count, todayList.Any(t => Due(t)! < today), open.Count,
+            open.Count(t => Due(t) is { } d && d > today && d <= week));
+    }
+
+    public TodayStats GetTodayStats()
+    {
+        var today = Today();
+        var mine = Mine().ToList();
+        DateOnly? Completed(N.Task t) => t.CompletedAt is { } c && DateTimeOffset.TryParse(c, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var o) ? DateOnly.FromDateTime(o.LocalDateTime) : null;
+        var days = mine.Where(t => t.Done).Select(Completed).Where(d => d is not null).Select(d => d!.Value).ToHashSet();
+        var done = mine.Count(t => t.Done && Completed(t) == today);
+        var left = mine.Count(t => !t.Done && Due(t) is { } d && d <= today);
+        var streak = 0;
+        for (var d = days.Contains(today) ? today : today.AddDays(-1); days.Contains(d); d = d.AddDays(-1)) streak++;
+        var week = Enumerable.Range(0, 7).Select(i => days.Contains(today.AddDays(i - 6))).ToList();
+        return new TodayStats(done, left, streak, week, done + left == 0 ? 0 : (double)done / (done + left));
+    }
+
+    public string TasksSubtitle(TaskViewKind view) => view switch
+    {
+        TaskViewKind.Today => "Due today and overdue, assigned to you.",
+        TaskViewKind.MyTasks => "Everything assigned to you.",
+        TaskViewKind.Upcoming => "The next seven days.",
+        TaskViewKind.All => "Every task in this workspace.",
+        _ => "Tasks assigned to your teams.",
+    };
+
+    public IReadOnlyList<TaskGroup> GetTaskGroups(TaskViewKind view)
+    {
+        var today = Today();
+        var groups = new List<TaskGroup>();
+        void Add(string title, bool overdue, IEnumerable<N.Task> tasks)
+        {
+            var items = tasks.OrderBy(t => t.DueTime ?? "99").ThenByDescending(t => t.Priority).ThenBy(t => t.CreatedAt, StringComparer.Ordinal).Select(t => ToItem(t, today)).ToList();
+            if (items.Count > 0) groups.Add(new TaskGroup(title, items.Count, overdue, items));
+        }
+        string Day(DateOnly d) => d.ToString("ddd d MMM", CultureInfo.CurrentCulture);
+        switch (view)
+        {
+            case TaskViewKind.Today:
+            {
+                var open = Mine().Where(t => !t.Done).ToList();
+                Add("Overdue", true, open.Where(t => Due(t) is { } d && d < today));
+                Add("Today · " + Day(today), false, open.Where(t => Due(t) == today));
+                break;
+            }
+            case TaskViewKind.Upcoming:
+            {
+                var week = today.AddDays(7);
+                var open = Mine().Where(t => !t.Done && Due(t) is { } d && d > today && d <= week).ToList();
+                foreach (var g in open.GroupBy(t => Due(t)!.Value).OrderBy(g => g.Key))
+                    Add(g.Key.ToString("dddd d MMM", CultureInfo.CurrentCulture), false, g);
+                break;
+            }
+            case TaskViewKind.Team:
+                break;
+            default:
+            {
+                var all = view == TaskViewKind.MyTasks ? Mine() : Visible();
+                var open = all.Where(t => !t.Done).ToList();
+                Add("Overdue", true, open.Where(t => Due(t) is { } d && d < today));
+                Add("Today · " + Day(today), false, open.Where(t => Due(t) == today));
+                Add("Later", false, open.Where(t => Due(t) is { } d && d > today));
+                Add("No date", false, open.Where(t => Due(t) is null));
+                if (view == TaskViewKind.All) Add("Done", false, all.Where(t => t.Done).OrderByDescending(t => t.CompletedAt, StringComparer.Ordinal).Take(20));
+                break;
+            }
+        }
+        return groups;
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        CloseLive();
+    }
+}
