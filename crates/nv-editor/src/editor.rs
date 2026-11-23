@@ -802,6 +802,20 @@ impl Editor {
         any && all
     }
 
+    /// The marks every text node in `from..to` has (the marks at `from` when it holds no text).
+    pub fn range_marks(&self, from: usize, to: usize) -> Vec<Mark> {
+        let mut common: Option<Vec<Mark>> = None;
+        for_inline_in(&self.doc, from, to, &mut |n| {
+            if n.is_text() {
+                match &mut common {
+                    None => common = Some(n.marks.clone()),
+                    Some(c) => c.retain(|m| n.marks.contains(m)),
+                }
+            }
+        });
+        common.unwrap_or_else(|| self.marks_at(from))
+    }
+
     pub fn add_mark_range(&mut self, from: usize, to: usize, mark: &Mark) {
         self.map_inline(from, to, &|n| {
             let mut n = n;

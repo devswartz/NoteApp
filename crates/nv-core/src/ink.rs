@@ -323,7 +323,12 @@ pub fn add_stroke(doc: &Doc, mut stroke: Stroke, id: &str, created: u64) -> Vec<
     stroke.z = next_z(doc, stroke.tool);
     stroke.created = created;
     let blob = encode(&stroke);
-    model::commit_ink(doc, &[], &[(id.to_string(), blob.clone())]);
+    model::commit_ink_with(
+        doc,
+        Some(ink_origin()),
+        &[],
+        &[(id.to_string(), blob.clone())],
+    );
     blob
 }
 
@@ -421,7 +426,7 @@ pub fn erase(
             removed.push(e.id.clone());
         }
     }
-    let gone = model::commit_ink(doc, &removed, &added);
+    let gone = model::commit_ink_with(doc, Some(ink_origin()), &removed, &added);
     InkEraseResult {
         removed: gone,
         added: added.into_iter().map(|(id, _)| id).collect(),
@@ -472,14 +477,14 @@ pub fn translate(
             new_id: nid,
         });
     }
-    model::commit_ink(doc, &removed, &added);
+    model::commit_ink_with(doc, Some(ink_origin()), &removed, &added);
     moved
 }
 
 /// Delete strokes by id (ones that are gone already are skipped); returns the ids deleted.
 /// Unreadable strokes can be deleted too: that is the user's choice.
 pub fn delete(doc: &Doc, ids: &[String]) -> Vec<String> {
-    model::commit_ink(doc, ids, &[])
+    model::commit_ink_with(doc, Some(ink_origin()), ids, &[])
 }
 
 fn outline_of(data: &[u8]) -> Option<Vec<geom::Piece>> {
@@ -593,7 +598,28 @@ impl LivePage {
         if self.is_closed() {
             return Err(InkError::Closed);
         }
+        // Held across the edit so an undo on another thread can't interleave with it (the
+        // manager's own observer isn't synchronised with the caller).
+        let mut guard = self.ink_undo.lock().unwrap();
+        guard.get_or_insert_with(|| new_ink_undo(self.doc()));
         f(self.doc())
+    }
+
+    fn ink_undo_step(&self, undo: bool) -> Result<bool, InkError> {
+        if self.is_closed() {
+            return Err(InkError::Closed);
+        }
+        let mut guard = self.ink_undo.lock().unwrap();
+        let Some(mgr) = guard.as_mut() else {
+            return Ok(false);
+        };
+        // A plain local transaction (the manager's own origin, not REMOTE_ORIGIN): LiveDoc's
+        // update observer stores it in the outbox and sends it like any local edit.
+        Ok(if undo {
+            mgr.undo_blocking()
+        } else {
+            mgr.redo_blocking()
+        })
     }
 
     fn add_finished(&self, stroke: Option<Stroke>) -> Result<Option<InkStrokeInfo>, InkError> {
@@ -606,6 +632,37 @@ impl LivePage {
             Ok(info_for(doc, &id))
         })
     }
+}
+
+/// The origin of every ink edit made through `LivePage` (not `nv_sync::REMOTE_ORIGIN`, so it is
+/// sent like any local edit). Ink undo tracks this origin only.
+const INK_ORIGIN: &str = "nv-core:ink";
+
+fn ink_origin() -> nv_model::yrs::Origin {
+    nv_model::yrs::Origin::from(INK_ORIGIN)
+}
+
+/// The page's ink undo manager, made at the first ink edit (so only edits made through this
+/// `LivePage` can be undone, never what the page held when it opened).
+///
+/// Scope is the `ink` map. The web's `canvasUndo.ts` has one manager over `boxes` and `ink` with
+/// origins GEOM_ORIGIN and INK_ORIGIN; box geometry can join this one later with
+/// `expand_scope(doc, &boxes_map)` plus `include_origin` for the geometry edits' origin.
+///
+/// Capture timeout is 0 (the web merges edits within 500 ms): the web's pointer events write many
+/// small edits per gesture, which the timeout groups; the apps call once per gesture, so each
+/// call must be exactly one step, even two quick calls.
+fn new_ink_undo(doc: &Doc) -> nv_model::yrs::undo::UndoManager<()> {
+    use nv_model::yrs::undo::{Options, UndoManager};
+    let options = Options::<()> {
+        capture_timeout_millis: 0,
+        tracked_origins: [ink_origin()].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut mgr = UndoManager::with_options(options);
+    let ink = doc.get_or_insert_map(nv_model::page::INK_KEY);
+    mgr.expand_scope(doc, &ink);
+    mgr
 }
 
 fn info_for(doc: &Doc, id: &str) -> Option<InkStrokeInfo> {
@@ -703,6 +760,37 @@ impl LivePage {
     /// Delete strokes by id; returns the ids that were there. One edit.
     pub fn delete_ink_strokes(&self, ids: Vec<String>) -> Result<Vec<String>, InkError> {
         self.ink_edit(|doc| Ok(delete(doc, &ids)))
+    }
+
+    /// Undo the last ink edit made through this page (an add, a whole erase gesture, a move, a
+    /// delete: one step each). Remote changes and other local edits (text, boxes) are never
+    /// undone. The result is an ordinary local edit, sent like any other; it is not reported
+    /// through a change listener (local edits aren't), so re-read `ink_strokes()` afterwards.
+    /// A move's undo brings back the old stroke ids. True if something was undone.
+    pub fn ink_undo(&self) -> Result<bool, InkError> {
+        self.ink_undo_step(true)
+    }
+
+    /// Redo what `ink_undo` undid (the redo steps are dropped by a new ink edit). True if
+    /// something was redone.
+    pub fn ink_redo(&self) -> Result<bool, InkError> {
+        self.ink_undo_step(false)
+    }
+
+    pub fn ink_can_undo(&self) -> bool {
+        self.ink_undo
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|m| m.can_undo())
+    }
+
+    pub fn ink_can_redo(&self) -> bool {
+        self.ink_undo
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|m| m.can_redo())
     }
 
     /// The lasso: ids of the strokes with at least `min_fraction` (the web's engine uses 0.5, at

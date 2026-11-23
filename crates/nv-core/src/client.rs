@@ -442,6 +442,7 @@ impl Core {
             hooks: live.remote_hooks(),
             closed: AtomicBool::new(false),
             live: Mutex::new(Some(live)),
+            ink_undo: Mutex::new(None),
         })
     }
 
@@ -898,6 +899,8 @@ pub struct LivePage {
     /// `close()` was called: edits made on `doc` from now on aren't sent.
     closed: AtomicBool,
     live: Mutex<Option<LiveDoc>>,
+    /// Ink undo (see `ink.rs`), made at the first ink edit.
+    pub(crate) ink_undo: Mutex<Option<nv_model::yrs::undo::UndoManager<()>>>,
 }
 
 // Used by the editor stream's `EditorSession::open_live` (not written yet) and the tests.
@@ -1051,6 +1054,7 @@ mod tests {
             hooks: Default::default(),
             closed: AtomicBool::new(true),
             live: Mutex::new(None),
+            ink_undo: Mutex::new(None),
         };
         (relay, live)
     }

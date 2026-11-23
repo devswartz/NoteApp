@@ -873,3 +873,132 @@ fn a_live_session_needs_the_box() {
     );
     live.close();
 }
+
+fn mark(kind: ViewMarkKind, value: Option<&str>) -> ViewMark {
+    ViewMark {
+        kind,
+        value: value.map(String::from),
+    }
+}
+
+#[test]
+fn view_runs_active_marks_and_atoms() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    s.set_view_selection(0, s.view_state().len);
+    // "😀 word" with the emoji before the bold word, then a mention and a page link.
+    s.insert_text("\u{1f600} word ".into());
+    let r = s.view_render();
+    let end = r.view.len;
+    s.set_view_selection(3, 7);
+    s.command("toggleMark".into(), r#"{"mark":"bold"}"#.into())
+        .unwrap();
+    s.command("setColor".into(), r#"{"color":"red"}"#.into())
+        .unwrap();
+    s.command("setHighlight".into(), r#"{"color":"yellow"}"#.into())
+        .unwrap();
+    s.command("setLink".into(), r#"{"href":"https://a.b"}"#.into())
+        .unwrap();
+    s.command("setComment".into(), r#"{"threadId":"t1"}"#.into())
+        .unwrap();
+    let marked = s.view_render();
+    assert!(marked.text_revision > r.text_revision);
+    assert_eq!(marked.view.text, r.view.text);
+    let line = &marked.view.lines[0];
+    assert_eq!(line.runs.len(), 3);
+    assert_eq!(line.runs[0].len, 3);
+    assert!(line.runs[0].marks.is_empty());
+    assert_eq!((line.runs[1].from, line.runs[1].len), (3, 4));
+    let kinds: Vec<ViewMarkKind> = line.runs[1].marks.iter().map(|m| m.kind).collect();
+    for k in [
+        ViewMarkKind::Bold,
+        ViewMarkKind::Link,
+        ViewMarkKind::TextColor,
+        ViewMarkKind::Highlight,
+        ViewMarkKind::Comment,
+    ] {
+        assert!(kinds.contains(&k), "{k:?}");
+    }
+    assert!(line.runs[1]
+        .marks
+        .contains(&mark(ViewMarkKind::Link, Some("https://a.b"))));
+    assert!(line.runs[1]
+        .marks
+        .contains(&mark(ViewMarkKind::TextColor, Some("red"))));
+    assert!(line.runs[1]
+        .marks
+        .contains(&mark(ViewMarkKind::Highlight, Some("yellow"))));
+    assert!(line.runs[1]
+        .marks
+        .contains(&mark(ViewMarkKind::Comment, Some("t1"))));
+    assert_eq!((line.runs[2].from, line.runs[2].len), (7, end - 7));
+    // Active marks: over the range, and at a caret inside the word.
+    assert!(marked
+        .active
+        .marks
+        .contains(&mark(ViewMarkKind::Bold, None)));
+    s.set_view_selection(5, 5);
+    assert!(s
+        .view_render()
+        .active
+        .marks
+        .contains(&mark(ViewMarkKind::Bold, None)));
+    s.set_view_selection(1, 1);
+    assert!(s.view_render().active.marks.is_empty());
+    // A mark toggle with no text change moves text_revision; a caret move doesn't.
+    let before = s.view_render();
+    s.set_view_selection(0, 2);
+    assert_eq!(s.view_render().text_revision, before.text_revision);
+    s.command("toggleMark".into(), r#"{"mark":"italic"}"#.into())
+        .unwrap();
+    let after = s.view_render();
+    assert_eq!(after.view.text, before.view.text);
+    assert!(after.text_revision > before.text_revision);
+    // A stored mark at a caret shows in `active` only.
+    s.set_view_selection(1, 1);
+    let rev = s.view_render().text_revision;
+    s.command("toggleMark".into(), r#"{"mark":"underline"}"#.into())
+        .unwrap();
+    let stored = s.view_render();
+    assert_eq!(stored.text_revision, rev);
+    assert!(stored
+        .active
+        .marks
+        .contains(&mark(ViewMarkKind::Underline, None)));
+    // Atoms.
+    let at = s.view_render().view.len;
+    s.set_view_selection(at, at);
+    s.command(
+        "insertMention".into(),
+        r#"{"id":"u2","label":"Sam"}"#.into(),
+    )
+    .unwrap();
+    s.command("insertPageLink".into(), r#"{"pageId":"p9"}"#.into())
+        .unwrap();
+    let v = s.view_render().view;
+    let line = &v.lines[0];
+    assert_eq!(line.atoms.len(), 2);
+    assert_eq!(line.atoms[0].kind, "mention");
+    assert_eq!(line.atoms[0].label, "Sam");
+    assert_eq!(line.atoms[0].offset + 1, line.atoms[1].offset);
+    assert!(line.atoms[0].attrs_json.contains("\"u2\""));
+    assert_eq!(line.atoms[1].kind, "pageLink");
+    assert_eq!(line.atoms[1].label, "p9");
+    assert!(line.atoms[1].attrs_json.contains("\"p9\""));
+    assert_eq!(line.attrs_json, None);
+    assert_eq!(line.runs.iter().map(|r| r.len).sum::<u32>(), line.len);
+}
+
+#[test]
+fn view_active_blocks() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    s.command("setHeading".into(), r#"{"level":2}"#.into())
+        .unwrap();
+    let a = s.view_render().active;
+    assert_eq!((a.block.as_str(), a.heading_level), ("heading", 2));
+    s.command("setParagraph".into(), "{}".into()).unwrap();
+    s.command("toggleBulletList".into(), "{}".into()).unwrap();
+    let a = s.view_render().active;
+    assert_eq!(a.block, "paragraph");
+    assert_eq!(a.list.as_deref(), Some("bulletList"));
+    assert!(!a.in_quote && !a.in_code);
+}

@@ -7,7 +7,7 @@
 //! only moves opaque bytes in and out of the map, so a stroke from a newer app (a blob this build
 //! can't decode) is carried along untouched unless it is explicitly deleted.
 
-use yrs::{Any, Doc, Map, Out, ReadTxn, Transact, WriteTxn};
+use yrs::{Any, Doc, Map, Origin, Out, ReadTxn, Transact, WriteTxn};
 
 use crate::page::{is_stroke_value, page_ink, INK_KEY};
 
@@ -36,10 +36,24 @@ pub fn ink_blob(doc: &Doc, id: &str) -> Option<Vec<u8>> {
 /// someone else deleted already are skipped) and add each of `added` under its id. Returns the
 /// ids actually removed. An empty edit writes nothing.
 pub fn commit_ink(doc: &Doc, removed: &[String], added: &[(String, Vec<u8>)]) -> Vec<String> {
+    commit_ink_with(doc, None, removed, added)
+}
+
+/// `commit_ink` in a transaction with the given origin (`None`: no origin). Any origin other than
+/// the sync's remote one is still a local edit; a yrs `UndoManager` can track it by this origin.
+pub fn commit_ink_with(
+    doc: &Doc,
+    origin: Option<Origin>,
+    removed: &[String],
+    added: &[(String, Vec<u8>)],
+) -> Vec<String> {
     if removed.is_empty() && added.is_empty() {
         return Vec::new();
     }
-    let mut txn = doc.transact_mut();
+    let mut txn = match origin {
+        Some(o) => doc.transact_mut_with(o),
+        None => doc.transact_mut(),
+    };
     let ink = txn.get_or_insert_map(INK_KEY);
     let mut gone = Vec::new();
     for id in removed {
