@@ -31,7 +31,7 @@ struct MacRoot: View {
 struct WindowChrome: NSViewRepresentable {
     let background: NSColor
 
-    final class Coordinator { var observing = false }
+    final class Coordinator { var observing = false; var placed = false }
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView {
@@ -62,6 +62,13 @@ struct WindowChrome: NSViewRepresentable {
         window.isMovableByWindowBackground = true
         window.backgroundColor = background
         window.minSize = NSSize(width: 960, height: 600)
+        // Corpus preview (CI screenshots): 1024 x 740 at the top left of the screen's usable area, so the whole window is in the shot.
+        if !coordinator.placed, UserDefaults.standard.bool(forKey: "previewSignedIn"), let screen = window.screen ?? NSScreen.main {
+            coordinator.placed = true
+            let area = screen.visibleFrame
+            let w = min(1024, area.width), h = min(740, area.height)
+            window.setFrame(NSRect(x: area.minX, y: area.maxY - h, width: w, height: h), display: true)
+        }
     }
 }
 

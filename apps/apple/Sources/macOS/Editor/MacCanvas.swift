@@ -131,6 +131,13 @@ final class MacCanvasView: NSView {
     private weak var menuOwner: MacBoxView?
     private var linkHost: NSHostingView<AnyView>?
 
+    // Read-only ink: highlighters behind the boxes, pens in front.
+    private let underInk = MacInkView(under: true)
+    private let overInk = MacInkView(under: false)
+    private var inkGeneration = 0
+    private var inkNeeded = true
+    private var lookDone = false
+
     override var isFlipped: Bool { true }
 
     override init(frame: NSRect) {
@@ -144,6 +151,8 @@ final class MacCanvasView: NSView {
         scroll.minMagnification = 0.5
         scroll.maxMagnification = 3
         scroll.documentView = surface
+        surface.addSubview(underInk)
+        surface.addSubview(overInk)
         scroll.contentView.postsBoundsChangedNotifications = true
         addSubview(scroll)
         surface.onMouseDown = { [weak self] event in self?.surfaceMouseDown(event) }
@@ -249,6 +258,9 @@ final class MacCanvasView: NSView {
             editors = [:]
             shownID = page.id
             needsGeometry = true
+            inkNeeded = true
+            underInk.clear()
+            overInk.clear()
             hideToolbar()
             hideMenu()
             scroll.contentView.scroll(to: .zero)
@@ -257,8 +269,12 @@ final class MacCanvasView: NSView {
         if self.host !== host {
             self.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
-            host?.onSynced = { [weak self] in self?.editors.values.forEach { $0.send(all: true) } }
+            host?.onSynced = { [weak self] in
+                self?.editors.values.forEach { $0.send(all: true) }
+                self?.reloadInk()
+            }
             needsGeometry = true
+            inkNeeded = true
         }
         if needsGeometry {
             needsGeometry = false
@@ -303,6 +319,11 @@ final class MacCanvasView: NSView {
             editors[id] = nil
         }
         relayout()
+        if inkNeeded {
+            inkNeeded = false
+            reloadInk()
+        }
+        runLookIfAsked()
     }
 
     /// A box's drawn width: wide boxes span the visible note area minus 40 pt on each side.
@@ -352,12 +373,18 @@ final class MacCanvasView: NSView {
         }
         // Stacking order: higher z in front (the box being edited in front of all).
         surface.sortSubviews({ a, b, _ in
-            let ka = (a as? MacBoxView)?.sortKey ?? -1, kb = (b as? MacBoxView)?.sortKey ?? -1
+            func key(_ v: NSView) -> Double { (v as? MacBoxView)?.sortKey ?? (v as? MacInkView)?.sortKey ?? -1 }
+            let ka = key(a), kb = key(b)
             return ka < kb ? .orderedAscending : (ka > kb ? .orderedDescending : .orderedSame)
         }, context: nil)
         let vis = visible
         let size = CGSize(width: max(maxX + 240, vis.width), height: max(maxY + 320, oy + 320, vis.height))
         if surface.frame.size != size { surface.setFrameSize(size) }
+        for ink in [underInk, overInk] {
+            if ink.frame != surface.bounds { ink.frame = surface.bounds }
+            ink.origin = CGPoint(x: ox, y: oy)
+            ink.dark = palette.isDark
+        }
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
         layoutHeader()
         window?.invalidateCursorRects(for: surface)
@@ -410,6 +437,82 @@ final class MacCanvasView: NSView {
         if let thread = box.commentThread(at: local) { CommentsModel.shared.focus(thread) }
         // A click on a task line's title edits the title.
         return box.beginTitleEdit(at: local)
+    }
+
+    // MARK: Ink (read-only)
+
+    /// Read the page's strokes again (a page opened, someone else changed it, the connection came back). The Mac shows ink
+    /// but doesn't draw it: drawing is the iPad's Pencil.
+    private func reloadInk() {
+        inkGeneration += 1
+        let mine = inkGeneration
+        guard let host else {
+            underInk.clear()
+            overInk.clear()
+            return
+        }
+        host.loadInk { [weak self] strokes in
+            guard let self, mine == self.inkGeneration, let strokes else { return }
+            self.underInk.set(strokes)
+            self.overInk.set(strokes)
+        }
+    }
+
+    // MARK: Look states
+
+    /// Look states with a box being edited (`-lookState edit-caret` and the like, CI screenshots, as the iPad's
+    /// `PageCanvasView.runLookIfAsked`): the caret at the end of "Box c", as the web reference.
+    private func runLookIfAsked() {
+        guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
+              let state = LookData.state,
+              ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link"].contains(state) else { return }
+        if state == "edit-new-box" {
+            guard !boxViews.isEmpty else { return }
+            lookDone = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                guard let self else { return }
+                self.createBox(at: CGPoint(x: Self.originX + 300, y: Self.originY + 80))
+                if let id = self.boxes.last?.id {
+                    self.geometry.moveBox(id, x: 420, y: 110)
+                    self.geometry.commit(id)
+                    self.boxes = self.geometry.apply(to: self.pageBoxes)
+                    self.relayout()
+                }
+            }
+            return
+        }
+        guard let box = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
+        lookDone = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self, weak box] in
+            guard let self, let box else { return }
+            self.beginEditing(box, at: nil) {
+                let none = NSRange(location: NSNotFound, length: 0)
+                if state == "slash-menu" {
+                    box.insertText("\n", replacementRange: none)
+                    box.insertText("/", replacementRange: none)
+                }
+                // The last line ("Box c").
+                let shown = box.shownText as NSString
+                let nl = shown.range(of: "\n", options: .backwards).location
+                let start = nl == NSNotFound ? 0 : nl + 1
+                if state == "edit-link" {
+                    // The last line made a link, then the editor opened on it (prefilled, with Open and Remove).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        box.lookSelect(from: start)
+                        EditorFocus.shared.run("editLink", ["text": shown.substring(from: start), "href": "example.com/notes"])
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.showLinkEditor() }
+                }
+                if state == "edit-selection" {
+                    for t in [0.3, 1.0, 2.0] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + t) {
+                            box.lookSelect(from: start)
+                            self.updateToolbar()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Comments
@@ -618,6 +721,7 @@ final class MacCanvasView: NSView {
     /// Someone else changed the page: every open box merges the page document again (the read-only boxes redraw from the
     /// snapshot in `show`).
     private func remoteChanged() {
+        reloadInk()
         guard !editors.isEmpty, let host else { return }
         host.fetchDocument { [weak self] document in
             guard let self, let document else { return }

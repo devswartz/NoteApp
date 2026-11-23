@@ -166,6 +166,23 @@ final class Shell {
 
     func closeSearch() { searchOpen = false }
 
+    /// Something is open over the page (Esc on the Mac closes it).
+    var hasOverlay: Bool { dialog != nil || sheet != nil || menu != nil || taskDetailId != nil || searchOpen }
+
+    func dismissTop() {
+        if dialog != nil {
+            dialog = nil
+        } else if sheet != nil {
+            sheet = nil
+        } else if menu != nil {
+            menu = nil
+        } else if taskDetailId != nil {
+            taskDetailId = nil
+        } else if searchOpen {
+            closeSearch()
+        }
+    }
+
     func openTask(_ id: String) {
         menu = nil
         searchOpen = false
@@ -284,6 +301,10 @@ struct AppShell: View {
             // The Mac's main menu has the shortcuts (MacCommands); these two are the web's own.
             .background {
                 Button("") { shell.toggleSidebar() }.keyboardShortcut("\\", modifiers: .command).opacity(0).accessibilityHidden(true)
+                // Esc closes what is open on top (a dialog, a menu, the task sheet, the search), as the web does.
+                if shell.hasOverlay {
+                    Button("") { shell.dismissTop() }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
+                }
             }
             #endif
             .overlay(alignment: .bottom) { ToastView() }

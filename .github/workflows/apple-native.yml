@@ -254,7 +254,7 @@ jobs:
       - name: Mac screenshots
         if: env.CHECKS == 'true'
         continue-on-error: true
-        timeout-minutes: 10
+        timeout-minutes: 20
         run: |
           APP="$(ls -d "$RUNNER_TEMP"/dd-mac/Build/Products/Debug/*.app | head -1)"
           BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
@@ -281,6 +281,10 @@ jobs:
           }
           shoot canvas-boxes -previewSignedIn YES -page canvas-boxes
           shoot tasks -previewSignedIn YES -lookState tasks-my
+          # The iPad look states (Shell.swift, MacCanvas.runLookIfAsked): same names as docs/rewrite/look/reference/.
+          for state in edit-caret edit-selection slash-menu edit-link search task-detail page-settings-and-ink dialog-new-section menu-page-row menu-account; do
+            shoot "$state" -previewSignedIn YES -lookState "$state"
+          done
           cp "$HOME"/Library/Logs/DiagnosticReports/*otivelo* "$OUT/" 2>/dev/null || true
           ls -l "$OUT"
       - uses: actions/upload-artifact@v4
