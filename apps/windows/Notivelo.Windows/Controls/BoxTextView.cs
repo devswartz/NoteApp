@@ -87,6 +87,44 @@ internal sealed class BoxTextView : UserControl
     }
 
 
+    /// <summary>Dev hook: drive the session from a script (NOTIVELO_SEED=file, loopback servers only) to fill a scratch page for screenshots.
+    /// Lines: <c>text ...</c>, <c>key Enter</c>, <c>cmd name {json}</c>, <c>word w</c> (select the last w), <c>end</c>.</summary>
+    public void RunScript(IEnumerable<string> script)
+    {
+        foreach (var raw in script)
+        {
+            var line = raw.TrimEnd((char)13);
+            if (line.Length == 0 || line.StartsWith('#')) continue;
+            var sp = line.IndexOf(' ');
+            var op = sp < 0 ? line : line[..sp];
+            var arg = sp < 0 ? "" : line[(sp + 1)..];
+            try
+            {
+                switch (op)
+                {
+                    case "text": _session.InsertText(arg); break;
+                    case "key": _session.Key(arg); break;
+                    case "cmd":
+                    {
+                        var j = arg.IndexOf(' ');
+                        _session.Command(j < 0 ? arg : arg[..j], j < 0 ? "{}" : arg[(j + 1)..]);
+                        break;
+                    }
+                    case "word":
+                    {
+                        var t = _session.ViewRender().View.Text;
+                        var at = t.LastIndexOf(arg, StringComparison.Ordinal);
+                        if (at >= 0) _session.SetViewSelection((uint)at, (uint)(at + arg.Length));
+                        break;
+                    }
+                    case "end": { var n = (uint)_session.ViewRender().View.Text.Length; _session.SetViewSelection(n, n); break; }
+                }
+            }
+            catch (Exception e) { Log("script " + line, e); }
+        }
+        Render();
+    }
+
     public void Release()
     {
         if (_disposed) return;
@@ -226,7 +264,7 @@ internal sealed class BoxTextView : UserControl
         double y = 0;
         N.ViewLine? prev = null;
         var callouts = -1; var codes = -1; var detailsIdx = -1;
-        var guideTop = -1.0; var guideBottom = 0.0; var guideX = 0.0; var taskRowY = 0.0;
+        var guideTop = -1.0; var guideBottom = 0.0; var guideX = 0.0;
         var detailsOpen = true;
         var inCallout = false; var calloutTop = 0.0; var calloutEmoji = ""; var calloutLeft = 0;
         var quoteTop = -1.0; double quoteX = 0;
@@ -306,8 +344,7 @@ internal sealed class BoxTextView : UserControl
             {
                 y = LayoutObject(box, y, text);
                 prev = line;
-                if (line.Kind == "taskRef") taskRowY = box.Y;
-                if (isNote) { if (guideTop < 0) { guideTop = box.Y; guideX = Metrics.IndentBefore(line, "taskRef") + 26; AddFold(guideX - 26, taskRowY); } guideBottom = box.Y + box.H; }
+                if (isNote) { if (guideTop < 0) { guideTop = box.Y; guideX = Metrics.IndentBefore(line, "taskRef") + 26; } guideBottom = box.Y + box.H; }
                 continue;
             }
 
@@ -346,7 +383,7 @@ internal sealed class BoxTextView : UserControl
                 _decos.Add(new Deco(DecoKind.ToggleArrow, new Rect(0, box.Y, 24, 27), null, detailsOpen ? 1 : 0, i));
             }
             prev = line;
-            if (isNote) { if (guideTop < 0) { guideTop = box.Y; guideX = Metrics.IndentBefore(line, "taskRef") + 26; AddFold(guideX - 26, taskRowY); } guideBottom = box.Y + box.H; }
+            if (isNote) { if (guideTop < 0) { guideTop = box.Y; guideX = Metrics.IndentBefore(line, "taskRef") + 26; } guideBottom = box.Y + box.H; }
         }
         CloseGuide();
         if (inCallout) { y += 12; CloseCallout(y); }
@@ -358,15 +395,6 @@ internal sealed class BoxTextView : UserControl
         Height = _height;
         Trace("relayout done h=" + _height);
         _ = bulletOrdinal;
-    }
-
-    /// <summary>The fold arrow in the gutter left of a task that has notes (LOOK 2.4).</summary>
-    private void AddFold(double textX, double rowY)
-    {
-        var chev = new Icon("chevron-down", 14, C2("TextMuted")) { Width = 22, Height = 22 };
-        Canvas.SetLeft(chev, textX - 22);
-        Canvas.SetTop(chev, rowY + 7);
-        _chrome.Children.Add(chev);
     }
 
     private string SafeDoc()

@@ -30,6 +30,11 @@ internal sealed class PageView : ThemedControl
     /// <summary>Dev hook: NOTIVELO_SELECT=anchor,head selects that view range in the first box and draws the caret/selection.</summary>
     private static readonly (int A, int H)? SelectHook = ParseSelect(Environment.GetEnvironmentVariable("NOTIVELO_SELECT"));
 
+    /// <summary>Dev hook: NOTIVELO_SEED=<script file> fills the first box of the first live page shown (loopback servers only).</summary>
+    private static readonly string? SeedScript = Environment.GetEnvironmentVariable("NOTIVELO_SEED") is { } sf && File.Exists(sf)
+        && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") ? sf : null;
+    private bool _seeded;
+
     private static (int, int)? ParseSelect(string? s) =>
         s?.Split(',') is { Length: 2 } p && int.TryParse(p[0], out var a) && int.TryParse(p[1], out var h) ? (a, h) : null;
 
@@ -280,6 +285,11 @@ internal sealed class PageView : ThemedControl
                 _views[box.Field] = new BoxTextView(session, _source);
             }
             catch (Exception e) { BoxTextView.Log("open " + box.Field, e); }
+        }
+        if (SeedScript is { } seed && _views.Count > 0 && !_seeded)
+        {
+            _seeded = true;
+            _views.Values.First().RunScript(File.ReadAllLines(seed));
         }
         foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); }
     }
