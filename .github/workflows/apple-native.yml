@@ -170,6 +170,64 @@ jobs:
           rm -f "$KEY"
           echo "::notice::Uploaded Notivelo $MARKETING_VERSION ($BUILD_NUMBER) to TestFlight (internal testing only)."
 
+      # The Mac build to TestFlight (macOS), same record as iOS (com.devswartz.notivelo), same version and build number.
+      # A failure here must not undo the iOS upload above, so it is continue-on-error.
+      - name: Archive and upload the Mac app to TestFlight
+        if: env.HAS_ASC == 'true' && env.UPLOAD == 'true'
+        continue-on-error: true
+        working-directory: apps/apple
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          printf '%s' "$ASC_KEY_P8" > "$KEY"
+          AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild -project Notivelo.xcodeproj -scheme NotiveloMac -configuration Release \
+            -destination 'generic/platform=macOS' -archivePath "$RUNNER_TEMP/NotiveloMac.xcarchive" \
+            "${AUTH[@]}" DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive | tail -n 60
+          for dest in export upload; do
+            cat > "$RUNNER_TEMP/ExportOptions-mac-$dest.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>$dest</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>testFlightInternalTestingOnly</key><true/>
+          </dict></plist>
+          PLIST
+          done
+          # A local .pkg first, so the signature and version can be checked before anything is uploaded.
+          rm -rf "$RUNNER_TEMP/export-mac"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/NotiveloMac.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-mac-export.plist" -exportPath "$RUNNER_TEMP/export-mac" "${AUTH[@]}" | tail -n 40
+          ls -l "$RUNNER_TEMP/export-mac"
+          PKG="$(ls "$RUNNER_TEMP"/export-mac/*.pkg | head -1)"
+          pkgutil --check-signature "$PKG" || true
+          rm -rf "$RUNNER_TEMP/pkg-expanded" && pkgutil --expand-full "$PKG" "$RUNNER_TEMP/pkg-expanded"
+          APP="$(find "$RUNNER_TEMP/pkg-expanded" -maxdepth 3 -name '*.app' | head -1)"
+          echo "App in pkg: $APP"
+          plutil -p "$APP/Contents/Info.plist" | grep -E 'CFBundleIdentifier|CFBundleShortVersionString|CFBundleVersion'
+          codesign -dvv "$APP" 2>&1 | grep -E "Authority=|TeamIdentifier=" || true
+          codesign -d --entitlements - "$APP" 2>&1 | head -n 20 || true
+          if ! codesign -dvv "$APP" 2>&1 | grep -qE "Authority=(Apple Distribution|3rd Party Mac Developer Application)"; then
+            echo "::error::the Mac app is not signed with an Apple Distribution / 3rd Party Mac Developer certificate"; exit 1
+          fi
+          case "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")" in
+            1.99.*) ;;
+            *) echo "::error::prototype builds must be version 1.99.x"; exit 1 ;;
+          esac
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/NotiveloMac.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions-mac-upload.plist" -exportPath "$RUNNER_TEMP/upload-mac" "${AUTH[@]}" | tail -n 40
+          rm -f "$KEY"
+          echo "::notice::Uploaded Notivelo Mac $MARKETING_VERSION ($BUILD_NUMBER) to TestFlight (internal testing only)."
+
       - name: Revoke the development certificate this run created
         if: always() && env.HAS_ASC == 'true' && env.UPLOAD == 'true'
         env:
@@ -190,6 +248,48 @@ jobs:
       - name: TestFlight skipped
         if: env.HAS_ASC != 'true' && env.UPLOAD == 'true'
         run: echo "::notice::App Store Connect secrets are not set; skipped the TestFlight upload."
+
+      # The Mac app, launched for real in corpus mode (-previewSignedIn YES, as iOS), and screenshots of the screen with
+      # screencapture. Artifact "mac-shots": the PNGs and the app's stderr.
+      - name: Mac screenshots
+        if: env.CHECKS == 'true'
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          APP="$(ls -d "$RUNNER_TEMP"/dd-mac/Build/Products/Debug/*.app | head -1)"
+          BIN="$APP/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+          OUT="$RUNNER_TEMP/mac-shots"; mkdir -p "$OUT"
+          codesign -dv "$APP" 2>&1 | head -n 5 || true
+          system_profiler SPDisplaysDataType 2>/dev/null | grep -E "Resolution|Display Type" | head -n 3 || true
+          shoot() { # shoot <name> <app args...>
+            local name="$1"; shift
+            "$BIN" "$@" > "$OUT/$name.log" 2>&1 &
+            local pid=$!
+            sleep 12
+            if kill -0 "$pid" 2>/dev/null; then echo "$name: running (pid $pid)"; else echo "::warning::$name: the app exited"; fi
+            osascript -e 'tell application "System Events" to set frontmost of (first process whose unix id is '"$pid"') to true' > "$OUT/$name.front.log" 2>&1 || true
+            sleep 2
+            screencapture -x -t png "$OUT/$name.png" || echo "::warning::screencapture failed: $name"
+            if [ "$name" = canvas-boxes ]; then
+              # Typing, best effort (needs the runner to let System Events send keys).
+              osascript -e 'tell application "System Events" to keystroke "Typed on the Mac"' > "$OUT/$name.type.log" 2>&1 || true
+              sleep 2
+              screencapture -x -t png "$OUT/$name-typed.png" || true
+            fi
+            ls "$HOME/Library/Logs/DiagnosticReports" 2>/dev/null | grep -i notivelo | head -n 3 || true
+            kill "$pid" 2>/dev/null || true; sleep 1
+          }
+          shoot canvas-boxes -previewSignedIn YES -page canvas-boxes
+          shoot tasks -previewSignedIn YES -lookState tasks-my
+          cp "$HOME"/Library/Logs/DiagnosticReports/*otivelo* "$OUT/" 2>/dev/null || true
+          ls -l "$OUT"
+      - uses: actions/upload-artifact@v4
+        if: always() && env.CHECKS == 'true'
+        with:
+          name: mac-shots
+          path: ${{ runner.temp }}/mac-shots/
+          if-no-files-found: ignore
+          retention-days: 14
 
       # Checks (about 25 min), only for commits with [checks] or by hand (when chasing a visual bug): the look side-by-sides,
       # the scroll XCUITest and the typing screenshots. Every push gets the build gate above (core, iPad/iPhone, Mac).
