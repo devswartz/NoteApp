@@ -1,0 +1,84 @@
+name: Windows core
+
+# The Rust core for Windows (docs/rewrite/PLAN.md M8): nv_core.dll for x64 and arm64 (ffi profile), the
+# uniffi-bindgen-cs C# bindings (uniffi 0.32), a Notivelo.Core project and NuGet package, and an xunit
+# smoke test on the page corpus. crates/nv-core/build-windows.sh makes the layout; it is the same
+# script to run by hand. The test runs on x64 only (windows-latest is x64); arm64 is build-only.
+# Runs on every branch push that touches the core (no rewrite/* skip), and on pull requests.
+on:
+  pull_request:
+  push:
+    paths:
+      - 'crates/**'
+      - 'tests/corpus/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/windows-core.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-core-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # The same toolchain as rust.yml.
+  RUST_TOOLCHAIN: '1.99.1'
+  # The release of the C# generator built for the uniffi version nv-core uses (0.32): v<generator>+v<uniffi>.
+  UNIFFI_BINDGEN_CS_TAG: 'v0.12.0+v0.32.0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    name: windows core
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache uniffi-bindgen-cs
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/uniffi-bindgen-cs.exe
+          key: uniffi-bindgen-cs-${{ env.UNIFFI_BINDGEN_CS_TAG }}-${{ env.RUST_TOOLCHAIN }}
+      - name: Install uniffi-bindgen-cs
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install uniffi-bindgen-cs --locked --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag "$UNIFFI_BINDGEN_CS_TAG"
+
+      - name: Build nv_core.dll (x64, arm64) and the C# bindings
+        run: bash crates/nv-core/build-windows.sh
+
+      - name: C# smoke test (x64)
+        working-directory: target/windows/NotiveloCore
+        run: NV_CORPUS_DIR="$GITHUB_WORKSPACE/tests/corpus" dotnet test Tests/Notivelo.Core.Tests --configuration Release
+
+      - name: Pack the NuGet package
+        working-directory: target/windows/NotiveloCore
+        run: |
+          dotnet pack Notivelo.Core --configuration Release --output nupkg
+          unzip -l nupkg/*.nupkg | grep -E 'nv_core.dll|Notivelo.Core.dll'
+          # Build outputs are not part of the artifact.
+          rm -rf Notivelo.Core/bin Notivelo.Core/obj Tests/Notivelo.Core.Tests/bin Tests/Notivelo.Core.Tests/obj
+
+      - name: Upload the package layout
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotiveloCoreWindows
+          path: target/windows/NotiveloCore/
+          retention-days: 14
