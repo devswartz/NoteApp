@@ -109,7 +109,7 @@ struct MacCommands: Commands {
             Button("Notivelo Help") {
                 if let url = URL(string: SessionModel.production + "/support") { NSWorkspace.shared.open(url) }
             }
-            Button("Keyboard Shortcuts") { bridge.shell?.notYet("The shortcuts list") }.keyboardShortcut("/", modifiers: .command)
+            Button("Keyboard Shortcuts") { bridge.openSettings("shortcuts") }.keyboardShortcut("/", modifiers: .command)
         }
     }
 }

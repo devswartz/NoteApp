@@ -16,6 +16,18 @@ enum LookData {
     static var landscape: Bool { UserDefaults.standard.bool(forKey: "lookLandscape") }
 
     static let user = User(id: "demo", email: "demo@example.com", name: "Demo User", color: "#f59e0b", emailVerified: true)
+    /// Settings > Notifications and Connected apps in corpus mode (`settings-notifications`, `settings-connected`).
+    static let notificationSettings = NotificationSettings(timeZone: "Europe/London", emailEnabled: true, defaultReminderTime: "09:00",
+                                                           digestEnabled: true, digestTime: "07:30")
+    static var connectedApps: [ConnectedApp] {
+        [
+            ConnectedApp(clientId: "chatgpt", name: "ChatGPT", clientUri: "https://chatgpt.com", scopes: ["notes:read", "notes:write"],
+                         connectedAt: iso(minutesAgo: 60 * 24 * 12), lastUsedAt: iso(minutesAgo: 90)),
+            ConnectedApp(clientId: "claude", name: "Claude", clientUri: "https://claude.ai", scopes: ["notes:read"],
+                         connectedAt: iso(minutesAgo: 60 * 24 * 3), lastUsedAt: nil),
+        ]
+    }
+
     static let workspaces = [
         Workspace(id: "demos-space", name: "Demo's Space", role: "owner", createdAt: "2026-11-21T00:00:00Z"),
         Workspace(id: "demo-team", name: "Demo Team", role: "owner", createdAt: "2026-11-21T00:00:00Z"),

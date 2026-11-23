@@ -2,9 +2,9 @@ import NotiveloCore
 import SwiftUI
 
 /// Settings (src/pages/Settings.tsx, LOOK.md 3.2, `settings.png`): a section list (a side list on wide screens, a grouped
-/// list then a section on phones) and the open section's cards. Built here: Profile (what the core reads: name, email,
-/// avatar colour; Sign out), Appearance (theme and accent colour, per device), Security (the locked pages password) and
-/// About. Name and password edits, Notifications, Connected apps and the workspace sections wait for core calls.
+/// list then a section on phones) and the open section's cards. Built here: Profile (name, avatar colour; Sign out),
+/// Appearance (theme and accent colour, per device), Notifications, Security (password, locked pages), Connected apps,
+/// Keyboard shortcuts and About (account sections in `SettingsAccount.swift`). The workspace sections are not built.
 struct SettingsSection: Identifiable {
     let id: String
     let title: String
@@ -15,7 +15,10 @@ struct SettingsSection: Identifiable {
     static let all: [SettingsSection] = [
         SettingsSection(id: "profile", title: "Profile", description: "How you appear to your team, and how you sign in.", icon: "user", group: "Account"),
         SettingsSection(id: "appearance", title: "Appearance", description: "How the app looks on this device.", icon: "palette", group: "Account"),
-        SettingsSection(id: "security", title: "Security", description: "Locked notes, and locking the app on this device.", icon: "lock", group: "Account"),
+        SettingsSection(id: "notifications", title: "Notifications", description: "How and when you hear about due tasks.", icon: "bell", group: "Account"),
+        SettingsSection(id: "security", title: "Security", description: "Your password, locked notes, and locking the app on this device.", icon: "lock", group: "Account"),
+        SettingsSection(id: "connected", title: "Connected apps", description: "AI assistants and other apps you’ve allowed to use your notes.", icon: "plug", group: "Account"),
+        SettingsSection(id: "shortcuts", title: "Keyboard shortcuts", description: "For a keyboard, and the Mac’s menus.", icon: "keyboard", group: "App"),
         SettingsSection(id: "about", title: "About", description: "", icon: "info", group: "App"),
     ]
 }
@@ -121,7 +124,10 @@ struct SettingsScreen: View {
             switch section.id {
             case "profile": ProfileSettings()
             case "appearance": AppearanceSettings()
-            case "security": SecuritySettings()
+            case "notifications": NotificationSettingsSection()
+            case "security": PasswordCard(); SecuritySettings()
+            case "connected": ConnectedAppsSection()
+            case "shortcuts": ShortcutsSection()
             default: AboutSettings()
             }
         }
@@ -176,57 +182,6 @@ struct SettingsRow<Control: View>: View {
                 text.frame(maxWidth: .infinity, alignment: .leading)
                 control()
             }
-        }
-    }
-}
-
-struct ProfileSettings: View {
-    @Environment(SessionModel.self) private var session
-    @Environment(Shell.self) private var shell
-    let theme = Theme.shared
-
-    var body: some View {
-        let p = theme.chrome
-        let user = session.shownUser
-        SettingsCard {
-            HStack(alignment: .top, spacing: 20) {
-                AvatarView(name: user?.name ?? "?", color: PlatformColor(css: user?.color ?? "#6366f1"), size: 56)
-                VStack(alignment: .leading, spacing: 14) {
-                    readOnly("Name", user?.name ?? "", p)
-                    VStack(alignment: .leading, spacing: 6) {
-                        readOnly("Email", user?.email ?? "", p)
-                        Text("Your sign-in email can’t be changed yet.").font(.web(12.5)).foregroundStyle(p.textMuted.color)
-                    }
-                    Text("Your name, avatar colour and password can be changed in the web app for now.")
-                        .font(.web(12.5)).foregroundStyle(p.textMuted.color).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        SettingsCard {
-            SettingsRow(title: "Sign out", detail: "You’ll need your email and password to sign in again.") {
-                Button {
-                    session.signOut()
-                } label: {
-                    HStack(spacing: 6) {
-                        Icon("log-out", 15, p.text.color)
-                        Text("Sign out").font(.web(14, 500)).foregroundStyle(p.text.color)
-                    }
-                    .padding(.horizontal, 12).frame(height: 32)
-                    .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func readOnly(_ label: String, _ value: String, _ p: Palette) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.web(12.5, 500)).foregroundStyle(p.text2.color)
-            Text(value).font(.web(14)).foregroundStyle(p.text2.color).lineLimit(1)
-                .padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-                .background(p.bgSubtle.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
         }
     }
 }

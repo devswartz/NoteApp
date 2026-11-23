@@ -221,6 +221,33 @@ final class SessionModel {
         endSession(message: nil)
     }
 
+    /// The profile as the server has it now (Settings > Profile): the signed-in copy follows.
+    func profileChanged(_ updated: User) {
+        guard phase == .signedIn else { return }
+        user = updated
+    }
+
+    /// Change the sign-in password. The server signs out every other device and gives this one a fresh session: its refresh
+    /// token is kept like a sign-in's, and the locked pages lock again.
+    func changePassword(current: String, new: String, then done: @escaping (Result<Void, Error>) -> Void) {
+        call({ core -> (SignedIn, String?) in
+            let signedIn = try core.changePassword(currentPassword: current, newPassword: new)
+            return (signedIn, core.refreshToken())
+        }) { result in
+            switch result {
+            case let .success((signedIn, latest)):
+                self.store(latest ?? signedIn.refreshToken)
+                self.user = signedIn.user
+                self.locksOpen = false
+                self.loadLockStatus()
+                self.refreshTasks()
+                done(.success(()))
+            case let .failure(e):
+                done(.failure(e))
+            }
+        }
+    }
+
     /// The hidden staging switch (long-press the version line on the sign-in screen).
     func toggleStaging() {
         guard phase != .signedIn else { return }
