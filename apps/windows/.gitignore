@@ -1,0 +1,9 @@
+bin/
+obj/
+AppPackages/
+BundleArtifacts/
+.vs/
+*.user
+*.pfx
+*.cer
+*.snk
