@@ -24,6 +24,7 @@
                 <Border x:Name="PageCard" Margin="6,6,6,0" CornerRadius="12,12,0,0" BorderThickness="1" />
                 <Border x:Name="TasksHost" Background="{ThemeResource Bg}" Visibility="Collapsed" />
                 <Border x:Name="CalendarHost" Background="{ThemeResource Bg}" Visibility="Collapsed" />
+                <Border x:Name="SettingsHost" Background="{ThemeResource Bg}" Visibility="Collapsed" />
             </Grid>
         </Grid>
     </Grid>

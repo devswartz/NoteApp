@@ -13,6 +13,8 @@ internal sealed class ShellHost
     public Action<string> OpenTask { get; set; } = _ => { };
     public Action OpenSearch { get; set; } = () => { };
     public Action OpenTrash { get; set; } = () => { };
+    public Action<QuickAddDialog.Seed?> OpenQuickAdd { get; set; } = _ => { };
+    public Action OpenSettings { get; set; } = () => { };
     public TreeActions Tree { get; }
 
     public ShellHost(INotesSource source, OverlayHost overlay)

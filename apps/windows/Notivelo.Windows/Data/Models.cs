@@ -83,3 +83,12 @@ public sealed record TaskDetailItem(
 public sealed record TaskPatch(
     string? Title = null, string? Description = null, bool? Done = null, int? Priority = null,
     string? DueDate = null, bool ClearDue = false, string? AssigneeId = null, bool ClearAssignee = false);
+
+/// <summary>What quick add makes (Apple's SessionModel.NewTaskFields): the words the core's parse_quick_add read, plus the chips' overrides. The source resolves
+/// <see cref="AssigneeMention"/> (@name) and <see cref="TeamText"/> (+team) and finds or makes the tags.</summary>
+public sealed record NewTask(
+    string Title, string Description, byte Priority, string? DueDate, string? DueTime, Notivelo.Native.TaskRecurrence? Recurrence,
+    string? AssigneeMention, string? TeamText, IReadOnlyList<string> Tags, string? PageId);
+
+/// <summary>An open task with a due date (yyyy-MM-dd) for the Calendar's month grid; a task without one is listed in its "No date" tray.</summary>
+public sealed record CalendarTask(string? Due, TaskItem Task, string? DueTime = null);

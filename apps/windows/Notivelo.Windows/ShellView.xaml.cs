@@ -23,6 +23,9 @@ public sealed partial class ShellView : UserControl
     private readonly RibbonView _ribbon = new();
     private readonly PageView _page;
     private readonly TasksView _tasks;
+    private readonly CalendarMonthView _calendar;
+    private readonly SettingsView _settings;
+    private AppRoute _before = AppRoute.Tasks;
     private readonly OverlayHost _overlay = new();
     private readonly ShellHost _host;
     private AppRoute _route = AppRoute.Notes;
@@ -32,7 +35,7 @@ public sealed partial class ShellView : UserControl
     private bool _sidebarOpen = true;
     private ThemeMode _theme = ThemeMode.Hybrid;
 
-    public ShellView(INotesSource source, Action? signOut = null)
+    public ShellView(INotesSource source, Action? signOut = null, string? server = null)
     {
         _source = source;
         InitializeComponent();
@@ -41,6 +44,8 @@ public sealed partial class ShellView : UserControl
         _sidebar = new SidebarView(source);
         _page = new PageView(source);
         _tasks = new TasksView(source);
+        _calendar = new CalendarMonthView(source);
+        _settings = new SettingsView(source, () => _theme, m => SetTheme(m), signOut, server);
         Root.Children.Add(_overlay);
         Grid.SetRowSpan(_overlay, 2);
         _host = new ShellHost(source, _overlay)
@@ -49,8 +54,10 @@ public sealed partial class ShellView : UserControl
             OpenTask = id => TaskSheet.Show(_host!, id),
             OpenSearch = () => { if (!_overlay.IsOpen) SearchPalette.Show(_host!); },
             OpenTrash = () => TrashDialog.Show(_host!),
+            OpenQuickAdd = s => QuickAddDialog.Show(_host!, s),
+            OpenSettings = () => { _overlay.CloseAll(); GoTo(AppRoute.Settings); },
         };
-        _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host;
+        _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host; _calendar.Host = _host; _settings.Host = _host;
         KeyDown += OnShellKey;
 
         RibbonHost.Child = _ribbon;
@@ -58,15 +65,15 @@ public sealed partial class ShellView : UserControl
         SidebarHost.Child = _sidebar;
         PageCard.Child = _page;
         TasksHost.Child = _tasks;
-        CalendarHost.Child = new TextBlock
-        {
-            Text = "Calendar comes later.", FontSize = 14, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Opacity = 0.6,
-        };
+        CalendarHost.Child = _calendar;
+        SettingsHost.Child = _settings;
         SidebarCell.Children.Add(MakeGrip());
 
-        _rail.RouteChanged += r => { _route = r; Refresh(); };
+        _rail.RouteChanged += r => GoTo(r);
+        _ribbon.Invoked += OnRibbon;
         _rail.ToggleSidebar += () => { _sidebarOpen = !_sidebarOpen; ApplySidebar(); _rail.SetSidebarOpen(_sidebarOpen); };
-        _rail.ThemeCycle += () => { _theme = (ThemeMode)(((int)_theme + 1) % 3); ApplyTheme(); };
+        _rail.CurrentTheme = () => _theme;
+        _rail.ThemeSelected += m => SetTheme(m);
         _sidebar.PageSelected += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
         _page.TaskOpened += id => _host.OpenTask(id);
         _page.PageOpened += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
@@ -109,7 +116,28 @@ public sealed partial class ShellView : UserControl
     }
 
     /// <summary>Dev/test hook (NOTIVELO_ROUTE=tasks|calendar|notes): start on another route.</summary>
-    public void Navigate(AppRoute route, TaskViewKind? view = null) { _route = route; if (view is { } v) _taskView = v; Refresh(); }
+    public void Navigate(AppRoute route, TaskViewKind? view = null) { if (view is { } v) _taskView = v; GoTo(route); }
+
+    /// <summary>Show a route. Settings keeps the sidebar of the route it was opened from and the ribbon's back arrow returns to it.</summary>
+    private void GoTo(AppRoute route)
+    {
+        if (route == AppRoute.Settings && _route != AppRoute.Settings) _before = _route;
+        _route = route;
+        Refresh();
+    }
+
+    /// <summary>The ribbon buttons that do something outside the page: New task (Tasks, Calendar), the Calendar's navigation, Settings' back arrow.</summary>
+    private void OnRibbon(string tip)
+    {
+        switch (tip)
+        {
+            case "New task": QuickAddDialog.Show(_host, null); break;
+            case "Today" when _route == AppRoute.Calendar: _calendar.GoToday(); break;
+            case "Previous" when _route == AppRoute.Calendar: _calendar.Step(-1); break;
+            case "Next" when _route == AppRoute.Calendar: _calendar.Step(1); break;
+            case "Back" when _route == AppRoute.Settings: GoTo(_before == AppRoute.Settings ? AppRoute.Notes : _before); break;
+        }
+    }
 
     public void SetTheme(ThemeMode m) { _theme = m; ApplyTheme(); }
 
@@ -128,12 +156,14 @@ public sealed partial class ShellView : UserControl
         // The page is open (a live page) only while it is shown; leaving the Notes view closes it.
         _source.OpenPage(_route == AppRoute.Notes ? _pageId : null);
         _rail.SetRoute(_route);
-        _sidebar.Update(_route, _pageId, _taskView);
+        _sidebar.Update(_route == AppRoute.Settings ? _before : _route, _pageId, _taskView);
         if (_page.PageId == _pageId) _page.Refresh(); else _page.SetPage(_pageId);
         _tasks.SetView(_taskView);
         PageCard.Visibility = _route == AppRoute.Notes ? Visibility.Visible : Visibility.Collapsed;
         TasksHost.Visibility = _route == AppRoute.Tasks ? Visibility.Visible : Visibility.Collapsed;
         CalendarHost.Visibility = _route == AppRoute.Calendar ? Visibility.Visible : Visibility.Collapsed;
+        SettingsHost.Visibility = _route == AppRoute.Settings ? Visibility.Visible : Visibility.Collapsed;
+        if (_route == AppRoute.Calendar) _calendar.Refresh();
         ApplyBreakpoints(ActualWidth);
     }
 
@@ -143,7 +173,23 @@ public sealed partial class ShellView : UserControl
         if (e.Handled) return;
         var ctrl = InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Control).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down);
         var shift = InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Shift).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down);
+        // Q opens quick add when no text box has the keyboard (Apple's shortcut shown on the sidebar's Add task)
+        if (!ctrl && e.Key == global::Windows.System.VirtualKey.Q && e.OriginalSource is not TextBox && e.OriginalSource is not RichEditBox
+            && !_overlay.IsOpen && BoxTextView.Focused is null && _route != AppRoute.Settings)
+        {
+            e.Handled = true;
+            _host.OpenQuickAdd(null);
+            return;
+        }
         if (!ctrl) return;
+        // no box has the keyboard: undo/redo still reach the live page (a box's own key handling marks the key handled first)
+        if (_route == AppRoute.Notes && (e.Key == global::Windows.System.VirtualKey.Z || e.Key == global::Windows.System.VirtualKey.Y)
+            && !_overlay.IsOpen && e.OriginalSource is not TextBox)
+        {
+            var undo = e.Key == global::Windows.System.VirtualKey.Z && !shift;
+            if (_page.Undo(undo) is not null) e.Handled = true;
+            return;
+        }
         if ((e.Key == global::Windows.System.VirtualKey.K && !shift) || (e.Key == global::Windows.System.VirtualKey.F && shift))
         {
             e.Handled = true;
@@ -169,6 +215,7 @@ public sealed partial class ShellView : UserControl
         MainHost.RequestedTheme = chrome;
         TasksHost.RequestedTheme = chrome;
         CalendarHost.RequestedTheme = chrome;
+        SettingsHost.RequestedTheme = chrome;
         PageCard.RequestedTheme = page;
         MainHost.Background = (Brush)ThemeBrushes.Get(_theme == ThemeMode.Light ? "Bg" : "BgSidebar", chrome);
         PageCard.Background = _theme == ThemeMode.Hybrid ? Ui.Hex("#fcfcfa") : ThemeBrushes.Get("Bg", page);

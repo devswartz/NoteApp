@@ -201,6 +201,8 @@ public sealed partial class SampleNotesSource : INotesSource
     }
 
     public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
+    public bool? PageUndo(string pageId, bool undo) => null;
+    public bool? CanPageUndo(string pageId, bool undo) => null;
     public TaskItem? FindTask(string taskId) => _made.GetValueOrDefault(taskId);
     public string? PageTitleOf(string pageId) => _pages.GetValueOrDefault(pageId)?.Title;
     public string? EmojiOfPage(string pageId) => null;

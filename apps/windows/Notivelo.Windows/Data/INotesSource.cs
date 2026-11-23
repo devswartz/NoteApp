@@ -31,6 +31,11 @@ public interface INotesSource
 
     /// <summary>The open page's live connection once it has synced (null for a source with none, or while connecting). The box views open editor sessions on it.</summary>
     Notivelo.Native.LivePage? LivePageOf(string pageId);
+    /// <summary>Undo (or redo) the page's newest change through the core's page undo. Null: the page isn't live (the box's own undo applies);
+    /// otherwise whether something changed. Nothing is notified by the core: the page info is read again here and <c>Changed</c> is raised.</summary>
+    bool? PageUndo(string pageId, bool undo);
+    /// <summary>Whether <see cref="PageUndo"/> would change something; null when the page isn't live.</summary>
+    bool? CanPageUndo(string pageId, bool undo);
     /// <summary>A task by id for task lines in a box (null: missing or not visible).</summary>
     TaskItem? FindTask(string taskId);
     /// <summary>The title of a page by id, or null when it isn't in the tree (a missing page link).</summary>
@@ -91,6 +96,11 @@ public interface INotesSource
     TaskDetailItem? GetTaskDetail(string taskId) => null;
     /// <summary>Change a task (shown at once, then sent to the core). A tick is <c>new TaskPatch(Done: true)</c>.</summary>
     void UpdateTask(string taskId, TaskPatch patch) { }
+
+    /// <summary>Quick add: make a task (shown at once on success). Returns an error sentence, or null.</summary>
+    Task<string?> AddTask(NewTask task) => Task.FromResult<string?>("Not available.");
+    /// <summary>The open tasks assigned to you (with their due day, null when none) for the Calendar.</summary>
+    IReadOnlyList<CalendarTask> CalendarTasks() => Array.Empty<CalendarTask>();
 
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();

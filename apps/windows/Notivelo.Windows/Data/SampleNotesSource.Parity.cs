@@ -295,4 +295,55 @@ public sealed partial class SampleNotesSource
         Log($"task {id} " + (p.Done is { } dn ? (dn ? "done" : "open") : "edit"));
         Raise();
     }
+
+    // ---- quick add and the Calendar (in memory) ----
+
+    private static DateOnly TodayDay => DateOnly.FromDateTime(DateTime.Now);
+
+    public Task<string?> AddTask(NewTask t)
+    {
+        var title = t.Title.Trim();
+        if (title.Length == 0) return Tsk.FromResult<string?>("Give the task a title.");
+        var id = NewId("t");
+        DateOnly? due = t.DueDate is { } d && DateOnly.TryParseExact(d, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var v) ? v : null;
+        var diff = due is { } dd ? dd.DayNumber - TodayDay.DayNumber : 0;
+        var (label, tone) = due is null ? ((string?)null, DueTone.None) : diff < 0 ? (due.Value.ToString("d MMM"), DueTone.Overdue) : diff == 0 ? ("Today", DueTone.Today)
+            : diff == 1 ? ("Tomorrow", DueTone.Soon) : (due.Value.ToString("d MMM"), diff < 7 ? DueTone.Soon : DueTone.Later);
+        var item = new TaskItem(id, title, false, t.Priority >= 4 ? 0 : t.Priority, label, tone, t.Recurrence is not null, null, null, "DU", t.Tags, 0, 0);
+        if (t.Description.Length > 0) _desc[id] = t.Description;
+        if (due is { } dv) _extra[id] = (dv.ToString("yyyy-MM-dd"), null);
+        // a new task is shown in the lists it belongs to: Today when due today or earlier, always My Tasks and All tasks
+        void Put(TaskViewKind view, string group, bool overdue)
+        {
+            var list = _groups[view].ToList();
+            var i = list.FindIndex(g => g.Title.StartsWith(group));
+            if (i >= 0) list[i] = list[i] with { Count = list[i].Count + 1, Tasks = list[i].Tasks.Append(item).ToList() };
+            else list.Add(new TaskGroup(group, 1, overdue, new[] { item }));
+            _groups[view] = list;
+        }
+        var g = due is null ? "No date" : diff < 0 ? "Overdue" : diff == 0 ? "Today" : "Later";
+        if (diff <= 0 && due is not null) Put(TaskViewKind.Today, g, diff < 0);
+        Put(TaskViewKind.MyTasks, g, g == "Overdue");
+        Put(TaskViewKind.All, g, g == "Overdue");
+        _tasksVersion++;
+        Log($"quickadd {id} {title}");
+        Raise();
+        return Tsk.FromResult<string?>(null);
+    }
+
+    public IReadOnlyList<CalendarTask> CalendarTasks()
+    {
+        var today = TodayDay;
+        // the sample tasks' days (their lists carry only labels)
+        DateOnly? Seed(string id) => id switch
+        {
+            "t-launch" => today.AddDays(-1), "t-welcome" or "t-notes" => today, "t-up1" => today.AddDays(1), "t-up2" or "t-slow" => today.AddDays(2),
+            "t-plan" => today.AddDays(9), _ => null,
+        };
+        return AllTasks().DistinctBy(t => t.Id).Where(t => !t.Done && t.Assignee is not null).Select(t =>
+        {
+            DateOnly? due = _extra.TryGetValue(t.Id, out var e) ? (e.Due is { } str && DateOnly.TryParse(str, out var p) ? p : null) : Seed(t.Id);
+            return new CalendarTask(due?.ToString("yyyy-MM-dd"), t);
+        }).ToList();
+    }
 }

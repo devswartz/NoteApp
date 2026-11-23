@@ -107,4 +107,94 @@ public class ParityTests
         Invoke(h, "task-circle-t-launch");
         AppHost.Wait(() => Status(h, "task-circle-t-launch") == "done=1" ? "x" : null, "the task ticked");
     });
+
+    [Fact]
+    public void Notebook_picker_opens_on_the_overlay_and_lists_the_notebooks() => AppHost.Run(nameof(Notebook_picker_opens_on_the_overlay_and_lists_the_notebooks), h =>
+    {
+        Invoke(h, "notebook-picker");
+        Find(h, "menu-notebook-picker");
+        Assert.Equal("Look reference", NameOf(h, "notebook-look-reference"));
+        Invoke(h, "notebook-look-reference");               // picking the open notebook closes the menu
+        AppHost.Wait(() => Gone(h, "menu-notebook-picker") ? "x" : null, "the picker closed");
+    });
+
+    [Fact]
+    public void Account_menu_shows_the_theme_switch() => AppHost.Run(nameof(Account_menu_shows_the_theme_switch), h =>
+    {
+        Invoke(h, "rail-account");
+        Find(h, "menu-account");
+        Assert.Contains("Hybrid", NameOf(h, "theme-hybrid"));
+        Assert.EndsWith("(selected)", NameOf(h, "theme-hybrid"));
+        Find(h, "theme-light");
+        Invoke(h, "theme-dark");
+        AppHost.Wait(() => Gone(h, "menu-account") ? "x" : null, "the account menu closed");
+        Invoke(h, "rail-account");                           // reopened: the choice is marked
+        AppHost.Wait(() => NameOf(h, "theme-dark").EndsWith("(selected)") ? "x" : null, "Dark marked");
+    });
+
+    [Fact]
+    public void Floating_toolbar_follows_a_text_selection() => AppHost.Run(nameof(Floating_toolbar_follows_a_text_selection), h =>
+    {
+        h.A.Focus();
+        h.Type("hello");
+        h.A.WaitText("hello");
+        Assert.True(Gone(h, "floating-toolbar"));            // a caret has no bar
+        h.Chord(CONTROL, KEY_A);
+        Find(h, "floating-toolbar");
+        Invoke(h, "float-bold");
+        Find(h, "floating-toolbar");                         // the box keeps the selection and the keyboard
+        h.A.WaitFor(s => s.Focus, "the box still focused");
+        h.Press(RIGHT);
+        AppHost.Wait(() => Gone(h, "floating-toolbar") ? "x" : null, "the bar gone with the selection");
+    });
+
+    [Fact]
+    public void Quick_add_makes_a_task_that_shows_in_the_list() => AppHost.Run(nameof(Quick_add_makes_a_task_that_shows_in_the_list), h =>
+    {
+        OpenTasks(h);
+        Retry(() => Find(h, "sidebar-add-task").Click());
+        Find(h, "quickadd-card");
+        SetText(h, "quickadd-input", "Buy oat milk p1");
+        AppHost.Wait(() => NameOf(h, "quickadd-priority") == "P1" ? "x" : null, "the P1 chip from the line (the core's parse)");
+        Invoke(h, "quickadd-due");
+        Invoke(h, "quickadd-due-today");
+        AppHost.Wait(() => NameOf(h, "quickadd-due") == "Today" ? "x" : null, "the due chip set to Today");
+        Invoke(h, "quickadd-ok");
+        AppHost.Wait(() => Gone(h, "quickadd-card") ? "x" : null, "the dialog closed");
+        AppHost.Wait(() => h.Window.FindAllDescendants().Any(e => e.Properties.AutomationId.ValueOrDefault?.StartsWith("task-row-") == true
+            && e.Properties.Name.ValueOrDefault == "Buy oat milk") ? "x" : null, "the new task in the Today list");
+    });
+
+    [Fact]
+    public void Calendar_shows_a_month_and_navigates() => AppHost.Run(nameof(Calendar_shows_a_month_and_navigates), h =>
+    {
+        Retry(() => Find(h, "rail-calendar").Click());
+        Find(h, "calendar-grid");
+        var now = DateTime.Now;
+        var month = now.ToString("MMMM yyyy");
+        AppHost.Wait(() => NameOf(h, "calendar-title") == month ? "x" : null, "the title of this month");
+        Find(h, "cal-daynum-" + now.ToString("yyyy-MM-dd") + "-today");          // today is marked
+        Find(h, "cal-task-t-welcome");                                           // a sample task due today
+        Invoke(h, "calendar-next");
+        var next = new DateTime(now.Year, now.Month, 1).AddMonths(1).ToString("MMMM yyyy");
+        AppHost.Wait(() => NameOf(h, "calendar-title") == next ? "x" : null, "next month");
+        Invoke(h, "calendar-today");
+        AppHost.Wait(() => NameOf(h, "calendar-title") == month ? "x" : null, "back to this month");
+    });
+
+    [Fact]
+    public void Settings_opens_from_the_account_menu() => AppHost.Run(nameof(Settings_opens_from_the_account_menu), h =>
+    {
+        Invoke(h, "rail-account");
+        Invoke(h, "menu-settings");
+        Find(h, "settings-root");
+        Find(h, "settings-name");
+        Invoke(h, "settings-section-appearance");
+        Invoke(h, "settings-theme-light");
+        AppHost.Wait(() => NameOf(h, "settings-theme-light").EndsWith("(selected)") ? "x" : null, "Light selected");
+        Invoke(h, "settings-section-about");
+        Find(h, "settings-version");
+        Invoke(h, "ribbon-back");
+        AppHost.Wait(() => Gone(h, "settings-root") ? "x" : null, "Settings closed by the back arrow");
+    });
 }

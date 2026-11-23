@@ -48,6 +48,10 @@ internal sealed class TasksView : ThemedControl
         var add = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(6, 8, 6, 8), Margin = new Thickness(0, 0, 0, 0) };
         add.Children.Add(new Icon("plus", 15, B("TextMuted")));
         add.Children.Add(Ui.Text("Add task", 13.5, B("TextMuted")));
+        add.Background = new SolidColorBrush(Colors.Transparent);
+        add.Tapped += (_, _) => Host?.OpenQuickAdd(null);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(add, "tasks-add-task");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(add, "Add task");
         root.Children.Add(add);
         return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }

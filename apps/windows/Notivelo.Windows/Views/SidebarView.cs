@@ -101,25 +101,24 @@ internal sealed class SidebarView : ThemedControl
         Grid.SetColumn(chev, 2);
         pg.Children.Add(chev);
         picker.Content = pg;
-        var menu = new MenuFlyout();
-        foreach (var n in _source.Notebooks)
+        // LOOK 4.9 notebook picker: "My notebooks" with each notebook's tile, a check on the open one and a lock on private ones, then New notebook
+        picker.Click += (_, _) =>
         {
-            var id = n.Id;
-            var item = new MenuFlyoutItem { Text = n.Name };
-            if (id == nb.Id) item.Icon = new FontIcon { Glyph = "", FontSize = 12 };
-            item.Click += (_, _) => { _source.SelectNotebook(id); Rebuild(); };
-            menu.Items.Add(item);
-        }
-        if (_source.CanEditTree)
-        {
-            menu.Items.Add(new MenuFlyoutSeparator());
-            var nn = new MenuFlyoutItem { Text = "New notebook" };
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(nn, "new-notebook");
-            nn.Click += (_, _) => Host?.Tree.NewNotebook();
-            menu.Items.Add(nn);
-        }
+            if (Host is null) return;
+            var items = new List<MenuEntry> { MenuEntry.Label("My notebooks") };
+            foreach (var n in _source.Notebooks)
+            {
+                var id = n.Id;
+                items.Add(new MenuEntry(n.Name, Click: () => { _source.SelectNotebook(id); Rebuild(); }, TileColor: n.ColorHex, Check: id == nb.Id, Lock: n.IsPrivate, Id: "notebook-" + PopupMenu.Slug(n.Name)));
+            }
+            if (_source.CanEditTree)
+            {
+                items.Add(MenuEntry.Sep());
+                items.Add(new MenuEntry("New notebook", "book-plus", () => Host?.Tree.NewNotebook(), Id: "new-notebook"));
+            }
+            PopupMenu.Show(Host.Overlay, items, picker, id: "menu-notebook-picker", width: 260);
+        };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(picker, "notebook-picker");
-        picker.Flyout = menu;
         head.Children.Add(picker);
         var more = Ui.IconButton("ellipsis", 15, 24, 24, "Notebook options");
         more.Margin = new Thickness(4, 0, 0, 0);
@@ -303,7 +302,10 @@ internal sealed class SidebarView : ThemedControl
         };
         Grid.SetColumn(kbd, 2);
         add.Children.Add(kbd);
-        root.Children.Add(Row(32, 7, false, null, add, new Thickness(10, 0, 10, 0)));
+        var addRow = Row(32, 7, false, () => Host?.OpenQuickAdd(null), add, new Thickness(10, 0, 10, 0));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(addRow, "sidebar-add-task");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(addRow, "Add task");
+        root.Children.Add(addRow);
         root.Children.Add(new Border { Height = 14 });
 
         root.Children.Add(TaskItemRow("sun", "Today", TaskViewKind.Today, counts.Today, counts.TodayOverdue));

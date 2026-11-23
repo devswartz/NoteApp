@@ -8,7 +8,7 @@ using Notivelo.Windows.Data;
 
 namespace Notivelo.Windows.Views;
 
-public enum AppRoute { Notes, Tasks, Calendar }
+public enum AppRoute { Notes, Tasks, Calendar, Settings }
 
 /// <summary>Rail (LOOK 4.2): 64 wide; Notes / Tasks / Calendar on top, sidebar toggle, search, bell, workspace and account at the foot.</summary>
 internal sealed class RailView : ThemedControl
@@ -20,7 +20,9 @@ internal sealed class RailView : ThemedControl
     public bool SidebarOpen { get; private set; } = true;
     public event Action<AppRoute>? RouteChanged;
     public event Action? ToggleSidebar;
-    public event Action? ThemeCycle;
+    public event Action<ThemeMode>? ThemeSelected;
+    /// <summary>The theme now in use (the account menu marks it).</summary>
+    public Func<ThemeMode>? CurrentTheme { get; set; }
     public event Action<string>? WorkspaceSelected;
     internal ShellHost? Host { get; set; }
 
@@ -84,31 +86,73 @@ internal sealed class RailView : ThemedControl
             }
             if (items.Count == 0) return;
             var tl = ws.TransformToVisual(null).TransformPoint(new global::Windows.Foundation.Point(0, 0));
-            var h = items.Sum(i => i.Separator ? 13 : 32) + 14;
+            var h = items.Sum(i => i.Height) + 14;
             PopupMenu.Show(Host.Overlay, items, null, at: new global::Windows.Foundation.Point(tl.X + ws.ActualWidth + 6, tl.Y + ws.ActualHeight - h), id: "menu-workspace");
         };
         foot.Children.Add(ws);
 
         var acct = new Button { Style = Ui.Style("GhostButtonStyle"), Width = 40, Height = 40, CornerRadius = new CornerRadius(9), Content = Ui.Avatar(_ws.UserInitials, 26) };
         ToolTipService.SetToolTip(acct, "Account");
-        var acctMenu = new MenuFlyout();
-        acctMenu.Items.Add(new MenuFlyoutItem { Text = _ws.UserName, IsEnabled = false });
-        if (_ws.UserEmail.Length > 0 && _ws.UserEmail != _ws.UserName) acctMenu.Items.Add(new MenuFlyoutItem { Text = _ws.UserEmail, IsEnabled = false });
-        acctMenu.Items.Add(new MenuFlyoutSeparator());
-        var theme = new MenuFlyoutItem { Text = "Change theme", Icon = new FontIcon { Glyph = "", FontSize = 14 } };
-        theme.Click += (_, _) => ThemeCycle?.Invoke();
-        acctMenu.Items.Add(theme);
-        if (_signOut is not null)
+        // LOOK 4.9 account menu: name and email, the theme switch, then Sign out; opens to the right, bottom-aligned
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(acct, "rail-account");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(acct, "Account");
+        acct.Click += (_, _) =>
         {
-            var so = new MenuFlyoutItem { Text = "Sign out", Icon = new FontIcon { Glyph = "", FontSize = 14 } };
-            so.Click += (_, _) => _signOut();
-            acctMenu.Items.Add(so);
-        }
-        acct.Flyout = acctMenu;
+            if (Host is null) return;
+            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), new MenuEntry("Settings", "settings", () => Host?.OpenSettings(), Id: "menu-settings"), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48) };
+            if (_signOut is not null)
+            {
+                items.Add(MenuEntry.Sep());
+                items.Add(new MenuEntry("Sign out", "log-out", () => _signOut()));
+            }
+            var tl = acct.TransformToVisual(null).TransformPoint(new global::Windows.Foundation.Point(0, 0));
+            var h = items.Sum(i => i.Height) + 14;
+            PopupMenu.Show(Host.Overlay, items, null, at: new global::Windows.Foundation.Point(tl.X + acct.ActualWidth + 6, tl.Y + acct.ActualHeight - h), id: "menu-account", width: 262);
+        };
         foot.Children.Add(acct);
         Grid.SetRow(foot, 1);
         root.Children.Add(foot);
         return root;
+    }
+
+    private UIElement AccountHeader(Func<string, Brush> b, Action close)
+    {
+        var col = new StackPanel { Spacing = 2, Padding = new Thickness(10, 8, 10, 8) };
+        col.Children.Add(Ui.Text(_ws.UserName, 14, b("Text"), 600));
+        if (_ws.UserEmail.Length > 0) col.Children.Add(Ui.Text(_ws.UserEmail, 12.5, b("TextMuted")));
+        return col;
+    }
+
+    /// <summary>The Theme switch: Light, Dark, Hybrid (chrome dark, page light) as three segments on a subtle track.</summary>
+    private UIElement ThemeSwitch(Func<string, Brush> b, Action close)
+    {
+        var now = CurrentTheme?.Invoke() ?? ThemeMode.Hybrid;
+        var track = new Grid
+        {
+            ColumnSpacing = 2, Padding = new Thickness(2), Margin = new Thickness(4, 0, 4, 2), Height = 46, CornerRadius = new CornerRadius(8),
+            Background = b("BgSubtle"), BorderBrush = b("Border"), BorderThickness = new Thickness(1),
+        };
+        var modes = new[] { (ThemeMode.Light, "Light", "sun"), (ThemeMode.Dark, "Dark", "moon"), (ThemeMode.Hybrid, "Hybrid", "contrast") };
+        for (var i = 0; i < modes.Length; i++)
+        {
+            var (mode, label, icon) = modes[i];
+            track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var active = mode == now;
+            var col = new StackPanel { Spacing = 3, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            col.Children.Add(new Icon(icon, 14, active ? b("Text") : b("TextMuted")) { HorizontalAlignment = HorizontalAlignment.Center });
+            col.Children.Add(Ui.Text(label, 11.5, active ? b("Text") : b("TextMuted"), 500).With(t => t.HorizontalAlignment = HorizontalAlignment.Center));
+            var seg = new Button
+            {
+                Style = Ui.Style("GhostButtonStyle"), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Padding = new Thickness(0),
+                CornerRadius = new CornerRadius(6), Content = col, Background = active ? b("Bg") : null,
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(seg, "theme-" + label.ToLowerInvariant());
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(seg, label + (active ? " (selected)" : ""));
+            seg.Click += (_, _) => { close(); ThemeSelected?.Invoke(mode); };
+            Grid.SetColumn(seg, i);
+            track.Children.Add(seg);
+        }
+        return track;
     }
 
     private UIElement ViewButton(string icon, string label, AppRoute route)

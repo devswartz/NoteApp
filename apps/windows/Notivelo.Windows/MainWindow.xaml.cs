@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
         var offline = string.Equals(sourceMode, "offline", StringComparison.OrdinalIgnoreCase);
         if (offline || string.Equals(sourceMode, "sample", StringComparison.OrdinalIgnoreCase))
         {
-            ShowShell(new SampleNotesSource(offline), null);
+            ShowShell(new SampleNotesSource(offline), null, null);
         }
         else
         {
@@ -74,7 +74,7 @@ public sealed partial class MainWindow : Window
         {
             if (_shown == SessionPhase.SignedIn) return;
             _shown = SessionPhase.SignedIn;
-            ShowShell(s.Source!, s.SignOut);
+            ShowShell(s.Source!, s.SignOut, s.Host);
         }
         else
         {
@@ -87,9 +87,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void ShowShell(INotesSource source, Action? signOut)
+    private void ShowShell(INotesSource source, Action? signOut, string? server)
     {
-        var shell = new ShellView(source, signOut);
+        var shell = new ShellView(source, signOut, server);
         if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode);
         if (Enum.TryParse<AppRoute>(Environment.GetEnvironmentVariable("NOTIVELO_ROUTE"), true, out var route)) shell.Navigate(route);
         Host.Children.Clear();
