@@ -35,3 +35,5 @@ Calendar (month and week, drag a task to another day), quick add (natural-langua
 Create account, Check your email, invite links, Members and Export as Markdown (2026-11-23).
 
 Page-level undo and the calendar Status, tag and person filters are in this build.
+
+Settings: profile edit, password, notifications, connected apps, keyboard shortcuts, bordered fields are in this build.

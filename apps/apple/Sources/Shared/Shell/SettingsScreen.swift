@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Settings (src/pages/Settings.tsx, LOOK.md 3.2, `settings.png`): a section list (a side list on wide screens, a grouped
 /// list then a section on phones) and the open section's cards. Built here: Profile (name, avatar colour; Sign out),
-/// Appearance (theme and accent colour, per device), Notifications, Security (password, locked pages), Connected apps,
+/// Appearance (theme and accent colour, per device), Notifications, Security (locked pages), Connected apps,
 /// Keyboard shortcuts and About (account sections in `SettingsAccount.swift`). The workspace sections are not built.
 struct SettingsSection: Identifiable {
     let id: String
@@ -15,8 +15,8 @@ struct SettingsSection: Identifiable {
     static let all: [SettingsSection] = [
         SettingsSection(id: "profile", title: "Profile", description: "How you appear to your team, and how you sign in.", icon: "user", group: "Account"),
         SettingsSection(id: "appearance", title: "Appearance", description: "How the app looks on this device.", icon: "palette", group: "Account"),
+        SettingsSection(id: "security", title: "Security", description: "Locked notes, and locking the app on this device.", icon: "lock", group: "Account"),
         SettingsSection(id: "notifications", title: "Notifications", description: "How and when you hear about due tasks.", icon: "bell", group: "Account"),
-        SettingsSection(id: "security", title: "Security", description: "Your password, locked notes, and locking the app on this device.", icon: "lock", group: "Account"),
         SettingsSection(id: "connected", title: "Connected apps", description: "AI assistants and other apps you’ve allowed to use your notes.", icon: "plug", group: "Account"),
         SettingsSection(id: "shortcuts", title: "Keyboard shortcuts", description: "For a keyboard, and the Mac’s menus.", icon: "keyboard", group: "App"),
         SettingsSection(id: "about", title: "About", description: "", icon: "info", group: "App"),
@@ -125,7 +125,7 @@ struct SettingsScreen: View {
             case "profile": ProfileSettings()
             case "appearance": AppearanceSettings()
             case "notifications": NotificationSettingsSection()
-            case "security": PasswordCard(); SecuritySettings()
+            case "security": SecuritySettings()
             case "connected": ConnectedAppsSection()
             case "shortcuts": ShortcutsSection()
             default: AboutSettings()

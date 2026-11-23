@@ -148,6 +148,7 @@ struct ProfileSettings: View {
                 HStack(alignment: .top, spacing: 20) { avatar; fields }
             }
         }
+        PasswordCard()
         SettingsCard {
             SettingsRow(title: "Sign out", detail: "You’ll need your email and password to sign in again.") {
                 Button {
