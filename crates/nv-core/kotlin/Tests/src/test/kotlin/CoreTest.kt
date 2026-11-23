@@ -110,7 +110,7 @@ class CoreTest {
                 assertTrue(heard.statuses.first() is LiveStatus.Connecting)
                 assertTrue(heard.statuses.last() is LiveStatus.Ended)
                 assertEquals(0u, page.unsentUpdates())
-                page.close()
+                page.shutdown()
             }
             assertTrue(core.unsentPages().isEmpty())
         }
