@@ -272,8 +272,9 @@ internal sealed class PageView : ThemedControl
     {
         if (!UseTextView || PageId is null) { DisposeViews(); return; }
         var live = _source.LivePageOf(PageId);
+        var offline = live is null && _source.OffersOfflineBoxes;
         if (!ReferenceEquals(live, _viewsFor)) DisposeViews();
-        if (live is null) return;
+        if (live is null && !offline) return;
         _viewsFor = live;
         var wanted = new HashSet<string>();
         foreach (var box in page.Boxes)
@@ -283,8 +284,12 @@ internal sealed class PageView : ThemedControl
             if (_views.ContainsKey(box.Field)) continue;
             try
             {
-                var session = Notivelo.Native.EditorSession.OpenLive(live, box.Field, new BoxTasks(_source, DispatcherQueue, () => PageId));
+                var tasks = new BoxTasks(_source, DispatcherQueue, () => PageId);
+                var session = live is not null ? Notivelo.Native.EditorSession.OpenLive(live, box.Field, tasks) : _source.OpenOfflineBox(PageId, box.Field, tasks);
+                if (session is null) continue;
                 _views[box.Field] = new BoxTextView(session, _source) { PageId = PageId };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_views[box.Field], "box-" + box.Field.Replace(':', '-'));
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_views[box.Field], "Text box");
             }
             catch (Exception e) { BoxTextView.Log("open " + box.Field, e); }
         }

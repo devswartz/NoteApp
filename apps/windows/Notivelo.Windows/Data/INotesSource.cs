@@ -47,6 +47,10 @@ public interface INotesSource
     /// <summary>People that can be mentioned with @ (the signed-in user until the workspace member list is exposed).</summary>
     IReadOnlyList<(string Id, string Label)> People(string query);
 
+    /// <summary>Offline test mode (NOTIVELO_SOURCE=offline): the source opens the boxes' editor sessions over local documents, with no live page.</summary>
+    bool OffersOfflineBoxes => false;
+    Notivelo.Native.EditorSession? OpenOfflineBox(string pageId, string field, Notivelo.Native.TaskCallbacks tasks) => null;
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);
