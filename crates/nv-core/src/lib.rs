@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use nv_model::yrs::{ReadTxn, StateVector, Transact};
 use nv_model::{DocKind, Page, TaskLine};
 
+mod account;
 #[cfg(target_os = "android")]
 mod android;
 mod boxes;
@@ -30,6 +31,7 @@ mod task_detail;
 mod tasks;
 mod tree_edit;
 mod versions;
+pub use account::*;
 pub use boxes::*;
 pub use client::*;
 pub use content::*;

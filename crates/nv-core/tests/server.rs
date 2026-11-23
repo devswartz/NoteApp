@@ -2046,3 +2046,79 @@ fn ink_against_a_running_server() {
     la.close();
     lb.close();
 }
+
+#[test]
+fn account_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let pw = "correct horse battery staple 1";
+    let email = format!("account-{stamp}@example.com");
+    let core = Core::new(url.clone());
+    core.register("Account A".into(), email.clone(), pw.into())
+        .unwrap();
+
+    // Profile: the name and colour change, `user()` follows, the server keeps them.
+    let u = core
+        .update_profile(Some("Renamed".into()), Some("#abcdef".into()))
+        .unwrap();
+    assert_eq!((u.name.as_str(), u.color.as_str()), ("Renamed", "#abcdef"));
+    assert_eq!(core.user().unwrap().name, "Renamed");
+    assert_eq!(core.profile().unwrap().color, "#abcdef");
+    let blank = core.update_profile(Some("  ".into()), None).unwrap_err();
+    assert_eq!(server_status(blank).0, 400);
+
+    // Notification settings: defaults, a partial change, a refusal.
+    let n = core.notification_settings().unwrap();
+    assert!(n.email_enabled && !n.digest_enabled);
+    let n = core
+        .update_notification_settings(NotificationSettingsChange {
+            digest_enabled: Some(true),
+            digest_time: Some("07:30".into()),
+            time_zone: Some("Europe/London".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    assert_eq!((n.digest_enabled, n.digest_time.as_str()), (true, "07:30"));
+    assert!(n.email_enabled);
+    assert_eq!(core.notification_settings().unwrap(), n);
+    let bad = core
+        .update_notification_settings(NotificationSettingsChange {
+            digest_time: Some("25:99".into()),
+            ..Default::default()
+        })
+        .unwrap_err();
+    assert_eq!(server_status(bad).0, 400);
+
+    // No app has been connected; disconnecting one that isn't is a 404.
+    assert!(core.connected_apps().unwrap().is_empty());
+    assert_eq!(
+        server_status(core.disconnect_app("nope".into()).unwrap_err()).0,
+        404
+    );
+
+    // Password: wrong current password, then a change that gives a new session.
+    let e = core
+        .change_password("not the password".into(), "another long password 2".into())
+        .unwrap_err();
+    assert_eq!(server_status(e), (400, Some("wrong_password".to_string())));
+    let old = core.refresh_token().unwrap();
+    let s = core
+        .change_password(pw.into(), "another long password 2".into())
+        .unwrap();
+    assert_ne!(s.refresh_token, old);
+    assert_eq!(
+        core.refresh_token().as_deref(),
+        Some(s.refresh_token.as_str())
+    );
+    core.profile().unwrap();
+    let other = Core::new(url);
+    other
+        .sign_in(email, "another long password 2".into())
+        .unwrap();
+}

@@ -825,3 +825,54 @@ impl std::fmt::Debug for NewLockDevice {
             .finish()
     }
 }
+
+// ───────── Account (server/routes/auth.ts, reminders.ts, oauth/routes.ts) ─────────
+
+/// GET /notifications/settings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationSettings {
+    /// IANA time zone; due dates and times are read in it.
+    pub time_zone: String,
+    pub email_enabled: bool,
+    /// HH:mm used for "before" reminders on tasks with a due date but no time.
+    pub default_reminder_time: String,
+    pub digest_enabled: bool,
+    /// HH:mm local time of the daily digest.
+    pub digest_time: String,
+}
+
+/// Body of PATCH /notifications/settings: only the fields set are sent.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationSettingsPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_zone: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_reminder_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digest_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digest_time: Option<String>,
+}
+
+/// GET /me/connected-apps: an AI app the user allowed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectedApp {
+    pub client_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub client_uri: Option<String>,
+    /// `dcr` or `cimd`: how the app registered.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub connected_at: String,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
+}

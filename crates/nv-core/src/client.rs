@@ -172,7 +172,7 @@ pub struct Task {
     pub locked: bool,
 }
 
-fn user(u: nv_api::User) -> User {
+pub(crate) fn user(u: nv_api::User) -> User {
     User {
         id: u.id,
         email: u.email,
@@ -447,7 +447,7 @@ impl Core {
         })
     }
 
-    fn signed_in(&self, s: nv_api::AuthSession) -> SignedIn {
+    pub(crate) fn signed_in(&self, s: nv_api::AuthSession) -> SignedIn {
         if let Some(store) = &self.store {
             let _ = store.set_account(&s.user.id);
         }
