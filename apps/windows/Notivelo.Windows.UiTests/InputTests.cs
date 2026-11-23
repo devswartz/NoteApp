@@ -74,7 +74,7 @@ public class InputTests
         Assert.Equal("", after.Text.TrimEnd((char)10));      // the heading, then the box's trailing paragraph
         Assert.StartsWith("heading", after.Block);
         h.Type("Title");
-        h.A.WaitText("Title");
+        h.A.WaitFor(x => x.Text.TrimEnd((char)10) == "Title", "the heading text");
     });
 
     [Fact]
@@ -87,7 +87,7 @@ public class InputTests
         var s = h.A.WaitFor(x => x.Menu == "none", "the menu closed");
         Assert.Equal("paragraph/•", s.Block);        // a bulleted list item
         h.Type("item");
-        h.A.WaitText("item");
+        h.A.WaitFor(x => x.Text.TrimEnd((char)10) == "item", "the list text");
     });
 
     [Fact]
