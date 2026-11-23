@@ -66,7 +66,8 @@ public sealed partial class ShellView : UserControl
 
         _rail.RouteChanged += r => { _route = r; Refresh(); };
         _rail.ToggleSidebar += () => { _sidebarOpen = !_sidebarOpen; ApplySidebar(); _rail.SetSidebarOpen(_sidebarOpen); };
-        _rail.ThemeCycle += () => { _theme = (ThemeMode)(((int)_theme + 1) % 3); ApplyTheme(); };
+        _rail.CurrentTheme = () => _theme;
+        _rail.ThemeSelected += m => SetTheme(m);
         _sidebar.PageSelected += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
         _page.TaskOpened += id => _host.OpenTask(id);
         _page.PageOpened += id => { _pageId = id; _route = AppRoute.Notes; Refresh(); };
@@ -144,6 +145,14 @@ public sealed partial class ShellView : UserControl
         var ctrl = InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Control).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down);
         var shift = InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Shift).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down);
         if (!ctrl) return;
+        // no box has the keyboard: undo/redo still reach the live page (a box's own key handling marks the key handled first)
+        if (_route == AppRoute.Notes && (e.Key == global::Windows.System.VirtualKey.Z || e.Key == global::Windows.System.VirtualKey.Y)
+            && !_overlay.IsOpen && e.OriginalSource is not TextBox)
+        {
+            var undo = e.Key == global::Windows.System.VirtualKey.Z && !shift;
+            if (_page.Undo(undo) is not null) e.Handled = true;
+            return;
+        }
         if ((e.Key == global::Windows.System.VirtualKey.K && !shift) || (e.Key == global::Windows.System.VirtualKey.F && shift))
         {
             e.Handled = true;

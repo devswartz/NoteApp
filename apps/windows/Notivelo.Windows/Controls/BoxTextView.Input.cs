@@ -81,7 +81,7 @@ internal sealed partial class BoxTextView
         _root.PointerReleased += OnPointerReleased;
         _root.PointerCaptureLost += (_, _) => _dragging = false;
         CharacterReceived += OnCharacter;
-        Unloaded += (_, _) => { StopBlink(); HideMenu(); if (Focused == this) { Focused = null; FocusedStateChanged?.Invoke(); } };
+        Unloaded += (_, _) => { StopBlink(); HideMenu(); HideFloatingBar(); if (Focused == this) { Focused = null; FocusedStateChanged?.Invoke(); } };
         SizeChanged += (_, _) => NotifyLayout();
     }
 
@@ -182,6 +182,7 @@ internal sealed partial class BoxTextView
     {
         if (_focused) ResetBlink();
         UpdateMenu();
+        UpdateFloatingBar();
         if (_focused || ReferenceEquals(Focused, this)) FocusedStateChanged?.Invoke();
         if (_ctx is null || _inPlatformCall || !_focused || prev is null) return;
         try
@@ -613,6 +614,7 @@ internal sealed partial class BoxTextView
         if (!_dragging) return;
         _dragging = false;
         _root.ReleasePointerCapture(e.Pointer);
+        UpdateFloatingBar();   // a drag-selection is done: the bar may show now
     }
 
     /// <summary>Near the top or bottom edge of the page's scroller, scroll it.</summary>
@@ -677,8 +679,8 @@ internal sealed partial class BoxTextView
                 case "c": CopyCut(false); return true;
                 case "x": CopyCut(true); return true;
                 case "v": _ = PasteAsync(shift); return true;
-                case "z": if (shift) _session.Redo(); else _session.Undo(); Render(); return true;
-                case "y": _session.Redo(); Render(); return true;
+                case "z": DoUndoRedo(!shift); return true;
+                case "y": DoUndoRedo(false); return true;
                 case "k": if (!shift) { ShowLinkEditor(); return true; } break;
             }
         }
@@ -832,8 +834,17 @@ internal sealed partial class BoxTextView
         catch (Exception e) { Log("command " + name, e); return false; }
     }
 
-    public bool DoUndo() { if (!Interactive) return false; var ok = _session.Undo(); Render(); return ok; }
-    public bool DoRedo() { if (!Interactive) return false; var ok = _session.Redo(); Render(); return ok; }
+    public bool DoUndo() => Interactive && DoUndoRedo(true);
+    public bool DoRedo() => Interactive && DoUndoRedo(false);
+
+    /// <summary>Undo or redo: through the live page when there is one (core page undo covers this box's text, boxes and ink), else the box's own session.</summary>
+    private bool DoUndoRedo(bool undo)
+    {
+        if (Notivelo.Windows.Views.PageView.Current is { } pv && pv.PageId == PageId && pv.Undo(undo) is { } done) return done;
+        var ok = undo ? _session.Undo() : _session.Redo();
+        Render();
+        return ok;
+    }
 
     // ---- clipboard ------------------------------------------------------------------------------------------------------------
 

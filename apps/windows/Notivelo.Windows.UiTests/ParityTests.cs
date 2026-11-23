@@ -107,4 +107,44 @@ public class ParityTests
         Invoke(h, "task-circle-t-launch");
         AppHost.Wait(() => Status(h, "task-circle-t-launch") == "done=1" ? "x" : null, "the task ticked");
     });
+
+    [Fact]
+    public void Notebook_picker_opens_on_the_overlay_and_lists_the_notebooks() => AppHost.Run(nameof(Notebook_picker_opens_on_the_overlay_and_lists_the_notebooks), h =>
+    {
+        Invoke(h, "notebook-picker");
+        Find(h, "menu-notebook-picker");
+        Assert.Equal("Look reference", NameOf(h, "notebook-look-reference"));
+        Invoke(h, "notebook-look-reference");               // picking the open notebook closes the menu
+        AppHost.Wait(() => Gone(h, "menu-notebook-picker") ? "x" : null, "the picker closed");
+    });
+
+    [Fact]
+    public void Account_menu_shows_the_theme_switch() => AppHost.Run(nameof(Account_menu_shows_the_theme_switch), h =>
+    {
+        Invoke(h, "rail-account");
+        Find(h, "menu-account");
+        Assert.Contains("Hybrid", NameOf(h, "theme-hybrid"));
+        Assert.EndsWith("(selected)", NameOf(h, "theme-hybrid"));
+        Find(h, "theme-light");
+        Invoke(h, "theme-dark");
+        AppHost.Wait(() => Gone(h, "menu-account") ? "x" : null, "the account menu closed");
+        Invoke(h, "rail-account");                           // reopened: the choice is marked
+        AppHost.Wait(() => NameOf(h, "theme-dark").EndsWith("(selected)") ? "x" : null, "Dark marked");
+    });
+
+    [Fact]
+    public void Floating_toolbar_follows_a_text_selection() => AppHost.Run(nameof(Floating_toolbar_follows_a_text_selection), h =>
+    {
+        h.A.Focus();
+        h.Type("hello");
+        h.A.WaitText("hello");
+        Assert.True(Gone(h, "floating-toolbar"));            // a caret has no bar
+        h.Chord(CONTROL, KEY_A);
+        Find(h, "floating-toolbar");
+        Invoke(h, "float-bold");
+        Find(h, "floating-toolbar");                         // the box keeps the selection and the keyboard
+        h.A.WaitFor(s => s.Focus, "the box still focused");
+        h.Press(RIGHT);
+        AppHost.Wait(() => Gone(h, "floating-toolbar") ? "x" : null, "the bar gone with the selection");
+    });
 }

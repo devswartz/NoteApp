@@ -24,9 +24,33 @@ internal sealed class PageView : ThemedControl
     public PageView(INotesSource source)
     {
         _source = source;
-        Loaded += (_, _) => BoxTextView.FocusedStateChanged += FocusChanged;
-        Unloaded += (_, _) => BoxTextView.FocusedStateChanged -= FocusChanged;
+        Loaded += (_, _) => { BoxTextView.FocusedStateChanged += FocusChanged; Current = this; };
+        Unloaded += (_, _) => { BoxTextView.FocusedStateChanged -= FocusChanged; if (ReferenceEquals(Current, this)) Current = null; };
     }
+
+    /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
+    public static PageView? Current { get; private set; }
+
+    /// <summary>Raised when the page's undo/redo availability may have changed (a page edit, an undo, a rebuild).</summary>
+    public static event Action? UndoStateChanged;
+
+    /// <summary>Undo or redo through the live page (core page undo: boxes, ink and the text of boxes whose sessions are open). Null when the page
+    /// isn't live, so the caller uses the box's own undo. The core notifies nothing, so every open view and the ink are read again.</summary>
+    public bool? Undo(bool undo)
+    {
+        if (PageId is null || _source.PageUndo(PageId, undo) is not { } changed) return null;
+        // the source raised Changed (boxes made, removed or moved are already shown); the text of every view and the ink are read again
+        if (changed && PageId is not null && _source.GetPage(PageId) is { } page)
+        {
+            foreach (var v in _views.Values) v.OnPageChanged(true);
+            UpdateInk(page);
+        }
+        UndoStateChanged?.Invoke();
+        return changed;
+    }
+
+    /// <summary>Undo/redo availability of the live page; null when it isn't live.</summary>
+    public bool? CanUndo(bool undo) => PageId is null ? null : _source.CanPageUndo(PageId, undo);
 
     // Box frames (chrome) per field, the canvas surface and the ink layers of the page shown.
     private readonly Dictionary<string, BoxFrame> _frames = new();
@@ -95,11 +119,13 @@ internal sealed class PageView : ThemedControl
                 foreach (var v in _views.Values) v.OnPageChanged(tasksChanged);   // task lines are drawn again when a task changed
                 ApplyGeometry(page);
                 UpdateInk(page);
+                UndoStateChanged?.Invoke();
                 return;
             }
         }
         Rebuild();
         if (tasksChanged) foreach (var v in _views.Values) v.OnPageChanged(true);
+        UndoStateChanged?.Invoke();
     }
 
     private string _sig = "";

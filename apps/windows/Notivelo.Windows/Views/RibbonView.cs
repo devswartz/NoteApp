@@ -14,7 +14,7 @@ public enum RibbonMode { Smallest, Compact, Full }
 /// <summary>Ribbon (LOOK 4.1): one per route, no tabs, buttons are placeholders. Smallest (&lt;= 1023), compact (&lt;= 1279) and full (&gt;= 1280, with group names and words).</summary>
 internal sealed class RibbonView : ThemedControl
 {
-    public RibbonView() => BoxTextView.FocusedStateChanged += RefreshStates;
+    public RibbonView() { BoxTextView.FocusedStateChanged += RefreshStates; PageView.UndoStateChanged += RefreshStates; }
 
     /// <summary>What an editing button does: the engine command and arguments, how its pressed state is read from the active marks, and whether it needs a focused box.</summary>
     private sealed record Spec(string Command, string Args = "{}", Func<Notivelo.Native.ViewActive, bool>? Active = null);
@@ -48,8 +48,9 @@ internal sealed class RibbonView : ThemedControl
         var act = box?.Active;
         foreach (var (b, tip, spec) in _bound)
         {
-            if (tip == "Undo") { b.IsEnabled = box?.CanUndo ?? false; continue; }
-            if (tip == "Redo") { b.IsEnabled = box?.CanRedo ?? false; continue; }
+            // a live page undoes through the core's page undo (boxes, ink, text); an offline page through the focused box
+            if (tip == "Undo") { b.IsEnabled = PageView.Current?.CanUndo(true) ?? box?.CanUndo ?? false; continue; }
+            if (tip == "Redo") { b.IsEnabled = PageView.Current?.CanUndo(false) ?? box?.CanRedo ?? false; continue; }
             b.IsEnabled = box is not null;
             if (b is ToggleButton t && spec?.Active is { } f) t.IsChecked = act is not null && f(act);
         }
@@ -283,8 +284,8 @@ internal sealed class RibbonView : ThemedControl
             // the box keeps the keyboard (and the IME): these buttons never take the focus
             b.AllowFocusOnInteraction = false; b.IsTabStop = false;
             _bound.Add((b, it.Tip, spec));
-            if (it.Tip == "Undo") b.Click += (_, _) => BoxTextView.Focused?.DoUndo();
-            else if (it.Tip == "Redo") b.Click += (_, _) => BoxTextView.Focused?.DoRedo();
+            if (it.Tip == "Undo") b.Click += (_, _) => { if (PageView.Current?.Undo(true) is null) BoxTextView.Focused?.DoUndo(); };
+            else if (it.Tip == "Redo") b.Click += (_, _) => { if (PageView.Current?.Undo(false) is null) BoxTextView.Focused?.DoRedo(); };
             else if (spec is not null) b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
         }
         return b;

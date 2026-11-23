@@ -335,6 +335,25 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     }
 
     public N.LivePage? LivePageOf(string pageId) => pageId == _openId && _state == PageState.Live && _info is not null ? _live : null;
+    public bool? PageUndo(string pageId, bool undo)
+    {
+        if (LivePageOf(pageId) is not { } live) return null;
+        try
+        {
+            var changed = undo ? live.Undo() : live.Redo();
+            _info = live.Info();
+            Raise();
+            return changed;
+        }
+        catch (Exception e) { System.Diagnostics.Debug.WriteLine("page undo: " + e.Message); return false; }
+    }
+
+    public bool? CanPageUndo(string pageId, bool undo)
+    {
+        if (LivePageOf(pageId) is not { } live) return null;
+        try { return undo ? live.CanUndo() : live.CanRedo(); } catch (Exception) { return false; }
+    }
+
     public TaskItem? FindTask(string taskId) => TaskLine(taskId);
     public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title;
     public string? EmojiOfPage(string pageId) => null;
