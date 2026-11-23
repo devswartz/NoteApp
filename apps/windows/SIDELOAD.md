@@ -9,7 +9,7 @@ That OID marks the package as one Windows may install unsigned. The committed `P
 
 ## Install
 
-Windows 11 only, with Developer Mode on (Settings > System > For developers > Developer Mode). In PowerShell:
+Windows 11 only. In PowerShell run as administrator (Microsoft's unsigned-package docs say an unsigned package with executable content needs an elevated prompt):
 
 ```powershell
 Add-AppxPackage -Path .\Notivelo.Windows_0.0.1.0_x64.msix -AllowUnsigned
@@ -32,7 +32,7 @@ The app's data (`%LOCALAPPDATA%\Notivelo`) and the sign-in kept in the Credentia
 ## Caveats
 
 - `-AllowUnsigned` is a Windows 11 feature (recent builds; not Windows 10). If PowerShell says the parameter does not exist, the PC is too old.
-- Developer Mode is required for unsigned packages.
+- Microsoft's docs (learn.microsoft.com/windows/msix/package/unsigned-package) do not ask for Developer Mode; if the install is refused anyway, turning it on (Settings > System > For developers) is the first thing to try.
 - The package is not trusted by anyone: there is no publisher identity, no Store update and no SmartScreen reputation. Install it only from a build you made or trust.
 - The identity name is `Notivelo.Windows.Dev` and the package is for testing. It cannot be installed next to a signed or Store build of a different identity, and it cannot be signed afterwards without changing the Publisher back.
 - The version is `0.0.1.0` for every build, so remove the old copy before installing a new one.
