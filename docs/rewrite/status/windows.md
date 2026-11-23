@@ -2,6 +2,25 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-22: shell in today's look (branch `rewrite/windows-shell`)
+
+Wide layout (LOOK 3.1/3.3) built in WinUI 3 with sample data; no phone layout. Verified by running an unpackaged Debug build locally at 150% DPI (client 1180x820 DIP) and comparing with `reference/ipad-landscape/*` (hybrid and light).
+
+- **What is built** (`apps/windows/Notivelo.Windows/`):
+  - `Themes/Tokens.xaml`: LOOK 1.1 light/dark colour tokens (alpha colours precomputed), type scale, radii. Accent is Blue only (accent switching not built). `Themes/Styles.xaml`: restyled ghost / ribbon-toggle / nav-toggle button templates (hover, pressed, checked, disabled from the tokens, no Fluent fills).
+  - `ShellView`: ribbon on top, rail 64, sidebar 216 (180-420, 6 pt grabber, hide/show from the rail), main. Theme modes Hybrid (default: dark chrome, light page inset 6 pt with 12 pt top corners), Light, Dark; clicking the rail account button cycles them. Window min 800x560 DIP (WM_GETMINMAXINFO); default client 1180x820.
+  - `RailView` (4.2), `SidebarView` (4.3: notebook picker, SECTIONS tree with pages folded in, Tasks panel with counts and VIEWS, Calendar stub), `RibbonView` (4.1: Note, Tasks and Calendar ribbons; smallest <=1023, compact <=1279, full >=1280 with group names and words; collapse/"Show ribbon"; buttons are placeholders), `PageView` (4.4 top bar, 4.5 article: title, sub-line, canvas of static positioned boxes as TextBlocks, task line, outline rail), `TasksView` (4.10: header, Today stats card, groups, TaskRow rows) for Today / My Tasks / Upcoming / All.
+  - Dev hooks: env `NOTIVELO_THEME=hybrid|light|dark`, `NOTIVELO_ROUTE=notes|tasks|calendar`; `App` writes unhandled exceptions to `%TEMP%\notivelo-crash.log`.
+- **Screenshots** (`docs/rewrite/status/windows/`, 1180 wide): `notes-hybrid.png`, `notes-light.png`, `tasks-hybrid.png` (Hybrid Tasks is dark), `tasks-light.png`.
+- **Fonts**: `--font` resolves to Segoe UI on Windows (SF Pro/Inter not installed; the reference PNGs were also rendered in Segoe UI), so the app uses the system Segoe UI; nothing bundled. Segoe UI has no Medium (500) or 650 weight, so those render as Regular/Semibold. Mono: Cascadia Mono, Consolas (unused yet).
+- **Icons**: Lucide (same as the web app, ISC licence). `apps/windows/tools/gen-icons.mjs` converts `docs/rewrite/look/icons/*.svg` (164 icons) to path-data strings in `Icons/IconData.cs`; `Controls/Icon.cs` draws them in a 24x24 viewbox with a 2-unit round stroke, tinted from the host button's foreground. Re-run the script when icons change.
+- **Data interface**: `Data/INotesSource.cs` (workspace, notebooks/sections/pages, `GetPage` returning `NotePage` with `CanvasBox`es and blocks, task counts, today stats, `GetTaskGroups(TaskViewKind)`, `Changed`), records in `Data/Models.cs`, fake `SampleNotesSource`. The core binding implements `INotesSource`; the views read nothing else. Box text view over `EditorSession` replaces the TextBlocks in `PageView.Box`.
+- **Remaining differences from today's look**:
+  - Hybrid page shadow is only a 1 pt dark ring (no 24 pt blur); page top bar is not translucent.
+  - Not built: second pages panel at >=1200 wide (pages stay folded in the tree), page side panel, menus/popovers (buttons do nothing), tooltips use the default style, hover-only row actions, notebook picker menu, calendar view, task detail, search, accent colours other than Blue, Face ID etc.
+  - Text metrics differ slightly (Segoe UI weights above); a few rows are 1-3 DIP off the reference (sidebar head spacing, Today stats card height).
+- **Local run notes**: the MSIX-typed Debug exe crashes unpackaged. For a quick visual run build with `-p:WindowsPackageType=None` (same sources, output elsewhere) and launch the exe; screenshots via `PrintWindow` of the window.
+
 ## 2026-11-22: project and CI (branch `rewrite/windows-shell`)
 
 Branched from `origin/rewrite/native` (contains cf8cee0, not merged).
