@@ -271,6 +271,7 @@ internal sealed partial class BoxTextView
 
     private void OnTextUpdating(CoreTextTextUpdatingEventArgs a)
     {
+        Trace("TextUpdating \"" + a.Text + "\" interactive=" + Interactive);
         if (!Interactive) { a.Result = CoreTextTextUpdatingResult.Failed; return; }
         _inPlatformCall = true;
         try
@@ -637,6 +638,7 @@ internal sealed partial class BoxTextView
         // while the IME is composing it gets Enter, arrows and Esc first
         if (_composing || _r?.View.Marked is not null) return false;
         var name = KeyName(e.Key);
+        Trace("KeyDown " + e.Key + " name=" + name);
         if (name is null) return false;
         var ctrl = Down(VirtualKey.Control);
         var alt = Down(VirtualKey.Menu);
@@ -750,6 +752,7 @@ internal sealed partial class BoxTextView
     // typing when the text services are unavailable: key characters go straight in
     private void OnCharacter(UIElement sender, CharacterReceivedRoutedEventArgs e)
     {
+        Trace("CharacterReceived " + (int)e.Character + " ctx=" + (_ctx is not null) + " focused=" + _focused);
         if (_ctx is not null || !Interactive || !_focused) return;
         var c = e.Character;
         if (char.IsControl(c)) return;

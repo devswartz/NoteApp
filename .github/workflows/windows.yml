@@ -138,6 +138,9 @@ jobs:
           Add-Type -AssemblyName System.Windows.Forms
           [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "$($_.DeviceName) $($_.Bounds) primary=$($_.Primary)" }
           "session: $env:SESSIONNAME; user: $env:USERNAME"
+          "ctfmon: " + ((Get-Process ctfmon -ErrorAction SilentlyContinue | Measure-Object).Count)
+          "languages: " + ((Get-WinUserLanguageList | ForEach-Object { $_.LanguageTag }) -join ",")
+          (Get-Service TabletInputService -ErrorAction SilentlyContinue | Out-String)
 
       - name: UI tests
         timeout-minutes: 25

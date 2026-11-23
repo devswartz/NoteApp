@@ -101,6 +101,7 @@ internal sealed class AppHost : IDisposable
         var psi = new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe)! };
         psi.Environment["NOTIVELO_SOURCE"] = "offline";
         psi.Environment["NOTIVELO_OFFLINE_LOG"] = log;
+        psi.Environment["NOTIVELO_TRACE"] = "1";
         var app = Application.Launch(psi);
         var auto = new UIA3Automation();
         Window w;
