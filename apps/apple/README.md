@@ -21,3 +21,5 @@ The core's task, search and comment calls are used by `Sources/iOS/Shell/TaskDet
 The Mac app (M6, AppKit) shares Sources/Shared with the iPad/iPhone app; its own code is in Sources/macOS.
 
 Tree edits, sharing, version history, the Trash and locked pages call the core from Sources/Shared/Shell (TreeActions, Sheets, LockScreen, SharedWithMe).
+
+The Mac build also goes to TestFlight (macOS) with the iPad/iPhone build, as the same 1.99.x version and build number.
