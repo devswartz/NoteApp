@@ -22,6 +22,7 @@ internal sealed class RailView : ThemedControl
     public event Action? ToggleSidebar;
     public event Action? ThemeCycle;
     public event Action<string>? WorkspaceSelected;
+    internal ShellHost? Host { get; set; }
 
     public RailView(INotesSource source, Action? signOut) { _source = source; _signOut = signOut; }
 
@@ -46,7 +47,11 @@ internal sealed class RailView : ThemedControl
         var toggle = Ui.IconButton(SidebarOpen ? "panel-left-close" : "panel-left-open", 19, 40, 40, SidebarOpen ? "Hide sidebar" : "Show sidebar", 9);
         toggle.Click += (_, _) => ToggleSidebar?.Invoke();
         foot.Children.Add(toggle);
-        foot.Children.Add(Ui.IconButton("search", 19, 40, 40, "Search", 9));
+        var search = Ui.IconButton("search", 19, 40, 40, "Search (Ctrl+K)", 9);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(search, "rail-search");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(search, "Search");
+        search.Click += (_, _) => Host?.OpenSearch();
+        foot.Children.Add(search);
         foot.Children.Add(Ui.IconButton("bell", 19, 40, 40, "Notifications", 9));
 
         var ws = new Button { Style = Ui.Style("GhostButtonStyle"), Width = 40, Height = 40, CornerRadius = new CornerRadius(9) };
@@ -61,16 +66,27 @@ internal sealed class RailView : ThemedControl
             },
             Child = Ui.Text(_ws.Initial, 14, new SolidColorBrush(Microsoft.UI.Colors.White), 700).With(t => { t.HorizontalAlignment = HorizontalAlignment.Center; }),
         };
-        var wsMenu = new MenuFlyout();
-        foreach (var w in _source.Workspaces)
+        // LOOK 4.9 workspace menu: the workspaces (role as the hint, a check on the open one), then Trash; opens to the right, bottom-aligned
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(ws, "rail-workspace");
+        ws.Click += (_, _) =>
         {
-            var id = w.Id;
-            var item = new MenuFlyoutItem { Text = w.Name };
-            if (id == _source.CurrentWorkspaceId) item.Icon = new FontIcon { Glyph = "", FontSize = 12 };
-            item.Click += (_, _) => WorkspaceSelected?.Invoke(id);
-            wsMenu.Items.Add(item);
-        }
-        if (wsMenu.Items.Count > 0) ws.Flyout = wsMenu;
+            if (Host is null) return;
+            var items = new List<MenuEntry>();
+            foreach (var w in _source.Workspaces)
+            {
+                var id = w.Id;
+                items.Add(new MenuEntry(w.Name, id == _source.CurrentWorkspaceId ? "check" : null, () => WorkspaceSelected?.Invoke(id), Hint: w.Role));
+            }
+            if (_source.CanEditTree)
+            {
+                if (items.Count > 0) items.Add(MenuEntry.Sep());
+                items.Add(new MenuEntry("Trash", "trash", () => Host?.OpenTrash()));
+            }
+            if (items.Count == 0) return;
+            var tl = ws.TransformToVisual(null).TransformPoint(new global::Windows.Foundation.Point(0, 0));
+            var h = items.Sum(i => i.Separator ? 13 : 32) + 14;
+            PopupMenu.Show(Host.Overlay, items, null, at: new global::Windows.Foundation.Point(tl.X + ws.ActualWidth + 6, tl.Y + ws.ActualHeight - h), id: "menu-workspace");
+        };
         foot.Children.Add(ws);
 
         var acct = new Button { Style = Ui.Style("GhostButtonStyle"), Width = 40, Height = 40, CornerRadius = new CornerRadius(9), Content = Ui.Avatar(_ws.UserInitials, 26) };
@@ -107,6 +123,8 @@ internal sealed class RailView : ThemedControl
             IsChecked = active, Content = content, HorizontalAlignment = HorizontalAlignment.Center,
             Foreground = B("TextMuted"),
         };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(btn, "rail-" + label.ToLowerInvariant());
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(btn, label);
         btn.Click += (_, _) => RouteChanged?.Invoke(route);
         var g = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
         g.Children.Add(btn);

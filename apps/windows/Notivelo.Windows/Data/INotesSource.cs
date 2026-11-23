@@ -64,6 +64,34 @@ public interface INotesSource
     /// <summary>The page's ink in drawing order (empty for a source without a live page).</summary>
     IReadOnlyList<InkStroke> InkOf(string pageId) => Array.Empty<InkStroke>();
 
+
+    // ---- parity B: tree actions (the core's create/rename/move/delete/trash calls; each refreshes the tree), search, task detail ----
+    /// <summary>The tree can be changed (a signed-in core source, or the sample).</summary>
+    bool CanEditTree => false;
+    Task<TreeResult> CreateNotebook(string name) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> CreateSection(string notebookId, string? parentId, string name) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> CreatePage(string sectionId, string title) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> Rename(TreeKind kind, string id, string name) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Copy a page or section next to the original (Apple's Duplicate).</summary>
+    Task<TreeResult> Duplicate(TreeKind kind, string id) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Move a page (to <paramref name="sectionId"/>) or a section (to a notebook, optionally under a section).</summary>
+    Task<TreeResult> Move(TreeKind kind, string id, string notebookId, string? sectionId) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Delete moves to the Trash (kept 60 days).</summary>
+    Task<TreeResult> Delete(TreeKind kind, string id) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TrashList> LoadTrash() => Task.FromResult(new TrashList(Array.Empty<TrashItem>(), "Not available."));
+    Task<TreeResult> Restore(TrashItem item) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> DeleteForever(TrashItem item) => Task.FromResult(new TreeResult(Error: "Not available."));
+    Task<TreeResult> EmptyTrash() => Task.FromResult(new TreeResult(Error: "Not available."));
+
+    /// <summary>The core's content search (page text, task titles and descriptions); null when it can't be asked (offline): the caller keeps the title matches.</summary>
+    Task<SearchOutcome?> SearchAsync(string query) => Task.FromResult<SearchOutcome?>(null);
+
+    /// <summary>Raised at each change to the task list, so views that draw task lines draw them again.</summary>
+    long TasksVersion => 0;
+    TaskDetailItem? GetTaskDetail(string taskId) => null;
+    /// <summary>Change a task (shown at once, then sent to the core). A tick is <c>new TaskPatch(Done: true)</c>.</summary>
+    void UpdateTask(string taskId, TaskPatch patch) { }
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

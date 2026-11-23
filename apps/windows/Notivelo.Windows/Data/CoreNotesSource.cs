@@ -120,7 +120,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             }
             var (tree, tasks) = await _session.CallAsync(c => (c.Tree(id), c.Tasks(id)));
             if (id != _wsId) return;
-            _tree = tree; _tasks = tasks; LoadError = null; Loading = false;
+            _tree = tree; _tasks = tasks; _tasksVersion++; LoadError = null; Loading = false;
             Rebuild();
             Raise();
             _ = LoadMembersAsync(id);
@@ -440,7 +440,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         {
             var made = await _session.CallAsync(c => c.CreateTaskWith(ws, new N.NewTaskInput(title, id, pageId, null, done)));
             if (ws != _wsId) return;
-            _tasks = _tasks.Where(t => t.Id != made.Id).Append(made).ToArray();
+            _tasks = _tasks.Where(t => t.Id != made.Id).Append(made).ToArray(); _tasksVersion++;
             Raise();
         }
         catch (Exception) { }
@@ -451,7 +451,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         try
         {
             await _session.CallAsync(c => { c.DeleteTask(id); return 0; });
-            _tasks = _tasks.Where(t => t.Id != id).ToArray();
+            _tasks = _tasks.Where(t => t.Id != id).ToArray(); _tasksVersion++;
             Raise();
         }
         catch (Exception) { }
@@ -603,6 +603,178 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             }
         }
         return groups;
+    }
+
+    // ---- parity B: tree actions, Trash, search, task detail -----------------------------------------------------------
+
+    public bool CanEditTree => _tree is not null && !_disposed;
+    private long _tasksVersion;
+    public long TasksVersion => _tasksVersion;
+
+    /// <summary>One tree call on the core thread, then the tree again (Apple's changeTree): the views show the result when <see cref="Changed"/> fires.</summary>
+    private async Task<TreeResult> Change(Func<N.Core, (string? Id, string? Note)> call)
+    {
+        var ws = _wsId;
+        if (ws is null) return new TreeResult(Error: "No workspace is open.");
+        try
+        {
+            var (r, tree) = await _session.CallAsync(c => { var x = call(c); return (x, c.Tree(ws)); });
+            if (ws == _wsId) { _tree = tree; Rebuild(); Raise(); }
+            return new TreeResult(r.Id, null, r.Note);
+        }
+        catch (OperationCanceledException) { return new TreeResult(Error: "Cancelled."); }
+        catch (Exception e) { return new TreeResult(Error: ErrorText.Message(e)); }
+    }
+
+    public async Task<TreeResult> CreateNotebook(string name)
+    {
+        var r = await Change(c => (c.CreateNotebook(_wsId!, name).Id, null));
+        if (r.Ok && r.Id is not null && _notebooks.Any(n => n.Id == r.Id)) { _notebookId = r.Id; Raise(); }
+        return r;
+    }
+
+    public Task<TreeResult> CreateSection(string notebookId, string? parentId, string name) => Change(c => (c.CreateSection(notebookId, name, parentId), null));
+    public Task<TreeResult> CreatePage(string sectionId, string title) => Change(c => (c.CreatePage(sectionId, title), null));
+
+    public Task<TreeResult> Rename(TreeKind kind, string id, string name) => Change(c =>
+    {
+        switch (kind)
+        {
+            case TreeKind.Notebook: c.RenameNotebook(id, name); break;
+            case TreeKind.Section: c.RenameSection(id, name); break;
+            default: c.RenamePage(id, name); break;
+        }
+        return (null, null);
+    });
+
+    public Task<TreeResult> Duplicate(TreeKind kind, string id) => Change(c => (kind == TreeKind.Section ? c.CopySection(id) : c.CopyPage(id), null));
+
+    public Task<TreeResult> Move(TreeKind kind, string id, string notebookId, string? sectionId) => Change(c =>
+    {
+        if (kind == TreeKind.Page) { if (sectionId is not null) c.MovePage(id, sectionId); }
+        else if (kind == TreeKind.Section) c.MoveSection(id, notebookId, sectionId);
+        return (null, null);
+    });
+
+    public Task<TreeResult> Delete(TreeKind kind, string id)
+    {
+        if (kind == TreeKind.Page && _openId == id) OpenPage(null);
+        return Change(c =>
+        {
+            switch (kind)
+            {
+                case TreeKind.Notebook: c.DeleteNotebook(id); break;
+                case TreeKind.Section: c.DeleteSection(id); break;
+                default: c.DeletePage(id); break;
+            }
+            return (null, null);
+        });
+    }
+
+    private static N.TrashKind KindOf(TreeKind k) => k switch { TreeKind.Notebook => N.TrashKind.Notebook, TreeKind.Section => N.TrashKind.Section, _ => N.TrashKind.Page };
+
+    public async Task<TrashList> LoadTrash()
+    {
+        var ws = _wsId;
+        if (ws is null) return new TrashList(Array.Empty<TrashItem>(), "No workspace is open.");
+        try
+        {
+            var list = await _session.CallAsync(c => c.Trash(ws));
+            return new TrashList(list.Select(e => new TrashItem(
+                e.Kind == N.TrashKind.Notebook ? TreeKind.Notebook : e.Kind == N.TrashKind.Section ? TreeKind.Section : TreeKind.Page,
+                e.Id, e.Name.Length == 0 ? "Untitled" : e.Name, e.Path, e.DeletedByName ?? "", (int)e.DaysLeft, e.Icon)).ToList());
+        }
+        catch (Exception e) { return new TrashList(Array.Empty<TrashItem>(), ErrorText.Message(e)); }
+    }
+
+    public Task<TreeResult> Restore(TrashItem item) => Change(c => (null, c.RestoreFromTrash(_wsId!, KindOf(item.Kind), item.Id) is { } place ? "Restored to " + place : "Restored"));
+    public Task<TreeResult> DeleteForever(TrashItem item) => Change(c => { c.DeleteForever(_wsId!, KindOf(item.Kind), item.Id); return (null, null); });
+    public Task<TreeResult> EmptyTrash() => Change(c => { c.EmptyTrash(_wsId!); return (null, null); });
+
+    public async Task<SearchOutcome?> SearchAsync(string query)
+    {
+        var ws = _wsId;
+        if (ws is null || string.IsNullOrWhiteSpace(query)) return null;
+        try
+        {
+            var r = await _session.CallAsync(c => c.Search(ws, query.Trim(), null));
+            var today = Today();
+            return new SearchOutcome(
+                r.Pages.Select(h => new SearchPageHit(h.PageId, h.Title.Length == 0 ? "Untitled" : h.Title, h.Path, h.Snippet.Select(s => (s.Text, s.Matched)).ToList())).ToList(),
+                r.Tasks.Select(h =>
+                {
+                    var due = h.Task.DueDate is { } d && DateOnly.TryParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var v) ? v : (DateOnly?)null;
+                    var (label, tone) = DueText(due, today);
+                    return new SearchTaskHit(h.Task.Id, h.Task.Title.Length == 0 ? "Untitled task" : h.Task.Title, label, tone, h.Task.Done);
+                }).ToList());
+        }
+        catch (Exception) { return null; }
+    }
+
+    private string? NameOf(string? userId)
+    {
+        if (userId is null) return null;
+        if (userId == _user.Id) return string.IsNullOrEmpty(_user.Name) ? "You" : _user.Name;
+        return _members.FirstOrDefault(m => m.Id == userId) is { } m ? (m.Name.Length > 0 ? m.Name : m.Email) : null;
+    }
+
+    public TaskDetailItem? GetTaskDetail(string id)
+    {
+        var t = _tasks.FirstOrDefault(x => x.Id == id);
+        if (t is null || t.Locked) return null;
+        var (label, tone) = DueText(Due(t), Today());
+        var page = t.PageId is null ? null : _tree?.Pages.FirstOrDefault(p => p.Id == t.PageId)?.Title;
+        return new TaskDetailItem(t.Id, t.Title, t.Description, t.Done, t.Priority, t.DueDate, label, tone, t.AssigneeId, NameOf(t.AssigneeId),
+            t.PageId, t.PageId is null ? null : (string.IsNullOrEmpty(page) ? "Untitled" : page), "Created " + Ago(t.CreatedAt));
+    }
+
+    public async void UpdateTask(string id, TaskPatch p)
+    {
+        var i = Array.FindIndex(_tasks, t => t.Id == id);
+        if (i < 0) return;
+        var ws = _wsId;
+        var old = _tasks[i];
+        var now = old with
+        {
+            Title = p.Title ?? old.Title, Description = p.Description ?? old.Description, Done = p.Done ?? old.Done,
+            Priority = p.Priority is { } pr ? (byte)pr : old.Priority,
+            DueDate = p.ClearDue ? null : p.DueDate ?? old.DueDate, DueTime = p.ClearDue ? null : old.DueTime,
+            AssigneeId = p.ClearAssignee ? null : p.AssigneeId ?? old.AssigneeId,
+            CompletedAt = p.Done is true ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : p.Done is false ? null : old.CompletedAt,
+        };
+        var copy = (N.Task[])_tasks.Clone();
+        copy[i] = now;
+        _tasks = copy; _tasksVersion++;
+        Raise();
+        var changes = new N.TaskChanges(
+            Title: p.Title, Description: p.Description, Done: p.Done, Priority: p.Priority is { } q ? (byte)q : null,
+            DueDate: p.DueDate, ClearDueDate: p.ClearDue, AssigneeId: p.AssigneeId, ClearAssignee: p.ClearAssignee);
+        try
+        {
+            var d = await _session.CallAsync(c => c.UpdateTask(id, changes));
+            if (ws != _wsId) return;
+            var j = Array.FindIndex(_tasks, t => t.Id == id);
+            if (j < 0) return;
+            var merged = (N.Task[])_tasks.Clone();
+            merged[j] = merged[j] with
+            {
+                Title = d.Title, Description = d.Description, Done = d.Done, Priority = d.Priority, DueDate = d.DueDate, DueTime = d.DueTime,
+                AssigneeId = d.AssigneeId, CompletedAt = d.CompletedAt, UpdatedAt = d.UpdatedAt,
+            };
+            _tasks = merged; _tasksVersion++;
+            Raise();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            // refused or offline beyond what the core queues: show the list as the server has it
+            try
+            {
+                var fresh = await _session.CallAsync(c => c.Tasks(ws!));
+                if (ws == _wsId) { _tasks = fresh; _tasksVersion++; Raise(); }
+            }
+            catch (Exception) { }
+        }
     }
 
     public void Dispose()

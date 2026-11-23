@@ -1,7 +1,7 @@
 namespace Notivelo.Windows.Data;
 
 /// <summary>In-memory sample data that mirrors the reference captures (docs/rewrite/look/reference).</summary>
-public sealed class SampleNotesSource : INotesSource
+public sealed partial class SampleNotesSource : INotesSource
 {
     public event EventHandler? Changed;
 
@@ -9,15 +9,16 @@ public sealed class SampleNotesSource : INotesSource
     public IReadOnlyList<WorkspaceInfo> Workspaces { get; } = new WorkspaceInfo[] { new("sample", "Workspace", "owner") };
     public string? CurrentWorkspaceId => "sample";
     public void SelectWorkspace(string id) { }
-    public string? CurrentNotebookId => Notebooks.Count > 0 ? Notebooks[0].Id : null;
-    public void SelectNotebook(string id) { }
+    private string? _nb;
+    public string? CurrentNotebookId => Notebooks.Any(n => n.Id == _nb) ? _nb : Notebooks.Count > 0 ? Notebooks[0].Id : null;
+    public void SelectNotebook(string id) { _nb = id; Changed?.Invoke(this, EventArgs.Empty); }
     public bool Loading => false;
     public string? LoadError => null;
     public void OpenPage(string? pageId) { }
     public IReadOnlyList<(PageSummary Page, string Where, string Edited)> RecentPages(int count) =>
         Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p, $"{n.Name} › {s.Name}", "2h ago")))).Take(count).ToList();
 
-    public IReadOnlyList<Notebook> Notebooks { get; }
+    public IReadOnlyList<Notebook> Notebooks { get; private set; }
 
     public string? InitialPageId => Offline ? "uitest" : Environment.GetEnvironmentVariable("NOTIVELO_SAMPLE_PAGE") is { Length: > 0 } p && _pages.ContainsKey(p) ? p : "canvas";
 
@@ -88,6 +89,9 @@ public sealed class SampleNotesSource : INotesSource
                         new(BlockKind.Paragraph, "Sample text in a canvas box. The real box text view arrives with the editor session."),
                     }),
                 }, s.OpenTasks, 0);
+
+        // the reference "Settings and ink" page has a blue page colour and a grid (LOOK 1.3)
+        _pages["settings-ink"] = _pages["settings-ink"] with { Colour = PageColour.Blue, Rules = RuleLines.Grid };
 
         _groups = new Dictionary<TaskViewKind, IReadOnlyList<TaskGroup>>
         {
@@ -198,7 +202,7 @@ public sealed class SampleNotesSource : INotesSource
 
     public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
     public TaskItem? FindTask(string taskId) => _made.GetValueOrDefault(taskId);
-    public string? PageTitleOf(string pageId) => null;
+    public string? PageTitleOf(string pageId) => _pages.GetValueOrDefault(pageId)?.Title;
     public string? EmojiOfPage(string pageId) => null;
     public string? UserId => null;
     public void CreateTask(string id, string title, bool done, string? pageId)

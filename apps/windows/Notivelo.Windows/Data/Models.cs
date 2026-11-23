@@ -53,3 +53,33 @@ public enum TaskViewKind { Today, MyTasks, Upcoming, All, Team }
 public sealed record TaskCounts(int Today, bool TodayOverdue, int MyTasks, int Upcoming);
 
 public sealed record TodayStats(int DoneToday, int Left, int DayStreak, IReadOnlyList<bool> WeekDone, double Progress);
+
+// ---- parity B: tree actions, Trash, search, task detail ----
+
+public enum TreeKind { Notebook, Section, Page }
+
+/// <summary>The outcome of a tree call: the new id (create), or an error sentence for the screen.</summary>
+public sealed record TreeResult(string? Id = null, string? Error = null, string? Note = null)
+{
+    public bool Ok => Error is null;
+}
+
+/// <summary>One entry of the workspace Trash (a deleted page, section or notebook), kept 60 days.</summary>
+public sealed record TrashItem(TreeKind Kind, string Id, string Name, string Path, string DeletedBy, int DaysLeft, string? Icon = null);
+
+public sealed record TrashList(IReadOnlyList<TrashItem> Items, string? Error = null);
+
+/// <summary>Search results (the core's content search): pages with a snippet (runs, Matched true where a term matched) and tasks.</summary>
+public sealed record SearchPageHit(string PageId, string Title, string Path, IReadOnlyList<(string Text, bool Matched)> Snippet);
+public sealed record SearchTaskHit(string TaskId, string Title, string? DueLabel, DueTone Tone, bool Done);
+public sealed record SearchOutcome(IReadOnlyList<SearchPageHit> Pages, IReadOnlyList<SearchTaskHit> Tasks);
+
+/// <summary>A task as the detail sheet shows it. Priority 1 urgent .. 4 none (0 = none too). DueDate is yyyy-MM-dd.</summary>
+public sealed record TaskDetailItem(
+    string Id, string Title, string Description, bool Done, int Priority, string? DueDate, string? DueLabel, DueTone Tone,
+    string? AssigneeId, string? AssigneeName, string? PageId, string? PageTitle, string CreatedLine);
+
+/// <summary>Fields to change on a task (what the core's TaskChanges carries for the ones the sheet edits).</summary>
+public sealed record TaskPatch(
+    string? Title = null, string? Description = null, bool? Done = null, int? Priority = null,
+    string? DueDate = null, bool ClearDue = false, string? AssigneeId = null, bool ClearAssignee = false);

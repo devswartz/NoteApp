@@ -78,6 +78,8 @@ internal sealed class PageView : ThemedControl
     /// <summary>Rebuild for new data, keeping the scroll position (live pages change under the reader).</summary>
     public void Refresh()
     {
+        var tasksChanged = _source.TasksVersion != _tasksSeen;
+        _tasksSeen = _source.TasksVersion;
         if (_scroll is not null && PageId is not null)
         {
             _offset = _scroll.VerticalOffset;
@@ -90,13 +92,14 @@ internal sealed class PageView : ThemedControl
                 if (_surface is not null)
                     foreach (var box in page.Boxes)
                         if (box.Field is not null && _views.ContainsKey(box.Field) && !_frames.ContainsKey(box.Field)) _surface.Children.Add(Box(box));
-                foreach (var v in _views.Values) v.OnPageChanged();
+                foreach (var v in _views.Values) v.OnPageChanged(tasksChanged);   // task lines are drawn again when a task changed
                 ApplyGeometry(page);
                 UpdateInk(page);
                 return;
             }
         }
         Rebuild();
+        if (tasksChanged) foreach (var v in _views.Values) v.OnPageChanged(true);
     }
 
     private string _sig = "";
@@ -111,6 +114,8 @@ internal sealed class PageView : ThemedControl
         _scroll = null;
         var page = PageId is null ? null : _source.GetPage(PageId);
         var root = new Grid { Background = new SolidColorBrush(Colors.Transparent) };
+        // page colour (LOOK 1.3) replaces the page background, top bar included
+        if (page is not null && PageTint(page.Colour, ActualTheme) is { } tint) root.Background = new SolidColorBrush(tint);
         // a click on the page outside any box gives the keyboard back to the page
         root.PointerPressed += (_, _) => { BoxTextView.CloseLinkEditor(); BoxTextView.Focused?.Unfocus(); BoxTextView.LeaveEditing(); };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -171,6 +176,7 @@ internal sealed class PageView : ThemedControl
         var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
         foreach (var box in page.Boxes) { var el = Box(box); Canvas.SetZIndex(el, rank[box]); canvas.Children.Add(el); }
         Grid.SetRow(canvas, 3);
+        if (page.Rules != RuleLines.None) article.Children.Add(RuleLayer(page.Rules, surfaceH));
         article.Children.Add(canvas);
 
         var sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = article };
@@ -192,6 +198,46 @@ internal sealed class PageView : ThemedControl
         Grid.SetRow(outline, 1);
         root.Children.Add(outline);
         return root;
+    }
+
+    /// <summary>Page colours (LOOK 1.3), light / dark.</summary>
+    private static global::Windows.UI.Color? PageTint(PageColour c, ElementTheme theme)
+    {
+        var dark = theme == ElementTheme.Dark;
+        var hex = c switch
+        {
+            PageColour.Yellow => dark ? "#221f1a" : "#fdf8e3",
+            PageColour.Green => dark ? "#1a1f1c" : "#eff7f0",
+            PageColour.Blue => dark ? "#1a1d24" : "#eef4fb",
+            PageColour.Purple => dark ? "#1e1b24" : "#f5f1fb",
+            PageColour.Pink => dark ? "#221b1f" : "#fcf1f5",
+            PageColour.Grey => dark ? "#1f1f22" : "#f4f4f5",
+            _ => null,
+        };
+        return hex is null ? null : Ui.ColorOf(hex);
+    }
+
+    /// <summary>Rule lines (LOOK 1.3 / 4.5.3): a 1 pt <c>--page-rule</c> line at the bottom of every 28 pt band, starting 7 pt below the surface top; Grid adds
+    /// vertical lines every 28 pt. Spans the page width from the note area's left edge. Drawn under the boxes; boxes' text is not snapped to the lines yet.</summary>
+    private UIElement RuleLayer(RuleLines rules, double height)
+    {
+        var layer = new Canvas { Height = height, Margin = new Thickness(0, 15, 0, 0), IsHitTestVisible = false };
+        Grid.SetRow(layer, 3);
+        var brush = B("PageRule");
+        void Fill(double w)
+        {
+            layer.Children.Clear();
+            for (var y = 7.0 + 27; y < height; y += 28) layer.Children.Add(Line(0, y, w, 1));
+            if (rules == RuleLines.Grid) for (var x = 27.0; x < w; x += 28) layer.Children.Add(Line(x, 7, 1, height - 7));
+        }
+        Microsoft.UI.Xaml.Shapes.Rectangle Line(double x, double y, double w, double h)
+        {
+            var r = new Microsoft.UI.Xaml.Shapes.Rectangle { Width = w, Height = h, Fill = brush };
+            Canvas.SetLeft(r, x); Canvas.SetTop(r, y);
+            return r;
+        }
+        layer.SizeChanged += (_, e) => Fill(e.NewSize.Width);
+        return layer;
     }
 
     private UIElement Missing()
@@ -245,6 +291,9 @@ internal sealed class PageView : ThemedControl
     }
 
     public event Action<string>? PageOpened;
+    public event Action<string>? TaskOpened;
+    internal ShellHost? Host { get; set; }
+    private long _tasksSeen;
 
     // ---- top bar ----------------------------------------------------------------------------------------------
 
@@ -282,7 +331,10 @@ internal sealed class PageView : ThemedControl
         ss.Children.Add(new TextBlock { Text = "Share", FontSize = 13, FontWeight = new FontWeight(500), VerticalAlignment = VerticalAlignment.Center, FontFamily = Ui.Font });
         share.Content = ss;
         right.Children.Add(share);
-        right.Children.Add(Ui.IconButton("ellipsis", 18, 32, 32, "Page options", 8));
+        var options = Ui.IconButton("ellipsis", 18, 32, 32, "Page options", 8);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(options, "page-options");
+        options.Click += (_, _) => { if (PageId is not null) Host?.Tree.PageMenuFor(options, PageId); };
+        right.Children.Add(options);
         Grid.SetColumn(right, 1);
         bar.Children.Add(right);
         return bar;
@@ -487,6 +539,7 @@ internal sealed class PageView : ThemedControl
     private void WireFrame(BoxFrame f)
     {
         f.View.PageLinkOpened += id => PageOpened?.Invoke(id);
+        f.View.TaskOpened = id => TaskOpened?.Invoke(id);
         // left empty: gone (after the event that left it is over)
         f.View.Left += () => DispatcherQueue.TryEnqueue(() => RemoveIfEmpty(f.Box?.Field ?? ""));
         if (!f.CanDrag) return;
