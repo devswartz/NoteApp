@@ -29,3 +29,5 @@ Ink on iPad pages: pen tools are in the ribbon's Draw button; the Pencil draws, 
 Mac parity: right-click tree menus, Esc closes dialogs, Cmd-F opens the search.
 
 The page icon row (Add icon, emoji picker) is in the shared page header; it saves through the core's setPageIcon.
+
+Calendar (month and week, drag a task to another day), quick add (natural-language line), Settings (theme, accent colour, locked pages password) and the page panel's Tasks tab are in the shared SwiftUI shell, so iPad, iPhone and the Mac have them.
