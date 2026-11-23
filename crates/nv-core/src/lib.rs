@@ -21,6 +21,7 @@ mod content;
 mod editor_session;
 pub mod ink;
 mod locked;
+mod page_undo;
 mod quickadd;
 mod recurrence;
 mod search;

@@ -18,11 +18,18 @@
 //! Every call is one transaction with no origin: a local edit, which a live page sends.
 
 use yrs::types::map::MapRef;
-use yrs::{Any, Doc, Map, MapPrelim, Out, Transact, TransactionMut, WriteTxn, XmlFragment};
+use yrs::{Any, Doc, Map, MapPrelim, Origin, Out, Transact, TransactionMut, WriteTxn, XmlFragment};
 
 use crate::js;
 use crate::page::{box_field, box_geoms, BoxGeom, BOXES_KEY};
 use crate::tree::{Insert, Node};
+
+fn begin(doc: &Doc, origin: Option<Origin>) -> TransactionMut<'_> {
+    match origin {
+        Some(o) => doc.transact_mut_with(o),
+        None => doc.transact_mut(),
+    }
+}
 
 pub const BOX_MIN_W: f64 = 120.0;
 pub const BOX_MAX_W: f64 = 2400.0;
@@ -140,6 +147,20 @@ fn set_num(txn: &mut TransactionMut, m: &MapRef, key: &str, v: f64) {
 /// Add a box with its top-left at (`x`, `y`), `w` wide, stacked at `z`; its content is empty.
 /// Position and width are clamped like the web's. One transaction.
 pub fn create_box(doc: &Doc, id: &str, x: f64, y: f64, w: f64, z: f64) -> Result<(), BoxError> {
+    create_box_with(doc, None, id, x, y, w, z)
+}
+
+/// `create_box` in a transaction with the given origin (`None`: no origin), which a yrs
+/// `UndoManager` can track. The other `_with` calls below are the same.
+pub fn create_box_with(
+    doc: &Doc,
+    origin: Option<Origin>,
+    id: &str,
+    x: f64,
+    y: f64,
+    w: f64,
+    z: f64,
+) -> Result<(), BoxError> {
     check_id(id)?;
     let g = BoxGeom {
         id: id.to_string(),
@@ -149,7 +170,7 @@ pub fn create_box(doc: &Doc, id: &str, x: f64, y: f64, w: f64, z: f64) -> Result
         z: finite(z, "z")?,
         wide: false,
     };
-    let mut txn = doc.transact_mut();
+    let mut txn = begin(doc, origin);
     let boxes = txn.get_or_insert_map(BOXES_KEY);
     if boxes.contains_key(&txn, id) {
         return Err(BoxError::Exists(id.to_string()));
@@ -162,8 +183,18 @@ pub fn create_box(doc: &Doc, id: &str, x: f64, y: f64, w: f64, z: f64) -> Result
 
 /// Move a box (clamped). One transaction.
 pub fn move_box(doc: &Doc, id: &str, x: f64, y: f64) -> Result<(), BoxError> {
+    move_box_with(doc, None, id, x, y)
+}
+
+pub fn move_box_with(
+    doc: &Doc,
+    origin: Option<Origin>,
+    id: &str,
+    x: f64,
+    y: f64,
+) -> Result<(), BoxError> {
     let (x, y) = (clamp_pos(finite(x, "x")?), clamp_pos(finite(y, "y")?));
-    let mut txn = doc.transact_mut();
+    let mut txn = begin(doc, origin);
     let m = geometry_map(&mut txn, id)?;
     set_num(&mut txn, &m, "x", x);
     set_num(&mut txn, &m, "y", y);
@@ -172,8 +203,17 @@ pub fn move_box(doc: &Doc, id: &str, x: f64, y: f64) -> Result<(), BoxError> {
 
 /// Set a box's width (clamped); a wide box stops being wide, as when the web drags its edge.
 pub fn resize_box(doc: &Doc, id: &str, w: f64) -> Result<(), BoxError> {
+    resize_box_with(doc, None, id, w)
+}
+
+pub fn resize_box_with(
+    doc: &Doc,
+    origin: Option<Origin>,
+    id: &str,
+    w: f64,
+) -> Result<(), BoxError> {
     let w = clamp_width(finite(w, "width")?);
-    let mut txn = doc.transact_mut();
+    let mut txn = begin(doc, origin);
     let m = geometry_map(&mut txn, id)?;
     set_num(&mut txn, &m, "w", w);
     if m.contains_key(&txn, "wide") {
@@ -197,7 +237,11 @@ pub fn front_z(boxes: &[BoxGeom], id: &str) -> Option<f64> {
 /// Put a box in front of all others; returns its z (unchanged, and nothing written, when it
 /// already is). One transaction.
 pub fn bring_to_front(doc: &Doc, id: &str) -> Result<f64, BoxError> {
-    let mut txn = doc.transact_mut();
+    bring_to_front_with(doc, None, id)
+}
+
+pub fn bring_to_front_with(doc: &Doc, origin: Option<Origin>, id: &str) -> Result<f64, BoxError> {
+    let mut txn = begin(doc, origin);
     let boxes = box_geoms(&txn);
     let Some(me) = boxes.iter().find(|b| b.id == id) else {
         return Err(BoxError::NoSuchBox(id.to_string()));
@@ -227,7 +271,16 @@ pub fn fragment_is_empty(nodes: &[Node]) -> bool {
 /// an empty box goes (`NotEmpty` otherwise, nothing written). With `force` the content goes too,
 /// as when the web deletes a selected box; tasks on its lines are the caller's to delete.
 pub fn delete_box(doc: &Doc, id: &str, force: bool) -> Result<(), BoxError> {
-    let mut txn = doc.transact_mut();
+    delete_box_with(doc, None, id, force)
+}
+
+pub fn delete_box_with(
+    doc: &Doc,
+    origin: Option<Origin>,
+    id: &str,
+    force: bool,
+) -> Result<(), BoxError> {
+    let mut txn = begin(doc, origin);
     let boxes = txn.get_or_insert_map(BOXES_KEY);
     if !boxes.contains_key(&txn, id) {
         return Err(BoxError::NoSuchBox(id.to_string()));

@@ -62,15 +62,35 @@ pub fn new_box_id() -> String {
     model::box_id_from(b)
 }
 
+/// The origin of every box edit made through `LivePage`; the page's undo tracks it (with ink's).
+pub(crate) const GEOM_ORIGIN: &str = "nv-core:geom";
+
+pub(crate) fn geom_origin() -> nv_model::yrs::Origin {
+    nv_model::yrs::Origin::from(GEOM_ORIGIN)
+}
+
 impl LivePage {
+    /// One box edit, recorded in the page's undo. `scope_box`: a box about to be deleted, whose
+    /// content is added to the undo scope first, so undoing the delete brings it back.
     fn box_edit<R>(
         &self,
-        f: impl FnOnce(&nv_model::yrs::Doc) -> Result<R, model::BoxError>,
+        scope_box: Option<&str>,
+        f: impl FnOnce(&nv_model::yrs::Doc, Option<nv_model::yrs::Origin>) -> Result<R, model::BoxError>,
     ) -> Result<R, BoxError> {
         if self.is_closed() {
             return Err(BoxError::Closed);
         }
-        Ok(f(self.doc())?)
+        let mut guard = self.ink_undo.lock().unwrap();
+        let mgr = guard.get_or_insert_with(|| {
+            crate::ink::new_ink_undo(self.doc(), self.page_undo.seq.clone())
+        });
+        if let Some(id) = scope_box {
+            let frag = self
+                .doc()
+                .get_or_insert_xml_fragment(nv_model::page::box_field(id));
+            mgr.expand_scope(self.doc(), &frag);
+        }
+        Ok(f(self.doc(), Some(geom_origin()))?)
     }
 }
 
@@ -97,37 +117,43 @@ impl LivePage {
         w: f64,
         z: f64,
     ) -> Result<(), BoxError> {
-        self.box_edit(|doc| model::create_box(doc, &id, x, y, w, z))
+        self.box_edit(None, |doc, o| {
+            model::create_box_with(doc, o, &id, x, y, w, z)
+        })
     }
 
     /// Move a box's top-left to (`x`, `y`) (clamped and rounded as in `create_box`).
     pub fn move_box(&self, id: String, x: f64, y: f64) -> Result<(), BoxError> {
-        self.box_edit(|doc| model::move_box(doc, &id, x, y))
+        self.box_edit(None, |doc, o| model::move_box_with(doc, o, &id, x, y))
     }
 
     /// Set a box's width (clamped and rounded as in `create_box`). A wide box (the page's main
     /// box, drawn across the page) stops being wide: it keeps the width you give it.
     pub fn resize_box(&self, id: String, w: f64) -> Result<(), BoxError> {
-        self.box_edit(|doc| model::resize_box(doc, &id, w))
+        self.box_edit(None, |doc, o| model::resize_box_with(doc, o, &id, w))
     }
 
     /// Put a box in front of every other: its z becomes one above the highest (nothing is
     /// written when it is alone at the top already). Returns the box's z afterwards.
     pub fn bring_to_front(&self, id: String) -> Result<f64, BoxError> {
-        self.box_edit(|doc| model::bring_to_front(doc, &id))
+        self.box_edit(None, |doc, o| model::bring_to_front_with(doc, o, &id))
     }
 
     /// Remove an **empty** box: its entry and its (empty) content. A box with text, tasks or
     /// anything else is refused with `NotEmpty` and left alone; the web removes only boxes the
     /// user left empty without asking, and asks (with an undo) for the others.
     pub fn delete_box(&self, id: String) -> Result<(), BoxError> {
-        self.box_edit(|doc| model::delete_box(doc, &id, false))
+        self.box_edit(Some(&id), |doc, o| {
+            model::delete_box_with(doc, o, &id, false)
+        })
     }
 
-    /// Remove a box whatever it holds, as the web's Delete key does on a selected box. There is
-    /// no undo in the core; the tasks on the box's task lines are not deleted (the web deletes them
+    /// Remove a box whatever it holds, as the web's Delete key does on a selected box. `undo()` brings it back
+    /// with its text. The tasks on the box's task lines are not deleted (the web deletes them
     /// through the task calls; `read_page(document).task_ids` lists them first).
     pub fn delete_box_with_content(&self, id: String) -> Result<(), BoxError> {
-        self.box_edit(|doc| model::delete_box(doc, &id, true))
+        self.box_edit(Some(&id), |doc, o| {
+            model::delete_box_with(doc, o, &id, true)
+        })
     }
 }

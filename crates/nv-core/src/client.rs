@@ -443,6 +443,7 @@ impl Core {
             closed: AtomicBool::new(false),
             live: Mutex::new(Some(live)),
             ink_undo: Mutex::new(None),
+            page_undo: Default::default(),
         })
     }
 
@@ -900,7 +901,9 @@ pub struct LivePage {
     closed: AtomicBool,
     live: Mutex<Option<LiveDoc>>,
     /// Ink undo (see `ink.rs`), made at the first ink edit.
-    pub(crate) ink_undo: Mutex<Option<nv_model::yrs::undo::UndoManager<()>>>,
+    pub(crate) ink_undo: Mutex<Option<nv_model::yrs::undo::UndoManager<u64>>>,
+    /// Page-level undo: the shared stamp counter and the live text sessions (`page_undo.rs`).
+    pub(crate) page_undo: crate::page_undo::PageUndo,
 }
 
 // Used by the editor stream's `EditorSession::open_live` (not written yet) and the tests.
@@ -1055,6 +1058,7 @@ mod tests {
             closed: AtomicBool::new(true),
             live: Mutex::new(None),
             ink_undo: Mutex::new(None),
+            page_undo: Default::default(),
         };
         (relay, live)
     }

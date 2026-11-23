@@ -518,6 +518,17 @@ impl EditorSession {
         })
     }
 
+    /// The stamp of the newest undo (or redo) step, for the page's undo.
+    pub(crate) fn page_top(&self, undo: bool) -> Option<u64> {
+        self.read(|i| {
+            if undo {
+                i.ed.top_undo_seq()
+            } else {
+                i.ed.top_redo_seq()
+            }
+        })
+    }
+
     /// The session, with others' changes on a live page brought in.
     fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
         let mut inner = locked(&self.inner);
@@ -589,6 +600,7 @@ impl EditorSession {
         tasks: Arc<dyn TaskCallbacks>,
         clock: Clock,
     ) -> Result<Arc<EditorSession>, EditorError> {
+        let page_undo = &page.page_undo;
         let page = page.doc().clone();
         // The session works on its own copy of the page, so the engine's tree never moves under
         // it mid-call: others' changes come in at its calls. Observe first, then copy: a change
@@ -604,7 +616,13 @@ impl EditorSession {
             .map_err(invalid)?;
         check_field(&doc, &field)?;
         let ed = Editor::open(doc, &field, Box::new(Host(tasks)), clock);
-        Ok(EditorSession::new(ed, Some(live)))
+        let session = EditorSession::new(ed, Some(live));
+        // Join the page's undo: this session's steps are stamped from its counter from now on.
+        locked(&session.inner)
+            .ed
+            .set_page_seq(page_undo.seq.clone());
+        page_undo.register(&session);
+        Ok(session)
     }
 }
 
