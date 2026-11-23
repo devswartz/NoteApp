@@ -5,6 +5,11 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **Account calls are done on `rewrite/core-account`** (cut from `rewrite/native` af067b5, not
+  merged; **core pauses**): profile, password change, notification settings and connected apps for
+  the native Settings screens, on the server's existing routes only ("For apple, windows and
+  android: account and settings"). Calendar task filters and avatar images: the server has
+  neither, so they are not offered.
 - **Page undo is done on `rewrite/core-pageundo`** (cut from `rewrite/native` e175c64, not merged;
   **core pauses**): `LivePage.undo()` / `redo()` / `can_undo()` / `can_redo()` take back this
   client's newest change on the page across box geometry, ink and box text, as the web's
@@ -48,6 +53,47 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For apple, windows and android: account and settings (2026-11-23, `rewrite/core-account`)
+
+All **online only** (offline: `CoreError.Network`, nothing changes), nothing stored on the device,
+no server changes. Swift names; Kotlin and C# are the same in their own case. Code: `nv-core`
+`account.rs`, `nv-api` `account.rs`; tests `nv-api/tests/account.rs` (scripted transport) and
+`account_against_a_running_server` in `nv-core/tests/server.rs`.
+
+- `profile() -> User`: `GET /me`; the user as the server has it now (`user()` is the sign-in copy).
+- `updateProfile(name: String?, color: String?) -> User`: `PATCH /me`, sends only what is set.
+  Name 1 to 100 characters (else 400 "Name is required" or too long); colour `#rrggbb`, anything
+  else is ignored by the server. `user()` follows. **The avatar is this colour**: the server has
+  no image avatar (no upload, no remove), so none is offered.
+- `changePassword(currentPassword:, newPassword:) -> SignedIn`: `POST /me/password`. The server
+  signs out every other device and every connected app and gives this sign-in a fresh session:
+  **store the returned `refreshToken`** (the old one is dead). Locked pages lock again. Errors:
+  wrong current password is `CoreError.Server` status 400, **code `wrong_password`** (the server
+  sends no code; the client adds it for its exact message); a new password under 8 characters or
+  too long is a plain 400 with the server's message; rate limits are the server's.
+- `notificationSettings() -> NotificationSettings` and
+  `updateNotificationSettings(change: NotificationSettingsChange) -> NotificationSettings`:
+  `GET`/`PATCH /notifications/settings`. Fields: `timeZone` (IANA), `emailEnabled`,
+  `defaultReminderTime` (HH:mm), `digestEnabled`, `digestTime` (HH:mm). A change field left nil
+  stays as it is; 400 for an unknown time zone or a bad time. The server has no per-kind
+  (mention, share, comment) switches.
+- `connectedApps() -> [ConnectedApp]`: `GET /me/connected-apps`: `clientId`, `name`, `clientUri`,
+  `scopes` (`notes:read`, `notes:write`), `connectedAt`, `lastUsedAt` (nil if never used).
+- `disconnectApp(clientId:)`: `DELETE /me/connected-apps/:clientId`; the app's tokens stop working
+  at once. 404 when it is not connected (already removed elsewhere).
+
+**Not offered.** Calendar task filters (status, tags, people): the server stores none and no
+endpoint takes them; the web keeps them in the calendar's URL (`?who`, `tags`, `team`), so the
+native apps keep them on the device. Avatar image: see `updateProfile`. Also left out, though the
+server has them: quiet hours per workspace (`/notifications/quiet-hours`), push device tokens
+(`/notifications/devices`), the calendar feed link (`/calendar-feed`), the test notification,
+resend verification, and account deletion (`/auth/account`, with its preview): ask if a screen
+needs one.
+
+**Not verified:** against a real connected app (the real-server test has none to list, so only
+the empty list and the 404 are covered there; the list's fields are covered by the scripted
+test); not built into Swift, Kotlin or C# locally, CI does that.
 
 ## For apple, windows and android: page undo (2026-11-23, `rewrite/core-pageundo`)
 
