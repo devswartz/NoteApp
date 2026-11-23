@@ -243,13 +243,7 @@ struct CalendarScreen: View {
                         .background(isToday ? p.accentSolid.color : Color.clear, in: Capsule())
                 }
                 Spacer(minLength: 0)
-                if canEdit && !phone {
-                    Button { shell.openQuickAdd(session, due: day) } label: {
-                        Icon("plus", 13, p.textMuted.color).frame(width: 22, height: 22)
-                    }
-                    .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
-                    .accessibilityLabel("Add task")
-                }
+                // The web shows no + in a day: double-tap a day to add a task there.
             }
             .padding(.horizontal, 4).padding(.top, 2)
             ForEach(items.prefix(limit), id: \.id) { t in chip(p, t, day: day, full: !shell.calMonth) }
@@ -419,7 +413,7 @@ struct CalendarPanel: View {
                         Button { shell.calCursor = d } label: {
                             Text("\(CalDates.day(d))").font(.web(12, selected ? 600 : (d == today ? 700 : 400))).monospacedDigit()
                                 .foregroundStyle(selected ? Color.white : (d == today ? p.accent.color : (out ? p.textMuted.color : p.text2.color)))
-                                .frame(maxWidth: .infinity).aspectRatio(1, contentMode: .fit)
+                                .frame(maxWidth: .infinity).frame(height: 24)
                                 .background(selected ? p.accentSolid.color : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                                 .overlay(alignment: .bottom) {
                                     if busy.contains(d) {

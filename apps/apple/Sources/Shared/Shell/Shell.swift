@@ -366,6 +366,13 @@ struct AppShell: View {
             openLookMenu()
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
+        // An invite link opened in the app (NotiveloApp.onOpenURL): the join dialog, with the link looked up.
+        .onChange(of: session.pendingInvite, initial: true) { _, token in
+            guard let token, session.phase == .signedIn else { return }
+            session.pendingInvite = nil
+            shell.menu = nil
+            shell.sheet = .joinInvite(token)
+        }
         #if os(iOS)
         // Locked pages lock when the app goes to the background (as the web locks on background).
         .onChange(of: scenePhase) { _, phase in

@@ -26,6 +26,9 @@ enum ShellSheet: Equatable {
     case trash
     case lock(LockMode)
     case quickAdd(QuickAddSeed)
+    case members
+    /// Join by invite link: the token when a link was opened in the app, nil to paste one.
+    case joinInvite(String?)
 }
 
 func copyToClipboard(_ text: String) {
@@ -40,7 +43,7 @@ func copyToClipboard(_ text: String) {
 // MARK: Small parts
 
 /// A list that scrolls when it is long and is just as tall as its rows when it is short.
-private struct ListBox<Content: View>: View {
+struct ListBox<Content: View>: View {
     let count: Int
     let height: CGFloat
     @ViewBuilder let content: () -> Content
@@ -55,7 +58,7 @@ private struct ListBox<Content: View>: View {
     }
 }
 
-private struct SheetNote: View {
+struct SheetNote: View {
     let text: String
     var danger = false
     let theme = Theme.shared
@@ -67,7 +70,7 @@ private struct SheetNote: View {
     }
 }
 
-private struct Chip: View {
+struct Chip: View {
     let text: String
     let theme = Theme.shared
 
@@ -108,7 +111,7 @@ private struct LevelSegments: View {
 }
 
 /// A person: avatar, name and address.
-private struct PersonLine: View {
+struct PersonLine: View {
     let name: String
     let email: String
     let color: String
@@ -131,7 +134,7 @@ private struct PersonLine: View {
     }
 }
 
-private func iconButton(_ icon: String, _ label: String, _ p: Palette, _ action: @escaping () -> Void) -> some View {
+func sheetIconButton(_ icon: String, _ label: String, _ p: Palette, _ action: @escaping () -> Void) -> some View {
     Button(action: action) { Icon(icon, 15, p.textMuted.color).frame(width: 32, height: 32) }
         .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
         .accessibilityLabel(label)
@@ -290,7 +293,7 @@ struct PageShareCard: View {
             }
             .buttonStyle(.plain)
             .disabled(viewerOnly)
-            iconButton("x", "Stop sharing with \(s.name)", p) { remove(s) }
+            sheetIconButton("x", "Stop sharing with \(s.name)", p) { remove(s) }
         }
         .padding(.vertical, 4)
     }
@@ -304,7 +307,7 @@ struct PageShareCard: View {
                 Text("Invited: can \(i.canEdit ? "edit" : "view") once they sign up").font(.web(12)).foregroundStyle(p.textMuted.color)
             }
             Spacer(minLength: 0)
-            iconButton("x", "Cancel the invite for \(i.email)", p) { revoke(i) }
+            sheetIconButton("x", "Cancel the invite for \(i.email)", p) { revoke(i) }
         }
         .padding(.vertical, 4)
     }
@@ -743,7 +746,7 @@ struct TrashCard: View {
                     Text("Restore").font(.web(12.5, 500)).foregroundStyle(p.accent.color).padding(.horizontal, 8).frame(height: 28)
                 }
                 .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
-                iconButton("trash", "Delete \(e.name) forever", p) { confirming = e.id }
+                sheetIconButton("trash", "Delete \(e.name) forever", p) { confirming = e.id }
             }
         }
         .padding(.vertical, 4)

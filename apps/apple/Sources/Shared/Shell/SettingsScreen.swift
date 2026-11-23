@@ -84,7 +84,7 @@ struct SettingsScreen: View {
         VStack(alignment: .leading, spacing: phone ? 20 : 18) {
             ForEach(["Account", "App"], id: \.self) { group in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(group.uppercased()).font(.web(11, 600)).tracking(0.44).foregroundStyle(p.textMuted.color)
+                    Text(group).font(.web(11.5, 500)).foregroundStyle(p.textMuted.color)
                         .padding(.horizontal, phone ? 0 : 8).padding(.bottom, 4)
                     ForEach(SettingsSection.all.filter { $0.group == group }) { s in
                         let active = !phone && current?.id == s.id

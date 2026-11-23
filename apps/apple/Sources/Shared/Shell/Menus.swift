@@ -337,6 +337,8 @@ struct MenuLayer: View {
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.notYet("New workspace") }
             MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.notYet("Workspace settings") }
+            MenuItem(palette: p, title: "Members", icon: "users") { shell.openSheet(.members, session, "Members") }
+            MenuItem(palette: p, title: "Join with invite link", icon: "link-2") { shell.openSheet(.joinInvite(nil), session, "Joining a workspace") }
             MenuItem(palette: p, title: "Activity", icon: "activity") { shell.notYet("Activity") }
             MenuItem(palette: p, title: "Trash", icon: "trash") { shell.openSheet(.trash, session, "Trash") }
         }
@@ -432,7 +434,7 @@ struct MenuLayer: View {
             MenuSeparator(palette: p)
             }
             Group {
-            MenuItem(palette: p, title: "Export as Markdown", icon: "file-down") { shell.notYet("Export") }
+            MenuItem(palette: p, title: "Export as Markdown", icon: "file-down") { shell.exportMarkdown(session) }
             MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.notYet("Export") }
             MenuItem(palette: p, title: "Print", icon: "printer", hint: "Ctrl+P") { shell.notYet("Printing") }
             MenuItem(palette: p, title: "Print page colour") { shell.notYet("Printing") }

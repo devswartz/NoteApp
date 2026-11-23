@@ -10,7 +10,9 @@ struct NativeRoot: View {
     var body: some View {
         let scheme: ColorScheme? = theme.mode == .system ? nil : (theme.chrome.isDark ? .dark : .light)
         LookFrame {
-            if session.phase == .signedIn {
+            if session.needsEmailCheck {
+                CheckEmailScreen()
+            } else if session.phase == .signedIn {
                 AppShell()
             } else {
                 SignInScreen()

@@ -7,6 +7,9 @@ struct SignInScreen: View {
     @Environment(\.openURL) private var openURL
     @State var email = ""
     @State var password = ""
+    /// "Create an account" (Login.tsx's register mode): a name as well, the server confirms the address by email.
+    @State var registerMode = false
+    @State var name = ""
     let theme = Theme.shared
 
     var body: some View {
@@ -46,12 +49,19 @@ struct SignInScreen: View {
                     .shadowSm(p)
                 Text("Notivelo").font(.web(17, 700)).foregroundStyle(p.text.color)
             }
-            Text("Welcome back").font(.web(22, 700)).tracking(-0.44).foregroundStyle(p.text.color).padding(.top, 20)
+            Text(registerMode ? "Create your account" : "Welcome back").font(.web(22, 700)).tracking(-0.44).foregroundStyle(p.text.color).padding(.top, 20)
             Text("Notes and tasks, connected — for you and your team.").font(.web(13.5)).lineLimit(1).minimumScaleFactor(0.85).foregroundStyle(p.textMuted.color).padding(.top, 4)
             if session.phase == .restoring {
                 Text("Signing in…").font(.web(14)).foregroundStyle(p.textMuted.color).padding(.vertical, 40)
             } else {
                 VStack(alignment: .leading, spacing: 14) {
+                    if registerMode {
+                        field("Name", p) {
+                            TextField("", text: $name)
+                                .textContentType(.name)
+                                .autocorrectionDisabled()
+                        }
+                    }
                     field("Email", p) {
                         TextField("", text: $email)
                             .textContentType(.username)
@@ -61,13 +71,15 @@ struct SignInScreen: View {
                     }
                     field("Password", p) {
                         SecureField("", text: $password)
-                            .textContentType(.password)
+                            .textContentType(registerMode ? .newPassword : .password)
                             .onSubmit(signIn)
                     }
-                    Button { open("/forgot") } label: {
-                        Text("Forgot password?").font(.web(12.5, 500)).foregroundStyle(p.accent.color)
+                    if !registerMode {
+                        Button { open("/forgot") } label: {
+                            Text("Forgot password?").font(.web(12.5, 500)).foregroundStyle(p.accent.color)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
                 .disabled(session.busy)
                 .padding(.top, 24).padding(.bottom, 18)
@@ -75,7 +87,7 @@ struct SignInScreen: View {
                     Text(error).font(.web(13)).foregroundStyle(p.danger.color).padding(.bottom, 12)
                 }
                 Button(action: signIn) {
-                    Text(session.busy ? "Signing in…" : "Sign in").font(.web(15, 500)).foregroundStyle(.white)
+                    Text(registerMode ? (session.busy ? "Creating…" : "Create account") : (session.busy ? "Signing in…" : "Sign in")).font(.web(15, 500)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 40)
                         .background(p.accentSolid.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
@@ -91,9 +103,24 @@ struct SignInScreen: View {
                     .buttonStyle(.plain)
                     .padding(.top, 8)
                 }
+                if registerMode {
+                    HStack(spacing: 0) {
+                        Text("By creating an account you agree to the ")
+                        Button { open("/terms") } label: { Text("Terms").foregroundStyle(p.accent.color) }.buttonStyle(.plain)
+                        Text(" and ")
+                        Button { open("/privacy") } label: { Text("Privacy Policy").foregroundStyle(p.accent.color) }.buttonStyle(.plain)
+                        Text(".")
+                    }
+                    .font(.web(12.5)).foregroundStyle(p.textMuted.color)
+                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                    .padding(.top, 12)
+                }
                 HStack(spacing: 4) {
-                    Text("New here?").foregroundStyle(p.textMuted.color)
-                    Button { open("/signup") } label: { Text("Create an account").font(.web(12.5, 500)).foregroundStyle(p.accent.color) }
+                    Text(registerMode ? "Already have an account?" : "New here?").foregroundStyle(p.textMuted.color)
+                    Button {
+                        registerMode.toggle()
+                        session.error = nil
+                    } label: { Text(registerMode ? "Sign in" : "Create an account").font(.web(12.5, 500)).foregroundStyle(p.accent.color) }
                         .buttonStyle(.plain)
                 }
                 .font(.web(12.5))
@@ -152,7 +179,11 @@ struct SignInScreen: View {
 
     private func signIn() {
         guard !session.busy else { return }
-        session.signIn(email: email, password: password)
+        if registerMode {
+            session.register(name: name, email: email, password: password)
+        } else {
+            session.signIn(email: email, password: password)
+        }
     }
 
     private static var versionLine: String {

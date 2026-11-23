@@ -90,9 +90,6 @@ struct QuickAddCard: View {
             }
             .padding(.bottom, 12)
             HStack(spacing: 8) {
-                if !phone {
-                    Text("↵ add · ⌘↵ add another").font(.web(12.5)).foregroundStyle(p.textMuted.color)
-                }
                 Spacer(minLength: 0)
                 Button { shell.sheet = nil } label: {
                     Text("Cancel").font(.web(14, 500)).foregroundStyle(p.text.color)
@@ -115,15 +112,23 @@ struct QuickAddCard: View {
         }
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 12)
         .frame(width: width, alignment: .leading)
-        .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(p.border.color, lineWidth: 1))
+        .background(p.bgElevated.color, in: cardShape)
+        .overlay(cardShape.stroke(p.border.color, lineWidth: 1))
         .shadowLg(p)
         .background {
             // Command-Return adds the task and keeps the dialog for the next one.
             Button("") { if ready { submit(q, keepOpen: true) } }
                 .keyboardShortcut(.return, modifiers: .command).opacity(0).accessibilityHidden(true)
         }
-        .onAppear { text = seed.text; focused = true }
+        // No keyboard in the look shots (it would cover the dialog).
+        .onAppear { text = seed.text; focused = LookData.state == nil }
+    }
+
+    /// The web's dialog (radius 14), or on the phone a bottom sheet (radius 16 on top).
+    private var cardShape: UnevenRoundedRectangle {
+        let top: CGFloat = phone ? 16 : 14
+        let bottom: CGFloat = phone ? 0 : 14
+        return UnevenRoundedRectangle(cornerRadii: .init(topLeading: top, bottomLeading: bottom, bottomTrailing: bottom, topTrailing: top), style: .continuous)
     }
 
     private func finalDue(_ q: QuickAddResult) -> String? {
@@ -160,8 +165,7 @@ struct QuickAddCard: View {
         } label: {
             chipLabel("calendar-days", label, active: due != nil, p)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .plainMenu()
         .fixedSize()
     }
 
@@ -179,8 +183,7 @@ struct QuickAddCard: View {
             chipLabel("flag", priority < 4 ? "P\(priority)" : "Priority", active: priority < 4, p,
                       color: priority < 4 ? priorityColor(priority, p).color : nil)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .plainMenu()
         .fixedSize()
     }
 
@@ -277,5 +280,16 @@ extension SessionModel {
                 if e is CancellationError { done("Couldn’t add the task.") } else { done(CoreBridge.message(e)) }
             }
         }
+    }
+}
+
+private extension View {
+    /// A menu whose label is drawn as given (the chips), on the Mac too.
+    @ViewBuilder func plainMenu() -> some View {
+        #if os(macOS)
+        self.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        #else
+        self.menuStyle(.borderlessButton).menuIndicator(.hidden)
+        #endif
     }
 }

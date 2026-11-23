@@ -32,22 +32,23 @@ struct PageScreen: View {
         let palette = theme.page.tinted(snapshot?.info.settings.color ?? "none")
         let hybrid = theme.isHybrid && !phone
         let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: hybrid ? 12 : 0, bottomLeading: 0, bottomTrailing: 0, topTrailing: hybrid ? 12 : 0), style: .continuous)
-        VStack(spacing: 0) {
-            PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone)
-            HStack(spacing: 0) {
+        // The side panel sits beside the whole page column (top bar included), as the web's does.
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone)
                 ZStack(alignment: .topTrailing) {
                     content(snapshot, palette)
                     if let snapshot, !snapshot.info.headings.isEmpty, !phone {
                         OutlineBars(count: snapshot.info.headings.count, palette: palette).padding(.top, 33).padding(.trailing, 18)
                     }
                 }
-                // The comments panel: the iPad's side panel (320 wide).
-                if comments.open && !phone { CommentsPanel(palette: theme.chrome, phone: false) }
             }
-            // The phone's bottom sheet (max 55 % of the height).
-            .overlay(alignment: .bottom) {
-                if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: mainScreenSize.height * 0.55) }
-            }
+            // The comments panel: the iPad's side panel (320 wide).
+            if comments.open && !phone { CommentsPanel(palette: theme.chrome, phone: false) }
+        }
+        // The phone's bottom sheet (max 55 % of the height).
+        .overlay(alignment: .bottom) {
+            if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: mainScreenSize.height * 0.55) }
         }
         .background(palette.bg.color)
         .clipShape(shape)
