@@ -71,8 +71,7 @@ public class InputTests
         h.A.WaitFor(x => x.Menu.StartsWith("slash:2/"), "the third item highlighted");
         h.Press(ENTER);
         var after = h.A.WaitFor(x => x.Menu == "none", "the menu closed");
-        Assert.Equal("", after.Text.TrimEnd('
-'));      // the heading, then the box's trailing paragraph
+        Assert.Equal("", after.Text.TrimEnd((char)10));      // the heading, then the box's trailing paragraph
         Assert.StartsWith("heading", after.Block);
         h.Type("Title");
         h.A.WaitText("Title");
