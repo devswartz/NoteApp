@@ -254,6 +254,33 @@ final class LivePageModel: PageSource {
     }
 }
 
+extension LivePageModel {
+    /// Put an earlier version back (`Core.restoreVersion`): the core saves the page as it is now ("before restore"), then
+    /// replaces its content in one edit. `done` gets the id of that "before restore" version (the way to undo), nil for an
+    /// empty page. The page shows the restored content at once.
+    func restore(versionId: String, then done: @escaping (Result<String?, Error>) -> Void) {
+        guard let session, let live, !isClosed else {
+            done(.failure(BoxError.Closed))
+            return
+        }
+        session.call({ core -> (String?, PageInfo) in
+            let before = try core.restoreVersion(page: live, versionId: versionId)
+            return (before, live.info())
+        }) { [weak self] result in
+            switch result {
+            case let .success((before, info)):
+                if let self, !self.isClosed, self.live === live {
+                    self.info = info
+                    self.onRemoteChange?()
+                }
+                done(.success(before))
+            case let .failure(e):
+                done(.failure(e))
+            }
+        }
+    }
+}
+
 extension LivePageModel: PageEditHost {
     var taskCallbacks: TaskCallbacks { tasksStore }
 

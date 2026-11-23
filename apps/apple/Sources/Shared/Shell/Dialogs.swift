@@ -37,6 +37,8 @@ struct DialogField: View {
     let placeholder: String
     @Binding var text: String
     var icon: String?
+    /// A password: dots instead of the letters.
+    var secure = false
     var focused: FocusState<Bool>.Binding
     var onSubmit: () -> Void = {}
     let theme = Theme.shared
@@ -47,13 +49,23 @@ struct DialogField: View {
             if let label { Text(label).font(.web(12.5, 500)).foregroundStyle(p.text2.color) }
             HStack(spacing: 8) {
                 if let icon { Icon(icon, 15, p.textMuted.color) }
-                TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(p.textPlaceholder.color))
-                    .font(.web(14))
-                    .foregroundStyle(p.text.color)
-                    .tint(p.accent.color)
-                    .focused(focused)
-                    .submitLabel(.done)
-                    .onSubmit(onSubmit)
+                if secure {
+                    SecureField("", text: $text, prompt: Text(placeholder).foregroundStyle(p.textPlaceholder.color))
+                        .font(.web(14))
+                        .foregroundStyle(p.text.color)
+                        .tint(p.accent.color)
+                        .focused(focused)
+                        .submitLabel(.done)
+                        .onSubmit(onSubmit)
+                } else {
+                    TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(p.textPlaceholder.color))
+                        .font(.web(14))
+                        .foregroundStyle(p.text.color)
+                        .tint(p.accent.color)
+                        .focused(focused)
+                        .submitLabel(.done)
+                        .onSubmit(onSubmit)
+                }
             }
             .padding(.horizontal, 10)
             .frame(height: 34)
@@ -127,6 +139,27 @@ struct DialogLayer: View {
                     .padding(.top, height * 0.12)
             }
             .frame(width: width, height: height)
+        } else if let sheet = shell.sheet {
+            let p = theme.chrome
+            ZStack(alignment: .top) {
+                p.bgOverlay.color.contentShape(Rectangle()).onTapGesture { shell.sheet = nil }
+                sheetCard(sheet)
+                    .padding(.top, height * (phone ? 0.06 : 0.12))
+            }
+            .frame(width: width, height: height)
+        }
+    }
+
+    /// The sharing, version history, Trash and lock dialogs (`Sheets.swift`).
+    @ViewBuilder private func sheetCard(_ sheet: ShellSheet) -> some View {
+        let w = min(480, width - 32)
+        let h = height * (phone ? 0.7 : 0.62)
+        switch sheet {
+        case let .sharePage(id): PageShareCard(pageId: id, width: w, listHeight: h * 0.5)
+        case let .shareNotebook(id): NotebookShareCard(notebookId: id, width: w, listHeight: h * 0.5)
+        case let .history(id): VersionHistoryCard(pageId: id, width: min(560, width - 32), listHeight: h * 0.3, previewHeight: h * 0.35)
+        case .trash: TrashCard(width: w, listHeight: h * 0.6)
+        case let .lock(mode): LockCard(mode: mode, width: min(400, width - 32))
         }
     }
 

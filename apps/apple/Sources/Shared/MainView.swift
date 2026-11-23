@@ -180,7 +180,7 @@ struct LivePageScreen: View {
         content
             .navigationTitle(meta.title.isEmpty ? "Untitled" : meta.title)
             .onAppear {
-                guard !meta.locked, model == nil else { return }
+                guard !meta.locked || session.locksOpen, model == nil else { return }
                 let m = LivePageModel(pageId: meta.id, title: meta.title, session: session)
                 model = m
                 m.open()
@@ -194,9 +194,8 @@ struct LivePageScreen: View {
 
     @ViewBuilder
     private var content: some View {
-        if meta.locked {
-            ContentUnavailableView("Locked page", systemImage: "lock",
-                                   description: Text("Locked pages open in the web app for now."))
+        if meta.locked, !session.locksOpen {
+            UnlockPrompt(palette: Theme.shared.chrome)
         } else if let model, let page = model.snapshot {
             PageContent(page: page, host: model)
                 .overlay(alignment: .top) { SyncBadge(state: model.state) }
