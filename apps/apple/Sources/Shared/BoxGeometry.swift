@@ -26,6 +26,8 @@ protocol BoxGeometryStore: AnyObject {
     func apply(to boxes: [PageBox]) -> [PageBox]
     /// A box made here that the page document does not have yet.
     func isLocal(_ id: String) -> Bool
+    /// An undo or redo of the page ran: what was last sent for a box is no longer what the document has.
+    func pageUndone()
 }
 
 /// Geometry changes kept in memory for the page being shown. A change to a box stays only while the
@@ -118,6 +120,8 @@ final class LocalBoxGeometry: BoxGeometryStore {
     /// The page's boxes (from the document) with the local changes on top, local boxes last.
     func apply(to boxes: [PageBox]) -> [PageBox] {
         current = Dictionary(boxes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // A box deleted here that the document has dropped: gone for good, unless an undo brings it back.
+        deleted = deleted.filter { current[$0] != nil }
         // A box made here that the page document has now: what was changed since stays on top of it.
         for c in created {
             guard let doc = current[c.id] else { continue }
@@ -141,6 +145,8 @@ final class LocalBoxGeometry: BoxGeometryStore {
     }
 
     func isLocal(_ id: String) -> Bool { created.contains { $0.id == id } }
+
+    func pageUndone() {}
 }
 
 /// Geometry changes sent to the server. The page shows them at once (`overlay`); the core's box
@@ -201,6 +207,8 @@ final class LiveBoxGeometry: BoxGeometryStore {
     func apply(to boxes: [PageBox]) -> [PageBox] { overlay.apply(to: boxes) }
 
     func isLocal(_ id: String) -> Bool { overlay.isLocal(id) }
+
+    func pageUndone() { sent = [:] }
 
     private func run(_ call: @escaping (LivePage) throws -> Void, id: String,
                      quiet: @escaping (Error) -> Bool = { _ in false }, takeBack: @escaping () -> Void) {

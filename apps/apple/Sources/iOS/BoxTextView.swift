@@ -35,23 +35,6 @@ final class BoxSelectionRect: UITextSelectionRect {
     override var isVertical: Bool { false }
 }
 
-/// The keyboard's undo (shake, three-finger swipe, the shortcut bar) undoes engine steps
-/// (EDITOR.md 10.3). Hardware Cmd+Z goes to `key("Mod+z")` instead (see `keyCommands`).
-final class EngineUndoManager: UndoManager {
-    weak var box: BoxTextView?
-    /// The box being edited: the page's undo, which is the box's text, or the page's ink once the box has nothing to undo
-    /// (`EditorFocus`).
-    private var focused: Bool { box != nil && EditorFocus.shared.box === box }
-    override var canUndo: Bool { focused ? EditorFocus.shared.canUndo : (box?.editor?.canUndo ?? false) }
-    override var canRedo: Bool { focused ? EditorFocus.shared.canRedo : (box?.editor?.canRedo ?? false) }
-    override func undo() {
-        if focused { EditorFocus.shared.undo() } else { box?.engineUndo() }
-    }
-    override func redo() {
-        if focused { EditorFocus.shared.redo() } else { box?.engineRedo() }
-    }
-}
-
 /// One text box of the page canvas: TextKit 2 layout of the box's text (an
 /// `NSTextLayoutManager` and `NSTextContentStorage` it owns), drawn by the view itself.
 ///
@@ -108,11 +91,8 @@ final class BoxTextView: UIView, UITextInput {
     private var marked: (lo: Int, hi: Int)?
     private var suggestion: EditorSuggestion?
     private var interaction: UITextInteraction?
-    private lazy var engineUndoManager: EngineUndoManager = {
-        let m = EngineUndoManager()
-        m.box = self
-        return m
-    }()
+    /// The keyboard's undo (shake, three-finger swipe, the shortcut bar) is the page's one undo (`PageUndoManager`).
+    private let pageUndoManager = PageUndoManager()
     /// Presses this view handled itself (their ends don't go to super either).
     private var handledPresses = Set<UIPress>()
 
@@ -592,7 +572,7 @@ final class BoxTextView: UIView, UITextInput {
         return resigned
     }
 
-    override var undoManager: UndoManager? { editor == nil ? super.undoManager : engineUndoManager }
+    override var undoManager: UndoManager? { editor == nil ? super.undoManager : pageUndoManager }
 
     /// Put the caret at `point` (view coordinates), as a tap does.
     func placeCaret(at point: CGPoint) {
@@ -829,23 +809,15 @@ final class BoxTextView: UIView, UITextInput {
         return before && after
     }
 
-    func engineUndo() {
-        guard let editor else { return }
-        engine(fromProtocol: false, edits: false) { _ in editor.undo() }
-    }
-
-    func engineRedo() {
-        guard let editor else { return }
-        engine(fromProtocol: false, edits: false) { _ in editor.redo() }
-    }
-
     /// A key chord for the engine (EDITOR.md 4 and 10.2). False when the engine didn't use it.
     @discardableResult
     func sendKey(_ chord: String) -> Bool {
-        guard let editor else { return false }
+        // Undo and redo are the page's, not the engine's own: one history for text, ink and boxes.
+        if chord == "Mod+z" { EditorFocus.shared.undo(); return true }
+        if chord == "Mod+Shift+z" || chord == "Mod+y" { EditorFocus.shared.redo(); return true }
+        guard editor != nil else { return false }
         let handled = engine(fromProtocol: false, edits: false) { $0.key(chord: chord) } ?? false
-        editor.noteKey(chord, handled: handled)
-        if handled { editor.send() }
+        if handled { PageHistory.shared.refresh() }
         return handled
     }
 

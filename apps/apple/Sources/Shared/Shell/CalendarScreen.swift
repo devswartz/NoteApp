@@ -56,7 +56,8 @@ enum CalDates {
 /// The Calendar (src/pages/tasks/CalendarView.tsx, LOOK.md 4.10): a month or a week of open tasks by due date, with the
 /// "No date" tray. Drag a task onto another day to move it (`Core.updateTask` with `dueDate`), onto the tray to clear its
 /// date; double-tap a day (or its +) to add a task there. Phones: tap a day in Month to open its week, tap a task for
-/// its sheet. Mine / Everyone, Today, previous / next and Week / Month are in the ribbon (wide) or the heading (phone).
+/// its sheet. Mine / Everyone, Tags, a person, Today, previous / next and Week / Month are in the ribbon (wide) or the
+/// heading (phone: Status and the assignee select; the web has no tag filter on phones). Status is the select at the top right.
 struct CalendarScreen: View {
     @Environment(Shell.self) private var shell
     @Environment(SessionModel.self) private var session
@@ -72,14 +73,33 @@ struct CalendarScreen: View {
         var undated: [CoreTask] = []
     }
 
+    /// The web's `inScope` over the task list: whose (Mine, Everyone, Unassigned or one person) and the Tags filter (any of
+    /// the chosen tags). Status is applied by the callers: the days follow it, the "No date" tray is always open tasks.
+    private func inScope(_ t: CoreTask, me: String?) -> Bool {
+        let who: Bool
+        switch shell.calWho {
+        case .everyone: who = true
+        case .mine: who = t.assigneeId == me
+        case .unassigned: who = t.assigneeId == nil
+        case let .person(id): who = t.assigneeId == id
+        }
+        return who && (shell.calTags.isEmpty || t.tagIds.contains { shell.calTags.contains($0) })
+    }
+
     private func data() -> CalData {
         let me = session.shownUser?.id
-        let scoped = session.shownTasks.filter {
-            !session.isDone($0) && !$0.locked && (shell.calWho == .everyone || $0.assigneeId == me)
-        }
+        let scoped = session.shownTasks.filter { !$0.locked && inScope($0, me: me) }
         var d = CalData()
         for t in scoped {
-            if let day = t.dueDate { d.byDay[day, default: []].append(t) } else { d.undated.append(t) }
+            let done = session.isDone(t)
+            if let day = t.dueDate {
+                switch shell.calStatus {
+                case .open where done, .done where !done: continue
+                default: d.byDay[day, default: []].append(t)
+                }
+            } else if !done {
+                d.undated.append(t)
+            }
         }
         for key in d.byDay.keys {
             d.byDay[key]?.sort { a, b in
@@ -153,17 +173,57 @@ struct CalendarScreen: View {
                     }
                     .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
                     .accessibilityLabel(shell.calMonth ? "Next month" : "Next week")
+                } else {
+                    statusSelect(p)
                 }
             }
             if phone {
+                HStack(spacing: 10) {
+                    statusSelect(p)
+                    personSelect(p)
+                    Spacer(minLength: 0)
+                }
                 HStack(spacing: 8) {
-                    segmented(p, ["Mine", "Everyone"], selected: shell.calWho == .mine ? 0 : 1) { shell.calWho = $0 == 0 ? .mine : .everyone }
                     Spacer(minLength: 0)
                     segmented(p, ["Month", "Week"], selected: shell.calMonth ? 0 : 1) { shell.calMonth = $0 == 0 }
                 }
             }
         }
         .padding(.bottom, 14).padding(.horizontal, phone ? 8 : 0)
+    }
+
+    /// The web's Status select (Open, Completed, All): the days show open tasks, completed ones, or both.
+    private func statusSelect(_ p: Palette) -> some View {
+        SelectMenu(palette: p, label: "Status", value: shell.calStatus.label) {
+            ForEach(Shell.CalendarStatus.allCases, id: \.self) { s in
+                Button { shell.calStatus = s } label: {
+                    if s == shell.calStatus { Label(s.label, systemImage: "checkmark") } else { Text(s.label) }
+                }
+            }
+        }
+    }
+
+    /// The phone's assignee select (the web's Calendar panel, Filters): Assigned to me, Everyone, Unassigned, then people.
+    private func personSelect(_ p: Palette) -> some View {
+        let me = session.shownUser?.id
+        let value: String
+        switch shell.calWho {
+        case .mine: value = "Assigned to me"
+        case .everyone: value = "Everyone"
+        case .unassigned: value = "Unassigned"
+        case let .person(id): value = session.members.first { $0.id == id }?.name ?? "Everyone"
+        }
+        func option(_ title: String, _ who: Shell.CalendarWho) -> some View {
+            Button { shell.calWho = who } label: {
+                if shell.calWho == who { Label(title, systemImage: "checkmark") } else { Text(title) }
+            }
+        }
+        return SelectMenu(palette: p, label: nil, value: value) {
+            option("Assigned to me", .mine)
+            option("Everyone", .everyone)
+            option("Unassigned", .unassigned)
+            ForEach(session.members.filter { $0.id != me }, id: \.id) { m in option(m.name, .person(m.id)) }
+        }
     }
 
     private func segmented(_ p: Palette, _ labels: [String], selected: Int, _ pick: @escaping (Int) -> Void) -> some View {
@@ -307,14 +367,16 @@ struct CalendarScreen: View {
 
     /// A task in a day (`.cal-task`): a bar in the priority colour on its left, the time, the title; red when overdue.
     private func chip(_ p: Palette, _ t: CoreTask, day: String, full: Bool) -> some View {
-        let late = !day.isEmpty && day < SessionModel.todayString
+        let done = session.isDone(t)
+        let late = !done && !day.isEmpty && day < SessionModel.todayString
         let bar = t.priority < 4 ? priorityColor(t.priority, p) : p.textMuted
         let size: CGFloat = phone && !full ? 10.5 : (full && phone ? 13.5 : 12)
         return HStack(spacing: 4) {
             if let time = t.dueTime {
                 Text(time).font(.web(size, 600)).foregroundStyle(p.text2.color)
             }
-            Text(t.title.isEmpty ? "Untitled" : t.title).font(.web(size)).foregroundStyle(late ? p.danger.color : p.text.color)
+            Text(t.title.isEmpty ? "Untitled" : t.title).font(.web(size)).strikethrough(done)
+                .foregroundStyle(done ? p.textMuted.color : (late ? p.danger.color : p.text.color))
         }
         .lineLimit(1)
         .padding(.horizontal, phone && !full ? 3 : 6).padding(.vertical, full && phone ? 7 : 2)
@@ -455,6 +517,53 @@ struct CalendarRibbon: View {
             RibbonSeparator(m: m)
             RibbonButton(icon: "user", m: m, pressed: shell.calWho == .mine) { shell.calWho = .mine }
             RibbonButton(icon: "users", m: m, pressed: shell.calWho == .everyone) { shell.calWho = .everyone }
+            // Tags and the person filter (the web's Tags and Team menus; people stand in for teams until tasks carry a team).
+            RibbonButton(icon: "tag", m: m, pressed: !shell.calTags.isEmpty, caret: true, anchor: "rb-cal-tags") { shell.menu = .calTags }
+            RibbonButton(icon: "user-round", m: m, pressed: shell.calWho != .mine && shell.calWho != .everyone, caret: true,
+                         anchor: "rb-cal-people") { shell.menu = .calPeople }
         }
+    }
+}
+
+/// The web's `<select class="input input-sm">` with its label (`.select-label`): 13 pt, 28 high, 1 pt border, radius 8,
+/// an arrow at the right; tapping it opens the options as a menu.
+struct SelectMenu<Content: View>: View {
+    let palette: Palette
+    let label: String?
+    let value: String
+    @ViewBuilder let content: () -> Content
+    @Environment(\.phoneLayout) private var phone
+
+    var body: some View {
+        let p = palette
+        HStack(spacing: 6) {
+            if let label { Text(label).font(.web(13)).foregroundStyle(p.text2.color) }
+            Menu {
+                content()
+            } label: {
+                HStack(spacing: 6) {
+                    Text(value).font(.web(phone ? 16 : 13)).foregroundStyle(p.text.color).lineLimit(1)
+                    Spacer(minLength: 0)
+                    Icon("chevron-down", 12, p.text2.color)
+                }
+                .padding(.horizontal, 8)
+                .frame(minWidth: 86, minHeight: phone ? 34 : 28, maxHeight: phone ? 34 : 28)
+                .background(p.bg.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+            }
+            .selectMenuStyle()
+            .fixedSize()
+        }
+    }
+}
+
+private extension View {
+    /// A menu whose label is drawn as given, on the Mac too.
+    @ViewBuilder func selectMenuStyle() -> some View {
+        #if os(macOS)
+        self.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        #else
+        self.menuStyle(.borderlessButton).menuIndicator(.hidden)
+        #endif
     }
 }

@@ -39,7 +39,7 @@ struct MacCommands: Commands {
         }
 
         // Edit
-        // Undo and Redo: the box being edited's text or the page's ink (`EditorFocus`, core's `inkUndo`). A text field that has
+        // Undo and Redo: the page's one undo (`PageHistory`, core's `LivePage.undo()`: text, ink and boxes). A text field that has
         // the keyboard (the sidebar's rename, search) keeps its own.
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") { undoRedo(redo: false) }.keyboardShortcut("z", modifiers: .command)

@@ -118,6 +118,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         addSubview(surface)
         ink = InkController(scroll: self, surface: surface)
         ink.notify = { [weak self] in self?.notify?($0) }
+        PageHistory.shared.notify = { [weak self] in self?.notify?($0) }
+        PageHistory.shared.beginStep = { [weak self] in self?.beginHistoryStep() }
         surface.onReorder = { [weak self] in self?.ink.layout() }
         NotificationCenter.default.addObserver(self, selector: #selector(inkToolChanged), name: InkTool.changed, object: nil)
         titleLabel.numberOfLines = 0
@@ -266,7 +268,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             self.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
             host?.onSynced = { [weak self] in
-                self?.editors.values.forEach { $0.send(all: true) }
+                self?.reopenStaleEditors()
                 self?.ink.reload()
             }
             ink.host = host
@@ -342,7 +344,6 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.onCaretChange = { [weak self] box in
             self?.keepCaretVisible(box)
             if box === self?.editing {
-                EditorFocus.shared.refresh()
                 self?.updateToolbar()
             }
         }
@@ -672,7 +673,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     /// Focus `box` with the caret at `point` (box coordinates; nil: at the end). Opens the box in
     /// the engine the first time.
-    private func beginEditing(_ box: BoxTextView, at point: CGPoint?, then: (() -> Void)? = nil) {
+    private func beginEditing(_ box: BoxTextView, at point: CGPoint?, restoreSelection: Bool = false, then: (() -> Void)? = nil) {
         if box === editing {
             if let point { box.placeCaret(at: point) }
             then?()
@@ -684,9 +685,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             self.editing = box
             box.chrome = true
             self.surface.bringSubviewToFront(box)
-            self.bringToFront(box.boxId)
+            if !restoreSelection { self.bringToFront(box.boxId) }
             _ = box.becomeFirstResponder()
-            if let point { box.placeCaret(at: point) } else { box.placeCaretAtEnd() }
+            if !restoreSelection { if let point { box.placeCaret(at: point) } else { box.placeCaretAtEnd() } }
             if let point { box.beginTitleEdit(at: point) }
             EditorFocus.shared.set(box)
             then?()
@@ -725,13 +726,45 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// read-only boxes redraw from the snapshot in `show`).
     private func remoteChanged() {
         ink.reload()
-        guard !editors.isEmpty, let host else { return }
-        host.fetchDocument { [weak self] document in
-            guard let self, let document else { return }
-            for (id, editor) in self.editors {
-                editor.applyRemote(document)
-                self.boxViews[id]?.remoteChanged()
+        // The open boxes' sessions are on the live page: they take others' changes at their next call.
+        for id in editors.keys { boxViews[id]?.remoteChanged() }
+    }
+
+    /// After a reconnect that made a new live page, the boxes being edited open again on it (their sessions belong to the
+    /// old page); what was typed is on the new page from the store.
+    private func reopenStaleEditors() {
+        guard let host, let token = host.pageToken else { return }
+        for (id, editor) in editors where editor.pageToken != nil && editor.pageToken != token {
+            BoxEditor.open(boxId: id, host: host) { [weak self] result in
+                guard let self, let view = self.boxViews[id], self.editors[id] === editor, case let .success(fresh) = result else { return }
+                self.editors[id] = fresh
+                view.attach(fresh)
+                if view === self.editing { EditorFocus.shared.set(view) }
             }
+        }
+    }
+
+    /// The page's undo or redo is about to run (`PageHistory`): stop a pen stroke, note each open box's revision; the
+    /// returned closure runs once core has taken the step.
+    private func beginHistoryStep() -> (() -> Void)? {
+        if ink.session.busy { ink.session.cancel() }
+        let before = editors.mapValues { $0.session.revision() }
+        return { [weak self] in self?.historyStepped(before) }
+    }
+
+    /// Core took an undo or redo step: draw what it changed again (strokes, boxes' text, geometry) and, when it was a box's
+    /// text, put the caret back in that box (the session restored its selection), as the web does.
+    private func historyStepped(_ before: [String: UInt64]) {
+        ink.reload()
+        geometry.pageUndone()
+        var touched: BoxTextView?
+        for (id, editor) in editors {
+            guard let view = boxViews[id] else { continue }
+            if editor.session.revision() != before[id], touched == nil || view === editing { touched = view }
+            view.remoteChanged()
+        }
+        if let view = touched, view !== editing, !InkTool.shared.inking {
+            beginEditing(view, at: nil, restoreSelection: true)
         }
     }
 
@@ -775,7 +808,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     // MARK: Ink and undo
 
     /// A pen tool was chosen: no box is being edited then, and the page takes the keyboard's and the three-finger undo
-    /// (`InkUndoManager`, Cmd-Z below), which reach the ink through `EditorFocus`.
+    /// (`PageUndoManager`, Cmd-Z below), which reach the ink through `EditorFocus`.
     @objc private func inkToolChanged() {
         guard InkTool.shared.inking else { return }
         if editing != nil { stopEditing() }
@@ -784,8 +817,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     override var canBecomeFirstResponder: Bool { true }
 
-    private let inkUndoManager = InkUndoManager()
-    override var undoManager: UndoManager? { inkUndoManager }
+    private let pageUndoManager = PageUndoManager()
+    override var undoManager: UndoManager? { pageUndoManager }
 
     /// Cmd-Z and Shift-Cmd-Z on a hardware keyboard while the page (not a box) has the keyboard.
     override var keyCommands: [UIKeyCommand]? {

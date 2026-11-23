@@ -20,7 +20,13 @@ final class Shell {
     }
 
     /// Whose tasks the Calendar shows (the ribbon's Mine / Everyone).
-    enum CalendarWho { case mine, everyone }
+    enum CalendarWho: Equatable { case mine, everyone, unassigned, person(String) }
+
+    /// The Calendar's Status select: open tasks (the default), completed ones, or all.
+    enum CalendarStatus: String, CaseIterable {
+        case open, done, any
+        var label: String { self == .open ? "Open" : (self == .done ? "Completed" : "All") }
+    }
 
     enum TaskList: String, CaseIterable {
         case today, my, upcoming, all, team
@@ -63,6 +69,8 @@ final class Shell {
         /// The emoji picker of a page's icon (the row above its title).
         case pageIcon(String)
         case blockType, textColor, highlight, taskSplit, pageColor, ruleLines
+        /// The Calendar ribbon's Tags and person filters.
+        case calTags, calPeople
     }
 
     var route: Route
@@ -89,6 +97,10 @@ final class Shell {
     var calCursor = SessionModel.todayString
     var calMonth = true
     var calWho: CalendarWho = .mine
+    /// Status, tag and person choices are kept for the workspace while the app runs, as the web keeps them (its task view
+    /// state and the calendar's URL); another workspace starts clean.
+    var calStatus: CalendarStatus = .open
+    var calTags: Set<String> = []
     /// Settings: the open section (nil: the list on phones, Profile on wide screens).
     var settingsSection: String?
     /// The page panel shows the page's tasks instead of its comments.
@@ -381,6 +393,9 @@ struct AppShell: View {
         #endif
         .onChange(of: session.workspaceId) {
             if case .page = shell.route, !session.preview { shell.route = .notes }
+            shell.calStatus = .open
+            shell.calTags = []
+            shell.calWho = .mine
         }
     }
 

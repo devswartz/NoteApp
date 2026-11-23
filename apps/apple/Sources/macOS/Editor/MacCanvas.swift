@@ -185,6 +185,8 @@ final class MacCanvasView: NSView {
         surface.addSubview(ink.input)
         ink.onInking = { [weak self] in self?.stopEditing() }
         ink.notify = { [weak self] in self?.notify?($0) }
+        PageHistory.shared.notify = { [weak self] in self?.notify?($0) }
+        PageHistory.shared.beginStep = { [weak self] in self?.beginHistoryStep() }
         scroll.contentView.postsBoundsChangedNotifications = true
         addSubview(scroll)
         surface.onMouseDown = { [weak self] event in self?.surfaceMouseDown(event) }
@@ -350,7 +352,7 @@ final class MacCanvasView: NSView {
             ink.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
             host?.onSynced = { [weak self] in
-                self?.editors.values.forEach { $0.send(all: true) }
+                self?.reopenStaleEditors()
                 self?.reloadInk()
             }
             needsGeometry = true
@@ -422,7 +424,6 @@ final class MacCanvasView: NSView {
         view.onCaretChange = { [weak self] box in
             guard let self, box === self.editing else { return }
             self.keepCaretVisible(box)
-            EditorFocus.shared.refresh()
             self.updateToolbar()
         }
         boxViews[id] = view
@@ -767,7 +768,7 @@ final class MacCanvasView: NSView {
     // MARK: Editing
 
     /// Focus `box` with the caret at `point` (box coordinates; nil: at the end). Opens the box in the engine the first time.
-    private func beginEditing(_ box: MacBoxView, at point: CGPoint?, then: (() -> Void)? = nil) {
+    private func beginEditing(_ box: MacBoxView, at point: CGPoint?, restoreSelection: Bool = false, then: (() -> Void)? = nil) {
         if box === editing {
             if let point { box.placeCaret(at: point) }
             then?()
@@ -778,10 +779,10 @@ final class MacCanvasView: NSView {
             guard let self, let box, box.superview != nil else { return }
             self.editing = box
             box.chrome = true
-            self.bringToFront(box.boxId)
+            if !restoreSelection { self.bringToFront(box.boxId) }
             self.relayout()
             box.setActive(true)
-            if let point { box.placeCaret(at: point) } else { box.placeCaretAtEnd() }
+            if !restoreSelection { if let point { box.placeCaret(at: point) } else { box.placeCaretAtEnd() } }
             if let point { box.beginTitleEdit(at: point) }
             EditorFocus.shared.set(box)
             self.updateToolbar()
@@ -818,17 +819,50 @@ final class MacCanvasView: NSView {
         relayout()
     }
 
-    /// Someone else changed the page: every open box merges the page document again (the read-only boxes redraw from the
-    /// snapshot in `show`).
+    /// Someone else changed the page: every open box's session is on the live page and takes the change at its next call
+    /// (the read-only boxes redraw from the snapshot in `show`).
     private func remoteChanged() {
         reloadInk()
-        guard !editors.isEmpty, let host else { return }
-        host.fetchDocument { [weak self] document in
-            guard let self, let document else { return }
-            for (id, editor) in self.editors {
-                editor.applyRemote(document)
-                self.boxViews[id]?.remoteChanged()
+        for id in editors.keys { boxViews[id]?.remoteChanged() }
+    }
+
+    /// After a reconnect that made a new live page, the boxes being edited open again on it (their sessions belong to the
+    /// old page); what was typed is on the new page from the store.
+    private func reopenStaleEditors() {
+        guard let host, let token = host.pageToken else { return }
+        for (id, editor) in editors where editor.pageToken != nil && editor.pageToken != token {
+            BoxEditor.open(boxId: id, host: host) { [weak self] result in
+                guard let self, let view = self.boxViews[id], self.editors[id] === editor, case let .success(fresh) = result else { return }
+                self.editors[id] = fresh
+                view.attach(fresh)
+                if view === self.editing { EditorFocus.shared.set(view) }
             }
+        }
+    }
+
+    /// The page's undo or redo is about to run (`PageHistory`): stop a pen stroke, note each open box's revision; the
+    /// returned closure runs once core has taken the step.
+    private func beginHistoryStep() -> (() -> Void)? {
+        if ink.session.busy { ink.session.cancel() }
+        let before = editors.mapValues { $0.session.revision() }
+        return { [weak self] in self?.historyStepped(before) }
+    }
+
+    /// Core took an undo or redo step: draw what it changed again (strokes, boxes' text, geometry) and, when it was a box's
+    /// text, put the caret back in that box (the session restored its selection), as the web does.
+    private func historyStepped(_ before: [String: UInt64]) {
+        reloadInk()
+        geometry.pageUndone()
+        var touched: MacBoxView?
+        for (id, editor) in editors {
+            guard let view = boxViews[id] else { continue }
+            if editor.session.revision() != before[id], touched == nil || view === editing { touched = view }
+            view.remoteChanged()
+        }
+        if let view = touched, view !== editing, !InkTool.shared.inking {
+            beginEditing(view, at: nil, restoreSelection: true)
+        } else {
+            editing?.refocus()
         }
     }
 

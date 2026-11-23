@@ -45,6 +45,8 @@ struct MenuItem: View {
     var icon: String?
     var hint: String?
     var tile: String?
+    /// A colour (#rrggbb) drawn as a dot in the icon column (the web's `LabelDot`: a tag or a team).
+    var dot: String?
     var note: String?
     var danger = false
     var disabled = false
@@ -65,7 +67,8 @@ struct MenuItem: View {
                                size: 20, radius: 6, fontSize: 11)
                 } else {
                     Group {
-                        if let icon { Icon(icon, 15, (danger ? p.danger : p.textMuted).color) } else { Color.clear }
+                        if let dot { Circle().fill(PlatformColor(css: dot).color).frame(width: 10, height: 10) }
+                        else if let icon { Icon(icon, 15, (danger ? p.danger : p.textMuted).color) } else { Color.clear }
                     }
                     .frame(width: 18, height: 18)
                 }
@@ -256,6 +259,12 @@ struct MenuLayer: View {
         case .ruleLines:
             let f = anchorFrame("rb-rule-lines")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, ruleMenu(p))
+        case .calTags:
+            let f = anchorFrame("rb-cal-tags")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, calTagsMenu(p))
+        case .calPeople:
+            let f = anchorFrame("rb-cal-people")
+            at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, calPeopleMenu(p))
         }
     }
 
@@ -559,6 +568,54 @@ struct MenuLayer: View {
                 }
             }
             .frame(width: 104)
+        }
+    }
+
+    // MARK: Calendar filters
+
+    /// The Calendar ribbon's Tags menu (`RibbonMenu` "Tags filter"): tasks with any of the ticked tags; it stays open while
+    /// ticking.
+    private func calTagsMenu(_ p: Palette) -> some View {
+        MenuCard(palette: p, width: 220, maxHeight: 380) {
+            if session.tags.isEmpty {
+                Text("No tags yet.").font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.horizontal, 10).padding(.vertical, 8)
+            }
+            ForEach(session.tags, id: \.id) { t in
+                MenuItem(palette: p, title: t.name, dot: t.color, checked: shell.calTags.contains(t.id)) {
+                    if shell.calTags.contains(t.id) { shell.calTags.remove(t.id) } else { shell.calTags.insert(t.id) }
+                }
+            }
+            if !shell.calTags.isEmpty {
+                MenuSeparator(palette: p)
+                MenuItem(palette: p, title: "Remove Tags filter", icon: "filter-x") {
+                    shell.calTags = []
+                    shell.menu = nil
+                }
+            }
+        }
+    }
+
+    /// The Calendar's person filter: tasks nobody has, or one person's (the web's assignee select, in the ribbon here).
+    private func calPeopleMenu(_ p: Palette) -> some View {
+        let me = session.shownUser?.id
+        return MenuCard(palette: p, width: 220, maxHeight: 380) {
+            MenuItem(palette: p, title: "Unassigned", icon: "user-minus", checked: shell.calWho == .unassigned) {
+                shell.calWho = .unassigned
+                shell.menu = nil
+            }
+            ForEach(session.members.filter { $0.id != me }, id: \.id) { m in
+                MenuItem(palette: p, title: m.name, dot: m.color, checked: shell.calWho == .person(m.id)) {
+                    shell.calWho = .person(m.id)
+                    shell.menu = nil
+                }
+            }
+            if shell.calWho != .mine && shell.calWho != .everyone {
+                MenuSeparator(palette: p)
+                MenuItem(palette: p, title: "Remove person filter", icon: "filter-x") {
+                    shell.calWho = .mine
+                    shell.menu = nil
+                }
+            }
         }
     }
 

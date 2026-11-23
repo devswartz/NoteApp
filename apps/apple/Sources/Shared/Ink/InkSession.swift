@@ -8,22 +8,50 @@ final class InkSlot<T>: @unchecked Sendable {
     var value: T?
 }
 
-/// The page's ink undo (docs/rewrite/status/core.md "For apple: ink undo"): whether core has a step to undo or redo, for
-/// the ribbon's buttons and the shortcuts. `EditorFocus` picks between this and the box's text undo.
+/// The page's one undo (docs/rewrite/status/core.md "For apple, windows and android: page undo"): core's `LivePage.undo()` /
+/// `redo()` take back this client's newest change on the page, whichever kind it was (text of a box edited live, ink, box
+/// geometry). Holds the flags the ribbon's buttons and the shortcuts read (`canUndo()` / `canRedo()`), refreshed after every
+/// write: `PageEditHost.boxCall` reports them with each call, typing sets them (`BoxEditor.edited`).
 @Observable
-final class InkHistory {
-    static let shared = InkHistory()
+final class PageHistory {
+    static let shared = PageHistory()
     private(set) var canUndo = false
     private(set) var canRedo = false
-    @ObservationIgnored weak var session: InkSession?
+    /// The page being edited; its calls and flags are the ones that count.
+    @ObservationIgnored weak var host: PageEditHost? {
+        didSet { if host !== oldValue { set(undo: false, redo: false) } }
+    }
+    /// The canvas: called before a step (stop a pen stroke, note which boxes' text there is); returns what to do once core
+    /// has taken the step (draw the strokes, boxes and text again, put the caret back).
+    @ObservationIgnored var beginStep: (() -> (() -> Void)?)?
+    @ObservationIgnored var notify: ((String) -> Void)?
 
     func set(undo: Bool, redo: Bool) {
         if canUndo != undo { canUndo = undo }
         if canRedo != redo { canRedo = redo }
     }
 
-    func undo() { session?.step(redo: false) }
-    func redo() { session?.step(redo: true) }
+    /// The flags core has now (after a change the flags weren't reported with).
+    func refresh() {
+        guard let host, host.savesBoxes else { return }
+        host.pageFlags { [weak self, weak host] flags in
+            guard let self, let host, self.host === host else { return }
+            self.set(undo: flags.0, redo: flags.1)
+        }
+    }
+
+    func undo() { step(redo: false) }
+    func redo() { step(redo: true) }
+
+    private func step(redo: Bool) {
+        guard let host, host.savesBoxes else { return }
+        let finish = beginStep?()
+        host.boxCall({ page in _ = try (redo ? page.redo() : page.undo()) }) { [weak self, weak host] error in
+            guard let self, let host, self.host === host else { return }
+            if let error { self.notify?("Couldn't \(redo ? "redo" : "undo"): \(CoreBridge.message(error))") }
+            finish?()
+        }
+    }
 }
 
 /// What a platform draws for an `InkSession`. All coordinates are page points from the page origin.
@@ -57,7 +85,7 @@ final class InkSession {
 
     weak var view: InkSessionView?
     weak var host: PageEditHost? {
-        didSet { if host !== oldValue { InkHistory.shared.session = self; InkHistory.shared.set(undo: false, redo: false) } }
+        didSet { if host !== oldValue { PageHistory.shared.host = host } }
     }
     var notify: ((String) -> Void)?
     /// Phones show ink read-only.
@@ -94,7 +122,7 @@ final class InkSession {
         setSelection([])
         clearLive()
         view?.inkStrokes([])
-        InkHistory.shared.set(undo: false, redo: false)
+        PageHistory.shared.set(undo: false, redo: false)
     }
 
     /// Read the page's strokes again (a page opened, someone else changed it, the connection came back, an edit of ours).
@@ -130,34 +158,11 @@ final class InkSession {
         if tool.kind != .lasso { setSelection([]) }
     }
 
-    // MARK: Undo
-
-    /// One step of the page's ink undo or redo (core's `inkUndo` / `inkRedo`), then the strokes again.
-    func step(redo: Bool) {
-        guard let host, host.savesBoxes else { return }
-        if gesture != nil { cancel() }
-        let flags = InkSlot<(Bool, Bool)>()
-        host.boxCall({ page in
-            _ = try (redo ? page.inkRedo() : page.inkUndo())
-            flags.value = (page.inkCanUndo(), page.inkCanRedo())
-        }) { [weak self] error in
-            guard let self else { return }
-            if let f = flags.value { InkHistory.shared.set(undo: f.0, redo: f.1) }
-            if let error { self.notify?("Couldn't \(redo ? "redo" : "undo"): \(CoreBridge.message(error))") }
-            self.reload()
-        }
-    }
-
-    /// A write to the page's ink and the undo flags in one call on the page's queue.
+    /// A write to the page's ink on the page's queue (`boxCall` reports the undo flags with it).
     private func write(_ what: String, _ call: @escaping (LivePage) throws -> Void, then: @escaping (Bool) -> Void) {
         guard let host else { then(false); return }
-        let flags = InkSlot<(Bool, Bool)>()
-        host.boxCall({ page in
-            try call(page)
-            flags.value = (page.inkCanUndo(), page.inkCanRedo())
-        }) { [weak self] error in
+        host.boxCall(call) { [weak self] error in
             guard let self else { return }
-            if let f = flags.value { InkHistory.shared.set(undo: f.0, redo: f.1) }
             if let error { self.notify?("Couldn't \(what): \(CoreBridge.message(error))") }
             then(error == nil)
         }

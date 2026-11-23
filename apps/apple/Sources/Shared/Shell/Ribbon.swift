@@ -8,23 +8,16 @@ final class EditorFocus {
     static let shared = EditorFocus()
     @ObservationIgnored private(set) weak var box: EditorTarget?
     private(set) var active = false
-    private(set) var boxCanUndo = false
-    private(set) var boxCanRedo = false
-    /// The ribbon's Undo and Redo, Cmd-Z: a step of the box being edited's text, or of the page's ink (`InkHistory`).
-    var canUndo: Bool { boxCanUndo || InkHistory.shared.canUndo }
-    var canRedo: Bool { boxCanRedo || InkHistory.shared.canRedo }
+    /// The ribbon's Undo and Redo, Cmd-Z, shake, the three-finger swipes: the page's one undo (`PageHistory`, core's
+    /// `LivePage.undo()`), whatever the newest change was and whichever box has the keyboard.
+    var canUndo: Bool { PageHistory.shared.canUndo }
+    var canRedo: Bool { PageHistory.shared.canRedo }
     /// The link editor of the canvas showing the focused box.
     @ObservationIgnored var onLink: (() -> Void)?
 
     func set(_ box: EditorTarget?) {
         self.box = box
         active = box != nil
-        refresh()
-    }
-
-    func refresh() {
-        boxCanUndo = box?.engineCanUndo ?? false
-        boxCanRedo = box?.engineCanRedo ?? false
     }
 
     /// An engine command for the focused box (`EditorSession.command`, EDITOR.md 4).
@@ -32,38 +25,12 @@ final class EditorFocus {
         guard let box else { return }
         let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
         box.command(name, json)
-        refresh()
     }
 
     func openLinkEditor() { onLink?() }
 
-    /// Whose step an undo (or redo) is: core's ink undo covers the page's strokes only, text undo the box's
-    /// (core.md "For apple: ink undo"). With a pen tool chosen the ink goes first; else the box being edited, and the ink
-    /// when the box has nothing left to undo (or none is being edited).
-    private func inkFirst(redo: Bool) -> Bool {
-        let ink = redo ? InkHistory.shared.canRedo : InkHistory.shared.canUndo
-        guard ink else { return false }
-        let boxHas = redo ? boxCanRedo : boxCanUndo
-        return InkTool.shared.inking || !boxHas
-    }
-
-    func undo() {
-        if inkFirst(redo: false) {
-            InkHistory.shared.undo()
-        } else {
-            box?.engineUndo()
-        }
-        refresh()
-    }
-
-    func redo() {
-        if inkFirst(redo: true) {
-            InkHistory.shared.redo()
-        } else {
-            box?.engineRedo()
-        }
-        refresh()
-    }
+    func undo() { PageHistory.shared.undo() }
+    func redo() { PageHistory.shared.redo() }
 }
 
 /// Room for the Mac window's traffic lights at the ribbon's left (the window has no title bar of its own). It is
