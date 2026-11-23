@@ -62,7 +62,8 @@ final class WindowInsets {
 /// compact (no group names, no words). Wider windows get the compact ribbon too for now.
 struct RibbonMetrics {
     let small: Bool
-    init(width: CGFloat) { small = width <= 1023 }
+    /// The Mac window's traffic lights take `WindowInsets.leading` of the ribbon's width (0 on iPad/iPhone).
+    init(width: CGFloat) { small = width - WindowInsets.shared.leading <= 1023 }
     var height: CGFloat { small ? 30 : 36 }
     var minWidth: CGFloat { small ? 25 : 36 }
     var pad: CGFloat { small ? 3 : 8 }

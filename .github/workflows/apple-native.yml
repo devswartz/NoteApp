@@ -282,9 +282,11 @@ jobs:
           shoot canvas-boxes -previewSignedIn YES -page canvas-boxes
           shoot tasks -previewSignedIn YES -lookState tasks-my
           # The iPad look states (Shell.swift, MacCanvas.runLookIfAsked): same names as docs/rewrite/look/reference/.
-          for state in edit-caret edit-selection slash-menu edit-link search task-detail page-settings-and-ink dialog-new-section menu-page-row menu-account; do
-            shoot "$state" -previewSignedIn YES -lookState "$state"
+          for state in page-canvas-boxes edit-caret edit-selection slash-menu edit-link search task-detail page-settings-and-ink dialog-new-section menu-page-row menu-account; do
+            shoot "$state" -previewSignedIn YES -theme light -lookState "$state"
           done
+          shoot ink-demo -previewSignedIn YES -theme light -page settings-and-ink -lookState ink-demo
+          shoot dark-edit-caret -previewSignedIn YES -theme dark -lookState edit-caret
           cp "$HOME"/Library/Logs/DiagnosticReports/*otivelo* "$OUT/" 2>/dev/null || true
           ls -l "$OUT"
       - uses: actions/upload-artifact@v4

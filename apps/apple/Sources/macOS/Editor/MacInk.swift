@@ -62,6 +62,13 @@ final class MacInkView: NSView {
     }
 
     func clear() { set([]) }
+    /// Look mode (CI): outlines the stroke builder drew (no corpus page has ink this build can read), to show the drawing.
+    func setDemo(_ list: [(ops: [Float], color: UInt32, highlighter: Bool)]) {
+        items = list.enumerated().filter { $0.element.highlighter == under }
+            .map { Item(id: "demo\($0.offset)", path: InkGeometry.path($0.element.ops), color: $0.element.color) }
+        needsDisplay = true
+    }
+
 
     override func draw(_ dirtyRect: NSRect) {
         guard !items.isEmpty, let ctx = NSGraphicsContext.current?.cgContext else { return }

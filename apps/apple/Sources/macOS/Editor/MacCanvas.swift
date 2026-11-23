@@ -441,11 +441,36 @@ final class MacCanvasView: NSView {
 
     // MARK: Ink (read-only)
 
+    /// `-lookState ink-demo` (CI): a pen squiggle, a second pen stroke and a highlighter over the first line, made with the
+    /// core's stroke builder, so the screenshot shows ink on the Mac.
+    private func showDemoInk() {
+        func outline(_ tool: UInt8, _ color: UInt32, _ width: Float, _ pts: [(Double, Double)]) -> [Float] {
+            let builder = InkStrokeBuilder(tool: tool, color: color, width: width, pressure: false, tilt: false)
+            var samples: [Double] = []
+            for (i, p) in pts.enumerated() { samples += [p.0, p.1, 0.5, 1.2, 0, Double(i) * 8] }
+            try? builder.pushMany(samples: samples)
+            return builder.preview(predicted: [])
+        }
+        let wave = stride(from: 0.0, through: 320.0, by: 6.0).map { ($0 + 20, 130 + 28 * sin($0 / 28)) }
+        let loop = stride(from: 0.0, through: 6.3, by: 0.15).map { (420 + 40 * cos($0), 150 + 40 * sin($0)) }
+        let list: [(ops: [Float], color: UInt32, highlighter: Bool)] = [
+            (outline(1, 0xFACC_1559, 18, [(0, 14), (60, 14), (130, 14)]), 0xFACC_1559, true),
+            (outline(0, 0x1D4E_D8FF, 4, wave), 0x1D4E_D8FF, false),
+            (outline(0, 0xDC26_26FF, 2.5, loop), 0xDC26_26FF, false),
+        ]
+        underInk.setDemo(list)
+        overInk.setDemo(list)
+    }
+
     /// Read the page's strokes again (a page opened, someone else changed it, the connection came back). The Mac shows ink
     /// but doesn't draw it: drawing is the iPad's Pencil.
     private func reloadInk() {
         inkGeneration += 1
         let mine = inkGeneration
+        if LookData.state == "ink-demo" {
+            showDemoInk()
+            return
+        }
         guard let host else {
             underInk.clear()
             overInk.clear()
