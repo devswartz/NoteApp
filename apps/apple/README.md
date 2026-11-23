@@ -24,7 +24,7 @@ Tree edits, sharing, version history, the Trash and locked pages call the core f
 
 The Mac build also goes to TestFlight (macOS) with the iPad/iPhone build, as the same 1.99.x version and build number.
 
-Ink on iPad pages: pen tools are in the ribbon's Draw button; the Pencil draws, and with "Draw with a finger" on a finger does too (two fingers scroll and zoom). Undo and redo (ribbon, Cmd-Z, three-finger swipes) cover the ink and the box's text. The Mac draws with the mouse or trackpad through the same Draw button; iPhone shows ink read-only (the web has no ink on phones either).
+Ink on iPad pages: pen tools are in the ribbon's Draw button; the Pencil draws, and with "Draw with a finger" on a finger does too (two fingers scroll and zoom). Undo and redo (ribbon, Cmd-Z, shake, three-finger swipes) are the page's one undo (core's `LivePage.undo()`): text, ink and box moves, newest first. The Mac draws with the mouse or trackpad through the same Draw button; iPhone shows ink read-only (the web has no ink on phones either).
 
 Mac parity: right-click tree menus, Esc closes dialogs, Cmd-F opens the search.
 
@@ -33,3 +33,5 @@ The page icon row (Add icon, emoji picker) is in the shared page header; it save
 Calendar (month and week, drag a task to another day), quick add (natural-language line), Settings (theme, accent colour, locked pages password) and the page panel's Tasks tab are in the shared SwiftUI shell, so iPad, iPhone and the Mac have them.
 
 Create account, Check your email, invite links, Members and Export as Markdown (2026-11-23).
+
+Page-level undo and the calendar Status, tag and person filters are in this build.

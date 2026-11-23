@@ -308,6 +308,30 @@ extension LivePageModel: PageEditHost {
         }
     }
 
+    var pageToken: ObjectIdentifier? { live.map { ObjectIdentifier($0) } }
+
+    func openLiveSession(field: String, _ done: @escaping (Result<EditorSession?, Error>) -> Void) {
+        guard let live, !isClosed else {
+            done(.failure(BoxEditorError.noDocument))
+            return
+        }
+        let tasks = tasksStore
+        // On the page's queue: a box made a moment ago is there by then, as for any box call.
+        editQueue.async {
+            let result: Result<EditorSession?, Error>
+            do { result = .success(try EditorSession.openLive(page: live, field: field, tasks: tasks)) } catch { result = .failure(error) }
+            DispatchQueue.main.async { done(result) }
+        }
+    }
+
+    func pageFlags(_ done: @escaping ((Bool, Bool)) -> Void) {
+        guard let live, !isClosed else { return }
+        editQueue.async {
+            let flags = (live.canUndo(), live.canRedo())
+            DispatchQueue.main.async { done(flags) }
+        }
+    }
+
     func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) {
         guard let live, !isClosed else {
             done(BoxError.Closed)
@@ -318,8 +342,13 @@ extension LivePageModel: PageEditHost {
             do { try call(live) } catch { failure = error }
             // A local call doesn't tell the page's listener: show the page as it is now.
             let page = live.info()
+            // Every box call is a write (or a read the flags don't care about): the undo flags come with it.
+            let flags = (live.canUndo(), live.canRedo())
             DispatchQueue.main.async { [weak self] in
-                if let self, !self.isClosed, self.live === live { self.info = page }
+                if let self, !self.isClosed, self.live === live {
+                    self.info = page
+                    if PageHistory.shared.host === self { PageHistory.shared.set(undo: flags.0, redo: flags.1) }
+                }
                 done(failure)
             }
         }

@@ -1,6 +1,4 @@
 import Foundation
 
-extension BoxTextView: EditorTarget {
-    var engineCanUndo: Bool { editor?.session.canUndo() ?? false }
-    var engineCanRedo: Bool { editor?.session.canRedo() ?? false }
-}
+/// `BoxTextView.command(_:_:)` is the whole of the shell's view of the box; undo is the page's (`PageHistory`).
+extension BoxTextView: EditorTarget {}

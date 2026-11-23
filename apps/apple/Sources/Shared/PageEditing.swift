@@ -24,6 +24,14 @@ protocol PageEditHost: AnyObject {
     /// The page's ink strokes in drawing order (core's `inkStrokes()`), read off the main thread and in order with the
     /// edits sent before it; nil when the page can't be read now (not open). Main thread; `done` too.
     func loadInk(_ done: @escaping ([InkStrokeInfo]?) -> Void)
+    /// Open a box's `EditorSession` on the live page (`EditorSession.openLive`, on the page's queue, in order with the box
+    /// calls before it): its text steps are in the page's undo, and its edits and others' changes need no bytes through the
+    /// app. `.success(nil)`: there is no live page (a corpus page), so open it on a copy of the document.
+    func openLiveSession(field: String, _ done: @escaping (Result<EditorSession?, Error>) -> Void)
+    /// Who the live page is now (a new one after a reconnect that dropped the old); nil without one.
+    var pageToken: ObjectIdentifier? { get }
+    /// The page's undo flags (`LivePage.canUndo()`, `canRedo()`), read on the page's queue. Main thread; `done` too.
+    func pageFlags(_ done: @escaping ((Bool, Bool)) -> Void)
 }
 
 enum BoxEditorError: Error {
@@ -33,98 +41,66 @@ enum BoxEditorError: Error {
 /// One box of a page open in the editor engine (`EditorSession`, nv-core).
 ///
 /// Threading: `EditorSession` calls are local (a mutex around the engine's state and its own
-/// yrs doc; no I/O), so they run on the main thread. Moving bytes to and from the live page
-/// (`LivePage.applyUpdate`, `LivePage.document`) happens on the host's own queue.
+/// yrs doc; no I/O), so they run on the main thread. Opening a live session and moving bytes to and from the live page
+/// (`LivePage.applyUpdate`, `LivePage.document`) happen on the host's own queue.
 ///
-/// Sync: the session has its own copy of the page document. After every local change the editor
-/// sends `encodeUpdateSince(confirmed)`, where `confirmed` is the session's state vector at the
-/// last send the live page took (empty at first: the first send is the whole document, which the
-/// live page mostly already has). A send that fails (offline, reconnecting) is folded into the
-/// next one; after a reconnect everything is sent again (`onSynced`). Others' changes come back
-/// as the live page's whole document, which `applyUpdate` merges (yrs skips what it has).
+/// Live pages: the session is opened on the `LivePage` (`EditorSession.openLive`). Its edits go into the page as they are
+/// made and others' changes come into it at its next call, so nothing is sent or merged here, and its text steps are in the
+/// page's undo (`PageHistory`). The session belongs to one `LivePage` (`pageToken`): after a reconnect that made a new one
+/// the canvas opens the box again (`PageEditHost.pageToken`).
+///
+/// Corpus pages (no server): the session has its own copy of the page document, edits stay in it, nothing is sent and there
+/// is no undo.
 final class BoxEditor {
     let boxId: String
     let session: EditorSession
     private weak var host: PageEditHost?
+    /// The live page this session was opened on (nil: a copy of the document).
+    let pageToken: ObjectIdentifier?
     /// The page's task store (title typing, flushing).
     var tasks: PageTaskStore? { host?.taskCallbacks as? PageTaskStore }
-    private var confirmed = Data()
-    /// The view's undo manager asks these (kept here; the session also has `canUndo()`).
-    private(set) var canUndo = false
-    private(set) var canRedo = false
 
     /// The engine field of a box: `box:<id>`, or `default` for an old single-column page.
     static func field(for boxId: String) -> String { boxId == "default" ? "default" : "box:\(boxId)" }
 
-    private init(boxId: String, session: EditorSession, host: PageEditHost) {
+    private init(boxId: String, session: EditorSession, host: PageEditHost, pageToken: ObjectIdentifier?) {
         self.boxId = boxId
         self.session = session
         self.host = host
+        self.pageToken = pageToken
     }
 
     /// Open `boxId` of the host's page. `done` runs on the main thread.
     static func open(boxId: String, host: PageEditHost, _ done: @escaping (Result<BoxEditor, Error>) -> Void) {
-        host.fetchDocument { [weak host] document in
-            guard let host, let document else {
-                done(.failure(BoxEditorError.noDocument))
-                return
-            }
-            do {
-                let session = try EditorSession.open(update: document, field: field(for: boxId), tasks: host.taskCallbacks)
-                let editor = BoxEditor(boxId: boxId, session: session, host: host)
-                // Opening may add the box's trailing paragraph: send it like any edit.
-                editor.send()
-                done(.success(editor))
-            } catch {
+        let token = host.pageToken
+        host.openLiveSession(field: field(for: boxId)) { [weak host] result in
+            guard let host else { return }
+            switch result {
+            case let .success(session?):
+                done(.success(BoxEditor(boxId: boxId, session: session, host: host, pageToken: token)))
+            case let .failure(error):
                 done(.failure(error))
+            case .success(nil):
+                host.fetchDocument { [weak host] document in
+                    guard let host, let document else {
+                        done(.failure(BoxEditorError.noDocument))
+                        return
+                    }
+                    do {
+                        let session = try EditorSession.open(update: document, field: field(for: boxId), tasks: host.taskCallbacks)
+                        done(.success(BoxEditor(boxId: boxId, session: session, host: host, pageToken: nil)))
+                    } catch {
+                        done(.failure(error))
+                    }
+                }
             }
         }
     }
 
-    /// After a local change (typing, a key, a command, a paste): send it.
+    /// After a local change (typing, a key, a command, a paste): the page has a step to undo and nothing to redo (a new
+    /// change anywhere drops every redo step).
     func edited() {
-        canUndo = true
-        canRedo = false
-        send()
-    }
-
-    func undo() -> Bool {
-        let done = session.undo()
-        if done { canRedo = true; send() } else { canUndo = false }
-        return done
-    }
-
-    func redo() -> Bool {
-        let done = session.redo()
-        if done { canUndo = true; send() } else { canRedo = false }
-        return done
-    }
-
-    /// Engine undo/redo through a key (`Mod+z`, `Mod+Shift+z`, `Mod+y`) also moves these.
-    func noteKey(_ chord: String, handled: Bool) {
-        switch chord {
-        case "Mod+z": if handled { canRedo = true } else { canUndo = false }
-        case "Mod+Shift+z", "Mod+y": if handled { canUndo = true } else { canRedo = false }
-        default: if handled { canUndo = true; canRedo = false }
-        }
-    }
-
-    /// Send what the live page may not have yet (`all`: everything, after a reconnect).
-    func send(all: Bool = false) {
-        guard let host else { return }
-        let since = all ? Data() : confirmed
-        guard let update = try? session.encodeUpdateSince(stateVector: since) else { return }
-        // An update with no structs and no deletes (nothing new) is two zero bytes.
-        if !all && update == Data([0, 0]) { return }
-        let sv = session.stateVector()
-        host.send(update) { [weak self] ok in
-            if ok { self?.confirmed = sv }
-        }
-    }
-
-    /// Merge someone else's change (the live page's whole document). The selection follows.
-    func applyRemote(_ document: Data) {
-        try? session.applyUpdate(update: document)
+        if pageToken != nil { PageHistory.shared.set(undo: true, redo: false) }
     }
 }
 
@@ -188,6 +164,10 @@ final class CorpusEditHost: PageEditHost {
     var onRemoteChange: (() -> Void)?
     var onSynced: (() -> Void)?
     let savesBoxes = false
+
+    func openLiveSession(field: String, _ done: @escaping (Result<EditorSession?, Error>) -> Void) { done(.success(nil)) }
+    var pageToken: ObjectIdentifier? { nil }
+    func pageFlags(_ done: @escaping ((Bool, Bool)) -> Void) { done((false, false)) }
 
     func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) { done(nil) }
 

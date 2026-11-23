@@ -11,10 +11,6 @@ import AppKit
 protocol EditorTarget: AnyObject {
     /// An engine command (`EditorSession.command`, EDITOR.md 4); false when it was not applied.
     @discardableResult func command(_ name: String, _ argsJSON: String) -> Bool
-    func engineUndo()
-    func engineRedo()
-    var engineCanUndo: Bool { get }
-    var engineCanRedo: Bool { get }
 }
 
 /// What the renderers read about the signed-in person and the open comment threads (set by the shell).

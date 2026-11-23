@@ -149,21 +149,6 @@ final class MacBoxView: NSTextView, EditorTarget {
         return done
     }
 
-    var engineCanUndo: Bool { editor?.session.canUndo() ?? false }
-    var engineCanRedo: Bool { editor?.session.canRedo() ?? false }
-
-    func engineUndo() {
-        guard let editor else { return }
-        engine(edits: false) { _ in editor.undo() }
-        refocus()
-    }
-
-    func engineRedo() {
-        guard let editor else { return }
-        engine(edits: false) { _ in editor.redo() }
-        refocus()
-    }
-
     // MARK: Content
 
     /// The box's width in page units; lays the text out again when it changes.
@@ -815,10 +800,12 @@ final class MacBoxView: NSTextView, EditorTarget {
     /// A key chord for the engine (EDITOR.md 4 and 10.2). False when the engine didn't use it.
     @discardableResult
     func sendKey(_ chord: String) -> Bool {
-        guard let editor else { return false }
+        // Undo and redo are the page's, not the engine's own: one history for text, ink and boxes.
+        if chord == "Mod+z" { EditorFocus.shared.undo(); return true }
+        if chord == "Mod+Shift+z" || chord == "Mod+y" { EditorFocus.shared.redo(); return true }
+        guard editor != nil else { return false }
         let handled = engine(edits: false) { $0.key(chord: chord) } ?? false
-        editor.noteKey(chord, handled: handled)
-        if handled { editor.send() }
+        if handled { PageHistory.shared.refresh() }
         return handled
     }
 

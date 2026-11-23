@@ -81,6 +81,7 @@ struct PageScreen: View {
         .onDisappear {
             comments.detach(pageId: pageId)
             if shell.openLive === live { shell.openLive = nil }
+            if let live, PageHistory.shared.host === live { PageHistory.shared.host = nil }
             live?.close()
             live = nil
             EditorFocus.shared.set(nil)

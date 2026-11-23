@@ -88,9 +88,9 @@ final class InkContainer: UIView {
 }
 
 
-/// The undo manager the page canvas gives the responder chain while a pen tool is chosen: shake to undo, the three-finger
-/// swipes and the Edit menu reach the ink (and the box being edited) through `EditorFocus`.
-final class InkUndoManager: UndoManager {
+/// The undo manager the page canvas and its boxes give the responder chain: shake to undo, the three-finger
+/// swipes and the Edit menu reach the page's one undo (`PageHistory`) through `EditorFocus`.
+final class PageUndoManager: UndoManager {
     override var canUndo: Bool { EditorFocus.shared.canUndo }
     override var canRedo: Bool { EditorFocus.shared.canRedo }
     override func undo() { EditorFocus.shared.undo() }
