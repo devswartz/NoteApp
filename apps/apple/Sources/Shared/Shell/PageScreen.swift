@@ -298,7 +298,7 @@ struct PageTopBar: View {
                 } label: {
                     HStack(spacing: 6) {
                         Icon("user-plus", 14, p.text.color)
-                        Text("Share").font(.web(13, 500)).foregroundStyle(p.text.color)
+                        Text("Share").font(.web(13, 500)).foregroundStyle(p.text.color).fixedSize()
                     }
                     .padding(.horizontal, 10).frame(height: 28)
                     .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
