@@ -61,8 +61,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Offline banner / pill (after 30 s) | ● ✓ | ● | ● ✓ | ● | ● | ● | |
 | "New version available, reload" prompt | ◐ | ◐ | ◐ | ◐ | ◐ | ● | service worker; bundled apps update via store/updater |
 | Deep links (`notivelo://`, universal links `/w/…`) | ● | ● | ● | ● | ● | — | `DeepLinks.tsx`, `platform/deepLinks.ts` |
-| Themes: Light, Dark, Hybrid (default), System | ● | ● | ● ✓ | ● | ● | ● | native window theme on desktop (`theme.rs`) |
-| Accent colour (8, per device) | ● | ● | ● | ● | ● | ● | Settings → Appearance |
+| Themes: Light, Dark, Hybrid (default), System | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | native window theme on desktop (`theme.rs`) |
+| Accent colour (8, per device) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | Settings → Appearance |
 | Get the apps page | — | — | — | — | — | ● | Settings → Get the apps (browser only) |
 | Send feedback (≤4000 chars, 5/hour) | ● | ● | ● | ● | ● | ● | `POST /feedback` |
 | Error reporting | ● | ● | ● | ● | ● | ● | `POST /client-errors` |
@@ -150,11 +150,11 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Notes under a task (bullets, numbers, paragraphs, checklists, subtasks) | ● | ● | ● | ● | ● | ● | `taskChildren.ts`, v0.5.0 |
 | Subtasks (one level, progress 2/5) | ● | ● | ● | ● | ● | ● | |
 | Checklist under a task (not tasks) | ● | ● | ● | ● | ● | ● | |
-| Tasks on this page panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/tasks` |
+| Tasks on this page panel | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `GET /pages/:id/tasks` |
 | Task detail: title, description, due date/time, priority, assignee, tags, team, assigned-by, reminders, recurrence, From the note | ● | ● | ● | ● | ● | ● | `TaskDetail.tsx`, `GET /tasks/:id/notes`. Native: every field editable (apple-wire); "From the note" not yet |
-| Quick add (Q) with natural language (dates, times, p1–p4, repeats, @assignee) | ● | ● | ● | ● | ● | ● | `QuickAdd.tsx`; phone via + tab |
+| Quick add (Q) with natural language (dates, times, p1–p4, repeats, @assignee) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `QuickAdd.tsx`; phone via + tab |
 | Views: Today (progress strip, streak, 7 days), My Tasks, Upcoming, Team, All tasks (status Open/Completed/All) | ● | ◐ | ● | ● | ◐ | ● | phones: Today and My Tasks tabs, rest via Notes/Tasks menu *(verify)* |
-| Calendar: month / week, drag to reschedule or onto No date, double-click to add, Mine / Everyone | ● | ◐ | ● | ● | ◐ | ● | `CalendarView.tsx`, `CalendarPanel.tsx`, `MiniCalendar.tsx` |
+| Calendar: month / week, drag to reschedule or onto No date, double-click to add, Mine / Everyone | ● ✓ | ◐ ✓ | ● ✓ | ● | ◐ | ● | `CalendarView.tsx`, `CalendarPanel.tsx`, `MiniCalendar.tsx` |
 | Sidebar counts (Today, My Tasks, Upcoming) | ● | ● | ● | ● | ● | ● | |
 | Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● | ● | ● | ● | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● | ● | ● | ● | ● | ● | `assigneeGroups.ts` |
