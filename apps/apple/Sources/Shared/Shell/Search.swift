@@ -148,7 +148,7 @@ struct SearchLayer: View {
                     .font(.web(16))
                     .foregroundStyle(p.text.color)
                     .tint(p.accent.color)
-                    .textInputAutocapitalization(.never)
+                    .noAutocapitalization()
                     .autocorrectionDisabled()
                     .submitLabel(.search)
                     .focused($focused)

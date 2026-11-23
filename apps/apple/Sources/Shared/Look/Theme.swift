@@ -1,13 +1,25 @@
 import Observation
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 // The web app's look as Swift constants (docs/rewrite/LOOK.md sections 1 and 2). Numbers are CSS px = points.
 
-extension UIColor {
+extension PlatformColor {
     convenience init(hex: UInt32, alpha: CGFloat = 1) {
-        self.init(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                  blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
+        self.init(rgb: (CGFloat((hex >> 16) & 0xFF) / 255, CGFloat((hex >> 8) & 0xFF) / 255, CGFloat(hex & 0xFF) / 255), alpha: alpha)
+    }
+
+    /// sRGB components 0…1 (UIKit's `red:green:blue:`, AppKit's `srgbRed:green:blue:`).
+    convenience init(rgb: (CGFloat, CGFloat, CGFloat), alpha: CGFloat = 1) {
+        #if canImport(UIKit)
+        self.init(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: alpha)
+        #else
+        self.init(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: alpha)
+        #endif
     }
 
     /// "#rrggbb" (user, notebook and section colours); grey when it can't be read.
@@ -20,21 +32,35 @@ extension UIColor {
         }
     }
 
-    var color: Color { Color(uiColor: self) }
+    var color: Color {
+        #if canImport(UIKit)
+        Color(uiColor: self)
+        #else
+        Color(nsColor: self)
+        #endif
+    }
+
+    /// sRGB red, green, blue, alpha.
+    var rgba: (CGFloat, CGFloat, CGFloat, CGFloat) {
+        var (r, g, b, a): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
+        #if canImport(UIKit)
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        #else
+        (usingColorSpace(.sRGB) ?? self).getRed(&r, green: &g, blue: &b, alpha: &a)
+        #endif
+        return (r, g, b, a)
+    }
 
     /// `a` over `b` at `t` (0…1 of `a`), like CSS color-mix in sRGB.
-    static func mix(_ a: UIColor, _ t: CGFloat, _ b: UIColor) -> UIColor {
-        var (r1, g1, b1, a1): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
-        var (r2, g2, b2, a2): (CGFloat, CGFloat, CGFloat, CGFloat) = (0, 0, 0, 0)
-        a.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        b.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-        return UIColor(red: r1 * t + r2 * (1 - t), green: g1 * t + g2 * (1 - t), blue: b1 * t + b2 * (1 - t), alpha: a1 * t + a2 * (1 - t))
+    static func mix(_ a: PlatformColor, _ t: CGFloat, _ b: PlatformColor) -> PlatformColor {
+        let (r1, g1, b1, a1) = a.rgba
+        let (r2, g2, b2, a2) = b.rgba
+        return PlatformColor(rgb: (r1 * t + r2 * (1 - t), g1 * t + g2 * (1 - t), b1 * t + b2 * (1 - t)), alpha: a1 * t + a2 * (1 - t))
     }
 
     /// White or black, whichever contrasts more (avatar initials, `initialsColor`).
-    var initialsColor: UIColor {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        getRed(&r, green: &g, blue: &b, alpha: &a)
+    var initialsColor: PlatformColor {
+        let (r, g, b, _) = rgba
         func lin(_ c: CGFloat) -> CGFloat { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
         let l = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
         return (1.05) / (l + 0.05) >= (l + 0.05) / 0.05 ? .white : .black
@@ -44,72 +70,72 @@ extension UIColor {
 /// One palette (`:root` light or `[data-theme='dark']`), with the accent mixes computed.
 struct Palette {
     let isDark: Bool
-    var bg: UIColor
-    var bgSubtle: UIColor
-    let bgSidebar: UIColor
-    let bgHover: UIColor
-    let bgPressed: UIColor
-    let bgElevated: UIColor
-    let bgOverlay: UIColor
-    let bgInverse: UIColor
-    let border: UIColor
-    let borderStrong: UIColor
-    let text: UIColor
-    let text2: UIColor
-    var textMuted: UIColor
-    var textPlaceholder: UIColor
-    let textInverse: UIColor
-    let accent: UIColor
-    let accentSolid: UIColor
-    let accentInverse: UIColor
-    let danger: UIColor
-    let success: UIColor
-    let warn: UIColor
-    let p1: UIColor
-    let p2: UIColor
-    let p3: UIColor
-    let pageTextMuted: UIColor
-    let pageRule: UIColor
+    var bg: PlatformColor
+    var bgSubtle: PlatformColor
+    let bgSidebar: PlatformColor
+    let bgHover: PlatformColor
+    let bgPressed: PlatformColor
+    let bgElevated: PlatformColor
+    let bgOverlay: PlatformColor
+    let bgInverse: PlatformColor
+    let border: PlatformColor
+    let borderStrong: PlatformColor
+    let text: PlatformColor
+    let text2: PlatformColor
+    var textMuted: PlatformColor
+    var textPlaceholder: PlatformColor
+    let textInverse: PlatformColor
+    let accent: PlatformColor
+    let accentSolid: PlatformColor
+    let accentInverse: PlatformColor
+    let danger: PlatformColor
+    let success: PlatformColor
+    let warn: PlatformColor
+    let p1: PlatformColor
+    let p2: PlatformColor
+    let p3: PlatformColor
+    let pageTextMuted: PlatformColor
+    let pageRule: PlatformColor
 
     /// Selected rows: accent at 9 % (light) / 15 % (dark).
-    var bgActive: UIColor { accent.withAlphaComponent(isDark ? 0.15 : 0.09) }
+    var bgActive: PlatformColor { accent.withAlphaComponent(isDark ? 0.15 : 0.09) }
     /// Selection, active chips, mention background: accent at 10 % / 15 %.
-    var accentSoft: UIColor { accent.withAlphaComponent(isDark ? 0.15 : 0.10) }
-    var dangerSoft: UIColor { isDark ? UIColor(hex: 0xF87171, alpha: 0.12) : UIColor(hex: 0xDC2626, alpha: 0.08) }
-    var successSoft: UIColor { isDark ? UIColor(hex: 0x4ADE80, alpha: 0.12) : UIColor(hex: 0x16A34A, alpha: 0.10) }
-    var warnSoft: UIColor { isDark ? UIColor(hex: 0xFBBF24, alpha: 0.12) : UIColor(hex: 0xD97706, alpha: 0.10) }
+    var accentSoft: PlatformColor { accent.withAlphaComponent(isDark ? 0.15 : 0.10) }
+    var dangerSoft: PlatformColor { isDark ? PlatformColor(hex: 0xF87171, alpha: 0.12) : PlatformColor(hex: 0xDC2626, alpha: 0.08) }
+    var successSoft: PlatformColor { isDark ? PlatformColor(hex: 0x4ADE80, alpha: 0.12) : PlatformColor(hex: 0x16A34A, alpha: 0.10) }
+    var warnSoft: PlatformColor { isDark ? PlatformColor(hex: 0xFBBF24, alpha: 0.12) : PlatformColor(hex: 0xD97706, alpha: 0.10) }
 
     static let light = Palette(
         isDark: false,
-        bg: UIColor(hex: 0xFFFFFF), bgSubtle: UIColor(hex: 0xF9F9FB), bgSidebar: UIColor(hex: 0xF7F7F8),
-        bgHover: UIColor(hex: 0x0F0F1E, alpha: 0.05), bgPressed: UIColor(hex: 0x0F0F1E, alpha: 0.09),
-        bgElevated: UIColor(hex: 0xFFFFFF), bgOverlay: UIColor(hex: 0x0A0A14, alpha: 0.32), bgInverse: UIColor(hex: 0x1F1F23),
-        border: UIColor(hex: 0xE7E7EA), borderStrong: UIColor(hex: 0xD4D4D8),
-        text: UIColor(hex: 0x1F1F23), text2: UIColor(hex: 0x52525B), textMuted: UIColor(hex: 0x686871),
-        textPlaceholder: UIColor(hex: 0x75757F), textInverse: UIColor(hex: 0xFAFAFA),
-        accent: UIColor(hex: 0x4F46E5), accentSolid: UIColor(hex: 0x4F46E5), accentInverse: UIColor(hex: 0xA5B4FC),
-        danger: UIColor(hex: 0xDC2626), success: UIColor(hex: 0x16A34A), warn: UIColor(hex: 0xD97706),
-        p1: UIColor(hex: 0xDC2626), p2: UIColor(hex: 0xEA8C00), p3: UIColor(hex: 0x2563EB),
-        pageTextMuted: UIColor(hex: 0x5C5C65), pageRule: UIColor(red: 70 / 255, green: 110 / 255, blue: 180 / 255, alpha: 0.15))
+        bg: PlatformColor(hex: 0xFFFFFF), bgSubtle: PlatformColor(hex: 0xF9F9FB), bgSidebar: PlatformColor(hex: 0xF7F7F8),
+        bgHover: PlatformColor(hex: 0x0F0F1E, alpha: 0.05), bgPressed: PlatformColor(hex: 0x0F0F1E, alpha: 0.09),
+        bgElevated: PlatformColor(hex: 0xFFFFFF), bgOverlay: PlatformColor(hex: 0x0A0A14, alpha: 0.32), bgInverse: PlatformColor(hex: 0x1F1F23),
+        border: PlatformColor(hex: 0xE7E7EA), borderStrong: PlatformColor(hex: 0xD4D4D8),
+        text: PlatformColor(hex: 0x1F1F23), text2: PlatformColor(hex: 0x52525B), textMuted: PlatformColor(hex: 0x686871),
+        textPlaceholder: PlatformColor(hex: 0x75757F), textInverse: PlatformColor(hex: 0xFAFAFA),
+        accent: PlatformColor(hex: 0x4F46E5), accentSolid: PlatformColor(hex: 0x4F46E5), accentInverse: PlatformColor(hex: 0xA5B4FC),
+        danger: PlatformColor(hex: 0xDC2626), success: PlatformColor(hex: 0x16A34A), warn: PlatformColor(hex: 0xD97706),
+        p1: PlatformColor(hex: 0xDC2626), p2: PlatformColor(hex: 0xEA8C00), p3: PlatformColor(hex: 0x2563EB),
+        pageTextMuted: PlatformColor(hex: 0x5C5C65), pageRule: PlatformColor(rgb: (70 / 255, 110 / 255, 180 / 255), alpha: 0.15))
 
     static let dark = Palette(
         isDark: true,
-        bg: UIColor(hex: 0x18181B), bgSubtle: UIColor(hex: 0x1D1D21), bgSidebar: UIColor(hex: 0x141416),
-        bgHover: UIColor(white: 1, alpha: 0.06), bgPressed: UIColor(white: 1, alpha: 0.10),
-        bgElevated: UIColor(hex: 0x232328), bgOverlay: UIColor(white: 0, alpha: 0.5), bgInverse: UIColor(hex: 0xF4F4F5),
-        border: UIColor(hex: 0x2C2C32), borderStrong: UIColor(hex: 0x3A3A42),
-        text: UIColor(hex: 0xECECEF), text2: UIColor(hex: 0xB4B4BC), textMuted: UIColor(hex: 0x9D9DA6),
-        textPlaceholder: UIColor(hex: 0x8E8E98), textInverse: UIColor(hex: 0x18181B),
-        accent: UIColor(hex: 0x8B95F9), accentSolid: UIColor(hex: 0x5B5BD6), accentInverse: UIColor(hex: 0x4F46E5),
-        danger: UIColor(hex: 0xF87171), success: UIColor(hex: 0x4ADE80), warn: UIColor(hex: 0xFBBF24),
-        p1: UIColor(hex: 0xF87171), p2: UIColor(hex: 0xFB923C), p3: UIColor(hex: 0x60A5FA),
-        pageTextMuted: UIColor(hex: 0xA3A3AC), pageRule: UIColor(red: 150 / 255, green: 170 / 255, blue: 220 / 255, alpha: 0.12))
+        bg: PlatformColor(hex: 0x18181B), bgSubtle: PlatformColor(hex: 0x1D1D21), bgSidebar: PlatformColor(hex: 0x141416),
+        bgHover: PlatformColor(white: 1, alpha: 0.06), bgPressed: PlatformColor(white: 1, alpha: 0.10),
+        bgElevated: PlatformColor(hex: 0x232328), bgOverlay: PlatformColor(white: 0, alpha: 0.5), bgInverse: PlatformColor(hex: 0xF4F4F5),
+        border: PlatformColor(hex: 0x2C2C32), borderStrong: PlatformColor(hex: 0x3A3A42),
+        text: PlatformColor(hex: 0xECECEF), text2: PlatformColor(hex: 0xB4B4BC), textMuted: PlatformColor(hex: 0x9D9DA6),
+        textPlaceholder: PlatformColor(hex: 0x8E8E98), textInverse: PlatformColor(hex: 0x18181B),
+        accent: PlatformColor(hex: 0x8B95F9), accentSolid: PlatformColor(hex: 0x5B5BD6), accentInverse: PlatformColor(hex: 0x4F46E5),
+        danger: PlatformColor(hex: 0xF87171), success: PlatformColor(hex: 0x4ADE80), warn: PlatformColor(hex: 0xFBBF24),
+        p1: PlatformColor(hex: 0xF87171), p2: PlatformColor(hex: 0xFB923C), p3: PlatformColor(hex: 0x60A5FA),
+        pageTextMuted: PlatformColor(hex: 0xA3A3AC), pageRule: PlatformColor(rgb: (150 / 255, 170 / 255, 220 / 255), alpha: 0.12))
 
     /// Hybrid's page: the light palette on `#fcfcfa`.
     static let hybridPage: Palette = {
         var p = Palette.light
-        p.bg = UIColor(hex: 0xFCFCFA)
-        p.bgSubtle = UIColor(hex: 0xF9F9F7)
+        p.bg = PlatformColor(hex: 0xFCFCFA)
+        p.bgSubtle = PlatformColor(hex: 0xF9F9F7)
         return p
     }()
 
@@ -122,35 +148,35 @@ struct Palette {
         ]
         guard let (l, d) = tints[name] else { return self }
         var p = self
-        p.bg = UIColor(hex: isDark ? d : l)
+        p.bg = PlatformColor(hex: isDark ? d : l)
         p.textMuted = pageTextMuted
         p.textPlaceholder = pageTextMuted
         return p
     }
 
     /// `--shadow-lg` (menus, popovers): the larger layer.
-    var shadowLg: (color: UIColor, radius: CGFloat, y: CGFloat) {
-        isDark ? (UIColor(white: 0, alpha: 0.55), 32, 24) : (UIColor(hex: 0x0F0F1E, alpha: 0.18), 32, 24)
+    var shadowLg: (color: PlatformColor, radius: CGFloat, y: CGFloat) {
+        isDark ? (PlatformColor(white: 0, alpha: 0.55), 32, 24) : (PlatformColor(hex: 0x0F0F1E, alpha: 0.18), 32, 24)
     }
 
     /// Text colours (`--tc-*`) and highlights (`--hl-*`), src/styles/colors.css.
-    func textColor(_ name: String) -> UIColor? {
+    func textColor(_ name: String) -> PlatformColor? {
         let t: [String: (UInt32, UInt32)] = [
             "gray": (0x6B6B74, 0xA3A3AD), "grey": (0x6B6B74, 0xA3A3AD), "red": (0xC42B2B, 0xF47C7C), "orange": (0xB4500C, 0xF5A05A),
             "yellow": (0x8C6400, 0xE9C53A), "green": (0x22783A, 0x5FCF80), "blue": (0x1F62C4, 0x6EA8F7),
             "purple": (0x7A3FD6, 0xB893F5), "pink": (0xBB2A75, 0xF07FB6),
         ]
-        return t[name].map { UIColor(hex: isDark ? $0.1 : $0.0) }
+        return t[name].map { PlatformColor(hex: isDark ? $0.1 : $0.0) }
     }
 
-    func highlight(_ name: String?) -> UIColor {
+    func highlight(_ name: String?) -> PlatformColor {
         let h: [String: (UInt32, UInt32)] = [
             "gray": (0xE9E9EC, 0x3A3A41), "grey": (0xE9E9EC, 0x3A3A41), "red": (0xFDE0DE, 0x5B2727), "orange": (0xFDE6CF, 0x563318),
             "yellow": (0xFCF0B0, 0x4F4313), "green": (0xD9F2DC, 0x1F4529), "blue": (0xDBE8FD, 0x1E3A5C),
             "purple": (0xEBE2FC, 0x3C2B5E), "pink": (0xFBDEEC, 0x552240),
         ]
         let v = h[name ?? "yellow"] ?? h["yellow"]!
-        return UIColor(hex: isDark ? v.1 : v.0)
+        return PlatformColor(hex: isDark ? v.1 : v.0)
     }
 
     static let colorNames = ["gray", "red", "orange", "yellow", "green", "blue", "purple", "pink"]
@@ -211,22 +237,31 @@ final class Theme {
 
 enum WebType {
     /// System font at a CSS weight (400, 500, 600, 650, 700).
-    static func ui(_ size: CGFloat, _ weight: Int = 400) -> UIFont {
-        UIFont.systemFont(ofSize: size, weight: uiWeight(weight))
+    static func ui(_ size: CGFloat, _ weight: Int = 400) -> PlatformFont {
+        PlatformFont.systemFont(ofSize: size, weight: uiWeight(weight))
     }
 
-    static func uiWeight(_ w: Int) -> UIFont.Weight {
+    static func uiWeight(_ w: Int) -> PlatformFont.Weight {
         switch w {
         case ..<450: return .regular
         case ..<550: return .medium
         case ..<625: return .semibold
-        case ..<675: return UIFont.Weight(rawValue: 0.35)
+        case ..<675: return PlatformFont.Weight(rawValue: 0.35)
         default: return .bold
         }
     }
 
-    static func mono(_ size: CGFloat, _ weight: Int = 400) -> UIFont {
-        UIFont.monospacedSystemFont(ofSize: size, weight: uiWeight(weight))
+    static func mono(_ size: CGFloat, _ weight: Int = 400) -> PlatformFont {
+        PlatformFont.monospacedSystemFont(ofSize: size, weight: uiWeight(weight))
+    }
+
+    /// The system font in italic (the block menu's "Quote").
+    static func italic(_ size: CGFloat) -> PlatformFont {
+        #if canImport(UIKit)
+        UIFont.italicSystemFont(ofSize: size)
+        #else
+        NSFontManager.shared.convert(NSFont.systemFont(ofSize: size), toHaveTrait: .italicFontMask)
+        #endif
     }
 }
 
@@ -262,18 +297,6 @@ struct Icon: View {
     }
 }
 
-extension UIImage {
-    /// A Lucide icon as a UIImage tinted `color`, `size` points square (for TextKit attachments and CALayers).
-    static func lucide(_ name: String, size: CGFloat, color: UIColor) -> UIImage? {
-        guard let base = UIImage(named: "lucide-\(name)") else { return nil }
-        let format = UIGraphicsImageRendererFormat.preferred()
-        format.opaque = false
-        return UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format).image { _ in
-            base.withTintColor(color, renderingMode: .alwaysOriginal).draw(in: CGRect(x: 0, y: 0, width: size, height: size))
-        }
-    }
-}
-
 // MARK: Shapes and small pieces
 
 /// Initials as the web app shows them (first letters of the first two words, else two letters).
@@ -286,7 +309,7 @@ func initials(_ name: String) -> String {
 /// A user avatar: a circle in the user's colour with initials at 42 % of the size.
 struct AvatarView: View {
     let name: String
-    let color: UIColor
+    let color: PlatformColor
     var size: CGFloat = 26
 
     var body: some View {
@@ -318,15 +341,33 @@ struct LetterTile: View {
     }
 }
 
-/// Pressed feedback for the web's ghost buttons: `--bg-pressed` behind the label while pressed.
+/// Pressed feedback for the web's ghost buttons: `--bg-pressed` behind the label while pressed (on the Mac also a
+/// lighter shade while the pointer is over it, the web's hover).
 struct PressStyle: ButtonStyle {
     var radius: CGFloat = 6
     var pressed: Color
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(configuration.isPressed ? pressed : Color.clear, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+        PressBody(configuration: configuration, radius: radius, pressed: pressed)
+    }
+}
+
+private struct PressBody: View {
+    let configuration: ButtonStyleConfiguration
+    let radius: CGFloat
+    let pressed: Color
+    @State private var hovering = false
+
+    var body: some View {
+        let fill: Color = configuration.isPressed ? pressed : (hovering ? pressed.opacity(0.6) : Color.clear)
+        let label = configuration.label
+            .background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .contentShape(Rectangle())
+        #if os(macOS)
+        label.onHover { hovering = $0 }
+        #else
+        label
+        #endif
     }
 }
 
@@ -337,8 +378,8 @@ extension View {
             if p.isDark {
                 self.shadow(color: Color.black.opacity(0.55), radius: 32, x: 0, y: 24)
             } else {
-                self.shadow(color: Color(uiColor: UIColor(hex: 0x0F0F1E, alpha: 0.18)), radius: 32, x: 0, y: 24)
-                    .shadow(color: Color(uiColor: UIColor(hex: 0x0F0F1E, alpha: 0.08)), radius: 4, x: 0, y: 2)
+                self.shadow(color: PlatformColor(hex: 0x0F0F1E, alpha: 0.18).color, radius: 32, x: 0, y: 24)
+                    .shadow(color: PlatformColor(hex: 0x0F0F1E, alpha: 0.08).color, radius: 4, x: 0, y: 2)
             }
         }
     }
@@ -350,8 +391,8 @@ extension View {
                 self.shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
                     .shadow(color: Color.black.opacity(0.3), radius: 1.5, x: 0, y: 1)
             } else {
-                self.shadow(color: Color(uiColor: UIColor(hex: 0x0F0F1E, alpha: 0.08)), radius: 8, x: 0, y: 4)
-                    .shadow(color: Color(uiColor: UIColor(hex: 0x0F0F1E, alpha: 0.06)), radius: 1.5, x: 0, y: 1)
+                self.shadow(color: PlatformColor(hex: 0x0F0F1E, alpha: 0.08).color, radius: 8, x: 0, y: 4)
+                    .shadow(color: PlatformColor(hex: 0x0F0F1E, alpha: 0.06).color, radius: 1.5, x: 0, y: 1)
             }
         }
     }

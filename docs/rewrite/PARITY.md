@@ -15,7 +15,7 @@ Today's apps: **iPad / iPhone** = Capacitor app (`apps/mobile`, iPad gets the wi
 | ○ | doesn't have it |
 | — | doesn't apply to that platform |
 
-Native progress: when a row is done in a native app, append **✓** to that platform's cell (e.g. `● ✓`). A row dropped on purpose gets `✗` and a note. M5 is done when every ●/◐ in the iPad column has a ✓ or ✗.
+Native progress: when a row is done in a native app, append **✓** to that platform's cell (e.g. `● ✓`). A row dropped on purpose gets `✗` and a note. **Mac ✓ (2026-11-22, rewrite/apple-mac) means it builds in the native Mac app (compiled only, never run on a Mac).** M5 is done when every ●/◐ in the iPad column has a ✓ or ✗.
 
 Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout** (rail, panels, ribbon). iPhone, Android and narrow web (≤760 px) use the **phone layout** (bottom tab bar, full-screen editor, floating toolbar).
 
@@ -23,7 +23,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Sign in (email + password) | ● ✓ | ● | ● | ● | ● | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
+| Sign in (email + password) | ● ✓ | ● | ● ✓ | ● | ● | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
 | Create account (open sign-up) | ● | ● | ● | ● | ● | ● | `/auth/register`; `/login?mode=register&email=…` prefill (web) |
 | Email confirmation screen (Check your email, Resend, I've verified, Sign out) | ● | ● | ● | ● | ● | ● | `CheckEmail.tsx`, `VerifyEmail.tsx`; unconfirmed accounts deleted after 7 days |
 | Forgot / reset password | ● | ● | ● | ● | ● | ● | email link opens web `ResetPassword` |
@@ -34,34 +34,34 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Delete account (preview of consequences, password) | ● | ● | ● | ● | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● | ● | ● | ● | ● | ● | sign-in screen and Settings → About |
-| Sign out | ● ✓ | ● | ● | ● | ● | ● | |
+| Sign out | ● ✓ | ● | ● ✓ | ● | ● | ● | |
 | Invite link: open, accept, join workspace | ● | ● | ● | ● | ● | ● | `/invites/:token`; universal links on iOS |
 
 ## 2. Navigation and shell
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Rail: Notes, Tasks, Calendar | ● | — | ● | ● | — | ● | `Rail.tsx`; phones use the tab bar |
+| Rail: Notes, Tasks, Calendar | ● | — | ● ✓ | ● | — | ● | `Rail.tsx`; phones use the tab bar |
 | Bottom tab bar (Notes, Today, +, My Tasks, Search) | — | ● | — | — | ● | ◐ | `MobileChrome.tsx`; web on narrow screens |
-| Workspace switcher (top of sidebar) | ● ✓ | ● | ● | ● | ● | ● | |
+| Workspace switcher (top of sidebar) | ● ✓ | ● | ● ✓ | ● | ● | ● | |
 | Create workspace | ● | ● | ● | ● | ● | ● | `POST /workspaces` |
-| Notes panel: notebook picker, section tree, pages list | ● | ● | ● | ● | ● | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
-| Section ribbons / colour tabs | ● | ◐ | ● | ● | ◐ | ● | `SectionRibbons.tsx` *(verify phone form)* |
-| Favourites and Recent | ● | ● | ● | ● | ● | ● | |
+| Notes panel: notebook picker, section tree, pages list | ● | ● | ● ✓ | ● | ● | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
+| Section ribbons / colour tabs | ● | ◐ | ● ✓ | ● | ◐ | ● | `SectionRibbons.tsx` *(verify phone form)* |
+| Favourites and Recent | ● | ● | ● ✓ | ● | ● | ● | |
 | Resize sidebar, hide sidebar (⌘\) | ● | — | ● | ● | — | ● | |
-| Notes home overview | ● | ● | ● | ● | ● | ● | `NotesHome.tsx` |
+| Notes home overview | ● | ● | ● ✓ | ● | ● | ● | `NotesHome.tsx` |
 | OneNote-style ribbon (Text, Lists, Insert, Page, View; Table group; changes per section: Tasks, Calendar) | ● | ○ | ● | ● | ○ | ● | collapse with chevron / Ctrl+F1; phones keep floating toolbar |
 | Floating formatting toolbar (phones) | — | ● | — | — | ● | ◐ | |
 | Undo/Redo buttons in note top bar (phones) | — | ● | — | — | ● | ◐ | v1.5.13, screens ≤760 px |
-| Command palette ⌘K (search + commands) | ● | ● | ● | ● | ● | ● | `CommandPalette.tsx`, `shell/commands.tsx` |
+| Command palette ⌘K (search + commands) | ● | ● | ● ✓ | ● | ● | ● | `CommandPalette.tsx`, `shell/commands.tsx` |
 | Keyboard shortcut overlay (?) | ● | ◐ | ● | ● | ◐ | ● | phones only with a keyboard |
 | F6 region cycling | ● | — | ● | ● | — | ● | `useF6Regions.ts` |
 | Swipe actions on rows | ● | ● | — | — | ● | ◐ | `SwipeRow.tsx` *(verify which rows)* |
-| Toasts with Undo | ● | ● | ● | ● | ● | ● | |
-| Offline banner / pill (after 30 s) | ● ✓ | ● | ● | ● | ● | ● | |
+| Toasts with Undo | ● | ● | ● ✓ | ● | ● | ● | |
+| Offline banner / pill (after 30 s) | ● ✓ | ● | ● ✓ | ● | ● | ● | |
 | "New version available, reload" prompt | ◐ | ◐ | ◐ | ◐ | ◐ | ● | service worker; bundled apps update via store/updater |
 | Deep links (`notivelo://`, universal links `/w/…`) | ● | ● | ● | ● | ● | — | `DeepLinks.tsx`, `platform/deepLinks.ts` |
-| Themes: Light, Dark, Hybrid (default), System | ● | ● | ● | ● | ● | ● | native window theme on desktop (`theme.rs`) |
+| Themes: Light, Dark, Hybrid (default), System | ● | ● | ● ✓ | ● | ● | ● | native window theme on desktop (`theme.rs`) |
 | Accent colour (8, per device) | ● | ● | ● | ● | ● | ● | Settings → Appearance |
 | Get the apps page | — | — | — | — | — | ● | Settings → Get the apps (browser only) |
 | Send feedback (≤4000 chars, 5/hour) | ● | ● | ● | ● | ● | ● | `POST /feedback` |
@@ -88,7 +88,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● | ◐ | ● | ● | ◐ | ● | phones stack boxes one under another with "Add a text box" |
+| Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● | ◐ | ● ✓ | ● | ◐ | ● | phones stack boxes one under another with "Add a text box" |
 | See-through boxes (only active box opaque) | ● | — | ● | ● | — | ● | |
 | Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● | ◐ | ● | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
@@ -96,29 +96,29 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● | ● | ● | ● | ● | ● | phone hides ✓ when saved |
 | Page title | ● | ● | ● | ● | ● | ● | title change refused unless current title known |
 | Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● | ● | ● | ● | ● | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
-| Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● | ● | ● | ● | ● | ● | |
-| Links: ⌘K, editor with Text + Address | ● | ● | ● | ● | ● | ● | `LinkEditor.tsx` |
-| Headings 1–3 | ● | ● | ● | ● | ● | ● | `#`, Ctrl+Alt+1/2/3 |
-| Bulleted lists (Ctrl+.) | ● | ● | ● | ● | ● | ● | |
+| Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● | ● | ● ✓ | ● | ● | ● | |
+| Links: ⌘K, editor with Text + Address | ● | ● | ● ✓ | ● | ● | ● | `LinkEditor.tsx` |
+| Headings 1–3 | ● | ● | ● ✓ | ● | ● | ● | `#`, Ctrl+Alt+1/2/3 |
+| Bulleted lists (Ctrl+.) | ● | ● | ● ✓ | ● | ● | ● | |
 | Word-style numbered outlines (1 → a → i; `1.`, `a.`, `i.`, `1)`) | ● | ● | ● | ● | ● | ● | Tab / Shift+Tab |
-| Plain checklist | ● | ● | ● | ● | ● | ● | |
+| Plain checklist | ● | ● | ● ✓ | ● | ● | ● | |
 | Tables: insert/delete rows and columns, header row, merge/split | ● | ◐ | ● | ● | ◐ | ● | Table ribbon group on wide layout |
 | Callout, toggle, quote, code block (highlighting), divider | ● | ● | ● | ● | ● | ● | `blocks.tsx`, `codeHighlight.ts` |
 | Backspace/Enter leave a block (Word-outline style) | ● | ● | ● | ● | ● | ● | `blockExit.ts` |
 | Images (insert, resize by corner) | ● | ● | ● | ● | ● | ● | `upload.ts`, `POST /uploads` |
 | File attachments (≤25 MB, type rules, signed short-lived links) | ● | ● | ● | ● | ● | ● | `/files/:id`, `/files/key` |
-| Slash menu (/) | ● | ● | ● | ● | ● | ● | `SlashMenu.tsx` |
-| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● | ● | ● | ● | ● | |
-| Page links `[[`, create page from link | ● | ● | ● | ● | ● | ● | `PageLink.tsx` |
+| Slash menu (/) | ● | ● | ● ✓ | ● | ● | ● | `SlashMenu.tsx` |
+| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● | ● ✓ | ● | ● | ● | |
+| Page links `[[`, create page from link | ● | ● | ● ✓ | ● | ● | ● | `PageLink.tsx` |
 | Linked from (backlinks) panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/backlinks` |
 | Drag handle: move a block with its nested lines, drop anywhere; keeps numbering | ● | ◐ | ● | ● | ◐ | ● | `blockMove.ts`, `listDrop.ts`, `handleReach.ts` |
 | Word-style multi-selection (Ctrl/⌘ + click/drag/double-click lines) | ● | — | ● | ● | — | ● | `linePicks*.ts` |
-| Copy keeps formatting; paste rich text and Markdown | ● | ● | ● | ● | ● | ● | `clipboardOut.ts`, `markdownUtils.ts` |
+| Copy keeps formatting; paste rich text and Markdown | ● | ● | ● ✓ | ● | ● | ● | `clipboardOut.ts`, `markdownUtils.ts` |
 | Outline / table of contents beside long pages | ● | ○ | ● | ● | ○ | ● | `Outline.tsx` *(verify phone)* |
 | Full width option | ● | — | ● | ● | — | ● | |
 | Page colour | ● | ● | ● | ● | ● | ● | syncs, in templates and versions |
 | Rule lines / grid with snapping | ● | ● | ● | ● | ● | ● | `ruleGrid.ts` |
-| Spellcheck | ● | ● | ● | ◐ | ● | ● | Mac app: native spelling (`spelling.rs`); else system/browser |
+| Spellcheck | ● | ● | ● ✓ | ◐ | ● | ● | Mac app: native spelling (`spelling.rs`); else system/browser |
 | Print page, print selection; Save as PDF | ● | ● | ● | ● | ● | ● | `print/`, `PrintSelectionMenu.tsx`; iOS via native `print` plugin method |
 | Export page (Markdown / PDF) | ● | ● | ● | ● | ● | ● | `exportPage.ts`, `collabExport.ts` |
 | Version history: list, preview, restore (undoable) | ● | ● | ● | ● | ● | ● | `VersionHistory.tsx`, `/pages/:id/versions` |
@@ -162,7 +162,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
 | Bulk select and bulk bar (complete, reschedule, assign, priority, delete; one Undo) | ● | ◐ | ● | ● | ◐ | ● | `BulkBar.tsx`, `selection.ts` |
 | Inline rename, complete with Undo | ● | ● | ● | ● | ● | ● | |
-| Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● ✓ | ● ✓ | ● | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
+| Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
 | Print task view (⌘P) | ● | ● | ● | ● | ● | ● | |
 | Tags: create, rename, colour, delete | ● | ● | ● | ● | ● | ● | `Labels.tsx`, `/tags` |
 | Teams and subteams, members | ● | ● | ● | ● | ● | ● | `TeamsSettings.tsx`, `/teams` |
@@ -172,7 +172,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Reminders: fixed time or N minutes before; default time for date-only tasks | ● ✓ | ● ✓ | ● | ● | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
+| Reminders: fixed time or N minutes before; default time for date-only tasks | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
 | Push reminders with snooze actions (10 min, 1 h, tomorrow) | ● | ● | ◐ | ◐ | ● | ● | iOS APNs, Android FCM (`SnoozeReceiver`), web push; desktop *(verify: webview notifications)* |
 | Local notifications | ● | ● | ○ | ○ | ● | — | `@capacitor/local-notifications` |
 | App icon badge: due today | ● | ● | ● | ◐ | ● | ○ | Mac Dock badge; Windows tray count |
@@ -184,8 +184,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Comment on selected text (thread anchored in the doc) | ● ✓ | ● ✓ | ● | ● | ● | ● | `collabComments.ts` |
-| Comments panel: reply, edit, delete, resolve, reopen | ● ✓ | ● ✓ | ● | ● | ● | ● | `collabCommentsPanel.tsx`, `/comment-threads` |
+| Comment on selected text (thread anchored in the doc) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `collabComments.ts` |
+| Comments panel: reply, edit, delete, resolve, reopen | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `collabCommentsPanel.tsx`, `/comment-threads` |
 | @mentions in comments (and pages) with notifications | ● | ● | ● | ● | ● | ● | `collabMentions.ts` |
 
 ## 9. Workspace, members and roles
@@ -203,7 +203,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Search page titles, text, tasks (best first) | ● ✓ | ● ✓ | ● | ● | ● | ● | `GET /workspaces/:id/search`; phone Search tab |
+| Search page titles, text, tasks (best first) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `GET /workspaces/:id/search`; phone Search tab |
 
 ## 11. Locked pages
 

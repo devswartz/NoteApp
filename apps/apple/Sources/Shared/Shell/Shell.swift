@@ -75,6 +75,8 @@ final class Shell {
     /// Sections open in the tree.
     var expanded: Set<String> = []
     var recentOpen = false
+    /// The page canvas's zoom (View ▸ Zoom In / Out / Actual Size on the Mac).
+    var zoom = 1.0
     /// Phone: the notes drawer is open.
     var drawerOpen = false
     /// Phone: the notebook whose sections are listed (Notes → notebook → section → page); nil: all notebooks.
@@ -218,7 +220,7 @@ extension EnvironmentValues {
 extension View {
     /// iOS 26 fades a scroll view's edges at the screen edge; the web has no such effect.
     @ViewBuilder func noEdgeEffect() -> some View {
-        #if compiler(>=6.2)
+        #if compiler(>=6.2) && os(iOS)
         if #available(iOS 26.0, *) { scrollEdgeEffectHidden(true, for: .all) } else { self }
         #else
         self
@@ -248,27 +250,15 @@ struct AppShell: View {
             let width = geo.size.width
             let chrome = theme.chrome
             Group {
+                #if os(iOS)
                 if width <= 760 {
                     PhoneShell(width: width)
                 } else {
-                    VStack(spacing: 0) {
-                        if shell.ribbonCollapsed {
-                            CollapsedRibbon()
-                        } else {
-                            Ribbon(width: width)
-                        }
-                        HStack(spacing: 0) {
-                            Rail()
-                            if shell.sidebarOpen ?? (width >= 900) {
-                                Sidebar()
-                                    .frame(width: 216)
-                                    .overlay(alignment: .trailing) { Rectangle().fill(chrome.border.color).frame(width: 1) }
-                            }
-                            MainArea(width: width)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    }
+                    desktop(width: width, chrome: chrome)
                 }
+                #else
+                desktop(width: width, chrome: chrome)
+                #endif
             }
             .frame(width: width, height: geo.size.height)
             .background(chrome.bgSidebar.color)
@@ -277,7 +267,14 @@ struct AppShell: View {
             .overlay { TaskDetailLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { DialogLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay(alignment: .bottom) { OfflineBanner().environment(\.phoneLayout, width <= 760) }
+            #if os(iOS)
             .background { Button("") { shell.openSearch() }.keyboardShortcut("k", modifiers: .command).opacity(0).accessibilityHidden(true) }
+            #else
+            // The Mac's main menu has the shortcuts (MacCommands); these two are the web's own.
+            .background {
+                Button("") { shell.toggleSidebar() }.keyboardShortcut("\\", modifiers: .command).opacity(0).accessibilityHidden(true)
+            }
+            #endif
             .overlay(alignment: .bottom) { ToastView() }
             .coordinateSpace(name: "shell")
         }
@@ -287,12 +284,34 @@ struct AppShell: View {
         })
         .onAppear {
             theme.systemDark = scheme == .dark
-            if UIScreen.main.bounds.width <= 760 { shell.configurePhoneLook() }
+            ShellBridge.shared.attach(shell, session)
+            if mainScreenSize.width <= 760 { shell.configurePhoneLook() }
             openLookMenu()
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
         .onChange(of: session.workspaceId) {
             if case .page = shell.route, !session.preview { shell.route = .notes }
+        }
+    }
+
+    /// The iPad's and the Mac's layout: ribbon across the top, then rail, sidebar and the main area.
+    private func desktop(width: CGFloat, chrome: Palette) -> some View {
+        VStack(spacing: 0) {
+            if shell.ribbonCollapsed {
+                CollapsedRibbon()
+            } else {
+                Ribbon(width: width)
+            }
+            HStack(spacing: 0) {
+                Rail()
+                if shell.sidebarOpen ?? (width >= 900) {
+                    Sidebar()
+                        .frame(width: 216)
+                        .overlay(alignment: .trailing) { Rectangle().fill(chrome.border.color).frame(width: 1) }
+                }
+                MainArea(width: width)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 

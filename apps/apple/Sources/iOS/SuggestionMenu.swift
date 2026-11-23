@@ -2,38 +2,7 @@ import UIKit
 
 /// The `/`, `[[` and `@` menus (SlashMenu.tsx, PageLink.tsx, collabMentions.ts; LOOK.md 4.7): a popover
 /// next to the caret listing the engine's slash items, matching pages or people.
-struct MenuRow {
-    let id: String
-    let title: String
-    var detail: String?
-    /// A Lucide icon name (`lucide-<name>` in the asset catalog).
-    var icon: String?
-    /// A colour dot before the title (people).
-    var dot: UIColor?
-}
-
-struct MenuContent {
-    enum Kind { case slash, page, mention }
-    let kind: Kind
-    let rows: [MenuRow]
-    let highlighted: Int?
-    /// The trigger character's rect in the box's coordinates.
-    let anchor: CGRect
-    /// Shown when no row matches (`nil`: no row says anything).
-    let emptyText: String?
-}
-
-/// Which Lucide icon the web uses (the engine says `check-square`, `code-2`; the bundled set has
-/// the current names).
-enum MenuIcons {
-    static func name(_ engine: String) -> String {
-        switch engine {
-        case "check-square": return "square-check"
-        case "code-2": return "code-xml"
-        default: return engine
-        }
-    }
-}
+// MenuRow, MenuContent and MenuIcons live in Shared/Editor/MenuModels.swift.
 
 final class SuggestionMenuView: UIView {
     var onPick: ((Int) -> Void)?

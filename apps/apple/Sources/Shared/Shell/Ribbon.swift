@@ -6,23 +6,22 @@ import SwiftUI
 @Observable
 final class EditorFocus {
     static let shared = EditorFocus()
-    @ObservationIgnored private(set) weak var box: BoxTextView?
+    @ObservationIgnored private(set) weak var box: EditorTarget?
     private(set) var active = false
     private(set) var canUndo = false
     private(set) var canRedo = false
     /// The link editor of the canvas showing the focused box.
     @ObservationIgnored var onLink: (() -> Void)?
 
-    func set(_ box: BoxTextView?) {
+    func set(_ box: EditorTarget?) {
         self.box = box
         active = box != nil
         refresh()
     }
 
     func refresh() {
-        let session = box?.editor?.session
-        canUndo = session?.canUndo() ?? false
-        canRedo = session?.canRedo() ?? false
+        canUndo = box?.engineCanUndo ?? false
+        canRedo = box?.engineCanRedo ?? false
     }
 
     /// An engine command for the focused box (`EditorSession.command`, EDITOR.md 4).
@@ -45,6 +44,15 @@ final class EditorFocus {
         refresh()
     }
 }
+
+/// Room for the Mac window's traffic lights at the ribbon's left (the window has no title bar of its own).
+let windowControlsInset: CGFloat = {
+    #if os(macOS)
+    return 72
+    #else
+    return 0
+    #endif
+}()
 
 /// Ribbon sizes by window width (src/styles/toolbar.css): ≤ 1023 the smallest buttons; ≤ 1279
 /// compact (no group names, no words). Wider windows get the compact ribbon too for now.
@@ -138,7 +146,7 @@ struct Ribbon: View {
             .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
             .padding(.leading, 4)
         }
-        .padding(.leading, m.padLeft)
+        .padding(.leading, m.padLeft + windowControlsInset)
         .padding(.trailing, m.padRight)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity)
@@ -175,7 +183,7 @@ struct CollapsedRibbon: View {
             }
             .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
         }
-        .padding(.leading, 16).padding(.trailing, 10)
+        .padding(.leading, 16 + windowControlsInset).padding(.trailing, 10)
         .frame(height: 30)
         .frame(maxWidth: .infinity)
         .background(p.bgSidebar.color)

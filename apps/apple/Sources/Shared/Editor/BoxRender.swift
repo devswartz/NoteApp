@@ -1,5 +1,9 @@
 import NotiveloCore
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Something the view draws in a line's indent (markers aren't characters: the drawn string has
 /// exactly the view's text, EDITOR.md 10.1). `x` is where the line's text starts (container coordinates).
@@ -107,11 +111,6 @@ struct BoxTextRenderer {
     }
 
     static let object = "\u{FFFC}"
-    /// Mention ids that are the signed-in person (drawn yellow, as "yourself").
-    static var selfMentionIds: Set<String> = []
-    /// Comment threads that are resolved (their text is drawn plain) and the one open in the comments panel (drawn stronger).
-    static var resolvedThreads: Set<String> = []
-    static var activeThread: String?
     /// Phones: task lines show only the checklist count, due chip, the Add checklist icon and open (LOOK.md 2.4).
     static var phoneChips = false
     /// List indent: 1.6 em.
@@ -124,7 +123,7 @@ struct BoxTextRenderer {
         var left: CGFloat = 0
         var right: CGFloat = 0
         var marker: BoxMarker.Kind?
-        var color: UIColor?
+        var color: PlatformColor?
         var checked = false
         var hidden = false
         var bulletDepth = 0
@@ -347,7 +346,7 @@ struct BoxTextRenderer {
     static var cellLeading: CGFloat { 27.2 - WebType.ui(16, 400).lineHeight }
 
     /// A table cell's text (wraps inside its column).
-    static func cellText(_ text: String, header: Bool, color: UIColor) -> NSAttributedString {
+    static func cellText(_ text: String, header: Bool, color: PlatformColor) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byWordWrapping
         style.lineSpacing = cellLeading
@@ -370,7 +369,7 @@ struct BoxTextRenderer {
             let h: CGFloat = 22.4 * 2 + 1
             let image = Self.image(CGSize(width: avail, height: h)) { _ in
                 palette.border.setFill()
-                UIRectFill(CGRect(x: 0, y: 22.4, width: avail, height: 1))
+                platformFill(CGRect(x: 0, y: 22.4, width: avail, height: 1))
             }
             line(attachment(image, height: h), ctx, out, lineHeight: h, raise: false)
         case "image":
@@ -379,7 +378,7 @@ struct BoxTextRenderer {
                                                   attributes: [.font: font(bodySize), .foregroundColor: palette.textMuted])
             let size = CGSize(width: min(avail, label.size().width + 22), height: 27.2)
             let image = Self.image(size) { _ in
-                UIImage.lucide("image", size: 16, color: palette.textMuted)?.draw(at: CGPoint(x: 0, y: 5.6))
+                PlatformImage.lucide("image", size: 16, color: palette.textMuted)?.paint(at: CGPoint(x: 0, y: 5.6))
                 label.draw(at: CGPoint(x: 22, y: (27.2 - font(bodySize).lineHeight) / 2))
             }
             line(attachment(image, height: 27.2), ctx, out, lineHeight: 27.2, raise: false)
@@ -392,7 +391,7 @@ struct BoxTextRenderer {
     private func taskRef(_ c: BoxNode, _ ctx: Context, _ out: Output) {
         let id = c.string("taskId") ?? ""
         let avail = max(width - ctx.left - ctx.right, 60)
-        let image: UIImage
+        let image: PlatformImage
         var titleWidth: CGFloat?
         var done = false
         switch tasks[id] {
@@ -463,7 +462,7 @@ struct BoxTextRenderer {
 
     /// Append one line: `\n` before it (with the previous line's style), the text with its
     /// paragraph style (fixed line height, indents, the collapsed spacing above it).
-    private func line(_ text: NSAttributedString, _ ctx: Context, _ out: Output, lineHeight: CGFloat, font lineFont: UIFont? = nil, raise: Bool = true) {
+    private func line(_ text: NSAttributedString, _ ctx: Context, _ out: Output, lineHeight: CGFloat, font lineFont: PlatformFont? = nil, raise: Bool = true) {
         let style = NSMutableParagraphStyle()
         let f = lineFont ?? font(bodySize)
         // CSS line-height: the leading is split above and below the text. TextKit gets the natural
@@ -510,7 +509,7 @@ struct BoxTextRenderer {
         let all = NSRange(location: 0, length: line.length)
         line.addAttribute(.paragraphStyle, value: style, range: all)
         if ctx.hidden {
-            line.addAttribute(.foregroundColor, value: UIColor.clear, range: all)
+            line.addAttribute(.foregroundColor, value: PlatformColor.clear, range: all)
             line.addAttribute(.font, value: font(1), range: all)
             line.removeAttribute(.attachment, range: all)
         }
@@ -525,9 +524,8 @@ struct BoxTextRenderer {
     }
 
     /// One U+FFFC drawn as `image`, sitting at the top of a line as tall as the image.
-    private func attachment(_ image: UIImage, height: CGFloat, drop: CGFloat = 0) -> NSAttributedString {
-        let a = NSTextAttachment(image: image)
-        a.allowsTextAttachmentView = false
+    private func attachment(_ image: PlatformImage, height: CGFloat, drop: CGFloat = 0) -> NSAttributedString {
+        let a = NSTextAttachment.drawing(image)
         let body = font(bodySize)
         a.bounds = CGRect(x: 0, y: body.descender - drop, width: image.size.width, height: height)
         let s = NSMutableAttributedString(attributedString: NSAttributedString(attachment: a))
@@ -536,9 +534,8 @@ struct BoxTextRenderer {
     }
 
     /// An inline atom (mention, page link): a pill image on the baseline.
-    private func inlineAttachment(_ image: UIImage, size: CGFloat) -> NSAttributedString {
-        let a = NSTextAttachment(image: image)
-        a.allowsTextAttachmentView = false
+    private func inlineAttachment(_ image: PlatformImage, size: CGFloat) -> NSAttributedString {
+        let a = NSTextAttachment.drawing(image)
         let f = font(size)
         a.bounds = CGRect(x: 0, y: f.descender - 1, width: image.size.width, height: image.size.height)
         let s = NSMutableAttributedString(attributedString: NSAttributedString(attachment: a))
@@ -546,15 +543,13 @@ struct BoxTextRenderer {
         return s
     }
 
-    static func image(_ size: CGSize, _ draw: (UIGraphicsImageRendererContext) -> Void) -> UIImage {
-        let format = UIGraphicsImageRendererFormat.preferred()
-        format.opaque = false
-        return UIGraphicsImageRenderer(size: CGSize(width: max(size.width, 1), height: max(size.height, 1)), format: format).image(actions: draw)
+    static func image(_ size: CGSize, _ draw: @escaping (CGContext) -> Void) -> PlatformImage {
+        PlatformImage.render(CGSize(width: max(size.width, 1), height: max(size.height, 1)), draw)
     }
 
     // MARK: Task rows (TaskRef.tsx, LOOK.md 2.4)
 
-    private func taskRow(title: String, done: Bool, due: String?, decor d: TaskDecor?, width: CGFloat) -> (image: UIImage, titleWidth: CGFloat) {
+    private func taskRow(title: String, done: Bool, due: String?, decor d: TaskDecor?, width: CGFloat) -> (image: PlatformImage, titleWidth: CGFloat) {
         let p = palette
         let rowHeight: CGFloat = 34
         let chipFont = WebType.ui(11.5, 500)
@@ -563,15 +558,15 @@ struct BoxTextRenderer {
         let chipY: CGFloat = 6
         func chip(_ w: CGFloat, _ x: CGFloat) {
             p.bgHover.setFill()
-            UIBezierPath(roundedRect: CGRect(x: x, y: chipY, width: w, height: 22), cornerRadius: 6).fill()
+            PlatformPath(roundedRect: CGRect(x: x, y: chipY, width: w, height: 22), cornerRadius: 6).fill()
         }
-        items.append((24, { x in UIImage.lucide("maximize-2", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 5.5, y: chipY + 4.5)) }))
+        items.append((24, { x in PlatformImage.lucide("maximize-2", size: 13, color: p.text2)?.paint(at: CGPoint(x: x + 5.5, y: chipY + 4.5)) }))
         let phone = Self.phoneChips
         let add = NSAttributedString(string: phone ? "" : "Add checklist", attributes: [.font: chipFont, .foregroundColor: p.text2])
         let addTextWidth: CGFloat = add.size().width
         let addW: CGFloat = 25 + addTextWidth
         items.append((addW, { x in
-            UIImage.lucide("list-plus", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 4, y: chipY + 4.5))
+            PlatformImage.lucide("list-plus", size: 13, color: p.text2)?.paint(at: CGPoint(x: x + 4, y: chipY + 4.5))
             add.draw(at: CGPoint(x: x + 21, y: chipY + (22 - chipFont.lineHeight) / 2))
         }))
         if phone {
@@ -580,16 +575,16 @@ struct BoxTextRenderer {
             let ini = NSAttributedString(string: initials(name), attributes: [.font: WebType.ui(8.4, 600), .foregroundColor: color.initialsColor])
             items.append((20, { x in
                 color.setFill()
-                UIBezierPath(ovalIn: CGRect(x: x, y: chipY + 1, width: 20, height: 20)).fill()
+                PlatformPath(ovalIn: CGRect(x: x, y: chipY + 1, width: 20, height: 20)).fill()
                 let s = ini.size()
                 ini.draw(at: CGPoint(x: x + (20 - s.width) / 2, y: chipY + 1 + (20 - s.height) / 2))
             }))
         } else {
             items.append((20, { x in
                 p.borderStrong.setStroke()
-                let path = UIBezierPath(ovalIn: CGRect(x: x + 0.75, y: chipY + 1.75, width: 18.5, height: 18.5))
+                let path = PlatformPath(ovalIn: CGRect(x: x + 0.75, y: chipY + 1.75, width: 18.5, height: 18.5))
                 path.lineWidth = 1.5
-                path.setLineDash([3, 2], count: 2, phase: 0)
+                path.dash(3, 2)
                 path.stroke()
             }))
         }
@@ -599,16 +594,16 @@ struct BoxTextRenderer {
         items.append((dueW, { x in
             chip(dueW, x)
             let tone = dueText == nil ? p.text2 : Due.tone(due, p)
-            UIImage.lucide("calendar-days", size: 13, color: tone)?.draw(at: CGPoint(x: x + (dueText == nil ? 6.5 : 7), y: chipY + 4.5))
+            PlatformImage.lucide("calendar-days", size: 13, color: tone)?.paint(at: CGPoint(x: x + (dueText == nil ? 6.5 : 7), y: chipY + 4.5))
             dueText?.draw(at: CGPoint(x: x + 24, y: chipY + (22 - chipFont.lineHeight) / 2))
         }))
         let priority = d?.priority ?? 4
         if !phone || priority < 4 { items.append((26, { x in
             chip(26, x)
             if priority < 4 {
-                UIImage.lucide("flag-filled", size: 13, color: priorityColor(priority, p))?.draw(at: CGPoint(x: x + 6.5, y: chipY + 4.5))
+                PlatformImage.lucide("flag-filled", size: 13, color: priorityColor(priority, p))?.paint(at: CGPoint(x: x + 6.5, y: chipY + 4.5))
             } else {
-                UIImage.lucide("flag", size: 13, color: p.text2)?.draw(at: CGPoint(x: x + 6.5, y: chipY + 4.5))
+                PlatformImage.lucide("flag", size: 13, color: p.text2)?.paint(at: CGPoint(x: x + 6.5, y: chipY + 4.5))
             }
         })) }
         if let list = d?.checklist {
@@ -618,7 +613,7 @@ struct BoxTextRenderer {
             let w: CGFloat = 30 + tWidth
             items.append((w, { x in
                 chip(w, x)
-                UIImage.lucide("square-check", size: 12, color: complete ? p.success : p.text2)?.draw(at: CGPoint(x: x + 7, y: chipY + 5))
+                PlatformImage.lucide("square-check", size: 12, color: complete ? p.success : p.text2)?.paint(at: CGPoint(x: x + 7, y: chipY + 5))
                 t.draw(at: CGPoint(x: x + 23, y: chipY + (22 - chipFont.lineHeight) / 2))
             }))
         }
@@ -634,15 +629,15 @@ struct BoxTextRenderer {
             let circle = CGRect(x: 0.8, y: 8.8, width: 16.4, height: 16.4)
             if done {
                 (priority < 4 ? ring : p.textMuted).setFill()
-                UIBezierPath(ovalIn: circle.insetBy(dx: -0.8, dy: -0.8)).fill()
-                UIImage.lucide("check", size: 11, color: .white)?.draw(at: CGPoint(x: 3.5, y: 11.5))
+                PlatformPath(ovalIn: circle.insetBy(dx: -0.8, dy: -0.8)).fill()
+                PlatformImage.lucide("check", size: 11, color: .white)?.paint(at: CGPoint(x: 3.5, y: 11.5))
             } else {
                 if priority < 4 {
                     ring.withAlphaComponent(0.10).setFill()
-                    UIBezierPath(ovalIn: circle).fill()
+                    PlatformPath(ovalIn: circle).fill()
                 }
                 ring.setStroke()
-                let path = UIBezierPath(ovalIn: circle)
+                let path = PlatformPath(ovalIn: circle)
                 path.lineWidth = 1.6
                 path.stroke()
             }
@@ -664,7 +659,7 @@ struct BoxTextRenderer {
         return (image, titleWidth)
     }
 
-    private func missingTask(width: CGFloat) -> UIImage {
+    private func missingTask(width: CGFloat) -> PlatformImage {
         let p = palette
         let text = NSAttributedString(string: "This task was deleted or is not visible to you.",
                                       attributes: [.font: WebType.ui(12.5), .foregroundColor: p.textMuted])
@@ -672,19 +667,19 @@ struct BoxTextRenderer {
         if Self.phoneChips {
             // Phones: the button wraps under the text (the web's flex-wrap), indented 14 from the box.
             return Self.image(CGSize(width: width, height: 70)) { _ in
-                UIImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.draw(at: CGPoint(x: 4, y: 6))
+                PlatformImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.paint(at: CGPoint(x: 4, y: 6))
                 text.draw(at: CGPoint(x: 27, y: 6 + (15 - WebType.ui(12.5).lineHeight) / 2 + 1))
                 remove.draw(at: CGPoint(x: 14, y: 39 + (15 - WebType.ui(13).lineHeight) / 2 + 1))
             }
         }
         return Self.image(CGSize(width: width, height: 40)) { _ in
-            UIImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.draw(at: CGPoint(x: 0, y: 6))
+            PlatformImage.lucide("file-x-corner", size: 15, color: p.textMuted)?.paint(at: CGPoint(x: 0, y: 6))
             text.draw(at: CGPoint(x: 23, y: 6 + (15 - WebType.ui(12.5).lineHeight) / 2 + 1))
             remove.draw(at: CGPoint(x: 23 + text.size().width + 18, y: 12 + (15 - WebType.ui(13).lineHeight) / 2 + 1))
         }
     }
 
-    private func fileCard(_ c: BoxNode, width: CGFloat) -> UIImage {
+    private func fileCard(_ c: BoxNode, width: CGFloat) -> PlatformImage {
         let p = palette
         let name = NSAttributedString(string: c.string("name") ?? "File", attributes: [.font: font(bodySize, weight: 500), .foregroundColor: p.text])
         let sizeText: String = {
@@ -695,19 +690,19 @@ struct BoxTextRenderer {
         let size = NSAttributedString(string: sizeText, attributes: [.font: WebType.ui(12), .foregroundColor: p.textMuted])
         let h: CGFloat = 52
         return Self.image(CGSize(width: width, height: h)) { _ in
-            let card = UIBezierPath(roundedRect: CGRect(x: 0.5, y: 0.5, width: width - 1, height: h - 1), cornerRadius: 8)
+            let card = PlatformPath(roundedRect: CGRect(x: 0.5, y: 0.5, width: width - 1, height: h - 1), cornerRadius: 8)
             p.bg.setFill()
             card.fill()
             p.border.setStroke()
             card.lineWidth = 1
             card.stroke()
             p.accentSoft.setFill()
-            UIBezierPath(roundedRect: CGRect(x: 11, y: 9, width: 34, height: 34), cornerRadius: 7).fill()
-            UIImage.lucide("file-text", size: 18, color: p.accent)?.draw(at: CGPoint(x: 19, y: 17))
+            PlatformPath(roundedRect: CGRect(x: 11, y: 9, width: 34, height: 34), cornerRadius: 7).fill()
+            PlatformImage.lucide("file-text", size: 18, color: p.accent)?.paint(at: CGPoint(x: 19, y: 17))
             name.draw(at: CGPoint(x: 55, y: (h - name.size().height) / 2))
             let sw = size.size().width
             size.draw(at: CGPoint(x: width - 11 - 28 - 8 - sw, y: (h - size.size().height) / 2))
-            UIImage.lucide("download", size: 16, color: p.text2)?.draw(at: CGPoint(x: width - 11 - 22, y: 18))
+            PlatformImage.lucide("download", size: 16, color: p.text2)?.paint(at: CGPoint(x: width - 11 - 22, y: 18))
         }
     }
 
@@ -724,9 +719,9 @@ struct BoxTextRenderer {
                 out.append(NSAttributedString(string: "\u{2028}", attributes: [.font: font(size)]))
             case "mention":
                 let label = node.string("label") ?? ""
-                let mine = Self.selfMentionIds.contains(node.string("id") ?? "")
+                let mine = EditorMarks.selfMentionIds.contains(node.string("id") ?? "")
                 out.append(inlineAttachment(pill("@" + label, size: size, fg: mine ? palette.text : palette.accent,
-                                                 bg: mine ? UIColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: 0.35) : palette.accentSoft,
+                                                 bg: mine ? PlatformColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: 0.35) : palette.accentSoft,
                                                  underline: false), size: size))
             case "pageLink":
                 let id = node.string("pageId") ?? ""
@@ -740,7 +735,7 @@ struct BoxTextRenderer {
     }
 
     /// A mention or page-link pill: padding 0 3, radius 4, weight 500.
-    private func pill(_ text: String, size: CGFloat, fg: UIColor, bg: UIColor, underline: Bool, icon: String? = nil) -> UIImage {
+    private func pill(_ text: String, size: CGFloat, fg: PlatformColor, bg: PlatformColor, underline: Bool, icon: String? = nil) -> PlatformImage {
         let f = font(size, weight: 500)
         let s = NSAttributedString(string: text, attributes: [.font: f, .foregroundColor: fg])
         let iconW: CGFloat = icon == nil ? 0 : size * 0.95 + 3
@@ -749,14 +744,14 @@ struct BoxTextRenderer {
         let h: CGFloat = ceil(f.lineHeight) + 2
         return Self.image(CGSize(width: w, height: h)) { _ in
             bg.setFill()
-            UIBezierPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h), cornerRadius: 4).fill()
+            PlatformPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h), cornerRadius: 4).fill()
             if let icon {
-                UIImage.lucide(icon, size: size * 0.95, color: palette.textMuted)?.draw(at: CGPoint(x: 3, y: (h - size * 0.95) / 2))
+                PlatformImage.lucide(icon, size: size * 0.95, color: palette.textMuted)?.paint(at: CGPoint(x: 3, y: (h - size * 0.95) / 2))
             }
             s.draw(at: CGPoint(x: 3 + iconW, y: 1))
             if underline {
                 palette.borderStrong.setFill()
-                UIRectFill(CGRect(x: 0, y: h - 1, width: w, height: 1))
+                platformFill(CGRect(x: 0, y: h - 1, width: w, height: 1))
             }
         }
     }
@@ -790,11 +785,11 @@ struct BoxTextRenderer {
                 // panel is stronger. A resolved thread's text looks plain.
                 let thread = mark.attrs["threadId"] as? String ?? ""
                 attrs[.nvThread] = thread
-                if !Self.resolvedThreads.contains(thread) {
-                    let active = thread == Self.activeThread
-                    attrs[.backgroundColor] = UIColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: active ? 0.55 : 0.28)
+                if !EditorMarks.resolvedThreads.contains(thread) {
+                    let active = thread == EditorMarks.activeThread
+                    attrs[.backgroundColor] = PlatformColor(red: 250 / 255, green: 204 / 255, blue: 21 / 255, alpha: active ? 0.55 : 0.28)
                     attrs[.underlineStyle] = NSUnderlineStyle.thick.rawValue
-                    attrs[.underlineColor] = UIColor(red: 234 / 255, green: 179 / 255, blue: 8 / 255, alpha: 0.8)
+                    attrs[.underlineColor] = PlatformColor(red: 234 / 255, green: 179 / 255, blue: 8 / 255, alpha: 0.8)
                 }
             default:
                 break
@@ -809,9 +804,8 @@ struct BoxTextRenderer {
         return NSAttributedString(string: node.text, attributes: attrs)
     }
 
-    func font(_ size: CGFloat, weight: Int = 400, italic: Bool = false, mono: Bool = false) -> UIFont {
-        let base: UIFont = mono ? WebType.mono(size, weight) : WebType.ui(size, weight)
-        guard italic, let d = base.fontDescriptor.withSymbolicTraits(base.fontDescriptor.symbolicTraits.union(.traitItalic)) else { return base }
-        return UIFont(descriptor: d, size: size)
+    func font(_ size: CGFloat, weight: Int = 400, italic: Bool = false, mono: Bool = false) -> PlatformFont {
+        let base: PlatformFont = mono ? WebType.mono(size, weight) : WebType.ui(size, weight)
+        return italic ? base.italicVariant(size) : base
     }
 }

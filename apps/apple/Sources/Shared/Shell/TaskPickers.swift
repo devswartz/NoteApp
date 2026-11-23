@@ -35,7 +35,7 @@ struct PickCard<Content: View>: View {
                 .background(GeometryReader { g in Color.clear.preference(key: PickHeightKey.self, value: g.size.height) })
         }
         .onPreferenceChange(PickHeightKey.self) { measured = $0 }
-        .scrollDismissesKeyboard(.interactively)
+        .dismissKeyboardOnScroll()
         .frame(width: width, height: min(max(measured, 1), maxHeight))
         .background(p.bgElevated.color, in: shape)
         .clipShape(shape)
@@ -101,7 +101,7 @@ private struct PickField: View {
             .font(.web(14))
             .foregroundStyle(p.text.color)
             .tint(p.accent.color)
-            .textInputAutocapitalization(.never)
+            .noAutocapitalization()
             .autocorrectionDisabled()
             .submitLabel(.done)
             .focused($focused)
@@ -141,7 +141,7 @@ func teamLabel(_ team: TaskTeam, _ teams: [TaskTeam]) -> String {
 }
 
 func colorDot(_ css: String, _ size: CGFloat = 10) -> some View {
-    Circle().fill(UIColor(css: css).color).frame(width: size, height: size)
+    Circle().fill(PlatformColor(css: css).color).frame(width: size, height: size)
 }
 
 // MARK: Assignee
@@ -165,7 +165,7 @@ struct AssigneePick: View {
 
     private func row(_ m: Person, _ meId: String?, indent: CGFloat = 0, teams: String? = nil) -> some View {
         PickRow(palette: palette, title: m.name + (m.id == meId ? " (you)" : ""), detail: teams.map { " · \($0)" }, checked: value == m.id, indent: indent,
-                lead: { AvatarView(name: m.name, color: UIColor(css: m.color), size: 18) }, action: { onPick(m.id) })
+                lead: { AvatarView(name: m.name, color: PlatformColor(css: m.color), size: 18) }, action: { onPick(m.id) })
     }
 
     var body: some View {

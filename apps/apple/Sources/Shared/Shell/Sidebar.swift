@@ -51,7 +51,7 @@ struct NotesPanel: View {
             HStack(spacing: 4) {
                 if let notebook, shell.renaming == "notebook:\(notebook.id)" {
                     HStack(spacing: 8) {
-                        LetterTile(letter: notebook.name, fill: AnyShapeStyle(UIColor(css: notebook.color).color), size: 22, radius: 6, fontSize: 12)
+                        LetterTile(letter: notebook.name, fill: AnyShapeStyle(PlatformColor(css: notebook.color).color), size: 22, radius: 6, fontSize: 12)
                         RenameField(initial: notebook.name) { shell.commitRename(.notebook, notebook.id, to: $0, session) }
                     }
                     .padding(.horizontal, 8).frame(height: 36)
@@ -59,7 +59,7 @@ struct NotesPanel: View {
                 Button { shell.menu = .notebookPicker } label: {
                     HStack(spacing: 8) {
                         if let notebook {
-                            LetterTile(letter: notebook.name, fill: AnyShapeStyle(UIColor(css: notebook.color).color), size: 22, radius: 6, fontSize: 12)
+                            LetterTile(letter: notebook.name, fill: AnyShapeStyle(PlatformColor(css: notebook.color).color), size: 22, radius: 6, fontSize: 12)
                             Text(notebook.name).font(.web(phone ? 15 : 14, 650)).foregroundStyle(p.text.color).lineLimit(1).truncationMode(.tail)
                             if notebook.visibility == "private" { Icon("lock", 12, p.textMuted.color) }
                         } else {
@@ -204,7 +204,7 @@ struct SectionNode: View {
                 Icon("chevron-down", 13, p.textMuted.color)
                     .rotationEffect(.degrees(open ? 0 : -90))
                     .frame(width: 14)
-                RoundedRectangle(cornerRadius: 2).fill(UIColor(css: section.color).color).frame(width: 4, height: 14)
+                RoundedRectangle(cornerRadius: 2).fill(PlatformColor(css: section.color).color).frame(width: 4, height: 14)
                 if shell.renaming == "section:\(section.id)" {
                     RenameField(initial: section.name) { shell.commitRename(.section, section.id, to: $0, session) }
                 } else {
@@ -404,7 +404,7 @@ struct RenameField: View {
             .tint(p.accent.color)
             .focused($focused)
             .submitLabel(.done)
-            .textInputAutocapitalization(.sentences)
+            .sentenceAutocapitalization()
             .padding(.horizontal, 8)
             .frame(height: 24)
             .background(p.bg.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

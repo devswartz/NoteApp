@@ -11,7 +11,9 @@ struct NotiveloApp: App {
                 .environment(session)
         }
         #if os(macOS)
-        .defaultSize(width: 1100, height: 720)
+        .defaultSize(width: 1280, height: 800)
+        .windowStyle(.hiddenTitleBar)
+        .commands { MacCommands() }
         #endif
     }
 }

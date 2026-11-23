@@ -18,3 +18,4 @@ CI: `.github/workflows/apple-native.yml` (macos-15) builds both on pushes to `re
 Test steps for each TestFlight build: `docs/rewrite/status/apple.md`, "How Devon tests this build".
 
 The core's task, search and comment calls are used by `Sources/iOS/Shell/TaskDetail.swift`, `TaskPickers.swift`, `Search.swift` and `Comments.swift`.
+The Mac app (M6, AppKit) shares Sources/Shared with the iPad/iPhone app; its own code is in Sources/macOS.

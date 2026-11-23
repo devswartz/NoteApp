@@ -14,7 +14,7 @@ struct TaskDetailLayer: View {
     var body: some View {
         if let id = shell.taskDetailId, let task = session.shownTasks.first(where: { $0.id == id }) {
             ZStack(alignment: phone ? .bottom : .trailing) {
-                Color(uiColor: UIColor(hex: 0x0A0A14, alpha: 0.18)).contentShape(Rectangle())
+                PlatformColor(hex: 0x0A0A14, alpha: 0.18).color.contentShape(Rectangle())
                     .onTapGesture { shell.taskDetailId = nil }
                 TaskSheet(task: task, phone: phone, size: CGSize(width: phone ? width : min(480, width), height: phone ? height * 0.92 : height))
                     .id(task.id)
@@ -83,7 +83,7 @@ struct TaskSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .noEdgeEffect()
-            .scrollDismissesKeyboard(.interactively)
+            .dismissKeyboardOnScroll()
         }
         .coordinateSpace(name: "tasksheet")
         .onPreferenceChange(PickFrameKey.self) { frames = $0 }
@@ -285,10 +285,10 @@ struct TaskSheet: View {
                     if let id = task.assigneeId {
                         HStack(spacing: 8) {
                             if let assignee {
-                                AvatarView(name: assignee.name, color: UIColor(css: assignee.color), size: 18)
+                                AvatarView(name: assignee.name, color: PlatformColor(css: assignee.color), size: 18)
                                 Text(assignee.name).foregroundStyle(p.text.color).lineLimit(1)
                             } else if let me, me.id == id {
-                                AvatarView(name: me.name, color: UIColor(css: me.color), size: 18)
+                                AvatarView(name: me.name, color: PlatformColor(css: me.color), size: 18)
                                 Text(me.name).foregroundStyle(p.text.color).lineLimit(1)
                             } else {
                                 Circle().stroke(p.borderStrong.color, lineWidth: 1.5).frame(width: 18, height: 18)
@@ -322,9 +322,9 @@ struct TaskSheet: View {
                     FlowLayout(spacing: 4, lineSpacing: 4) {
                         ForEach(ownTags, id: \.id) { t in
                             Text(t.name).font(.web(12, 500)).lineLimit(1)
-                                .foregroundStyle(UIColor.mix(UIColor(css: t.color), 0.7, p.text).color)
+                                .foregroundStyle(PlatformColor.mix(PlatformColor(css: t.color), 0.7, p.text).color)
                                 .padding(.horizontal, 7).frame(height: 22)
-                                .background(UIColor(css: t.color).withAlphaComponent(0.16).color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                .background(PlatformColor(css: t.color).withAlphaComponent(0.16).color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         }
                     }
                 }
