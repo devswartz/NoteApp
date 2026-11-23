@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Media;
 using Notivelo.Windows.Controls;
 using Notivelo.Windows.Data;
@@ -17,15 +18,37 @@ internal sealed class PageView : ThemedControl
 
     public PageView(INotesSource source) => _source = source;
 
-    public void SetPage(string? id) { PageId = id; Rebuild(); }
+    private ScrollViewer? _scroll;
+    private double _offset;
+
+    public void SetPage(string? id)
+    {
+        if (id != PageId) _offset = 0;
+        PageId = id;
+        Rebuild();
+    }
+
+    /// <summary>Rebuild for new data, keeping the scroll position (live pages change under the reader).</summary>
+    public void Refresh()
+    {
+        if (_scroll is not null && PageId is not null) _offset = _scroll.VerticalOffset;
+        Rebuild();
+    }
 
     protected override UIElement Build()
     {
+        _scroll = null;
         var page = PageId is null ? null : _source.GetPage(PageId);
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        if (page is null) { root.Children.Add(Empty()); return root; }
+        if (page is null)
+        {
+            var e = PageId is null || _source.Loading || _source.LoadError is not null ? Overview() : Missing();
+            Grid.SetRowSpan((FrameworkElement)e, 2);
+            root.Children.Add(e);
+            return root;
+        }
 
         root.Children.Add(TopBar(page));
 
@@ -43,15 +66,37 @@ internal sealed class PageView : ThemedControl
         var sub = Ui.Text(page.EditedLine, 12.5, B("PageTextMuted"), lineHeight: 18.75);
         sub.Margin = new Thickness(51, 6, 0, 22);
         Grid.SetRow(sub, 2);
-        article.Children.Add(sub);
+        if (page.State != PageState.Live)
+        {
+            var (text, brush) = page.State switch
+            {
+                PageState.Connecting => ("Opening the page…", B("PageTextMuted")),
+                PageState.Offline => ((page.StateMessage ?? "Offline") + " Trying again…", B("Warn")),
+                _ => (page.StateMessage ?? "This page can't be shown.", B("Danger")),
+            };
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(51, 6, 0, 22) };
+            line.Children.Add(Ui.Text(page.EditedLine + " · ", 12.5, B("PageTextMuted"), lineHeight: 18.75));
+            line.Children.Add(Ui.Text(text, 12.5, brush, 600, lineHeight: 18.75));
+            Grid.SetRow(line, 2);
+            article.Children.Add(line);
+        }
+        else article.Children.Add(sub);
 
-        var surfaceH = Math.Max(320, page.Boxes.Max(b => b.Y) + 320);
+        var surfaceH = Math.Max(320, (page.Boxes.Count == 0 ? 0 : page.Boxes.Max(b => b.Y)) + 320);
         var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 10, 0, 0) };
         foreach (var box in page.Boxes) canvas.Children.Add(Box(box));
         Grid.SetRow(canvas, 3);
         article.Children.Add(canvas);
 
         var sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = article };
+        _scroll = sv;
+        if (_offset > 0)
+        {
+            var target = _offset;
+            RoutedEventHandler? once = null;
+            once = (_, _) => { sv.Loaded -= once; sv.UpdateLayout(); sv.ChangeView(null, target, null, true); };
+            sv.Loaded += once;
+        }
         Grid.SetRow(sv, 1);
         root.Children.Add(sv);
 
@@ -64,14 +109,57 @@ internal sealed class PageView : ThemedControl
         return root;
     }
 
-    private UIElement Empty()
+    private UIElement Missing()
     {
         var sp = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Spacing = 6 };
-        sp.Children.Add(Ui.Text("Pick a page", 15, B("Text"), 700));
-        sp.Children.Add(Ui.Text("Choose a page in the sidebar to open it.", 13, B("TextMuted")));
+        sp.Children.Add(Ui.Text("Page not found", 20, B("Text"), 700));
+        sp.Children.Add(Ui.Text("It may have been moved or deleted.", 14, B("TextMuted")));
         Grid.SetRowSpan(sp, 2);
         return sp;
     }
+
+    /// <summary>No page selected (LOOK 4.14): "Notes", then Recently edited cards; or the loading / error / no notebooks states.</summary>
+    private UIElement Overview()
+    {
+        var root = new StackPanel { Padding = new Thickness(40, 36, 40, 60) };
+        root.Children.Add(Ui.Text("Notes", 26, B("Text"), 700, lineHeight: 34, tracking: -0.02));
+        if (_source.LoadError is { } err)
+        {
+            var msg = Ui.Text(err, 14, B("Danger"), lineHeight: 21);
+            msg.TextWrapping = TextWrapping.Wrap; msg.Margin = new Thickness(0, 12, 0, 12);
+            root.Children.Add(msg);
+            var retry = new Button { Content = "Try again", Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(12, 0, 12, 0), Height = 32, Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Foreground = B("Text") };
+            retry.Click += (_, _) => { if (_source.CurrentWorkspaceId is { } w) _source.SelectWorkspace(w); };
+            root.Children.Add(retry);
+        }
+        else if (_source.Loading) root.Children.Add(Ui.Text("Loading your notes…", 14, B("TextMuted")).With(t => t.Margin = new Thickness(0, 12, 0, 0)));
+        else if (_source.Notebooks.Count == 0) root.Children.Add(Ui.Text("No notebooks yet. Create one in the web app.", 14, B("TextMuted")).With(t => t.Margin = new Thickness(0, 12, 0, 0)));
+        else
+        {
+            var recent = _source.RecentPages(8);
+            if (recent.Count > 0)
+            {
+                root.Children.Add(Ui.Text("Recently edited", 15, B("Text"), 650).With(t => t.Margin = new Thickness(0, 24, 0, 10)));
+                var grid = new Microsoft.UI.Xaml.Controls.VariableSizedWrapGrid { Orientation = Orientation.Horizontal, ItemWidth = 200, ItemHeight = 84 };
+                foreach (var (p, where, edited) in recent)
+                {
+                    var card = new Border { Width = 188, Height = 72, Padding = new Thickness(14, 10, 14, 10), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1), BorderBrush = B("Border"), Background = B("BgElevated") };
+                    var sp = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+                    sp.Children.Add(Ui.Text(p.Title, 14, B("Text"), 600));
+                    sp.Children.Add(Ui.Text(where, 12, B("TextMuted")));
+                    sp.Children.Add(Ui.Text(edited, 11.5, B("TextMuted")));
+                    card.Child = sp;
+                    var id = p.Id;
+                    card.Tapped += (_, _) => PageOpened?.Invoke(id);
+                    grid.Children.Add(card);
+                }
+                root.Children.Add(grid);
+            }
+        }
+        return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    }
+
+    public event Action<string>? PageOpened;
 
     // ---- top bar ----------------------------------------------------------------------------------------------
 
@@ -158,14 +246,86 @@ internal sealed class PageView : ThemedControl
         switch (blk.Kind)
         {
             case BlockKind.Heading1:
-                return Ui.Text(blk.Text, 28, B("Text"), 700, lineHeight: 36.4, tracking: -0.02).With(t => { t.TextWrapping = TextWrapping.Wrap; t.Margin = new Thickness(0, first ? 0 : 33.6, 0, 8.4); });
+                return Rich(blk, 28, 700, 36.4, -0.02).With(t => t.Margin = new Thickness(0, first ? 0 : 33.6, 0, 8.4));
             case BlockKind.Heading2:
-                return Ui.Text(blk.Text, 21.6, B("Text"), 700, lineHeight: 29.16, tracking: -0.01).With(t => { t.TextWrapping = TextWrapping.Wrap; t.Margin = new Thickness(0, first ? 0 : 23.76, 0, 5.4); });
+                return Rich(blk, 21.6, 700, 29.16, -0.01).With(t => t.Margin = new Thickness(0, first ? 0 : 23.76, 0, 5.4));
+            case BlockKind.Heading3:
+                return Rich(blk, 17.6, 700, 25, 0).With(t => t.Margin = new Thickness(0, first ? 0 : 19.2, 0, 4));
             case BlockKind.Task:
                 return TaskLine(blk.Task!);
+            case BlockKind.ListItem:
+            case BlockKind.CheckItem:
+                return ListLine(blk, first);
+            case BlockKind.Quote:
+            {
+                var tb = Rich(blk, 16, 400, 27.2, 0, B("Text2"));
+                return new Border { BorderBrush = B("BorderStrong"), BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(12, 0, 0, 0), Margin = new Thickness(0, first ? 0 : 6.4, 0, 0), Child = tb };
+            }
+            case BlockKind.Code:
+            {
+                var tb = Ui.Text(blk.Text, 13.5, B("Text"), lineHeight: 21).With(t => { t.FontFamily = Ui.Mono; t.TextWrapping = TextWrapping.Wrap; });
+                return new Border { Background = B("BgHover"), CornerRadius = new CornerRadius(6), Padding = new Thickness(12, 8, 12, 8), Margin = new Thickness(0, first ? 0 : 6.4, 0, 0), Child = tb };
+            }
+            case BlockKind.Rule:
+                return new Border { Height = 1, Background = B("BorderStrong"), Margin = new Thickness(0, 12, 0, 12) };
             default:
-                return Ui.Text(blk.Text, 16, B("Text"), lineHeight: 27.2).With(t => { t.TextWrapping = TextWrapping.Wrap; t.Margin = new Thickness(0, first ? 0 : 6.4, 0, 0); });
+                return Rich(blk, 16, 400, 27.2, 0).With(t => t.Margin = new Thickness(0, first ? 0 : 6.4, 0, 0));
         }
+    }
+
+    /// <summary>Bullet, number or check box in a 24 pt column, indented 24 pt per level, then the line's text.</summary>
+    private UIElement ListLine(BoxBlock blk, bool first)
+    {
+        var g = new Grid { Margin = new Thickness(24 * blk.Indent, first ? 0 : 3, 0, 0) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var mark = blk.Kind == BlockKind.CheckItem ? (blk.Checked ? "☑" : "☐") : blk.Marker ?? "•";
+        var m = Ui.Text(mark, 16, blk.Kind == BlockKind.CheckItem && blk.Checked ? B("Accent") : B("Text2"), lineHeight: 27.2);
+        m.FontFamily = blk.Kind == BlockKind.CheckItem ? new FontFamily("Segoe UI Symbol") : Ui.Font;
+        m.HorizontalAlignment = HorizontalAlignment.Left;
+        g.Children.Add(m);
+        var t = Rich(blk, 16, 400, 27.2, 0, blk.Kind == BlockKind.CheckItem && blk.Checked ? B("TextMuted") : null);
+        Grid.SetColumn(t, 1);
+        g.Children.Add(t);
+        return g;
+    }
+
+    /// <summary>The block's text with its marks (bold, italic, underline, strike, code, link and mention colours, highlights): read-only.</summary>
+    private TextBlock Rich(BoxBlock blk, double size, int weight, double lineHeight, double tracking, Brush? fg = null)
+    {
+        var tb = Ui.Text("", size, fg ?? B("Text"), weight, lineHeight, tracking);
+        tb.TextWrapping = TextWrapping.Wrap;
+        tb.TextTrimming = TextTrimming.None;
+        tb.VerticalAlignment = VerticalAlignment.Top;
+        if (blk.Spans is not { Count: > 0 }) { tb.Text = blk.Text; return tb; }
+        var at = 0;
+        foreach (var sp in blk.Spans)
+        {
+            var parts = sp.Text.Split((char)10);
+            for (var i = 0; i < parts.Length; i++)
+            {
+                if (i > 0) { tb.Inlines.Add(new LineBreak()); at++; }
+                if (parts[i].Length == 0) continue;
+                var run = new Run { Text = parts[i] };
+                if (sp.Bold) run.FontWeight = new FontWeight((ushort)Math.Max(weight, 700));
+                if (sp.Italic) run.FontStyle = global::Windows.UI.Text.FontStyle.Italic;
+                var deco = TextDecorations.None;
+                if (sp.Underline) deco |= TextDecorations.Underline;
+                if (sp.Strike) deco |= TextDecorations.Strikethrough;
+                if (deco != TextDecorations.None) run.TextDecorations = deco;
+                if (sp.Code) { run.FontFamily = Ui.Mono; run.FontSize = size * 0.9; }
+                if (sp.ColorHex is { } c) run.Foreground = Ui.Hex(c);
+                tb.Inlines.Add(run);
+                if (sp.HighlightHex is { } h)
+                {
+                    var hl = new TextHighlighter { Background = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(0x99, Ui.ColorOf(h).R, Ui.ColorOf(h).G, Ui.ColorOf(h).B)) };
+                    hl.Ranges.Add(new TextRange { StartIndex = at, Length = parts[i].Length });
+                    tb.TextHighlighters.Add(hl);
+                }
+                at += parts[i].Length;
+            }
+        }
+        return tb;
     }
 
     /// <summary>A task line inside a box (LOOK 2.4): circle, empty-state chips, avatar, "Add checklist", open.</summary>
@@ -175,6 +335,17 @@ internal sealed class PageView : ThemedControl
         var circle = TaskParts.Circle(B, t.Priority, t.Done);
         ((FrameworkElement)circle).VerticalAlignment = VerticalAlignment.Center;
         row.Children.Add(circle);
+        if (t.Title.Length > 0)
+        {
+            // a real task: its title (struck through when done) and due date; the empty chips below are the sample's new-task line
+            var title = Ui.Text(t.Title, 16, t.Done ? B("TextMuted") : B("Text"), lineHeight: 24);
+            if (t.Done) title.TextDecorations = TextDecorations.Strikethrough;
+            title.MaxWidth = 460;
+            row.Children.Add(title);
+            if (t.DueLabel is { } due)
+                row.Children.Add(Ui.Text(due, 12, t.Tone == DueTone.Overdue ? B("Danger") : t.Tone == DueTone.Today ? B("Accent") : B("TextMuted"), 600).With(x => x.Margin = new Thickness(4, 2, 0, 0)));
+            return row;
+        }
         UIElement Chip(string icon) => new Border
         {
             Height = 22, Width = 26, CornerRadius = new CornerRadius(6), Background = B("BgHover"), VerticalAlignment = VerticalAlignment.Center,

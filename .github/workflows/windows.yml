@@ -2,13 +2,15 @@ name: Windows native
 # The native Windows app of the rewrite (apps/windows, WinUI 3, .NET 8, single-project MSIX). Builds x64 Release and packages an
 # unsigned MSIX on every push to a rewrite branch (and PRs) that touches it, then uploads it as a short-lived artifact.
 # No signing, no Store identity, no upload anywhere: the package is for sideloading after test-signing it by hand.
+# The app compiles the core's C# bindings and ships nv_core.dll, so the job first builds the core with
+# crates/nv-core/build-windows.sh (the same script as windows-core.yml). It runs on core changes too.
 on:
   workflow_dispatch:
   push:
     branches: ['rewrite/**']
-    paths: ['apps/windows/**', '.github/workflows/windows.yml']
+    paths: ['apps/windows/**', 'crates/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/windows.yml']
   pull_request:
-    paths: ['apps/windows/**', '.github/workflows/windows.yml']
+    paths: ['apps/windows/**', 'crates/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/windows.yml']
 
 permissions:
   contents: read
@@ -16,6 +18,12 @@ permissions:
 concurrency:
   group: windows-native-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # The same toolchain and generator as windows-core.yml / rust.yml.
+  RUST_TOOLCHAIN: '1.99.1'
+  UNIFFI_BINDGEN_CS_TAG: 'v0.12.0+v0.32.0'
+  CARGO_TERM_COLOR: always
 
 defaults:
   run:
@@ -25,13 +33,34 @@ jobs:
   windows:
     name: windows (x64 + arm64 build, unsigned MSIX)
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
+      - name: Cache uniffi-bindgen-cs
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/uniffi-bindgen-cs.exe
+          key: uniffi-bindgen-cs-${{ env.UNIFFI_BINDGEN_CS_TAG }}-${{ env.RUST_TOOLCHAIN }}
+      - name: Install uniffi-bindgen-cs
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install uniffi-bindgen-cs --locked --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag "$UNIFFI_BINDGEN_CS_TAG"
+
+      - name: Build nv_core.dll (x64, arm64) and the C# bindings
+        run: bash crates/nv-core/build-windows.sh
 
       - name: Restore
         run: |
