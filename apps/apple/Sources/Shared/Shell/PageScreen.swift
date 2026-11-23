@@ -166,8 +166,13 @@ struct PageScreen: View {
         } else if let snapshot {
             let title = meta?.title ?? snapshot.title
             let edited = meta.map { "Edited \(Due.ago($0.updatedAt))" + (session.preview ? " by you" : "") } ?? "Edited just now by you"
+            // "Add icon" above the title: for a page of the tree that can be edited (the look states keep their own).
+            let canEditIcon = meta != nil && sample == nil && LookData.state == nil && !session.preview && session.canEditTree && (editHost?.savesBoxes ?? false)
+            let onIcon: ((CGRect) -> Void)? = canEditIcon ? { iconTapped($0) } : nil
             PageCanvas(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
-                       decor: decor, showAddIcon: phone || ((LookData.state?.hasPrefix("edit") ?? false)), stacked: phone, notify: { shell.say($0) })
+                       decor: decor, showAddIcon: phone || canEditIcon || ((LookData.state?.hasPrefix("edit") ?? false)), icon: meta?.icon,
+                       onIcon: onIcon, stacked: phone, notify: { shell.say($0) })
+                .anchor("page-canvas", shell)
         } else if let sample, case .failure = sample.page {
             notFound(palette)
         } else if let live, case .ended = live.state {
@@ -178,6 +183,13 @@ struct PageScreen: View {
             // `.page-loading`: an empty page until the document is there.
             Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// The icon row was tapped (its frame in the canvas): the emoji picker opens under it.
+    private func iconTapped(_ r: CGRect) {
+        let c = shell.frames["page-canvas"] ?? .zero
+        shell.frames["page-icon"] = r.offsetBy(dx: c.minX, dy: c.minY)
+        shell.menu = .pageIcon(pageId)
     }
 
     /// `.empty-page`: "Page not found", why, and a way out (PageView.tsx).

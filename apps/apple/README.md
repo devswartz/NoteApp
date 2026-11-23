@@ -24,6 +24,8 @@ Tree edits, sharing, version history, the Trash and locked pages call the core f
 
 The Mac build also goes to TestFlight (macOS) with the iPad/iPhone build, as the same 1.99.x version and build number.
 
-Pencil ink on iPad pages: pen tools are in the ribbon's Draw button.
+Ink on iPad pages: pen tools are in the ribbon's Draw button; the Pencil draws, and with "Draw with a finger" on a finger does too (two fingers scroll and zoom). Undo and redo (ribbon, Cmd-Z, three-finger swipes) cover the ink and the box's text. The Mac draws with the mouse or trackpad through the same Draw button; iPhone shows ink read-only (the web has no ink on phones either).
 
-Mac parity: ink is shown read-only on Mac pages; right-click tree menus, Esc closes dialogs, Cmd-F opens the search.
+Mac parity: right-click tree menus, Esc closes dialogs, Cmd-F opens the search.
+
+The page icon row (Add icon, emoji picker) is in the shared page header; it saves through the core's setPageIcon.

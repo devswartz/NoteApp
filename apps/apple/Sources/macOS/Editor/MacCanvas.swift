@@ -18,6 +18,12 @@ struct MacCanvas: NSViewRepresentable {
     var decor: [String: TaskDecor] = [:]
     var zoom: Double = 1
     var onZoom: ((Double) -> Void)?
+    /// The page's icon (an emoji); whether "Add icon" shows on hover and the row opens the picker (`onIcon`, with the row's
+    /// frame in this view); `showAddIcon`: "Add icon" always shows (the look states).
+    var icon: String?
+    var canEditIcon = false
+    var showAddIcon = false
+    var onIcon: ((CGRect) -> Void)?
     /// A short message for the user (the shell's toast).
     var notify: ((String) -> Void)?
 
@@ -28,7 +34,8 @@ struct MacCanvas: NSViewRepresentable {
     func updateNSView(_ view: MacCanvasView, context: Context) {
         view.notify = notify
         view.onZoom = onZoom
-        view.setHeader(title: title, subline: subline, palette: palette)
+        view.onIcon = onIcon
+        view.setHeader(title: title, subline: subline, palette: palette, icon: icon, canEditIcon: canEditIcon, showAddIcon: showAddIcon)
         view.decor = decor
         view.setZoom(zoom)
         view.show(page, host: host)
@@ -45,6 +52,12 @@ final class MacSurfaceView: NSView {
     var titleRect = CGRect.zero
     var subline = NSAttributedString()
     var sublineRect = CGRect.zero
+    /// The row above the title: the page's icon, or "Add icon" (when `showAdd`).
+    var iconEmoji: NSAttributedString?
+    var iconRect = CGRect.zero
+    var addGlyph: NSImage?
+    var addLabel: NSAttributedString?
+    var showAdd = false
     private var rules = "none"
     private var originY: CGFloat = 0
 
@@ -87,6 +100,12 @@ final class MacSurfaceView: NSView {
         }
         title.draw(with: titleRect, options: [.usesLineFragmentOrigin], context: nil)
         subline.draw(with: sublineRect, options: [.usesLineFragmentOrigin], context: nil)
+        if let iconEmoji {
+            iconEmoji.draw(with: iconRect, options: [.usesLineFragmentOrigin], context: nil)
+        } else if showAdd {
+            addGlyph?.paint(at: CGPoint(x: iconRect.minX, y: iconRect.minY + 6.5))
+            addLabel?.draw(with: CGRect(x: iconRect.minX + 21, y: iconRect.minY + 5, width: 130, height: 18), options: [.usesLineFragmentOrigin], context: nil)
+        }
     }
 }
 
@@ -131,11 +150,21 @@ final class MacCanvasView: NSView {
     private weak var menuOwner: MacBoxView?
     private var linkHost: NSHostingView<AnyView>?
 
-    // Read-only ink: highlighters behind the boxes, pens in front.
-    private let underInk = MacInkView(under: true)
-    private let overInk = MacInkView(under: false)
-    private var inkGeneration = 0
+    // Ink: highlighters behind the boxes, pens in front; the mouse and trackpad draw while a pen tool is chosen.
+    private let ink = MacInkController()
     private var inkNeeded = true
+
+    // The row above the title: the page's icon, or "Add icon" on hover (src/pages/PageView.tsx `PageIcon`).
+    private var icon: String?
+    private var canEditIcon = false
+    private var forceAddIcon = false
+    private var hovering = false
+    private var tracking: NSTrackingArea?
+    var onIcon: ((CGRect) -> Void)?
+    /// A page's icon is 56 pt (line 1.1, padding 2) in a row taller than the empty one (28 pt): the title and the page's
+    /// origin move down with it.
+    private var headerShift: CGFloat { icon.map { $0.isEmpty ? 0 : 56 * 1.1 + 4 - 28 } ?? 0 }
+    private var originYNow: CGFloat { Self.originY + headerShift }
     private var lookDone = false
 
     override var isFlipped: Bool { true }
@@ -151,8 +180,11 @@ final class MacCanvasView: NSView {
         scroll.minMagnification = 0.5
         scroll.maxMagnification = 3
         scroll.documentView = surface
-        surface.addSubview(underInk)
-        surface.addSubview(overInk)
+        surface.addSubview(ink.under)
+        surface.addSubview(ink.over)
+        surface.addSubview(ink.input)
+        ink.onInking = { [weak self] in self?.stopEditing() }
+        ink.notify = { [weak self] in self?.notify?($0) }
         scroll.contentView.postsBoundsChangedNotifications = true
         addSubview(scroll)
         surface.onMouseDown = { [weak self] event in self?.surfaceMouseDown(event) }
@@ -215,7 +247,11 @@ final class MacCanvasView: NSView {
     // MARK: Showing the page
 
     /// The title (36/1.2, 700, −0.025 em; "Untitled" in `--border-strong` when empty) and the "Edited …" line (12.5 muted).
-    func setHeader(title: String, subline: String, palette: Palette) {
+    func setHeader(title: String, subline: String, palette: Palette, icon: String?, canEditIcon: Bool, showAddIcon: Bool) {
+        let iconChanged = self.icon != icon
+        self.icon = icon
+        self.canEditIcon = canEditIcon
+        forceAddIcon = showAddIcon
         let key = "\(palette.isDark)-\(palette.bg.hashValue)-\(palette.textMuted.hashValue)"
         if key != paletteKey {
             paletteKey = key
@@ -238,14 +274,58 @@ final class MacCanvasView: NSView {
             .baselineOffset: (titleLine - titleFont.lineHeight) / BoxTextRenderer.baselineDivisor,
         ])
         surface.subline = NSAttributedString(string: subline, attributes: [.font: WebType.ui(12.5), .foregroundColor: palette.textMuted])
+        if let icon, !icon.isEmpty {
+            let line = NSMutableParagraphStyle()
+            line.minimumLineHeight = 56 * 1.1
+            line.maximumLineHeight = 56 * 1.1
+            surface.iconEmoji = NSAttributedString(string: icon, attributes: [.font: NSFont.systemFont(ofSize: 56), .paragraphStyle: line])
+        } else {
+            surface.iconEmoji = nil
+        }
+        surface.addGlyph = PlatformImage.lucide("face-slightly-smiling-plus", size: 15, color: palette.textMuted)
+        surface.addLabel = NSAttributedString(string: "Add icon", attributes: [.font: WebType.ui(13, 500), .foregroundColor: palette.textMuted])
+        refreshIconRow()
         layoutHeader()
+        if iconChanged, shownID != nil { relayout() }
+    }
+
+    /// "Add icon" shows while the pointer is over the page (the web's `.page-article:hover .page-icon-add`), or always in the
+    /// look states.
+    private func refreshIconRow() {
+        let noIcon = (icon ?? "").isEmpty
+        let show = noIcon && (forceAddIcon || (canEditIcon && hovering))
+        if surface.showAdd != show {
+            surface.showAdd = show
+            surface.needsDisplay = true
+        }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        refreshIconRow()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        refreshIconRow()
     }
 
     private func layoutHeader() {
         let left = Self.originX + MacBoxView.padX
         let width = max(visible.width - left - 40, 100)
         let used = surface.title.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
-        surface.titleRect = CGRect(x: left, y: 32 + 28 + 4, width: width, height: max(ceil(used), 43.2))
+        let row = 28 + headerShift
+        let hasIcon = !(icon ?? "").isEmpty
+        surface.iconRect = CGRect(x: left - (hasIcon ? 4 : 8), y: 32, width: hasIcon ? 240 : 160, height: row)
+        surface.titleRect = CGRect(x: left, y: 32 + row + 4, width: width, height: max(ceil(used), 43.2))
         surface.sublineRect = CGRect(x: left, y: surface.titleRect.maxY + 6, width: width, height: 18.75)
         surface.needsDisplay = true
     }
@@ -259,8 +339,7 @@ final class MacCanvasView: NSView {
             shownID = page.id
             needsGeometry = true
             inkNeeded = true
-            underInk.clear()
-            overInk.clear()
+            ink.reset()
             hideToolbar()
             hideMenu()
             scroll.contentView.scroll(to: .zero)
@@ -268,6 +347,7 @@ final class MacCanvasView: NSView {
         }
         if self.host !== host {
             self.host = host
+            ink.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
             host?.onSynced = { [weak self] in
                 self?.editors.values.forEach { $0.send(all: true) }
@@ -357,7 +437,7 @@ final class MacCanvasView: NSView {
         guard !relaying else { return }
         relaying = true
         defer { relaying = false }
-        let ox = Self.originX, oy = Self.originY
+        let ox = Self.originX, oy = originYNow
         var maxX: CGFloat = 0, maxY: CGFloat = 0
         for box in boxes {
             guard let view = boxViews[box.id] else { continue }
@@ -373,18 +453,16 @@ final class MacCanvasView: NSView {
         }
         // Stacking order: higher z in front (the box being edited in front of all).
         surface.sortSubviews({ a, b, _ in
-            func key(_ v: NSView) -> Double { (v as? MacBoxView)?.sortKey ?? (v as? MacInkView)?.sortKey ?? -1 }
+            func key(_ v: NSView) -> Double {
+                (v as? MacBoxView)?.sortKey ?? (v as? MacInkView)?.sortKey ?? (v as? MacInkInput)?.sortKey ?? -1
+            }
             let ka = key(a), kb = key(b)
             return ka < kb ? .orderedAscending : (ka > kb ? .orderedDescending : .orderedSame)
         }, context: nil)
         let vis = visible
         let size = CGSize(width: max(maxX + 240, vis.width), height: max(maxY + 320, oy + 320, vis.height))
         if surface.frame.size != size { surface.setFrameSize(size) }
-        for ink in [underInk, overInk] {
-            if ink.frame != surface.bounds { ink.frame = surface.bounds }
-            ink.origin = CGPoint(x: ox, y: oy)
-            ink.dark = palette.isDark
-        }
+        ink.layout(in: surface.bounds, origin: CGPoint(x: ox, y: oy), dark: palette.isDark, accent: palette.accent)
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
         layoutHeader()
         window?.invalidateCursorRects(for: surface)
@@ -395,12 +473,17 @@ final class MacCanvasView: NSView {
     private func surfaceMouseDown(_ event: NSEvent) {
         let p = surface.convert(event.locationInWindow, from: nil)
         if linkEditorShown { hideLinkEditor(refocus: false) }
+        // The icon row (the icon, or "Add icon" while it shows): the shell's icon picker.
+        if canEditIcon, let onIcon, surface.showAdd || surface.iconEmoji != nil, surface.iconRect.insetBy(dx: -6, dy: -4).contains(p) {
+            onIcon(convert(surface.iconRect, from: surface))
+            return
+        }
         if let hit = moveHit(p) {
             startDrag(hit)
             return
         }
         // A click on empty canvas: while editing it only stops; else it makes a box (the web's click-to-create).
-        if editing != nil || host == nil || p.y < Self.originY {
+        if editing != nil || host == nil || p.y < originYNow {
             stopEditing()
         } else {
             createBox(at: p)
@@ -439,7 +522,7 @@ final class MacCanvasView: NSView {
         return box.beginTitleEdit(at: local)
     }
 
-    // MARK: Ink (read-only)
+    // MARK: Ink
 
     /// `-lookState ink-demo` (CI): a pen squiggle, a second pen stroke and a highlighter over the first line, made with the
     /// core's stroke builder, so the screenshot shows ink on the Mac.
@@ -458,29 +541,21 @@ final class MacCanvasView: NSView {
             (outline(0, 0x1D4E_D8FF, 4, wave), 0x1D4E_D8FF, false),
             (outline(0, 0xDC26_26FF, 2.5, loop), 0xDC26_26FF, false),
         ]
-        underInk.setDemo(list)
-        overInk.setDemo(list)
+        ink.under.setDemo(list)
+        ink.over.setDemo(list)
     }
 
-    /// Read the page's strokes again (a page opened, someone else changed it, the connection came back). The Mac shows ink
-    /// but doesn't draw it: drawing is the iPad's Pencil.
+    /// Read the page's strokes again (a page opened, someone else changed it, the connection came back, an edit of ours).
     private func reloadInk() {
-        inkGeneration += 1
-        let mine = inkGeneration
         if LookData.state == "ink-demo" {
             showDemoInk()
             return
         }
-        guard let host else {
-            underInk.clear()
-            overInk.clear()
+        guard host != nil else {
+            ink.reset()
             return
         }
-        host.loadInk { [weak self] strokes in
-            guard let self, mine == self.inkGeneration, let strokes else { return }
-            self.underInk.set(strokes)
-            self.overInk.set(strokes)
-        }
+        ink.reload()
     }
 
     // MARK: Look states
@@ -496,7 +571,7 @@ final class MacCanvasView: NSView {
             lookDone = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 guard let self else { return }
-                self.createBox(at: CGPoint(x: Self.originX + 300, y: Self.originY + 80))
+                self.createBox(at: CGPoint(x: Self.originX + 300, y: originYNow + 80))
                 if let id = self.boxes.last?.id {
                     self.geometry.moveBox(id, x: 420, y: 110)
                     self.geometry.commit(id)
@@ -581,7 +656,7 @@ final class MacCanvasView: NSView {
     /// once and is opened in the editor, so it can be typed in.
     private func createBox(at p: CGPoint) {
         let x = max(Double(p.x - Self.originX), 0)
-        let y = max(Double(p.y - Self.originY - 12), 0)
+        let y = max(Double(p.y - originYNow - 12), 0)
         let front = (boxes.map(\.z).max() ?? 0) + 1
         let id = geometry.createBox(x: x, y: y, width: 360, front: front)
         boxes = geometry.apply(to: pageBoxes)

@@ -44,6 +44,9 @@ final class InkTool {
     private(set) var penWidth: Float
     private(set) var highlighterColor: UInt32
     private(set) var highlighterWidth: Float
+    /// A finger draws too (the web's "Draw with a finger", off by default: a finger scrolls). Remembered on this device; the
+    /// iPad's. The Mac's mouse and trackpad always draw while a pen tool is chosen.
+    private(set) var fingerDrawing: Bool
     /// Strokes the lasso holds, and what deletes them (set by the canvas that shows them).
     private(set) var selectionCount = 0
     @ObservationIgnored var deleteSelection: (() -> Void)?
@@ -56,6 +59,7 @@ final class InkTool {
         highlighterColor = d.object(forKey: "ink.hlColor") as? UInt32 ?? Self.highlighterColors[0].hex
         let hw = d.object(forKey: "ink.hlWidth") as? Double
         highlighterWidth = hw.map { Float($0) } ?? Self.highlighterWidths[1]
+        fingerDrawing = d.bool(forKey: "ink.finger")
     }
 
     /// A tool that takes the Pencil (everything but select).
@@ -82,6 +86,11 @@ final class InkTool {
     func setHighlighterColor(_ c: UInt32) { highlighterColor = c; save(); post() }
     func setPenWidth(_ w: Float) { penWidth = w; save(); post() }
     func setHighlighterWidth(_ w: Float) { highlighterWidth = w; save(); post() }
+    func setFingerDrawing(_ on: Bool) {
+        fingerDrawing = on
+        UserDefaults.standard.set(on, forKey: "ink.finger")
+        post()
+    }
     func setSelectionCount(_ n: Int) { if selectionCount != n { selectionCount = n } }
 
     /// The style a new stroke gets: tool number, 0xRRGGBBAA, width (nil for tools that don't draw).

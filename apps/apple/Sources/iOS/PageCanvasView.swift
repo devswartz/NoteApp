@@ -19,6 +19,10 @@ struct PageCanvasView: UIViewRepresentable {
     let palette: Palette
     var decor: [String: TaskDecor] = [:]
     var showAddIcon = false
+    /// The page's icon (an emoji), if it has one.
+    var icon: String?
+    /// The row above the title opens the icon picker here.
+    var onIcon: ((CGRect) -> Void)?
     /// Phones: boxes stacked in reading order, full width (LOOK.md 3.2).
     var stacked = false
     /// A short message for the user (the shell's toast).
@@ -32,7 +36,8 @@ struct PageCanvasView: UIViewRepresentable {
         view.stacked = stacked
         view.notify = notify
         BoxTextRenderer.phoneChips = stacked
-        view.setHeader(title: title, subline: subline, palette: palette, showAddIcon: showAddIcon)
+        view.onIcon = onIcon
+        view.setHeader(title: title, subline: subline, palette: palette, showAddIcon: showAddIcon, icon: icon)
         view.decor = decor
         view.show(page, host: host)
     }
@@ -54,6 +59,17 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     var stacked = false
     /// Phones: the article's padding is 12 20, the title 28 pt.
     static let phoneOriginY: CGFloat = 12 + 44 + 4 + 33.6 + 6 + 18.75 + 22 + 6
+    /// The page's icon, shown large (56 pt, 44 on phones, line 1.1, padding 2) in the row above the title: that row is taller
+    /// than the empty one (28 pt, 44 on phones), so the title and the page's origin move down with it (`.page-icon-row`).
+    private var icon: String?
+    /// The icon row was tapped (its frame in this view's coordinates): the shell opens the icon picker there.
+    var onIcon: ((CGRect) -> Void)?
+    private var headerShift: CGFloat {
+        guard icon != nil else { return 0 }
+        return (stacked ? 44 * 1.1 + 4 : 56 * 1.1 + 4) - (stacked ? 44 : 28)
+    }
+    private var originYNow: CGFloat { Self.originY + headerShift }
+    private var phoneOriginNow: CGFloat { Self.phoneOriginY + headerShift }
     private var shownID: String?
     private var shownTasks: [String: TaskLine] = [:]
     private var shownTitles: [String: String] = [:]
@@ -103,6 +119,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         ink = InkController(scroll: self, surface: surface)
         ink.notify = { [weak self] in self?.notify?($0) }
         surface.onReorder = { [weak self] in self?.ink.layout() }
+        NotificationCenter.default.addObserver(self, selector: #selector(inkToolChanged), name: InkTool.changed, object: nil)
         titleLabel.numberOfLines = 0
         subLabel.numberOfLines = 1
         surface.addSubview(titleLabel)
@@ -166,7 +183,9 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     /// The title (36/1.2, 700, −0.025 em; "Untitled" in `--border-strong` when empty) and the
     /// "Edited …" line (12.5 muted).
-    func setHeader(title: String, subline: String, palette: Palette, showAddIcon: Bool) {
+    func setHeader(title: String, subline: String, palette: Palette, showAddIcon: Bool, icon: String?) {
+        let iconChanged = self.icon != icon
+        self.icon = icon
         let key = "\(palette.isDark)-\(palette.bg.hashValue)-\(palette.textMuted.hashValue)"
         if key != paletteKey {
             paletteKey = key
@@ -192,7 +211,14 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             .baselineOffset: (titleLine - titleFont.lineHeight) / BoxTextRenderer.baselineDivisor,
         ])
         subLabel.attributedText = NSAttributedString(string: subline, attributes: [.font: WebType.ui(12.5), .foregroundColor: palette.textMuted])
-        if showAddIcon {
+        if let icon, !icon.isEmpty {
+            let size: CGFloat = stacked ? 44 : 56
+            let style = NSMutableParagraphStyle()
+            style.minimumLineHeight = size * 1.1
+            style.maximumLineHeight = size * 1.1
+            addIcon.attributedText = NSAttributedString(string: icon, attributes: [.font: UIFont.systemFont(ofSize: size), .paragraphStyle: style])
+            addIcon.isHidden = false
+        } else if showAddIcon {
             let s = NSMutableAttributedString()
             if let icon = UIImage.lucide("face-slightly-smiling-plus", size: 15, color: palette.textMuted) {
                 let a = NSTextAttachment(image: icon)
@@ -206,6 +232,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             addIcon.isHidden = true
         }
         layoutHeader()
+        if iconChanged, shownID != nil { relayout() }
     }
 
     private func layoutHeader() {
@@ -213,10 +240,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         let width = max(bounds.width / max(zoomScale, 0.01) - left - (stacked ? 20 : 40), 100)
         let titleSize = titleLabel.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let top: CGFloat = stacked ? 12 : 32
-        let iconRow: CGFloat = stacked ? 44 : 28
+        let iconRow: CGFloat = (stacked ? 44 : 28) + headerShift
         titleLabel.frame = CGRect(x: left, y: top + iconRow + 4, width: width, height: max(titleSize.height, stacked ? 33.6 : 43.2))
         subLabel.frame = CGRect(x: left, y: titleLabel.frame.maxY + 6, width: width, height: 18.75)
-        addIcon.frame = CGRect(x: left - (stacked ? 0 : 8), y: top, width: 160, height: iconRow)
+        addIcon.frame = CGRect(x: left - (icon != nil ? 4 : (stacked ? 0 : 8)), y: top, width: icon != nil ? 240 : 160, height: iconRow)
     }
 
     func show(_ page: PageSnapshot, host: PageEditHost?) {
@@ -332,13 +359,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         guard !relaying else { return }
         relaying = true
         defer { relaying = false }
-        let ox = Self.originX, oy = Self.originY
+        let ox = Self.originX, oy = originYNow
         var maxX: CGFloat = 0, maxY: CGFloat = 0
         var frames: [(String, CGRect, Double)] = []
         var separators: [CGFloat] = []
         // Phones: one under the other, padding 12 0, a hairline between (text 20 pt in).
         // The first of several boxes has 9 pt more above it than a lone box (a page's text).
-        var y = Self.phoneOriginY - BoxTextView.pad.top + (boxes.count > 1 ? 9 : 0)
+        var y = phoneOriginNow - BoxTextView.pad.top + (boxes.count > 1 ? 9 : 0)
         for box in boxes {
             guard let view = boxViews[box.id] else { continue }
             let w = width(of: box)
@@ -364,7 +391,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             surface.bringSubviewToFront(view)
         }
         if let editing { surface.bringSubviewToFront(editing) }
-        ink.origin = stacked ? CGPoint(x: 0, y: Self.phoneOriginY) : CGPoint(x: ox, y: oy)
+        ink.origin = stacked ? CGPoint(x: 0, y: phoneOriginNow) : CGPoint(x: ox, y: oy)
         ink.layout()
         let visible = CGSize(width: max(bounds.width, 1) / max(zoomScale, 0.01), height: max(bounds.height, 1) / max(zoomScale, 0.01))
         let size = stacked
@@ -387,6 +414,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         // With a pen tool chosen a finger only scrolls and zooms: it neither creates nor opens boxes.
         if InkTool.shared.inking { return }
         let p = tap.location(in: surface)
+        // The icon row ("Add icon", or the icon): the shell's icon picker.
+        if !addIcon.isHidden, host != nil, let onIcon, addIcon.frame.insetBy(dx: -6, dy: -4).contains(p) {
+            let r = convert(addIcon.frame, from: surface)
+            onIcon(CGRect(x: r.minX - contentOffset.x, y: r.minY - contentOffset.y, width: r.width, height: r.height))
+            return
+        }
         // A task's fold arrow (in the gutter, outside the box's own frame).
         for view in boxViews.values {
             if let id = view.foldTask(at: view.convert(p, from: surface)) {
@@ -397,7 +430,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
         if linkEditor.isShown { hideLinkEditor(refocus: false) }
         guard let box = box(at: p) else {
-            if editing != nil || stacked || host == nil || p.y < Self.originY || toolbar.covers(tap.location(in: self)) {
+            if editing != nil || stacked || host == nil || p.y < originYNow || toolbar.covers(tap.location(in: self)) {
                 stopEditing()
             } else {
                 createBox(at: p)
@@ -455,7 +488,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// On a live page the box exists on the server at once and is opened in the editor, so it can be typed in.
     private func createBox(at p: CGPoint) {
         let x = max(Double(p.x - Self.originX), 0)
-        let y = max(Double(p.y - Self.originY - 12), 0)
+        let y = max(Double(p.y - originYNow - 12), 0)
         let front = (boxes.map(\.z).max() ?? 0) + 1
         let id = geometry.createBox(x: x, y: y, width: 360, front: front)
         boxes = geometry.apply(to: pageBoxes)
@@ -739,6 +772,30 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if let box = editing { keepCaretVisible(box) }
     }
 
+    // MARK: Ink and undo
+
+    /// A pen tool was chosen: no box is being edited then, and the page takes the keyboard's and the three-finger undo
+    /// (`InkUndoManager`, Cmd-Z below), which reach the ink through `EditorFocus`.
+    @objc private func inkToolChanged() {
+        guard InkTool.shared.inking else { return }
+        if editing != nil { stopEditing() }
+        _ = becomeFirstResponder()
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    private let inkUndoManager = InkUndoManager()
+    override var undoManager: UndoManager? { inkUndoManager }
+
+    /// Cmd-Z and Shift-Cmd-Z on a hardware keyboard while the page (not a box) has the keyboard.
+    override var keyCommands: [UIKeyCommand]? {
+        [UIKeyCommand(input: "z", modifierFlags: .command, action: #selector(undoKey)),
+         UIKeyCommand(input: "z", modifierFlags: [.command, .shift], action: #selector(redoKey))]
+    }
+
+    @objc private func undoKey() { EditorFocus.shared.undo() }
+    @objc private func redoKey() { EditorFocus.shared.redo() }
+
     // MARK: Gestures
 
     override func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
@@ -791,7 +848,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             lookDone = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
                 guard let self else { return }
-                self.createBox(at: CGPoint(x: Self.originX + 300, y: Self.originY + 80))
+                self.createBox(at: CGPoint(x: Self.originX + 300, y: originYNow + 80))
                 if let id = self.boxes.last?.id {
                     self.geometry.moveBox(id, x: 420, y: 110)
                     self.geometry.commit(id)

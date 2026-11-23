@@ -243,6 +243,22 @@ extension Shell {
         run(dialog.op, session, name: text, to: destination)
     }
 
+    /// A page's icon (an emoji, nil clears it): core's `setPageIcon`; the tree comes back with it, so the sidebar row and the
+    /// page's own icon row follow. The web's `setPageIcon` (src/pages/PageView.tsx).
+    func setPageIcon(_ id: String, _ icon: String?, _ session: SessionModel) {
+        guard session.canEditTree || session.preview else {
+            say("You can only view this workspace.")
+            return
+        }
+        if session.preview {
+            notYet("Page icons")
+            return
+        }
+        session.changeTree({ core, _ -> Void in try core.setPageIcon(pageId: id, icon: icon) }) { result in
+            if case let .failure(e) = result { self.failed(e) }
+        }
+    }
+
     fileprivate func failed(_ error: Error) {
         if error is CancellationError { return }
         say(SessionModel.plainMessage(error))

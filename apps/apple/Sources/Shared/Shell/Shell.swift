@@ -53,6 +53,8 @@ final class Shell {
         case account, workspace, notebookPicker, notebookOptions, pageOptions
         case section(String)
         case pageRow(String)
+        /// The emoji picker of a page's icon (the row above its title).
+        case pageIcon(String)
         case blockType, textColor, highlight, taskSplit, pageColor, ruleLines
     }
 

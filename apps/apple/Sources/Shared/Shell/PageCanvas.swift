@@ -11,17 +11,21 @@ struct PageCanvas: View {
     let palette: Palette
     var decor: [String: TaskDecor] = [:]
     var showAddIcon = false
+    /// The page's icon (an emoji), and what a tap on the row above the title does (nil: it can't be changed).
+    var icon: String?
+    var onIcon: ((CGRect) -> Void)?
     var stacked = false
     var notify: ((String) -> Void)?
 
     var body: some View {
         #if os(iOS)
         PageCanvasView(page: page, host: host, title: title, subline: subline, palette: palette,
-                       decor: decor, showAddIcon: showAddIcon, stacked: stacked, notify: notify)
+                       decor: decor, showAddIcon: showAddIcon, icon: icon, onIcon: onIcon, stacked: stacked, notify: notify)
             .ignoresSafeArea(.container, edges: .bottom)
             .ignoresSafeArea(.keyboard)
         #else
-        MacPageCanvas(page: page, host: host, title: title, subline: subline, palette: palette, decor: decor, notify: notify)
+        MacPageCanvas(page: page, host: host, title: title, subline: subline, palette: palette, decor: decor, canEditIcon: onIcon != nil,
+                      showAddIcon: showAddIcon && onIcon == nil, icon: icon, onIcon: onIcon, notify: notify)
         #endif
     }
 }

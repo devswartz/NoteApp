@@ -39,10 +39,17 @@ final class BoxSelectionRect: UITextSelectionRect {
 /// (EDITOR.md 10.3). Hardware Cmd+Z goes to `key("Mod+z")` instead (see `keyCommands`).
 final class EngineUndoManager: UndoManager {
     weak var box: BoxTextView?
-    override var canUndo: Bool { box?.editor?.canUndo ?? false }
-    override var canRedo: Bool { box?.editor?.canRedo ?? false }
-    override func undo() { box?.engineUndo() }
-    override func redo() { box?.engineRedo() }
+    /// The box being edited: the page's undo, which is the box's text, or the page's ink once the box has nothing to undo
+    /// (`EditorFocus`).
+    private var focused: Bool { box != nil && EditorFocus.shared.box === box }
+    override var canUndo: Bool { focused ? EditorFocus.shared.canUndo : (box?.editor?.canUndo ?? false) }
+    override var canRedo: Bool { focused ? EditorFocus.shared.canRedo : (box?.editor?.canRedo ?? false) }
+    override func undo() {
+        if focused { EditorFocus.shared.undo() } else { box?.engineUndo() }
+    }
+    override func redo() {
+        if focused { EditorFocus.shared.redo() } else { box?.engineRedo() }
+    }
 }
 
 /// One text box of the page canvas: TextKit 2 layout of the box's text (an
