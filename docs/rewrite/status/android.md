@@ -20,6 +20,8 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 ## Differences from the references (known)
 
 - Font: system sans (Roboto). LOOK.md's stack lists Roboto after SF Pro, Inter and Segoe UI, none of which ship on Android; the references are Segoe UI, so widths and glyph shapes differ a little.
+- The phone drawer shows no open-task counts (the reference has none); the tablet tree does.
+- Paparazzi caps snapshots at 1000 px high, so the iphone and ipad-portrait shots are scaled down (and the side-by-side scales them back up).
 - Emoji page icons depend on the renderer's emoji font.
 - Shadows (card, FAB, drawer) use Compose elevation shadows, not the CSS two-layer blur.
 - Phone notebook screen and section page rows have no reference; they follow the section screen's style.

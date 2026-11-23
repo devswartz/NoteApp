@@ -190,7 +190,7 @@ fun PageRow(
             Modifier.weight(1f),
             weight = if (selected) 500 else 400,
         )
-        if (openTasks > 0) {
+        if (openTasks > 0 && !metrics.actions) {
             Row(
                 Modifier.alpha(0.8f).padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
