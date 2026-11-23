@@ -5,7 +5,7 @@ public sealed partial class SampleNotesSource : INotesSource
 {
     public event EventHandler? Changed;
 
-    public Workspace Workspace { get; } = new("Workspace", "D", "DU", "Devon", "devon@example.com");
+    public Workspace Workspace { get; private set; } = new("Workspace", "D", "DU", "Devon", "devon@example.com");
     public IReadOnlyList<WorkspaceInfo> Workspaces { get; } = new WorkspaceInfo[] { new("sample", "Workspace", "owner") };
     public string? CurrentWorkspaceId => "sample";
     public void SelectWorkspace(string id) { }

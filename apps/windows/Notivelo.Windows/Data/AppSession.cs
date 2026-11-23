@@ -147,6 +147,9 @@ internal sealed class AppSession
         Raise();
     }
 
+    /// <summary>Keep a refresh token the core handed back outside a plain call (a password change makes the old one useless).</summary>
+    public void KeepToken(string token) => Store(token);
+
     private void Store(string? token)
     {
         if (token is null || token == _savedToken) return;

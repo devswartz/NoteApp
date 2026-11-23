@@ -96,7 +96,8 @@ internal sealed class AppHost : IDisposable
         throw new FileNotFoundException("Set NOTIVELO_EXE to the unpackaged Notivelo.exe");
     }
 
-    public static AppHost Launch()
+    /// <summary>Start the app. <paramref name="env"/> adds environment variables (NOTIVELO_THEME...); a size gives a normal (not maximised) window of that size.</summary>
+    public static AppHost Launch(IReadOnlyDictionary<string, string>? env = null, int? width = null, int? height = null)
     {
         var exe = ExePath();
         var log = Path.Combine(Path.GetTempPath(), "notivelo-tasks-" + Guid.NewGuid().ToString("N") + ".log");
@@ -104,13 +105,23 @@ internal sealed class AppHost : IDisposable
         psi.Environment["NOTIVELO_SOURCE"] = "offline";
         psi.Environment["NOTIVELO_OFFLINE_LOG"] = log;
         psi.Environment["NOTIVELO_TRACE"] = "1";
+        if (env is not null) foreach (var kv in env) psi.Environment[kv.Key] = kv.Value;
         var app = Application.Launch(psi);
         var auto = new UIA3Automation();
         Window w;
         try { w = app.GetMainWindow(auto, TimeSpan.FromSeconds(60)); }
         catch { try { app.Kill(); } catch { } throw; }
         var host = new AppHost(app, auto, w, log);
-        try { w.Patterns.Window.Pattern.SetWindowVisualState(WindowVisualState.Maximized); } catch { }
+        if (width is { } ww && height is { } hh)
+        {
+            try { w.Patterns.Window.Pattern.SetWindowVisualState(WindowVisualState.Normal); } catch { }
+            try { w.Patterns.Transform.Pattern.Move(0, 0); w.Patterns.Transform.Pattern.Resize(ww, hh); } catch { }
+            Thread.Sleep(600);
+        }
+        else
+        {
+            try { w.Patterns.Window.Pattern.SetWindowVisualState(WindowVisualState.Maximized); } catch { }
+        }
         try { w.SetForeground(); w.Focus(); } catch { }
         // the page and its boxes appear once the shell has laid out
         try { _ = host.A.State; _ = host.B.State; }

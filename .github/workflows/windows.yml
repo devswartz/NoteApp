@@ -1,7 +1,7 @@
 name: Windows native
 # The native Windows app of the rewrite (apps/windows, WinUI 3, .NET 8, single-project MSIX). Builds x64 Release and packages an
 # unsigned MSIX on every push to a rewrite branch (and PRs) that touches it, then uploads it as a short-lived artifact.
-# No signing, no Store identity, no upload anywhere: the package is for sideloading after test-signing it by hand.
+# No signing, no Store identity, no upload anywhere: the packages (x64, arm64) are unsigned and sideload with Add-AppxPackage -AllowUnsigned (SIDELOAD.md).
 # The app compiles the core's C# bindings and ships nv_core.dll, so the job first builds the core with
 # crates/nv-core/build-windows.sh (the same script as windows-core.yml). It runs on core changes too.
 on:
@@ -75,22 +75,45 @@ jobs:
       - name: Build arm64 Release
         run: dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=ARM64
 
+      # Sideloadable without a certificate: Windows 11 installs an unsigned package with `Add-AppxPackage -AllowUnsigned` only when the manifest
+      # Publisher carries the OID below. Patched here, in the CI checkout only; the committed manifest keeps Publisher="CN=Notivelo Dev".
+      # See apps/windows/SIDELOAD.md.
+      - name: Make the manifest Publisher accept unsigned installs (CI only)
+        run: |
+          m=apps/windows/Notivelo.Windows/Package.appxmanifest
+          sed -i 's|Publisher="CN=Notivelo Dev"|Publisher="CN=Notivelo Dev, OID.2.25.311729368913984317654407730594956997722=1"|' "$m"
+          grep -n '<Identity' "$m"
+          grep -q 'OID.2.25.311729368913984317654407730594956997722=1' "$m"
+
       - name: Package MSIX (x64, unsigned)
         run: >
           dotnet build apps/windows/Notivelo.Windows/Notivelo.Windows.csproj -c Release -p:Platform=x64
           -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false
-          -p:AppxPackageDir="$GITHUB_WORKSPACE/msix/"
+          -p:AppxPackageDir="$GITHUB_WORKSPACE/msix/x64/"
+
+      - name: Package MSIX (arm64, unsigned)
+        run: >
+          dotnet build apps/windows/Notivelo.Windows/Notivelo.Windows.csproj -c Release -p:Platform=ARM64
+          -p:GenerateAppxPackageOnBuild=true -p:AppxPackageSigningEnabled=false
+          -p:AppxPackageDir="$GITHUB_WORKSPACE/msix/arm64/"
 
       - uses: actions/upload-artifact@v4
         with:
           name: notivelo-windows-x64-msix-unsigned
-          path: msix/**/*.msix
+          path: msix/x64/**/*.msix
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notivelo-windows-arm64-msix-unsigned
+          path: msix/arm64/**/*.msix
+          if-no-files-found: error
+          retention-days: 14
 
   # The input checks that used to be a manual list: FlaUI (UIA3) drives the real app with real keys and the mouse. The app is built
   # unpackaged (no MSIX identity needed) and started in its offline test mode (NOTIVELO_SOURCE=offline: no server, a fixed page of
-  # boxes over local documents). Needs the runner's interactive desktop; screenshots of failures are kept for 3 days.
+  # boxes over local documents). Needs the runner's interactive desktop; screenshots of failures are kept for 3 days, the look screenshots (LookShots) for 7.
   windows-uitest:
     name: windows UI tests (FlaUI, offline mode)
     runs-on: windows-latest
@@ -99,6 +122,7 @@ jobs:
       NV_TARGETS: x86_64-pc-windows-msvc
       NOTIVELO_EXE: ${{ github.workspace }}\out-ui\Notivelo.exe
       UITEST_SHOTS: ${{ github.workspace }}\uitest-shots
+      LOOK_SHOTS: ${{ github.workspace }}\look-shots
     steps:
       - uses: actions/checkout@v4
 
@@ -144,7 +168,14 @@ jobs:
 
       - name: UI tests
         timeout-minutes: 25
-        run: dotnet test apps/windows/Notivelo.Windows.UiTests/Notivelo.Windows.UiTests.csproj -c Release --logger "console;verbosity=normal"
+        run: dotnet test apps/windows/Notivelo.Windows.UiTests/Notivelo.Windows.UiTests.csproj -c Release --filter "FullyQualifiedName!~LookShots" --logger "console;verbosity=normal"
+
+      # Screenshots of every screen (1180x820, light and hybrid) from the offline sample data, for the look comparison. Never fails the job.
+      - name: Look screenshots
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 10
+        run: dotnet test apps/windows/Notivelo.Windows.UiTests/Notivelo.Windows.UiTests.csproj -c Release --no-build --filter "FullyQualifiedName~LookShots" --logger "console;verbosity=normal"
 
       - name: Collect app logs
         if: always()
@@ -158,3 +189,10 @@ jobs:
           path: uitest-shots/
           if-no-files-found: ignore
           retention-days: 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-look-screenshots
+          path: look-shots/
+          if-no-files-found: ignore
+          retention-days: 7
