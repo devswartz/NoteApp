@@ -28,10 +28,23 @@ internal sealed class SignInView : UserControl
         _hold.Tick += (_, _) => { _hold.Stop(); _session.ToggleStaging(); };
         _email.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) _password.Focus(FocusState.Keyboard); };
         _password.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) Submit(); };
-        Loaded += (_, _) => Render();
+        Loaded += (_, _) => { Render(); DevAutoSignIn(); };
         ActualThemeChanged += (_, _) => Render();
         _session.Changed += OnChanged;
         Unloaded += (_, _) => _session.Changed -= OnChanged;
+    }
+
+    /// <summary>Dev hook for local runs and screenshots: NOTIVELO_DEV_EMAIL / NOTIVELO_DEV_PASSWORD fill the form and sign in once, but only
+    /// against a loopback server (the web app's dev server), so a real account is never typed by a script. Nothing is stored in the repo.</summary>
+    private void DevAutoSignIn()
+    {
+        var email = Environment.GetEnvironmentVariable("NOTIVELO_DEV_EMAIL");
+        var pw = Environment.GetEnvironmentVariable("NOTIVELO_DEV_PASSWORD");
+        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(pw)) return;
+        if (!Uri.TryCreate(_session.ServerUrl, UriKind.Absolute, out var u) || !u.IsLoopback) return;
+        if (_session.Phase != SessionPhase.SignedOut) return;
+        _email.Text = email; _password.Password = pw;
+        Submit();
     }
 
     private void OnChanged() { if (IsLoaded) Render(); }
@@ -48,10 +61,10 @@ internal sealed class SignInView : UserControl
     {
         foreach (var f in new FrameworkElement[] { _email, _password }) (f.Parent as Panel)?.Children.Remove(f);
         var root = new Grid { Background = B("BgSubtle") };
-        var col = new StackPanel { Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(16, 24, 16, 24), Width = 432 };
+        var col = new StackPanel { Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(16, 24, 16, 24), MaxWidth = 432 };
         col.Children.Add(Card());
         col.Children.Add(Footer());
-        root.Children.Add(new ScrollViewer { Content = col, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalContentAlignment = VerticalAlignment.Center });
+        root.Children.Add(col);
         Content = root;
     }
 
@@ -85,7 +98,7 @@ internal sealed class SignInView : UserControl
         else
         {
             var form = new StackPanel { Spacing = 14, Margin = new Thickness(0, 24, 0, 18), IsHitTestVisible = !_session.Busy };
-            Style(_email, "you@example.com");
+            Style(_email, "");
             Style(_password, "");
             form.Children.Add(Field("Email", _email));
             form.Children.Add(Field("Password", _password));
@@ -129,9 +142,9 @@ internal sealed class SignInView : UserControl
 
             var legal = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 0) };
             legal.Children.Add(Link("Privacy", 12.5, "/privacy", true));
-            legal.Children.Add(Ui.Text(" · ", 12.5, B("TextMuted")));
+            legal.Children.Add(Ui.Text("·", 12.5, B("TextMuted")).With(t => t.Margin = new Thickness(6, 0, 6, 0)));
             legal.Children.Add(Link("Terms", 12.5, "/terms", true));
-            legal.Children.Add(Ui.Text(" · ", 12.5, B("TextMuted")));
+            legal.Children.Add(Ui.Text("·", 12.5, B("TextMuted")).With(t => t.Margin = new Thickness(6, 0, 6, 0)));
             legal.Children.Add(Link("Support", 12.5, "/support", true));
             card.Children.Add(legal);
         }

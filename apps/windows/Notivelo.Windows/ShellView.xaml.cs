@@ -73,8 +73,16 @@ public sealed partial class ShellView : UserControl
 
     public void SetTheme(ThemeMode m) { _theme = m; ApplyTheme(); }
 
+    // Dev hook (NOTIVELO_PAGE=<part of a title>): open that page as soon as the tree has loaded.
+    private string? _devPage = Environment.GetEnvironmentVariable("NOTIVELO_PAGE");
+
     private void Refresh()
     {
+        if (_devPage is not null && _pageId is null)
+        {
+            var hit = _source.RecentPages(500).FirstOrDefault(r => r.Page.Title.Contains(_devPage, StringComparison.OrdinalIgnoreCase));
+            if (hit.Page is not null) { _pageId = hit.Page.Id; _route = AppRoute.Notes; _devPage = null; }
+        }
         // The page is open (a live page) only while it is shown; leaving the Notes view closes it.
         _source.OpenPage(_route == AppRoute.Notes ? _pageId : null);
         _rail.SetRoute(_route);
