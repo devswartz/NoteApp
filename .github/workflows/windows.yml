@@ -87,3 +87,71 @@ jobs:
           path: msix/**/*.msix
           if-no-files-found: error
           retention-days: 7
+
+  # The input checks that used to be a manual list: FlaUI (UIA3) drives the real app with real keys and the mouse. The app is built
+  # unpackaged (no MSIX identity needed) and started in its offline test mode (NOTIVELO_SOURCE=offline: no server, a fixed page of
+  # boxes over local documents). Needs the runner's interactive desktop; screenshots of failures are kept for 3 days.
+  windows-uitest:
+    name: windows UI tests (FlaUI, offline mode)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      NV_TARGETS: x86_64-pc-windows-msvc
+      NOTIVELO_EXE: ${{ github.workspace }}\out-ui\Notivelo.exe
+      UITEST_SHOTS: ${{ github.workspace }}\uitest-shots
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-uitest
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache uniffi-bindgen-cs
+        id: bindgen-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/uniffi-bindgen-cs.exe
+          key: uniffi-bindgen-cs-${{ env.UNIFFI_BINDGEN_CS_TAG }}-${{ env.RUST_TOOLCHAIN }}
+      - name: Install uniffi-bindgen-cs
+        if: steps.bindgen-cache.outputs.cache-hit != 'true'
+        run: cargo install uniffi-bindgen-cs --locked --git https://github.com/NordSecurity/uniffi-bindgen-cs --tag "$UNIFFI_BINDGEN_CS_TAG"
+
+      - name: Build nv_core.dll (x64) and the C# bindings
+        run: bash crates/nv-core/build-windows.sh
+
+      - name: Build the app (x64 Release, unpackaged)
+        run: >
+          dotnet build apps/windows/Notivelo.Windows/Notivelo.Windows.csproj -c Release -p:Platform=x64
+          -p:WindowsPackageType=None -o "$GITHUB_WORKSPACE/out-ui"
+
+      - name: Desktop info
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "$($_.DeviceName) $($_.Bounds) primary=$($_.Primary)" }
+          "session: $env:SESSIONNAME; user: $env:USERNAME"
+
+      - name: UI tests
+        timeout-minutes: 25
+        run: dotnet test apps/windows/Notivelo.Windows.UiTests/Notivelo.Windows.UiTests.csproj -c Release --logger "console;verbosity=normal"
+
+      - name: Collect app logs
+        if: always()
+        run: |
+          mkdir -p uitest-shots
+          cp "$TEMP"/notivelo-*.log uitest-shots/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: uitest-screenshots
+          path: uitest-shots/
+          if-no-files-found: ignore
+          retention-days: 3
