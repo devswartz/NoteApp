@@ -86,6 +86,109 @@ pub struct Tree {
     pub notebooks: Vec<Notebook>,
     pub sections: Vec<Section>,
     pub pages: Vec<PageMeta>,
+    /// Pages in the Trash that the caller could restore (members and up; absent from older
+    /// servers): a task on one shows its page as "in Trash".
+    #[serde(default)]
+    pub trashed_pages: Vec<TrashedPage>,
+}
+
+/// A page in the Trash, as the tree lists it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TrashedPage {
+    pub id: String,
+    pub title: String,
+}
+
+/// POST /workspaces/:id/notebooks: the notebook and the "General" section it starts with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNotebook {
+    pub id: String,
+    pub section_id: String,
+}
+
+/// DELETE /pages|sections|notebooks/:id: what went to the Trash.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Trashed {
+    pub trash_id: String,
+    /// Tasks that were on what went to the Trash (they stay in the task list).
+    #[serde(default)]
+    pub tasks: u32,
+}
+
+/// POST /pages/:id/move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageMoved {
+    pub section_id: String,
+    pub position: f64,
+}
+
+/// POST /sections/:id/move.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionMoved {
+    pub notebook_id: String,
+    pub parent_id: Option<String>,
+    pub position: f64,
+}
+
+/// POST /trash/:kind/:id/restore.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Restored {
+    /// Where it went when its old place was gone ("" when it went back as it was).
+    #[serde(default)]
+    pub moved_to: String,
+}
+
+/// What a Trash entry is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrashKind {
+    Page,
+    Section,
+    Notebook,
+}
+
+impl TrashKind {
+    /// The word in the server's paths (`/trash/:kind/:id`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrashKind::Page => "page",
+            TrashKind::Section => "section",
+            TrashKind::Notebook => "notebook",
+        }
+    }
+}
+
+/// One entry of the Trash (GET /workspaces/:id/trash): the item at the top of what was deleted.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrashItem {
+    pub kind: TrashKind,
+    pub id: String,
+    /// The page's title, or the section's or notebook's name.
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub deleted_at: String,
+    #[serde(default)]
+    pub deleted_by: Option<String>,
+    #[serde(default)]
+    pub deleted_by_name: Option<String>,
+    /// When the daily job removes it for good (60 days after `deleted_at`).
+    pub expires_at: String,
+    pub days_left: u32,
+    /// Where it was: "Notebook > Section" (empty for a notebook).
+    #[serde(default)]
+    pub path: String,
+    /// How many pages and (sub)sections went with it.
+    #[serde(default)]
+    pub pages: u32,
+    #[serde(default)]
+    pub sections: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -471,4 +574,254 @@ pub struct CommentThread {
     pub resolved_by: Option<String>,
     #[serde(default)]
     pub comments: Vec<Comment>,
+}
+
+// ───────── Sharing (server/routes/workspaces.ts) ─────────
+
+/// A pending workspace invite (GET /workspaces/:id/members, for owners and admins).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingInvite {
+    pub email: String,
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub invited_by: Option<String>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// When the emailed link stops working (an admin can resend).
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+/// GET /workspaces/:id/members: the members, and (owners and admins only) the pending invites.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct MemberList {
+    #[serde(default)]
+    pub members: Vec<Member>,
+    #[serde(default)]
+    pub invites: Vec<PendingInvite>,
+}
+
+/// What an invite did (POST /workspaces/:id/members, `.../invites/:email/resend`): `status` is
+/// `added` (an existing, verified account joined at once) or `invited` (an invite link was
+/// made). `invite_url` is there for `invited`, so the caller can hand it over when the server
+/// sent no mail (`emailed` false).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteResult {
+    pub status: String,
+    #[serde(default)]
+    pub emailed: bool,
+    #[serde(default)]
+    pub invite_url: Option<String>,
+}
+
+/// The page an invite link is for, when it is a single-page invite.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvitedPage {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub can_edit: bool,
+}
+
+/// GET /invites/:token: what an invite link is for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InviteInfo {
+    pub workspace_id: String,
+    #[serde(default)]
+    pub workspace_name: String,
+    #[serde(default)]
+    pub invited_by_name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub expired: bool,
+    #[serde(default)]
+    pub page: Option<InvitedPage>,
+}
+
+/// POST /invites/:token/accept: where the invite led (`page_id` for a single-page invite).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AcceptedInvite {
+    pub workspace_id: String,
+    #[serde(default)]
+    pub page_id: Option<String>,
+}
+
+/// GET /notebooks/:id/shares: a notebook's visibility, creator and the people it is shared with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookShares {
+    #[serde(default)]
+    pub visibility: String,
+    #[serde(default)]
+    pub created_by: String,
+    #[serde(default)]
+    pub user_ids: Vec<String>,
+}
+
+/// One person a page is shared with.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageShare {
+    pub user_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub color: String,
+    #[serde(default)]
+    pub can_edit: bool,
+    /// A member of the page's workspace (their role still caps the share).
+    #[serde(default)]
+    pub member: bool,
+}
+
+/// A pending invite to a page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageInvite {
+    pub email: String,
+    #[serde(default)]
+    pub can_edit: bool,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+/// GET /pages/:id/shares (and the answer of every page share change).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PageShares {
+    #[serde(default)]
+    pub shares: Vec<PageShare>,
+    #[serde(default)]
+    pub invites: Vec<PageInvite>,
+}
+
+/// POST /pages/:id/shares: `status` `shared` or `invited`, and the lists as they are now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageShareResult {
+    pub status: String,
+    #[serde(default)]
+    pub emailed: bool,
+    #[serde(default)]
+    pub invite_url: Option<String>,
+    #[serde(flatten)]
+    pub lists: PageShares,
+}
+
+/// GET /shared-pages: a page someone shared with the caller.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedPage {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub workspace_id: String,
+    #[serde(default)]
+    pub workspace_name: String,
+    #[serde(default)]
+    pub member: bool,
+    #[serde(default)]
+    pub can_edit: bool,
+    #[serde(default)]
+    pub shared_by_name: Option<String>,
+    #[serde(default)]
+    pub shared_at: String,
+}
+
+// ───────── Version history (server/versions.ts) ─────────
+
+/// One saved version of a page (GET /pages/:id/versions, newest first).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageVersion {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub author_id: Option<String>,
+    /// `auto`, `manual`, or `restore` (taken just before a restore).
+    #[serde(default)]
+    pub reason: String,
+    /// When the content was last edited before this snapshot.
+    #[serde(default)]
+    pub at: String,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+// ───────── Locked pages (server/routes/locks.ts) ─────────
+
+/// A device that can unlock with Face ID / Touch ID / biometrics.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockDevice {
+    pub id: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
+    #[serde(default)]
+    pub expires_at: String,
+}
+
+/// GET /locked-notes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockedNotes {
+    #[serde(default)]
+    pub has_password: bool,
+    #[serde(default)]
+    pub unlocked: bool,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub idle_ms: u64,
+    #[serde(default)]
+    pub locked_pages: u32,
+    #[serde(default)]
+    pub failures: u32,
+    #[serde(default)]
+    pub blocked_until: Option<String>,
+    #[serde(default)]
+    pub tries_before_lockout: u32,
+    #[serde(default)]
+    pub devices: Vec<LockDevice>,
+}
+
+/// POST /locked-notes/devices: a new device secret, handed out once.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewLockDevice {
+    pub id: String,
+    pub secret: String,
+    #[serde(default)]
+    pub expires_at: String,
+}
+
+impl std::fmt::Debug for NewLockDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NewLockDevice")
+            .field("id", &self.id)
+            .field("secret", &"<hidden>")
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }

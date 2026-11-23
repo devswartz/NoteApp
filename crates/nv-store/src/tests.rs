@@ -66,6 +66,7 @@ fn tree(pages: Vec<PageMeta>) -> Tree {
             position: 1.0,
         }],
         pages,
+        trashed_pages: vec![],
     }
 }
 
@@ -566,4 +567,159 @@ fn upgrades_a_version_2_database_in_place() {
     assert_eq!(s.queued_updates("p1").unwrap().len(), 1, "data kept");
     s.queue_task_op("w1", "t1", None, &TaskOp::Delete).unwrap();
     assert_eq!(s.task_ops().unwrap().len(), 1);
+}
+
+#[test]
+fn a_trashed_page_keeps_its_document_until_it_is_gone_for_good() {
+    let s = Store::open_in_memory().unwrap();
+    s.put_workspaces(&[workspace("w1")]).unwrap();
+    s.put_tree("w1", &tree(vec![page("p1", false), page("p2", false)]))
+        .unwrap();
+    assert!(s.put_page_doc("p1", b"one").unwrap());
+    assert!(s.put_page_doc("p2", b"two").unwrap());
+
+    // p1 goes to the Trash: out of `pages`, into `trashed_pages`; its document stays.
+    let mut t = tree(vec![page("p2", false)]);
+    t.trashed_pages = vec![nv_api::TrashedPage {
+        id: "p1".into(),
+        title: "One".into(),
+    }];
+    s.put_tree("w1", &t).unwrap();
+    assert_eq!(s.page_doc("p1").unwrap().unwrap().doc, b"one");
+    assert_eq!(s.tree("w1").unwrap(), Some(t));
+    // It is not a live page: nothing new is stored for it, and it has no workspace as a page.
+    assert!(!s.put_page_doc("p1", b"new").unwrap());
+    assert_eq!(s.workspace_of("page", "p1").unwrap(), None);
+    assert_eq!(s.workspace_of("page", "p2").unwrap().as_deref(), Some("w1"));
+
+    // Restored: back in `pages`, document untouched.
+    s.put_tree("w1", &tree(vec![page("p1", false), page("p2", false)]))
+        .unwrap();
+    assert_eq!(s.page_doc("p1").unwrap().unwrap().doc, b"one");
+    assert!(s.tree("w1").unwrap().unwrap().trashed_pages.is_empty());
+
+    // Trashed, then deleted for good: gone from both lists, so the document goes.
+    let mut t = tree(vec![page("p2", false)]);
+    t.trashed_pages = vec![nv_api::TrashedPage {
+        id: "p1".into(),
+        title: "One".into(),
+    }];
+    s.put_tree("w1", &t).unwrap();
+    s.put_tree("w1", &tree(vec![page("p2", false)])).unwrap();
+    assert_eq!(s.page_doc("p1").unwrap(), None);
+    assert!(s.page_doc("p2").unwrap().is_some());
+}
+
+#[test]
+fn the_store_knows_which_workspace_holds_a_node() {
+    let s = Store::open_in_memory().unwrap();
+    assert_eq!(s.tree_workspaces().unwrap(), Vec::<String>::new());
+    s.put_workspaces(&[workspace("w1")]).unwrap();
+    s.put_tree("w1", &tree(vec![page("p1", false)])).unwrap();
+    assert_eq!(s.tree_workspaces().unwrap(), ["w1"]);
+    assert_eq!(
+        s.workspace_of("notebook", "n1").unwrap().as_deref(),
+        Some("w1")
+    );
+    assert_eq!(
+        s.workspace_of("section", "s1").unwrap().as_deref(),
+        Some("w1")
+    );
+    assert_eq!(s.workspace_of("page", "p1").unwrap().as_deref(), Some("w1"));
+    assert_eq!(s.workspace_of("page", "nope").unwrap(), None);
+}
+
+// ───────── Tasks on locked pages ─────────
+
+fn full_task(id: &str, page: &str) -> Task {
+    let mut t = task(id, false);
+    t.page_id = Some(page.into());
+    t.title = format!("SECRET {id}");
+    t.description = "SECRET text".into();
+    t
+}
+
+#[test]
+fn tasks_on_a_locked_page_are_stored_redacted_however_they_arrive() {
+    let store = Store::open_in_memory().unwrap();
+    store
+        .put_tree("w1", &tree(vec![page("p1", true), page("p2", false)]))
+        .unwrap();
+    // A whole list (the server sent them in full: the sign-in was unlocked).
+    store
+        .put_tasks("w1", &[full_task("a", "p1"), full_task("b", "p2")])
+        .unwrap();
+    // One task (a write's answer).
+    store.put_task(&full_task("c", "p1")).unwrap();
+    let got = store.tasks("w1").unwrap().unwrap();
+    let by = |id: &str| got.iter().find(|t| t.id == id).unwrap();
+    for id in ["a", "c"] {
+        let t = by(id);
+        assert_eq!(
+            (t.title.as_str(), t.description.as_str(), t.locked),
+            ("Locked task", "", true)
+        );
+        assert!(t.tag_ids.is_empty());
+        assert_eq!(t.due_date.as_deref(), Some("2026-11-30"), "the rest stays");
+        assert_eq!(t.checklist, Some(nv_api::Checklist { done: 1, total: 2 }));
+    }
+    assert_eq!(
+        (by("b").title.as_str(), by("b").locked),
+        ("SECRET b", false)
+    );
+    assert_eq!(store.task("c").unwrap().unwrap().title, "Locked task");
+}
+
+#[test]
+fn a_page_that_becomes_locked_redacts_the_tasks_stored_before() {
+    let store = Store::open_in_memory().unwrap();
+    store
+        .put_tree("w1", &tree(vec![page("p1", false)]))
+        .unwrap();
+    store.put_tasks("w1", &[full_task("a", "p1")]).unwrap();
+    store.put_page_doc("p1", b"doc").unwrap();
+    assert_eq!(store.tasks("w1").unwrap().unwrap()[0].title, "SECRET a");
+
+    // The next tree load says it is locked.
+    store.put_tree("w1", &tree(vec![page("p1", true)])).unwrap();
+    assert_eq!(store.tasks("w1").unwrap().unwrap()[0].title, "Locked task");
+    assert!(store.page_doc("p1").unwrap().is_none());
+
+    // Or the core marks it at once (it locked the page itself).
+    let store = Store::open_in_memory().unwrap();
+    store
+        .put_tree("w1", &tree(vec![page("p1", false)]))
+        .unwrap();
+    store.put_tasks("w1", &[full_task("a", "p1")]).unwrap();
+    store.put_page_doc("p1", b"doc").unwrap();
+    store.queue_updates("p1", &[b"edit".to_vec()]).unwrap();
+    assert!(store.mark_page_locked("p1").unwrap());
+    assert!(store.is_locked("p1").unwrap());
+    assert!(store.tree("w1").unwrap().unwrap().pages[0].locked);
+    assert_eq!(store.tasks("w1").unwrap().unwrap()[0].title, "Locked task");
+    assert!(store.page_doc("p1").unwrap().is_none());
+    assert!(store.queued_updates("p1").unwrap().is_empty());
+    assert!(!store.mark_page_locked("nope").unwrap());
+}
+
+#[test]
+fn a_locked_pages_text_is_gone_from_the_file_after_it_is_locked() {
+    let db = TempDb::new("lockedbytes");
+    let store = Store::open(&db.0).unwrap();
+    store
+        .put_tree("w1", &tree(vec![page("p1", false)]))
+        .unwrap();
+    store.put_tasks("w1", &[full_task("a", "p1")]).unwrap();
+    store.put_page_doc("p1", b"SECRET page body").unwrap();
+    store.mark_page_locked("p1").unwrap();
+    drop(store);
+    let mut all = Vec::new();
+    for ext in ["", "-wal", "-shm"] {
+        if let Ok(b) = std::fs::read(format!("{}{ext}", db.0.display())) {
+            all.extend(b);
+        }
+    }
+    let has = |n: &str| all.windows(n.len()).any(|w| w == n.as_bytes());
+    assert!(!has("SECRET"), "text of a locked page is still in the file");
+    assert!(has("Locked task"));
 }

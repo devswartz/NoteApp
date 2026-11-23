@@ -5,6 +5,14 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
 
 ## Now
 
+- **The whole `rewrite/core-tree` step is done** (cut from `rewrite/native` 501dcbf, not merged;
+  **core pauses**): tree management (create, rename, recolour, move, duplicate and delete
+  notebooks, sections and pages, the Trash; "For apple: tree management"), then **sharing**
+  (members, invites, notebook and page shares; "For apple: sharing"), **version history** (list,
+  preview, restore into an open page; "For apple: version history") and **locked pages** (set the
+  password, lock and unlock, Face ID devices, lock a page, tasks of locked pages kept off the
+  disk; "For apple: locked pages"). **Next queued: Kotlin/Android** (bindings and the Android
+  library build in CI), **and the M7 server work once the owner approves CHANGELOG-SYNC.md.**
 - **The whole `rewrite/core-tasks-full` step is done** (cut from `rewrite/native` a625e3c, not
   merged): the full task model (task details, update, tags, teams, members, reminders, quick add;
   "For apple: task details"), **full-text search** ("For apple: search") and **comment threads**
@@ -15,10 +23,426 @@ and the Rust parts of CI. The overseeing session folds this file into `docs/rewr
   `rewrite/core-tasks`: "For apple: task calls", "For editor: the live doc").
 - **Next, in order** (for a fresh session; see the handover below): Kotlin bindings with an
   Android library build in CI (`cargo-ndk`, including the platform verifier's Android init,
-  below), then the CHANGELOG-SYNC.md design.
+  below), then the CHANGELOG-SYNC.md design (M7 server work, once the owner approves it).
 - **For the editor stream:** the engine has no command that adds or removes a `comment` mark yet;
   apple's Comment button needs one (`set_comment(thread_id)` / `unset_comment(thread_id)`, see "For
   apple: comments").
+
+## For apple: sharing (2026-11-22, `rewrite/core-tree`)
+
+Members, invites, notebook shares and page shares, as the server does them
+(`server/routes/workspaces.ts`; the web's callers are `src/components/sharing/*`). All additions:
+no existing record or call changed (`members(workspaceId:)` stays, and returns the members only).
+No name clashes with `apps/apple` (grepped for every new name).
+
+```swift
+// workspace people
+core.workspacePeople(workspaceId:) throws -> WorkspacePeople          // {members: [WorkspaceMember], invites: [PendingInvite]}
+core.inviteMember(workspaceId:, email:, role: String? = nil) throws -> InviteResult
+core.resendInvite(workspaceId:, email:) throws -> InviteResult
+core.revokeInvite(workspaceId:, email:) throws
+core.setMemberRole(workspaceId:, userId:, role:) throws
+core.removeMember(workspaceId:, userId:) throws
+core.leaveWorkspace(workspaceId:) throws
+core.inviteInfo(token:) throws -> InviteInfo
+core.acceptInvite(token:) throws -> AcceptedInvite                     // {workspaceId, pageId: String?}
+// notebooks (visibility itself is setNotebookVisibility, from tree management)
+core.notebookShares(notebookId:) throws -> NotebookShares              // {visibility, createdBy, userIds}
+core.setNotebookShares(notebookId:, userIds: [String]) throws -> [String]
+// pages
+core.pageShares(pageId:) throws -> PageShares                          // {shares: [PageShareEntry], invites: [PageInviteEntry]}
+core.sharePageWithMember(pageId:, userId:, canEdit:) throws -> PageShareResult
+core.sharePageByEmail(pageId:, email:, canEdit:) throws -> PageShareResult
+core.setPageShareEdit(pageId:, userId:, canEdit:) throws -> PageShares
+core.removePageShare(pageId:, userId:) throws -> PageShares            // your own id: "Remove from Shared with me"
+core.revokePageInvite(pageId:, email:) throws -> PageShares
+core.sharedPages() throws -> [SharedPageEntry]                         // "Shared with me"
+```
+
+Records: `PendingInvite { email, role, invitedBy?, createdAt?, expiresAt? }`, `InviteResult { status
+("added" | "invited"), emailed, inviteUrl? }`, `InviteInfo { workspaceId, workspaceName,
+invitedByName, email, role, expired, page: InvitedPage? }`, `InvitedPage { id, title, canEdit }`,
+`PageShareEntry { userId, name, email, color, canEdit, member }`, `PageInviteEntry { email,
+canEdit, expiresAt?, createdAt }`, `PageShareResult { status ("shared" | "invited"), emailed,
+inviteUrl?, shares: PageShares }`, `SharedPageEntry { id, title, icon?, workspaceId,
+workspaceName, member, canEdit, sharedByName?, sharedAt }`. Roles are the strings owner, admin,
+member, viewer.
+
+**Server routes used.** `GET|POST /workspaces/:id/members` | `PATCH|DELETE
+/workspaces/:id/members/:userId` | `POST /workspaces/:id/invites/:email/resend` | `DELETE
+/workspaces/:id/invites/:email` | `GET /invites/:token` | `POST /invites/:token/accept` | `GET|PUT
+/notebooks/:id/shares` | `GET|POST /pages/:id/shares` | `PATCH|DELETE /pages/:id/shares/:userId` |
+`DELETE /pages/:id/invites/:email` | `GET /shared-pages` (all in `server/routes/workspaces.ts`).
+Leaving is `DELETE .../members/<your id>`. Not used: `/shared-tasks` (tasks assigned to you on
+pages shared from workspaces you are not in), `/pages/:id/people`.
+
+**Who can do what** (the server decides; refusals come back as `CoreError.Server` with its
+message; viewers can read the member list):
+- List members: any member, viewers included. **Pending invites: owners and admins only** (empty
+  for everyone else).
+- Invite, resend, revoke an invite: owners and admins; **only an owner may invite an owner**.
+- Change a role: owners and admins; **only an owner may make an owner or change one**; the last
+  owner cannot be demoted (400). Remove a member: owners and admins (**only an owner may remove an
+  owner**; the last owner cannot go, 400); their open tasks are unassigned and their shares in the
+  workspace end. **Leave: any role**, except the last owner (400, make another owner first).
+- Accept an invite: signed in **as the invited address** (403 otherwise); 410 expired, 404 no
+  longer valid (resent, revoked, or already used).
+- Notebook shares (the people a *private* notebook is shared with): **the notebook's creator
+  only** (403), only workspace members (400), and not while the notebook holds a locked page (400,
+  `has_locked_page`). Anyone who can see the notebook may read the list.
+- Page shares: whoever has edit access to the page's notebook (in a **private notebook, only its
+  creator**). Sharing with someone **outside the workspace (by email, or an account that is not a
+  member): owners and admins only** (403). At most 200 shares and invites per page. A locked page
+  cannot be shared. A member's role caps what a share grants (a viewer only views). Anyone may
+  remove their own share.
+- Adding people to a workspace that has a locked page outside a private notebook is refused (400,
+  `has_locked_page`): move the page into a private notebook, or remove its lock.
+
+**With mail off** (the test server, or a self-hosted one without SMTP): invites still work, but
+nothing is sent. `InviteResult.emailed` is false and `inviteUrl` is the link to **hand over
+yourself** (show it to copy). The link's last path part is the token for `inviteInfo` and
+`acceptInvite`; the host in it is the server's `PUBLIC_URL`, or in development
+`http://localhost:5173`, not necessarily this server. An invitee whose address has a **confirmed
+account** is simply added ("added", no link); one with an unconfirmed account gets a link
+instead. A person who signs up later with an invited address joins at sign-up when accounts are
+confirmed at once (mail off), or when they confirm the address. Links work for 14 days
+(`expiresAt` on `PendingInvite`); resending makes a fresh link and the old one stops working.
+
+**The stored data.** Leaving a workspace, accepting an invite, and changing or removing your own
+role fetch the workspace list again and store it, so `cachedWorkspaces` follows and a workspace
+you left disappears from the store with its tree, tasks and page documents. `setNotebookShares`
+fetches the tree again. Nothing else is stored: share lists, invite links and people's emails are
+read each time and not kept. **Online only**: offline these throw `CoreError.Network` and change
+nothing (no queue; writes are never retried).
+
+## For apple: version history (2026-11-22, `rewrite/core-tree`)
+
+```swift
+core.pageVersions(pageId:) throws -> [PageVersion]                     // newest first
+core.pageVersion(pageId:, versionId:) throws -> PageVersionDocument    // {version, document: Data}
+core.restoreVersion(page: LivePage, versionId:) throws -> String?      // id of the "before restore" version
+```
+
+`PageVersion { id, title, authorId?, reason ("auto" | "manual" | "restore"), at, createdAt }`:
+`at` is when the content was last edited before the snapshot (the time the web's list shows),
+`createdAt` when it was saved; both ISO instants; `authorId` is a user id (name it with
+`workspacePeople` / `members`); "restore" means "before restore" in the web's list. Server:
+`GET /pages/:id/versions` (also takes an automatic snapshot first when one is due),
+`GET /pages/:id/versions/:vid`, `POST /pages/:id/versions { reason }` (`server/routes/pages.ts`,
+`server/versions.ts`; snapshots are kept in full for 24 h, hourly for 7 days, then daily, at most
+200).
+
+**Preview.** `pageVersion(...).document` is a Yjs update like `pageDocument`: `readPage`,
+`pageContent` and `pageMarkdown` read it. It is not stored on the device. Anyone who can open the
+page may list and preview; restoring needs edit access (a viewer gets 403 before anything changes).
+
+**How restore works.** **The server has no restore route; the web restores in the client**
+(`src/editor/VersionHistory.tsx`): `POST /pages/:id/versions {reason: "restore"}` saves the
+current state, then `replacePageContent` replaces the live document's content with a copy of the
+version's in one Yjs transaction. `restoreVersion` does the same on the **open `LivePage`**
+(`nv_model::restore::replace_page_content`, the Rust form of `replacePageContent`):
+1. it fetches the version (`GET`), waits up to 3 s for edits not yet sent to reach the server (so
+   the snapshot has them), asks the server to snapshot the current state (`POST`), and only then
+2. replaces the page's content in **one local edit**: every box and the default fragment are
+   deleted, the version's boxes (same ids and geometry) and content are inserted as copies, page
+   colour and rule lines come back when the version has them, and so does handwriting; a version
+   from before pages were canvases becomes one wide box. Returns the id of the "before restore"
+   version (the newest existing one when nothing changed since it; none for an empty page), which
+   is also the way to **undo**: `restoreVersion` with that id.
+- **The open page changes at once** (`info()`, `document()`); the listener's `onChange` is *not*
+  called for your own edit (as for any local edit): read `info()` after the call.
+- **Other open copies converge**: the edit goes out like typing. Edits others make at the same
+  moment into text the restore deleted are lost with it (as with any delete).
+- **Offline queue.** The restore is queued behind edits not yet sent and kept in the store until
+  the server confirms it, so a restore made while the socket is down goes out on reconnect, in
+  order, and survives a restart. The HTTP steps need a connection: **offline, `restoreVersion`
+  throws `Network` and changes nothing**. Nothing can bring the old content back: the restore
+  *deletes* items and inserts new ones, and a deleted item stays deleted in every merge, however
+  old the copy (a stored page, an earlier queued edit, a device that was offline all along).
+  (Merging the *version's own update* into the live page would do nothing, so a restore cannot be
+  done that way: always use `restoreVersion`.)
+- A closed page throws `Network` ("the page is closed"). Tests: scripted ones
+  (`crates/nv-core/tests/versions.rs`, with an edit queued offline and an old copy merged in
+  later), model ones (`crates/nv-model/src/restore.rs`), and the real server (two open copies
+  converge, the server's saved page matches, an old copy merged into both changes nothing, undo).
+
+## For apple: locked pages (2026-11-22, `rewrite/core-tree`)
+
+Answers "Unlocking locked pages in the Core API" (apple's request; the "unlock" notes under
+"Answers to apple's requests" are now built). Server: `server/routes/locks.ts`, `server/locks.ts`;
+the web's side is `src/lib/lockedNotes.ts`.
+
+```swift
+core.lockedNotesStatus() throws -> LockedNotesStatus
+core.setLockedNotesPassword(password:, currentPassword: String? = nil) throws -> String?   // expiresAt
+core.unlockLockedNotes(password:) throws -> String                                        // expiresAt
+core.unlockLockedNotesWithDevice(deviceId:, secret:, installId:) throws -> String
+core.registerUnlockDevice(installId:, label: String? = nil) throws -> NewUnlockDevice     // {id, secret, expiresAt}
+core.removeUnlockDevice(deviceId:) throws
+core.lockLockedNotes() throws                                                             // "Lock now"
+core.keepLockedNotesUnlocked() throws -> LockKeepalive                                    // {unlocked, expiresAt?}
+core.lockPage(pageId:) throws
+core.removePageLock(pageId:, password:) throws
+```
+
+`LockedNotesStatus { hasPassword, unlocked, expiresAt?, idleMs, lockedPages, failures,
+blockedUntil?, triesBeforeLockout, devices: [UnlockDevice] }`, `UnlockDevice { id, label?,
+createdAt, lastUsedAt?, expiresAt }`. Routes: `GET /locked-notes`, `POST /locked-notes/password`,
+`POST /locked-notes/unlock` (password, or `deviceId` + `secret` + `installId`), `POST
+/locked-notes/lock`, `POST /locked-notes/keepalive`, `POST|DELETE /locked-notes/devices`, `POST
+/pages/:id/lock`, `POST /pages/:id/lock/remove`. Not built: the forgotten-password reset by
+emailed code (`/locked-notes/reset/start`, `/locked-notes/reset`), `/locked-notes/file-key`
+(upload links on locked pages).
+
+- **One password per account**, separate from the sign-in password, 6 to 72 bytes.
+  `setLockedNotesPassword` sets it, or changes it (`currentPassword` required; a wrong one counts
+  as a wrong try). Setting or changing it unlocks this sign-in; **changing it locks every other
+  sign-in and removes every device**.
+- **Unlocking is per sign-in** (the refresh-token family), not per page: `unlockLockedNotes`
+  unlocks all of the account's locked pages for this sign-in. **It lasts `idleMs` (5 minutes)
+  without activity.** `keepLockedNotesUnlocked` (call it about every minute while a locked page
+  is on screen) and editing an open locked page (the server does it every 30 s of activity) push
+  it back; `lockLockedNotes`, sign-out, a password change, or the lapse end it. When it ends the
+  server closes the locked pages' sockets (4403): an open `LivePage` ends with `.noAccess`. Close
+  open locked pages yourself on "Lock now" and when the app goes to the background (the web
+  locks on background).
+- **Wrong tries**: `Server` 400 `wrong_password` (the message says how many tries are left);
+  after 5 in a row, `Server` 429 `locked_out` for 15 minutes, doubling per further failure up to
+  24 hours (the owner is emailed); `status.failures` / `blockedUntil` show it. No password set:
+  409 `no_lock_password`.
+- **Face ID / Touch ID.** After an unlock **with the password**, `registerUnlockDevice(installId:
+  label:)` returns `{id, secret}` once (403 `locked` while locked): keep `id` and `secret` in the
+  keychain behind biometrics, and `installId` (a random string of at least 16 characters the app
+  makes once per install). After the biometric check, `unlockLockedNotesWithDevice`. It works for
+  that sign-in and install only, for 30 days. A secret the server no longer accepts (another
+  sign-in, another install, expired, password changed) is `Server` 401 `device_revoked`: ask for
+  the password (**this counts as a wrong try**; the core does not retry it). One device per
+  sign-in and install: registering again replaces it.
+- **Locking a page** (`lockPage`): needs a password (409 `no_lock_password`), edit access, and a
+  page **only you can see** (a private notebook shared with nobody, or a workspace you alone are
+  in, and not shared page by page: 403 `not_private`). You become its owner; nobody else, admins
+  included, sees it any more. `removePageLock` needs the password (404 for anyone but its owner).
+  Other rules of the server: a locked page cannot be shared or duplicated and may only move into a
+  private notebook.
+- **Reading an unlocked page.** `pageDocument`, `pageVersions`/`pageVersion`, comments, search
+  text, task text and `openLivePage` work as for any page while this sign-in is unlocked. While
+  locked, content calls answer `Server` 404 (measured for `pageDocument` and `pageVersions`: the page
+  "isn't there"; comments are documented above as 403) and the owner still sees its title in the
+  tree (`PageMeta.locked`; `search` finds it by title only).
+- **Tasks.** `tasks(workspaceId:)` returns the tasks of locked pages **in full while unlocked**
+  (`Task.locked == false`) and as "Locked task" with `locked == true` while locked.
+
+**What is never stored** (tested, see below):
+- **The password and the device secret**: not kept anywhere by the core, not logged
+  (`nv_api::Request` and `NewUnlockDevice` hide them from `Debug`). Passwords go in the body of
+  the one request. The one `secret` is returned once, for your keychain.
+- **The content of a locked page, unlocked or not**: no page document (`pageDocument` of an
+  unlocked page is not saved; `cachedPageDocument` stays nil), no outbox (the offline queue of a
+  locked page's edits), no queued task changes. A page counts as locked when a stored tree marks
+  it (`PageMeta.locked`, true whether or not the sign-in is unlocked). **Live editing of an
+  unlocked page keeps its edits in memory only**, as before: an edit made while the connection is
+  down is held in the `LivePage` and lost if the app quits before it reconnects (`unsentUpdates()`
+  shows them; `unsentPages()` does not list the page).
+- **Task text of locked pages**: after an unlock the server sends these tasks in full; `nv-store`
+  redacts them **before writing** (title "Locked task", empty description, no tags,
+  `locked: true`; due date, status, assignee and checklist counts stay, as the server's
+  `redactTask`). `tasks()` still *returns* the full list to the caller, and nothing else of them is
+  stored, so `cachedTasks` shows "Locked task". Locking a page redacts the tasks stored before
+  (`lockPage` marks it in the stored tree at once, drops its stored document, queued edits and
+  queued task changes, and folds the write-ahead log into the database file).
+- **While the core believes the sign-in may be unlocked** (after an unlock, a password set, or a
+  status or keep-alive that said unlocked; until `lockLockedNotes` or a status that says locked) it
+  **fetches the workspace's tree again first** in `tasks()`, `pageDocument()` and
+  `openLivePage()`/`openPage()`, so a page locked from another device is recognised before
+  anything is stored. That is one extra request per such call. Not covered: an app restarted
+  within 5 minutes of an unlock on a device whose stored tree is stale and which calls `tasks()`
+  before any tree call; call `lockedNotesStatus()` at launch (it sets the flag) and `tree()`
+  before `tasks()`, as you do.
+
+**Tests.** Scripted (`crates/nv-core/tests/locked.rs`): after an unlock with a stale stored tree,
+a task list with marker titles and descriptions is stored redacted and **the SQLite file, its WAL
+and SHM are searched byte by byte** for the markers (UTF-8 and UTF-16), with a positive control; a
+task write answers in full and is stored redacted; locking a page with a failing tree refetch;
+**live editing of an unlocked locked page against the stand-in collab server** (edit online, edit
+while disconnected, close) with the markers absent from the file; passwords and device secrets
+absent; and the calls' bodies. `crates/nv-store/src/tests.rs` (redaction by `put_tasks`,
+`put_task`, `put_tree`, `mark_page_locked`; the file after locking), `nv-api` tests (bodies;
+`device_revoked` sent once; `Debug` hides bodies), and `locked_pages_against_a_running_server`
+(real server: password, lock, unlock, wrong password, lockout counter, Face ID device unlock and
+revocation, password change, remove lock; markers absent from the file).
+
+## For apple: tree management (2026-11-22, `rewrite/core-tree`)
+
+Answers apple's request for tree writes (create, rename, recolour, move, duplicate, delete, Trash).
+All additions: no existing record or call changed (`Tree`, `Notebook`, `Section` and `PageMeta`
+are as before). The truth is the server: `server/routes/tree.ts` (notebooks, sections, move,
+copy), `server/routes/pages.ts` (pages), `server/routes/trash.ts` and `server/trash.ts` (Trash);
+the web's callers are `src/components/shell/treeDnd.ts` (drops), `notesRows.tsx` (menus),
+`NewNotebookDialog.tsx` and `src/lib/trash.ts` (delete + Undo).
+
+```swift
+// notebooks
+core.createNotebook(workspaceId:, name:, color: String? = nil, visibility: String? = nil) throws -> NewNotebook   // {id, sectionId}
+core.renameNotebook(notebookId:, name:) throws
+core.setNotebookColor(notebookId:, color:) throws
+core.setNotebookVisibility(notebookId:, visibility:) throws -> UInt32     // page shares that ended
+core.moveNotebook(notebookId:, index: UInt32? = nil) throws -> Double      // new position
+core.deleteNotebook(notebookId:) throws -> Trashed                         // {trashId, tasks}
+// sections (and subsections)
+core.createSection(notebookId:, name:, parentId: String? = nil, color: String? = nil) throws -> String   // id
+core.renameSection(sectionId:, name:) throws
+core.setSectionColor(sectionId:, color:) throws
+core.moveSection(sectionId:, notebookId:, parentId: String? = nil, index: UInt32? = nil) throws -> SectionPlace
+core.copySection(sectionId:, notebookId: String? = nil, name: String? = nil) throws -> String            // id of the copy
+core.deleteSection(sectionId:) throws -> Trashed
+// pages
+core.createPage(sectionId:, title: String? = nil) throws -> String        // id
+core.renamePage(pageId:, title:) throws
+core.setPageIcon(pageId:, icon: String?) throws                           // nil clears
+core.movePage(pageId:, sectionId: String? = nil, index: UInt32? = nil) throws -> PagePlace
+core.copyPage(pageId:, sectionId: String? = nil, title: String? = nil) throws -> String                  // id of the copy
+core.deletePage(pageId:) throws -> Trashed
+// Trash
+core.trash(workspaceId:) throws -> [TrashEntry]
+core.restoreFromTrash(workspaceId:, kind: TrashKind, id:) throws -> String?   // where it went, nil: back as it was
+core.deleteForever(workspaceId:, kind:, id:) throws
+core.emptyTrash(workspaceId:) throws -> UInt32                                // entries removed
+core.cachedTrashedPages(workspaceId:) -> [TrashedPage]?                       // local, from the stored tree
+// pure helpers (the web's, same results)
+positionAt(siblingPositions: [Double], index: UInt32) -> Double
+dropIndex(siblingIds: [String], targetId: String, after: Bool) -> UInt32
+```
+
+Records: `NewNotebook { id, sectionId }`, `PagePlace { sectionId, position }`,
+`SectionPlace { notebookId, parentId: String?, position }`, `Trashed { trashId, tasks }`,
+`TrashedPage { id, title }`, `TrashEntry { kind, id, name, icon: String?, deletedAt, deletedBy:
+String?, deletedByName: String?, expiresAt, daysLeft, path, pages, sections }`, enum
+`TrashKind { page, section, notebook }`. Times are ISO instants (UTC). No name clashes with
+`apps/apple` (grepped for each: none).
+
+**Server routes used.** `POST /workspaces/:id/notebooks` | `PATCH /notebooks/:id` (`name`,
+`color`, `visibility`) | `POST /notebooks/:id/move` | `DELETE /notebooks/:id` | `POST
+/notebooks/:id/sections` | `PATCH /sections/:id` (`name`, `color`) | `POST /sections/:id/move` |
+`POST /sections/:id/copy` | `DELETE /sections/:id` | `POST /sections/:id/pages` | `PATCH
+/pages/:id` (`title`, `icon`) | `POST /pages/:id/move` | `POST /pages/:id/copy` | `DELETE
+/pages/:id` | `GET /workspaces/:id/trash` | `POST /trash/:kind/:id/restore` | `DELETE
+/trash/:kind/:id` | `DELETE /workspaces/:id/trash`. The PATCH routes also take `position`,
+`notebookId`, `parentId`, `sectionId` and (pages) `titleWas`/`iconWas`; the core does not send
+them (moves use the `/move` routes, as the web does; the stale-title check is for the web's
+editor, which can hold an old title).
+
+**Positions and moves.**
+- Positions are the server's: REAL numbers per sibling list (notebooks of a workspace, top-level
+  sections of a notebook, subsections of a section, pages of a section). **You never send a
+  position.** A move sends `index`: the place among the new siblings **without the item itself**
+  (0 = first; omitted = last). The server turns it into a position (empty list 1; at or past the
+  end last + 1; first, first - 1; else the average of the two neighbours) and **returns it**.
+  `positionAt` is the same rule (`treePosition.ts`), for an optimistic drop; `dropIndex` is the
+  web's `indexFor`: pass the new siblings in position order without the dragged item, the target
+  row and whether the drop is below it; "inside" a section or notebook has no target, so use the
+  sibling count (or leave `index` nil).
+- **Pages** (`movePage`): `sectionId` nil keeps the section (a reorder); another section of the
+  same workspace moves it there (any notebook). Another workspace: `Server` 400 ("Cannot move
+  between workspaces"). Needs edit access to the target section. A locked page may only go to a
+  notebook only its owner can see (400 otherwise).
+- **Sections** (`moveSection`): always says where. `parentId` a section id: nested under it, and
+  **that section's notebook wins** over `notebookId`; `parentId` nil: the top level of
+  `notebookId`. Its subsections and pages go with it (their `notebookId` changes in the tree).
+  Refused with 400: into itself or one of its own subsections, past 3 levels (`MAX_SECTION_DEPTH`,
+  `shared/sections.ts`; mirror `canNestUnder` in the UI), another workspace, or a section holding
+  locked pages into a notebook others can see. The web's drop rules: a section dropped on the
+  middle of another nests there, on a notebook goes to its top level.
+- **Notebooks** (`moveNotebook`): reorder only; `index` is among the workspace's other notebooks.
+- `createSection(parentId:)` makes a subsection (same notebook, 3 levels). Create always appends
+  (last position).
+- **Duplicate.** `copyPage`: in its own section the copy sits right after the original and is
+  titled "<title> (copy)" ("Untitled (copy)" if empty); into another section it goes to the end and
+  keeps the title; `title` overrides. The tasks written on the page are copied too. A locked page
+  cannot be duplicated (400 "Remove the lock to duplicate this page"). `copySection`: copies the
+  subsections and pages (and their tasks), **leaves locked pages out**; same notebook: named
+  "<name> (copy)" next to the original's siblings (end of the list); another notebook of the
+  workspace (`notebookId`): keeps the name, at the top level. Both need edit access; the
+  workspace must be the same (400 otherwise).
+- **Create a notebook.** The server makes it with one section named "General" (`sectionId`). The
+  new-notebook dialog's starting structures are apple's: the web renames/recolours that section
+  and adds more with `createSection` and pages with `createPage` + `setPageIcon`
+  (`NewNotebookDialog.tsx`). `visibility` "private" makes it visible to its creator (and whoever
+  it is shared with, next step). Names are trimmed by the server, 1 to 100 characters (400
+  otherwise); colours are `#rrggbb` (400 otherwise); a page title is cut to 300 characters. Page
+  icons: an emoji or short text, cut to 16 characters.
+- **New page.** `createPage(sectionId:, title:)` makes a blank canvas page (title "" = untitled).
+  The web's "New page" additionally asks the server for the section's default template and fills
+  the page from its creator's client; that client-side fill is not part of this call.
+- Who may do what (server): members and up can create, rename, move, copy and delete in
+  notebooks they can see; viewers get `Server` 403/404. A **notebook** is deleted only by its
+  creator or a workspace admin, its visibility changed only by its creator. Private notebooks are
+  invisible to others (404).
+
+**What delete does.** Every delete goes to the **Trash**, not away, for 60 days: `deletePage`,
+`deleteSection` (with its subsections and pages), `deleteNotebook` (with everything in it). It
+returns `Trashed { trashId, tasks }`: `tasks` is how many tasks were on what went (the web's toast
+says "Its n tasks stay in your task list"; they do stay, shown as on a page "in Trash"). The web's
+Undo is `restoreFromTrash(kind:, id:)` with the deleted item's own id (`trashId` equals it).
+- `trash(workspaceId:)`: the entries the caller may see, newest first: for each, the item at the
+  top of the batch. Members and up only (viewers: empty); someone else's locked page is not
+  listed. `path` is "Notebook > Section" (empty for a notebook), `pages`/`sections` count what went
+  with it, `daysLeft` runs from 60.
+- `restoreFromTrash` puts back the entry and everything trashed with it. If its old place is gone it
+  goes elsewhere and the call returns the name (a page: the notebook's first section; a section:
+  the notebook's top level, named by the notebook). `nil`: back as it was. A page or section whose
+  notebook is also in the Trash: `Server` 409 "Its notebook is in the Trash too" (restore the
+  notebook first). An entry that is gone (purged, expired, or not yours): 404.
+- `deleteForever` removes an entry for good (its tasks become standalone; cannot be undone) and
+  `emptyTrash` removes all of the caller's visible entries (**owners and admins only**, others
+  get 403; returns how many entries went).
+
+**The stored tree.** After every write the server accepted, the core **fetches the workspace's
+tree again and stores it** (not a local patch: a restore, a duplicate or a section move touches
+rows only the server knows, and the server's positions stay exact). So when the call returns,
+`cachedTree(workspaceId:)` shows the change, with the server's own positions. Which workspace is
+found from the stored tree by the id; if the id is in no stored tree every stored workspace tree
+is refreshed; without a store (`Core(serverUrl:)`) nothing is fetched. If that refetch fails (the
+connection dropped right after the write) the call still returns success (it is done on the
+server) and the stored tree stays stale until the next `tree(workspaceId:)`. Apple can also
+patch its own copy at once for the drop and let the refetch correct it.
+- **Locked pages** are unchanged: the refetched tree marks a page locked and the store deletes its
+  document, as with any tree load. Moving, renaming and trashing one's own locked page work; the
+  server withholds other people's locked pages from every list.
+- **Trash and stored documents.** The tree now reads `trashedPages` (`[{id, title}]`, members and
+  up): `nv-store` keeps them as `trashed_page` rows, and **a trashed page keeps its stored
+  document** (so Undo/restore is instant and offline reading works), where before the tree load
+  that follows a delete dropped it as "no longer shown". A page gone from both `pages` and
+  `trashedPages` (deleted forever, or access lost) loses its document as before. A trashed page is
+  not a live page: nothing new is stored for it and its offline edits are refused.
+  `cachedTrashedPages(workspaceId:)` is the list, for a task's "in Trash" label. The public
+  `Tree` record is unchanged (no `trashedPages` field), so `Tree(...)` initialisers keep building.
+- Tasks are not refetched: after `deleteForever` or `emptyTrash` the tasks of purged pages lose
+  their page on the server; call `tasks(workspaceId:)` to see it.
+
+**Online only.** These calls are not queued: the server makes every id (a client-chosen id is
+ignored), so an offline create could not be named, ordered or referred to by later calls (move a
+page that does not exist yet), and moves and deletes depend on positions and permissions only the
+server knows. Offline they throw `CoreError.Network` unchanged, nothing is changed, and nothing
+is sent twice (writes are never retried). Refusals are `CoreError.Server(status:, message:, code:)`
+with the server's message (400 rules above, 403 role, 404 gone/not visible, 409 restore blocked);
+`SignedOut` as everywhere. Show the message in the dialog. `cachedTree` stays as it was after a
+failure.
+
+**Tests.** `crates/nv-api/tests/tree.rs` (every call's method, path, body and answer),
+`crates/nv-core/tests/tree_edit.rs` (scripted: bodies, the stored tree after each write, trash and
+restore keeping the document, locked pages, offline, refusals, failed refetch, no store, the
+position helpers), `crates/nv-store/src/tests.rs` (trashed pages), and the real-server test
+`tree_management_against_a_running_server` in `crates/nv-core/tests/server.rs` (creates a
+notebook, sections, subsections, 3-level limit, pages; renames, colours, icons; reorders,
+moves between sections and notebooks; duplicates pages and a section; trash, restore, delete
+forever, empty), which also checks the stored tree equals the server's after the whole run.
+
+## For apple: not in this step
+
+Sharing, version history and unlocking locked pages are done (the three sections above). Not done
+here: the forgotten locked-notes password reset (emailed code), the section's default template (`defaultTemplateId`/`noDefaultTemplate` on `Section` in
+`shared/types.ts`; the core's `Section` does not carry them yet), page "pending template" fills,
+notebook sharing lists (`sharedWith`), favourites.
 
 ## For apple: search (2026-11-22, `rewrite/core-tasks-full`)
 
@@ -606,7 +1030,7 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
   `unsentUpdates`); `LivePage.close()` as above. One ordering note: `signOut` while pages are open
   should close them first (their threads would otherwise end with `.signedOut` on their next
   refresh, which is harmless).
-- **Unlocking locked pages in the Core API** (not built; low priority). What it would take:
+- **Unlocking locked pages in the Core API** (built 2026-11-22: see "For apple: locked pages"; kept for the reasoning). What it would take:
   - Server (server/routes/locks.ts, read only): `GET /locked-notes` (status), `POST
     /locked-notes/unlock` with `{ password }` or `{ deviceId, secret }` → `{ expiresAt }` (rate
     limited), `POST /locked-notes/lock`, `POST /locked-notes/keepalive`, `POST
@@ -674,6 +1098,27 @@ All additions; nothing was renamed, so today's Swift compiles unchanged.
 
 ## Done
 
+- 2026-11-22, sharing, version history and locked-page unlock (`rewrite/core-tree`): nv-api
+  `share.rs`, `versions.rs`, `locks.rs` (members and invites, notebook and page shares, shared
+  pages, versions and the restore snapshot, locked-notes calls) with their types, `Request`'s
+  `Debug` hides bodies, and a 401 `device_revoked` is not refreshed and retried; nv-model
+  `restore.rs` (`replace_page_content`, the Rust `replacePageContent`); nv-store redacts tasks of
+  locked pages before writing (`put_tasks`, `put_task`, `put_tree`) and `mark_page_locked`;
+  nv-core `sharing.rs`, `versions.rs` (`restoreVersion` on an open `LivePage`), `locked.rs` (and
+  the tree refetch while unlocked). Tests: `crates/nv-api/tests/share_versions_locks.rs`,
+  `crates/nv-core/tests/{sharing,versions,locked}.rs`, nv-model restore tests, nv-store tests, and
+  `sharing_against_a_running_server`, `version_history_and_restore_against_a_running_server` and
+  `locked_pages_against_a_running_server` (real server on port 4477, passed).
+
+- 2026-11-22, tree management (`rewrite/core-tree`): nv-api `tree.rs` (`create_notebook`,
+  `patch_notebook`, `move_notebook`, `delete_notebook`, `create_section`, `patch_section`,
+  `move_section`, `copy_section`, `delete_section`, `create_page`, `patch_page`, `move_page`,
+  `copy_page`, `delete_page`, `trash`, `restore_from_trash`, `purge_from_trash`, `empty_trash`),
+  `Tree.trashed_pages`; nv-store keeps `trashed_page` rows and the stored documents of trashed
+  pages, plus `workspace_of` / `tree_workspaces`; nv-core `tree_edit.rs` (the Core calls above,
+  `positionAt`, `dropIndex`, `cachedTrashedPages`), each write followed by a stored-tree refetch.
+  Tests: `crates/nv-api/tests/tree.rs`, `crates/nv-core/tests/tree_edit.rs`, nv-store tests, and
+  `tree_management_against_a_running_server` (real server on port 4467, passed).
 - 2026-11-22, search and comment threads (`rewrite/core-tasks-full`): nv-api `search`,
   `page_comments`, `add_comment_thread`, `reply_to_thread`, `set_thread_resolved`,
   `delete_comment_thread`, `edit_comment`, `delete_comment` with `SearchResult`/`CommentThread`

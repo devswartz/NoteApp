@@ -8,6 +8,7 @@ pub mod js;
 pub mod lists;
 pub mod markdown;
 pub mod page;
+pub mod restore;
 pub mod sanitize;
 pub mod text;
 pub mod tree;

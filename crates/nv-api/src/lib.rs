@@ -7,7 +7,11 @@
 //!
 //! The client is blocking: the core calls it from its own threads, never the UI thread.
 
+mod locks;
+mod share;
+mod tree;
 pub mod types;
+mod versions;
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -53,12 +57,28 @@ impl std::fmt::Display for ApiError {
 impl std::error::Error for ApiError {}
 
 /// One HTTP exchange, as the transport sees it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Request {
     pub method: &'static str,
     pub url: String,
     pub bearer: Option<String>,
     pub body: Option<String>,
+}
+
+/// `Debug` shows neither the token nor the body: bodies carry passwords (sign-in, the
+/// locked-notes password), so a request can be printed or logged without leaking them.
+impl std::fmt::Debug for Request {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Request")
+            .field("method", &self.method)
+            .field("url", &self.url)
+            .field("bearer", &self.bearer.as_ref().map(|_| "<hidden>"))
+            .field(
+                "body",
+                &self.body.as_ref().map(|b| format!("<{} bytes>", b.len())),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -398,7 +418,10 @@ impl Client {
         body: Option<&Value>,
     ) -> Result<T, ApiError> {
         let res = self.send(method, path, Some(self.access_token()?), body)?;
-        if res.status == 401 {
+        // 401 means "refresh the token", except a device secret the server no longer accepts
+        // (`device_revoked`): that is an answer, and sending it again would count as another
+        // wrong try against the lockout.
+        if res.status == 401 && !is_device_revoked(&res) {
             let token = self.refresh()?.access_token;
             return Self::decode(self.send(method, path, Some(token), body)?);
         }
@@ -701,6 +724,12 @@ impl Client {
             .decode(b64)
             .map_err(|e| ApiError::Decode(e.to_string()))
     }
+}
+
+fn is_device_revoked(res: &Response) -> bool {
+    serde_json::from_str::<Value>(&res.body)
+        .map(|v| v["code"] == "device_revoked")
+        .unwrap_or(false)
 }
 
 /// `encodeURIComponent`.

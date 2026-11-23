@@ -281,6 +281,8 @@ impl Core {
     /// `tasks()` before it is turned into the Core API's `Task` (or `TaskDetail`).
     pub(crate) fn tasks_raw(&self, workspace_id: &str) -> Result<Vec<nv_api::Task>, CoreError> {
         self.send_queued_quietly();
+        // Unlocked: tasks of locked pages arrive in full; know which pages are locked first.
+        self.refresh_lock_knowledge(Some(workspace_id.to_string()));
         let mut ts = self.fetch(
             || self.api.tasks(workspace_id),
             |s, ts| {
@@ -353,6 +355,9 @@ pub struct Core {
     backoff: Mutex<Backoff>,
     /// Task writes: their order, deleted tasks for undo, the last refusal (`tasks.rs`).
     pub(crate) tasks: crate::tasks::TaskState,
+    /// This sign-in may have its locked pages unlocked (set by the unlock calls and the status
+    /// calls, cleared by locking and sign-out): see `locked.rs`.
+    pub(crate) maybe_unlocked: AtomicBool,
 }
 
 impl Core {
@@ -368,6 +373,7 @@ impl Core {
             store: db_path.and_then(|p| open_store(Path::new(&p))),
             backoff: Mutex::new(Backoff::default()),
             tasks: Default::default(),
+            maybe_unlocked: AtomicBool::new(false),
         })
     }
 
@@ -487,6 +493,7 @@ impl Core {
             store: None,
             backoff: Mutex::new(Backoff::default()),
             tasks: Default::default(),
+            maybe_unlocked: AtomicBool::new(false),
         })
     }
 
@@ -500,6 +507,7 @@ impl Core {
             store: open_store(Path::new(&db_path)),
             backoff: Mutex::new(Backoff::default()),
             tasks: Default::default(),
+            maybe_unlocked: AtomicBool::new(false),
         })
     }
 
@@ -555,6 +563,7 @@ impl Core {
     pub fn sign_out(&self) {
         self.api.logout();
         self.tasks.clear();
+        self.maybe_unlocked.store(false, Ordering::SeqCst);
         if let Some(s) = &self.store {
             let _ = s.clear();
         }
@@ -653,6 +662,7 @@ impl Core {
     /// stored on this device unless the page is locked. Offline (`Network`): the stored copy
     /// when there is one.
     pub fn page_document(&self, page_id: String) -> Result<Vec<u8>, CoreError> {
+        self.refresh_lock_knowledge(self.page_workspace(&page_id));
         self.fetch(
             || self.api.page_doc(&page_id),
             |s, d| {
@@ -675,6 +685,7 @@ impl Core {
         page_id: String,
         listener: Arc<dyn LivePageListener>,
     ) -> Result<Arc<LivePage>, CoreError> {
+        self.refresh_lock_knowledge(self.page_workspace(&page_id));
         let (doc, forbidden, relay, options) = self.live_parts(&page_id, Sink::Live(listener));
         let live = LiveDoc::start(
             &self.api.collab_url(&page_id),
@@ -696,6 +707,7 @@ impl Core {
         page_id: String,
         listener: Arc<dyn PageListener>,
     ) -> Result<Arc<LivePage>, CoreError> {
+        self.refresh_lock_knowledge(self.page_workspace(&page_id));
         let token = self.api.access_token()?;
         let url = self.api.collab_url(&page_id);
         let socket = nv_sync::open_socket(&url, &token)?;
@@ -1045,6 +1057,7 @@ mod tests {
 
     fn tree_with(pages: &[(&str, bool)]) -> nv_api::Tree {
         nv_api::Tree {
+            trashed_pages: vec![],
             notebooks: vec![],
             sections: vec![],
             pages: pages
