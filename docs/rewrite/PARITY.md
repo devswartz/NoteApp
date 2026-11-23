@@ -29,8 +29,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Forgot / reset password | ● | ● | ● | ● | ● | ● | email link opens web `ResetPassword` |
 | Sign-in kept securely | ● ✓ | ● | ● | ● | ● | ◐ | mobile: secure storage plugin (Keychain/Keystore); desktop: system keychain (`secure.rs`); web: browser storage |
 | Release builds locked to app.notiveloapp.com; internal builds have hidden "Change server…" | ● | ● | ● | ● | ● | — | `src/platform/serverUrl.ts`, desktop `config.rs` |
-| Profile: name, avatar colour | ● | ● | ● | ● | ● | ● | Settings → Profile |
-| Change password | ● | ● | ● | ● | ● | ● | `POST /me/password` |
+| Profile: name, avatar colour | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | Settings → Profile |
+| Change password | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `POST /me/password` |
 | Delete account (preview of consequences, password) | ● | ● | ● | ● | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● | ● | ● | ● | ● | ● | sign-in screen and Settings → About |
@@ -236,7 +236,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
 | OAuth consent page for AI apps | — | — | — | — | — | ● | `OAuthConsent.tsx`, `server/oauth` |
-| Settings → Connected apps: list, revoke | ● | ● | ● | ● | ● | ● | `ConnectedApps.tsx` |
+| Settings → Connected apps: list, revoke | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `ConnectedApps.tsx` |
 | MCP connector at `/mcp` | — | — | — | — | — | — | server only; unchanged by the rewrite |
 
 ## 15. Platform integrations
