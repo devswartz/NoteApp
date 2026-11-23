@@ -141,10 +141,11 @@ struct DialogLayer: View {
             .frame(width: width, height: height)
         } else if let sheet = shell.sheet {
             let p = theme.chrome
-            ZStack(alignment: .top) {
+            let bottomSheet: Bool = { if case .quickAdd = sheet { return phone }; return false }()
+            ZStack(alignment: bottomSheet ? .bottom : .top) {
                 p.bgOverlay.color.contentShape(Rectangle()).onTapGesture { shell.sheet = nil }
                 sheetCard(sheet)
-                    .padding(.top, height * (phone ? 0.06 : 0.12))
+                    .padding(.top, bottomSheet ? 0 : height * (phone ? 0.06 : 0.12))
             }
             .frame(width: width, height: height)
         }
@@ -160,7 +161,9 @@ struct DialogLayer: View {
         case let .history(id): VersionHistoryCard(pageId: id, width: min(560, width - 32), listHeight: h * 0.3, previewHeight: h * 0.35)
         case .trash: TrashCard(width: w, listHeight: h * 0.6)
         case let .lock(mode): LockCard(mode: mode, width: min(400, width - 32))
-        case let .quickAdd(seed): QuickAddCard(seed: seed, width: min(560, width - 32))
+        case let .quickAdd(seed): QuickAddCard(seed: seed, width: phone ? width : min(560, width - 32))
+        case .members: MembersCard(width: min(520, width - 32), listHeight: h * 0.5)
+        case let .joinInvite(token): JoinInviteCard(token: token, width: min(440, width - 32))
         }
     }
 

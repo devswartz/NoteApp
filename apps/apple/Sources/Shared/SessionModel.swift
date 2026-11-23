@@ -50,6 +50,8 @@ final class SessionModel {
     private(set) var searchedQuery = ""
     /// Pages shared with this person one by one ("Shared with me").
     var sharedPages: [SharedPageEntry] = []
+    /// An invite link (its token) opened in the app: the shell offers to join once signed in.
+    var pendingInvite: String?
     /// What the server says about the locked pages (password set, unlocked, tries).
     var lockStatus: LockedNotesStatus?
     /// This sign-in has unlocked the locked pages (they stay open until 5 minutes without activity).
@@ -152,6 +154,59 @@ final class SessionModel {
                 switch result {
                 case let .success(s): self.didSignIn(s.user, token: latest ?? s.refreshToken)
                 case let .failure(e): self.error = CoreBridge.message(e, signingIn: true)
+                }
+            }
+        }
+    }
+
+    /// Create an account (`Core.register`) and sign in to it. The server then wants the address confirmed first
+    /// (`needsEmailCheck`: the "Check your email" screen).
+    func register(name: String, email: String, password: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, !email.isEmpty, !password.isEmpty else {
+            error = "Enter your name, email and a password."
+            return
+        }
+        guard password.count >= 8, password.count <= 72 else {
+            error = "Use a password of 8 to 72 characters."
+            return
+        }
+        busy = true
+        error = nil
+        let core = self.core
+        queue.async {
+            let result = Result { try core.register(name: name, email: email, password: password) }
+            let latest = core.refreshToken()
+            DispatchQueue.main.async {
+                guard core === self.core else { return }
+                self.busy = false
+                switch result {
+                case let .success(s): self.didSignIn(s.user, token: latest ?? s.refreshToken)
+                case let .failure(e): self.error = SessionModel.plainMessage(e)
+                }
+            }
+        }
+    }
+
+    /// Signed in, but the address isn't confirmed yet: the shell shows "Check your email" instead of the app.
+    var needsEmailCheck: Bool { phase == .signedIn && !preview && user?.emailVerified == false }
+
+    /// "I've verified, continue": ask the server again (the refresh token's session carries the user as it is now).
+    func recheckEmail(then done: @escaping (String?) -> Void) {
+        guard let token = savedToken ?? Keychain.read(account: serverURL) else { done("Sign in again."); return }
+        let core = self.core
+        queue.async {
+            let result = Result { try core.restoreSession(refreshToken: token) }
+            let latest = core.refreshToken()
+            DispatchQueue.main.async {
+                guard core === self.core else { return }
+                switch result {
+                case let .success(s):
+                    self.didSignIn(s.user, token: latest ?? s.refreshToken)
+                    done(s.user.emailVerified ? nil : "Not confirmed yet. Open the link in the email we sent, then try again.")
+                case let .failure(e):
+                    done(SessionModel.plainMessage(e))
                 }
             }
         }
@@ -293,6 +348,34 @@ final class SessionModel {
                 }
             case let .failure(e):
                 if !(e is CancellationError) { self.loadError = CoreBridge.message(e) }
+            }
+        }
+    }
+
+    /// An invite was accepted: the workspace list again, then that workspace (or the shared page's).
+    func joined(_ a: AcceptedInvite) {
+        call({ try $0.workspaces() }) { result in
+            guard case let .success(list) = result else { return }
+            self.workspaces = list
+            if list.contains(where: { $0.id == a.workspaceId }) { self.selectWorkspace(a.workspaceId) }
+            self.loadShared()
+        }
+    }
+
+    /// You left a workspace: the list again, and the first one that is left.
+    func leftWorkspace(_ id: String) {
+        call({ try $0.workspaces() }) { result in
+            guard case let .success(list) = result else { return }
+            self.workspaces = list
+            if self.workspaceId == id {
+                if let next = list.first {
+                    self.selectWorkspace(next.id)
+                } else {
+                    self.workspaceId = nil
+                    self.tree = nil
+                    self.tasks = []
+                    self.loadError = "No workspaces yet. Create one in the web app."
+                }
             }
         }
     }

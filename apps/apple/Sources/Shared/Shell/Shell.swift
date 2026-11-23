@@ -118,7 +118,10 @@ final class Shell {
         let state = LookData.state ?? ""
         if preview {
             switch state {
-            case "tasks-today", "empty-tasks-today": route = .tasks(.today)
+            case "tasks-today", "empty-tasks-today", "quick-add": route = .tasks(.today)
+            case "tasks-calendar", "ribbon-calendar": route = .calendar
+            case "settings", "ribbon-settings": route = .settings
+            case "page-tasks-panel": route = .page(LookData.pageId("tasks"))
             case "tasks-upcoming": route = .tasks(.upcoming)
             case "tasks-my": route = .tasks(.my)
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
@@ -138,6 +141,7 @@ final class Shell {
             notebookId = "look"
             if state != "" && !state.hasSuffix("canvas-boxes") && state != "sidebar" { recents = [LookData.pageId("canvas-boxes")] }
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
+            if state == "page-tasks-panel" { pageTasksTab = true; CommentsModel.shared.open = true }
             if state == "search" { searchOpen = true; searchQuery = "plan" }
             if state == "task-detail" { route = .tasks(.my); taskDetailId = "t-review" }
         } else {
@@ -362,6 +366,13 @@ struct AppShell: View {
             openLookMenu()
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
+        // An invite link opened in the app (NotiveloApp.onOpenURL): the join dialog, with the link looked up.
+        .onChange(of: session.pendingInvite, initial: true) { _, token in
+            guard let token, session.phase == .signedIn else { return }
+            session.pendingInvite = nil
+            shell.menu = nil
+            shell.sheet = .joinInvite(token)
+        }
         #if os(iOS)
         // Locked pages lock when the app goes to the background (as the web locks on background).
         .onChange(of: scenePhase) { _, phase in
@@ -416,6 +427,7 @@ struct AppShell: View {
             "dialog-delete-notebook": { shell.delete(.notebook, "look", session) },
             "inline-rename": { shell.rename(.page, corpus, session) },
         ]
+        if state == "quick-add" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.openQuickAdd(session) } }
         if let open = dialogs[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { open() } }
     }
 }
