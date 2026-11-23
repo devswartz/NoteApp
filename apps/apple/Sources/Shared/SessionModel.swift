@@ -351,6 +351,9 @@ final class SessionModel {
 
     fileprivate func setTasksFromStore(_ list: [CoreTask]) { tasks = list }
 
+    /// A task just made, shown at once (the list is read again soon after).
+    func appendTask(_ t: CoreTask) { if !tasks.contains(where: { $0.id == t.id }) { tasks.append(t) } }
+
     func refreshTasks() {
         guard let ws = workspaceId else { return }
         call({ try $0.tasks(workspaceId: ws) }) { result in

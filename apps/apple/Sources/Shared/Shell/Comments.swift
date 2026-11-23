@@ -253,6 +253,9 @@ struct CommentsPanel: View {
                 Capsule().fill(p.borderStrong.color).frame(width: 36, height: 4).padding(.top, 8).padding(.bottom, 2)
             }
             head(p)
+            if shell.pageTasksTab {
+                PageTasksList(palette: p)
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     if let pending = model.pending { Composer(palette: p, quote: pending.quote) }
@@ -289,6 +292,7 @@ struct CommentsPanel: View {
             }
             .noEdgeEffect()
             .dismissKeyboardOnScroll()
+            }
         }
         .frame(width: phone ? nil : 320)
         .frame(maxWidth: phone ? .infinity : nil, maxHeight: phone ? maxHeight : .infinity)
@@ -300,25 +304,28 @@ struct CommentsPanel: View {
         .shadow(color: phone ? Color.black.opacity(0.18) : .clear, radius: 12, y: -4)
     }
 
+    private func tab(_ icon: String, _ title: String, active: Bool, _ p: Palette, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Icon(icon, 14, (active ? p.text : p.text2).color)
+                Text(title).font(.web(13, 500)).foregroundStyle((active ? p.text : p.text2).color)
+            }
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(active ? p.bgElevated.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .shadow(color: active ? Color.black.opacity(0.1) : .clear, radius: 1, y: 1)
+        }
+        .buttonStyle(.plain)
+    }
+
     /// Head 48: the Tasks / Comments switch and the close button.
     private func head(_ p: Palette) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 2) {
-                Button { shell.notYet("Tasks on this page") } label: {
-                    HStack(spacing: 5) {
-                        Icon("circle-check", 14, p.text2.color)
-                        Text("Tasks").font(.web(13, 500)).foregroundStyle(p.text2.color)
-                    }
-                    .padding(.horizontal, 10).frame(height: 28)
+                tab("circle-check", "Tasks", active: shell.pageTasksTab, p) { shell.pageTasksTab = true }
+                tab("message-square", "Comments", active: !shell.pageTasksTab, p) {
+                    shell.pageTasksTab = false
+                    if model.pageId != nil { model.reload() }
                 }
-                .buttonStyle(.plain)
-                HStack(spacing: 5) {
-                    Icon("message-square", 14, p.text.color)
-                    Text("Comments").font(.web(13, 500)).foregroundStyle(p.text.color)
-                }
-                .padding(.horizontal, 10).frame(height: 28)
-                .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .shadow(color: Color.black.opacity(0.1), radius: 1, y: 1)
             }
             .padding(2)
             .background(p.bgHover.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))

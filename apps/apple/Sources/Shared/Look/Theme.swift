@@ -85,9 +85,9 @@ struct Palette {
     var textMuted: PlatformColor
     var textPlaceholder: PlatformColor
     let textInverse: PlatformColor
-    let accent: PlatformColor
-    let accentSolid: PlatformColor
-    let accentInverse: PlatformColor
+    var accent: PlatformColor
+    var accentSolid: PlatformColor
+    var accentInverse: PlatformColor
     let danger: PlatformColor
     let success: PlatformColor
     let warn: PlatformColor
@@ -197,6 +197,67 @@ enum ThemeMode: String, CaseIterable {
     }
 }
 
+/// The accent colour (Settings > Appearance, per device): the web's eight (`src/styles/accents.css`). Blue is the
+/// palettes' own; the others replace `--accent`, `--accent-solid` and `--accent-inverse`, a light and a dark set.
+enum AccentChoice: String, CaseIterable {
+    case blue, purple, teal, green, orange, red, pink, graphite
+
+    var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+
+    /// The swatch in Settings (`ACCENTS` in src/store/ui.ts).
+    var swatch: UInt32 {
+        switch self {
+        case .blue: return 0x4F46E5
+        case .purple: return 0x9333EA
+        case .teal: return 0x0D9488
+        case .green: return 0x16A34A
+        case .orange: return 0xEA580C
+        case .red: return 0xDC2626
+        case .pink: return 0xDB2777
+        case .graphite: return 0x52525B
+        }
+    }
+
+    /// (accent, solid, inverse) on light surfaces.
+    var light: (UInt32, UInt32, UInt32) {
+        switch self {
+        case .blue: return (0x4F46E5, 0x4F46E5, 0xA5B4FC)
+        case .purple: return (0x7E22CE, 0x7E22CE, 0xC084FC)
+        case .teal: return (0x0D6D65, 0x0D6D65, 0x2DD4BF)
+        case .green: return (0x13733A, 0x13733A, 0x4ADE80)
+        case .orange: return (0xB53D0B, 0xB53D0B, 0xFB923C)
+        case .red: return (0xB91C1C, 0xB91C1C, 0xFB8585)
+        case .pink: return (0xBE185D, 0xBE185D, 0xF472B6)
+        case .graphite: return (0x3F3F46, 0x3F3F46, 0xA1A1AA)
+        }
+    }
+
+    /// The same on dark surfaces.
+    var dark: (UInt32, UInt32, UInt32) {
+        switch self {
+        case .blue: return (0x8B95F9, 0x5B5BD6, 0x4F46E5)
+        case .purple: return (0xC084FC, 0x9333EA, 0x7E22CE)
+        case .teal: return (0x2DD4BF, 0x0F766E, 0x0D6D65)
+        case .green: return (0x4ADE80, 0x15803D, 0x13733A)
+        case .orange: return (0xFB923C, 0xC2410C, 0xB53D0B)
+        case .red: return (0xFB8585, 0xB91C1C, 0xB91C1C)
+        case .pink: return (0xF472B6, 0xBE185D, 0xBE185D)
+        case .graphite: return (0xA1A1AA, 0x52525B, 0x3F3F46)
+        }
+    }
+}
+
+extension Palette {
+    func accented(_ a: AccentChoice) -> Palette {
+        let set = isDark ? a.dark : a.light
+        var p = self
+        p.accent = PlatformColor(hex: set.0)
+        p.accentSolid = PlatformColor(hex: set.1)
+        p.accentInverse = PlatformColor(hex: set.2)
+        return p
+    }
+}
+
 /// The current palettes: `chrome` for the ribbon, rail, sidebar and menus; `page` for the note
 /// page (Hybrid: dark chrome, light page).
 @Observable
@@ -206,28 +267,36 @@ final class Theme {
     var mode: ThemeMode {
         didSet { UserDefaults.standard.set(mode.rawValue, forKey: "theme") }
     }
+    var accent: AccentChoice {
+        didSet { UserDefaults.standard.set(accent.rawValue, forKey: "accent") }
+    }
     /// The system's appearance (for System).
     var systemDark = false
 
     private init() {
         mode = ThemeMode(rawValue: UserDefaults.standard.string(forKey: "theme") ?? "") ?? .hybrid
+        accent = AccentChoice(rawValue: UserDefaults.standard.string(forKey: "accent") ?? "") ?? .blue
     }
 
     var chrome: Palette {
+        let base: Palette
         switch mode {
-        case .light: return .light
-        case .dark, .hybrid: return .dark
-        case .system: return systemDark ? .dark : .light
+        case .light: base = .light
+        case .dark, .hybrid: base = .dark
+        case .system: base = systemDark ? .dark : .light
         }
+        return accent == .blue ? base : base.accented(accent)
     }
 
     var page: Palette {
+        let base: Palette
         switch mode {
-        case .light: return .light
-        case .dark: return .dark
-        case .hybrid: return .hybridPage
-        case .system: return systemDark ? .dark : .light
+        case .light: base = .light
+        case .dark: base = .dark
+        case .hybrid: base = .hybridPage
+        case .system: base = systemDark ? .dark : .light
         }
+        return accent == .blue ? base : base.accented(accent)
     }
 
     var isHybrid: Bool { mode == .hybrid }

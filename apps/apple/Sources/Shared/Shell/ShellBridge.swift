@@ -78,7 +78,7 @@ final class ShellBridge {
 
     func showNotes() { shell?.route = .notes }
     func showTasks(_ list: Shell.TaskList) { shell?.route = .tasks(list) }
-    func showCalendar() { shell?.notYet("The calendar") }
+    func showCalendar() { shell?.route = .calendar }
     func search() { shell?.openSearch() }
     func toggleSidebar() { shell?.toggleSidebar() }
     func toggleRibbon() { shell?.ribbonCollapsed.toggle() }
@@ -92,4 +92,14 @@ final class ShellBridge {
     }
 
     func zoomActual() { shell?.zoom = 1 }
+}
+
+extension ShellBridge {
+    /// File > New Task.
+    func newTask() {
+        guard let shell, let session else { return }
+        shell.openQuickAdd(session)
+    }
+
+    func openSettings() { shell?.openSettings() }
 }

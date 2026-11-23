@@ -13,7 +13,14 @@ final class Shell {
         /// A section with no page open (the empty-section screen).
         case section(String)
         case tasks(TaskList)
+        /// The Calendar: month or week, tasks by due date.
+        case calendar
+        /// Settings (personal): Profile, Appearance, Security, About.
+        case settings
     }
+
+    /// Whose tasks the Calendar shows (the ribbon's Mine / Everyone).
+    enum CalendarWho { case mine, everyone }
 
     enum TaskList: String, CaseIterable {
         case today, my, upcoming, all, team
@@ -78,6 +85,16 @@ final class Shell {
     var searchQuery = ""
     /// The task whose detail sheet is open.
     var taskDetailId: String?
+    /// The Calendar: the day it is on (YYYY-MM-DD), month or week, whose tasks.
+    var calCursor = SessionModel.todayString
+    var calMonth = true
+    var calWho: CalendarWho = .mine
+    /// Settings: the open section (nil: the list on phones, Profile on wide screens).
+    var settingsSection: String?
+    /// The page panel shows the page's tasks instead of its comments.
+    var pageTasksTab = false
+    /// Where Settings' Back goes.
+    var routeBeforeSettings: Route = .notes
     /// Sections open in the tree.
     var expanded: Set<String> = []
     var recentOpen = false
@@ -212,6 +229,28 @@ final class Shell {
     func openSheet(_ sheet: ShellSheet, _ session: SessionModel, _ what: String) {
         menu = nil
         if session.preview { notYet(what) } else { self.sheet = sheet }
+    }
+
+    /// Quick add (the web's Q): the dialog, with the page the task goes on and a day to start from. Viewers can't add.
+    func openQuickAdd(_ session: SessionModel, pageId: String? = nil, due: String? = nil, text: String = "") {
+        menu = nil
+        searchOpen = false
+        taskDetailId = nil
+        if !session.preview && session.workspace?.role == "viewer" {
+            say("You can only view this workspace.")
+            return
+        }
+        sheet = .quickAdd(QuickAddSeed(pageId: pageId, dueDate: due, text: text))
+    }
+
+    func openSettings(_ section: String? = nil) {
+        menu = nil
+        searchOpen = false
+        taskDetailId = nil
+        if route != .settings { routeBeforeSettings = route }
+        settingsSection = section
+        route = .settings
+        drawerOpen = false
     }
 
     func notYet(_ what: String) {
@@ -395,6 +434,10 @@ struct MainArea: View {
                 PageScreen(pageId: id).id(id)
             case let .tasks(list):
                 TasksScreen(list: list)
+            case .calendar:
+                CalendarScreen()
+            case .settings:
+                SettingsScreen()
             case .notes:
                 NotesHome()
             case let .section(id):

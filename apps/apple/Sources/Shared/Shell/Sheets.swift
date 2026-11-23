@@ -25,6 +25,7 @@ enum ShellSheet: Equatable {
     case history(String)
     case trash
     case lock(LockMode)
+    case quickAdd(QuickAddSeed)
 }
 
 func copyToClipboard(_ text: String) {
