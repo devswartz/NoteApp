@@ -1,0 +1,8 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+# Paparazzi goldens: recorded in CI (recordPaparazziDebug), uploaded as the android-shots artifact, not committed.
+app/src/test/snapshots/
