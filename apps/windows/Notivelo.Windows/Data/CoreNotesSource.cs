@@ -465,6 +465,50 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         catch (Exception) { }
     }
 
+    public async Task<string?> AddTask(NewTask t)
+    {
+        var ws = _wsId;
+        if (ws is null) return "Not signed in.";
+        try
+        {
+            var title = t.Title;
+            var assignee = _user.Id;
+            if (t.AssigneeMention is { } mention)
+            {
+                if (N.NvCore.ResolveMember(mention, _members, _user.Id) is { } id) assignee = id; else title += " @" + mention;
+            }
+            string? teamId = null;
+            if (t.TeamText is { } team)
+            {
+                var teams = await _session.CallAsync(c => c.Teams(ws));
+                if (N.NvCore.ResolveTeam(team, teams) is { } id) teamId = id; else title += " +" + team;
+            }
+            title = title.Trim();
+            if (title.Length == 0) return "Give the task a title.";
+            string[]? tagIds = null;
+            if (t.Tags.Count > 0)
+            {
+                var known = await _session.CallAsync(c => c.Tags(ws));
+                var ids = new List<string>();
+                foreach (var name in t.Tags)
+                {
+                    var hit = known.FirstOrDefault(k => string.Equals(k.Name, name, StringComparison.OrdinalIgnoreCase));
+                    ids.Add(hit?.Id ?? (await _session.CallAsync(c => c.CreateTag(ws, name, null))).Id);
+                }
+                tagIds = ids.ToArray();
+            }
+            var input = new N.NewTaskInput(title, null, t.PageId, null, false, t.Description.Length == 0 ? null : t.Description, t.Priority, t.DueDate, t.DueTime,
+                t.Recurrence, null, assignee, teamId, tagIds);
+            var made = await _session.CallAsync(c => c.CreateTaskWith(ws, input));
+            if (ws == _wsId) { _tasks = _tasks.Where(x => x.Id != made.Id).Append(made).ToArray(); _tasksVersion++; Raise(); }
+            return null;
+        }
+        catch (Exception e) { return ErrorText.Message(e); }
+    }
+
+    public IReadOnlyList<CalendarTask> CalendarTasks() =>
+        Mine().Where(t => !t.Done).Select(t => new CalendarTask(t.DueDate, ToItem(t, Today()), t.DueTime)).ToList();
+
     public async void DeleteTask(string id)
     {
         try

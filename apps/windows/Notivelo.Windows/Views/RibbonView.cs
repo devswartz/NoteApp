@@ -80,6 +80,9 @@ internal sealed class RibbonView : ThemedControl
         b.Flyout = f;
     }
 
+    /// <summary>A button outside the page editor was pressed (its tooltip text): New task, the Calendar's Today / Previous / Next, Back.</summary>
+    public event Action<string>? Invoked;
+
     public AppRoute Route { get; private set; } = AppRoute.Notes;
     public RibbonMode Mode { get; private set; } = RibbonMode.Compact;
     public TaskViewKind TaskView { get; private set; } = TaskViewKind.Today;
@@ -117,9 +120,10 @@ internal sealed class RibbonView : ThemedControl
         {
             new("New", new Item[] { new("plus", "New task", Word: "New task") }),
             new("Navigate", new Item[] { new("calendar-days", "Today"), new("chevron-left", "Previous"), new("chevron-right", "Next") }),
-            new("View", new Item[] { new("calendar-range", "Week", Pressed: true), new("calendar-days", "Month") }),
+            new("View", new Item[] { new("calendar-range", "Week", true), new("calendar-days", "Month", Pressed: true) }),
             new("Filter", new Item[] { new("user", "Mine", Pressed: true), new("users", "Everyone"), new("tag", "Tags", Menu: true), new("users-round", "Team", Menu: true) }),
         },
+        AppRoute.Settings => new Group[] { new("Settings", new Item[] { new("arrow-left", "Back", Word: "Back") }) },
         _ => new Group[]
         {
             new("Text", new Item[]
@@ -287,6 +291,12 @@ internal sealed class RibbonView : ThemedControl
             if (it.Tip == "Undo") b.Click += (_, _) => { if (PageView.Current?.Undo(true) is null) BoxTextView.Focused?.DoUndo(); };
             else if (it.Tip == "Redo") b.Click += (_, _) => { if (PageView.Current?.Undo(false) is null) BoxTextView.Focused?.DoRedo(); };
             else if (spec is not null) b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+        }
+        else if (!it.Disabled)
+        {
+            var tip = it.Tip;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(tip));
+            b.Click += (_, _) => Invoked?.Invoke(tip);
         }
         return b;
     }

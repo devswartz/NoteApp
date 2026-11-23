@@ -302,7 +302,10 @@ internal sealed class SidebarView : ThemedControl
         };
         Grid.SetColumn(kbd, 2);
         add.Children.Add(kbd);
-        root.Children.Add(Row(32, 7, false, null, add, new Thickness(10, 0, 10, 0)));
+        var addRow = Row(32, 7, false, () => Host?.OpenQuickAdd(null), add, new Thickness(10, 0, 10, 0));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(addRow, "sidebar-add-task");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(addRow, "Add task");
+        root.Children.Add(addRow);
         root.Children.Add(new Border { Height = 14 });
 
         root.Children.Add(TaskItemRow("sun", "Today", TaskViewKind.Today, counts.Today, counts.TodayOverdue));

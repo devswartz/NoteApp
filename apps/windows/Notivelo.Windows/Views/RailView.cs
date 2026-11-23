@@ -8,7 +8,7 @@ using Notivelo.Windows.Data;
 
 namespace Notivelo.Windows.Views;
 
-public enum AppRoute { Notes, Tasks, Calendar }
+public enum AppRoute { Notes, Tasks, Calendar, Settings }
 
 /// <summary>Rail (LOOK 4.2): 64 wide; Notes / Tasks / Calendar on top, sidebar toggle, search, bell, workspace and account at the foot.</summary>
 internal sealed class RailView : ThemedControl
@@ -99,7 +99,7 @@ internal sealed class RailView : ThemedControl
         acct.Click += (_, _) =>
         {
             if (Host is null) return;
-            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48) };
+            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), new MenuEntry("Settings", "settings", () => Host?.OpenSettings(), Id: "menu-settings"), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48) };
             if (_signOut is not null)
             {
                 items.Add(MenuEntry.Sep());

@@ -97,6 +97,11 @@ public interface INotesSource
     /// <summary>Change a task (shown at once, then sent to the core). A tick is <c>new TaskPatch(Done: true)</c>.</summary>
     void UpdateTask(string taskId, TaskPatch patch) { }
 
+    /// <summary>Quick add: make a task (shown at once on success). Returns an error sentence, or null.</summary>
+    Task<string?> AddTask(NewTask task) => Task.FromResult<string?>("Not available.");
+    /// <summary>The open tasks assigned to you (with their due day, null when none) for the Calendar.</summary>
+    IReadOnlyList<CalendarTask> CalendarTasks() => Array.Empty<CalendarTask>();
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);
