@@ -141,7 +141,11 @@ final class MacCanvasView: NSView {
     /// The boxes as the page document has them (before local changes).
     private var pageBoxes: [PageBox] = []
     private var dragging = false
-    private enum Drag { case move(id: String, start: CGPoint, x: Double, y: Double), resize(id: String, start: CGPoint, w: Double) }
+    private enum Drag {
+        case move(id: String, start: CGPoint, x: Double, y: Double), resize(id: String, start: CGPoint, w: Double)
+        /// A resize handle of the selected image (the shape stays: `aspect` is height over width).
+        case image(id: String, handle: ImageHandle, start: CGPoint, w: CGFloat, aspect: CGFloat, maxW: CGFloat)
+    }
 
     // Popups over the page (outside the scroll view, so they keep their size when zoomed).
     private var toolbarHost: NSHostingView<AnyView>?
@@ -421,6 +425,10 @@ final class MacCanvasView: NSView {
         view.onHeightChange = { [weak self] _ in self?.relayout() }
         view.onMenu = { [weak self] box, content in self?.showMenu(box, content) }
         view.onMouseDown = { [weak self] box, event in self?.boxMouseDown(box, event) ?? false }
+        view.onDropMedia = { [weak self] box, items, point in
+            guard let self, self.host != nil else { return }
+            self.beginEditing(box, at: point) { MediaHub.shared.upload(items, into: box) }
+        }
         view.onCaretChange = { [weak self] box in
             guard let self, box === self.editing else { return }
             self.keepCaretVisible(box)
@@ -508,6 +516,11 @@ final class MacCanvasView: NSView {
             return true
         }
         if box !== editing {
+            // A double click on a picture or file card opens it (the first click is already starting the edit).
+            if event.clickCount == 2, let m = box.mediaItem(at: local) {
+                MediaHub.shared.open(m)
+                return true
+            }
             // A link in a box that is not being edited opens (http, https, mailto), as the web's read-only text does.
             if let url = box.linkHref(at: local).flatMap(LinkURL.openable) {
                 NSWorkspace.shared.open(url)
@@ -723,6 +736,10 @@ final class MacCanvasView: NSView {
     private func moveHit(_ p: CGPoint) -> Drag? {
         guard let box = editing, box.superview != nil, let b = boxes.first(where: { $0.id == box.boxId }) else { return nil }
         let f = box.boxFrame
+        // A selected image's resize handles come first (they sit inside the box).
+        if let h = box.imageHandle(at: box.convert(p, from: surface)) {
+            return .image(id: b.id, handle: h.handle, start: p, w: h.rect.width, aspect: h.aspect, maxW: h.maxWidth)
+        }
         if CGRect(x: f.minX, y: f.minY - 16, width: f.width, height: 20).contains(p) {
             return .move(id: b.id, start: p, x: b.x, y: b.y)
         }
@@ -737,13 +754,26 @@ final class MacCanvasView: NSView {
         guard let window else { return }
         hideToolbar()
         dragging = true
+        var imageSent: (at: Date, width: CGFloat) = (.distantPast, 0)
+        var imageWanted: CGFloat = 0
         switch hit {
         case let .move(id, _, _, _), let .resize(id, _, _): bringToFront(id)
+        case let .image(_, _, _, w, _, _): imageSent = (.distantPast, w); imageWanted = w
         }
         while let event = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             let p = surface.convert(event.locationInWindow, from: nil)
             if event.type == .leftMouseUp { break }
+            if case let .image(id, handle, start, w, aspect, maxW) = hit {
+                let dx = p.x - start.x
+                imageWanted = min(max(w + (handle.growsLeft ? -dx : dx), 80), maxW).rounded()
+                if abs(imageWanted - imageSent.width) >= 2, Date().timeIntervalSince(imageSent.at) > 0.05 {
+                    imageSent = (Date(), imageWanted)
+                    boxViews[id]?.resizeImage(width: imageWanted, aspect: aspect)
+                }
+                continue
+            }
             switch hit {
+            case .image: break
             case let .move(id, start, x, y):
                 geometry.moveBox(id, x: max(x + Double(p.x - start.x), 0), y: max(y + Double(p.y - start.y), 0))
             case let .resize(id, start, w):
@@ -755,11 +785,14 @@ final class MacCanvasView: NSView {
                 lastCommit = Date()
                 switch hit {
                 case let .move(id, _, _, _), let .resize(id, _, _): geometry.commit(id)
+                case .image: break
                 }
             }
         }
         switch hit {
         case let .move(id, _, _, _), let .resize(id, _, _): geometry.commit(id)
+        case let .image(id, _, _, _, aspect, _):
+            if imageWanted != imageSent.width { boxViews[id]?.resizeImage(width: imageWanted, aspect: aspect) }
         }
         dragging = false
         updateToolbar()

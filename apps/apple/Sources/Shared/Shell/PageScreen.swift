@@ -58,7 +58,11 @@ struct PageScreen: View {
                 .overlay(shape.stroke(hybrid ? Color.black.opacity(0.55) : .clear, lineWidth: 1).padding(-0.5))
         )
         .padding(.top, hybrid ? 6 : 0).padding(.horizontal, hybrid ? 6 : 0)
-        .onAppear(perform: openPage)
+        .onAppear {
+            MediaHub.shared.configure(session: session, shell: shell, pageId: pageId)
+            openPage()
+        }
+        .onChange(of: pageId) { _, id in MediaHub.shared.pageId = id }
         .onChange(of: session.locksOpen) { _, open in
             if open {
                 openPage()

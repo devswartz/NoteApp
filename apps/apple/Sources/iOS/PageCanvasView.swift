@@ -99,8 +99,15 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private var lastCommit = Date.distantPast
     /// The boxes as the page document has them (before local changes).
     private var pageBoxes: [PageBox] = []
-    private enum Drag { case move(id: String, start: CGPoint, x: Double, y: Double), resize(id: String, start: CGPoint, w: Double) }
+    private enum Drag {
+        case move(id: String, start: CGPoint, x: Double, y: Double), resize(id: String, start: CGPoint, w: Double)
+        /// A resize handle of the selected image (the shape stays: `aspect` is height over width).
+        case image(id: String, handle: ImageHandle, start: CGPoint, w: CGFloat, aspect: CGFloat, maxW: CGFloat)
+    }
     private var drag: Drag?
+    /// The image being resized: the width last sent to the engine and the one the finger is at.
+    private var imageSent: (at: Date, width: CGFloat) = (.distantPast, 0)
+    private var imageWanted: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -133,6 +140,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         singleTap.addTarget(self, action: #selector(tapped(_:)))
         singleTap.require(toFail: doubleTap)
         addGestureRecognizer(singleTap)
+        addInteraction(UIDropInteraction(delegate: self))
         boxPan.addTarget(self, action: #selector(panned(_:)))
         boxPan.maximumNumberOfTouches = 1
         // Fails at touch-down unless the touch starts on the edited box's bar or width handle: otherwise it
@@ -552,8 +560,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     private func moveHit(_ p: CGPoint) -> Drag? {
-        guard !stacked, let box = editing, box.superview != nil, let b = boxes.first(where: { $0.id == box.boxId }) else { return nil }
+        guard let box = editing, box.superview != nil, let b = boxes.first(where: { $0.id == box.boxId }) else { return nil }
         let f = box.frame
+        // A selected image's resize handles come first (they sit inside the box, on phones too).
+        if let h = box.imageHandle(at: box.convert(p, from: surface)) {
+            return .image(id: b.id, handle: h.handle, start: p, w: h.rect.width, aspect: h.aspect, maxW: h.maxWidth)
+        }
+        guard !stacked else { return nil }
         // The top bar (12 high in the web, a bigger target here) and the width handle on the right edge.
         if CGRect(x: f.minX, y: f.minY - 26, width: f.width, height: 34).contains(p) {
             return .move(id: b.id, start: p, x: b.x, y: b.y)
@@ -573,11 +586,22 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 hideToolbar()
                 switch drag {
                 case let .move(id, _, _, _), let .resize(id, _, _): bringToFront(id)
+                case let .image(_, _, _, w, _, _): imageSent = (.distantPast, w); imageWanted = w
                 }
             }
         case .changed:
             guard let drag else { return }
+            if case let .image(id, handle, start, w, aspect, maxW) = drag {
+                let dx = p.x - start.x
+                imageWanted = min(max(w + (handle.growsLeft ? -dx : dx), 80), maxW).rounded()
+                if abs(imageWanted - imageSent.width) >= 2, Date().timeIntervalSince(imageSent.at) > 0.08 {
+                    imageSent = (Date(), imageWanted)
+                    boxViews[id]?.resizeImage(width: imageWanted, aspect: aspect)
+                }
+                return
+            }
             switch drag {
+            case .image: break
             case let .move(id, start, x, y):
                 geometry.moveBox(id, x: max(x + Double(p.x - start.x), 0), y: max(y + Double(p.y - start.y), 0))
             case let .resize(id, start, w):
@@ -589,6 +613,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                 lastCommit = Date()
                 switch drag {
                 case let .move(id, _, _, _), let .resize(id, _, _): geometry.commit(id)
+                case .image: break
                 }
             }
         case .ended, .cancelled, .failed:
@@ -596,6 +621,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             drag = nil
             switch finished {
             case let .move(id, _, _, _), let .resize(id, _, _): geometry.commit(id)
+            case let .image(id, _, _, _, aspect, _):
+                if imageWanted != imageSent.width { boxViews[id]?.resizeImage(width: imageWanted, aspect: aspect) }
             }
             updateToolbar()
         default: break
@@ -839,6 +866,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if g === singleTap || g === doubleTap, linkEditor.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, menu.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, let box = editing, box.bounds.contains(g.location(in: box)) { return false }
+        // A double tap on an image opens it (the box's own recognizer); it doesn't zoom the page.
+        if g === doubleTap, let hit = box(at: g.location(in: surface)), hit.mediaItem(at: g.location(in: hit))?.kind == .image { return false }
         return super.gestureRecognizerShouldBegin(g)
     }
 
@@ -987,6 +1016,31 @@ final class PageSurfaceView: UIView {
                 if x + 1 >= rect.minX && x <= rect.maxX { UIRectFill(CGRect(x: x, y: max(top, rect.minY), width: 1, height: max(rect.maxY - max(top, rect.minY), 0))) }
                 x += step
             }
+        }
+    }
+}
+
+// MARK: Dropping pictures and files
+
+/// Pictures and files dropped on a box (Photos, Files, another app, split view): uploaded and inserted at the drop point.
+extension PageScrollView: UIDropInteractionDelegate {
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        host != nil && session.items.contains { PlatformMedia.wants($0.itemProvider) }
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        let p = session.location(in: surface)
+        return UIDropProposal(operation: box(at: p) != nil || editing != nil ? .copy : .cancel)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        let p = session.location(in: surface)
+        guard let target = box(at: p) ?? editing else { return }
+        let providers = session.items.map(\.itemProvider).filter(PlatformMedia.wants)
+        guard !providers.isEmpty else { return }
+        let local = target.convert(p, from: surface)
+        beginEditing(target, at: target.bounds.contains(local) ? local : nil) {
+            PlatformMedia.load(providers) { MediaHub.shared.upload($0, into: target) }
         }
     }
 }

@@ -50,6 +50,8 @@ final class MacBoxView: NSTextView, EditorTarget {
     }
     /// A mouse press in the box (return true when the canvas took it: starting to edit, moving, resizing, a fold arrow).
     var onMouseDown: ((MacBoxView, NSEvent) -> Bool)?
+    /// Pictures or files dropped on the box (the point is in this view's coordinates): the canvas opens the box and uploads them.
+    var onDropMedia: ((MacBoxView, [PickedFile], CGPoint) -> Void)?
     /// The height changed (the box grows with its text).
     var onHeightChange: ((MacBoxView) -> Void)?
     /// The caret moved or the text changed (the canvas keeps the caret in view and the toolbar over the selection).
@@ -105,7 +107,10 @@ final class MacBoxView: NSTextView, EditorTarget {
         smartInsertDeleteEnabled = false
         isContinuousSpellCheckingEnabled = true
         isGrammarCheckingEnabled = false
+        // Not the text view's own types: files and pictures dropped on the box are uploaded (below).
         unregisterDraggedTypes()
+        registerForDraggedTypes([.fileURL, .png, .tiff])
+        NotificationCenter.default.addObserver(self, selector: #selector(mediaLoaded(_:)), name: MediaCache.loaded, object: nil)
         setAccessibilityIdentifier("box:\(boxId)")
         applyColors()
     }
@@ -243,6 +248,50 @@ final class MacBoxView: NSTextView, EditorTarget {
                 painter.marker(m.kind, x: inset.width + m.x, line: line)
             }
         }
+        if chrome, let m = selectedMedia, let r = mediaRect(m) { painter.mediaSelection(m, rect: r) }
+    }
+
+    // MARK: Images and file cards
+
+    /// The image or file card under `p` (view coordinates).
+    func mediaItem(at p: CGPoint) -> BoxMedia? {
+        rendering.media.first { m in mediaRect(m)?.contains(p) ?? false }
+    }
+
+    /// Where an image or file card is drawn, in view coordinates.
+    func mediaRect(_ m: BoxMedia) -> CGRect? {
+        guard let line = lineBox(m.offset) else { return nil }
+        return CGRect(x: textContainerInset.width + m.x, y: line.top, width: m.size.width, height: m.size.height)
+    }
+
+    /// The image or file card selected as a node (a click on it).
+    var selectedMedia: BoxMedia? {
+        guard editor != nil, sel.hi == sel.lo + 1 else { return nil }
+        return rendering.media.first { $0.offset == sel.lo }
+    }
+
+    /// The handle of the selected image at `p` (view coordinates), with the picture's rect.
+    func imageHandle(at p: CGPoint) -> (handle: ImageHandle, rect: CGRect, aspect: CGFloat, maxWidth: CGFloat)? {
+        guard chrome, let m = selectedMedia, m.kind == .image, let r = mediaRect(m), m.size.width > 0,
+              let h = ImageHandle.at(p, in: r, pad: 8) else { return nil }
+        return (h, r, m.size.height / m.size.width, max(layoutWidth - m.x, 80))
+    }
+
+    /// Resize the selected image (the web's resize handles): the width, and the height that keeps its shape.
+    func resizeImage(width: CGFloat, aspect: CGFloat) {
+        let w = max(width, 80).rounded()
+        runCommand("setImageWidth", ["width": w, "height": (w * aspect).rounded()])
+    }
+
+    func selectMedia(_ m: BoxMedia) {
+        guard editor != nil else { return }
+        selectByPlatform(lo: m.offset, hi: m.offset + 1)
+    }
+
+    /// A picture arrived (or failed): draw again if this box shows it.
+    @objc private func mediaLoaded(_ note: Notification) {
+        guard let src = note.userInfo?["src"] as? String, rendering.media.contains(where: { $0.src == src }) else { return }
+        rerender()
     }
 
     /// The line that starts at `offset`: its top, height and baseline in view coordinates.
@@ -334,6 +383,12 @@ final class MacBoxView: NSTextView, EditorTarget {
 
     override func mouseDown(with event: NSEvent) {
         if let onMouseDown, onMouseDown(self, event) { return }
+        // A click on a picture or file card selects it (a double click opens it); the text view would put a caret beside it.
+        if editor != nil, isEditable, let m = mediaItem(at: convert(event.locationInWindow, from: nil)) {
+            selectMedia(m)
+            if event.clickCount == 2 { MediaHub.shared.open(m) }
+            return
+        }
         super.mouseDown(with: event)
     }
 
@@ -571,6 +626,10 @@ final class MacBoxView: NSTextView, EditorTarget {
     /// Put the caret at `point` (view coordinates), as a click does.
     func placeCaret(at point: CGPoint) {
         guard editor != nil else { return }
+        if let m = mediaItem(at: point) {
+            selectMedia(m)
+            return
+        }
         let o = closestOffset(to: point)
         selectByPlatform(lo: o, hi: o)
     }
@@ -780,7 +839,11 @@ final class MacBoxView: NSTextView, EditorTarget {
         guard menuRows.indices.contains(i) else { return }
         let r = menuRows[i]
         switch menuKind {
-        case .slash: runCommand("pickSlash", ["title": r.id])
+        case .slash:
+            runCommand("pickSlash", ["title": r.id])
+            // The engine only removes the typed "/image"; the open panel is the view's.
+            if r.id == "Image" { MediaHub.shared.pick(.image, into: self) }
+            if r.id == "File attachment" { MediaHub.shared.pick(.file, into: self) }
         case .page: runCommand("pickPage", ["pageId": r.id])
         case .mention: runCommand("pickMention", ["id": r.id, "label": r.title])
         }
@@ -966,11 +1029,19 @@ final class MacBoxView: NSTextView, EditorTarget {
         return false
     }
 
-    // Dragging text is not supported yet (the engine has no move-range call): neither a source nor a target.
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { [] }
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { [] }
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { false }
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool { false }
+    // Dragging text is not supported yet (the engine has no move-range call): neither a source nor a target. Files and pictures
+    // dropped on the box are uploaded and inserted where they land.
+    private func takesDrop(_ sender: NSDraggingInfo) -> Bool { onDropMedia != nil && PlatformMedia.hasMedia(sender.draggingPasteboard) }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { takesDrop(sender) ? .copy : [] }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { takesDrop(sender) ? .copy : [] }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { takesDrop(sender) }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard takesDrop(sender) else { return false }
+        let items = PlatformMedia.pasteboardFiles(sender.draggingPasteboard)
+        guard !items.isEmpty else { return false }
+        onDropMedia?(self, items, convert(sender.draggingLocation, from: nil))
+        return true
+    }
 
     // MARK: Clipboard
 
@@ -986,10 +1057,24 @@ final class MacBoxView: NSTextView, EditorTarget {
 
     override func paste(_ sender: Any?) {
         let board = NSPasteboard.general
+        // Files copied in Finder (their names are on the pasteboard as text too) and pictures with no text are uploaded.
+        if editor != nil, PlatformMedia.hasFiles(board) {
+            MediaHub.shared.upload(PlatformMedia.pasteboardFiles(board), into: self)
+            return
+        }
         let html = board.string(forType: .html) ?? ""
         let plain = board.string(forType: .string) ?? ""
-        guard !html.isEmpty || !plain.isEmpty else { return }
+        guard !html.isEmpty || !plain.isEmpty else {
+            if editor != nil { MediaHub.shared.upload(PlatformMedia.pasteboardFiles(board), into: self) }
+            return
+        }
         engine { _ = $0.paste(html: html, text: plain) }
+    }
+
+    /// Paste is on for pictures and files too (the text view only knows its own types).
+    override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(NSText.paste(_:)), editor != nil, isEditable, PlatformMedia.hasMedia(.general) { return true }
+        return super.validateMenuItem(item)
     }
 
     override func pasteAsPlainText(_ sender: Any?) {

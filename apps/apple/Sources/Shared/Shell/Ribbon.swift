@@ -251,8 +251,8 @@ struct NoteRibbon: View {
         }
         Group {
         RibbonButton(icon: "table", m: m, enabled: on) { focus.run("insertTable", ["rows": 3, "cols": 3, "header": true]) }
-        RibbonButton(icon: "image-plus", m: m, enabled: on) { shell.notYet("Images") }
-        RibbonButton(icon: "paperclip", m: m, enabled: on) { shell.notYet("File attachments") }
+        RibbonButton(icon: "image-plus", m: m, enabled: on) { MediaHub.shared.pick(.image, into: focus.box) }
+        RibbonButton(icon: "paperclip", m: m, enabled: on) { MediaHub.shared.pick(.file, into: focus.box) }
         RibbonButton(icon: "link-2", m: m, enabled: on) { focus.openLinkEditor() }
         RibbonButton(icon: "file-symlink", m: m, enabled: on) { shell.notYet("Links to pages") }
         RibbonButton(icon: "minus", m: m, enabled: on) { shell.notYet("Dividers from the ribbon") }

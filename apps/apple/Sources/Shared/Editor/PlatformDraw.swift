@@ -47,6 +47,9 @@ extension UIImage {
 
     /// Draw at `p` (top-left).
     func paint(at p: CGPoint) { draw(at: p) }
+
+    /// Draw stretched to `rect`.
+    func paint(in rect: CGRect) { draw(in: rect) }
 }
 
 extension UIBezierPath {
@@ -76,6 +79,11 @@ extension NSImage {
     /// Draw at `p` (top-left), upright in a flipped context.
     func paint(at p: CGPoint) {
         draw(in: NSRect(origin: p, size: size), from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
+    /// Draw stretched to `rect`, upright in a flipped context.
+    func paint(in rect: CGRect) {
+        draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
     /// A Lucide icon (`lucide-<name>` in the asset catalog) tinted `color`, `size` points square.

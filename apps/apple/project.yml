@@ -61,6 +61,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         NSFaceIDUsageDescription: Unlock your locked pages with Face ID.
+        NSCameraUsageDescription: Take a photo to put on a page.
         LSRequiresIPhoneOS: true
         UILaunchScreen:
           UIColorName: AccentColor
