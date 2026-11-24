@@ -68,6 +68,21 @@ public interface INotesSource
     bool DeleteBox(string pageId, string boxId) => false;
     /// <summary>The page's ink in drawing order (empty for a source without a live page).</summary>
     IReadOnlyList<InkStroke> InkOf(string pageId) => Array.Empty<InkStroke>();
+    /// <summary>Ink can be drawn on this page (a live page; the offline sample page keeps its strokes in memory). The writes below go through the core's ink
+    /// calls (Apple's InkSession) and join page undo; they raise no Changed, so the caller reads <see cref="InkOf"/> again.</summary>
+    bool CanInk(string pageId) => false;
+    /// <summary>The finished stroke of a builder (core <c>AddInkStroke</c>).</summary>
+    bool AddInkStroke(string pageId, Notivelo.Native.InkStrokeBuilder builder, byte tool, uint color) => false;
+    /// <summary>Core <c>EraseInk(track, radius, partial)</c>: a flat x,y track.</summary>
+    bool EraseInk(string pageId, float[] track, float radius, bool partial) => false;
+    /// <summary>Core <c>InkHitLasso(polygon, 0.5)</c>.</summary>
+    IReadOnlyList<string> InkHitLasso(string pageId, float[] polygon) => Array.Empty<string>();
+    /// <summary>Core <c>InkHitPoint(x, y, radius)</c>.</summary>
+    IReadOnlyList<string> InkHitPoint(string pageId, float x, float y, float radius) => Array.Empty<string>();
+    /// <summary>Core <c>MoveInkStrokes</c>: the moved strokes get new ids. Null when it failed.</summary>
+    IReadOnlyList<(string OldId, string NewId)>? MoveInkStrokes(string pageId, IReadOnlyList<string> ids, float dx, float dy) => null;
+    /// <summary>Core <c>DeleteInkStrokes</c>.</summary>
+    bool DeleteInkStrokes(string pageId, IReadOnlyList<string> ids) => false;
 
 
     // ---- parity B: tree actions (the core's create/rename/move/delete/trash calls; each refreshes the tree), search, task detail ----

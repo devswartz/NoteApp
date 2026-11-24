@@ -24,8 +24,8 @@ internal sealed class PageView : ThemedControl
     public PageView(INotesSource source)
     {
         _source = source;
-        Loaded += (_, _) => { BoxTextView.FocusedStateChanged += FocusChanged; Current = this; };
-        Unloaded += (_, _) => { BoxTextView.FocusedStateChanged -= FocusChanged; if (ReferenceEquals(Current, this)) Current = null; };
+        Loaded += (_, _) => { BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
+        Unloaded += (_, _) => { BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
     }
 
     /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
@@ -56,6 +56,7 @@ internal sealed class PageView : ThemedControl
     private readonly Dictionary<string, BoxFrame> _frames = new();
     private Canvas? _surface;
     private InkLayer? _inkUnder, _inkOver;
+    private InkOverlay? _inkOverlay;
     private BoxFrame? _dragging;
 
     private void FocusChanged()
@@ -195,8 +196,8 @@ internal sealed class PageView : ThemedControl
         _surface = canvas;
         canvas.PointerPressed += OnSurfacePressed;
         // the ink layers are made when the page has ink (a canvas control per layer)
-        _inkUnder = null; _inkOver = null;
-        canvas.SizeChanged += (_, e) => { if (_inkUnder is not null) _inkUnder.Width = e.NewSize.Width; if (_inkOver is not null) _inkOver.Width = e.NewSize.Width; };
+        _inkUnder = null; _inkOver = null; _inkOverlay = null;
+        canvas.SizeChanged += (_, e) => { if (_inkUnder is not null) _inkUnder.Width = e.NewSize.Width; if (_inkOver is not null) _inkOver.Width = e.NewSize.Width; if (_inkOverlay is not null) _inkOverlay.Width = e.NewSize.Width; };
         UpdateInk(page);
         _firstBox = page.Boxes.FirstOrDefault();
         var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
@@ -505,6 +506,7 @@ internal sealed class PageView : ThemedControl
             _surface.Height = h;
             if (_inkUnder is not null) _inkUnder.Height = h;
             if (_inkOver is not null) _inkOver.Height = h;
+            if (_inkOverlay is not null) _inkOverlay.Height = h;
         }
     }
 
@@ -512,7 +514,8 @@ internal sealed class PageView : ThemedControl
     {
         var strokes = PageId is null ? Array.Empty<InkStroke>() : _source.InkOf(PageId);
         var dark = ActualTheme == ElementTheme.Dark;
-        if (strokes.Count > 0 && _surface is not null && _inkUnder is null)
+        var canInk = PageId is not null && _source.CanInk(PageId);
+        if ((strokes.Count > 0 || (canInk && InkTool.Shared.BarOpen)) && _surface is not null && _inkUnder is null)
         {
             var h = _surface.Height; var w = _surface.ActualWidth;
             _inkUnder = new InkLayer(true) { Height = h, Width = w };
@@ -522,8 +525,35 @@ internal sealed class PageView : ThemedControl
             _surface.Children.Add(_inkUnder);
             _surface.Children.Add(_inkOver);
         }
+        // the pen row is open on a page that takes ink: the overlay takes the pointer while a pen tool is chosen
+        if (canInk && InkTool.Shared.BarOpen && _surface is not null && _inkOverlay is null && _inkUnder is not null && _inkOver is not null)
+        {
+            _inkOverlay = new InkOverlay(_source, PageId!, _inkUnder, _inkOver, () =>
+            {
+                if (PageId is not null && _source.GetPage(PageId) is { } p) UpdateInk(p);
+                UndoStateChanged?.Invoke();
+            }) { Height = _surface.Height, Width = _surface.ActualWidth };
+            Canvas.SetZIndex(_inkOverlay, 2_000_000);
+            _surface.Children.Add(_inkOverlay);
+        }
+        // strokes drawn below the old end of the page make it longer
+        if (_surface is not null && strokes.Count > 0 && strokes.Max(s => s.MaxY) + 40 > _surface.Height)
+        {
+            var h = strokes.Max(s => s.MaxY) + 40;
+            _surface.Height = h;
+            if (_inkUnder is not null) _inkUnder.Height = h;
+            if (_inkOver is not null) _inkOver.Height = h;
+            if (_inkOverlay is not null) _inkOverlay.Height = h;
+        }
         _inkUnder?.Set(strokes, dark);
         _inkOver?.Set(strokes, dark);
+        _inkOverlay?.SetStrokes(strokes, dark);
+    }
+
+    /// <summary>The pen row opened: the overlay is made on the page on screen.</summary>
+    private void OnInkTool()
+    {
+        if (_inkOverlay is null && InkTool.Shared.BarOpen && PageId is not null && _source.GetPage(PageId) is { } page) UpdateInk(page);
     }
 
     /// <summary>A click on empty canvas: while a box is being edited it only stops that (and removes the box if it was left empty);
@@ -687,87 +717,6 @@ internal sealed class PageView : ThemedControl
             _bar3.Background = _b("BorderStrong");
             Bar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             Handle.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        }
-    }
-
-    /// <summary>One layer of the page's ink (LOOK 4.5; the web's InkRenderer layers): the core's outlines filled with the nonzero rule, highlighters under
-    /// the boxes and pens over them. Read-only: it never takes a click. In the dark theme near-black ink is drawn near-white.</summary>
-    private sealed class InkLayer : Grid
-    {
-        private readonly CanvasControl _c = new() { IsHitTestVisible = false };
-        private readonly bool _highlighters;
-        private List<InkStroke> _items = new();
-        private readonly Dictionary<string, CanvasGeometry> _geo = new();
-        private bool _dark;
-        public InkLayer(bool highlighters)
-        {
-            _highlighters = highlighters;
-            IsHitTestVisible = false;
-            HorizontalAlignment = HorizontalAlignment.Left; VerticalAlignment = VerticalAlignment.Top;
-            Children.Add(_c);
-            _c.Draw += Draw;
-            _c.CreateResources += (_, _) => { foreach (var g in _geo.Values) g.Dispose(); _geo.Clear(); };
-        }
-
-        public void Set(IReadOnlyList<InkStroke> all, bool dark)
-        {
-            var next = all.Where(s => s.Highlighter == _highlighters).ToList();
-            if (_dark == dark && next.Count == _items.Count && next.Zip(_items).All(p => p.First.Id == p.Second.Id && ReferenceEquals(p.First.Ops, p.Second.Ops))) return;
-            _dark = dark; _items = next;
-            _c.Visibility = next.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-            _c.Invalidate();
-        }
-
-        private static CanvasGeometry Build(ICanvasResourceCreator rc, float[] ops)
-        {
-            using var pb = new CanvasPathBuilder(rc);
-            pb.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Winding);
-            var open = false; var i = 0;
-            while (i < ops.Length)
-            {
-                switch ((int)ops[i])
-                {
-                    case 0:
-                        if (i + 2 >= ops.Length) { i = ops.Length; break; }
-                        if (open) pb.EndFigure(CanvasFigureLoop.Closed);
-                        pb.BeginFigure(ops[i + 1], ops[i + 2]); open = true; i += 3; break;
-                    case 1:
-                        if (i + 2 >= ops.Length) { i = ops.Length; break; }
-                        if (open) pb.AddLine(ops[i + 1], ops[i + 2]);
-                        i += 3; break;
-                    case 2:
-                    {
-                        if (i + 3 >= ops.Length) { i = ops.Length; break; }
-                        if (open) { pb.EndFigure(CanvasFigureLoop.Closed); open = false; }
-                        float cx = ops[i + 1], cy = ops[i + 2], r = ops[i + 3];
-                        pb.BeginFigure(cx + r, cy);
-                        pb.AddArc(new System.Numerics.Vector2(cx - r, cy), r, r, 0, CanvasSweepDirection.Clockwise, CanvasArcSize.Small);
-                        pb.AddArc(new System.Numerics.Vector2(cx + r, cy), r, r, 0, CanvasSweepDirection.Clockwise, CanvasArcSize.Small);
-                        pb.EndFigure(CanvasFigureLoop.Closed);
-                        i += 4; break;
-                    }
-                    default:
-                        if (open) { pb.EndFigure(CanvasFigureLoop.Closed); open = false; }
-                        i += 1; break;
-                }
-            }
-            if (open) pb.EndFigure(CanvasFigureLoop.Closed);
-            return CanvasGeometry.CreatePath(pb);
-        }
-
-        private void Draw(CanvasControl sender, CanvasDrawEventArgs args)
-        {
-            foreach (var s in _items)
-            {
-                try
-                {
-                    if (!_geo.TryGetValue(s.Id, out var g)) _geo[s.Id] = g = Build(args.DrawingSession, s.Ops);
-                    var r = (byte)(s.Color >> 24); var gr = (byte)(s.Color >> 16); var b = (byte)(s.Color >> 8); var a = (byte)s.Color;
-                    if (_dark && (0.2126 * r + 0.7152 * gr + 0.0722 * b) / 255 < 0.25) { r = 0xE6; gr = 0xE6; b = 0xE6; }
-                    args.DrawingSession.FillGeometry(g, global::Windows.UI.Color.FromArgb(a, r, gr, b));
-                }
-                catch (Exception) { }
-            }
         }
     }
 

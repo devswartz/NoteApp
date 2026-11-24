@@ -19,7 +19,7 @@ public enum RuleLines { None, Lines, Grid }
 public sealed record CanvasBox(double X, double Y, double Width, bool Wide, IReadOnlyList<BoxBlock> Blocks, string? Field = null, string? Id = null, double Z = 0);
 
 /// <summary>One ink stroke of the page: the core's outline (path commands: 0 x y move, 1 x y line, 2 cx cy r circle, 3 close; fill nonzero), 0xRRGGBBAA colour.</summary>
-public sealed record InkStroke(string Id, bool Highlighter, uint Color, float[] Ops, float MaxX, float MaxY);
+public sealed record InkStroke(string Id, bool Highlighter, uint Color, float[] Ops, float MaxX, float MaxY, float MinX = 0, float MinY = 0);
 
 public enum BlockKind { Paragraph, Heading1, Heading2, Heading3, Task, ListItem, CheckItem, Quote, Code, Rule }
 

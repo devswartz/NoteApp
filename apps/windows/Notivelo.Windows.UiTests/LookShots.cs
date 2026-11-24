@@ -93,6 +93,11 @@ public class LookShots
         Step("canvas-focused", () => { h.A.Focus(); h.Type("Meeting notes"); Snap("canvas-focused"); });
         Step("page-canvas", () => { Invoke("page-row-canvas"); Settle(900); Snap("page-canvas"); });
         Step("page-ink", () => { Invoke("page-row-settings-ink"); Settle(900); Snap("page-ink"); });
+        Step("ink-toolbar", () =>   // the pen row open over the ink page (pen chosen: colours and widths show)
+        {
+            Invoke("page-row-settings-ink"); Settle(900); Invoke("ribbon-draw"); Find("ink-tool-pen"); Settle(700); Snap("ink-toolbar");
+            try { Invoke("ink-close"); } catch (Exception) { }
+        });
         Step("workspace-menu", () => { Invoke("rail-workspace"); Find("menu-workspace"); Snap("workspace-menu"); });
         Step("notebook-picker", () => { Invoke("notebook-picker"); Find("menu-notebook-picker"); Snap("notebook-picker"); });
         Step("account-menu", () => { Invoke("rail-account"); Find("menu-account"); Snap("account-menu"); });

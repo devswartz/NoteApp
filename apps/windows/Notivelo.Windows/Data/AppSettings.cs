@@ -10,6 +10,10 @@ internal static class AppSettings
     {
         public bool Staging { get; set; }
         public Dictionary<string, string> Workspaces { get; set; } = new();
+        public uint? PenColor { get; set; }
+        public float? PenWidth { get; set; }
+        public uint? HighlighterColor { get; set; }
+        public float? HighlighterWidth { get; set; }
     }
 
     private static readonly object Gate = new();
@@ -43,6 +47,11 @@ internal static class AppSettings
     }
 
     public static bool Staging { get => Load().Staging; set { Load().Staging = value; Save(); } }
+
+    public static uint? PenColor { get => Load().PenColor; set { Load().PenColor = value; Save(); } }
+    public static float? PenWidth { get => Load().PenWidth; set { Load().PenWidth = value; Save(); } }
+    public static uint? HighlighterColor { get => Load().HighlighterColor; set { Load().HighlighterColor = value; Save(); } }
+    public static float? HighlighterWidth { get => Load().HighlighterWidth; set { Load().HighlighterWidth = value; Save(); } }
 
     public static string? Workspace(string server) => Load().Workspaces.GetValueOrDefault(server);
 

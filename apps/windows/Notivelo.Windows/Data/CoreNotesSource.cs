@@ -442,13 +442,47 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
                 if (!_outlines.TryGetValue(key, out var ops)) ops = N.NvCore.InkOutlineOps(s.Data);
                 if (ops.Length == 0) continue;
                 kept[key] = ops;
-                res.Add(new InkStroke(s.Id, s.Tool == 1, s.Color, ops, b.MaxX, b.MaxY));
+                res.Add(new InkStroke(s.Id, s.Tool == 1, s.Color, ops, b.MaxX, b.MaxY, b.MinX, b.MinY));
             }
         }
         catch (Exception) { }
         _outlines.Clear();
         foreach (var kv in kept) _outlines[kv.Key] = kv.Value;
         return res;
+    }
+
+    // ink writes: the core's calls on the open live page (Apple's InkSession); no Changed is raised, the page reads InkOf again
+    public bool CanInk(string pageId) => LivePageOf(pageId) is not null;
+
+    private bool InkCall(string pageId, Action<N.LivePage> call)
+    {
+        if (LivePageOf(pageId) is not { } live) return false;
+        try { call(live); return true; }
+        catch (Exception e) { System.Diagnostics.Debug.WriteLine("ink call: " + e.Message); return false; }
+    }
+
+    public bool AddInkStroke(string pageId, N.InkStrokeBuilder builder, byte tool, uint color) => InkCall(pageId, l => l.AddInkStroke(builder));
+    public bool EraseInk(string pageId, float[] track, float radius, bool partial) => InkCall(pageId, l => l.EraseInk(track, radius, partial));
+    public bool DeleteInkStrokes(string pageId, IReadOnlyList<string> ids) => InkCall(pageId, l => l.DeleteInkStrokes(ids.ToArray()));
+
+    public IReadOnlyList<string> InkHitLasso(string pageId, float[] polygon)
+    {
+        string[] r = Array.Empty<string>();
+        InkCall(pageId, l => r = l.InkHitLasso(polygon, 0.5f));
+        return r;
+    }
+
+    public IReadOnlyList<string> InkHitPoint(string pageId, float x, float y, float radius)
+    {
+        string[] r = Array.Empty<string>();
+        InkCall(pageId, l => r = l.InkHitPoint(x, y, radius));
+        return r;
+    }
+
+    public IReadOnlyList<(string OldId, string NewId)>? MoveInkStrokes(string pageId, IReadOnlyList<string> ids, float dx, float dy)
+    {
+        N.InkMovedStroke[]? r = null;
+        return InkCall(pageId, l => r = l.MoveInkStrokes(ids.ToArray(), dx, dy)) && r is not null ? r.Select(m => (m.OldId, m.NewId)).ToList() : null;
     }
 
     public async void CreateTask(string id, string title, bool done, string? pageId)

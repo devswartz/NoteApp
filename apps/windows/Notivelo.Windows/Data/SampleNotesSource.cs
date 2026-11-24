@@ -173,7 +173,7 @@ public sealed partial class SampleNotesSource : INotesSource
     /// <summary>The sample "Settings and ink" page shows a few strokes made with the core's stroke builder (screenshots).</summary>
     private IReadOnlyList<InkStroke>? _demoInk;
 
-    public IReadOnlyList<InkStroke> InkOf(string pageId)
+    private IReadOnlyList<InkStroke> DemoInk(string pageId)
     {
         if (pageId != "settings-ink") return Array.Empty<InkStroke>();
         if (_demoInk is not null) return _demoInk;
@@ -184,7 +184,7 @@ public sealed partial class SampleNotesSource : INotesSource
             var i = 0;
             foreach (var p in pts) { samples.AddRange(new[] { p.X, p.Y, 0.5, 1.2, 0, i++ * 8.0 }); }
             b.PushMany(samples.ToArray());
-            return new InkStroke(id, tool == 1, color, b.Preview(Array.Empty<float>()), 0, 0);
+            return Measured(new InkStroke(id, tool == 1, color, b.Preview(Array.Empty<float>()), 0, 0));
         }
         var wave = Enumerable.Range(0, 54).Select(i => (20.0 + i * 6, 130 + 28 * Math.Sin(i * 6 / 28.0)));
         var loop = Enumerable.Range(0, 43).Select(i => (420 + 40 * Math.Cos(i * 0.15), 150 + 40 * Math.Sin(i * 0.15)));
@@ -201,8 +201,6 @@ public sealed partial class SampleNotesSource : INotesSource
     }
 
     public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
-    public bool? PageUndo(string pageId, bool undo) => null;
-    public bool? CanPageUndo(string pageId, bool undo) => null;
     public TaskItem? FindTask(string taskId) => _made.GetValueOrDefault(taskId);
     public string? PageTitleOf(string pageId) => _pages.GetValueOrDefault(pageId)?.Title;
     public string? EmojiOfPage(string pageId) => null;
