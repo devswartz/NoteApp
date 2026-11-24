@@ -15,9 +15,21 @@ final class EditorFocus {
     /// The link editor of the canvas showing the focused box.
     @ObservationIgnored var onLink: (() -> Void)?
 
+    /// The table the caret is in (the ribbon's Table group, the table menu); nil outside a table.
+    private(set) var table: TableState?
+    /// The phone's and the floating toolbar's Table button: the shell opens the table menu.
+    @ObservationIgnored var onTableMenu: (() -> Void)?
+
     func set(_ box: EditorTarget?) {
         self.box = box
         active = box != nil
+        refreshTable()
+    }
+
+    /// Read the caret's table again (after each caret or content change in the focused box).
+    func refreshTable() {
+        let now = box?.tableState()
+        if now != table { table = now }
     }
 
     /// An engine command for the focused box (`EditorSession.command`, EDITOR.md 4).
@@ -251,14 +263,17 @@ struct NoteRibbon: View {
         RibbonSeparator(m: m)
         }
         Group {
-        RibbonButton(icon: "table", m: m, enabled: on) { focus.run("insertTable", ["rows": 3, "cols": 3, "header": true]) }
+        if focus.table == nil {
+            RibbonButton(icon: "table", m: m, enabled: on) { focus.run("insertTable", ["rows": 3, "cols": 3, "header": true]) }
+        }
         RibbonButton(icon: "image-plus", m: m, enabled: on) { MediaHub.shared.pick(.image, into: focus.box) }
         RibbonButton(icon: "paperclip", m: m, enabled: on) { MediaHub.shared.pick(.file, into: focus.box) }
         RibbonButton(icon: "link-2", m: m, enabled: on) { focus.openLinkEditor() }
         RibbonButton(icon: "file-symlink", m: m, enabled: on) { shell.notYet("Links to pages") }
         RibbonButton(icon: "minus", m: m, enabled: on) { shell.notYet("Dividers from the ribbon") }
-        RibbonSeparator(m: m)
         }
+        if on, let table = focus.table { TableRibbonGroup(m: m, state: table) }
+        RibbonSeparator(m: m)
         Group {
         RibbonButton(icon: "paint-bucket", m: m, bar: Color.clear, anchor: "rb-page-colour") { shell.menu = .pageColor }
         RibbonButton(icon: "rows-3", m: m, anchor: "rb-rule-lines") { shell.menu = .ruleLines }

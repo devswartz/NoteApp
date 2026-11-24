@@ -150,7 +150,7 @@ struct MenuLayer: View {
     private func isSheet(_ menu: Shell.Menu) -> Bool {
         guard phone else { return false }
         switch menu {
-        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon: return true
+        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon, .tableMenu: return true
         case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore: return true
         default: return false
         }
@@ -271,6 +271,13 @@ struct MenuLayer: View {
         case .ruleLines:
             let f = anchorFrame("rb-rule-lines")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, ruleMenu(p))
+        case .tableMenu:
+            if phone {
+                sheet(TableMenuCard(palette: p, state: focus.table, width: width))
+            } else {
+                let f = anchorFrame("rb-table")
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, TableMenuCard(palette: p, state: focus.table, width: width))
+            }
         case .calTags:
             let f = anchorFrame("rb-cal-tags")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, calTagsMenu(p))

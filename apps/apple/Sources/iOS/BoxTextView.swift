@@ -156,6 +156,8 @@ final class BoxTextView: UIView, UITextInput {
     /// The plain text drawn (to find a box by its words, CI).
     var shownText: String { rendering.string.string }
 
+    func tableState() -> TableState? { editor?.session.tableState() }
+
     /// An engine command (`EditorSession.command`) from the ribbon or a menu, sent like any edit.
     @discardableResult
     func command(_ name: String, _ argsJSON: String) -> Bool {

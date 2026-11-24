@@ -71,7 +71,7 @@ final class Shell {
         case pageRow(String)
         /// The emoji picker of a page's icon (the row above its title).
         case pageIcon(String)
-        case blockType, textColor, highlight, taskSplit, pageColor, ruleLines
+        case blockType, textColor, highlight, taskSplit, pageColor, ruleLines, tableMenu
         /// The Calendar ribbon's Tags and person filters.
         case calTags, calPeople
         /// The Tasks ribbon's menus (and the phone's filter sheets): group, sort, and the filter kinds.
@@ -137,6 +137,7 @@ final class Shell {
     @ObservationIgnored private var toastToken = 0
 
     init() {
+        EditorFocus.shared.onTableMenu = { [weak self] in self?.menu = .tableMenu }
         let defaults = UserDefaults.standard
         let preview = defaults.bool(forKey: "previewSignedIn")
         let state = LookData.state ?? ""
@@ -154,7 +155,7 @@ final class Shell {
             case "templates": route = .page(LookData.pageId("empty"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
-            case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))
+            case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools": route = .page(LookData.pageId("sandbox"))
             default:
                 if state.hasPrefix("page-") {
                     route = .page(LookData.pageId(String(state.dropFirst("page-".count))))

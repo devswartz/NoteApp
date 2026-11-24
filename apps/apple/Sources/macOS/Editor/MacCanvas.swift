@@ -501,6 +501,7 @@ final class MacCanvasView: NSView {
         view.onCaretChange = { [weak self] box in
             guard let self, box === self.editing else { return }
             self.keepCaretVisible(box)
+            EditorFocus.shared.refreshTable()
             self.updateToolbar()
         }
         boxViews[id] = view
@@ -765,7 +766,7 @@ final class MacCanvasView: NSView {
     private func runLookIfAsked() {
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
               let state = LookData.state,
-              ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected"].contains(state) else { return }
+              ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected", "table-tools"].contains(state) else { return }
         if state == "box-selected" {
             // A box selected as a whole (no caret): the accent outline, as after a click on its top bar.
             guard let view = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
@@ -812,6 +813,12 @@ final class MacCanvasView: NSView {
                         EditorFocus.shared.run("editLink", ["text": shown.substring(from: start), "href": "example.com/notes"])
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.showLinkEditor() }
+                }
+                if state == "table-tools" {
+                    // A 3 x 3 table after "Box c", the caret in its first cell: the ribbon's Table group.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        EditorFocus.shared.run("insertTable", ["rows": 3, "cols": 3, "header": true])
+                    }
                 }
                 if state == "edit-selection" {
                     for t in [0.3, 1.0, 2.0] {

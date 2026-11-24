@@ -153,6 +153,8 @@ final class MacBoxView: NSTextView, EditorTarget {
     /// The plain text drawn.
     var shownText: String { rendering.string.string }
 
+    func tableState() -> TableState? { editor?.session.tableState() }
+
     private var isFocused: Bool { window?.firstResponder === self }
 
     /// An engine command from the ribbon or a menu, sent like any edit.

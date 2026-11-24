@@ -189,6 +189,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
         toolbar.onLink = { [weak self] in self?.showLinkEditor() }
         toolbar.onComment = { [weak self] in self?.startComment() }
+        toolbar.onTable = { EditorFocus.shared.onTableMenu?() }
         NotificationCenter.default.addObserver(self, selector: #selector(commentsChanged), name: CommentsModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(commentUnset(_:)), name: CommentsModel.unset, object: nil)
         EditorFocus.shared.onLink = { [weak self] in self?.showLinkEditor() }
@@ -421,6 +422,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.onLinkKey = { [weak self] in self?.showLinkEditor() }
         view.onCaretChange = { [weak self] box in
             self?.keepCaretVisible(box)
+            if box === self?.editing { EditorFocus.shared.refreshTable() }
             if box === self?.editing {
                 self?.updateToolbar()
             }
@@ -763,7 +765,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             return
         }
         if toolbar.superview == nil { addSubview(toolbar) }
-        toolbar.build(palette: palette, maxWidth: stacked ? bounds.width - 16 : .greatestFiniteMagnitude)
+        toolbar.build(palette: palette, maxWidth: stacked ? bounds.width - 16 : .greatestFiniteMagnitude, table: EditorFocus.shared.table != nil)
         let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
         toolbar.isHidden = false
         toolbar.place(over: convert(rect, from: box), visible: visible)
@@ -1055,7 +1057,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// Look states with a box being edited (`-lookState edit-caret`, CI): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
-              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected"].contains(state) else { return }
+              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected", "table-tools"].contains(state) else { return }
         if state == "box-selected" {
             // A box selected as a whole (no caret): the accent outline, as after a click on its top bar.
             guard let view = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
@@ -1100,6 +1102,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                         EditorFocus.shared.run("editLink", ["text": shown.substring(from: start), "href": "example.com/notes"])
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.showLinkEditor() }
+                }
+                if state == "table-tools" {
+                    // A 3 x 3 table after "Box c", the caret in its first cell: the ribbon's Table group (the phone: the table menu).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        EditorFocus.shared.run("insertTable", ["rows": 3, "cols": 3, "header": true])
+                        if self.stacked { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { EditorFocus.shared.onTableMenu?() } }
+                    }
                 }
                 if state == "edit-selection" {
                     // The last line ("Box c"), as the web reference selects.
