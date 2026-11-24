@@ -14,6 +14,33 @@ pub struct RemoteCursor {
     pub head: usize,
 }
 
+/// Where a Yjs relative position (a collaborator's cursor, as awareness carries it) is in the
+/// box `field` of `doc`, as an offset in the box's `text_for_view()` (UTF-16 units). None when
+/// it isn't inside that box.
+pub fn relative_to_view_offset(
+    doc: &nv_model::yrs::Doc,
+    field: &str,
+    st: &nv_model::yrs::StickyIndex,
+) -> Option<usize> {
+    let pos = crate::bind::locate_relative(doc, field, st)?;
+    let mut tree = crate::bind::read_tree(doc, field);
+    crate::editor::normalize_loaded(&mut tree);
+    Some(crate::input::ViewText::of(&tree).to_offset(pos))
+}
+
+/// A Yjs relative position for an offset in the box's `text_for_view()`: what to put in
+/// awareness so the web and other apps draw this caret. None where it can't be tied to the box.
+pub fn view_offset_to_relative(
+    doc: &nv_model::yrs::Doc,
+    field: &str,
+    offset: usize,
+) -> Option<nv_model::yrs::StickyIndex> {
+    let mut tree = crate::bind::read_tree(doc, field);
+    crate::editor::normalize_loaded(&mut tree);
+    let pos = crate::input::ViewText::of(&tree).to_pos(offset);
+    crate::bind::relative_position(doc, field, pos)
+}
+
 impl Editor {
     /// Apply someone else's change (a Yjs update for the page doc). The tree is read again, the
     /// selection and remote cursors follow the text they were in, and an open composition is
@@ -203,5 +230,48 @@ mod tests {
         b.apply_update(&full(&a.binding.as_ref().unwrap().doc))
             .unwrap();
         assert_eq!(a.doc, b.doc);
+    }
+
+    #[test]
+    fn a_caret_crosses_the_wire_as_a_yjs_relative_position() {
+        use crate::remote::{relative_to_view_offset, view_offset_to_relative};
+        let mut a = editor("<paragraph>one</paragraph><paragraph>two th|ree</paragraph>");
+        a.finish();
+        let doc_a = a.binding.as_ref().unwrap().doc.clone();
+        // The view text is one line per block: offset 4 + 7 = 11 is after "two thr".
+        let rel = view_offset_to_relative(&doc_a, "default", 11).unwrap();
+        // The awareness JSON is what y-prosemirror reads: an item id and an assoc.
+        let json = serde_json::to_value(&rel).unwrap();
+        assert!(json.get("item").is_some() || json.get("type").is_some());
+        assert_eq!(json["assoc"], 0);
+        // Another client (the web, or another app) resolves it on its own copy of the doc, even
+        // after text was typed before it.
+        let mut b = other(&a);
+        b.sel = crate::Selection::caret(1);
+        b.insert_text("++");
+        b.finish();
+        let doc_b = b.binding.as_ref().unwrap().doc.clone();
+        let back: nv_model::yrs::StickyIndex = serde_json::from_value(json).unwrap();
+        assert_eq!(relative_to_view_offset(&doc_b, "default", &back), Some(13));
+        // The end of a line and the very start resolve too.
+        let end = view_offset_to_relative(&doc_b, "default", 15).unwrap();
+        assert_eq!(relative_to_view_offset(&doc_b, "default", &end), Some(15));
+        let start = view_offset_to_relative(&doc_b, "default", 0).unwrap();
+        assert_eq!(relative_to_view_offset(&doc_b, "default", &start), Some(0));
+    }
+
+    #[test]
+    fn a_web_cursor_is_read() {
+        use crate::remote::relative_to_view_offset;
+        let a = editor("<paragraph>hello|</paragraph>");
+        let doc = a.binding.as_ref().unwrap().doc.clone();
+        // The item of the first character of the text, as y-prosemirror sends it.
+        let rel = crate::bind::relative_position(&doc, "default", 3).unwrap();
+        let id = serde_json::to_value(&rel).unwrap()["item"].clone();
+        let web = serde_json::json!({ "type": null, "tname": null, "item": id, "assoc": 0 });
+        let st: nv_model::yrs::StickyIndex = serde_json::from_value(web).unwrap();
+        assert_eq!(relative_to_view_offset(&doc, "default", &st), Some(2));
+        // Not in this fragment: none.
+        assert_eq!(relative_to_view_offset(&doc, "box:zzz", &st), None);
     }
 }

@@ -444,6 +444,7 @@ impl Core {
             live: Mutex::new(Some(live)),
             ink_undo: Mutex::new(None),
             page_undo: Default::default(),
+            presence: Default::default(),
         })
     }
 
@@ -904,6 +905,17 @@ pub struct LivePage {
     pub(crate) ink_undo: Mutex<Option<nv_model::yrs::undo::UndoManager<u64>>>,
     /// Page-level undo: the shared stamp counter and the live text sessions (`page_undo.rs`).
     pub(crate) page_undo: crate::page_undo::PageUndo,
+    /// What this client shows the others (see `announce_presence`, `set_local_cursor`).
+    presence: Mutex<PresenceState>,
+}
+
+/// This client's awareness state: the user's flags and the caret (a Yjs relative position pair).
+#[derive(Default)]
+struct PresenceState {
+    /// Set by `announce_presence`; none until then.
+    can_edit: Option<bool>,
+    /// `{"anchor": <relative position>, "head": <relative position>}`, or none.
+    cursor: Option<serde_json::Value>,
 }
 
 // Used by the editor stream's `EditorSession::open_live` (not written yet) and the tests.
@@ -947,6 +959,91 @@ impl LivePage {
     }
 }
 
+/// Someone else's caret in one box of the page, in view offsets.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct BoxCursor {
+    /// The awareness client (one per window); stable while that window is on the page.
+    pub client_id: u64,
+    /// The person (empty when their client doesn't say).
+    pub user_id: String,
+    pub name: String,
+    /// `#rrggbb`.
+    pub color: String,
+    pub box_id: String,
+    /// Offsets in the box's `text_for_view()` (UTF-16 units); equal for a caret.
+    pub anchor: u32,
+    pub head: u32,
+}
+
+/// One awareness state's caret, resolved into the box it is in (none: no caret, or not in a box).
+fn cursor_of(
+    doc: &nv_model::yrs::Doc,
+    boxes: &[String],
+    client_id: u64,
+    state: &str,
+) -> Option<BoxCursor> {
+    let v: serde_json::Value = serde_json::from_str(state).ok()?;
+    let c = v.get("cursor").filter(|c| c.is_object())?;
+    let anchor: nv_model::yrs::StickyIndex =
+        serde_json::from_value(c.get("anchor")?.clone()).ok()?;
+    let head: Option<nv_model::yrs::StickyIndex> = c
+        .get("head")
+        .and_then(|h| serde_json::from_value(h.clone()).ok());
+    for id in boxes {
+        let field = nv_model::page::box_field(id);
+        let Some(a) = nv_editor::remote::relative_to_view_offset(doc, &field, &anchor) else {
+            continue;
+        };
+        let h = head
+            .as_ref()
+            .and_then(|h| nv_editor::remote::relative_to_view_offset(doc, &field, h))
+            .unwrap_or(a);
+        let user = v.get("user");
+        let text = |k: &str| {
+            user.and_then(|u| u.get(k))
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        let color = Some(text("color"))
+            .filter(|c| c.len() == 7 && c.starts_with('#'))
+            .unwrap_or_else(|| "#6366f1".into());
+        return Some(BoxCursor {
+            client_id,
+            user_id: text("id"),
+            name: text("name"),
+            color,
+            box_id: id.clone(),
+            anchor: a as u32,
+            head: h as u32,
+        });
+    }
+    None
+}
+
+impl LivePage {
+    /// Send this client's awareness state: the user, and the caret if there is one. Nothing until
+    /// `announce_presence` has run.
+    fn publish_presence(&self) {
+        let (can_edit, cursor) = {
+            let p = self.presence.lock().unwrap();
+            let Some(can_edit) = p.can_edit else { return };
+            (can_edit, p.cursor.clone())
+        };
+        let live = self.live.lock().unwrap();
+        let (Some(me), Some(l)) = (&self.me, live.as_ref()) else {
+            return;
+        };
+        l.set_presence(
+            &json!({
+                "user": { "id": me.id, "name": me.name, "color": me.color, "canEdit": can_edit },
+                "cursor": cursor,
+            })
+            .to_string(),
+        );
+    }
+}
+
 #[uniffi::export]
 impl LivePage {
     pub fn page_id(&self) -> String {
@@ -978,12 +1075,77 @@ impl LivePage {
     }
 
     /// Show the signed-in user to the others on the page, as the web app does (src/editor/collab.ts).
+    /// Keeps the caret set by `set_local_cursor`.
     pub fn announce_presence(&self, can_edit: bool) {
-        let live = self.live.lock().unwrap();
-        let (Some(me), Some(l)) = (&self.me, live.as_ref()) else {
-            return;
+        self.presence.lock().unwrap().can_edit = Some(can_edit);
+        self.publish_presence();
+    }
+
+    /// Show where this user's caret or selection is, as y-prosemirror's cursor plugin does
+    /// (awareness field `cursor`: `{anchor, head}` as Yjs relative positions), so the web and the
+    /// other apps draw it. `anchor` and `head` are offsets in the box's `text_for_view()` (the
+    /// same space as `EditorSession.viewSelection()`, UTF-16 units). Sent when
+    /// `announce_presence` has run (the user's name and colour go with it); a position that can't
+    /// be tied to the box's text clears the caret. Cheap: call it on every selection change.
+    pub fn set_local_cursor(&self, box_id: String, anchor: u32, head: u32) {
+        let field = nv_model::page::box_field(&box_id);
+        let rel =
+            |o: u32| nv_editor::remote::view_offset_to_relative(&self.doc, &field, o as usize);
+        let cursor = match (rel(anchor), rel(head)) {
+            (Some(a), Some(h)) => Some(json!({ "anchor": a, "head": h })),
+            _ => None,
         };
-        l.set_presence(&json!({ "user": { "id": me.id, "name": me.name, "color": me.color, "canEdit": can_edit } }).to_string());
+        {
+            let mut p = self.presence.lock().unwrap();
+            if p.cursor == cursor {
+                return;
+            }
+            p.cursor = cursor;
+        }
+        self.publish_presence();
+    }
+
+    /// Take the caret off the others' screens (the editor lost focus, the page closed).
+    pub fn clear_local_cursor(&self) {
+        {
+            let mut p = self.presence.lock().unwrap();
+            if p.cursor.is_none() {
+                return;
+            }
+            p.cursor = None;
+        }
+        self.publish_presence();
+    }
+
+    /// The other people's carets in this page's boxes, ready to draw: one per other client that
+    /// has a caret in a box (a person with two windows open has two; this client's own is left
+    /// out). `anchor` and `head` are offsets in the box's `text_for_view()` (UTF-16 units), as
+    /// `EditorSession.setViewSelection` and `ViewRender.remoteCursors` use. Poll it when
+    /// presence changes or on a timer; positions follow edits because they are Yjs relative
+    /// positions.
+    pub fn remote_cursors(&self) -> Vec<BoxCursor> {
+        let states = match self.live.lock().unwrap().as_ref() {
+            Some(l) => l.presence(),
+            None => return Vec::new(),
+        };
+        let mine = self.doc.client_id().get();
+        let boxes: Vec<String> = {
+            let txn = self.doc.transact();
+            nv_model::page::box_geoms(&txn)
+                .into_iter()
+                .map(|b| b.id)
+                .collect()
+        };
+        let mut out = Vec::new();
+        for (client_id, json) in states {
+            if client_id == mine {
+                continue;
+            }
+            if let Some(c) = cursor_of(&self.doc, &boxes, client_id, &json) {
+                out.push(c);
+            }
+        }
+        out
     }
 
     /// Everyone's presence on the page as JSON states (this user's included).
@@ -1059,6 +1221,7 @@ mod tests {
             live: Mutex::new(None),
             ink_undo: Mutex::new(None),
             page_undo: Default::default(),
+            presence: Default::default(),
         };
         (relay, live)
     }

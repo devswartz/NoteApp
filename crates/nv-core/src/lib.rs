@@ -35,6 +35,7 @@ mod tasks;
 mod templates;
 mod tree_edit;
 mod versions;
+mod workspace_admin;
 pub use account::*;
 pub use boxes::*;
 pub use client::*;
@@ -55,6 +56,7 @@ pub use tasks::*;
 pub use templates::*;
 pub use tree_edit::*;
 pub use versions::*;
+pub use workspace_admin::*;
 
 uniffi::setup_scaffolding!();
 

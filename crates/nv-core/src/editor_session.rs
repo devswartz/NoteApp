@@ -310,6 +310,18 @@ pub struct RemoteCursor {
     pub head: u32,
 }
 
+/// The table around the caret, for a table ribbon tab: which of its buttons are on or can work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct TableState {
+    /// The first row is made of header cells.
+    pub header_row: bool,
+    /// More than one cell is selected (the caret and the other end of the selection are in
+    /// different cells): `mergeCells` works.
+    pub can_merge: bool,
+    /// The caret's cell spans columns or rows: `splitCell` works.
+    pub can_split: bool,
+}
+
 /// What to draw.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct EditorState {
@@ -730,6 +742,24 @@ impl EditorSession {
         }
         self.edit(|ed| ed.command(&name, &args))
             .map_err(|_| EditorError::UnknownCommand { name })
+    }
+
+    /// The table the caret is in, or none outside tables. Table commands (`command`): `insertTable
+    /// {rows, cols, header}`, `addRowBefore`, `addRowAfter`, `addColumnBefore`, `addColumnAfter`,
+    /// `deleteRow`, `deleteColumn`, `deleteTable`, `toggleHeaderRow`, `mergeCells`, `splitCell`.
+    /// Rows, columns, merge and split work on the selected cells: the caret's cell, or the
+    /// rectangle between the two ends of a selection that lie in different cells; `mergeCells`
+    /// also takes `{top, left, bottom, right}` (inclusive grid slots of the caret's table) for a
+    /// view with its own cell selection.
+    pub fn table_state(&self) -> Option<TableState> {
+        self.read(|i| {
+            let header_row = i.ed.table_state()?;
+            Some(TableState {
+                header_row,
+                can_merge: i.ed.can_merge_cells(),
+                can_split: i.ed.can_split_cell(),
+            })
+        })
     }
 
     /// Paste what the clipboard holds (HTML preferred, then plain text).

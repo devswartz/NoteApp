@@ -1061,3 +1061,128 @@ fn view_active_blocks() {
     assert_eq!(a.list.as_deref(), Some("bulletList"));
     assert!(!a.in_quote && !a.in_code);
 }
+
+/// Cursors on the wire (awareness `cursor`: Yjs relative positions, as y-prosemirror sends
+/// them): other clients' carets come out per box in view offsets, and ours goes out in the
+/// same form.
+#[test]
+fn cursors_cross_the_wire_in_awareness() {
+    use nv_editor::remote::{relative_to_view_offset, view_offset_to_relative};
+    let server = TestServer::start(&["acc"]);
+    apply(server.room.doc(), &page("canvas-boxes"));
+    // Someone else (the web, say) has a selection in box a: the server holds their state.
+    let rel = |o: usize| view_offset_to_relative(server.room.doc(), "box:a", o).unwrap();
+    let state = serde_json::json!({
+        "user": { "id": "u2", "name": "Bo", "color": "#ff0000", "canEdit": true },
+        "cursor": { "anchor": rel(1), "head": rel(3) }
+    });
+    server.room.set_presence(&state.to_string());
+    let script = Script::default();
+    script.0.lock().unwrap().push_back(serde_json::json!({
+        "accessToken": "acc", "expiresIn": 900, "refreshToken": "ref",
+        "user": { "id": "u1", "email": "a@b.c", "name": "Ann", "color": "#123456", "emailVerified": true }
+    }));
+    let core = Core::with_transport(&server.base, Box::new(script), None);
+    core.sign_in("a@b.c".into(), "pw".into()).unwrap();
+    let ev = Arc::new(Events::default());
+    let live = core.open_live_page("page-1".into(), ev.clone()).unwrap();
+    wait_for("sync", || *ev.synced.lock().unwrap() == 1);
+    live.announce_presence(true);
+    wait_for("their caret", || !live.remote_cursors().is_empty());
+    let c = live.remote_cursors().remove(0);
+    assert_eq!(
+        (
+            c.user_id.as_str(),
+            c.name.as_str(),
+            c.color.as_str(),
+            c.box_id.as_str()
+        ),
+        ("u2", "Bo", "#ff0000", "a")
+    );
+    assert_eq!((c.anchor, c.head), (1, 3));
+    // Our own caret isn't in the list; the others see ours.
+    live.set_local_cursor("a".into(), 2, 4);
+    wait_for("our caret on the server", || {
+        server
+            .room
+            .presence()
+            .iter()
+            .any(|(_, s)| s.contains("Ann") && s.contains("\"cursor\":{"))
+    });
+    let (_, mine) = server
+        .room
+        .presence()
+        .into_iter()
+        .find(|(_, s)| s.contains("Ann"))
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_str(&mine).unwrap();
+    assert_eq!(v["user"]["name"], "Ann");
+    assert_eq!(v["user"]["canEdit"], true);
+    let at = |k: &str| {
+        let st: nv_model::yrs::StickyIndex =
+            serde_json::from_value(v["cursor"][k].clone()).unwrap();
+        relative_to_view_offset(server.room.doc(), "box:a", &st)
+    };
+    assert_eq!((at("anchor"), at("head")), (Some(2), Some(4)));
+    // Text typed before their caret on the server moves it.
+    let (other, _) = open(full(server.room.doc()), "box:a");
+    let sv = other.state_vector();
+    other.set_selection(1, 1);
+    other.insert_text("+++".into());
+    apply(server.room.doc(), &other.encode_update_since(sv).unwrap());
+    wait_for("the caret to follow the text", || {
+        live.remote_cursors().first().is_some_and(|c| c.anchor == 4)
+    });
+    assert_eq!(live.remote_cursors()[0].head, 6);
+    // Taking ours back.
+    live.clear_local_cursor();
+    wait_for("our caret taken back", || {
+        server
+            .room
+            .presence()
+            .iter()
+            .any(|(_, s)| s.contains("Ann") && s.contains("\"cursor\":null"))
+    });
+    live.close();
+}
+
+#[test]
+fn table_commands_through_the_session() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    assert_eq!(s.table_state(), None);
+    assert!(s
+        .command(
+            "insertTable".into(),
+            r#"{"rows":2,"cols":2,"header":true}"#.into()
+        )
+        .unwrap());
+    let t = s.table_state().unwrap();
+    assert_eq!(
+        t,
+        TableState {
+            header_row: true,
+            can_merge: false,
+            can_split: false
+        }
+    );
+    assert!(s.command("addColumnAfter".into(), "".into()).unwrap());
+    assert!(s.command("addRowBefore".into(), "".into()).unwrap());
+    assert!(s
+        .command(
+            "mergeCells".into(),
+            r#"{"top":0,"left":0,"bottom":1,"right":1}"#.into()
+        )
+        .unwrap());
+    assert!(
+        s.state().doc_json.contains("\"colspan\":2"),
+        "{}",
+        s.state().doc_json
+    );
+    assert!(s.table_state().unwrap().can_split);
+    assert!(s.command("splitCell".into(), "".into()).unwrap());
+    assert!(!s.table_state().unwrap().can_split);
+    assert!(!s.command("splitCell".into(), "".into()).unwrap());
+    assert!(s.command("toggleHeaderRow".into(), "".into()).unwrap());
+    assert!(s.command("deleteTable".into(), "".into()).unwrap());
+    assert_eq!(s.table_state(), None);
+}
