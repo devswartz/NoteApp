@@ -2,6 +2,11 @@ package com.notivelo.app.look
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import com.notivelo.app.edit.EditingBox
+import com.notivelo.app.edit.LineSpec
+import com.notivelo.app.edit.LocalLookEdit
+import com.notivelo.app.edit.StaticEngine
+import com.notivelo.app.edit.StaticRender
 import com.notivelo.app.data.AppState
 import com.notivelo.app.data.NoActions
 import com.notivelo.app.data.Phase
@@ -212,8 +217,31 @@ object LookData {
 
     private val signedOut = AppState(phase = Phase.SignedOut)
 
+    /** A box of the Canvas page being edited, with the engine's frame fixed: caret, selection, or the slash menu open. */
+    private fun editScene(full: String): LookScene? {
+        val mode = when {
+            full.startsWith("dark-") -> ThemeMode.Dark
+            full.startsWith("hybrid-") -> ThemeMode.Hybrid
+            else -> ThemeMode.Light
+        }
+        val box = full.removePrefix("dark-").removePrefix("hybrid-")
+        val box_c = listOf(LineSpec("Right lower", "heading", 2), LineSpec("Box c"))
+        val editing = when (box) {
+            "edit-caret" -> EditingBox("c", StaticEngine(StaticRender.of(box_c, 17)))
+            "edit-selection" -> EditingBox("c", StaticEngine(StaticRender.of(box_c, 12, 17)))
+            "slash-menu" -> EditingBox("blank", StaticEngine(StaticRender.of(listOf(LineSpec("/")), 1, suggestion = StaticRender.slash())))
+            else -> return null
+        }
+        val demo = "demo-team"
+        val withPage = onPage(pageId("canvas"), "look", "corpus")
+        return LookScene(
+            signedIn(demo, demoTeamTree) { withPage(this).let { st -> st.copy(page = st.page?.copy(editing = editing)) } },
+            mode, sidebar = null,
+        )
+    }
+
     /** The scene for a state name (the reference file name without `.png`), or null. */
-    fun scene(name: String): LookScene? = dataScene(name) ?: when (name) {
+    fun scene(name: String): LookScene? = dataScene(name) ?: editScene(name) ?: when (name) {
         "sign-in" -> LookScene(signedOut, ThemeMode.Light)
         "dark-sign-in" -> LookScene(signedOut, ThemeMode.Dark)
         "hybrid-sign-in" -> LookScene(signedOut, ThemeMode.Hybrid)
@@ -238,7 +266,7 @@ object LookData {
 @Composable
 fun LookRoot(name: String) {
     val scene = LookData.scene(name) ?: error("Unknown look state: $name")
-    CompositionLocalProvider(LocalNow provides LookData.now, LocalToday provides LookData.today) {
+    CompositionLocalProvider(LocalNow provides LookData.now, LocalToday provides LookData.today, LocalLookEdit provides true) {
         NotiveloTheme(scene.mode) {
             NotiveloRoot(
                 state = scene.state,

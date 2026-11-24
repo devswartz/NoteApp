@@ -2,6 +2,7 @@ package com.notivelo.app.ui.page
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +39,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +51,11 @@ import com.notivelo.app.data.AppState
 import com.notivelo.app.data.InkShape
 import com.notivelo.app.data.PageStatus
 import com.notivelo.app.data.TreeIndex
+import com.notivelo.app.edit.BoxEditor
+import com.notivelo.app.edit.EditContext
+import com.notivelo.app.edit.LocalEditContext
+import com.notivelo.app.edit.LocalPageActions
+import com.notivelo.app.edit.PageChoice
 import com.notivelo.app.look.Ic
 import com.notivelo.app.look.LIcon
 import com.notivelo.app.look.LocalPagePalette
@@ -103,13 +111,23 @@ fun PageScreen(
         val tint = info?.settings?.color ?: "none"
         val page = if (tint == "none") p else PagePalettes.tinted(p, tint)
         val envTinted = if (page === p) env else PageEnv(page, phone, env.tasks, env.pageTitles, env.meId, env.meName, env.meColor, env.today)
+        val choices = remember(state.tree) {
+            state.tree?.pages.orEmpty().filter { !it.locked && it.id != meta.id }.map { pg ->
+                val sec = index.section(pg.sectionId)
+                val nb = sec?.let { index.notebookOf(it) }
+                PageChoice(pg.id, pg.title, listOfNotNull(nb?.name, sec?.name).joinToString(" / "))
+            }
+        }
+        val editCtx = remember(view?.editing, choices, state.members, info) { EditContext(view?.editing, choices, state.members, info) }
         Box(Modifier.weight(1f).fillMaxWidth().background(page.bg)) {
+          CompositionLocalProvider(LocalEditContext provides editCtx) {
             when {
                 meta.locked -> Message("Locked pages open in the web app for now.", page)
                 view?.status == PageStatus.NoAccess -> Message("You no longer have access to this page.", page)
                 phone -> PhoneCanvas(meta, sub, PageLayout.withDefault(info?.boxes.orEmpty(), info?.content.orEmpty()), info?.content.orEmpty(), view?.ink.orEmpty(), info?.settings?.rules ?: "none", envTinted, scrollPx)
                 else -> TabletCanvas(meta, sub, PageLayout.withDefault(info?.boxes.orEmpty(), info?.content.orEmpty()), info?.content.orEmpty(), view?.ink.orEmpty(), info?.settings?.rules ?: "none", envTinted, scrollPx)
             }
+          }
         }
     }
 }
@@ -243,11 +261,13 @@ private fun TabletCanvas(
         val ruleColor = PagePalettes.rule(p)
         val pens = ink.filter { !it.highlighter }
         val glows = ink.filter { it.highlighter }
+        val actions = LocalPageActions.current
         CanvasSurface(
             placed = placed, visibleW = visibleW, visibleH = visibleH, hasIcon = hasIcon,
             modifier = Modifier
                 .verticalScroll(scroll)
                 .horizontalScroll(h)
+                .pointerInput(Unit) { detectTapGestures { actions.stopEditing() } }
                 .drawBehind { drawRules(rules, oy, ruleColor) }
                 .drawWithContent {
                     drawInk(glows, PageLayout.ORIGIN_X, oy)
@@ -258,7 +278,7 @@ private fun TabletCanvas(
                 PageHeader(meta, sub, p, false, Modifier.width((visibleW - (PageLayout.ORIGIN_X + PageLayout.BOX_PAD_X).dp - 40.dp).coerceAtLeast(100.dp)))
             },
             box = { b ->
-                BoxView(byId[b.id], env, Modifier.width(b.width.dp))
+                BoxView(b.id, byId[b.id], env, Modifier.width(b.width.dp))
             },
         )
     }
@@ -301,11 +321,20 @@ private fun CanvasSurface(
     }
 }
 
+/** A box: its blocks as drawn text, or, once tapped (and the page is live), the text view over the box's editor session. */
 @Composable
-private fun BoxView(content: BoxContent?, env: PageEnv, modifier: Modifier = Modifier) {
+private fun BoxView(boxId: String, content: BoxContent?, env: PageEnv, modifier: Modifier = Modifier) {
     val p = env.palette
     val nodes = content?.nodes.orEmpty()
-    Column(modifier.padding(horizontal = PageLayout.BOX_PAD_X.dp, vertical = PageLayout.BOX_PAD_Y.dp)) {
+    val ec = LocalEditContext.current
+    val actions = LocalPageActions.current
+    val editing = ec.editing?.takeIf { it.boxId == boxId }
+    if (editing != null) {
+        BoxEditor(editing, env, ec, modifier)
+        return
+    }
+    val tap = Modifier.pointerInput(boxId) { detectTapGestures { o -> actions.startEditing(boxId, o.x, o.y) } }
+    Column(modifier.then(tap).padding(horizontal = PageLayout.BOX_PAD_X.dp, vertical = PageLayout.BOX_PAD_Y.dp)) {
         if (isBlank(nodes)) {
             WText("Type '/' for commands…", env.body, p.textPlaceholder, lineHeight = 1.7f)
         } else {
@@ -383,10 +412,12 @@ private fun PhoneCanvas(
     val glows = ink.filter { it.highlighter }
     val originY = PageLayout.PHONE_ORIGIN_Y + shift
     val ruleColor = PagePalettes.rule(p)
+    val actions = LocalPageActions.current
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(scroll)
+            .pointerInput(Unit) { detectTapGestures { actions.stopEditing() } }
             .drawBehind { drawRules(rules, originY, ruleColor) }
             .drawWithContent {
                 drawInk(glows, 0f, originY)
@@ -398,7 +429,7 @@ private fun PhoneCanvas(
         PageHeader(meta, sub, p, true, Modifier.padding(horizontal = 20.dp))
         Spacer(Modifier.height((22f + 6f - PageLayout.BOX_PAD_Y + PageLayout.phoneTopGap(stacked.size)).dp))
         for (b in stacked) {
-            BoxView(byId[b.id], env, Modifier.padding(horizontal = 9.dp).fillMaxWidth())
+            BoxView(b.id, byId[b.id], env, Modifier.padding(horizontal = 9.dp).fillMaxWidth())
             Spacer(Modifier.height(3.5.dp))
             Box(Modifier.padding(horizontal = 20.dp).fillMaxWidth().height(1.dp).background(p.border))
             Spacer(Modifier.height(5.dp))
