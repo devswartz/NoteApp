@@ -68,6 +68,42 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 | Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
 | Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
 
+## 2026-11-24: PARITY audit and the most-used rows left (branch `rewrite/windows-audit`, from `origin/rewrite/native` 8247569)
+
+Not merged. Nothing was driven with input on this PC, and nothing ran against a server: the UI tests use the in-memory sample source.
+
+- **Audit** (a12859a, docs only, by reading the code and UI tests):
+  - Every Windows row marked ● or ◐ was checked; built rows now have ✓ in `PARITY.md`, and a "Windows ✓" line explains what the mark means.
+  - Of 144 unticked rows, 69 were ticked; 75 are left (31 partly built, 44 missing). They are classed in "Parity left" above: no-server 46, Devon 3, M7 26.
+  - **Not the same as Apple's classing:** 25 of the M7 rows only need a new core call on a server route that already exists (templates, workspace create, export and import, backlinks, page settings, saved views, tag and team management, feedback, resend verification). Apple's audit counts those as no-server.
+  - Judgement calls:
+    - Forgot password (opens the web flow, as Apple's does), the pasted invite link and tree drag are ticked. Tree drag has not been tried with a real mouse.
+    - The email confirmation screen is not ticked, because it has no Resend.
+- **Built** (a95d6a3, fixes 492b9af), the most-used rows that needed no server work. Seven rows are ticked:
+  - **Task filters, sort and group (156, 159):**
+    - The Tasks ribbon's Group, Sort, Status, Assignee, Tags, Team, Priority, More filters (due, source) and Clear filters now work. Show (Today, Upcoming, My Tasks, All) works too.
+    - There is a search box with a count and summary, and Mine / Everyone on Upcoming.
+    - The Team view shows a card per person, or groups by team.
+    - Choices are kept per view on this device.
+  - **Notifications (179):** a bell on the rail with an unread count and a popover. Opening an item marks it read; there is also Mark all read and Load more. It refreshes on sign-in, when the window is activated, and every 60 s.
+  - **Taskbar badge (178):** shows my open tasks due today or overdue. It needs the packaged app, and an unpackaged run shows none.
+  - **Save state (96):** the page bar shows Saving…, Saved, Offline, or Offline — changes kept. "Connecting" shows as Offline.
+  - **Public share link (126):** create, copy, open, and turn off with a confirm, in the Share dialog.
+  - **Delete account (34):** Settings > Profile. It shows the server's preview, asks for the password, shows a wrong-password message, then goes back to sign-in. The sample deletes nothing.
+  - **Partly done, not ticked:**
+    - Ribbon (53, 99): Clear formatting, Link to page, Divider and text colour work; Highlight is still a yellow toggle.
+    - Page colour and Rule lines change only the sample page, since core has no call to write page settings (request below).
+    - Print, Outline, the Table group and table tools are not done.
+  - **Fixed after CI:**
+    - The wrong-password message vanished as soon as the field was cleared.
+    - A test used the wrong id for the Done status.
+- **Next no-server rows by use:** table tools and callout/toggle/code; box select, copy and delete; cursors and presence; task keyboard, bulk bar, inline rename and Undo on toasts; opening offline from a cold start.
+- **Needs a manual check, or a server:** every new path through the core; the badge in the installed MSIX; whether Link to page opens the page picker; the Team view with real tasks.
+- **Requests to core:** a call to write page settings (page colour, rule lines); plus the M7 list in "Parity left".
+- **CI runs** (branch `rewrite/windows-audit`):
+  - 45400489250 on a95d6a3: 2 failures, both fixed.
+  - 45403518954 on 492b9af: green. Build x64 + arm64, 280 unit tests, 73 UI tests, look shots.
+
 ## 2026-11-24: images and attachments, page tools, people and sign-up, tree and shell polish (branch `rewrite/windows-parity3`, from `origin/rewrite/native` e5ea45a)
 
 Not merged. Nothing was driven with input on this PC: local checks were builds and unit tests; UI tests and screenshots ran on the GitHub runner. Nothing ran against a real server, so every `CoreNotesSource` path added this round is untested; the UI tests use the in-memory sample source.
