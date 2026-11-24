@@ -24,8 +24,9 @@ internal sealed class PageView : ThemedControl
     public PageView(INotesSource source)
     {
         _source = source;
-        Loaded += (_, _) => { BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
-        Unloaded += (_, _) => { BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
+        _saveTimer.Tick += (_, _) => PollSave();
+        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
+        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
     }
 
     /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
@@ -131,6 +132,32 @@ internal sealed class PageView : ThemedControl
     }
 
     private string _sig = "";
+    private StackPanel? _saved;
+    private SaveState _savedState = (SaveState)(-1);
+    private readonly global::Microsoft.UI.Xaml.DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+
+    private SaveState ShownSave => AuditRules.Combine(_source.IsOffline, _source.SaveState);
+
+    /// <summary>The bar's save state, drawn in place (only its own little panel changes).</summary>
+    private void DrawSave()
+    {
+        if (_saved is not { } p) return;
+        var st = ShownSave;
+        _savedState = st;
+        var off = st is SaveState.Offline or SaveState.OfflineKept;
+        var text = AuditRules.SaveText(st);
+        p.Children.Clear();
+        p.Children.Add(new Icon(off ? "cloud-off" : st == SaveState.Saving ? "loader-circle" : "check", 14, off ? B("Warn") : B("Text2")));
+        p.Children.Add(Ui.Text(text, 12, off ? B("Warn") : B("Text2")));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(p, text);
+    }
+
+    private async void PollSave()
+    {
+        if (PageId is null) return;
+        try { await _source.RefreshSaveState(); } catch (Exception) { }
+        if (IsLoaded && ShownSave != _savedState) DrawSave();
+    }
 
     /// <summary>What a full rebuild shows besides the text inside session-backed boxes.</summary>
     private string Signature(NotePage p) =>
@@ -510,12 +537,10 @@ internal sealed class PageView : ThemedControl
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         var saved = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-        // the save state: Saved, or Offline (a page that cannot connect, a lost network) with a cloud-off icon in the warn colour
-        var offline = _source.IsOffline;
-        saved.Children.Add(new Icon(offline ? "cloud-off" : "check", 14, offline ? B("Warn") : B("Text2")));
-        saved.Children.Add(Ui.Text(offline ? "Offline" : "Saved", 12, offline ? B("Warn") : B("Text2")));
+        // the save state: Saved, Saving… (edits the server has not confirmed), Offline (a page that cannot connect, a lost network) or Offline — changes kept; drawn again as it is polled
+        _saved = saved;
+        DrawSave();
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(saved, "page-status");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(saved, offline ? "Offline" : "Saved");
         right.Children.Add(saved);
         var tasksBtn = Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(tasksBtn, "page-tasks-button");

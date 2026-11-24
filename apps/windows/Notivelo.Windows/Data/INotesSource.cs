@@ -236,6 +236,30 @@ public interface INotesSource
     /// <summary>Accept it as the signed-in user; a workspace invite makes that workspace the open one.</summary>
     Task<PageToolResult<JoinedInfo>> AcceptInvite(string token) => Task.FromResult(PageToolResult<JoinedInfo>.Fail("Not available."));
 
+    // ---- audit batch: task filters (every visible task with what the filters read), the notification inbox, the save state, the public share link, delete account ----
+    /// <summary>Every task this person can see (top-level, open and recently done), with the fields the task view's filters, sort and groups read.</summary>
+    IReadOnlyList<TaskFact> TaskFacts() => Array.Empty<TaskFact>();
+    /// <summary>Read the teams, tags and the full tasks (a task's team) again; raises Changed when they arrive.</summary>
+    void LoadTaskTeams() { }
+    /// <summary>The inbox (newest first); <paramref name="before"/> asks for older ones. Online only.</summary>
+    Task<PageToolResult<InboxPage>> LoadInbox(string? before) => Task.FromResult(PageToolResult<InboxPage>.Fail("Not available."));
+    /// <summary>The bell's count; null when it can't be asked.</summary>
+    Task<int?> UnreadCount() => Task.FromResult<int?>(null);
+    Task MarkNotificationRead(string id) => Task.CompletedTask;
+    Task MarkAllNotificationsRead() => Task.CompletedTask;
+    /// <summary>The page bar's save state as last read; <see cref="RefreshSaveState"/> reads it again (a cheap call).</summary>
+    SaveState SaveState => SaveState.Saved;
+    Task RefreshSaveState() => Task.CompletedTask;
+    /// <summary>Change the page's colour (kind "colour": none, yellow, green, blue, purple, pink, grey) or rule lines (kind "rules": none, lines, grid). Null: done; else a sentence.</summary>
+    Task<string?> SetPageSetting(string pageId, string kind, string value) => Task.FromResult<string?>("Changing the page colour and rule lines isn't available here yet.");
+    /// <summary>The page's public link (null in the value: it is off).</summary>
+    Task<PageToolResult<string?>> LoadShareLink(string pageId) => Task.FromResult(PageToolResult<string?>.Fail("Not available."));
+    Task<PageToolResult<string>> CreateShareLink(string pageId) => Task.FromResult(PageToolResult<string>.Fail("Not available."));
+    Task<PageToolResult<bool>> DeleteShareLink(string pageId) => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    Task<AccountResult<DeletionPreviewInfo>> LoadDeletionPreview() => Task.FromResult(AccountResult<DeletionPreviewInfo>.Off());
+    /// <summary>Delete the account. A wrong password answers Code "wrong_password". On success the caller returns to the sign-in screen.</summary>
+    Task<AccountResult<bool>> DeleteAccount(string password) => Task.FromResult(AccountResult<bool>.Off());
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

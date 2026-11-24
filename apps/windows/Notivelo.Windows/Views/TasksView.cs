@@ -9,7 +9,7 @@ using Notivelo.Windows.Data;
 namespace Notivelo.Windows.Views;
 
 /// <summary>Tasks views (LOOK 4.10): header, Today stats card, groups of TaskRows, "+ Add task".</summary>
-internal sealed class TasksView : ThemedControl
+internal sealed partial class TasksView : ThemedControl
 {
     private readonly INotesSource _source;
     public TaskViewKind View { get; private set; } = TaskViewKind.Today;
@@ -17,7 +17,7 @@ internal sealed class TasksView : ThemedControl
 
     public TasksView(INotesSource source) => _source = source;
 
-    public void SetView(TaskViewKind v) { View = v; Rebuild(); }
+    public void SetView(TaskViewKind v) { View = v; EnsureTeams(); Rebuild(); }
 
     private static string Title(TaskViewKind v) => v switch
     {
@@ -37,13 +37,10 @@ internal sealed class TasksView : ThemedControl
         root.Children.Add(sub);
         if (View == TaskViewKind.Today) root.Children.Add(StatsCard());
 
-        var groups = _source.GetTaskGroups(View);
-        foreach (var g in groups) root.Children.Add(GroupBlock(g));
-        if (_source.LoadError is { } err && groups.Count == 0)
-            root.Children.Add(Ui.Text(err, 13.5, B("Danger")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, 24, 0, 24); }));
-        else if (groups.Count == 0 && _source.Loading)
-            root.Children.Add(Ui.Text("Loading…", 13.5, B("TextMuted")).With(t => t.Margin = new Thickness(0, 24, 0, 24)));
-        else if (groups.Count == 0) root.Children.Add(EmptyState());
+        root.Children.Add(ControlsRow());
+        _list = new StackPanel();
+        root.Children.Add(_list);
+        FillList();
 
         var add = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Padding = new Thickness(6, 8, 6, 8), Margin = new Thickness(0, 0, 0, 0) };
         add.Children.Add(new Icon("plus", 15, B("TextMuted")));
@@ -118,12 +115,13 @@ internal sealed class TasksView : ThemedControl
     private UIElement GroupBlock(TaskGroup g)
     {
         var panel = new StackPanel { Margin = new Thickness(0, 0, 0, 22) };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(panel, "Group " + g.Title);
         var head = new Grid { Padding = new Thickness(0, 8, 0, 6), BorderBrush = B("Border"), BorderThickness = new Thickness(0, 0, 0, 1) };
         var hs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         hs.Children.Add(Ui.Text(g.Title, 13.5, g.IsOverdue ? B("Danger") : B("Text"), 650));
         hs.Children.Add(Ui.Text(g.Count.ToString(), 12, B("TextMuted"), 500));
         head.Children.Add(hs);
-        panel.Children.Add(head);
+        if (g.Title.Length > 0) panel.Children.Add(head);
         foreach (var t in g.Tasks) panel.Children.Add(Row(t));
         return panel;
     }

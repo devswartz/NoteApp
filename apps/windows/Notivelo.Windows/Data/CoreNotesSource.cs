@@ -727,8 +727,11 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
         var due = Due(t);
         var (label, tone) = DueText(due, today);
         var page = t.PageId is null ? null : _tree?.Pages.FirstOrDefault(p => p.Id == t.PageId)?.Title;
-        return new TaskItem(t.Id, t.Title, t.Done, t.Priority, label, tone, false, string.IsNullOrEmpty(page) ? null : page, null,
-            t.AssigneeId == _user.Id ? Workspace.UserInitials : null, Array.Empty<string>(), (int)(t.ChecklistDone ?? 0), (int)(t.ChecklistTotal ?? 0));
+        var teamId = _details.GetValueOrDefault(t.Id)?.TeamId;
+        var team = teamId is null ? null : _teams.FirstOrDefault(x => x.Id == teamId)?.Name;
+        var who = t.AssigneeId is null ? null : t.AssigneeId == _user.Id ? Workspace.UserInitials : _members.FirstOrDefault(m => m.Id == t.AssigneeId) is { } mm ? Initials(mm.Name, mm.Email) : null;
+        return new TaskItem(t.Id, t.Title, t.Done, t.Priority >= 4 ? 0 : t.Priority, label, tone, false, string.IsNullOrEmpty(page) ? null : page, team,
+            who, t.TagIds.Select(id => _tags.FirstOrDefault(x => x.Id == id)?.Name).Where(n => n is not null).Select(n => n!).ToList(), (int)(t.ChecklistDone ?? 0), (int)(t.ChecklistTotal ?? 0));
     }
 
     private static (string? Label, DueTone Tone) DueText(DateOnly? due, DateOnly today)

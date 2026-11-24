@@ -203,6 +203,7 @@ internal static class PageDialogs
         var error = Note(o, "", true); error.Visibility = Visibility.Collapsed;
         panel.Children.Add(hint); panel.Children.Add(suggest); panel.Children.Add(invite); panel.Children.Add(error);
         panel.Children.Add(new ScrollViewer { MaxHeight = 200, Content = people, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        panel.Children.Add(ShareLinkBlock.Build(h, pageId));
         var done = Dialogs.Btn(o, "Done", true, id: "share-done");
         panel.Children.Add(Foot(done));
         layer = Open(o, 520, panel, 80);

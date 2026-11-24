@@ -38,6 +38,7 @@ public sealed partial class ShellView : UserControl
     private readonly global::Microsoft.UI.Xaml.DispatcherTimer _offlineTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private DateTime? _offlineSince;
     private bool _pillDismissed;
+    private readonly global::Microsoft.UI.Xaml.DispatcherTimer _inboxTimer = new() { Interval = TimeSpan.FromSeconds(60) };
     private static readonly bool ForceOffline = Environment.GetEnvironmentVariable("NOTIVELO_FORCE_OFFLINE") == "1";
 
     public ShellView(INotesSource source, Action? signOut = null, string? server = null)
@@ -87,6 +88,15 @@ public sealed partial class ShellView : UserControl
 
         _rail.RouteChanged += r => GoTo(r);
         _ribbon.Invoked += OnRibbon;
+        _ribbon.TaskState = () => _tasks.State;
+        _ribbon.MenuRequested += (tip, anchor) => _tasks.ShowMenu(tip, anchor);
+        _tasks.StateChanged += () => _ribbon.Refresh();
+        _ribbon.PageSettingChosen += OnPageSetting;
+        // the bell: the unread count on sign-in, when the window comes to the front and every minute
+        Action activated = () => DispatcherQueue.TryEnqueue(() => _host.Inbox.Refresh(false));
+        Loaded += (_, _) => { MainWindow.WindowActivated += activated; _inboxTimer.Start(); _host.Inbox.Refresh(false); };
+        Unloaded += (_, _) => { MainWindow.WindowActivated -= activated; _inboxTimer.Stop(); TaskbarBadge.Set(0); };
+        _inboxTimer.Tick += (_, _) => _host.Inbox.Refresh(false);
         _rail.ToggleSidebar += () => { _sidebarOpen = !_sidebarOpen; ApplySidebar(); _rail.SetSidebarOpen(_sidebarOpen); };
         _rail.CurrentTheme = () => _theme;
         _rail.ThemeSelected += m => SetTheme(m);
@@ -153,13 +163,25 @@ public sealed partial class ShellView : UserControl
         switch (tip)
         {
             case "New task": QuickAddDialog.Show(_host, null); break;
+            case "Today" or "Upcoming" or "My Tasks" or "All tasks" when _route == AppRoute.Tasks:
+                _taskView = tip switch { "Today" => TaskViewKind.Today, "Upcoming" => TaskViewKind.Upcoming, "My Tasks" => TaskViewKind.MyTasks, _ => TaskViewKind.All };
+                Refresh(); break;
             case "Today" when _route == AppRoute.Calendar: _calendar.GoToday(); break;
             case "Previous" when _route == AppRoute.Calendar: _calendar.Step(-1); break;
             case "Next" when _route == AppRoute.Calendar: _calendar.Step(1); break;
             case "Week" or "Month" when _route == AppRoute.Calendar: _calendar.SetWeek(tip == "Week"); _ribbon.Refresh(); break;
             case "Mine" or "Everyone" when _route == AppRoute.Calendar: _calendar.SetEveryone(tip == "Everyone"); _ribbon.Refresh(); break;
+            case "Clear filters" when _route == AppRoute.Tasks: _tasks.ClearFilters(); break;
             case "Back" when _route == AppRoute.Settings: GoTo(_before == AppRoute.Settings ? AppRoute.Notes : _before); break;
         }
+    }
+
+    /// <summary>Page colour or Rule lines from the ribbon: written by the source, an error as a toast.</summary>
+    private async void OnPageSetting(string kind, string value)
+    {
+        if (_pageId is not { } id) return;
+        var err = await _source.SetPageSetting(id, kind, value);
+        if (err is not null) _host.Toast(err, true);
     }
 
     public void SetTheme(ThemeMode m, bool persist = true)
@@ -232,6 +254,7 @@ public sealed partial class ShellView : UserControl
         _rail.SetRoute(_route);
         _sidebar.Update(_route == AppRoute.Settings ? _before : _route, _pageId, _taskView);
         UpdateOffline();
+        TaskbarBadge.Set(_source.GetTaskCounts().Today);
         if (_page.PageId == _pageId) _page.Refresh(); else _page.SetPage(_pageId);
         _tasks.SetView(_taskView);
         PageCard.Visibility = _route == AppRoute.Notes ? Visibility.Visible : Visibility.Collapsed;

@@ -66,6 +66,47 @@ internal sealed class RibbonView : ThemedControl
             };
     }
 
+    /// <summary>The text colours (the engine's setColor with a colour name; "Default" takes the colour off).</summary>
+    private MenuFlyout TextColourMenu()
+    {
+        var f = new MenuFlyout();
+        var dark = ActualTheme == ElementTheme.Dark;
+        void Add(string label, string? name)
+        {
+            var it = new MenuFlyoutItem { Text = label };
+            if (Notivelo.Windows.Text.TextColors.Text(name, dark) is { } hex)
+                it.Icon = new FontIcon { Glyph = "A", FontWeight = new FontWeight(700), FontSize = 14, Foreground = Ui.Hex(hex) };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "colour-text-" + (name ?? "default"));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, label);
+            it.Click += (_, _) =>
+            {
+                var box = BoxTextView.Focused;
+                if (name is null) box?.RunCommand("unsetColor"); else box?.RunCommand("setColor", "{\"color\":\"" + name + "\"}");
+                box?.Focus(FocusState.Programmatic);
+            };
+            f.Items.Add(it);
+        }
+        Add("Default", null);
+        foreach (var n in new[] { "gray", "red", "orange", "yellow", "green", "blue", "purple", "pink" }) Add(char.ToUpperInvariant(n[0]) + n[1..], n);
+        return f;
+    }
+
+    private MenuFlyout PageMenu(string tip)
+    {
+        var f = new MenuFlyout();
+        var colour = tip == "Page colour";
+        foreach (var v in colour ? new[] { "none", "yellow", "green", "blue", "purple", "pink", "grey" } : new[] { "none", "lines", "grid" })
+        {
+            var value = v;
+            var it = new MenuFlyoutItem { Text = char.ToUpperInvariant(v[0]) + v[1..] };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, (colour ? "page-colour-" : "rule-lines-") + v);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, it.Text);
+            it.Click += (_, _) => PageSettingChosen?.Invoke(colour ? "colour" : "rules", value);
+            f.Items.Add(it);
+        }
+        return f;
+    }
+
     private void BlockTypeMenu(Button b)
     {
         var f = new MenuFlyout();
@@ -106,23 +147,7 @@ internal sealed class RibbonView : ThemedControl
 
     private IReadOnlyList<Group> Left() => Route switch
     {
-        AppRoute.Tasks => new Group[]
-        {
-            new("New", new Item[] { new("plus", "New task", Word: "New task") }),
-            new("Show", new Item[]
-            {
-                new("sun", "Today", Pressed: TaskView == TaskViewKind.Today), new("calendar-range", "Upcoming", Pressed: TaskView == TaskViewKind.Upcoming),
-                new("inbox", "My Tasks", Pressed: TaskView == TaskViewKind.MyTasks), new("list-checks", "All tasks", Pressed: TaskView == TaskViewKind.All),
-            }),
-            new("Organise", new Item[] { new("layers", "Group", true, Menu: true), new("arrow-up-down", "Sort", true, Menu: true) }),
-            new("Filter", new Item[]
-            {
-                new("eye", "Status", Menu: true), new("user", "Assignee", Menu: true), new("tag", "Tags", Menu: true), new("users-round", "Team", Menu: true),
-                new("flag", "Priority", Menu: true), new("sliders-horizontal", "More filters", Menu: true), new("funnel-x", "Clear filters", true),
-            }),
-            new("Views", new Item[] { new("bookmark", "Saved views", Menu: true), new("bookmark-plus", "Save view", true) }),
-            new("Print", new Item[] { new("printer", "Print") }),
-        },
+        AppRoute.Tasks => TasksGroups(),
         AppRoute.Calendar => new Group[]
         {
             new("New", new Item[] { new("plus", "New task", Word: "New task") }),
@@ -153,6 +178,44 @@ internal sealed class RibbonView : ThemedControl
             new("View", new Item[] { new("list-tree", "Outline", Pressed: true) }),
         },
     };
+
+    /// <summary>The Tasks view's filters and groups as pressed buttons (the choices live in the Tasks view, per view on the device).</summary>
+    public Func<TaskViewState?>? TaskState { get; set; }
+
+    /// <summary>A Tasks ribbon button with a menu was pressed (its tooltip text and the button to open the menu under).</summary>
+    public event Action<string, FrameworkElement>? MenuRequested;
+
+    /// <summary>Page colour or Rule lines was picked (the setting and its value: none/yellow/..., none/lines/grid).</summary>
+    public event Action<string, string>? PageSettingChosen;
+
+    private Group[] TasksGroups()
+    {
+        var st = TaskState?.Invoke();
+        bool On(string k) => st is not null && st.IsOn(k);
+        return new Group[]
+        {
+            new("New", new Item[] { new("plus", "New task", Word: "New task") }),
+            new("Show", new Item[]
+            {
+                new("sun", "Today", Pressed: TaskView == TaskViewKind.Today), new("calendar-range", "Upcoming", Pressed: TaskView == TaskViewKind.Upcoming),
+                new("inbox", "My Tasks", Pressed: TaskView == TaskViewKind.MyTasks), new("list-checks", "All tasks", Pressed: TaskView == TaskViewKind.All),
+            }),
+            new("Organise", new Item[]
+            {
+                new("layers", "Group", Menu: true, Pressed: st is not null && st.Group != TaskGrouping.Due),
+                new("arrow-up-down", "Sort", Menu: true, Pressed: st is not null && st.Sort != TaskSort.Due),
+            }),
+            new("Filter", new Item[]
+            {
+                new("eye", "Status", TaskView != TaskViewKind.All, Menu: true, Pressed: On("status")), new("user", "Assignee", Menu: true, Pressed: On("assignee")),
+                new("tag", "Tags", Menu: true, Pressed: On("tags")), new("users-round", "Team", Menu: true, Pressed: On("team")),
+                new("flag", "Priority", Menu: true, Pressed: On("priority")), new("sliders-horizontal", "More filters", Menu: true, Pressed: On("due") || On("source")),
+                new("funnel-x", "Clear filters", st is null || !st.AnyFilter),
+            }),
+            new("Views", new Item[] { new("bookmark", "Saved views", Menu: true), new("bookmark-plus", "Save view", true) }),
+            new("Print", new Item[] { new("printer", "Print") }),
+        };
+    }
 
     private IReadOnlyList<Item> Right() => Route == AppRoute.Notes
         ? new Item[] { new("pen", "Draw", Pressed: InkTool.Shared.BarOpen), new("undo-2", "Undo", true), new("redo-2", "Redo", true) }
@@ -281,7 +344,8 @@ internal sealed class RibbonView : ThemedControl
 
         ButtonBase b;
         Specs.TryGetValue(it.Tip, out var spec);
-        var editing = Route == AppRoute.Notes && (spec is not null || it.Tip is "Undo" or "Redo" or "Picture" or "File");
+        var custom = it.Tip is "Clear formatting" or "Link to page" or "Divider" or "Text colour";
+        var editing = Route == AppRoute.Notes && (spec is not null || custom || it.Tip is "Undo" or "Redo" or "Picture" or "File");
         if (it.Pressed || spec?.Active is not null)
             b = new ToggleButton { Style = Ui.Style("RibbonToggleStyle"), IsChecked = it.Pressed };
         else
@@ -305,12 +369,26 @@ internal sealed class RibbonView : ThemedControl
                 b.Click += (_, _) => { if (BoxTextView.Focused is { } box) _ = box.PickMediaAsync(picture); };
             }
             else if (spec is not null) b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            else if (custom)
+            {
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(it.Tip));
+                var tip = it.Tip;
+                if (tip == "Text colour") ((Button)b).Flyout = TextColourMenu();
+                else b.Click += (_, _) =>
+                {
+                    var box = BoxTextView.Focused;
+                    if (tip == "Clear formatting") box?.ClearFormatting(); else box?.RibbonInsert(tip == "Divider" ? "divider" : "page-link");
+                    box?.Focus(FocusState.Programmatic);
+                };
+            }
         }
         else if (!it.Disabled)
         {
             var tip = it.Tip;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(tip));
             if (tip == "Draw") { b.AllowFocusOnInteraction = false; b.IsTabStop = false; b.Click += (_, _) => InkTool.Shared.ToggleBar(); }
+            else if (Route == AppRoute.Notes && tip is "Page colour" or "Rule lines") ((Button)b).Flyout = PageMenu(tip);
+            else if (it.Menu && Route == AppRoute.Tasks && tip != "Saved views") b.Click += (_, _) => MenuRequested?.Invoke(tip, b);
             else b.Click += (_, _) => Invoked?.Invoke(tip);
         }
         return b;

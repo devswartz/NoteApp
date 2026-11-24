@@ -26,7 +26,12 @@ internal sealed class RailView : ThemedControl
     public event Action<string>? WorkspaceSelected;
     internal ShellHost? Host { get; set; }
 
-    public RailView(INotesSource source, Action? signOut) { _source = source; _signOut = signOut; }
+    public RailView(INotesSource source, Action? signOut)
+    {
+        _source = source; _signOut = signOut;
+        Loaded += (_, _) => { if (Host is { } h) h.Inbox.Changed += Refresh; };
+        Unloaded += (_, _) => { if (Host is { } h) h.Inbox.Changed -= Refresh; };
+    }
 
     public void Refresh() => Rebuild();
 
@@ -54,7 +59,7 @@ internal sealed class RailView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(search, "Search");
         search.Click += (_, _) => Host?.OpenSearch();
         foot.Children.Add(search);
-        foot.Children.Add(Ui.IconButton("bell", 19, 40, 40, "Notifications", 9));
+        foot.Children.Add(Bell());
 
         var ws = new Button { Style = Ui.Style("GhostButtonStyle"), Width = 40, Height = 40, CornerRadius = new CornerRadius(9) };
         ToolTipService.SetToolTip(ws, "Workspace");
@@ -115,6 +120,30 @@ internal sealed class RailView : ThemedControl
         Grid.SetRow(foot, 1);
         root.Children.Add(foot);
         return root;
+    }
+
+    /// <summary>The bell with its unread badge (the web's .bell-btn and .bell-badge): a red pill at the top right, ringed in the rail's background. Opens the inbox.</summary>
+    private UIElement Bell()
+    {
+        var unread = Host?.Inbox.Unread ?? 0;
+        var btn = Ui.IconButton("bell", 19, 40, 40, "Notifications", 9);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(btn, "rail-bell");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(btn, AuditRules.BellLabel(unread));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(btn, "unread=" + unread);
+        btn.Click += (_, _) => { if (Host is { } h) InboxPopover.Show(h, btn); };
+        var g = new Grid { Width = 40, Height = 40 };
+        g.Children.Add(btn);
+        if (unread > 0)
+        {
+            var pill = new Border
+            {
+                MinWidth = 16, Height = 16, Padding = new Thickness(4, 0, 4, 0), CornerRadius = new CornerRadius(8), Background = Ui.Hex("#ef4444"), BorderBrush = B("BgSidebar"), BorderThickness = new Thickness(2),
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 2, -2, 0), IsHitTestVisible = false,
+                Child = Ui.Text(AuditRules.BadgeText(unread), 10, new SolidColorBrush(Microsoft.UI.Colors.White), 600).With(t => { t.HorizontalAlignment = HorizontalAlignment.Center; t.TextTrimming = TextTrimming.None; }),
+            };
+            g.Children.Add(pill);
+        }
+        return g;
     }
 
     private UIElement AccountHeader(Func<string, Brush> b, Action close)
