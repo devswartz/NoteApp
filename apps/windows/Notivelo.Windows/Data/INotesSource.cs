@@ -96,6 +96,21 @@ public interface INotesSource
     Task<TreeResult> Duplicate(TreeKind kind, string id) => Task.FromResult(new TreeResult(Error: "Not available."));
     /// <summary>Move a page (to <paramref name="sectionId"/>) or a section (to a notebook, optionally under a section).</summary>
     Task<TreeResult> Move(TreeKind kind, string id, string notebookId, string? sectionId) => Task.FromResult(new TreeResult(Error: "Not available."));
+    // ---- parity batch 4: colours, reordering and notebook sharing (the core's set_*_color, move_* with an index, notebook_shares ...) ----
+    /// <summary>A notebook's or a section's colour (#rrggbb).</summary>
+    Task<TreeResult> SetColor(TreeKind kind, string id, string hex) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Move with a place: a page into <paramref name="parentId"/> (a section), a section under <paramref name="parentId"/> (null: top level of <paramref name="notebookId"/>),
+    /// a notebook among the notebooks, at <paramref name="index"/> among its new siblings without itself (null: last).</summary>
+    Task<TreeResult> MoveTo(TreeKind kind, string id, string notebookId, string? parentId, int? index) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Who a notebook is shared with.</summary>
+    Task<PageToolResult<NotebookSharesInfo>> LoadNotebookShares(string notebookId) => Task.FromResult(PageToolResult<NotebookSharesInfo>.Fail("Not available."));
+    /// <summary>Make a notebook private (only its creator and the people picked) or shared with the workspace.</summary>
+    Task<PageToolResult<NotebookSharesInfo>> SetNotebookPrivate(string notebookId, bool isPrivate) => Task.FromResult(PageToolResult<NotebookSharesInfo>.Fail("Not available."));
+    /// <summary>Replace the members a private notebook is shared with (its creator only).</summary>
+    Task<PageToolResult<NotebookSharesInfo>> SetNotebookShares(string notebookId, IReadOnlyList<string> userIds) => Task.FromResult(PageToolResult<NotebookSharesInfo>.Fail("Not available."));
+    /// <summary>The connection is down (a page that cannot connect, a failed load): the page's top bar says "Offline" and, after 30 s, the offline pill shows.</summary>
+    bool IsOffline => false;
+
     /// <summary>Delete moves to the Trash (kept 60 days).</summary>
     Task<TreeResult> Delete(TreeKind kind, string id) => Task.FromResult(new TreeResult(Error: "Not available."));
     Task<TrashList> LoadTrash() => Task.FromResult(new TrashList(Array.Empty<TrashItem>(), "Not available."));

@@ -15,6 +15,7 @@ internal sealed class ShellHost
     public Action OpenTrash { get; set; } = () => { };
     public Action<QuickAddDialog.Seed?> OpenQuickAdd { get; set; } = _ => { };
     public Action OpenSettings { get; set; } = () => { };
+    public Action OpenShortcuts { get; set; } = () => { };
     public TreeActions Tree { get; }
 
     public ShellHost(INotesSource source, OverlayHost overlay)
@@ -50,24 +51,38 @@ internal sealed class TreeActions
 
     // ---- menus ----
 
-    public void NotebookMenu(FrameworkElement anchor, Notebook nb) => PopupMenu.Show(O, new[]
+    public void NotebookMenu(FrameworkElement anchor, Notebook nb)
     {
-        new MenuEntry("New section", "folder-plus", () => NewSection(nb.Id, null)),
-        new MenuEntry("Rename", "pencil", () => RenameDialog(TreeKind.Notebook, nb.Id, nb.Name)),
-        MenuEntry.Sep(),
-        new MenuEntry("Delete notebook", "trash", () => DeleteDialog(TreeKind.Notebook, nb.Id, nb.Name), Danger: true),
-    }, anchor, endAlign: true, id: "menu-notebook");
+        var items = new List<MenuEntry>
+        {
+            new("New section", "folder-plus", () => NewSection(nb.Id, null)),
+            new("Rename", "pencil", () => RenameDialog(TreeKind.Notebook, nb.Id, nb.Name)),
+            new("Share with people…", "user-plus", () => NotebookShareDialog.Show(_h, nb.Id, nb.Name), Id: "menu-notebook-share"),
+            new(nb.IsPrivate ? "Share with workspace" : "Make private", "lock", () => SetPrivate(nb.Id, !nb.IsPrivate), Id: "menu-notebook-visibility"),
+        };
+        AddMoveSteps(items, TreeKind.Notebook, nb.Id);
+        items.Add(MenuEntry.Colours(nb.ColorHex, c => Recolour(TreeKind.Notebook, nb.Id, c)));
+        items.Add(MenuEntry.Sep());
+        items.Add(new("Delete notebook", "trash", () => DeleteDialog(TreeKind.Notebook, nb.Id, nb.Name), Danger: true));
+        PopupMenu.Show(O, items, anchor, endAlign: true, id: "menu-notebook");
+    }
 
-    public void SectionMenu(FrameworkElement? anchor, Notebook? nb, Section s, global::Windows.Foundation.Point? at = null) => PopupMenu.Show(O, new[]
+    public void SectionMenu(FrameworkElement? anchor, Notebook? nb, Section s, global::Windows.Foundation.Point? at = null)
     {
-        new MenuEntry("New page", "file-plus", () => NewPage(s.Id)),
-        new MenuEntry("New subsection", "folder-plus", () => NewSection(nb?.Id ?? NotebookOf(s.Id) ?? "", s.Id)),
-        new MenuEntry("Rename", "pencil", () => RenameDialog(TreeKind.Section, s.Id, s.Name)),
-        new MenuEntry("Duplicate", "copy", () => Duplicate(TreeKind.Section, s.Id)),
-        new MenuEntry("Move to…", "folder-input", () => MoveDialog(TreeKind.Section, s.Id, s.Name)),
-        MenuEntry.Sep(),
-        new MenuEntry("Delete section", "trash", () => DeleteDialog(TreeKind.Section, s.Id, s.Name), Danger: true),
-    }, anchor, endAlign: true, at: at, id: "menu-section");
+        var items = new List<MenuEntry>
+        {
+            new("New page", "file-plus", () => NewPage(s.Id)),
+            new("New subsection", "folder-plus", () => NewSection(nb?.Id ?? NotebookOf(s.Id) ?? "", s.Id)),
+            new("Rename", "pencil", () => RenameDialog(TreeKind.Section, s.Id, s.Name)),
+            new("Duplicate", "copy", () => Duplicate(TreeKind.Section, s.Id)),
+            new("Move to…", "folder-input", () => MoveDialog(TreeKind.Section, s.Id, s.Name)),
+        };
+        AddMoveSteps(items, TreeKind.Section, s.Id);
+        items.Add(MenuEntry.Colours(s.ColorHex, c => Recolour(TreeKind.Section, s.Id, c)));
+        items.Add(MenuEntry.Sep());
+        items.Add(new("Delete section", "trash", () => DeleteDialog(TreeKind.Section, s.Id, s.Name), Danger: true));
+        PopupMenu.Show(O, items, anchor, endAlign: true, at: at, id: "menu-section");
+    }
 
     public void PageMenu(FrameworkElement? anchor, PageSummary p, global::Windows.Foundation.Point? at = null, bool current = false)
     {
@@ -78,6 +93,7 @@ internal sealed class TreeActions
         };
         if (!p.Locked) items.Add(new("Duplicate", "copy", () => Duplicate(TreeKind.Page, p.Id)));
         items.Add(new("Move to…", "folder-input", () => MoveDialog(TreeKind.Page, p.Id, p.Title)));
+        AddMoveSteps(items, TreeKind.Page, p.Id);
         items.Add(MenuEntry.Sep());
         if (!p.Locked) items.Add(new("Share…", "user-plus", () => PageDialogs.Share(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-share"));
         items.Add(new("Version history", "rotate-ccw", () => PageDialogs.VersionHistory(_h, p.Id), Id: "menu-version-history"));
@@ -114,6 +130,102 @@ internal sealed class TreeActions
 
     private string? NotebookOf(string sectionId) => Sections().FirstOrDefault(x => x.S.Id == sectionId).NotebookId;
     private PageSummary? FindPage(string id) => Sections().SelectMany(x => x.S.Pages).FirstOrDefault(p => p.Id == id);
+
+    // ---- colours and order ----
+
+    public async void Recolour(TreeKind kind, string id, string hex)
+    {
+        var err = await Run(S.SetColor(kind, id, hex));
+        if (err is not null) _h.Toast(err, true);
+    }
+
+    private async void SetPrivate(string notebookId, bool isPrivate)
+    {
+        var r = await S.SetNotebookPrivate(notebookId, isPrivate);
+        _h.Toast(r.Ok ? (isPrivate ? "Only you and the people you pick can see this notebook" : "Everyone in the workspace can see this notebook") : r.Error ?? "Couldn't change who sees it", !r.Ok);
+    }
+
+    /// <summary>The ids of the item's siblings in order (a page's section, a section's parent or notebook, the notebooks) and what a move call needs to place it.</summary>
+    internal (IReadOnlyList<string> Siblings, string NotebookId, string? ParentId) PlaceOf(TreeKind kind, string id)
+    {
+        switch (kind)
+        {
+            case TreeKind.Notebook: return (S.Notebooks.Select(n => n.Id).ToList(), id, null);
+            case TreeKind.Page:
+            {
+                var host = Sections().FirstOrDefault(x => x.S.Pages.Any(p => p.Id == id));
+                return host.S is null ? (Array.Empty<string>(), "", null) : (host.S.Pages.Select(p => p.Id).ToList(), host.NotebookId, host.S.Id);
+            }
+            default:
+            {
+                var me = Sections().FirstOrDefault(x => x.S.Id == id);
+                if (me.S is null) return (Array.Empty<string>(), "", null);
+                return (Sections().Where(x => x.NotebookId == me.NotebookId && x.ParentId == me.ParentId).Select(x => x.S.Id).ToList(), me.NotebookId, me.ParentId);
+            }
+        }
+    }
+
+    /// <summary>Move up / Move down: the menu and keyboard way to reorder what a drag in the tree does.</summary>
+    private void AddMoveSteps(List<MenuEntry> items, TreeKind kind, string id)
+    {
+        var (sibs, _, _) = PlaceOf(kind, id);
+        if (ShellRules.StepIndex(sibs, id, -1) is not null) items.Add(new("Move up", "arrow-up", () => Step(kind, id, -1), Id: "menu-move-up"));
+        if (ShellRules.StepIndex(sibs, id, 1) is not null) items.Add(new("Move down", "arrow-down", () => Step(kind, id, 1), Id: "menu-move-down"));
+    }
+
+    public async void Step(TreeKind kind, string id, int step)
+    {
+        var (sibs, nb, parent) = PlaceOf(kind, id);
+        if (ShellRules.StepIndex(sibs, id, step) is not { } to) return;
+        var err = await Run(S.MoveTo(kind, id, nb, parent, to));
+        if (err is not null) _h.Toast(err, true);
+    }
+
+    /// <summary>A drop in the tree: put the item at <paramref name="index"/> among the children of <paramref name="parentId"/> (a section; for a section null is its notebook's top level).</summary>
+    public async void Drop(TreeKind kind, string id, string notebookId, string? parentId, int? index)
+    {
+        var err = await Run(S.MoveTo(kind, id, notebookId, parentId, index));
+        if (err is not null) _h.Toast(err, true);
+    }
+
+    /// <summary>Whether <paramref name="candidate"/> is the section <paramref name="id"/> or inside it (a section cannot go into itself).</summary>
+    internal bool IsSelfOrInside(string id, string candidate)
+    {
+        var all = Sections().ToList();
+        for (var cur = (string?)candidate; cur is not null;)
+        {
+            if (cur == id) return true;
+            cur = all.FirstOrDefault(x => x.S.Id == cur).ParentId;
+        }
+        return false;
+    }
+
+    /// <summary>Where a drop puts the dragged item: its notebook, parent section (null: top level; for a page the section) and index among the new siblings without itself
+    /// (null: last), or null when the drop is not allowed (a section onto a page, a section into itself or what it holds, an item onto itself).</summary>
+    internal (string NotebookId, string? ParentId, int? Index)? DropPlan(TreeKind dragKind, string dragId, TreeKind targetKind, string targetId, ShellRules.Zone zone)
+    {
+        if (dragKind == TreeKind.Page)
+        {
+            if (targetKind == TreeKind.Section) return (NotebookOf(targetId) ?? "", targetId, null);
+            var host = SectionOfPage(targetId);
+            if (host is null || targetId == dragId) return null;
+            var sibs = PlaceOf(TreeKind.Page, targetId).Siblings.Where(x => x != dragId).ToList();
+            return (NotebookOf(host) ?? "", host, ShellRules.DropIndex(sibs, targetId, zone != ShellRules.Zone.Before));
+        }
+        if (dragKind == TreeKind.Section)
+        {
+            if (targetKind != TreeKind.Section || IsSelfOrInside(dragId, targetId)) return null;
+            var nb = NotebookOf(targetId) ?? "";
+            if (zone == ShellRules.Zone.Into) return (nb, targetId, null);
+            var sibs = PlaceOf(TreeKind.Section, targetId).Siblings.Where(x => x != dragId).ToList();
+            return (nb, ParentOf(targetId), ShellRules.DropIndex(sibs, targetId, zone == ShellRules.Zone.After));
+        }
+        return null;
+    }
+
+    internal string? SectionNotebook(string sectionId) => NotebookOf(sectionId);
+    internal string? ParentOf(string sectionId) => Sections().FirstOrDefault(x => x.S.Id == sectionId).ParentId;
+    internal string? SectionOfPage(string pageId) => Sections().FirstOrDefault(x => x.S.Pages.Any(p => p.Id == pageId)).S?.Id;
 
     // ---- actions ----
 

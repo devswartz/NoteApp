@@ -121,7 +121,7 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
             }
             var (tree, tasks) = await _session.CallAsync(c => (c.Tree(id), c.Tasks(id)));
             if (id != _wsId) return;
-            _tree = tree; _tasks = tasks; _tasksVersion++; LoadError = null; Loading = false;
+            _tree = tree; _tasks = tasks; _tasksVersion++; LoadError = null; Loading = false; _netDown = false;
             Rebuild();
             Raise();
             _ = LoadMembersAsync(id);
@@ -130,7 +130,7 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
         catch (Exception e)
         {
             if (id != _wsId) return;
-            Loading = false; LoadError = ErrorText.Message(e);
+            Loading = false; LoadError = ErrorText.Message(e); NoteNetwork(e);
             Raise();
         }
     }
@@ -922,11 +922,12 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
         try
         {
             var (r, tree) = await _session.CallAsync(c => { var x = call(c); return (x, c.Tree(ws)); });
+            _netDown = false;
             if (ws == _wsId) { _tree = tree; Rebuild(); Raise(); }
             return new TreeResult(r.Id, null, r.Note);
         }
         catch (OperationCanceledException) { return new TreeResult(Error: "Cancelled."); }
-        catch (Exception e) { return new TreeResult(Error: ErrorText.Message(e)); }
+        catch (Exception e) { NoteNetwork(e); return new TreeResult(Error: ErrorText.Message(e)); }
     }
 
     public async Task<TreeResult> CreateNotebook(string name)

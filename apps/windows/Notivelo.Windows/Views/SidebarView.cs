@@ -57,6 +57,80 @@ internal sealed class SidebarView : ThemedControl
         return row;
     }
 
+    // ---- drag to reorder / move (the web's treeDnd.ts): drag a page or a section; the row under the pointer shows where it lands ----------------------
+    // The top quarter of a row drops before it, the bottom quarter after it, the middle into it (a section row only). Pages go into sections; sections go next to
+    // sections or into one (the core refuses past three levels and says so). Move up / Move down in the menus do the same without a pointer.
+
+    private (TreeKind Kind, string Id)? _drag;
+    private Border? _hot;
+    private Brush? _hotBg;
+
+    private void ClearHot()
+    {
+        if (_hot is null) return;
+        _hot.BorderThickness = new Thickness(0);
+        if (_hotBg is not null) _hot.Background = _hotBg;
+        _hot = null; _hotBg = null;
+    }
+
+    private void ShowHot(Border row, ShellRules.Zone zone)
+    {
+        if (!ReferenceEquals(_hot, row)) { ClearHot(); _hot = row; _hotBg = row.Background; }
+        row.BorderBrush = B("Accent");
+        switch (zone)
+        {
+            case ShellRules.Zone.Before: row.BorderThickness = new Thickness(0, 2, 0, 0); row.Background = _hotBg; break;
+            case ShellRules.Zone.After: row.BorderThickness = new Thickness(0, 0, 0, 2); row.Background = _hotBg; break;
+            default: row.BorderThickness = new Thickness(1); row.Background = B("AccentSoft"); break;
+        }
+    }
+
+    private void Draggable(Border row, TreeKind kind, string id)
+    {
+        if (!_source.CanEditTree || Host is null) return;
+        row.CanDrag = true;
+        row.DragStarting += (_, e) =>
+        {
+            _drag = (kind, id);
+            e.Data.SetText("notivelo:" + kind.ToString().ToLowerInvariant() + ":" + id);
+            e.Data.RequestedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+        };
+        row.DropCompleted += (_, _) => { _drag = null; ClearHot(); };
+    }
+
+    private void DropTarget(Border row, TreeKind kind, string id)
+    {
+        if (!_source.CanEditTree || Host is null) return;
+        row.AllowDrop = true;
+        (string, string?, int?)? Plan(Microsoft.UI.Xaml.DragEventArgs e, out ShellRules.Zone zone)
+        {
+            zone = ShellRules.Zone.After;
+            if (_drag is not { } d || Host is null) return null;
+            var nest = kind == TreeKind.Section;
+            zone = ShellRules.DropZone(e.GetPosition(row).Y, row.ActualHeight, nest);
+            if (d.Kind == TreeKind.Page && kind == TreeKind.Section) zone = ShellRules.Zone.Into;   // a page can only go into a section
+            return Host.Tree.DropPlan(d.Kind, d.Id, kind, id, zone) is { } p ? (p.NotebookId, p.ParentId, p.Index) : null;
+        }
+        row.DragOver += (_, e) =>
+        {
+            var plan = Plan(e, out var zone);
+            if (plan is null) { e.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.None; if (ReferenceEquals(_hot, row)) ClearHot(); return; }
+            e.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+            e.DragUIOverride.IsCaptionVisible = false;
+            ShowHot(row, zone);
+            e.Handled = true;
+        };
+        row.DragLeave += (_, _) => { if (ReferenceEquals(_hot, row)) ClearHot(); };
+        row.Drop += (_, e) =>
+        {
+            var plan = Plan(e, out ShellRules.Zone _);
+            var d = _drag;
+            ClearHot(); _drag = null;
+            e.Handled = true;
+            if (plan is { } p && d is { } dd) Host!.Tree.Drop(dd.Kind, dd.Id, p.Item1, p.Item2, p.Item3);
+        };
+    }
+
     private static Grid Cols(params GridLength[] widths)
     {
         var g = new Grid();
@@ -227,6 +301,8 @@ internal sealed class SidebarView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, s.Name);
         if (canEdit)
         {
+            Draggable(row, TreeKind.Section, s.Id);
+            DropTarget(row, TreeKind.Section, s.Id);
             // hover actions: "+" New page, "..." Section options (always there for the UI tests, drawn on hover)
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Opacity = 0 };
             var add = Ui.IconButton("plus", 15, 24, 24, "New page");
@@ -358,6 +434,8 @@ internal sealed class SidebarView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, p.Title);
         if (_source.CanEditTree && Host is not null)
         {
+            Draggable(row, TreeKind.Page, p.Id);
+            DropTarget(row, TreeKind.Page, p.Id);
             var more = Ui.IconButton("ellipsis", 15, 24, 24, "Page options");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(more, "page-more-" + p.Id);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, "Page options: " + p.Title);

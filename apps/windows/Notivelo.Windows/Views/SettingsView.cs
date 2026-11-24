@@ -102,10 +102,10 @@ internal sealed partial class SettingsView : ThemedControl
 
     private FrameworkElement Appearance()
     {
-        var p = Page("Appearance", "Light, Dark, or Hybrid: dark chrome around a light page.");
+        var p = Page("Appearance", "Light, Dark, Hybrid (dark chrome around a light page) or System, which follows Windows.");
         var now = _theme();
         var track = new Grid { ColumnSpacing = 8 };
-        var modes = new[] { (ThemeMode.Light, "Light", "sun"), (ThemeMode.Dark, "Dark", "moon"), (ThemeMode.Hybrid, "Hybrid", "contrast") };
+        var modes = new[] { (ThemeMode.Light, "Light", "sun"), (ThemeMode.Dark, "Dark", "moon"), (ThemeMode.Hybrid, "Hybrid", "contrast"), (ThemeMode.System, "System", "monitor") };
         for (var i = 0; i < modes.Length; i++)
         {
             var (mode, label, icon) = modes[i];
@@ -126,6 +126,30 @@ internal sealed partial class SettingsView : ThemedControl
             track.Children.Add(b);
         }
         p.Children.Add(track);
+        p.Children.Add(Ui.Text("Accent colour", 14, B("Text"), 600).With(t => t.Margin = new Thickness(0, 28, 0, 4)));
+        p.Children.Add(Ui.Text("The colour of links, selected rows and buttons. Kept on this device.", 13, B("TextMuted")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, 0, 0, 12); }));
+        var swatches = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        AutomationProperties.SetAutomationId(swatches, "settings-accents");
+        AutomationProperties.SetName(swatches, "Accent colour");
+        var current = ShellRules.AccentOf(AppSettings.Accent).Key;
+        foreach (var a in ShellRules.Accents)
+        {
+            var choice = a;
+            var on = choice.Key == current;
+            var dot = new Grid { Width = 28, Height = 28 };
+            dot.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = Ui.Hex("#" + choice.Swatch.ToString("X6")) });
+            if (on) dot.Children.Add(new Icon("check", 14, new SolidColorBrush(Colors.White)) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            var b = new Button
+            {
+                Style = Ui.Style("GhostButtonStyle"), Width = 38, Height = 38, Padding = new Thickness(0), CornerRadius = new CornerRadius(19), Content = dot,
+                BorderBrush = on ? B("Text") : null, BorderThickness = new Thickness(on ? 2 : 0),
+            };
+            AutomationProperties.SetAutomationId(b, "settings-accent-" + choice.Key);
+            AutomationProperties.SetName(b, choice.Label + (on ? " (selected)" : ""));
+            b.Click += (_, _) => { AppSettings.Accent = choice.Key; ThemeBrushes.ApplyAccent(choice.Key); Rebuild(); };
+            swatches.Children.Add(b);
+        }
+        p.Children.Add(swatches);
         return p;
     }
 

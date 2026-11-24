@@ -107,7 +107,7 @@ public sealed partial class MainWindow : Window
     private void ShowShell(INotesSource source, Action? signOut, string? server)
     {
         var shell = new ShellView(source, signOut, server);
-        if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode);
+        if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode, false);
         if (Enum.TryParse<AppRoute>(Environment.GetEnvironmentVariable("NOTIVELO_ROUTE"), true, out var route)) shell.Navigate(route);
         Host.Children.Clear();
         Host.Children.Add(shell);

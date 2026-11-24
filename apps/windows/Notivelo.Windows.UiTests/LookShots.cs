@@ -62,6 +62,28 @@ public class LookShots
         catch (Exception e) { Log($"[auth] {e.GetType().Name}: {e.Message}"); }
     }
 
+    /// <summary>The offline pill: the sample reports a lost connection from the start (NOTIVELO_FORCE_OFFLINE), so the page's top bar says Offline and the pill shows at the bottom.</summary>
+    [Fact]
+    public void OfflinePill()
+    {
+        AppHost host;
+        try { host = AppHost.Launch(new Dictionary<string, string> { ["NOTIVELO_FORCE_OFFLINE"] = "1", ["NOTIVELO_THEME"] = "hybrid" }, 1196, 859); }
+        catch (Exception e) { Log($"[offline] launch failed: {e.Message}"); return; }
+        using var h = host;
+        var w = h.Window;
+        try
+        {
+            AppHost.Wait(() => w.FindFirstDescendant(w.ConditionFactory.ByAutomationId("offline-pill")), "offline-pill", 8000);
+            Thread.Sleep(600);
+            Directory.CreateDirectory(Dir);
+            var file = Path.Combine(Dir, "offline-pill-hybrid.png");
+            if (DwmGetWindowAttribute(w.Properties.NativeWindowHandle.Value, 9, out var fr, Marshal.SizeOf<Rect>()) == 0 && fr.Right > fr.Left)
+                Capture.Rectangle(new Rectangle(fr.Left, fr.Top, fr.Right - fr.Left, fr.Bottom - fr.Top)).ToFile(file);
+            else Capture.Element(w).ToFile(file);
+        }
+        catch (Exception e) { Log($"[offline] {e.GetType().Name}: {e.Message}"); }
+    }
+
     private static void Run(string theme)
     {
         AppHost host;
@@ -111,7 +133,7 @@ public class LookShots
                 var r = w.BoundingRectangle;       // a click on the scrim at the window's bottom right closes what Escape didn't
                 if (Exists("menu-account") || Exists("menu-workspace") || Exists("menu-section") || Exists("menu-notebook-picker") || Exists("prompt-input")
                     || Exists("search-input") || Exists("quickadd-card") || Exists("task-sheet") || Exists("trash-dialog") || Exists("confirm-ok")
-                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page"))
+                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page") || Exists("shortcuts-sheet") || Exists("notebook-share-dialog") || Exists("menu-notebook"))
                     FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point((int)r.Right - 12, (int)r.Bottom - 12));
             }
             catch { }
@@ -149,7 +171,14 @@ public class LookShots
         Step("workspace-menu", () => { Invoke("rail-workspace"); Find("menu-workspace"); Snap("workspace-menu"); });
         Step("notebook-picker", () => { Invoke("notebook-picker"); Find("menu-notebook-picker"); Snap("notebook-picker"); });
         Step("account-menu", () => { Invoke("rail-account"); Find("menu-account"); Snap("account-menu"); });
-        Step("section-menu", () => { Invoke("section-more-corpus"); Find("menu-section"); Snap("section-menu"); });
+        Step("section-menu", () => { Invoke("section-more-corpus"); Find("menu-section"); Snap("section-menu"); });   // with the colour row
+        Step("notebook-menu", () => { Invoke("notebook-more"); Find("menu-notebook"); Snap("notebook-menu"); });
+        Step("shortcut-sheet", () => { Invoke("rail-account"); Find("menu-account"); Invoke("menu-shortcuts"); Find("shortcuts-sheet"); Settle(500); Snap("shortcut-sheet"); });
+        Step("notebook-share", () =>
+        {
+            Invoke("notebook-more"); Invoke("menu-notebook-share"); Find("notebook-share-dialog");
+            Invoke("nbshare-private"); Find("nbshare-member-u2"); Invoke("nbshare-member-u2"); Settle(700); Snap("notebook-share");
+        });
         Step("quick-add", () => {   // the Add task row is in the Tasks panel
             Find("rail-tasks")!.Click(); Settle(700); Invoke("sidebar-add-task"); Find("quickadd-card"); Snap("quick-add"); });
         Step("search-palette", () =>
@@ -216,5 +245,6 @@ public class LookShots
         Step("settings-notifications", () => { OpenSettings("notifications"); Snap("settings-notifications"); });
         Step("settings-apps", () => { OpenSettings("apps"); Snap("settings-apps"); });
         Step("settings-appearance", () => { OpenSettings("appearance"); Snap("settings-appearance"); });
+        Step("settings-accent", () => { OpenSettings("appearance"); Invoke("settings-accent-teal"); Settle(500); Snap("settings-accent"); Invoke("settings-accent-blue"); });
     }
 }

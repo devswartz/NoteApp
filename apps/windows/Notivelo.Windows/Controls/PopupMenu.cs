@@ -16,6 +16,28 @@ internal sealed record MenuEntry(string Text, string? Icon = null, Action? Click
     public static MenuEntry Label(string text) => new(text, Heading: true);
     /// <summary>A row of its own content (the account menu's header and theme switch); gets the brush lookup and the menu's close action.</summary>
     public static MenuEntry Block(Func<Func<string, Brush>, Action, UIElement> build, double height) => new("", Custom: build, CustomHeight: height);
+    /// <summary>The colour row of the notebook and section menus (Apple's ColorRow): eight circles, the current one ticked; a pick closes the menu.</summary>
+    public static MenuEntry Colours(string? current, Action<string> pick) => Block((b, close) =>
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(6, 7, 6, 7), Height = 22 };
+        AutomationProperties.SetAutomationId(row, "menu-colours");
+        AutomationProperties.SetName(row, "Colour");
+        foreach (var (hex, name) in Notivelo.Windows.Data.ShellRules.TreeColours)
+        {
+            var on = Notivelo.Windows.Data.ShellRules.SameColour(hex, current);
+            var dot = new Grid { Width = 20, Height = 20 };
+            dot.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse { Fill = Ui.Hex(hex) });
+            if (on) dot.Children.Add(new Icon("check", 12, new SolidColorBrush(Microsoft.UI.Colors.White)) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+            var btn = new Button { Style = Ui.Style("GhostButtonStyle"), Width = 22, Height = 22, Padding = new Thickness(0), CornerRadius = new CornerRadius(11), Content = dot };
+            AutomationProperties.SetAutomationId(btn, "colour-" + hex.TrimStart('#'));
+            AutomationProperties.SetName(btn, name + (on ? " (selected)" : ""));
+            var h = hex;
+            btn.Click += (_, _) => { close(); pick(h); };
+            row.Children.Add(btn);
+        }
+        return row;
+    }, 36);
+
     internal double Height => Separator ? 13 : Custom is not null ? CustomHeight : Heading ? 24 : 32;
 }
 

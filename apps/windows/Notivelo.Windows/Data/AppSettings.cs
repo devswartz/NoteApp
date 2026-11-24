@@ -18,6 +18,9 @@ internal static class AppSettings
         public bool CalendarWeek { get; set; }
         public bool CalendarEveryone { get; set; }
         public int CalendarStatus { get; set; }
+        /// <summary>Appearance, per device: the theme (hybrid, light, dark, system) and the accent colour key (blue ...).</summary>
+        public string? Theme { get; set; }
+        public string? Accent { get; set; }
     }
 
     private static readonly object Gate = new();
@@ -64,6 +67,9 @@ internal static class AppSettings
     public static bool CalendarWeek { get => Load().CalendarWeek; set { Load().CalendarWeek = value; Save(); } }
     public static bool CalendarEveryone { get => Load().CalendarEveryone; set { Load().CalendarEveryone = value; Save(); } }
     public static int CalendarStatus { get => Load().CalendarStatus; set { Load().CalendarStatus = value; Save(); } }
+
+    public static string? Theme { get => Load().Theme; set { Load().Theme = value; Save(); } }
+    public static string? Accent { get => Load().Accent; set { Load().Accent = value; Save(); } }
 
     public static string? Workspace(string server) => Load().Workspaces.GetValueOrDefault(server);
 

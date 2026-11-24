@@ -133,8 +133,8 @@ internal sealed class PageView : ThemedControl
     private string _sig = "";
 
     /// <summary>What a full rebuild shows besides the text inside session-backed boxes.</summary>
-    private static string Signature(NotePage p) =>
-        string.Join("|", p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked, p.Emoji,
+    private string Signature(NotePage p) =>
+        string.Join("|", _source.IsOffline, p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked, p.Emoji,
             string.Join(";", p.Boxes.Where(b => b.Field is null).Select(b => $"@{b.X},{b.Y},{b.Width},{b.Wide}")));
 
     protected override UIElement Build()
@@ -178,7 +178,7 @@ internal sealed class PageView : ThemedControl
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var title = Ui.Text(page.Title, 36, B("Text"), 700, lineHeight: 43.2, tracking: -0.025);
+        var title = TitleHost(page);
         title.Margin = new Thickness(51, 0, 0, 0);
         Grid.SetRow(title, 1);
         if (!string.IsNullOrEmpty(page.Emoji))
@@ -435,6 +435,61 @@ internal sealed class PageView : ThemedControl
     private long _tasksSeen;
     private bool _tasksOpen;
 
+    // ---- the title: a click turns it into a text box in place; Enter or leaving it renames the page (the core's rename_page), Esc keeps the old title ----
+
+    private Border TitleHost(NotePage page)
+    {
+        var host = new Border();
+        var shown = page.Title;
+        var canRename = page.CanEdit && !page.Locked && PageId is not null && _source.CanEditTree;
+        var id = PageId;
+
+        void ShowLabel()
+        {
+            var t = Ui.Text(shown, 36, B("Text"), 700, lineHeight: 43.2, tracking: -0.025);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(t, "page-title");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(t, shown);
+            if (canRename) t.Tapped += (_, _) => Edit();
+            host.Child = t;
+        }
+
+        void Edit()
+        {
+            var box = new TextBox
+            {
+                Style = Ui.Style("PlainTextBoxStyle"), Text = shown == "Untitled" ? "" : shown, PlaceholderText = "Untitled", FontSize = 36, FontWeight = new global::Windows.UI.Text.FontWeight(700),
+                Padding = new Thickness(0), MinHeight = 43, Foreground = B("Text"), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0),
+                AcceptsReturn = false, TextWrapping = TextWrapping.NoWrap, FontFamily = Ui.Font,
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(box, "page-title-edit");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, "Page title");
+            var done = false;
+            async void Finish(bool save)
+            {
+                if (done) return;
+                done = true;
+                var change = save ? ShellRules.TitleChange(shown, box.Text) : null;
+                if (change is null) { ShowLabel(); return; }
+                var old = shown;
+                shown = change.Length == 0 ? "Untitled" : change;
+                ShowLabel();
+                var r = await _source.Rename(TreeKind.Page, id!, change);
+                if (!r.Ok) { shown = old; ShowLabel(); Host?.Toast(r.Error ?? "Couldn't rename the page.", true); }
+            }
+            box.KeyDown += (_, e) =>
+            {
+                if (e.Key == global::Windows.System.VirtualKey.Enter) { e.Handled = true; Finish(true); }
+                else if (e.Key == global::Windows.System.VirtualKey.Escape) { e.Handled = true; Finish(false); }
+            };
+            box.LostFocus += (_, _) => Finish(true);
+            host.Child = box;
+            box.Loaded += (_, _) => { box.Focus(FocusState.Programmatic); box.SelectAll(); };
+        }
+
+        ShowLabel();
+        return host;
+    }
+
     // ---- top bar ----------------------------------------------------------------------------------------------
 
     private UIElement TopBar(NotePage page)
@@ -455,8 +510,12 @@ internal sealed class PageView : ThemedControl
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         var saved = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
-        saved.Children.Add(new Icon("check", 14, B("Text2")));
-        saved.Children.Add(Ui.Text("Saved", 12, B("Text2")));
+        // the save state: Saved, or Offline (a page that cannot connect, a lost network) with a cloud-off icon in the warn colour
+        var offline = _source.IsOffline;
+        saved.Children.Add(new Icon(offline ? "cloud-off" : "check", 14, offline ? B("Warn") : B("Text2")));
+        saved.Children.Add(Ui.Text(offline ? "Offline" : "Saved", 12, offline ? B("Warn") : B("Text2")));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(saved, "page-status");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(saved, offline ? "Offline" : "Saved");
         right.Children.Add(saved);
         var tasksBtn = Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(tasksBtn, "page-tasks-button");
