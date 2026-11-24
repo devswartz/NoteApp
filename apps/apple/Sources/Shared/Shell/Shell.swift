@@ -139,7 +139,6 @@ final class Shell {
     @ObservationIgnored private var toastToken = 0
 
     init() {
-        EditorFocus.shared.onTableMenu = { [weak self] in self?.menu = .tableMenu }
         let defaults = UserDefaults.standard
         let preview = defaults.bool(forKey: "previewSignedIn")
         let state = LookData.state ?? ""
@@ -397,6 +396,7 @@ struct AppShell: View {
             Color.clear.onAppear { if shell.sidebarOpen == nil { shell.sidebarOpen = g.size.width >= 900 } }
         })
         .onAppear {
+            EditorFocus.shared.onTableMenu = { [weak shell] in shell?.menu = .tableMenu }
             theme.systemDark = scheme == .dark
             ShellBridge.shared.attach(shell, session)
             if mainScreenSize.width <= 760 { shell.configurePhoneLook() }
