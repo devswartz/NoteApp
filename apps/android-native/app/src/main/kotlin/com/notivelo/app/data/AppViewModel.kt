@@ -456,7 +456,7 @@ class AppViewModel(
     // Editing a box: a core session on it (others' edits come into it, its edits go into the page)
 
     override fun startEditing(boxId: String, tapX: Float, tapY: Float) {
-        android.util.Log.i("Notivelo", "startEditing $boxId handle=${handle != null} page=${_state.value.pageId} ws=${_state.value.workspaceId}")
+        nvLog("startEditing $boxId handle=${handle != null} page=${_state.value.pageId} ws=${_state.value.workspaceId}")
         viewModelScope.launch { openEditing(boxId, tapX, tapY) }
     }
 
@@ -485,7 +485,7 @@ class AppViewModel(
             refreshFlags(pid)
             loadMembers(ws)
         } catch (e: Exception) {
-            android.util.Log.w("Notivelo", "openEditor failed", e)
+            nvLog("openEditor failed: $e")
             _state.update { it.copy(notice = "This box could not be opened for editing.") }
         }
     }
@@ -497,7 +497,7 @@ class AppViewModel(
     }
 
     override fun stopEditing() {
-        android.util.Log.i("Notivelo", "stopEditing editing=${_state.value.page?.editing?.boxId}")
+        nvLog("stopEditing editing=${_state.value.page?.editing?.boxId}")
         val pid = _state.value.pageId ?: return
         val e = _state.value.page?.editing ?: return
         val h = handle
@@ -649,4 +649,9 @@ class AppViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = AppViewModel(backend, store) as T
     }
+}
+
+/** A line in logcat (tag Notivelo); silent on the JVM, where android.util.Log is not there. */
+private fun nvLog(msg: String) {
+    try { android.util.Log.i("Notivelo", msg) } catch (e: Throwable) { }
 }

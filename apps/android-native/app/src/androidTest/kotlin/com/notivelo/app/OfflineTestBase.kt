@@ -77,8 +77,7 @@ abstract class OfflineTestBase {
             if (ok) return
             if (SystemClock.uptimeMillis() > end) {
                 val log = try { device.executeShellCommand("logcat -d -s Notivelo:V AndroidRuntime:E").takeLast(1500) } catch (x: Exception) { "" }
-                android.util.Log.e("NvTest", "timeout waiting for $what; app log:
-$log")
+                android.util.Log.e("NvTest", "timeout waiting for $what; app log: $log")
                 shot("timeout-" + what.take(30).replace(Regex("[^A-Za-z0-9]+"), "_"))
                 throw AssertionError("Timed out waiting for $what [$log] (text=${textOrNull()?.let { "\"" + it.replace("\n", "\\n") + "\"" }})")
             }
