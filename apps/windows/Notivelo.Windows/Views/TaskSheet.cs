@@ -130,6 +130,7 @@ internal sealed class TaskSheet
         // subtasks (a subtask has none of its own)
         _subs.Margin = new Thickness(0, 18, 0, 0);
         AutomationProperties.SetAutomationId(_subs, "task-sheet-subtasks");
+        AutomationProperties.SetName(_subs, "Subtasks");
         body.Children.Add(_subs);
         _subInput.Style = Ui.Style("PlainTextBoxStyle"); _subInput.PlaceholderText = "Add a subtask…"; _subInput.FontSize = 14; _subInput.BorderThickness = new Thickness(0);
         _subInput.Background = new SolidColorBrush(Colors.Transparent); _subInput.Padding = new Thickness(0, 6, 0, 6);

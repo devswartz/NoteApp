@@ -109,6 +109,7 @@ internal sealed class PageTasksPanel : ThemedControl
         // the id sits on a StackPanel inside the border (a Border has no UI Automation peer)
         var tagged = new StackPanel { Children = { root } };
         AutomationProperties.SetAutomationId(tagged, "page-tasks-panel");
+        AutomationProperties.SetName(tagged, "Tasks on this page");
         AutomationProperties.SetItemStatus(tagged, $"tasks={all.Count} open={open.Count} done={done.Count}");
         return new Border { BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged };
     }

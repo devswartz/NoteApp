@@ -536,7 +536,7 @@ internal sealed class PageView : ThemedControl
             _inkUnder = new InkLayer(true) { Height = h, Width = w };
             _inkOver = new InkLayer(false) { Height = h, Width = w };
             Canvas.SetZIndex(_inkUnder, -1);
-            Canvas.SetZIndex(_inkOver, 1_000_000);
+            Canvas.SetZIndex(_inkOver, 10_000);
             _surface.Children.Add(_inkUnder);
             _surface.Children.Add(_inkOver);
         }
@@ -548,8 +548,11 @@ internal sealed class PageView : ThemedControl
                 if (PageId is not null && _source.GetPage(PageId) is { } p) UpdateInk(p);
                 UndoStateChanged?.Invoke();
             }) { Height = _surface.Height, Width = _surface.ActualWidth };
-            Canvas.SetZIndex(_inkOverlay, 2_000_000);
-            _surface.Children.Add(_inkOverlay);
+            // a plain Grid carries the z-index (an attached property set directly on the UserControl threw E_INVALIDARG)
+            var host = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+            host.Children.Add(_inkOverlay);
+            Canvas.SetZIndex(host, 20_000);
+            _surface.Children.Add(host);
         }
         // strokes drawn below the old end of the page make it longer
         if (_surface is not null && strokes.Count > 0 && strokes.Max(s => s.MaxY) + 40 > _surface.Height)
