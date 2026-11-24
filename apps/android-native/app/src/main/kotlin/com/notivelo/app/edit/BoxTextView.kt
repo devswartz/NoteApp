@@ -681,7 +681,8 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
         }
         // Printable keys with no IME attached (some emulators and test rigs): type them.
         val u = event.unicodeChar
-        if (u != 0 && !ctrl && !event.isAltPressed && event.isPrintingKey) {
+        // KeyEvent.isPrintingKey is false for Space (a separator), which must still type.
+        if (u != 0 && !ctrl && !event.isAltPressed && (event.isPrintingKey || code == KeyEvent.KEYCODE_SPACE)) {
             input.commitText(String(Character.toChars(u)), 1)
             return true
         }

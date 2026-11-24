@@ -108,10 +108,12 @@ class BoxEditingTest : OfflineTestBase() {
         compose.onNodeWithText("Heading 1").performClick()
         waitFor("a heading block") { frame().active.block == "heading" }
         assertEquals(1, frame().active.headingLevel.toInt())
-        assertEquals("the slash is gone", "", text())
+        assertEquals("the slash is gone", "", text().trimEnd('
+'))
         assertNull("the menu closed", frame().suggestion)
         typeKeys("Title")
-        waitForText("Title")
+        waitFor("Title typed") { text().trimEnd('
+') == "Title" }
         assertEquals("heading", frame().active.block)
     }
 
@@ -287,9 +289,9 @@ class BoxEditingTest : OfflineTestBase() {
         compose.onNodeWithText("Heading 1").performClick()
         waitFor("heading") { frame().active.block == "heading" }
         typeKeys("T")
-        waitForText("T")
+        waitFor("T typed") { text().contains("T") }
         ctrl(KeyEvent.KEYCODE_Z)
-        waitFor("typed text undone") { text() != "T" }
+        waitFor("typed text undone") { !text().contains("T") }
     }
 
     // Switching boxes ------------------------------------------------------------------------------------------------------------
