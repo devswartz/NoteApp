@@ -14,7 +14,11 @@ public enum RibbonMode { Smallest, Compact, Full }
 /// <summary>Ribbon (LOOK 4.1): one per route, no tabs, buttons are placeholders. Smallest (&lt;= 1023), compact (&lt;= 1279) and full (&gt;= 1280, with group names and words).</summary>
 internal sealed class RibbonView : ThemedControl
 {
-    public RibbonView() { BoxTextView.FocusedStateChanged += RefreshStates; PageView.UndoStateChanged += RefreshStates; }
+    public RibbonView() { BoxTextView.FocusedStateChanged += RefreshStates; PageView.UndoStateChanged += RefreshStates; Loaded += (_, _) => InkTool.Shared.Changed += OnInkChanged; Unloaded += (_, _) => InkTool.Shared.Changed -= OnInkChanged; }
+
+    private bool _drawShown;
+    /// <summary>The Draw button shows pressed while the pen row is open.</summary>
+    private void OnInkChanged() { if (_drawShown != InkTool.Shared.BarOpen) { _drawShown = InkTool.Shared.BarOpen; Rebuild(); } }
 
     /// <summary>What an editing button does: the engine command and arguments, how its pressed state is read from the active marks, and whether it needs a focused box.</summary>
     private sealed record Spec(string Command, string Args = "{}", Func<Notivelo.Native.ViewActive, bool>? Active = null);
@@ -88,6 +92,9 @@ internal sealed class RibbonView : ThemedControl
     public TaskViewKind TaskView { get; private set; } = TaskViewKind.Today;
     public bool Collapsed { get; private set; }
 
+    /// <summary>Draw the buttons again (the Calendar's Week / Month and Mine / Everyone changed).</summary>
+    public void Refresh() => Rebuild();
+
     public void Update(AppRoute route, RibbonMode mode, TaskViewKind view)
     {
         if (route == Route && mode == Mode && view == TaskView) return;
@@ -120,8 +127,8 @@ internal sealed class RibbonView : ThemedControl
         {
             new("New", new Item[] { new("plus", "New task", Word: "New task") }),
             new("Navigate", new Item[] { new("calendar-days", "Today"), new("chevron-left", "Previous"), new("chevron-right", "Next") }),
-            new("View", new Item[] { new("calendar-range", "Week", true), new("calendar-days", "Month", Pressed: true) }),
-            new("Filter", new Item[] { new("user", "Mine", Pressed: true), new("users", "Everyone"), new("tag", "Tags", Menu: true), new("users-round", "Team", Menu: true) }),
+            new("View", new Item[] { new("calendar-range", "Week", Pressed: CalendarMonthView.Week), new("calendar-days", "Month", Pressed: !CalendarMonthView.Week) }),
+            new("Filter", new Item[] { new("user", "Mine", Pressed: !CalendarMonthView.Everyone), new("users", "Everyone", Pressed: CalendarMonthView.Everyone), new("tag", "Tags", Menu: true), new("users-round", "Team", Menu: true) }),
         },
         AppRoute.Settings => new Group[] { new("Settings", new Item[] { new("arrow-left", "Back", Word: "Back") }) },
         _ => new Group[]
@@ -148,12 +155,12 @@ internal sealed class RibbonView : ThemedControl
     };
 
     private IReadOnlyList<Item> Right() => Route == AppRoute.Notes
-        ? new Item[] { new("undo-2", "Undo", true), new("redo-2", "Redo", true) }
+        ? new Item[] { new("pen", "Draw", Pressed: InkTool.Shared.BarOpen), new("undo-2", "Undo", true), new("redo-2", "Redo", true) }
         : Array.Empty<Item>();
 
     protected override UIElement Build()
     {
-        _bound.Clear(); _blockButton = null; _blockLabel = null;
+        _bound.Clear(); _blockButton = null; _blockLabel = null; _drawShown = InkTool.Shared.BarOpen;
         var host = BuildCore();
         RefreshStates();
         return host;
@@ -296,7 +303,8 @@ internal sealed class RibbonView : ThemedControl
         {
             var tip = it.Tip;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(tip));
-            b.Click += (_, _) => Invoked?.Invoke(tip);
+            if (tip == "Draw") { b.AllowFocusOnInteraction = false; b.IsTabStop = false; b.Click += (_, _) => InkTool.Shared.ToggleBar(); }
+            else b.Click += (_, _) => Invoked?.Invoke(tip);
         }
         return b;
     }

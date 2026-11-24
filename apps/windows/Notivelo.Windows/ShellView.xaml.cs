@@ -21,6 +21,7 @@ public sealed partial class ShellView : UserControl
     private readonly RailView _rail;
     private readonly SidebarView _sidebar;
     private readonly RibbonView _ribbon = new();
+    private readonly InkBar _inkBar = new() { Visibility = Visibility.Collapsed };
     private readonly PageView _page;
     private readonly TasksView _tasks;
     private readonly CalendarMonthView _calendar;
@@ -60,7 +61,11 @@ public sealed partial class ShellView : UserControl
         _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host; _calendar.Host = _host; _settings.Host = _host;
         KeyDown += OnShellKey;
 
-        RibbonHost.Child = _ribbon;
+        var ribbonStack = new StackPanel();
+        ribbonStack.Children.Add(_ribbon);
+        ribbonStack.Children.Add(_inkBar);
+        RibbonHost.Child = ribbonStack;
+        InkTool.Shared.Changed += UpdateInkBar;
         RailHost.Child = _rail;
         SidebarHost.Child = _sidebar;
         PageCard.Child = _page;
@@ -135,6 +140,8 @@ public sealed partial class ShellView : UserControl
             case "Today" when _route == AppRoute.Calendar: _calendar.GoToday(); break;
             case "Previous" when _route == AppRoute.Calendar: _calendar.Step(-1); break;
             case "Next" when _route == AppRoute.Calendar: _calendar.Step(1); break;
+            case "Week" or "Month" when _route == AppRoute.Calendar: _calendar.SetWeek(tip == "Week"); _ribbon.Refresh(); break;
+            case "Mine" or "Everyone" when _route == AppRoute.Calendar: _calendar.SetEveryone(tip == "Everyone"); _ribbon.Refresh(); break;
             case "Back" when _route == AppRoute.Settings: GoTo(_before == AppRoute.Settings ? AppRoute.Notes : _before); break;
         }
     }
@@ -197,10 +204,14 @@ public sealed partial class ShellView : UserControl
         }
     }
 
+    /// <summary>The pen row shows under the ribbon of a page while Draw is on.</summary>
+    private void UpdateInkBar() => _inkBar.Visibility = _route == AppRoute.Notes && InkTool.Shared.BarOpen ? Visibility.Visible : Visibility.Collapsed;
+
     private void ApplyBreakpoints(double width)
     {
         var mode = width >= 1280 ? RibbonMode.Full : width > 1023 ? RibbonMode.Compact : RibbonMode.Smallest;
         _ribbon.Update(_route, mode, _taskView);
+        UpdateInkBar();
     }
 
     private void ApplyTheme()

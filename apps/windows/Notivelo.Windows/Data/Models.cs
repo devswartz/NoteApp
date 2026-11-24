@@ -19,7 +19,7 @@ public enum RuleLines { None, Lines, Grid }
 public sealed record CanvasBox(double X, double Y, double Width, bool Wide, IReadOnlyList<BoxBlock> Blocks, string? Field = null, string? Id = null, double Z = 0);
 
 /// <summary>One ink stroke of the page: the core's outline (path commands: 0 x y move, 1 x y line, 2 cx cy r circle, 3 close; fill nonzero), 0xRRGGBBAA colour.</summary>
-public sealed record InkStroke(string Id, bool Highlighter, uint Color, float[] Ops, float MaxX, float MaxY);
+public sealed record InkStroke(string Id, bool Highlighter, uint Color, float[] Ops, float MaxX, float MaxY, float MinX = 0, float MinY = 0);
 
 public enum BlockKind { Paragraph, Heading1, Heading2, Heading3, Task, ListItem, CheckItem, Quote, Code, Rule }
 
@@ -77,18 +77,39 @@ public sealed record SearchOutcome(IReadOnlyList<SearchPageHit> Pages, IReadOnly
 /// <summary>A task as the detail sheet shows it. Priority 1 urgent .. 4 none (0 = none too). DueDate is yyyy-MM-dd.</summary>
 public sealed record TaskDetailItem(
     string Id, string Title, string Description, bool Done, int Priority, string? DueDate, string? DueLabel, DueTone Tone,
-    string? AssigneeId, string? AssigneeName, string? PageId, string? PageTitle, string CreatedLine);
+    string? AssigneeId, string? AssigneeName, string? PageId, string? PageTitle, string CreatedLine,
+    string? DueTime = null, string? TeamId = null, IReadOnlyList<string>? TagIds = null, Notivelo.Native.TaskRecurrence? Recurrence = null, string? RecurrenceText = null,
+    string? ParentId = null, string? ParentTitle = null, IReadOnlyList<SubtaskInfo>? Subtasks = null, string? AssignedByName = null, bool Editable = true);
+
+/// <summary>A subtask of the sheet's task (a task whose parent it is).</summary>
+public sealed record SubtaskInfo(string Id, string Title, bool Done, int Priority);
+
+/// <summary>A team of the workspace; Depth 1 is a subteam (<see cref="Label"/> is then "Parent › Child").</summary>
+public sealed record TeamInfo(string Id, string Name, string Label, string Color, string? ParentId, int Depth = 0);
+
+public sealed record TagInfo(string Id, string Name, string Color);
+
+/// <summary>One of your reminders on a task: its words and, when it will not fire, why (sent / done / no due date).</summary>
+public sealed record ReminderInfo(string Id, string Text, string? Note);
+
+/// <summary>A reminder to add: this many minutes before the due time (<see cref="BeforeMinutes"/>), or at a fixed instant (<see cref="At"/>, ISO UTC).</summary>
+public sealed record ReminderInput(uint? BeforeMinutes, string? At);
+
+/// <summary>The Calendar's status select (Apple's Shell.CalendarStatus): the days show open tasks, completed ones, or both.</summary>
+public enum CalendarStatus { Open, Completed, All }
 
 /// <summary>Fields to change on a task (what the core's TaskChanges carries for the ones the sheet edits).</summary>
 public sealed record TaskPatch(
     string? Title = null, string? Description = null, bool? Done = null, int? Priority = null,
-    string? DueDate = null, bool ClearDue = false, string? AssigneeId = null, bool ClearAssignee = false);
+    string? DueDate = null, bool ClearDue = false, string? AssigneeId = null, bool ClearAssignee = false,
+    string? DueTime = null, bool ClearDueTime = false, string? TeamId = null, bool ClearTeam = false, string[]? TagIds = null,
+    Notivelo.Native.TaskRecurrence? Recurrence = null, bool ClearRecurrence = false);
 
 /// <summary>What quick add makes (Apple's SessionModel.NewTaskFields): the words the core's parse_quick_add read, plus the chips' overrides. The source resolves
 /// <see cref="AssigneeMention"/> (@name) and <see cref="TeamText"/> (+team) and finds or makes the tags.</summary>
 public sealed record NewTask(
     string Title, string Description, byte Priority, string? DueDate, string? DueTime, Notivelo.Native.TaskRecurrence? Recurrence,
-    string? AssigneeMention, string? TeamText, IReadOnlyList<string> Tags, string? PageId);
+    string? AssigneeMention, string? TeamText, IReadOnlyList<string> Tags, string? PageId, string? AssigneeId = null, string? TeamId = null);
 
 /// <summary>An open task with a due date (yyyy-MM-dd) for the Calendar's month grid; a task without one is listed in its "No date" tray.</summary>
 public sealed record CalendarTask(string? Due, TaskItem Task, string? DueTime = null);

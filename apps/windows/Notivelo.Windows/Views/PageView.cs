@@ -24,8 +24,8 @@ internal sealed class PageView : ThemedControl
     public PageView(INotesSource source)
     {
         _source = source;
-        Loaded += (_, _) => { BoxTextView.FocusedStateChanged += FocusChanged; Current = this; };
-        Unloaded += (_, _) => { BoxTextView.FocusedStateChanged -= FocusChanged; if (ReferenceEquals(Current, this)) Current = null; };
+        Loaded += (_, _) => { BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
+        Unloaded += (_, _) => { BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
     }
 
     /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
@@ -56,6 +56,7 @@ internal sealed class PageView : ThemedControl
     private readonly Dictionary<string, BoxFrame> _frames = new();
     private Canvas? _surface;
     private InkLayer? _inkUnder, _inkOver;
+    private InkOverlay? _inkOverlay;
     private BoxFrame? _dragging;
 
     private void FocusChanged()
@@ -146,6 +147,9 @@ internal sealed class PageView : ThemedControl
         root.PointerPressed += (_, _) => { BoxTextView.CloseLinkEditor(); BoxTextView.Focused?.Unfocus(); BoxTextView.LeaveEditing(); };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        // "Tasks on this page" docks at the right of the page (and its top bar)
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (page is null)
         {
             var e = PageId is null || _source.Loading || _source.LoadError is not null ? Overview() : Missing();
@@ -195,8 +199,8 @@ internal sealed class PageView : ThemedControl
         _surface = canvas;
         canvas.PointerPressed += OnSurfacePressed;
         // the ink layers are made when the page has ink (a canvas control per layer)
-        _inkUnder = null; _inkOver = null;
-        canvas.SizeChanged += (_, e) => { if (_inkUnder is not null) _inkUnder.Width = e.NewSize.Width; if (_inkOver is not null) _inkOver.Width = e.NewSize.Width; };
+        _inkUnder = null; _inkOver = null; _inkOverlay = null;
+        canvas.SizeChanged += (_, e) => { if (_inkUnder is not null) _inkUnder.Width = e.NewSize.Width; if (_inkOver is not null) _inkOver.Width = e.NewSize.Width; if (_inkOverlay is not null) _inkOverlay.Width = e.NewSize.Width; };
         UpdateInk(page);
         _firstBox = page.Boxes.FirstOrDefault();
         var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
@@ -223,6 +227,12 @@ internal sealed class PageView : ThemedControl
             outline.Children.Add(new Border { Width = 16, Height = 2, Background = i == 0 ? B("Accent") : B("BorderStrong"), HorizontalAlignment = HorizontalAlignment.Right });
         Grid.SetRow(outline, 1);
         root.Children.Add(outline);
+        if (_tasksOpen && PageId is { } tasksPage)
+        {
+            var panel = new PageTasksPanel(_source, tasksPage, () => { _tasksOpen = false; Rebuild(); }) { Host = Host };
+            Grid.SetColumn(panel, 1); Grid.SetRowSpan(panel, 2);
+            root.Children.Add(panel);
+        }
         return root;
     }
 
@@ -320,6 +330,7 @@ internal sealed class PageView : ThemedControl
     public event Action<string>? TaskOpened;
     internal ShellHost? Host { get; set; }
     private long _tasksSeen;
+    private bool _tasksOpen;
 
     // ---- top bar ----------------------------------------------------------------------------------------------
 
@@ -344,7 +355,12 @@ internal sealed class PageView : ThemedControl
         saved.Children.Add(new Icon("check", 14, B("Text2")));
         saved.Children.Add(Ui.Text("Saved", 12, B("Text2")));
         right.Children.Add(saved);
-        right.Children.Add(WithBadge(Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8), page.OpenTasks));
+        var tasksBtn = Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(tasksBtn, "page-tasks-button");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(tasksBtn, _tasksOpen ? "panel=open" : "panel=closed");
+        if (_tasksOpen) tasksBtn.Background = B("AccentSoft");
+        tasksBtn.Click += (_, _) => { _tasksOpen = !_tasksOpen; Rebuild(); };
+        right.Children.Add(WithBadge(tasksBtn, page.OpenTasks));
         right.Children.Add(Ui.IconButton("message-square", 18, 32, 32, "Comments", 8));
 
         var share = new Button
@@ -505,6 +521,7 @@ internal sealed class PageView : ThemedControl
             _surface.Height = h;
             if (_inkUnder is not null) _inkUnder.Height = h;
             if (_inkOver is not null) _inkOver.Height = h;
+            if (_inkOverlay is not null) _inkOverlay.Height = h;
         }
     }
 
@@ -512,18 +529,49 @@ internal sealed class PageView : ThemedControl
     {
         var strokes = PageId is null ? Array.Empty<InkStroke>() : _source.InkOf(PageId);
         var dark = ActualTheme == ElementTheme.Dark;
-        if (strokes.Count > 0 && _surface is not null && _inkUnder is null)
+        var canInk = PageId is not null && _source.CanInk(PageId);
+        if ((strokes.Count > 0 || (canInk && InkTool.Shared.BarOpen)) && _surface is not null && _inkUnder is null)
         {
             var h = _surface.Height; var w = _surface.ActualWidth;
             _inkUnder = new InkLayer(true) { Height = h, Width = w };
             _inkOver = new InkLayer(false) { Height = h, Width = w };
             Canvas.SetZIndex(_inkUnder, -1);
-            Canvas.SetZIndex(_inkOver, 1_000_000);
+            Canvas.SetZIndex(_inkOver, 10_000);
             _surface.Children.Add(_inkUnder);
             _surface.Children.Add(_inkOver);
         }
+        // the pen row is open on a page that takes ink: the overlay takes the pointer while a pen tool is chosen
+        if (canInk && InkTool.Shared.BarOpen && _surface is not null && _inkOverlay is null && _inkUnder is not null && _inkOver is not null)
+        {
+            _inkOverlay = new InkOverlay(_source, PageId!, _inkUnder, _inkOver, () =>
+            {
+                if (PageId is not null && _source.GetPage(PageId) is { } p) UpdateInk(p);
+                UndoStateChanged?.Invoke();
+            }) { Height = _surface.Height, Width = _surface.ActualWidth };
+            // a plain Grid carries the z-index (an attached property set directly on the UserControl threw E_INVALIDARG)
+            var host = new Grid { HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top };
+            host.Children.Add(_inkOverlay);
+            Canvas.SetZIndex(host, 20_000);
+            _surface.Children.Add(host);
+        }
+        // strokes drawn below the old end of the page make it longer
+        if (_surface is not null && strokes.Count > 0 && strokes.Max(s => s.MaxY) + 40 > _surface.Height)
+        {
+            var h = strokes.Max(s => s.MaxY) + 40;
+            _surface.Height = h;
+            if (_inkUnder is not null) _inkUnder.Height = h;
+            if (_inkOver is not null) _inkOver.Height = h;
+            if (_inkOverlay is not null) _inkOverlay.Height = h;
+        }
         _inkUnder?.Set(strokes, dark);
         _inkOver?.Set(strokes, dark);
+        _inkOverlay?.SetStrokes(strokes, dark);
+    }
+
+    /// <summary>The pen row opened: the overlay is made on the page on screen.</summary>
+    private void OnInkTool()
+    {
+        if (_inkOverlay is null && InkTool.Shared.BarOpen && PageId is not null && _source.GetPage(PageId) is { } page) UpdateInk(page);
     }
 
     /// <summary>A click on empty canvas: while a box is being edited it only stops that (and removes the box if it was left empty);
@@ -687,87 +735,6 @@ internal sealed class PageView : ThemedControl
             _bar3.Background = _b("BorderStrong");
             Bar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
             Handle.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        }
-    }
-
-    /// <summary>One layer of the page's ink (LOOK 4.5; the web's InkRenderer layers): the core's outlines filled with the nonzero rule, highlighters under
-    /// the boxes and pens over them. Read-only: it never takes a click. In the dark theme near-black ink is drawn near-white.</summary>
-    private sealed class InkLayer : Grid
-    {
-        private readonly CanvasControl _c = new() { IsHitTestVisible = false };
-        private readonly bool _highlighters;
-        private List<InkStroke> _items = new();
-        private readonly Dictionary<string, CanvasGeometry> _geo = new();
-        private bool _dark;
-        public InkLayer(bool highlighters)
-        {
-            _highlighters = highlighters;
-            IsHitTestVisible = false;
-            HorizontalAlignment = HorizontalAlignment.Left; VerticalAlignment = VerticalAlignment.Top;
-            Children.Add(_c);
-            _c.Draw += Draw;
-            _c.CreateResources += (_, _) => { foreach (var g in _geo.Values) g.Dispose(); _geo.Clear(); };
-        }
-
-        public void Set(IReadOnlyList<InkStroke> all, bool dark)
-        {
-            var next = all.Where(s => s.Highlighter == _highlighters).ToList();
-            if (_dark == dark && next.Count == _items.Count && next.Zip(_items).All(p => p.First.Id == p.Second.Id && ReferenceEquals(p.First.Ops, p.Second.Ops))) return;
-            _dark = dark; _items = next;
-            _c.Visibility = next.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-            _c.Invalidate();
-        }
-
-        private static CanvasGeometry Build(ICanvasResourceCreator rc, float[] ops)
-        {
-            using var pb = new CanvasPathBuilder(rc);
-            pb.SetFilledRegionDetermination(CanvasFilledRegionDetermination.Winding);
-            var open = false; var i = 0;
-            while (i < ops.Length)
-            {
-                switch ((int)ops[i])
-                {
-                    case 0:
-                        if (i + 2 >= ops.Length) { i = ops.Length; break; }
-                        if (open) pb.EndFigure(CanvasFigureLoop.Closed);
-                        pb.BeginFigure(ops[i + 1], ops[i + 2]); open = true; i += 3; break;
-                    case 1:
-                        if (i + 2 >= ops.Length) { i = ops.Length; break; }
-                        if (open) pb.AddLine(ops[i + 1], ops[i + 2]);
-                        i += 3; break;
-                    case 2:
-                    {
-                        if (i + 3 >= ops.Length) { i = ops.Length; break; }
-                        if (open) { pb.EndFigure(CanvasFigureLoop.Closed); open = false; }
-                        float cx = ops[i + 1], cy = ops[i + 2], r = ops[i + 3];
-                        pb.BeginFigure(cx + r, cy);
-                        pb.AddArc(new System.Numerics.Vector2(cx - r, cy), r, r, 0, CanvasSweepDirection.Clockwise, CanvasArcSize.Small);
-                        pb.AddArc(new System.Numerics.Vector2(cx + r, cy), r, r, 0, CanvasSweepDirection.Clockwise, CanvasArcSize.Small);
-                        pb.EndFigure(CanvasFigureLoop.Closed);
-                        i += 4; break;
-                    }
-                    default:
-                        if (open) { pb.EndFigure(CanvasFigureLoop.Closed); open = false; }
-                        i += 1; break;
-                }
-            }
-            if (open) pb.EndFigure(CanvasFigureLoop.Closed);
-            return CanvasGeometry.CreatePath(pb);
-        }
-
-        private void Draw(CanvasControl sender, CanvasDrawEventArgs args)
-        {
-            foreach (var s in _items)
-            {
-                try
-                {
-                    if (!_geo.TryGetValue(s.Id, out var g)) _geo[s.Id] = g = Build(args.DrawingSession, s.Ops);
-                    var r = (byte)(s.Color >> 24); var gr = (byte)(s.Color >> 16); var b = (byte)(s.Color >> 8); var a = (byte)s.Color;
-                    if (_dark && (0.2126 * r + 0.7152 * gr + 0.0722 * b) / 255 < 0.25) { r = 0xE6; gr = 0xE6; b = 0xE6; }
-                    args.DrawingSession.FillGeometry(g, global::Windows.UI.Color.FromArgb(a, r, gr, b));
-                }
-                catch (Exception) { }
-            }
         }
     }
 

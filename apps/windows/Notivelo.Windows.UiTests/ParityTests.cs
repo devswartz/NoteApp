@@ -182,6 +182,156 @@ public class ParityTests
         AppHost.Wait(() => NameOf(h, "calendar-title") == month ? "x" : null, "back to this month");
     });
 
+
+    // ---- task detail, quick add pickers, "Tasks on this page", Calendar week / Everyone / Status (the offline sample data) ----
+
+    /// <summary>A button or toggle: Invoke where the control has it, else a real click.</summary>
+    private static void Press(AppHost h, string id) => Retry(() => { var e = Find(h, id); if (e.Patterns.Invoke.IsSupported) e.Patterns.Invoke.Pattern.Invoke(); else e.Click(); });
+
+    private static void OpenSheetOfLaunch(AppHost h)
+    {
+        Invoke(h, "rail-search");
+        Find(h, "search-input");
+        h.Type("launch");
+        Thread.Sleep(600);
+        Invoke(h, "search-result-task-t-launch");
+        Find(h, "task-sheet-title");
+    }
+
+    [Fact]
+    public void Task_sheet_sets_team_tags_due_repeat_and_reminders() => AppHost.Run(nameof(Task_sheet_sets_team_tags_due_repeat_and_reminders), h =>
+    {
+        OpenSheetOfLaunch(h);
+        AppHost.Wait(() => Status(h, "task-sheet-team") == "team=team-staff" ? "x" : null, "the sample task's team (Staff)");
+        Invoke(h, "task-sheet-team");
+        Invoke(h, "pick-team-team-design");
+        AppHost.Wait(() => Status(h, "task-sheet-team") == "team=team-design" ? "x" : null, "the team changed to Design");
+
+        Invoke(h, "task-sheet-tags");                            // make a tag by name, then pick an existing one
+        SetText(h, "pick-tag-input", "ship");
+        Invoke(h, "pick-tag-create");
+        AppHost.Wait(() => Status(h, "task-sheet-tags").Contains("ship") ? "x" : null, "the new tag on the task");
+        SetText(h, "pick-tag-input", "");
+        Invoke(h, "pick-tag-launch");
+        AppHost.Wait(() => Status(h, "task-sheet-tags") is var t && t.Contains("ship") && t.Contains("launch") ? "x" : null, "both tags on the task");
+        Retry(() => Find(h, "pick-tag-input").Focus());          // Escape goes to the focused menu (SetText through UIA leaves focus elsewhere)
+        h.Press(ESCAPE);                                         // closes the tags menu, not the sheet
+        AppHost.Wait(() => Gone(h, "pick-tag-input") ? "x" : null, "the tags menu closed");
+        Find(h, "task-sheet-title");
+
+        Invoke(h, "task-sheet-due");
+        Invoke(h, "pick-due-tomorrow");
+        var tomorrow = DateTime.Now.AddDays(1).ToString("yyyy-MM-dd");
+        AppHost.Wait(() => Status(h, "task-sheet-due") == "due=" + tomorrow ? "x" : null, "the due date set to tomorrow");
+
+        Invoke(h, "task-sheet-repeat");
+        Invoke(h, "pick-repeat-0");                              // Every day
+        AppHost.Wait(() => Status(h, "task-sheet-repeat").StartsWith("repeat=Every") ? "x" : null, "a repeat rule, in words");
+
+        Invoke(h, "task-sheet-add-reminder");                    // a due date makes "before it is due" available
+        Invoke(h, "pick-reminder-60");
+        AppHost.Wait(() => NameOf(h, "task-sheet-reminder-0") == "1 hour before" ? "x" : null, "the reminder listed");
+        Assert.Equal("reminders=1", Status(h, "task-sheet-reminders"));
+        Invoke(h, "task-sheet-reminder-del-0");
+        AppHost.Wait(() => Status(h, "task-sheet-reminders") == "reminders=0" ? "x" : null, "the reminder removed");
+    });
+
+    [Fact]
+    public void Task_sheet_adds_and_ticks_subtasks() => AppHost.Run(nameof(Task_sheet_adds_and_ticks_subtasks), h =>
+    {
+        OpenSheetOfLaunch(h);
+        Assert.Equal("subtasks=0/0", Status(h, "task-sheet-subtasks"));
+        Retry(() => { SetText(h, "task-sheet-subtask-input", "Draft the FAQ"); Find(h, "task-sheet-subtask-input").Focus(); });
+        h.Press(ENTER);
+        AppHost.Wait(() => Status(h, "task-sheet-subtasks") == "subtasks=0/1" ? "x" : null, "the subtask listed under the task");
+        string? tick = null;
+        AppHost.Wait(() =>
+        {
+            tick = h.Window.FindAllDescendants().Select(e => e.Properties.AutomationId.ValueOrDefault).FirstOrDefault(i => i?.StartsWith("task-sheet-sub-tick-") == true);
+            return tick;
+        }, "the subtask tick");
+        Invoke(h, tick!);
+        AppHost.Wait(() => Status(h, "task-sheet-subtasks") == "subtasks=1/1" ? "x" : null, "the subtask done: 1/1");
+    });
+
+    [Fact]
+    public void Quick_add_pickers_set_team_tags_and_assignee() => AppHost.Run(nameof(Quick_add_pickers_set_team_tags_and_assignee), h =>
+    {
+        OpenTasks(h);
+        Retry(() => Find(h, "sidebar-add-task").Click());
+        Find(h, "quickadd-card");
+        SetText(h, "quickadd-input", "Plan the offsite");
+        Invoke(h, "quickadd-team");
+        Invoke(h, "pick-team-team-design");
+        AppHost.Wait(() => NameOf(h, "quickadd-team") == "Design" ? "x" : null, "the team chip set by its picker");
+        Invoke(h, "quickadd-tags");
+        Invoke(h, "pick-tag-docs");
+        Retry(() => Find(h, "pick-tag-input").Focus());
+        h.Press(ESCAPE);                                         // closes the tags menu, quick add stays
+        AppHost.Wait(() => Gone(h, "pick-tag-input") ? "x" : null, "the tags menu closed");
+        AppHost.Wait(() => NameOf(h, "quickadd-tags") == "#docs" ? "x" : null, "the tags chip set by its picker");
+        Invoke(h, "quickadd-assignee");
+        Invoke(h, "pick-assignee-u2");
+        AppHost.Wait(() => NameOf(h, "quickadd-assignee") == "Sam Rivera" ? "x" : null, "the assignee chip set by its picker");
+        Invoke(h, "quickadd-due");
+        Invoke(h, "quickadd-due-today");
+        Invoke(h, "quickadd-ok");
+        AppHost.Wait(() => Gone(h, "quickadd-card") ? "x" : null, "the dialog closed");
+        AppHost.Wait(() => h.Window.FindAllDescendants().Any(e => e.Properties.AutomationId.ValueOrDefault?.StartsWith("task-row-") == true
+            && e.Properties.Name.ValueOrDefault == "Plan the offsite") ? "x" : null, "the new task in the Today list");
+        Invoke(h, "rail-search");                                // open its sheet from search (a mouse click on the row is unreliable under UIA)
+        Find(h, "search-input");
+        h.Type("offsite");
+        Thread.Sleep(600);
+        string? hit = null;
+        AppHost.Wait(() => hit = h.Window.FindAllDescendants().Select(e => e.Properties.AutomationId.ValueOrDefault).FirstOrDefault(i => i?.StartsWith("search-result-task-") == true), "the new task in the search results");
+        Invoke(h, hit!);                                         // its sheet shows what the pickers set
+        AppHost.Wait(() => Status(h, "task-sheet-team") == "team=team-design" ? "x" : null, "the team on the new task");
+        Assert.Contains("docs", Status(h, "task-sheet-tags"));
+    });
+
+    [Fact]
+    public void Page_tasks_panel_lists_the_pages_tasks_and_ticks_them() => AppHost.Run(nameof(Page_tasks_panel_lists_the_pages_tasks_and_ticks_them), h =>
+    {
+        Press(h, "page-row-tasks");
+        Press(h, "page-tasks-button");
+        Find(h, "page-tasks-panel");
+        AppHost.Wait(() => Status(h, "page-tasks-panel") == "tasks=3 open=2 done=1" ? "x" : null, "the page's three tasks, two open");
+        Assert.Equal("1/3 done", NameOf(h, "page-tasks-progress"));
+        Invoke(h, "page-task-circle-t-welcome");
+        AppHost.Wait(() => Status(h, "page-tasks-panel") == "tasks=3 open=1 done=2" ? "x" : null, "a task ticked in the panel");
+        Assert.Equal("2/3 done", NameOf(h, "page-tasks-progress"));
+        Press(h, "page-tasks-add");                              // quick add for this page
+        Find(h, "quickadd-card");
+        Find(h, "quickadd-page");
+        h.Press(ESCAPE);
+        Invoke(h, "page-tasks-close");
+        AppHost.Wait(() => Gone(h, "page-tasks-panel") ? "x" : null, "the panel closed");
+    });
+
+    [Fact]
+    public void Calendar_week_everyone_and_status_filter() => AppHost.Run(nameof(Calendar_week_everyone_and_status_filter), h =>
+    {
+        Retry(() => Find(h, "rail-calendar").Click());
+        Find(h, "calendar-grid");
+        Find(h, "cal-task-t-welcome");                           // mine, open
+        Assert.True(Gone(h, "cal-task-t-other"));                // Sam's task is not in Mine
+        Press(h, "ribbon-everyone");
+        Find(h, "cal-task-t-other");
+        Press(h, "ribbon-week");
+        AppHost.Wait(() => NameOf(h, "calendar-title").Contains("–") ? "x" : null, "the week's title (a range of days)");
+        Find(h, "cal-task-t-welcome");
+        Find(h, "cal-task-t-other");
+        Assert.True(Gone(h, "cal-task-t-slow"));                 // done: hidden while the status is Open
+        Invoke(h, "calendar-status");
+        Invoke(h, "calendar-status-completed");
+        Find(h, "cal-task-t-slow");
+        AppHost.Wait(() => Gone(h, "cal-task-t-welcome") ? "x" : null, "open tasks hidden while the status is Completed");
+        Assert.Equal("status=completed", Status(h, "calendar-status"));
+        Invoke(h, "ribbon-next");                                // a week later
+        AppHost.Wait(() => Gone(h, "cal-task-t-slow") ? "x" : null, "next week has no tasks");
+    });
+
     [Fact]
     public void Settings_opens_from_the_account_menu() => AppHost.Run(nameof(Settings_opens_from_the_account_menu), h =>
     {

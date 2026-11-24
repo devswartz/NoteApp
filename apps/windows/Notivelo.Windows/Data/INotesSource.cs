@@ -68,6 +68,21 @@ public interface INotesSource
     bool DeleteBox(string pageId, string boxId) => false;
     /// <summary>The page's ink in drawing order (empty for a source without a live page).</summary>
     IReadOnlyList<InkStroke> InkOf(string pageId) => Array.Empty<InkStroke>();
+    /// <summary>Ink can be drawn on this page (a live page; the offline sample page keeps its strokes in memory). The writes below go through the core's ink
+    /// calls (Apple's InkSession) and join page undo; they raise no Changed, so the caller reads <see cref="InkOf"/> again.</summary>
+    bool CanInk(string pageId) => false;
+    /// <summary>The finished stroke of a builder (core <c>AddInkStroke</c>).</summary>
+    bool AddInkStroke(string pageId, Notivelo.Native.InkStrokeBuilder builder, byte tool, uint color) => false;
+    /// <summary>Core <c>EraseInk(track, radius, partial)</c>: a flat x,y track.</summary>
+    bool EraseInk(string pageId, float[] track, float radius, bool partial) => false;
+    /// <summary>Core <c>InkHitLasso(polygon, 0.5)</c>.</summary>
+    IReadOnlyList<string> InkHitLasso(string pageId, float[] polygon) => Array.Empty<string>();
+    /// <summary>Core <c>InkHitPoint(x, y, radius)</c>.</summary>
+    IReadOnlyList<string> InkHitPoint(string pageId, float x, float y, float radius) => Array.Empty<string>();
+    /// <summary>Core <c>MoveInkStrokes</c>: the moved strokes get new ids. Null when it failed.</summary>
+    IReadOnlyList<(string OldId, string NewId)>? MoveInkStrokes(string pageId, IReadOnlyList<string> ids, float dx, float dy) => null;
+    /// <summary>Core <c>DeleteInkStrokes</c>.</summary>
+    bool DeleteInkStrokes(string pageId, IReadOnlyList<string> ids) => false;
 
 
     // ---- parity B: tree actions (the core's create/rename/move/delete/trash calls; each refreshes the tree), search, task detail ----
@@ -101,6 +116,24 @@ public interface INotesSource
     Task<string?> AddTask(NewTask task) => Task.FromResult<string?>("Not available.");
     /// <summary>The open tasks assigned to you (with their due day, null when none) for the Calendar.</summary>
     IReadOnlyList<CalendarTask> CalendarTasks() => Array.Empty<CalendarTask>();
+    /// <summary>Your tasks and, with <paramref name="everyone"/>, everyone's, open and done, by due date (the Calendar applies its status filter).</summary>
+    IReadOnlyList<CalendarTask> CalendarTasks(bool everyone) => everyone ? Array.Empty<CalendarTask>() : CalendarTasks();
+
+    // ---- task sheet extras (Apple's TaskDetail / TaskPickers: team, tags, time, repeat, reminders, subtasks) and "Tasks on this page" ----
+    IReadOnlyList<TeamInfo> Teams() => Array.Empty<TeamInfo>();
+    IReadOnlyList<TagInfo> Tags() => Array.Empty<TagInfo>();
+    /// <summary>A tag by name, made when it doesn't exist (core <c>create_tag</c>); null when it can't be.</summary>
+    Task<TagInfo?> CreateTag(string name) => Task.FromResult<TagInfo?>(null);
+    IReadOnlyList<ReminderInfo> Reminders(string taskId) => Array.Empty<ReminderInfo>();
+    /// <summary>Load what the pickers and the sheet show beyond the task list (full task, reminders, teams, tags; null task: the lists only). Raises Changed when it has them.</summary>
+    void LoadTaskExtras(string? taskId) { }
+    Task<string?> AddReminder(string taskId, ReminderInput reminder) => Task.FromResult<string?>("Not available.");
+    Task<string?> DeleteReminder(string taskId, string reminderId) => Task.FromResult<string?>("Not available.");
+    /// <summary>A subtask of a task (it lives on the parent's page). Returns an error sentence, or null.</summary>
+    Task<string?> AddSubtask(string parentId, string title) => Task.FromResult<string?>("Not available.");
+    /// <summary>The tasks written on a page, open ones by due date first (done ones included: the panel hides them behind "Show n completed").</summary>
+    IReadOnlyList<TaskItem> PageTasks(string pageId) => Array.Empty<TaskItem>();
+
 
     // ---- account (the core's account calls; online only: offline each answers Offline and changes nothing) ----
     Task<AccountResult<AccountProfile>> LoadProfile() => Task.FromResult(AccountResult<AccountProfile>.Off());

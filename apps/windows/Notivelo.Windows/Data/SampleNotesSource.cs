@@ -120,13 +120,14 @@ public sealed partial class SampleNotesSource : INotesSource
                 new("Overdue", 1, true, new[] { launch }),
                 new("Today · Sat 21 Nov", 2, false, new[] { welcome, notes }),
                 new("No date", 1, false, new[] { Task("t-nodate", "Someday: tidy the sandbox", 0, null, DueTone.None, "Sandbox", null) }),
+                new("Later", 1, false, new[] { Task("t-other", "Sam: book the offsite", 3, "Wed", DueTone.Soon, "Weekly sync", null, assignee: "SR") }),
             },
             [TaskViewKind.Team] = Array.Empty<TaskGroup>(),
         };
     }
 
-    private static TaskItem Task(string id, string title, int priority, string? due, DueTone tone, string? page, string? team, bool done = false)
-        => new(id, title, done, priority, due, tone, false, page, team, "DU", Array.Empty<string>(), 0, 0);
+    private static TaskItem Task(string id, string title, int priority, string? due, DueTone tone, string? page, string? team, bool done = false, string assignee = "DU")
+        => new(id, title, done, priority, due, tone, false, page, team, assignee, Array.Empty<string>(), 0, 0);
 
     // ---- canvas boxes (offline test mode only): the page record is replaced with the boxes changed, as the core's page info would be ----
     private void EditBoxes(string pageId, Func<List<CanvasBox>, bool> edit)
@@ -173,7 +174,7 @@ public sealed partial class SampleNotesSource : INotesSource
     /// <summary>The sample "Settings and ink" page shows a few strokes made with the core's stroke builder (screenshots).</summary>
     private IReadOnlyList<InkStroke>? _demoInk;
 
-    public IReadOnlyList<InkStroke> InkOf(string pageId)
+    private IReadOnlyList<InkStroke> DemoInk(string pageId)
     {
         if (pageId != "settings-ink") return Array.Empty<InkStroke>();
         if (_demoInk is not null) return _demoInk;
@@ -184,7 +185,7 @@ public sealed partial class SampleNotesSource : INotesSource
             var i = 0;
             foreach (var p in pts) { samples.AddRange(new[] { p.X, p.Y, 0.5, 1.2, 0, i++ * 8.0 }); }
             b.PushMany(samples.ToArray());
-            return new InkStroke(id, tool == 1, color, b.Preview(Array.Empty<float>()), 0, 0);
+            return Measured(new InkStroke(id, tool == 1, color, b.Preview(Array.Empty<float>()), 0, 0));
         }
         var wave = Enumerable.Range(0, 54).Select(i => (20.0 + i * 6, 130 + 28 * Math.Sin(i * 6 / 28.0)));
         var loop = Enumerable.Range(0, 43).Select(i => (420 + 40 * Math.Cos(i * 0.15), 150 + 40 * Math.Sin(i * 0.15)));
@@ -201,8 +202,6 @@ public sealed partial class SampleNotesSource : INotesSource
     }
 
     public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
-    public bool? PageUndo(string pageId, bool undo) => null;
-    public bool? CanPageUndo(string pageId, bool undo) => null;
     public TaskItem? FindTask(string taskId) => _made.GetValueOrDefault(taskId);
     public string? PageTitleOf(string pageId) => _pages.GetValueOrDefault(pageId)?.Title;
     public string? EmojiOfPage(string pageId) => null;
@@ -210,7 +209,8 @@ public sealed partial class SampleNotesSource : INotesSource
     public void CreateTask(string id, string title, bool done, string? pageId)
     {
         if (!Offline) return;
-        _made[id] = Task(id, title, 0, null, DueTone.None, null, null, done);
+        _made[id] = Task(id, title, 0, null, DueTone.None, pageId is null ? null : PageTitleOf(pageId), null, done);
+        if (pageId is not null) OnPage(pageId).Add(id);
         Log($"create {id} {title}");
     }
     public void DeleteTask(string id) { if (Offline) { _made.Remove(id); Log($"delete {id}"); } }
