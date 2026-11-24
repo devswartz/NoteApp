@@ -108,12 +108,10 @@ class BoxEditingTest : OfflineTestBase() {
         compose.onNodeWithText("Heading 1").performClick()
         waitFor("a heading block") { frame().active.block == "heading" }
         assertEquals(1, frame().active.headingLevel.toInt())
-        assertEquals("the slash is gone", "", text().trimEnd('
-'))
+        assertEquals("the slash is gone", "", text().trimEnd('\n'))
         assertNull("the menu closed", frame().suggestion)
         typeKeys("Title")
-        waitFor("Title typed") { text().trimEnd('
-') == "Title" }
+        waitFor("Title typed") { text().trimEnd('\n') == "Title" }
         assertEquals("heading", frame().active.block)
     }
 
