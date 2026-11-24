@@ -122,6 +122,16 @@ abstract class OfflineTestBase {
     protected fun startEditing(id: String = FIRST) {
         waitForBoxNode(id)
         compose.onNodeWithTag("box-$id").performClick()
+        // The Compose-injected tap, else a real touch from the device at the node's place on screen.
+        val end = SystemClock.uptimeMillis() + 2500
+        while (SystemClock.uptimeMillis() < end && viewOrNull()?.isFocused != true) Thread.sleep(50)
+        if (viewOrNull()?.isFocused != true) {
+            val b = compose.onNodeWithTag("box-$id").fetchSemanticsNode().boundsInWindow
+            val loc = IntArray(2)
+            scenario.onActivity { it.window.decorView.getLocationOnScreen(loc) }
+            android.util.Log.w("NvTest", "performClick did not start editing; device click at ${b.center} + ${loc.toList()}")
+            device.click((b.center.x + loc[0]).toInt(), (b.center.y + loc[1]).toInt())
+        }
         waitFor("the box editor to have focus") { viewOrNull()?.isFocused == true }
     }
 
