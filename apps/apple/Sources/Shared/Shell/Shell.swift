@@ -112,6 +112,8 @@ final class Shell {
     let tv = TaskViewState()
     /// Settings: the open section (nil: the list on phones, Profile on wide screens).
     var settingsSection: String?
+    /// Settings shows the workspace's sections (General, Teams, Tags, Activity) instead of the person's.
+    var settingsWorkspace = false
     /// The page panel shows the page's tasks instead of its comments.
     var pageTasksTab = false
     /// Where Settings' Back goes.
@@ -169,6 +171,8 @@ final class Shell {
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
             if state == "page-tasks-panel" { pageTasksTab = true; CommentsModel.shared.open = true }
             if state == "search" { searchOpen = true; searchQuery = "plan" }
+            if state == "workspace-settings" { route = .settings; settingsSection = "workspace"; settingsWorkspace = true }
+            if state == "teams-settings" { route = .settings; settingsSection = "teams"; settingsWorkspace = true }
             if state == "delete-account" { route = .settings; settingsSection = "profile" }
             if state.hasPrefix("settings-") { route = .settings; settingsSection = String(state.dropFirst("settings-".count)) }
             if state == "task-detail" { route = .tasks(.my); taskDetailId = "t-review" }
@@ -276,7 +280,8 @@ final class Shell {
         sheet = .quickAdd(QuickAddSeed(pageId: pageId, dueDate: due, text: text))
     }
 
-    func openSettings(_ section: String? = nil) {
+    func openSettings(_ section: String? = nil, workspace: Bool = false) {
+        settingsWorkspace = workspace
         menu = nil
         searchOpen = false
         taskDetailId = nil

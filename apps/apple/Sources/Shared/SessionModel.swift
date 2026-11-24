@@ -519,6 +519,22 @@ final class SessionModel {
         }
     }
 
+    /// A workspace was made here: the list again, then that workspace.
+    func createdWorkspace(_ id: String) {
+        call({ try $0.workspaces() }) { result in
+            guard case let .success(list) = result else { return }
+            self.workspaces = list
+            if list.contains(where: { $0.id == id }) { self.selectWorkspace(id) }
+        }
+    }
+
+    /// The workspace list again (a rename), keeping the open one.
+    func refreshWorkspaces() {
+        call({ try $0.workspaces() }) { result in
+            if case let .success(list) = result { self.workspaces = list }
+        }
+    }
+
     /// You left a workspace: the list again, and the first one that is left.
     func leftWorkspace(_ id: String) {
         call({ try $0.workspaces() }) { result in

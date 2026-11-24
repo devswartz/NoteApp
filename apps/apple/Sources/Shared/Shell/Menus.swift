@@ -370,11 +370,11 @@ struct MenuLayer: View {
                 }
             }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.notYet("New workspace") }
-            MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.notYet("Workspace settings") }
+            MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.openSheet(.workspaceDialog(.newWorkspace), session, "New workspace") }
+            MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.openSettings("workspace", workspace: true) }
             MenuItem(palette: p, title: "Members", icon: "users") { shell.openSheet(.members, session, "Members") }
             MenuItem(palette: p, title: "Join with invite link", icon: "link-2") { shell.openSheet(.joinInvite(nil), session, "Joining a workspace") }
-            MenuItem(palette: p, title: "Activity", icon: "activity") { shell.notYet("Activity") }
+            MenuItem(palette: p, title: "Activity", icon: "activity") { shell.openSettings("activity", workspace: true) }
             MenuItem(palette: p, title: "Trash", icon: "trash") { shell.openSheet(.trash, session, "Trash") }
         }
     }
