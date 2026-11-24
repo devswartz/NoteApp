@@ -29,6 +29,8 @@ enum ShellSheet: Equatable {
     case members
     /// Join by invite link: the token when a link was opened in the app, nil to paste one.
     case joinInvite(String?)
+    /// Settings > Profile > Delete account.
+    case deleteAccount
 }
 
 func copyToClipboard(_ text: String) {
@@ -231,6 +233,7 @@ struct PageShareCard: View {
                 if let inviteUrl { inviteBox(inviteUrl, p) }
                 if let error { SheetNote(text: error, danger: true) }
                 peopleList(p)
+                PublicLinkSection(pageId: pageId)
             }
         } foot: {
             DialogButton(title: "Done", style: .primary) { shell.sheet = nil }
@@ -317,6 +320,13 @@ struct PageShareCard: View {
     }
 
     private func load() {
+        if session.preview {
+            data = PageShares(shares: [
+                PageShareEntry(userId: "ana", name: "Ana Silva", email: "ana@example.com", color: "#ec4899", canEdit: true, member: true),
+                PageShareEntry(userId: "chen", name: "Chen Wei", email: "chen@example.com", color: "#10b981", canEdit: false, member: true),
+            ], invites: [])
+            return
+        }
         session.call({ try $0.pageShares(pageId: pageId) }) { result in
             switch result {
             case let .success(shares): data = shares

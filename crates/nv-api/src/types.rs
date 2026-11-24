@@ -911,3 +911,72 @@ pub struct FileData {
     /// `Content-Type` without parameters, e.g. `image/png`.
     pub mime: String,
 }
+
+/// GET /notifications: one in-app notification (the bell inbox).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppNotification {
+    pub id: String,
+    /// mention, assigned, shared, comment, reminder, invite or other.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
+    pub actor_id: Option<String>,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    /// In-app path to open, e.g. `/w/<ws>/p/<page>`.
+    #[serde(default)]
+    pub link: Option<String>,
+    /// Free-form extras (`pageId`, `taskId`, ...).
+    #[serde(default)]
+    pub data: Option<serde_json::Value>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub read_at: Option<String>,
+}
+
+/// GET /notifications: a page of the inbox and the unread count of the whole inbox.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NotificationList {
+    #[serde(default)]
+    pub items: Vec<AppNotification>,
+    #[serde(default)]
+    pub unread: u64,
+}
+
+/// The `{id, name}` of a workspace in the deletion preview.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceRef {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferredWorkspace {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub new_owner_name: String,
+}
+
+/// GET /auth/account/deletion-preview.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountDeletionPreview {
+    #[serde(default)]
+    pub deleted_workspaces: Vec<WorkspaceRef>,
+    #[serde(default)]
+    pub transferred_workspaces: Vec<TransferredWorkspace>,
+    #[serde(default)]
+    pub shared_ownership: Vec<WorkspaceRef>,
+    #[serde(default)]
+    pub left_workspaces: Vec<WorkspaceRef>,
+    #[serde(default)]
+    pub private_notebooks: u64,
+}

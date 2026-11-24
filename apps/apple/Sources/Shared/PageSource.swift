@@ -114,6 +114,9 @@ final class LivePageModel: PageSource {
     let title: String
     private(set) var info: PageInfo?
     private(set) var state: State = .connecting
+    /// Everyone else who has the page open (the page bar's avatars): polled from the core's presence while the page is live.
+    private(set) var people: [PagePerson] = []
+    @ObservationIgnored private var presenceToken = 0
 
     @ObservationIgnored private weak var session: SessionModel?
     @ObservationIgnored private var live: LivePage?
@@ -191,6 +194,7 @@ final class LivePageModel: PageSource {
     /// Leave the page: close the connection (off the main thread; it may wait for the socket).
     func close() {
         isClosed = true
+        presenceToken += 1
         tasksStore.flush()
         generation += 1
         if let live { Self.closeInBackground(live) }
@@ -225,6 +229,7 @@ final class LivePageModel: PageSource {
             attempts = 0
             state = .live
             if info == nil, let live { info = live.info() }
+            startPresence()
             onSynced?()
         case let .closed(code, reason):
             dropConnection()
@@ -243,6 +248,30 @@ final class LivePageModel: PageSource {
             dropConnection()
             state = .offline(message)
             retryLater()
+        }
+    }
+
+    /// Show this person to the others on the page, and read who is there every 3 seconds (on the edit queue: the core's page
+    /// lock is held while a call runs). Stops when the page closes or the connection drops (the next sync starts it again).
+    private func startPresence() {
+        guard let live, let session else { return }
+        presenceToken += 1
+        let token = presenceToken
+        let canEdit = session.workspace?.role != "viewer"
+        editQueue.async { live.announcePresence(canEdit: canEdit) }
+        pollPresence(token, generation)
+    }
+
+    private func pollPresence(_ token: Int, _ gen: Int) {
+        guard let live, token == presenceToken, gen == generation, !isClosed else { return }
+        let me = session?.user?.id
+        editQueue.async { [weak self] in
+            let list = PagePerson.from(states: live.presence(), excluding: me)
+            DispatchQueue.main.async {
+                guard let self, token == self.presenceToken, gen == self.generation, !self.isClosed else { return }
+                if list != self.people { self.people = list }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.pollPresence(token, gen) }
+            }
         }
     }
 

@@ -21,6 +21,7 @@ mod client;
 mod content;
 mod editor_session;
 mod files;
+mod inbox;
 pub mod ink;
 mod locked;
 mod page_undo;
@@ -38,6 +39,7 @@ pub use client::*;
 pub use content::*;
 pub use editor_session::*;
 pub use files::*;
+pub use inbox::*;
 pub use ink::{
     ink_outline_ops, ink_outline_svg, ink_outline_triangles, read_ink, InkBounds, InkEraseResult,
     InkError, InkMovedStroke, InkStrokeBuilder, InkStrokeInfo,

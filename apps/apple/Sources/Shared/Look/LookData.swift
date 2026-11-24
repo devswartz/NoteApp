@@ -28,6 +28,18 @@ enum LookData {
         ]
     }
 
+    /// The other people of the demo workspace (inbox actors, presence): id → name and colour.
+    static let people: [String: (name: String, color: String)] = [
+        "ana": ("Ana Silva", "#ec4899"), "ben": ("Ben Okafor", "#0ea5e9"), "chen": ("Chen Wei", "#10b981"),
+    ]
+
+    /// Static look data (`-lookState presence`): the demo people on the page.
+    static let presence: [PagePerson] = [
+        PagePerson(id: "ana", name: "Ana Silva", color: "#ec4899", canEdit: true, sessions: 1),
+        PagePerson(id: "ben", name: "Ben Okafor", color: "#0ea5e9", canEdit: true, sessions: 2),
+        PagePerson(id: "chen", name: "Chen Wei", color: "#10b981", canEdit: false, sessions: 1),
+    ]
+
     static let workspaces = [
         Workspace(id: "demos-space", name: "Demo's Space", role: "owner", createdAt: "2026-11-21T00:00:00Z"),
         Workspace(id: "demo-team", name: "Demo Team", role: "owner", createdAt: "2026-11-21T00:00:00Z"),

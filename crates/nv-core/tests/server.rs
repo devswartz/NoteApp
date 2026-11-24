@@ -2206,3 +2206,54 @@ fn files_against_a_running_server() {
         403
     );
 }
+
+#[test]
+fn inbox_link_and_deletion_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let pw = "correct horse battery staple 1";
+    let email = format!("inbox-{stamp}@example.com");
+    let core = Core::new(url.clone());
+    core.register("Inbox A".into(), email.clone(), pw.into())
+        .unwrap();
+
+    // Inbox: empty for a new account; the calls succeed.
+    let page = core.notifications(None, None).unwrap();
+    assert!(page.items.is_empty() && page.unread == 0 && page.next_before.is_none());
+    assert_eq!(core.unread_notification_count().unwrap(), 0);
+    core.mark_notification_read("nope".into()).unwrap();
+    core.mark_all_notifications_read().unwrap();
+
+    // Share link: off, on (same link twice), off again; a new one differs.
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    let tree = core.tree(ws).unwrap();
+    let page_id = tree.pages[0].id.clone();
+    assert_eq!(core.page_share_link(page_id.clone()).unwrap(), None);
+    let a = core.create_page_share_link(page_id.clone()).unwrap();
+    assert!(a.url.contains("/s/"));
+    assert_eq!(core.create_page_share_link(page_id.clone()).unwrap(), a);
+    assert_eq!(
+        core.page_share_link(page_id.clone()).unwrap(),
+        Some(a.clone())
+    );
+    core.delete_page_share_link(page_id.clone()).unwrap();
+    assert_eq!(core.page_share_link(page_id.clone()).unwrap(), None);
+    let b = core.create_page_share_link(page_id).unwrap();
+    assert_ne!(a, b);
+
+    // Delete account: preview, a wrong password changes nothing, the right one signs out.
+    let p = core.account_deletion_preview().unwrap();
+    assert!(!p.deleted_workspaces.is_empty());
+    let e = core.delete_account("not the password".into()).unwrap_err();
+    assert_eq!(server_status(e), (401, Some("wrong_password".to_string())));
+    core.profile().unwrap();
+    core.delete_account(pw.into()).unwrap();
+    assert_eq!(core.workspaces().unwrap_err(), CoreError::SignedOut);
+    assert!(Core::new(url).sign_in(email, pw.into()).is_err());
+}

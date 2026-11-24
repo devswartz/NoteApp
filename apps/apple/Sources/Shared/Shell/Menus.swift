@@ -150,7 +150,7 @@ struct MenuLayer: View {
     private func isSheet(_ menu: Shell.Menu) -> Bool {
         guard phone else { return false }
         switch menu {
-        case .notebookOptions, .section, .pageRow, .pageIcon: return true
+        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon: return true
         case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore: return true
         default: return false
         }
@@ -192,6 +192,14 @@ struct MenuLayer: View {
     private func placed(_ menu: Shell.Menu) -> some View {
         let p = theme.chrome
         switch menu {
+        case .inbox:
+            if phone {
+                sheet(InboxCard(palette: p, width: width - 16, listHeight: height * 0.5))
+            } else {
+                let f = anchorFrame("rail-bell")
+                at(CGPoint(x: f.maxX + 8, y: min(f.maxY + 5, height - 8)), .bottomLeading,
+                   InboxCard(palette: p, width: min(380, width - 24), listHeight: min(460, height * 0.6)))
+            }
         case .account:
             if phone {
                 let f = anchorFrame("drawer-account")
@@ -239,6 +247,9 @@ struct MenuLayer: View {
                 let f = anchorFrame("page-icon")
                 at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, iconPicker(p, id))
             }
+        case .presence:
+            let f = anchorFrame("page-presence")
+            at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, PresenceMenu(palette: p, people: shell.presenceList(session)))
         case .pageOptions:
             let f = anchorFrame("page-options")
             at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, pageOptions(p))

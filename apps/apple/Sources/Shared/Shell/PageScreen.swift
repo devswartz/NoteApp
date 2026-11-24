@@ -35,7 +35,8 @@ struct PageScreen: View {
         // The side panel sits beside the whole page column (top bar included), as the web's does.
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone)
+                PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone,
+                           people: session.preview ? shell.presenceList(session) : (live?.people ?? []))
                 ZStack(alignment: .topTrailing) {
                     content(snapshot, palette)
                     if let snapshot, !snapshot.info.headings.isEmpty, !phone {
@@ -237,6 +238,8 @@ struct PageTopBar: View {
     let status: String
     let taskCount: Int
     var phone = false
+    /// Everyone else on the page.
+    var people: [PagePerson] = []
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
 
@@ -268,11 +271,13 @@ struct PageTopBar: View {
             Spacer(minLength: 0)
             }
             HStack(spacing: 6) {
+                PresenceStack(people: people, max: phone ? 3 : 4, palette: p)
                 if !phone {
                 HStack(spacing: 5) {
                     Icon(status == "Saved" ? "check" : status == "Offline" ? "cloud-off" : "loader", 14, statusColor.color)
-                    Text(status).font(.web(12))
+                    Text(status).font(.web(12)).lineLimit(1)
                 }
+                .fixedSize()
                 .foregroundStyle(statusColor.color)
                 .padding(.horizontal, 6)
                 }

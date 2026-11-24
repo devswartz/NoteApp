@@ -9,6 +9,7 @@
 
 mod account;
 mod files;
+mod inbox;
 mod locks;
 mod share;
 mod tree;
@@ -202,6 +203,14 @@ impl Transport for UreqTransport {
                         let mut r = self.agent.delete(&req.url);
                         if let Some(a) = &auth {
                             r = r.header("Authorization", a);
+                        }
+                        // A DELETE with a body (DELETE /auth/account takes the password).
+                        if let Some(b) = body {
+                            return finish(
+                                r.force_send_body()
+                                    .header("Content-Type", "application/json")
+                                    .send(b.as_str()),
+                            );
                         }
                         return finish(r.call());
                     }

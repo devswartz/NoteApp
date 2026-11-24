@@ -94,8 +94,7 @@ struct PhoneShell: View {
             }
             Spacer(minLength: 0)
             HStack(spacing: 0) {
-                Button { shell.notYet("Notifications") } label: { Icon("bell", 20, p.text2.color).frame(width: 44, height: 44) }
-                    .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+                BellButton(size: 20, box: 44, color: p.text2.color, ring: p.bg.color, anchorId: "phone-bell")
                 Button { shell.openSearch() } label: { Icon("search", 20, p.text2.color).frame(width: 44, height: 44) }
                     .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
             }

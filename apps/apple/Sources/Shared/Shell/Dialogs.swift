@@ -164,6 +164,7 @@ struct DialogLayer: View {
         case let .quickAdd(seed): QuickAddCard(seed: seed, width: phone ? width : min(560, width - 32))
         case .members: MembersCard(width: min(520, width - 32), listHeight: h * 0.5)
         case let .joinInvite(token): JoinInviteCard(token: token, width: min(440, width - 32))
+        case .deleteAccount: DeleteAccountCard(width: min(480, width - 32), maxBodyHeight: height * (phone ? 0.3 : 0.34))
         }
     }
 

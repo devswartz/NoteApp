@@ -73,6 +73,14 @@ final class MediaCache {
     /// Forget a failure (the person tapped the placeholder, or the connection is back): the next draw tries again.
     func retry(_ src: String) { failedAt[src] = nil }
 
+    /// Forget every picture, in memory and on disk (the account was deleted).
+    func clearAll() {
+        memory.removeAllObjects()
+        pending.removeAll()
+        failedAt.removeAll()
+        queue.async { if let dir = Self.folder { try? FileManager.default.removeItem(at: dir) } }
+    }
+
     private func start(_ src: String) {
         pending.insert(src)
         queue.async { [weak self] in
