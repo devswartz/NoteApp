@@ -113,3 +113,93 @@ jobs:
           path: apps/android-native/app/build/reports
           if-no-files-found: ignore
           retention-days: 7
+
+  # The emulator UI tests (apps/android-native/app/src/androidTest): the debug app on its offline source (`--es source offline`),
+  # real core editor sessions, driven by key events, an input connection, taps and the Compose test rule. x86_64 core only.
+  ui-tests:
+    name: emulator UI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NV_ABIS: 'x86_64'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-native-x86_64
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache cargo-ndk
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-v1-${{ env.RUST_TOOLCHAIN }}
+      - name: Install cargo-ndk
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk --locked
+
+      - name: Build the core (x86_64)
+        run: bash crates/nv-core/build-android.sh
+
+      # Hardware acceleration for the emulator on the hosted Linux runner (the action's README).
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-x86_64-google_apis-pixel6-v1
+
+      - name: Create the AVD snapshot (cache miss only)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2.35.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated the AVD snapshot for caching."
+
+      - name: Run the UI tests
+        uses: reactivecircus/android-emulator-runner@v2.35.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          working-directory: apps/android-native
+          script: bash scripts/run-ui-tests.sh
+
+      - name: Upload the UI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ui-test-reports
+          path: |
+            apps/android-native/app/build/reports/androidTests
+            apps/android-native/app/build/outputs/androidTest-results
+            apps/android-native/ui-test-out
+          if-no-files-found: ignore
+          retention-days: 14

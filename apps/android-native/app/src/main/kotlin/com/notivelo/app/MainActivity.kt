@@ -12,7 +12,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import com.notivelo.app.data.AppViewModel
+import com.notivelo.app.data.MemorySessionStore
+import com.notivelo.app.data.OfflineBackend
 import com.notivelo.app.look.LookRoot
 import com.notivelo.app.look.NotiveloTheme
 import com.notivelo.app.look.ThemeMode
@@ -20,9 +25,14 @@ import com.notivelo.app.look.pal
 import com.notivelo.app.ui.NotiveloRoot
 
 class MainActivity : ComponentActivity() {
+    /** Debug builds only: `--es source offline` opens a sample page with no server (OfflineBackend; the UI tests use it). */
+    private val offline: Boolean by lazy {
+        applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0 && intent.getStringExtra("source") == "offline"
+    }
+
     private val model: AppViewModel by viewModels {
         val app = application as NotiveloApp
-        AppViewModel.Factory(app.backend, app.store)
+        if (offline) AppViewModel.Factory(OfflineBackend(), MemorySessionStore(refreshToken = "offline-token")) else AppViewModel.Factory(app.backend, app.store)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,6 +48,12 @@ class MainActivity : ComponentActivity() {
         // Debug builds can open a look scene without a server: adb shell am start -n <id>/com.notivelo.app.MainActivity --es lookState notes-home
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         val look = if (debuggable) intent.getStringExtra("lookState") else null
+        if (offline) {
+            lifecycleScope.launch {
+                model.state.first { it.tree != null }
+                model.openPage(OfflineBackend.PAGE_ID)
+            }
+        }
         setContent {
             if (look != null) {
                 LookRoot(look)
