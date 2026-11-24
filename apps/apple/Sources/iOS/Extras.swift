@@ -1,6 +1,7 @@
 #if os(iOS)
 import Foundation
 import NotiveloCore
+import SwiftUI
 import WidgetKit
 
 // The iPhone/iPad extras of today's app (apps/mobile/ios/App/ShareExtension and TodayWidget), over the App Group
@@ -89,6 +90,27 @@ struct ShareContent {
         guard !blocks.isEmpty,
               let data = try? JSONSerialization.data(withJSONObject: ["type": "doc", "content": blocks]) else { return nil }
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// Keeps the widget's snapshot current and takes queued shares (a modifier of its own so AppShell.body stays quick to type-check).
+struct IOSExtras: ViewModifier {
+    let shell: Shell
+    let session: SessionModel
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var ready: Bool { scenePhase == .active && session.phase == .signedIn && session.tree != nil }
+
+    func body(content: Content) -> some View {
+        let json = TodayWidgetFeed.json(session)
+        let isReady = ready
+        return content
+            .onChange(of: json, initial: true) { _, new in
+                if !session.preview { TodayWidgetFeed.publish(new) }
+            }
+            .onChange(of: isReady, initial: true) { _, now in
+                if now { shell.takeShares(session) }
+            }
     }
 }
 
