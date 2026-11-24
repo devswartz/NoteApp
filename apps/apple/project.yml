@@ -58,6 +58,12 @@ targets:
         # Shared container with the share extension and widget, as today (apps/mobile/ios/App/App/App.entitlements).
         com.apple.security.application-groups:
           - group.com.devswartz.notivelo
+        # Push reminders (APNs). Xcode switches this to production when exporting for TestFlight/App Store, as today's app.
+        aps-environment: development
+        # Universal links, the same domains as today's app (apps/mobile/ios/App/App/App.entitlements).
+        com.apple.developer.associated-domains:
+          - applinks:app.notiveloapp.com
+          - applinks:staging.notiveloapp.com
     info:
       path: Sources/iOS/Info.plist
       properties:
@@ -67,7 +73,7 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSFaceIDUsageDescription: Unlock your locked pages with Face ID.
         NSCameraUsageDescription: Take a photo to put on a page.
-        # notivelo://page/<id>, notivelo://w/<workspace>/p/<page> (the web's own paths). No Associated Domains yet.
+        # notivelo://page/<id>, notivelo://w/<workspace>/p/<page> (the web's own paths); web addresses open through Associated Domains.
         CFBundleURLTypes:
           - CFBundleURLName: com.devswartz.notivelo
             CFBundleTypeRole: Editor

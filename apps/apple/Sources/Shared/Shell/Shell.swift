@@ -399,8 +399,10 @@ struct AppShell: View {
             } else {
                 shell.inbox.refresh(session, list: false)
                 AppBadge.askOnce()
+                session.registerPush()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pushTokenChanged)) { _ in session.registerPush() }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
         // The bell's count: when the app comes to the front, when the inbox opens, and every 60 s while it is in front.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
