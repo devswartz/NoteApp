@@ -240,7 +240,18 @@ internal sealed partial class BoxTextView
         }
         var node = SelectedMedia() is { } m ? (m.Kind == DecoKind.Image ? "image" : "file") : "none";
         var sizes = _decos.Where(d => d.Kind == DecoKind.Image).Select(d => $"{Math.Round(d.Rect.Width)}x{Math.Round(d.Rect.Height)}");
-        return $"images={string.Join(",", images)};files={string.Join("|", files)};sizes={string.Join(",", sizes)};node={node};upload={_uploading}";
+        // the selected picture's bottom-right corner relative to this control's top left, in DIPs (for the resize test)
+        var corner = "";
+        if (SelectedMedia() is { Kind: DecoKind.Image } sel)
+        {
+            try
+            {
+                var o = _root.TransformToVisual(this).TransformPoint(new Point(sel.Rect.Right, sel.Rect.Bottom));
+                corner = $"{Math.Round(o.X)},{Math.Round(o.Y)}";
+            }
+            catch { }
+        }
+        return $"images={string.Join(",", images)};files={string.Join("|", files)};sizes={string.Join(",", sizes)};corner={corner};node={node};upload={_uploading}";
     }
 
     // ---- open and save ---------------------------------------------------------------------------------------------------------------
@@ -352,6 +363,7 @@ internal sealed partial class BoxTextView
     private void EndResize(PointerRoutedEventArgs e)
     {
         if (_rz is not { } rz) return;
+        MoveResize(e.GetCurrentPoint(_root).Position);   // the release point counts even if the moves before it were coalesced
         _rz = null;
         try { _root.ReleasePointerCapture(e.Pointer); } catch { }
         var w = MediaRules.ClampWidth(rz.Now.Width);

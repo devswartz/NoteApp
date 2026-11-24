@@ -163,8 +163,18 @@ public class MediaTests
             // the picture sits at the view's top left, 200 x 100
             Mouse.Click(new Point(r.Left + 60, r.Top + 40));
             h.A.WaitMedia("node", v => v == "image", "the picture selected");
-            var corner = new Point(r.Left + 200, r.Top + 100);
-            Mouse.Drag(corner, new Point(corner.X - 80, corner.Y - 40));
+            // the picture's corner as the box reports it (the box has padding, so it is not at the bounds' top left)
+            string c = "";
+            h.A.WaitMedia("corner", v => (c = v).Contains(','), "the picture's corner");
+            var xy = c.Split(',').Select(int.Parse).ToArray();
+            var corner = new Point((int)r.Left + xy[0] - 1, (int)r.Top + xy[1] - 1);
+            Mouse.MoveTo(corner);
+            Thread.Sleep(150);
+            Mouse.Down(MouseButton.Left);
+            Thread.Sleep(80);
+            for (var i = 1; i <= 16; i++) { Mouse.MoveTo(new Point(corner.X - 5 * i, corner.Y - 5 * i)); Thread.Sleep(15); }
+            Thread.Sleep(80);
+            Mouse.Up(MouseButton.Left);
             h.A.WaitMedia("sizes", v => v == "120x60", "the picture 120 wide");
         }
         catch { h.Shot(nameof(Click_selects_the_picture_and_a_handle_drag_resizes_it)); throw; }
