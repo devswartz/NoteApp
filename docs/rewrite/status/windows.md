@@ -70,7 +70,21 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 
 ## 2026-11-24: left2: templates finished, table tools, who is on the page, notebook drag (branch `rewrite/windows-left2`, from `rewrite/native` f30d23b)
 
-Not merged, not pushed. Built and 319 unit tests green on this PC (`dotnet build` of the sln, the UI test project and `dotnet test`); nothing was driven with input and nothing ran against a server (the UI tests in `Left2Tests.cs` and the shots in `LookShots.cs` are written for CI only).
+Not merged; pushed. Built and 319 unit tests green on this PC (`dotnet build` of the sln, the UI test project and `dotnet test`); nothing was driven with input and nothing ran against a server (the UI tests in `Left2Tests.cs` and the shots in `LookShots.cs` are written for CI only).
+
+- **CI** (branch `rewrite/windows-left2`):
+  - 45497160372 on 16a43bc: 2 failures.
+    - A ribbon flyout menu takes the keyboard, so Table tools and the Text style menu acted on no box. Fixed in 40b65f3: they now act on the box that last had focus (`BoxTextView.Target`).
+  - 45501494077 on 40b65f3: 3 failures.
+    - A typed "/" opens the slash menu only at a line start or after a space, so Callout and Toggle did nothing after other text. Fixed in aabee32: a space goes in first and is taken back after the pick.
+    - After the first row of a table is deleted, the engine puts the caret on the line above the table (core quirk, for apple-left3). The test now steps back in with Down.
+    - `Search_finds_tasks_and_the_sheet_edits_them` failed again. It is the second flaky run of this test, and nothing in this batch touches it.
+  - 45505179122 on aabee32: green. Build x64 + arm64, 319 unit tests, 93 UI tests, look shots.
+- **Waits for apple-left3** (core calls; nothing added to `crates/` here):
+  - tables: merge and split cells, column width, header column, cell colours, and the caret after deleting a first row;
+  - blocks: toggle open/close, code-block copy and highlighting;
+  - other people's carets in boxes, and follow mode;
+  - workspace, team and tag management.
 
 - **Templates (134-140: all ✓ in PARITY).** An empty new page shows a strip with the three built-ins, "More…" and "Start blank" (dismiss); a template put on a page shows "Started from X" with **Start blank**, which undoes the insert (`LivePage.Undo`), deletes the template's tasks and clears a title or icon the template set (`PageView.Left2.cs`, `CoreNotesSource.Templates.cs` `ApplyTemplate`). Ribbon Page group > **Templates** and the page menu **Use a template…** open the picker for the open page (built-ins by `InsertTemplateContent`, saved ones by `UseTemplate`). Section menu: **Default template…** (inherit, None, or a saved template: `SetSectionDefaultTemplate`, read back with `SectionDefaultTemplates`, the effective one worked out up the section chain) and **Manage templates…** (rename, delete, and a button that cycles where a template is offered: everywhere, this section, not this section: `UpdateTemplate`). The New page button now asks the core for the section's default (`CreatePageFromTemplate` with "default", then the pending claim). Not possible with the core: a built-in template can't be a section default or be renamed (only saved ones are stored); the subsections flag is always on when a section is added to a scope; a saved template made private can't be a default (the core refuses). The template's tasks appear in the task list at once (`RefreshTasksNow`).
 - **Tables and blocks (105, 106: partly).** Ribbon **Table** group: Add row, Add column and **Table tools** (insert row above and below, column left and right, header row, delete row, column, table), all engine commands (`addRowAfter`, `addRowBefore`, `addColumnAfter`, `addColumnBefore`, `toggleHeaderRow`, `deleteRow`, `deleteColumn`, `deleteTable`). The Text style menu gained Callout and Toggle (`pickSlash`); the slash menu already had them. **Waits for apple-left3:** merge and split cells, column width, a header column, cell colours (no engine command), toggle open/close from the keyboard, code copy and highlighting.
