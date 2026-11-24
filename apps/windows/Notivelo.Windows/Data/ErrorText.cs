@@ -24,6 +24,14 @@ internal static class ErrorText
         }
     }
 
+    /// <summary>A failed upload or download as one sentence (Text/MediaRules.UploadError has the wording).</summary>
+    public static string Media(Exception e, string name) => e switch
+    {
+        N.CoreException.Network => Notivelo.Windows.Text.MediaRules.UploadError(null, null, null, name, true),
+        N.CoreException.Server s => Notivelo.Windows.Text.MediaRules.UploadError(s.status, s.code, s.message, name, false),
+        _ => Message(e),
+    };
+
     public static bool TokenRejected(Exception e) => e switch
     {
         N.CoreException.SignedOut => true,

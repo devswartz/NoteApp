@@ -98,6 +98,19 @@ internal sealed partial class BoxTextView
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(link, "Link");
         link.Click += (_, _) => ShowLinkEditor();
         row.Children.Add(link);
+        if (PageId is not null && _source.CanComment(PageId))
+        {
+            var comment = new Button
+            {
+                Style = Ui.Style("GhostButtonStyle"), Width = 30, Height = 30, Padding = new Thickness(0), CornerRadius = new CornerRadius(6),
+                Content = new Icon("message-square", 16, C2(Has(N.ViewMarkKind.Comment) ? "Accent" : "TextMuted")), AllowFocusOnInteraction = false, IsTabStop = false,
+            };
+            ToolTipService.SetToolTip(comment, "Comment");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(comment, "float-comment");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(comment, "Comment");
+            comment.Click += (_, _) => BeginComment();
+            row.Children.Add(comment);
+        }
         Separator();
         var task = new Button
         {
@@ -121,5 +134,21 @@ internal sealed partial class BoxTextView
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, "Formatting");
         try { card.Shadow = new ThemeShadow(); card.Translation = new System.Numerics.Vector3(0, 0, 24); } catch { }
         return card;
+    }
+
+    /// <summary>Start a comment thread on the selected text (the floating bar's Comment button): the selection is marked with a fresh thread id through the editor
+    /// (<c>setComment</c>), and the page's comments panel asks for the first comment; only then does the source create the thread.</summary>
+    public void BeginComment()
+    {
+        if (_r is not { } r || PageId is null) return;
+        var from = SelFrom(r.View); var to = SelTo(r.View);
+        var text = r.View.Text;
+        if (to <= from || to > text.Length) return;
+        var quote = text[from..to].Replace("\n", " ").Trim();
+        if (quote.Length == 0) return;
+        var id = N.NvCore.NewCommentThreadId();
+        if (!RunCommand("setComment", System.Text.Json.JsonSerializer.Serialize(new { threadId = id }))) return;
+        HideFloatingBar();
+        Notivelo.Windows.Views.PageView.Current?.BeginComment(id, quote);
     }
 }

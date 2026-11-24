@@ -19,6 +19,10 @@ internal sealed class PageTasksPanel : ThemedControl
     private readonly Action _close;
     private bool _showDone;
     internal ShellHost? Host { get; set; }
+    /// <summary>Set: the Comments tab shows (this model's threads); null: the Tasks tab.</summary>
+    internal CommentsModel? Comments { get; set; }
+    /// <summary>Switch tab: true for Comments.</summary>
+    internal Action<bool>? SwitchTab { get; set; }
 
     public PageTasksPanel(INotesSource src, string pageId, Action close)
     {
@@ -27,7 +31,7 @@ internal sealed class PageTasksPanel : ThemedControl
         Unloaded += (_, _) => _src.Changed -= OnChanged;
     }
 
-    private void OnChanged(object? s, EventArgs e) => Rebuild();
+    private void OnChanged(object? s, EventArgs e) { if (Comments is null) Rebuild(); }   // the Comments tab keeps its text boxes: it redraws from its own model
 
     protected override UIElement Build()
     {
@@ -45,8 +49,11 @@ internal sealed class PageTasksPanel : ThemedControl
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Padding = new Thickness(2), CornerRadius = new CornerRadius(8), Background = B("BgHover"), HorizontalAlignment = HorizontalAlignment.Left };
-        tabs.Children.Add(Tab("list-todo", "Tasks", true));
-        tabs.Children.Add(Tab("message-square", "Comments", false));
+        var onComments = Comments is not null;
+        var tasksTab = Tab("list-todo", "Tasks", !onComments, "page-tab-tasks", () => SwitchTab?.Invoke(false));
+        var commentsTab = Tab("message-square", "Comments", onComments, "page-tab-comments", () => SwitchTab?.Invoke(true));
+        tabs.Children.Add(tasksTab);
+        tabs.Children.Add(commentsTab);
         head.Children.Add(tabs);
         var close = Ui.IconButton("x", 14, 28, 28, "Close");
         AutomationProperties.SetAutomationId(close, "page-tasks-close");
@@ -54,6 +61,17 @@ internal sealed class PageTasksPanel : ThemedControl
         Grid.SetColumn(close, 1);
         head.Children.Add(close);
         root.Children.Add(head);
+
+        if (Comments is { } model)
+        {
+            var body = new CommentsBody(_src, model) { Host = Host };
+            Grid.SetRow(body, 1); Grid.SetRowSpan(body, 2);
+            root.Children.Add(body);
+            var tagged2 = new StackPanel { Children = { root } };
+            AutomationProperties.SetAutomationId(tagged2, "page-comments-panel");
+            AutomationProperties.SetName(tagged2, "Comments on this page");
+            return new Border { Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged2 };
+        }
 
         // done / total
         var prog = new StackPanel { Padding = new Thickness(14, 8, 14, 6) };
@@ -111,15 +129,20 @@ internal sealed class PageTasksPanel : ThemedControl
         AutomationProperties.SetAutomationId(tagged, "page-tasks-panel");
         AutomationProperties.SetName(tagged, "Tasks on this page");
         AutomationProperties.SetItemStatus(tagged, $"tasks={all.Count} open={open.Count} done={done.Count}");
-        return new Border { BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged };
+        return new Border { Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged };
     }
 
-    private UIElement Tab(string icon, string text, bool on)
+    private UIElement Tab(string icon, string text, bool on, string id, Action click)
     {
-        var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Padding = new Thickness(10, 0, 10, 0), Height = 28, CornerRadius = new CornerRadius(6), Background = on ? B("BgElevated") : null };
+        var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         sp.Children.Add(new Icon(icon, 14, on ? B("Text") : B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
         sp.Children.Add(Ui.Text(text, 13, on ? B("Text") : B("TextMuted"), 500).With(t => t.VerticalAlignment = VerticalAlignment.Center));
-        return sp;
+        var b = new Button { Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(10, 0, 10, 0), Height = 28, CornerRadius = new CornerRadius(6), Background = on ? B("BgElevated") : null, Content = sp };
+        AutomationProperties.SetAutomationId(b, id);
+        AutomationProperties.SetName(b, text);
+        AutomationProperties.SetItemStatus(b, on ? "selected=1" : "selected=0");
+        b.Click += (_, _) => click();
+        return b;
     }
 
     private UIElement Row(TaskItem t)

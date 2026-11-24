@@ -7,6 +7,8 @@ internal static class IconData
     {
         ["activity"] = "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2",
         ["alarm-clock"] = "M4 13A8 8 0 1 0 20 13A8 8 0 1 0 4 13Z M12 9v4l2 2 M5 3 2 6 M22 6l-3-3 M6.38 18.7 4 21 M17.64 18.67 20 21",
+        ["arrow-up"] = "M12 19V5 M5 12l 7-7 7 7",
+        ["arrow-down"] = "M12 5v14 M19 12l-7 7-7-7",
         ["arrow-down-to-line"] = "M12 17V3 M6 11l 6 6 6-6 M19 21H5",
         ["arrow-down-up"] = "M3 16l 4 4 4-4 M7 20V4 M21 8l-4-4-4 4 M17 4v16",
         ["arrow-left"] = "M12 19l-7-7 7-7 M19 12H5",

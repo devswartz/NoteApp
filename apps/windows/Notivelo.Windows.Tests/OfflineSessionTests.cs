@@ -129,4 +129,28 @@ public class OfflineSessionTests
         Assert.Equal(ops.Length, at);
         Assert.DoesNotContain(ops, float.IsNaN);
     }
+
+    [Fact]
+    public void Images_and_file_cards_insert_select_and_resize()
+    {
+        var (s, _) = Open();
+        s.InsertText("before");
+        Assert.True(s.Command("insertImage", "{\"src\":\"/uploads/abc.png\",\"alt\":\"cat.png\"}"));
+        Assert.True(s.Command("insertFile", "{\"url\":\"/uploads/def.pdf\",\"name\":\"a.pdf\",\"size\":2048,\"mime\":\"application/pdf\"}"));
+        var lines = s.ViewRender().View.Lines;
+        var img = lines.Single(l => l.Kind == "image");
+        var file = lines.Single(l => l.Kind == "fileAttachment");
+        Assert.Contains("/uploads/abc.png", img.AttrsJson);
+        Assert.Contains("a.pdf", file.AttrsJson);
+        // an unsafe address is refused
+        Assert.False(s.Command("insertImage", "{\"src\":\"javascript:alert(1)\",\"alt\":\"x\"}"));
+        // a click on the picture selects it, and the resize command takes the selected node (width at least 80, height as given)
+        s.SetViewSelection(img.Offset, img.Offset + 1);
+        Assert.True(s.Command("setImageWidth", "{\"width\":240,\"height\":160}"));
+        var after = s.ViewRender().View.Lines.Single(l => l.Kind == "image");
+        Assert.Contains("240", after.AttrsJson);
+        Assert.Contains("160", after.AttrsJson);
+        Assert.True(s.Command("setImageWidth", "{\"width\":10}"));
+        Assert.Contains("80", s.ViewRender().View.Lines.Single(l => l.Kind == "image").AttrsJson);
+    }
 }

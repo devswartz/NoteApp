@@ -146,7 +146,7 @@ internal sealed class RibbonView : ThemedControl
             }),
             new("Insert", new Item[]
             {
-                new("table", "Table", true, Word: "Table"), new("image-plus", "Image", true), new("paperclip", "File attachment", true), new("link-2", "Link", true),
+                new("table", "Table", true, Word: "Table"), new("image-plus", "Picture", true, Word: "Picture"), new("paperclip", "File", true, Word: "File"), new("link-2", "Link", true),
                 new("file-symlink", "Link to page", true), new("minus", "Divider", true),
             }),
             new("Page", new Item[] { new("paint-bucket", "Page colour", Menu: false), new("rows-3", "Rule lines"), new("printer", "Print") }),
@@ -281,7 +281,7 @@ internal sealed class RibbonView : ThemedControl
 
         ButtonBase b;
         Specs.TryGetValue(it.Tip, out var spec);
-        var editing = Route == AppRoute.Notes && (spec is not null || it.Tip is "Undo" or "Redo");
+        var editing = Route == AppRoute.Notes && (spec is not null || it.Tip is "Undo" or "Redo" or "Picture" or "File");
         if (it.Pressed || spec?.Active is not null)
             b = new ToggleButton { Style = Ui.Style("RibbonToggleStyle"), IsChecked = it.Pressed };
         else
@@ -297,6 +297,13 @@ internal sealed class RibbonView : ThemedControl
             _bound.Add((b, it.Tip, spec));
             if (it.Tip == "Undo") b.Click += (_, _) => { if (PageView.Current?.Undo(true) is null) BoxTextView.Focused?.DoUndo(); };
             else if (it.Tip == "Redo") b.Click += (_, _) => { if (PageView.Current?.Undo(false) is null) BoxTextView.Focused?.DoRedo(); };
+            else if (it.Tip is "Picture" or "File")
+            {
+                // the dialog opens at the focused box's caret; the box is held now because the dialog takes the window's focus
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(it.Tip));
+                var picture = it.Tip == "Picture";
+                b.Click += (_, _) => { if (BoxTextView.Focused is { } box) _ = box.PickMediaAsync(picture); };
+            }
             else if (spec is not null) b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
         }
         else if (!it.Disabled)

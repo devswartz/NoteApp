@@ -25,6 +25,13 @@ public sealed partial class MainWindow : Window
         {
             ShowShell(new SampleNotesSource(offline), null, null);
         }
+        else if (string.Equals(sourceMode, "signup", StringComparison.OrdinalIgnoreCase))
+        {
+            // NOTIVELO_SOURCE=signup: the sign-in, sign-up and check-email screens with no server (UI tests, look screenshots); sign-up succeeds with nothing sent.
+            _session = new AppSession(preview: true);
+            _session.Changed += ShowPhase;
+            ShowPhase();
+        }
         else
         {
             _session = new AppSession();
@@ -63,22 +70,32 @@ public sealed partial class MainWindow : Window
 
     private AppSession? _session;
     private SessionPhase? _shown;
+    private bool _checkShown;
     private SignInView? _signIn;
 
-    /// <summary>Sign-in screen while signed out or restoring, the shell once signed in (a new shell per sign-in).</summary>
+    /// <summary>Sign-in screen while signed out or restoring, the check-email screen when the new account's address is not confirmed, the shell once signed in (a new shell per sign-in).</summary>
     private void ShowPhase()
     {
         var s = _session!;
         var signedIn = s.Phase == SessionPhase.SignedIn && s.Source is not null;
-        if (signedIn)
+        if (s.NeedsEmailCheck)
         {
-            if (_shown == SessionPhase.SignedIn) return;
-            _shown = SessionPhase.SignedIn;
+            if (_checkShown) return;
+            _checkShown = true; _shown = SessionPhase.SignedIn;
+            Host.Children.Clear();
+            Host.Children.Add(new CheckEmailView(s));
+            ApplyTheme(ThemeMode.Hybrid);
+        }
+        else if (signedIn)
+        {
+            if (_shown == SessionPhase.SignedIn && !_checkShown) return;
+            _shown = SessionPhase.SignedIn; _checkShown = false;
             ShowShell(s.Source!, s.SignOut, s.Host);
         }
         else
         {
             if (_shown == SessionPhase.SignedOut) return; // the sign-in view follows the session by itself
+            _checkShown = false;
             _shown = SessionPhase.SignedOut;
             _signIn = new SignInView(s);
             Host.Children.Clear();
@@ -90,7 +107,7 @@ public sealed partial class MainWindow : Window
     private void ShowShell(INotesSource source, Action? signOut, string? server)
     {
         var shell = new ShellView(source, signOut, server);
-        if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode);
+        if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode, false);
         if (Enum.TryParse<AppRoute>(Environment.GetEnvironmentVariable("NOTIVELO_ROUTE"), true, out var route)) shell.Navigate(route);
         Host.Children.Clear();
         Host.Children.Add(shell);

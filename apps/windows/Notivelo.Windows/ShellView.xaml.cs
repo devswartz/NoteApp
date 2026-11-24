@@ -10,8 +10,6 @@ using Notivelo.Windows.Views;
 
 namespace Notivelo.Windows;
 
-public enum ThemeMode { Hybrid, Light, Dark }
-
 /// <summary>The app shell (LOOK 3.1 / 3.3): ribbon, rail, resizable sidebar, main (page, Tasks views). Wide layout only.</summary>
 public sealed partial class ShellView : UserControl
 {
@@ -34,11 +32,18 @@ public sealed partial class ShellView : UserControl
     private TaskViewKind _taskView = TaskViewKind.Today;
     private double _sidebarWidth = SidebarDefault;
     private bool _sidebarOpen = true;
-    private ThemeMode _theme = ThemeMode.Hybrid;
+    private ThemeMode _theme = ShellRules.ParseTheme(AppSettings.Theme, ThemeMode.Hybrid);
+    private readonly global::Windows.UI.ViewManagement.UISettings _ui = new();
+    private readonly Border _offlinePill = new();
+    private readonly global::Microsoft.UI.Xaml.DispatcherTimer _offlineTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private DateTime? _offlineSince;
+    private bool _pillDismissed;
+    private static readonly bool ForceOffline = Environment.GetEnvironmentVariable("NOTIVELO_FORCE_OFFLINE") == "1";
 
     public ShellView(INotesSource source, Action? signOut = null, string? server = null)
     {
         _source = source;
+        ThemeBrushes.ApplyAccent(AppSettings.Accent);
         InitializeComponent();
         _pageId = source.InitialPageId;
         _rail = new RailView(source, signOut);
@@ -47,6 +52,7 @@ public sealed partial class ShellView : UserControl
         _tasks = new TasksView(source);
         _calendar = new CalendarMonthView(source);
         _settings = new SettingsView(source, () => _theme, m => SetTheme(m), signOut, server);
+        Root.Children.Add(BuildOfflinePill());
         Root.Children.Add(_overlay);
         Grid.SetRowSpan(_overlay, 2);
         _host = new ShellHost(source, _overlay)
@@ -57,9 +63,14 @@ public sealed partial class ShellView : UserControl
             OpenTrash = () => TrashDialog.Show(_host!),
             OpenQuickAdd = s => QuickAddDialog.Show(_host!, s),
             OpenSettings = () => { _overlay.CloseAll(); GoTo(AppRoute.Settings); },
+            OpenShortcuts = () => ShortcutSheet.Show(_host!),
         };
         _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host; _calendar.Host = _host; _settings.Host = _host;
         KeyDown += OnShellKey;
+        // pictures and files added in a box (upload errors, saved files) report through the shell's toasts
+        Action<string, bool> notice = (t, err) => _host.Toast(t, err);
+        Loaded += (_, _) => BoxTextView.Notice += notice;
+        Unloaded += (_, _) => BoxTextView.Notice -= notice;
 
         var ribbonStack = new StackPanel();
         ribbonStack.Children.Add(_ribbon);
@@ -88,6 +99,11 @@ public sealed partial class ShellView : UserControl
         Unloaded += (_, _) => _source.OpenPage(null);
         _sidebar.TaskViewSelected += v => { _taskView = v; Refresh(); };
 
+        // System follows Windows' light / dark setting live
+        _ui.ColorValuesChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (_theme == ThemeMode.System) ApplyTheme(); });
+        _offlineTimer.Tick += (_, _) => UpdateOffline();
+        Loaded += (_, _) => { _offlineTimer.Start(); UpdateOffline(); };
+        Unloaded += (_, _) => _offlineTimer.Stop();
         SizeChanged += (_, e) => ApplyBreakpoints(e.NewSize.Width);
         ApplyTheme();
         ApplySidebar();
@@ -146,7 +162,58 @@ public sealed partial class ShellView : UserControl
         }
     }
 
-    public void SetTheme(ThemeMode m) { _theme = m; ApplyTheme(); }
+    public void SetTheme(ThemeMode m, bool persist = true)
+    {
+        _theme = m; ApplyTheme();
+        if (persist) AppSettings.Theme = ShellRules.ThemeKey(m);
+    }
+
+    /// <summary>Windows is set to dark apps (NOTIVELO_SYSTEM_THEME=dark|light overrides it for the tests).</summary>
+    private bool SystemIsDark()
+    {
+        switch (Environment.GetEnvironmentVariable("NOTIVELO_SYSTEM_THEME")?.ToLowerInvariant())
+        {
+            case "dark": return true;
+            case "light": return false;
+        }
+        try { var c = _ui.GetColorValue(global::Windows.UI.ViewManagement.UIColorType.Background); return c.R < 128; } catch (Exception) { return false; }
+    }
+
+    // ---- offline pill (Apple's OfflineBanner): after 30 s without a connection, a small pill at the bottom centre; its x keeps it away until the next reconnect ----
+
+    private UIElement BuildOfflinePill()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(3.5), Background = ThemeBrushes.Get("Warn", ElementTheme.Dark), VerticalAlignment = VerticalAlignment.Center });
+        row.Children.Add(Ui.Text(ShellRules.OfflineText, 11.5, ThemeBrushes.Get("TextMuted", ElementTheme.Dark), 500).With(t => t.VerticalAlignment = VerticalAlignment.Center));
+        var x = Ui.IconButton("x", 12, 22, 22, "Dismiss");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(x, "offline-pill-x");
+        x.Click += (_, _) => { _pillDismissed = true; UpdateOffline(); };
+        row.Children.Add(x);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "offline-pill");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, ShellRules.OfflineText);
+        _offlinePill.Child = row;
+        _offlinePill.Padding = new Thickness(12, 4, 4, 4);
+        _offlinePill.CornerRadius = new CornerRadius(16);
+        _offlinePill.BorderThickness = new Thickness(1);
+        _offlinePill.HorizontalAlignment = HorizontalAlignment.Center;
+        _offlinePill.VerticalAlignment = VerticalAlignment.Bottom;
+        _offlinePill.Margin = new Thickness(0, 0, 0, 16);
+        _offlinePill.RequestedTheme = ElementTheme.Dark;
+        _offlinePill.Background = ThemeBrushes.Get("BgElevated", ElementTheme.Dark);
+        _offlinePill.BorderBrush = ThemeBrushes.Get("Border", ElementTheme.Dark);
+        _offlinePill.Visibility = Visibility.Collapsed;
+        Grid.SetRowSpan(_offlinePill, 2);
+        return _offlinePill;
+    }
+
+    private void UpdateOffline()
+    {
+        var off = _source.IsOffline;
+        if (off && _offlineSince is null) _offlineSince = DateTime.UtcNow;
+        if (!off) { _offlineSince = null; _pillDismissed = false; }
+        _offlinePill.Visibility = ShellRules.ShowOfflinePill(_offlineSince, DateTime.UtcNow, _pillDismissed, ForceOffline) ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     // Dev hook (NOTIVELO_PAGE=<part of a title>): open that page as soon as the tree has loaded.
     private string? _devPage = Environment.GetEnvironmentVariable("NOTIVELO_PAGE");
@@ -164,6 +231,7 @@ public sealed partial class ShellView : UserControl
         _source.OpenPage(_route == AppRoute.Notes ? _pageId : null);
         _rail.SetRoute(_route);
         _sidebar.Update(_route == AppRoute.Settings ? _before : _route, _pageId, _taskView);
+        UpdateOffline();
         if (_page.PageId == _pageId) _page.Refresh(); else _page.SetPage(_pageId);
         _tasks.SetView(_taskView);
         PageCard.Visibility = _route == AppRoute.Notes ? Visibility.Visible : Visibility.Collapsed;
@@ -187,6 +255,17 @@ public sealed partial class ShellView : UserControl
             e.Handled = true;
             _host.OpenQuickAdd(null);
             return;
+        }
+        // Ctrl+/ opens the keyboard-shortcut sheet anywhere; a bare ? (Shift+/) does when no text field has the keyboard
+        if ((int)e.Key == 191)
+        {
+            var typing = e.OriginalSource is TextBox || e.OriginalSource is RichEditBox || e.OriginalSource is PasswordBox || BoxTextView.Focused is not null;
+            if (ShellRules.OpensShortcuts(ctrl, shift, typing, ctrl ? "/" : shift ? "?" : "/"))
+            {
+                e.Handled = true;
+                ShortcutSheet.Show(_host);
+                return;
+            }
         }
         if (!ctrl) return;
         // no box has the keyboard: undo/redo still reach the live page (a box's own key handling marks the key handled first)
@@ -216,8 +295,9 @@ public sealed partial class ShellView : UserControl
 
     private void ApplyTheme()
     {
-        var chrome = _theme == ThemeMode.Light ? ElementTheme.Light : ElementTheme.Dark;
-        var page = _theme == ThemeMode.Dark ? ElementTheme.Dark : ElementTheme.Light;
+        var mode = ShellRules.Resolve(_theme, SystemIsDark());   // System is Light or Dark by what Windows is set to
+        var chrome = mode == ThemeMode.Light ? ElementTheme.Light : ElementTheme.Dark;
+        var page = mode == ThemeMode.Dark ? ElementTheme.Dark : ElementTheme.Light;
         Root.RequestedTheme = chrome;
         RibbonHost.RequestedTheme = chrome;
         RailHost.RequestedTheme = chrome;
@@ -228,10 +308,10 @@ public sealed partial class ShellView : UserControl
         CalendarHost.RequestedTheme = chrome;
         SettingsHost.RequestedTheme = chrome;
         PageCard.RequestedTheme = page;
-        MainHost.Background = (Brush)ThemeBrushes.Get(_theme == ThemeMode.Light ? "Bg" : "BgSidebar", chrome);
-        PageCard.Background = _theme == ThemeMode.Hybrid ? Ui.Hex("#fcfcfa") : ThemeBrushes.Get("Bg", page);
+        MainHost.Background = (Brush)ThemeBrushes.Get(mode == ThemeMode.Light ? "Bg" : "BgSidebar", chrome);
+        PageCard.Background = mode == ThemeMode.Hybrid ? Ui.Hex("#fcfcfa") : ThemeBrushes.Get("Bg", page);
         // Hybrid: the page is inset 6 pt with 12 pt top corners and a 1 pt dark ring; other themes run it edge to edge.
-        var inset = _theme == ThemeMode.Hybrid;
+        var inset = mode == ThemeMode.Hybrid;
         PageCard.Margin = inset ? new Thickness(6, 6, 6, 0) : new Thickness(0);
         PageCard.CornerRadius = inset ? new CornerRadius(12, 12, 0, 0) : new CornerRadius(0);
         PageCard.BorderBrush = inset ? new SolidColorBrush(global::Windows.UI.Color.FromArgb(0x8C, 0, 0, 0)) : new SolidColorBrush(Colors.Transparent);

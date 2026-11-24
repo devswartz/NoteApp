@@ -82,6 +82,8 @@ internal sealed class RailView : ThemedControl
             if (_source.CanEditTree)
             {
                 if (items.Count > 0) items.Add(MenuEntry.Sep());
+                items.Add(new MenuEntry("Members", "users", () => { if (Host is { } hh) PeopleDialogs.Members(hh); }, Id: "menu-members"));
+                items.Add(new MenuEntry("Join with invite link", "link-2", () => { if (Host is { } hh) PeopleDialogs.JoinInvite(hh); }, Id: "menu-join-invite"));
                 items.Add(new MenuEntry("Trash", "trash", () => Host?.OpenTrash()));
             }
             if (items.Count == 0) return;
@@ -99,7 +101,7 @@ internal sealed class RailView : ThemedControl
         acct.Click += (_, _) =>
         {
             if (Host is null) return;
-            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48), MenuEntry.Sep(), new MenuEntry("Settings", "settings", () => Host?.OpenSettings(), Id: "menu-settings") };
+            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48), MenuEntry.Sep(), new MenuEntry("Settings", "settings", () => Host?.OpenSettings(), Id: "menu-settings"), new MenuEntry("Keyboard shortcuts", "keyboard", () => Host?.OpenShortcuts(), Hint: "?", Id: "menu-shortcuts") };
             if (_signOut is not null)
             {
                 items.Add(MenuEntry.Sep());
@@ -132,7 +134,7 @@ internal sealed class RailView : ThemedControl
             ColumnSpacing = 2, Padding = new Thickness(2), Margin = new Thickness(4, 0, 4, 2), Height = 46, CornerRadius = new CornerRadius(8),
             Background = b("BgSubtle"), BorderBrush = b("Border"), BorderThickness = new Thickness(1),
         };
-        var modes = new[] { (ThemeMode.Light, "Light", "sun"), (ThemeMode.Dark, "Dark", "moon"), (ThemeMode.Hybrid, "Hybrid", "contrast") };
+        var modes = new[] { (ThemeMode.Light, "Light", "sun"), (ThemeMode.Dark, "Dark", "moon"), (ThemeMode.Hybrid, "Hybrid", "contrast"), (ThemeMode.System, "System", "monitor") };
         for (var i = 0; i < modes.Length; i++)
         {
             var (mode, label, icon) = modes[i];

@@ -9,7 +9,7 @@ namespace Notivelo.Windows.Data;
 /// thread except the core calls themselves (<see cref="AppSession.CallAsync"/>) and the live page's listener, which hops back through
 /// <see cref="AppSession.Post"/>. <see cref="Changed"/> is raised on the UI thread.
 /// </summary>
-internal sealed class CoreNotesSource : INotesSource, IDisposable
+internal sealed partial class CoreNotesSource : INotesSource, IDisposable
 {
     private readonly AppSession _session;
     private readonly N.User _user;
@@ -76,6 +76,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             Loading = false;
             PickWorkspace();
             Raise();
+            _ = LoadPageToolsAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception e)
@@ -120,7 +121,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             }
             var (tree, tasks) = await _session.CallAsync(c => (c.Tree(id), c.Tasks(id)));
             if (id != _wsId) return;
-            _tree = tree; _tasks = tasks; _tasksVersion++; LoadError = null; Loading = false;
+            _tree = tree; _tasks = tasks; _tasksVersion++; LoadError = null; Loading = false; _netDown = false;
             Rebuild();
             Raise();
             _ = LoadMembersAsync(id);
@@ -129,7 +130,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         catch (Exception e)
         {
             if (id != _wsId) return;
-            Loading = false; LoadError = ErrorText.Message(e);
+            Loading = false; LoadError = ErrorText.Message(e); NoteNetwork(e);
             Raise();
         }
     }
@@ -213,7 +214,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         _info = null; _attempts = 0; _stateMessage = null;
         _state = PageState.Connecting;
         _gen++;
-        if (pageId is not null) StartOpen();
+        if (pageId is not null) { StartOpen(); _ = LoadComments(pageId); }
     }
 
     /// <summary>Close the page's connection off the UI thread (close may wait for the socket thread).</summary>
@@ -231,6 +232,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     {
         var id = _openId;
         if (id is null || _live is not null || _disposed) return;
+        if (PageLockedNow(id)) { _state = PageState.Locked; _stateMessage = null; Raise(); return; }   // the lock screen asks for the password first
         var gen = ++_gen;
         var listener = new Listener(this, gen);
         try
@@ -247,6 +249,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             if (gen != _gen) return;
             if (e is N.CoreException.Server s && (s.status == 403 || s.status == 404))
             {
+                if (s.status == 403 && IsLockedPage(id)) { LockLapsed(); return; }
                 _state = PageState.Ended; _stateMessage = s.status == 404 ? "This page was deleted." : "You don't have access to this page.";
                 Raise(); return;
             }
@@ -278,7 +281,8 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
                 break;
             case N.SyncStatus.Closed c:
                 DropConnection();
-                if (c.Code == 4403) { _state = PageState.Ended; _stateMessage = "You no longer have access to this page."; Raise(); }
+                if (c.Code == 4403 && _openId is { } lockedId && IsLockedPage(lockedId)) LockLapsed();
+                else if (c.Code == 4403) { _state = PageState.Ended; _stateMessage = "You no longer have access to this page."; Raise(); }
                 else if (c.Code == 4401 && _attempts < 3) { _attempts++; StartOpen(); }
                 else { _state = PageState.Offline; _stateMessage = c.Reason.Length == 0 ? $"Disconnected ({c.Code})." : c.Reason; Raise(); RetryLater(); }
                 break;
@@ -355,8 +359,8 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     }
 
     public TaskItem? FindTask(string taskId) => TaskLine(taskId);
-    public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title;
-    public string? EmojiOfPage(string pageId) => null;
+    public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title ?? _shared.FirstOrDefault(s => s.Id == pageId)?.Title;
+    public string? EmojiOfPage(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Icon is { Length: > 0 } i ? i : null;
     public string? UserId => _user.Id;
 
     /// <summary>Pages for the [[ menu: titles starting with the query first, then words starting with it, then containing it (Apple's pageMatches); newest first within each.</summary>
@@ -667,18 +671,25 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     public NotePage? GetPage(string pageId)
     {
         var meta = _tree?.Pages.FirstOrDefault(p => p.Id == pageId);
-        if (meta is null) return null;
+        var live = pageId == _openId;
+        var boxes = live && _info is not null ? BoxesOf(_info) : Array.Empty<CanvasBox>();
+        var settings = live ? _info?.Settings : null;
+        if (meta is null)
+        {
+            // a page someone shared with you, from another workspace (or one not in this tree): its words come from the shared list
+            if (_shared.FirstOrDefault(s => s.Id == pageId) is not { } sh) return null;
+            return new NotePage(pageId, sh.Title.Length == 0 ? "Untitled" : sh.Title, sh.SharedBy is null ? "Shared with you" : "Shared by " + sh.SharedBy, sh.WorkspaceName, "#6366f1", Array.Empty<string>(),
+                ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, 0, OpenCommentCount(pageId), live ? _state : PageState.Connecting, live ? _stateMessage : null,
+                false, sh.Icon, sh.CanEdit);
+        }
         var sec = _tree!.Sections.FirstOrDefault(s => s.Id == meta.SectionId);
         var path = new List<string>();
         for (var cur = sec; cur is not null;) { path.Insert(0, cur.Name); cur = cur.ParentId is { } p ? _tree.Sections.FirstOrDefault(s => s.Id == p) : null; }
         var nb = sec is null ? null : _tree.Notebooks.FirstOrDefault(n => n.Id == sec.NotebookId);
-        var live = pageId == _openId;
-        var boxes = live && _info is not null ? BoxesOf(_info) : Array.Empty<CanvasBox>();
-        var settings = live ? _info?.Settings : null;
         return new NotePage(
             pageId, meta.Title.Length == 0 ? "Untitled" : meta.Title, "Edited " + Ago(meta.UpdatedAt), nb?.Name ?? "", nb?.Color ?? "#6366f1", path,
-            ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, _tasks.Count(t => !t.Done && t.PageId == pageId), 0,
-            live ? _state : PageState.Connecting, live ? _stateMessage : null, meta.Locked);
+            ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, _tasks.Count(t => !t.Done && t.PageId == pageId), OpenCommentCount(pageId),
+            live ? _state : PageState.Connecting, live ? _stateMessage : null, meta.Locked, meta.Icon is { Length: > 0 } icon ? icon : null, WorkspaceRole != "viewer");
     }
 
     private static PageColour ParseColour(string? c) => Enum.TryParse<PageColour>(c, true, out var v) ? v : PageColour.None;
@@ -734,6 +745,39 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     /// <summary>Top-level tasks this person can see.</summary>
     private IEnumerable<N.Task> Visible() => _tasks.Where(t => !t.Locked && t.ParentId is null);
     private IEnumerable<N.Task> Mine() => Visible().Where(t => t.AssigneeId == _user.Id);
+
+    // ---- images and attachments: the core's upload_file / file_url / download_file (online only; each runs on the core's call queue, off the UI thread) ----
+
+    public bool CanUpload(string pageId) => _wsId is not null && LivePageOf(pageId) is not null;
+
+    public async Task<MediaResult<UploadedMedia>> UploadFile(string pageId, string name, byte[] data)
+    {
+        if (_wsId is not { } ws) return MediaResult<UploadedMedia>.Fail("Open a workspace first.");
+        try
+        {
+            var up = await _session.CallAsync(c => c.UploadFile(ws, pageId, name, data));
+            return new MediaResult<UploadedMedia>(new UploadedMedia(up.Url, up.Name, up.Mime, (long)up.Size));
+        }
+        catch (OperationCanceledException) { return MediaResult<UploadedMedia>.Fail("You were signed out. Sign in again."); }
+        catch (Exception e) { return MediaResult<UploadedMedia>.Fail(ErrorText.Media(e, name)); }
+    }
+
+    public async Task<string?> FileUrl(string stored)
+    {
+        try { return await _session.CallAsync(c => c.FileUrl(stored)); }
+        catch { return null; }
+    }
+
+    public async Task<MediaResult<MediaBytes>> DownloadFile(string stored)
+    {
+        try
+        {
+            var f = await _session.CallAsync(c => c.DownloadFile(stored));
+            return new MediaResult<MediaBytes>(new MediaBytes(f.Bytes, f.Mime));
+        }
+        catch (OperationCanceledException) { return MediaResult<MediaBytes>.Fail("You were signed out. Sign in again."); }
+        catch (Exception e) { return MediaResult<MediaBytes>.Fail(ErrorText.Media(e, Path.GetFileName(stored))); }
+    }
 
     public TaskCounts GetTaskCounts()
     {
@@ -878,11 +922,12 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         try
         {
             var (r, tree) = await _session.CallAsync(c => { var x = call(c); return (x, c.Tree(ws)); });
+            _netDown = false;
             if (ws == _wsId) { _tree = tree; Rebuild(); Raise(); }
             return new TreeResult(r.Id, null, r.Note);
         }
         catch (OperationCanceledException) { return new TreeResult(Error: "Cancelled."); }
-        catch (Exception e) { return new TreeResult(Error: ErrorText.Message(e)); }
+        catch (Exception e) { NoteNetwork(e); return new TreeResult(Error: ErrorText.Message(e)); }
     }
 
     public async Task<TreeResult> CreateNotebook(string name)

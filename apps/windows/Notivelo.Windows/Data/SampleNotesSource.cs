@@ -90,6 +90,7 @@ public sealed partial class SampleNotesSource : INotesSource
                     }),
                 }, s.OpenTasks, 0);
 
+        SeedShared();
         // the reference "Settings and ink" page has a blue page colour and a grid (LOOK 1.3)
         _pages["settings-ink"] = _pages["settings-ink"] with { Colour = PageColour.Blue, Rules = RuleLines.Grid };
 
@@ -204,8 +205,7 @@ public sealed partial class SampleNotesSource : INotesSource
     public Notivelo.Native.LivePage? LivePageOf(string pageId) => null;
     public TaskItem? FindTask(string taskId) => _made.GetValueOrDefault(taskId);
     public string? PageTitleOf(string pageId) => _pages.GetValueOrDefault(pageId)?.Title;
-    public string? EmojiOfPage(string pageId) => null;
-    public string? UserId => null;
+    public string? UserId => Me;
     public void CreateTask(string id, string title, bool done, string? pageId)
     {
         if (!Offline) return;
@@ -220,7 +220,7 @@ public sealed partial class SampleNotesSource : INotesSource
     public IReadOnlyList<(string Id, string Label, string Detail, string? ColorHex)> People(string query) =>
         new (string, string, string, string?)[] { ("u1", "Demo User", "demo@example.com", "#6366f1"), ("u2", "Sam Rivera", "sam@example.com", "#14b8a6"), ("u3", "Priya Nair", "priya@example.com", "#ec4899") }
             .Where(p => query.Length == 0 || p.Item2.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
-    public NotePage? GetPage(string pageId) => _pages.GetValueOrDefault(pageId);
+    public NotePage? GetPage(string pageId) => Overlay(_pages.GetValueOrDefault(pageId));
 
     public TaskCounts GetTaskCounts() => new(3, true, 15, 7);
 

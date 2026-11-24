@@ -59,6 +59,7 @@ internal sealed partial class BoxTextView : UserControl
         _root.Children.Add(_chrome);
         ActualThemeChanged += (_, _) => { _textRev = ulong.MaxValue; Render(); };
         InitInput();
+        InitMedia();
     }
 
     public double LaidOutHeight => _height;
@@ -173,7 +174,7 @@ internal sealed partial class BoxTextView : UserControl
 
     private enum DecoKind { Callout, Quote, CodeBlock, Rule, Table, TableCell, Image, FileCard, ToggleArrow, Checkbox, Bullet, Marker, TaskGuide }
 
-    private sealed record Deco(DecoKind Kind, Rect Rect, string? Text = null, int Flag = 0, int Line = -1);
+    private sealed record Deco(DecoKind Kind, Rect Rect, string? Text = null, int Flag = 0, int Line = -1, string? Src = null);
 
     private sealed class Back
     {
@@ -537,24 +538,23 @@ internal sealed partial class BoxTextView : UserControl
                 return y + 1;
             case "image":
             {
-                var iw = hasAttrs ? Num(attrs, "width", 0) : 0;
-                var ih = hasAttrs ? Num(attrs, "height", 0) : 0;
-                if (iw <= 0) iw = Math.Min(avail, 320);
-                if (ih <= 0) ih = Math.Min(120, Math.Round(iw * 0.6));
-                if (iw > avail) { ih = ih * avail / iw; iw = avail; }
+                var src = hasAttrs ? Str(attrs, "src") ?? "" : "";
+                var ent = src.Length > 0 ? MediaCache.Request(_source, src, _mediaLoaded) : null;
+                var (iw, ih) = MediaRules.DisplaySize(hasAttrs ? Num(attrs, "width", 0) : 0, hasAttrs ? Num(attrs, "height", 0) : 0, ent?.W ?? 0, ent?.H ?? 0, avail);
                 box.Y = y; box.H = ih;
                 var alt = hasAttrs ? Str(attrs, "alt") : null;
-                _decos.Add(new Deco(DecoKind.Image, new Rect(box.X, y, iw, ih), string.IsNullOrEmpty(alt) ? "Image" : alt, 0, box.Index));
+                _decos.Add(new Deco(DecoKind.Image, new Rect(box.X, y, iw, ih), string.IsNullOrEmpty(alt) ? "Image" : alt, 0, box.Index, src));
                 return y + ih;
             }
             case "fileAttachment":
             {
                 var name = hasAttrs ? Str(attrs, "name") ?? "file" : "file";
                 var size = hasAttrs ? Num(attrs, "size", 0) : 0;
+                var mime = hasAttrs ? Str(attrs, "mime") : null;
                 var cw = Math.Min(520, avail);
                 box.Y = y; box.H = 52;
-                _decos.Add(new Deco(DecoKind.FileCard, new Rect(box.X, y, cw, 52), name + "\n" + SizeText(size), 0, box.Index));
-                var ficon = new Icon("file-text", 18, C2("Accent")) { Width = 34, Height = 34 };
+                _decos.Add(new Deco(DecoKind.FileCard, new Rect(box.X, y, cw, 52), name + "\n" + MediaRules.SizeText(size), 0, box.Index));
+                var ficon = new Icon(MediaRules.IconOf(mime, name), 18, C2("Accent")) { Width = 34, Height = 34 };
                 Canvas.SetLeft(ficon, box.X + 10); Canvas.SetTop(ficon, y + 9);
                 _chrome.Children.Add(ficon);
                 var dl = new Icon("download", 16, C2("Text2")) { Width = 28, Height = 28 };
@@ -579,9 +579,6 @@ internal sealed partial class BoxTextView : UserControl
                 return y + LineMetrics.BasePitch;
         }
     }
-
-    private static string SizeText(double bytes) =>
-        bytes <= 0 ? "" : bytes < 1024 ? $"{bytes:0} B" : bytes < 1048576 ? $"{bytes / 1024:0.#} KB" : $"{bytes / 1048576:0.#} MB";
 
     /// <summary>Open the detail sheet of a task line's task (set by the page).</summary>
     public Action<string>? TaskOpened { get; set; }
@@ -750,13 +747,7 @@ internal sealed partial class BoxTextView : UserControl
                     ds.DrawRectangle(Inset(new Rect(d.Rect.X, d.Rect.Y, d.Rect.Width + 1, d.Rect.Height + 1), 0.5), border, 1);
                     break;
                 }
-                case DecoKind.Image:
-                {
-                    ds.FillRoundedRectangle(d.Rect, 8, 8, C("BgSubtle"));
-                    ds.DrawRoundedRectangle(Inset(d.Rect, 0.5), 8, 8, border, 1);
-                    DrawSmall(ds, d.Text ?? "Image", d.Rect.X, d.Rect.Y + d.Rect.Height / 2 - 10, 13, C("TextMuted"), CanvasHorizontalAlignment.Center, d.Rect.Width);
-                    break;
-                }
+                case DecoKind.Image: DrawImage(ds, d, border); break;
                 case DecoKind.FileCard:
                 {
                     ds.FillRoundedRectangle(d.Rect, 8, 8, C("Bg"));
@@ -791,6 +782,18 @@ internal sealed partial class BoxTextView : UserControl
             switch (d.Kind)
             {
                 case DecoKind.Marker: DrawMarker(ds, d); break;
+                case DecoKind.Image or DecoKind.FileCard when IsSelectedNode(d.Line) && (ShowSelection || _focused):
+                {
+                    var rc = d.Kind == DecoKind.Image && _rz is { } rz && rz.Line == d.Line ? rz.Now : d.Rect;
+                    ds.DrawRoundedRectangle(Inset(rc, -1), 8, 8, C("AccentSolid"), 2);
+                    if (d.Kind == DecoKind.Image)
+                        foreach (var h in Handles(rc))
+                        {
+                            ds.FillRoundedRectangle(h, 2, 2, Colors.White);
+                            ds.DrawRoundedRectangle(h, 2, 2, C("AccentSolid"), 1.5f);
+                        }
+                    break;
+                }
                 case DecoKind.Checkbox:
                 {
                     var rc = d.Rect;
@@ -838,6 +841,31 @@ internal sealed partial class BoxTextView : UserControl
         };
         using var l = new CanvasTextLayout(ds, s, f, (float)width, (float)(size * 1.5));
         ds.DrawTextLayout(l, (float)x, (float)y, c);
+    }
+
+    /// <summary>A picture: its pixels in a rounded frame, or a placeholder (name and "Loading…" / "Can't load this picture") while it loads or when it can't.</summary>
+    private void DrawImage(CanvasDrawingSession ds, Deco d, Color border)
+    {
+        var ent = string.IsNullOrEmpty(d.Src) ? null : MediaCache.Peek(d.Src);
+        var rc = _rz is { } rz && rz.Line == d.Line ? rz.Now : d.Rect;
+        if (ent?.Bitmap is { } bmp)
+        {
+            try
+            {
+                using var geo = CanvasGeometry.CreateRoundedRectangle(ds, rc, 6, 6);
+                using (ds.CreateLayer(1f, geo))
+                    ds.DrawImage(bmp, rc, new Rect(0, 0, bmp.Size.Width, bmp.Size.Height), 1f, CanvasImageInterpolation.HighQualityCubic);
+                ds.DrawRoundedRectangle(Inset(rc, 0.5), 6, 6, Alpha(border, 0.8), 1);
+                return;
+            }
+            catch (Exception e) { Log("draw image", e); }
+        }
+        ds.FillRoundedRectangle(rc, 8, 8, C("BgSubtle"));
+        ds.DrawRoundedRectangle(Inset(rc, 0.5), 8, 8, border, 1);
+        var failed = ent?.Failed == true;
+        var mid = rc.Y + rc.Height / 2;
+        DrawSmall(ds, d.Text ?? "Image", rc.X + 8, mid - (rc.Height >= 44 ? 17 : 10), 13, C("TextMuted"), CanvasHorizontalAlignment.Center, Math.Max(10, rc.Width - 16), 500);
+        if (rc.Height >= 44) DrawSmall(ds, failed ? "Can't load this picture" : "Loading…", rc.X + 8, mid + 2, 12, C("TextMuted"), CanvasHorizontalAlignment.Center, Math.Max(10, rc.Width - 16));
     }
 
     private void DrawEmoji(CanvasDrawingSession ds, string emoji, Rect box)
@@ -946,6 +974,7 @@ internal sealed partial class BoxTextView : UserControl
             if (part is null) continue;
             if (!line.IsText || b.Text is null)
             {
+                if (line.Kind is "image" or "fileAttachment" && IsSelectedNode(b.Index)) continue;   // the outline and handles show it
                 var rc = new Rect(b.X, b.Y, Math.Max(20, _width - b.X), Math.Max(1, b.H));
                 ds.FillRoundedRectangle(rc, 2, 2, fill);
                 continue;

@@ -57,6 +57,80 @@ internal sealed class SidebarView : ThemedControl
         return row;
     }
 
+    // ---- drag to reorder / move (the web's treeDnd.ts): drag a page or a section; the row under the pointer shows where it lands ----------------------
+    // The top quarter of a row drops before it, the bottom quarter after it, the middle into it (a section row only). Pages go into sections; sections go next to
+    // sections or into one (the core refuses past three levels and says so). Move up / Move down in the menus do the same without a pointer.
+
+    private (TreeKind Kind, string Id)? _drag;
+    private Border? _hot;
+    private Brush? _hotBg;
+
+    private void ClearHot()
+    {
+        if (_hot is null) return;
+        _hot.BorderThickness = new Thickness(0);
+        if (_hotBg is not null) _hot.Background = _hotBg;
+        _hot = null; _hotBg = null;
+    }
+
+    private void ShowHot(Border row, ShellRules.Zone zone)
+    {
+        if (!ReferenceEquals(_hot, row)) { ClearHot(); _hot = row; _hotBg = row.Background; }
+        row.BorderBrush = B("Accent");
+        switch (zone)
+        {
+            case ShellRules.Zone.Before: row.BorderThickness = new Thickness(0, 2, 0, 0); row.Background = _hotBg; break;
+            case ShellRules.Zone.After: row.BorderThickness = new Thickness(0, 0, 0, 2); row.Background = _hotBg; break;
+            default: row.BorderThickness = new Thickness(1); row.Background = B("AccentSoft"); break;
+        }
+    }
+
+    private void Draggable(Border row, TreeKind kind, string id)
+    {
+        if (!_source.CanEditTree || Host is null) return;
+        row.CanDrag = true;
+        row.DragStarting += (_, e) =>
+        {
+            _drag = (kind, id);
+            e.Data.SetText("notivelo:" + kind.ToString().ToLowerInvariant() + ":" + id);
+            e.Data.RequestedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+        };
+        row.DropCompleted += (_, _) => { _drag = null; ClearHot(); };
+    }
+
+    private void DropTarget(Border row, TreeKind kind, string id)
+    {
+        if (!_source.CanEditTree || Host is null) return;
+        row.AllowDrop = true;
+        (string, string?, int?)? Plan(Microsoft.UI.Xaml.DragEventArgs e, out ShellRules.Zone zone)
+        {
+            zone = ShellRules.Zone.After;
+            if (_drag is not { } d || Host is null) return null;
+            var nest = kind == TreeKind.Section;
+            zone = ShellRules.DropZone(e.GetPosition(row).Y, row.ActualHeight, nest);
+            if (d.Kind == TreeKind.Page && kind == TreeKind.Section) zone = ShellRules.Zone.Into;   // a page can only go into a section
+            return Host.Tree.DropPlan(d.Kind, d.Id, kind, id, zone) is { } p ? (p.NotebookId, p.ParentId, p.Index) : null;
+        }
+        row.DragOver += (_, e) =>
+        {
+            var plan = Plan(e, out var zone);
+            if (plan is null) { e.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.None; if (ReferenceEquals(_hot, row)) ClearHot(); return; }
+            e.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+            e.DragUIOverride.IsCaptionVisible = false;
+            ShowHot(row, zone);
+            e.Handled = true;
+        };
+        row.DragLeave += (_, _) => { if (ReferenceEquals(_hot, row)) ClearHot(); };
+        row.Drop += (_, e) =>
+        {
+            var plan = Plan(e, out ShellRules.Zone _);
+            var d = _drag;
+            ClearHot(); _drag = null;
+            e.Handled = true;
+            if (plan is { } p && d is { } dd) Host!.Tree.Drop(dd.Kind, dd.Id, p.Item1, p.Item2, p.Item3);
+        };
+    }
+
     private static Grid Cols(params GridLength[] widths)
     {
         var g = new Grid();
@@ -134,7 +208,8 @@ internal sealed class SidebarView : ThemedControl
         list.Children.Add(GroupHeading("Sections", true, () => Host?.Tree.NewSection(nb.Id, null)));
         foreach (var s in nb.Sections) AddSection(list, s, 0);
         if (nb.Sections.Count == 0) list.Children.Add(Ui.Text("No sections yet.", 12.5, B("TextMuted")).With(t => t.Margin = new Thickness(10, 6, 0, 0)));
-        var sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Disabled, Content = list };
+        if (_source.SharedWithMe.Count > 0) list.Children.Add(SharedGroup());
+        var sv =new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollMode = ScrollMode.Disabled, Content = list };
         Grid.SetRow(sv, 1);
         root.Children.Add(sv);
         return root;
@@ -226,6 +301,8 @@ internal sealed class SidebarView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, s.Name);
         if (canEdit)
         {
+            Draggable(row, TreeKind.Section, s.Id);
+            DropTarget(row, TreeKind.Section, s.Id);
             // hover actions: "+" New page, "..." Section options (always there for the UI tests, drawn on hover)
             var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, Opacity = 0 };
             var add = Ui.IconButton("plus", 15, 24, 24, "New page");
@@ -268,16 +345,83 @@ internal sealed class SidebarView : ThemedControl
         parent.Children.Add(kids);
     }
 
+    /// <summary>A page's icon in the tree: its emoji, or the plain page glyph.</summary>
+    private UIElement PageGlyph(string? emoji, bool selected)
+    {
+        if (string.IsNullOrEmpty(emoji)) return new Icon("file-text", 14, selected ? B("Text2") : B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center };
+        return new TextBlock { Text = emoji, FontSize = 13, FontFamily = new FontFamily("Segoe UI Emoji"), VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+    }
+
+    private bool _sharedClosed;
+
+    /// <summary>SHARED WITH ME (the web's SharedWithMe, Apple's SharedWithMeGroup): pages other people shared one by one, from any workspace, each with an x
+    /// that removes it from the list.</summary>
+    private UIElement SharedGroup()
+    {
+        var box = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var g = Cols(Px(12), Star, Px(12));
+        g.ColumnSpacing = 6;
+        g.Children.Add(new Icon("users", 12, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
+        var t = Ui.Text("SHARED WITH ME", 11.5, B("TextMuted"), 600, tracking: 0.04);
+        Grid.SetColumn(t, 1);
+        g.Children.Add(t);
+        var chev = new Icon(_sharedClosed ? "chevron-right" : "chevron-down", 12, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(chev, 2);
+        g.Children.Add(chev);
+        var btn = new Button { Style = Ui.Style("GhostButtonStyle"), Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Content = g };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(btn, "sidebar-shared");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(btn, "Shared with me");
+        btn.Click += (_, _) => { _sharedClosed = !_sharedClosed; Rebuild(); };
+        box.Children.Add(new Grid { MinHeight = 26, Children = { btn } });
+        if (_sharedClosed) return box;
+        foreach (var e in _source.SharedWithMe)
+        {
+            var entry = e;
+            var selected = entry.Id == SelectedPageId;
+            var row = Cols(Px(14), Star, Auto, Auto);
+            row.ColumnSpacing = 6;
+            row.Children.Add(PageGlyph(entry.Icon, selected));
+            var title = Ui.Text(entry.Title.Length == 0 ? "Untitled" : entry.Title, 14, selected ? B("Accent") : B("Text2"), selected ? 500 : 400);
+            Grid.SetColumn(title, 1);
+            row.Children.Add(title);
+            var ws = Ui.Text(entry.WorkspaceName, 11.5, B("TextMuted"));
+            Grid.SetColumn(ws, 2);
+            row.Children.Add(ws);
+            var x = Ui.IconButton("x", 13, 22, 22, "Remove from Shared with me");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(x, "shared-remove-" + entry.Id);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(x, "Remove from Shared with me: " + entry.Title);
+            x.Tapped += (_, ev) => ev.Handled = true;
+            x.Click += async (_, _) =>
+            {
+                var err = await _source.LeaveShare(entry.Id);
+                if (err is not null) Host?.Toast(err, true);
+            };
+            Grid.SetColumn(x, 3);
+            row.Children.Add(x);
+            var r = Row(28, 6, selected, () => PageSelected?.Invoke(entry.Id), row, new Thickness(6 + 14 + 20, 0, 4, 0));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(r, "shared-row-" + entry.Id);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(r, entry.Title);
+            box.Children.Add(r);
+        }
+        return box;
+    }
+
     private UIElement PageRow(PageSummary p, int depth)
     {
         var selected = p.Id == SelectedPageId;
         var g = Cols(Px(14), Star, Auto, Auto);
         g.ColumnSpacing = 6;
-        g.Children.Add(new Icon("file-text", 14, selected ? B("Text2") : B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
+        g.Children.Add(PageGlyph(p.Emoji, selected));
         var t = Ui.Text(p.Title, 14, selected ? B("Accent") : B("Text2"), selected ? 500 : 400);
         Grid.SetColumn(t, 1);
         g.Children.Add(t);
-        if (p.OpenTasks > 0)
+        if (p.Locked)
+        {
+            var lk = new Icon("lock", 12, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center };
+            Grid.SetColumn(lk, 2);
+            g.Children.Add(lk);
+        }
+        else if (p.OpenTasks > 0)
         {
             var c = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 3, Opacity = 0.8, VerticalAlignment = VerticalAlignment.Center };
             c.Children.Add(new Icon("circle-check", 11, B("TextMuted")));
@@ -290,6 +434,8 @@ internal sealed class SidebarView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, p.Title);
         if (_source.CanEditTree && Host is not null)
         {
+            Draggable(row, TreeKind.Page, p.Id);
+            DropTarget(row, TreeKind.Page, p.Id);
             var more = Ui.IconButton("ellipsis", 15, 24, 24, "Page options");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(more, "page-more-" + p.Id);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, "Page options: " + p.Title);

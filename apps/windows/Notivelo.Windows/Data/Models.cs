@@ -31,14 +31,14 @@ public sealed record TextSpan(string Text, bool Bold = false, bool Italic = fals
 public sealed record BoxBlock(BlockKind Kind, string Text, TaskItem? Task = null, IReadOnlyList<TextSpan>? Spans = null,
     string? Marker = null, int Indent = 0, bool Checked = false);
 
-public enum PageState { Live, Connecting, Offline, Ended }
+public enum PageState { Live, Connecting, Offline, Ended, Locked }
 
 public sealed record WorkspaceInfo(string Id, string Name, string Role);
 
 public sealed record NotePage(
     string Id, string Title, string EditedLine, string NotebookName, string NotebookColorHex, IReadOnlyList<string> SectionPath,
     PageColour Colour, RuleLines Rules, IReadOnlyList<CanvasBox> Boxes, int OpenTasks, int Comments,
-    PageState State = PageState.Live, string? StateMessage = null, bool Locked = false);
+    PageState State = PageState.Live, string? StateMessage = null, bool Locked = false, string? Emoji = null, bool CanEdit = true);
 
 public enum DueTone { None, Overdue, Today, Soon, Later }
 

@@ -1,6 +1,7 @@
 using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -15,6 +16,8 @@ namespace Notivelo.Windows.Views;
 internal sealed class SignInView : UserControl
 {
     private readonly AppSession _session;
+    private readonly TextBox _name = new();
+    private bool _register;
     private readonly TextBox _email = new();
     private readonly PasswordBox _password = new();
     private readonly DispatcherTimer _hold = new() { Interval = TimeSpan.FromMilliseconds(1500) };
@@ -26,7 +29,11 @@ internal sealed class SignInView : UserControl
         VerticalContentAlignment = VerticalAlignment.Stretch;
         IsTabStop = false;
         _hold.Tick += (_, _) => { _hold.Stop(); _session.ToggleStaging(); };
+        _name.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) _email.Focus(FocusState.Keyboard); };
         _email.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) _password.Focus(FocusState.Keyboard); };
+        AutomationProperties.SetAutomationId(_name, "signup-name"); AutomationProperties.SetName(_name, "Name");
+        AutomationProperties.SetAutomationId(_email, "signin-email"); AutomationProperties.SetName(_email, "Email");
+        AutomationProperties.SetAutomationId(_password, "signin-password"); AutomationProperties.SetName(_password, "Password");
         _password.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter) Submit(); };
         Loaded += (_, _) => { Render(); DevAutoSignIn(); };
         ActualThemeChanged += (_, _) => Render();
@@ -54,12 +61,13 @@ internal sealed class SignInView : UserControl
     private void Submit()
     {
         if (_session.Busy) return;
-        _session.SignIn(_email.Text, _password.Password);
+        if (_register) _session.Register(_name.Text, _email.Text, _password.Password);
+        else _session.SignIn(_email.Text, _password.Password);
     }
 
     private void Render()
     {
-        foreach (var f in new FrameworkElement[] { _email, _password }) (f.Parent as Panel)?.Children.Remove(f);
+        foreach (var f in new FrameworkElement[] { _name, _email, _password }) (f.Parent as Panel)?.Children.Remove(f);
         var root = new Grid { Background = B("BgSubtle") };
         var col = new StackPanel { Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(16, 24, 16, 24), MaxWidth = 432 };
         col.Children.Add(Card());
@@ -73,22 +81,8 @@ internal sealed class SignInView : UserControl
         var restoring = _session.Phase == SessionPhase.Restoring;
         var card = new StackPanel { Spacing = 0 };
 
-        // logo row: 34x34 app icon (radius 9) + "Notivelo" 17/700
-        var logo = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-        var badge = new Border
-        {
-            Width = 34, Height = 34, CornerRadius = new CornerRadius(9), Background = Ui.Hex("#5B5BD6"),
-            Child = new Border
-            {
-                Width = 16, Height = 16, CornerRadius = new CornerRadius(3), Background = new SolidColorBrush(Colors.White),
-                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                Child = new Icon("check", 12, Ui.Hex("#5B5BD6")) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            },
-        };
-        logo.Children.Add(badge);
-        logo.Children.Add(Ui.Text("Notivelo", 17, B("Text"), 700));
-        card.Children.Add(logo);
-        card.Children.Add(Ui.Text("Welcome back", 22, B("Text"), 700, tracking: -0.02).With(t => t.Margin = new Thickness(0, 20, 0, 0)));
+        card.Children.Add(AuthParts.Logo(B));
+        card.Children.Add(Ui.Text(_register ? "Create your account" : "Welcome back", 22, B("Text"), 700, tracking: -0.02).With(t => t.Margin = new Thickness(0, 20, 0, 0)));
         card.Children.Add(Ui.Text("Notes and tasks, connected — for you and your team.", 13.5, B("TextMuted")).With(t => t.Margin = new Thickness(0, 4, 0, 0)));
 
         if (restoring)
@@ -98,28 +92,18 @@ internal sealed class SignInView : UserControl
         else
         {
             var form = new StackPanel { Spacing = 14, Margin = new Thickness(0, 24, 0, 18), IsHitTestVisible = !_session.Busy };
-            Style(_email, "");
+            Style(_name, ""); Style(_email, "");
             Style(_password, "");
+            if (_register) form.Children.Add(Field("Name", _name));
             form.Children.Add(Field("Email", _email));
             form.Children.Add(Field("Password", _password));
-            form.Children.Add(Link("Forgot password?", 12.5, "/forgot"));
+            if (!_register) form.Children.Add(Link("Forgot password?", 12.5, "/forgot"));
             card.Children.Add(form);
 
             if (_session.Error is { } err)
-                card.Children.Add(Ui.Text(err, 13, B("Danger")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, 0, 0, 12); }));
+                card.Children.Add(Ui.Text(err, 13, B("Danger")).With(t => { AutomationProperties.SetAutomationId(t, "signin-error"); AutomationProperties.SetName(t, err); t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, 0, 0, 12); }));
 
-            var go = new Button
-            {
-                Content = _session.Busy ? "Signing in…" : "Sign in", Height = 40, HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Center, CornerRadius = new CornerRadius(8), FontSize = 15, FontWeight = new FontWeight(500),
-                FontFamily = Ui.Font, Foreground = B("TextOnAccent"), Background = B("AccentSolid"), BorderThickness = new Thickness(0), IsEnabled = !_session.Busy,
-            };
-            foreach (var k in new[] { "ButtonBackgroundPointerOver", "ButtonBackgroundPressed" }) go.Resources[k] = B("AccentSolidHover");
-            go.Resources["ButtonBackgroundDisabled"] = B("AccentSolid");
-            go.Resources["ButtonForegroundDisabled"] = B("TextOnAccent");
-            foreach (var k in new[] { "ButtonForegroundPointerOver", "ButtonForegroundPressed" }) go.Resources[k] = B("TextOnAccent");
-            go.Resources["ButtonBorderBrushPointerOver"] = new SolidColorBrush(Colors.Transparent);
-            go.Resources["ButtonBorderBrushPressed"] = new SolidColorBrush(Colors.Transparent);
+            var go = AuthParts.Accent(B, _register ? (_session.Busy ? "Creatingâ€¦" : "Create account") : (_session.Busy ? "Signing inâ€¦" : "Sign in"), !_session.Busy, "signin-submit");
             go.Click += (_, _) => Submit();
             card.Children.Add(go);
 
@@ -135,9 +119,25 @@ internal sealed class SignInView : UserControl
                 card.Children.Add(retry);
             }
 
+            if (_register)
+            {
+                var terms = new StackPanel { Orientation = Orientation.Vertical, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+                var t1 = Ui.Text("By creating an account you agree to the", 12.5, B("TextMuted")); t1.HorizontalAlignment = HorizontalAlignment.Center;
+                terms.Children.Add(t1);
+                var t2 = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
+                t2.Children.Add(Link("Terms", 12.5, "/terms"));
+                t2.Children.Add(Ui.Text("and", 12.5, B("TextMuted")));
+                t2.Children.Add(Link("Privacy Policy", 12.5, "/privacy"));
+                t2.Children.Add(Ui.Text(".", 12.5, B("TextMuted")));
+                terms.Children.Add(t2);
+                card.Children.Add(terms);
+            }
+
             var newHere = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 20, 0, 0) };
-            newHere.Children.Add(Ui.Text("New here?", 12.5, B("TextMuted")));
-            newHere.Children.Add(Link("Create an account", 12.5, "/signup"));
+            newHere.Children.Add(Ui.Text(_register ? "Already have an account?" : "New here?", 12.5, B("TextMuted")));
+            var toggle = AuthParts.Link(B, _register ? "Sign in" : "Create an account", 12.5, "signin-toggle-mode");
+            toggle.Click += (_, _) => { _register = !_register; _session.ClearError(); Render(); };
+            newHere.Children.Add(toggle);
             card.Children.Add(newHere);
 
             var legal = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 14, 0, 0) };
@@ -149,11 +149,10 @@ internal sealed class SignInView : UserControl
             card.Children.Add(legal);
         }
 
-        return new Border
-        {
-            Padding = new Thickness(32), MaxWidth = 400, Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16), Child = card,
-        };
+        var frame = AuthParts.Frame(B, card);
+        AutomationProperties.SetAutomationId(card, _register ? "signup" : "signin");
+        AutomationProperties.SetName(card, _register ? "Create your account" : "Sign in");
+        return frame;
     }
 
     private void Style(Control box, string placeholder)

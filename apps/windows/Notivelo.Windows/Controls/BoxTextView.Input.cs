@@ -79,7 +79,7 @@ internal sealed partial class BoxTextView
         _root.PointerPressed += OnPointerPressed;
         _root.PointerMoved += OnPointerMoved;
         _root.PointerReleased += OnPointerReleased;
-        _root.PointerCaptureLost += (_, _) => _dragging = false;
+        _root.PointerCaptureLost += (_, _) => { _dragging = false; _rz = null; };
         CharacterReceived += OnCharacter;
         Unloaded += (_, _) => { StopBlink(); HideMenu(); HideFloatingBar(); if (Focused == this) { Focused = null; FocusedStateChanged?.Invoke(); } };
         SizeChanged += (_, _) => NotifyLayout();
@@ -534,22 +534,30 @@ internal sealed partial class BoxTextView
             var text = _r!.View.Text;
             var sel = _r.View.Selection;
             _unit = 0;
+            if (!right && BeginResize(pt.Position, e)) { e.Handled = true; return; }
+            var media = MediaAt(pt.Position);
             if (right)
             {
                 var s0 = SelFrom(_r.View); var s1 = SelTo(_r.View);
-                if (off < s0 || off > s1) _session.SetViewSelection((uint)off, (uint)off);
+                if (media is { Line: >= 0 } mm) _session.SetViewSelection(_r.View.Lines[mm.Line].Offset, _r.View.Lines[mm.Line].Offset + 1);
+                else if (off < s0 || off > s1) _session.SetViewSelection((uint)off, (uint)off);
                 Render();
-                ShowContextMenu(pt.Position);
+                ShowContextMenu(pt.Position, media is { Line: >= 0 } m2 ? m2.Line : -1);
                 e.Handled = true;
                 return;
             }
             // a page link opens its page; a link opens with Ctrl, or when the box was not being edited
             if (TryOpenAt(pt.Position, off, Down(VirtualKey.Control), wasFocused)) { e.Handled = true; return; }
-            var line = _r.View.Lines.Length > 0 ? _r.View.Lines[Math.Max(0, RunMap.LineAt(_r.View.Lines, off))] : null;
+            var line = media is { Line: >= 0 } hit ? _r.View.Lines[hit.Line] : _r.View.Lines.Length > 0 ? _r.View.Lines[Math.Max(0, RunMap.LineAt(_r.View.Lines, off))] : null;
             if (line is not null && !line.IsText)
             {
+                // a double-click on a picture or file card opens it (downloaded to a temp folder); a click on the card's download icon saves it
+                var openIt = _clicks >= 2 && media is { Line: >= 0 };
+                var saveIt = media is { Kind: DecoKind.FileCard, Line: >= 0 } fc && pt.Position.X >= fc.Rect.Right - 10 - 28 - 4 && pt.Position.X <= fc.Rect.Right - 6;
                 _session.SetViewSelection(line.Offset, line.Offset + 1);
                 _anchor = (int)line.Offset; _clicks = 1;
+                if (openIt) { _clicks = 0; _ = OpenMediaAsync(media!.Line); }
+                else if (saveIt) _ = SaveMediaAsync(media!.Line);
             }
             else if (_clicks == 2 && !shift)
             {
@@ -579,6 +587,8 @@ internal sealed partial class BoxTextView
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
     {
+        if (_rz is not null) { MoveResize(e.GetCurrentPoint(_root).Position); return; }
+        if (!_dragging && Interactive && _r is not null) UpdateCursor(e.GetCurrentPoint(_root).Position);
         if (!_dragging || !Interactive) return;
         try
         {
@@ -611,6 +621,7 @@ internal sealed partial class BoxTextView
 
     private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (_rz is not null) { EndResize(e); return; }
         if (!_dragging) return;
         _dragging = false;
         _root.ReleasePointerCapture(e.Pointer);
@@ -684,7 +695,14 @@ internal sealed partial class BoxTextView
                 case "k": if (!shift) { ShowLinkEditor(); return true; } break;
             }
         }
+        if (name == "Enter" && !ctrl && !alt && !shift && _r!.Suggestion is null && SelectedMedia() is { Line: >= 0 } sm) { _ = OpenMediaAsync(sm.Line); return true; }
         var menuOpen = _r!.Suggestion is not null;
+        // /image and /file: the engine removes the typed text and answers "no node"; the picker opens instead
+        if (name is "Enter" or "Tab" && !ctrl && !alt && HighlightedSlashId() is ("Image" or "File") and var slashId)
+        {
+            PickSlashMedia(slashId);
+            return true;
+        }
         // the [[ and @ menus are the app's: it keeps the highlight and picks
         if (menuOpen && _r.Suggestion!.Trigger != N.SuggestionTrigger.Slash && !ctrl && !alt)
         {
@@ -872,6 +890,7 @@ internal sealed partial class BoxTextView
         try
         {
             var v = Clipboard.GetContent();
+            if (await PasteMediaAsync(v)) return;
             string html = "", text = "";
             if (!plain && v.Contains(StandardDataFormats.Html)) html = CfHtml.Fragment(await v.GetHtmlFormatAsync());
             if (v.Contains(StandardDataFormats.Text)) text = await v.GetTextAsync();
@@ -884,7 +903,7 @@ internal sealed partial class BoxTextView
         catch (Exception e) { Log("paste", e); }
     }
 
-    private void ShowContextMenu(Point at)
+    private void ShowContextMenu(Point at, int mediaLine = -1)
     {
         var f = new MenuFlyout();
         var has = _r is { } r && r.View.Selection.Anchor != r.View.Selection.Head;
@@ -893,6 +912,12 @@ internal sealed partial class BoxTextView
             var it = new MenuFlyoutItem { Text = label, IsEnabled = enabled, KeyboardAcceleratorTextOverride = keys };
             it.Click += (_, _) => { act(); Focus(FocusState.Programmatic); };
             return it;
+        }
+        if (mediaLine >= 0)
+        {
+            f.Items.Add(Item("Open", () => _ = OpenMediaAsync(mediaLine), true, "Enter"));
+            f.Items.Add(Item("Save as…", () => _ = SaveMediaAsync(mediaLine), true, ""));
+            f.Items.Add(new MenuFlyoutSeparator());
         }
         f.Items.Add(Item("Cut", () => CopyCut(true), has, "Ctrl+X"));
         f.Items.Add(Item("Copy", () => CopyCut(false), has, "Ctrl+C"));
@@ -956,7 +981,13 @@ internal sealed partial class BoxTextView
             var (id, label, desc, icon) = items[i];
             var row = MenuRow(label, desc, icon, i == hi, s.Trigger == N.SuggestionTrigger.Slash, dots.TryGetValue(id, out var dot) ? dot : null);
             var idx = i; var itemId = id; var itemLabel = label;
-            row.PointerPressed += (_, e) => { e.Handled = true; if (s.Trigger == N.SuggestionTrigger.Slash) RunCommand("pickSlash", JsonSerializer.Serialize(new { title = itemId })); else PickApp(idx); Focus(FocusState.Programmatic); };
+            row.PointerPressed += (_, e) =>
+            {
+                e.Handled = true;
+                if (s.Trigger == N.SuggestionTrigger.Slash) { if (itemId is "Image" or "File") PickSlashMedia(itemId); else RunCommand("pickSlash", JsonSerializer.Serialize(new { title = itemId })); }
+                else PickApp(idx);
+                Focus(FocusState.Programmatic);
+            };
             if (i == hi) active = row;
             panel.Children.Add(row);
         }
@@ -1021,6 +1052,19 @@ internal sealed partial class BoxTextView
             g.Children.Add(dot);
         }
         return new Border { Padding = new Thickness(8, 6, 8, 6), CornerRadius = new CornerRadius(7), Background = active ? C2("BgHover") : new SolidColorBrush(Colors.Transparent), Child = g };
+    }
+
+    /// <summary>The slash menu's Image or File: the engine removes the typed "/image" and returns false (no node); the file dialog opens at that caret.</summary>
+    private string? HighlightedSlashId()
+    {
+        if (_r?.Suggestion is not { Trigger: N.SuggestionTrigger.Slash } s || s.Items.Length == 0) return null;
+        return s.Items[Math.Min((int)(s.Highlighted ?? 0), s.Items.Length - 1)].Id;
+    }
+
+    private void PickSlashMedia(string title)
+    {
+        RunCommand("pickSlash", JsonSerializer.Serialize(new { title }));
+        _ = PickMediaAsync(title == "Image");
     }
 
     private void PickApp(int index)

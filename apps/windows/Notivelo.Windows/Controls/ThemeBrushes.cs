@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using Notivelo.Windows.Data;
 
 namespace Notivelo.Windows.Controls;
 
@@ -27,5 +28,29 @@ internal static class ThemeBrushes
             _dark = (ResourceDictionary)d.ThemeDictionaries["Dark"];
             if (_light.ContainsKey("Bg")) return;
         }
+    }
+
+    private static global::Windows.UI.Color Rgb(uint v, byte a = 0xFF) => global::Windows.UI.Color.FromArgb(a, (byte)(v >> 16), (byte)(v >> 8), (byte)v);
+
+    /// <summary>The accent colour (Settings → Appearance, per device): the Accent tokens of the light and the dark palette take the choice's sets
+    /// (the web's accents.css), in place, so everything drawn from them (XAML ThemeResource and code lookups) changes at once.</summary>
+    public static void ApplyAccent(string? key)
+    {
+        if (_light is null) Load();
+        if (_light is null || _dark is null) return;
+        var a = ShellRules.AccentOf(key);
+        void Set(ResourceDictionary dict, AccentSet s, bool dark)
+        {
+            void P(string name, uint rgb, byte alpha = 0xFF) { if (dict[name] is SolidColorBrush b) b.Color = Rgb(rgb, alpha); }
+            P("Accent", s.Accent);
+            P("AccentHover", s.Hover);
+            P("AccentSoft", s.Accent, ShellRules.SoftAlpha(dark));
+            P("AccentSolid", s.Solid);
+            P("AccentSolidHover", s.SolidHover);
+            P("AccentSolidDisabled", ShellRules.DisabledSolid(s.Solid, dark));
+            P("BgActive", s.Accent, (byte)(dark ? 0x26 : 0x17));
+        }
+        Set(_light, a.Light, false);
+        Set(_dark, a.Dark, true);
     }
 }

@@ -2,6 +2,57 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-24: images and attachments, page tools, people and sign-up, tree and shell polish (branch `rewrite/windows-parity3`, from `origin/rewrite/native` e5ea45a)
+
+Not merged. Nothing was driven with input on this PC: local checks were builds and unit tests; UI tests and screenshots ran on the GitHub runner. Nothing ran against a real server, so every `CoreNotesSource` path added this round is untested; the UI tests use the in-memory sample source.
+
+- **Images and attachments** (`Controls/BoxTextView.Media.cs`, `MediaCache.cs`, `MediaPicker.cs`, `Data/Media.cs`, `SampleNotesSource.Media.cs`, `Text/MediaRules.cs`; core `uploadFile` / `fileUrl` / `downloadFile`, editor `insertImage` / `insertFile` / `setImageWidth`):
+  - **Insert:** ribbon Picture and File (`ribbon-picture`, `ribbon-file`), `/image` and `/file` (open the picker), paste files or a bare bitmap, drop files on a box.
+  - **Upload:** off the UI thread, "Uploading…" pill, errors as toasts (25 MB, empty, view-only, not found, offline). `image/*` except HEIC and SVG becomes a picture, anything else a file card; only the stored `/uploads/` path goes in the document.
+  - **Display, resize, open:** pictures load through a signed link into a Win2D bitmap cached for the page (placeholder, retry after 20 s); file cards with type icon, name and size. Click selects a picture and shows 4 handles; dragging resizes, keeping the aspect ratio, with a minimum width of 80. Double-click or Enter opens a temp copy; Save as… from the right-click menu or the card's download icon.
+  - **Left out:** a drop on empty canvas doesn't make a box; no keyboard resize. Real file dialogs, clipboard and drag-drop are only stubbed in tests (`NOTIVELO_TEST_PICK`, offline only).
+- **Batch 2, page tools** (`Views/CommentsPanel.cs`, `Views/PageDialogs.cs`, `Data/PageTools.cs`, `CoreNotesSource.PageTools.cs`, `SampleNotesSource.PageTools.cs`):
+  - Comments tab: threads, reply, resolve/reopen, edit, delete, @mentions; a Comment button on the floating bar marks text (`setComment` / `unsetComment`); badge on the top bar.
+  - Version history: list, Markdown preview, restore.
+  - Page sharing: people search, Can view / Can edit, remove, pending invites with revoke.
+  - Locked pages: Lock page (sets the password first if needed), Remove lock, Lock pages now, an unlock screen, and relocking on 403 with a once-a-minute keepalive. Windows Hello is not done, and the Settings → Security entry point is missing.
+  - Export as Markdown (FileSavePicker), Shared with me in the sidebar, page icon (emoji picker; shown in the tree, Recent and the title).
+- **Batch 3, people and sign-up** (`Views/PeopleDialogs.cs`, `CheckEmailView.cs`, `AuthParts.cs`, `Data/People.cs`):
+  - Create account on the sign-in card (`register`); the check-email screen re-checks via `restore_session`.
+  - Workspace menu → Members: role menu, remove, invite by email with role, pending invites with Resend and Revoke, copyable invite link, Leave workspace.
+  - Workspace menu → Join with invite link (pasted link or token).
+  - `NOTIVELO_SOURCE=signup` previews the signed-out screens.
+  - **Left out:** Resend on the check-email screen; no core call.
+  - **Left out:** a standalone invite link with no email; no core call.
+  - **Left out:** opening invite links by protocol activation.
+- **Batch 4, tree and shell polish** (`Data/ShellPolish.cs`, `Views/NotebookShareDialog.cs`):
+  - Colours: the section and notebook menus have Apple's 8 colours.
+  - Notebook sharing: share with people, Make private, Share with workspace.
+  - Tree: drag pages and sections (before, after, into), and Move up / Move down for pages, sections and notebooks.
+  - Settings → Appearance: accent colours, and a System theme that follows Windows live. The theme choice is now kept.
+  - Offline pill: in the top bar, plus a bottom pill after 30 s (`NOTIVELO_FORCE_OFFLINE=1`).
+  - Shortcut sheet: from the account menu, Ctrl+/ or ?.
+  - Page title: click it to rename.
+  - **Left out:**
+    - Notebook drag; the shortcut list is partly assumed.
+    - The offline signal comes from network errors, not pending sync.
+    - Print, templates and Get the apps need core calls.
+- **Look** (CI shots compared with `look/reference`; 13 before-fix shots as `windows/p3-*.png`):
+  - Fixed: the sign-up terms line was clipped; the notebook and section menus now open at the button's left edge (they covered the rail); the page panel now fills its height in Hybrid.
+  - Most of the new screens (media, comments, versions, share, lock, members, join, shortcut sheet, sign-up, check-email, accent) have no reference: they were judged against the matched screens only.
+  - The page and account menus carry fewer items than the reference.
+- **Needs a manual check:**
+  - picture resize and tree drag with a real mouse;
+  - paste, and drop from Explorer;
+  - the real file dialogs;
+  - every core-backed path against a server: upload, signed links, comments, versions, sharing, lock, register, members.
+- **Requests to core:** resend verification email; standalone workspace invite link create/revoke; a lock-state read without a 403; comment-anchor ranges for highlighting; a connection/pending-sync signal; plus the earlier list (templates, favourites, saved views, bell and activity, workspace create/rename/delete, export/import, backlinks, public links).
+- **CI runs** (branch `rewrite/windows-parity3`):
+  - 45323584416 on 4c4acc6: 1 failure (resize test hit the wrong corner; fixed by reading the corner from the box).
+  - 45325725142 on fb52402: 2 failures (tree rows have no Invoke pattern; tests now click).
+  - 45328154688 on 1585d70: green. Build x64 + arm64, 253 unit tests, 67 UI tests, 83 look shots.
+  - 45330277630 on 3256c45 (look fixes and this status): one failure in `Search_finds_tasks_and_the_sheet_edits_them` (the Tasks row not found in time; nothing this round touched it), green on a re-run of the UI job: 67 UI tests, look shots. That test looks flaky.
+
 ## 2026-11-24: ink editing and task detail (branch `rewrite/windows-ink`, from `origin/rewrite/native` 5b7f5f4)
 
 Not merged. Nothing was driven with input on this PC: local checks were builds and unit tests; UI tests and screenshots run on the GitHub runner. Of the PARITY batches below, only batch 1 (task detail) was done this round; batches 2-4 are next.
