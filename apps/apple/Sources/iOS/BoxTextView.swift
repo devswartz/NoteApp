@@ -58,6 +58,10 @@ final class BoxTextView: UIView, UITextInput {
     var palette: Palette = .light {
         didSet { tintColor = palette.text }
     }
+    /// The box is selected as a whole (not edited): an accent outline; Delete, copy and cut act on it.
+    var selectedBox = false {
+        didSet { if selectedBox != oldValue { setNeedsDisplay() } }
+    }
     /// The box is being edited: opaque `--bg`, `--border-strong` border, move bar and width handle.
     var chrome = false {
         didSet {
@@ -244,6 +248,14 @@ final class BoxTextView: UIView, UITextInput {
             box.stroke()
         }
         for d in rendering.decorations { drawDecoration(d, inset: inset) }
+        if selectedBox {
+            let outline = UIBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), cornerRadius: 6)
+            p.accent.withAlphaComponent(0.08).setFill()
+            outline.fill()
+            p.accent.setStroke()
+            outline.lineWidth = 2
+            outline.stroke()
+        }
         // Look mode (CI): the simulator shows no UIKit selection without a keyboard, so draw the
         // engine's selection as the web does (accent, soft).
         if LookData.state != nil, editor != nil, sel.hi > sel.lo {

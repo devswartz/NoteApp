@@ -492,6 +492,7 @@ final class MacCanvasView: NSView {
         view.palette = palette
         view.onHeightChange = { [weak self] _ in self?.relayout() }
         view.onMenu = { [weak self] box, content in self?.showMenu(box, content) }
+        view.onContextMenu = { [weak self] box, _ in self?.contextMenu(for: box) }
         view.onMouseDown = { [weak self] box, event in self?.boxMouseDown(box, event) ?? false }
         view.onDropMedia = { [weak self] box, items, point in
             guard let self, self.host != nil else { return }
@@ -542,7 +543,114 @@ final class MacCanvasView: NSView {
         ink.layout(in: surface.bounds, origin: CGPoint(x: ox, y: oy), dark: palette.isDark, accent: palette.accent)
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
         layoutHeader()
+        applySelection()
         window?.invalidateCursorRects(for: surface)
+    }
+
+    // MARK: Selected box
+
+    /// The box selected as a whole (click its top bar, or right-click it): the accent outline, and Delete, Cmd-C/X/V/D act on it.
+    private var selected: String?
+    private var selectedIds: [String] { selected.map { [$0] } ?? [] }
+
+    override var acceptsFirstResponder: Bool { selected != nil }
+
+    /// The top bar above a box that is not being edited.
+    private func barHit(_ p: CGPoint) -> String? {
+        for view in boxViews.values where view !== editing {
+            let f = view.boxFrame
+            if CGRect(x: f.minX, y: f.minY - 16, width: f.width, height: 20).contains(p) { return view.boxId }
+        }
+        return nil
+    }
+
+    private func applySelection() {
+        for (id, view) in boxViews { view.selectedBox = id == selected }
+    }
+
+    private func select(_ id: String?) {
+        if id != nil { stopEditing() }
+        selected = id
+        applySelection()
+        if id != nil {
+            hideToolbar()
+            window?.makeFirstResponder(self)
+        } else if window?.firstResponder === self {
+            window?.makeFirstResponder(nil)
+        }
+    }
+
+    @objc func copy(_ sender: Any?) {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.copy(selectedIds, host: host) { [weak self] problem in self?.notify?(problem ?? "Box copied") }
+    }
+
+    @objc func cut(_ sender: Any?) {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.cut(selectedIds, host: host) { [weak self] problem in
+            if let problem { self?.notify?(problem) } else { self?.select(nil); self?.notify?("Box cut") }
+        }
+    }
+
+    @objc func paste(_ sender: Any?) {
+        guard let host else { return }
+        BoxActions.paste(host: host) { [weak self] ids, problem in
+            if let problem { self?.notify?(problem); return }
+            if let last = ids.last { self?.selected = last; self?.applySelection() }
+        }
+    }
+
+    @objc func delete(_ sender: Any?) {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.delete(selectedIds, host: host) { [weak self] problem in
+            if let problem { self?.notify?(problem) } else { self?.select(nil); self?.notify?("Box deleted. Undo with Cmd-Z.") }
+        }
+    }
+
+    @objc func duplicateBox(_ sender: Any?) {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.duplicate(selectedIds, host: host) { [weak self] ids, problem in
+            if let problem { self?.notify?(problem); return }
+            if let last = ids.last { self?.selected = last; self?.applySelection() }
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        // Delete and forward delete remove the selected box.
+        if selected != nil, event.keyCode == 51 || event.keyCode == 117 {
+            delete(nil)
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if selected != nil, window?.firstResponder === self, flags == .command, event.charactersIgnoringModifiers == "d" {
+            duplicateBox(nil)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    /// Right-click on a box that is not being edited: Copy, Cut, Duplicate, Paste, Delete.
+    private func contextMenu(for box: MacBoxView) -> NSMenu? {
+        guard host != nil, box !== editing else { return nil }
+        select(box.boxId)
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        func add(_ title: String, _ action: Selector) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
+        add("Copy", #selector(copy(_:)))
+        add("Cut", #selector(cut(_:)))
+        add("Duplicate", #selector(duplicateBox(_:)))
+        if BoxClipboard.canPaste { add("Paste", #selector(paste(_:))) }
+        menu.addItem(.separator())
+        add("Delete", #selector(delete(_:)))
+        return menu
     }
 
     // MARK: Mouse
@@ -559,6 +667,11 @@ final class MacCanvasView: NSView {
             startDrag(hit)
             return
         }
+        if host != nil, let id = barHit(p) {
+            select(id)
+            return
+        }
+        if selected != nil { select(nil) }
         // A click on empty canvas: while editing it only stops; else it makes a box (the web's click-to-create).
         if editing != nil || host == nil || p.y < originYNow {
             stopEditing()
@@ -583,6 +696,11 @@ final class MacCanvasView: NSView {
             startDrag(hit)
             return true
         }
+        if host != nil, let id = barHit(p) {
+            select(id)
+            return true
+        }
+        if selected != nil { select(nil) }
         if box !== editing {
             // A double click on a picture or file card opens it (the first click is already starting the edit).
             if event.clickCount == 2, let m = box.mediaItem(at: local) {
@@ -647,7 +765,17 @@ final class MacCanvasView: NSView {
     private func runLookIfAsked() {
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
               let state = LookData.state,
-              ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link"].contains(state) else { return }
+              ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected"].contains(state) else { return }
+        if state == "box-selected" {
+            // A box selected as a whole (no caret): the accent outline, as after a click on its top bar.
+            guard let view = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
+            lookDone = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.selected = view.boxId
+                self?.applySelection()
+            }
+            return
+        }
         if state == "edit-new-box" {
             guard !boxViews.isEmpty else { return }
             lookDone = true
@@ -876,6 +1004,7 @@ final class MacCanvasView: NSView {
             return
         }
         stopEditing()
+        if selected != nil { selected = nil; applySelection() }
         let focus = { [weak self, weak box] in
             guard let self, let box, box.superview != nil else { return }
             self.editing = box
