@@ -428,6 +428,15 @@ pub fn read_tree(doc: &Doc, field: &str) -> Node {
     n
 }
 
+/// Write `tree`'s children into the empty (or new) fragment `field` inside the caller's
+/// transaction, so several fragments and other edits go out as one update and one undo step.
+pub fn write_fragment_in(txn: &mut TransactionMut, field: &str, tree: &Node) {
+    use nv_model::yrs::WriteTxn;
+    let frag = txn.get_or_insert_xml_fragment(field);
+    let old: Vec<Node> = Vec::new();
+    write_children(txn, &frag, &old, &tree.content);
+}
+
 fn read_children(doc: &Doc, field: &str) -> Vec<Node> {
     let page = nv_model::Page::read(doc);
     let nodes = page

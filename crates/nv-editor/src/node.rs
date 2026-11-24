@@ -260,6 +260,69 @@ impl Node {
         Value::Object(o)
     }
 
+    /// The inverse of `to_json`: a node from ProseMirror's JSON (attributes missing from the
+    /// JSON get their schema defaults). An unknown node type is an error; an unknown mark is
+    /// dropped. Text is normalised (adjacent runs with the same marks merge).
+    pub fn from_json(v: &Value) -> Result<Node, String> {
+        let mut n = Self::from_json_raw(v, 0)?;
+        n.normalize();
+        Ok(n)
+    }
+
+    fn from_json_raw(v: &Value, depth: usize) -> Result<Node, String> {
+        if depth > 60 {
+            return Err("content is nested too deeply".into());
+        }
+        let o = v.as_object().ok_or("a node must be an object")?;
+        let kind = o
+            .get("type")
+            .and_then(Value::as_str)
+            .ok_or("a node has no type")?;
+        if kind == "text" {
+            let text = o.get("text").and_then(Value::as_str).unwrap_or("");
+            let mut marks = Vec::new();
+            for m in o
+                .get("marks")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let Some(name) = m.get("type").and_then(Value::as_str) else {
+                    continue;
+                };
+                if !schema().is_mark(name) {
+                    continue;
+                }
+                let attrs = m
+                    .get("attrs")
+                    .and_then(Value::as_object)
+                    .cloned()
+                    .unwrap_or_default();
+                marks.push(Mark::new(name, attrs));
+            }
+            marks.sort_by_key(Mark::rank);
+            return Ok(Node::text(text, marks));
+        }
+        if !schema().nodes.contains_key(kind) {
+            return Err(format!("unknown node type {kind:?}"));
+        }
+        let attrs = o
+            .get("attrs")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let mut content = Vec::new();
+        for c in o
+            .get("content")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            content.push(Self::from_json_raw(c, depth + 1)?);
+        }
+        Ok(Node::new(kind, attrs, content))
+    }
+
     /// The node at a child path.
     pub fn at(&self, path: &[usize]) -> &Node {
         path.iter().fold(self, |n, &i| &n.content[i])

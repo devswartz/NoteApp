@@ -62,6 +62,12 @@ pub struct Section {
     pub name: String,
     pub color: String,
     pub position: f64,
+    /// The section's own default template (a template id); none inherits the parent's.
+    #[serde(default)]
+    pub default_template_id: Option<String>,
+    /// "None" chosen here: no inherited default.
+    #[serde(default)]
+    pub no_default_template: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -979,4 +985,91 @@ pub struct AccountDeletionPreview {
     pub left_workspaces: Vec<WorkspaceRef>,
     #[serde(default)]
     pub private_notebooks: u64,
+}
+
+/// Where a template is offered (`TemplateMeta.sections`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateSection {
+    pub section_id: String,
+    #[serde(default = "yes")]
+    pub include_subsections: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// A page template (GET /workspaces/:id/templates), without its content.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateMeta {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// "workspace" or "private".
+    pub visibility: String,
+    /// "canvas" or "document".
+    pub kind: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(default)]
+    pub task_count: u64,
+    #[serde(default)]
+    pub file_count: u64,
+    #[serde(default)]
+    pub can_manage: bool,
+    #[serde(default)]
+    pub scoped: bool,
+    #[serde(default)]
+    pub sections: Vec<TemplateSection>,
+}
+
+/// POST /templates/:id/use and the pending-template claim: content to insert, with new tasks.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateUse {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// "canvas" or "document".
+    #[serde(default)]
+    pub kind: String,
+    pub content: Value,
+    #[serde(default)]
+    pub task_ids: Vec<String>,
+    /// Only on the pending claim.
+    #[serde(default)]
+    pub template_id: Option<String>,
+    /// Only on the pending claim.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+/// POST /sections/:id/pages.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageCreated {
+    pub id: String,
+    #[serde(default)]
+    pub pending_template: Option<PendingTemplateRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingTemplateRef {
+    pub id: String,
+    pub name: String,
+}
+
+/// POST /reminders/snooze.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snoozed {
+    pub task_id: String,
+    /// ISO instant the reminder fires again.
+    pub until: String,
 }

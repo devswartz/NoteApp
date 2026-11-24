@@ -2257,3 +2257,160 @@ fn inbox_link_and_deletion_against_a_running_server() {
     assert_eq!(core.workspaces().unwrap_err(), CoreError::SignedOut);
     assert!(Core::new(url).sign_in(email, pw.into()).is_err());
 }
+
+#[test]
+fn templates_push_devices_and_box_clipboard_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let core = Core::new(url);
+    core.register(
+        "Tpl A".into(),
+        format!("tpl-{stamp}@example.com"),
+        "correct horse battery staple 1".into(),
+    )
+    .unwrap();
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    let tree = core.tree(ws.clone()).unwrap();
+    let section = tree.sections[0].id.clone();
+    assert_eq!(tree.sections[0].default_template_id, None);
+    assert!(core.templates(ws.clone()).unwrap().is_empty());
+
+    // A page with two boxes: paste them in, save the page as a template.
+    let src = core
+        .create_page(section.clone(), Some("Source".into()))
+        .unwrap();
+    let ev = Arc::new(LiveEvents::default());
+    let live = core.open_live_page(src.clone(), ev.clone()).unwrap();
+    wait_for("synced", 20, || {
+        ev.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
+    let clip = r#"[{"x":40,"y":60,"w":300,"content":[{"type":"paragraph","content":[{"type":"text","text":"Agenda {date}"}]}]},
+                   {"x":400,"y":60,"w":240,"content":[{"type":"paragraph","content":[{"type":"text","text":"Notes"}]}]}]"#;
+    let ids = live
+        .paste_boxes(clip.into(), Some(40.0), Some(60.0), Default::default())
+        .unwrap();
+    assert_eq!(ids.len(), 2);
+    let t = core
+        .save_page_as_template(
+            src.clone(),
+            "Weekly".into(),
+            Some("📋".into()),
+            live.canvas_template_json(),
+            "canvas".into(),
+            None,
+        )
+        .unwrap();
+    assert_eq!((t.name.as_str(), t.kind.as_str()), ("Weekly", "canvas"));
+    assert!(t.can_manage && !t.scoped);
+    assert_eq!(core.templates(ws.clone()).unwrap(), vec![t.clone()]);
+    let r = core
+        .update_template(t.id.clone(), Some("Weekly 2".into()), None, None)
+        .unwrap();
+    assert_eq!(r.name, "Weekly 2");
+
+    // Use it on another page.
+    let dst = core.create_page(section.clone(), None).unwrap();
+    let u = core.use_template(t.id.clone(), dst.clone()).unwrap();
+    assert_eq!(u.title, "Weekly 2");
+    assert_eq!(u.kind, "canvas");
+    let ev2 = Arc::new(LiveEvents::default());
+    let live2 = core.open_live_page(dst.clone(), ev2.clone()).unwrap();
+    wait_for("synced", 20, || {
+        ev2.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
+    let n = live2.info().boxes.len();
+    let new = live2
+        .insert_template_content(
+            u.content_json.clone(),
+            u.kind.clone(),
+            "Tuesday".into(),
+            "".into(),
+        )
+        .unwrap();
+    assert_eq!(new.len(), 2);
+    assert_eq!(live2.info().boxes.len(), n + 2);
+    let copy: serde_json::Value =
+        serde_json::from_str(&live2.boxes_json(new.clone()).unwrap()).unwrap();
+    assert!(copy["text"].as_str().unwrap().contains("Agenda Tuesday"));
+    assert_eq!(live2.duplicate_boxes(new).unwrap().len(), 2);
+    assert!(live2.undo().unwrap());
+    assert_eq!(live2.info().boxes.len(), n + 2);
+
+    // Default template for the section: a new page starts from it (pending, claimed once).
+    core.set_section_default_template(
+        section.clone(),
+        DefaultTemplateChoice::Template { id: t.id.clone() },
+    )
+    .unwrap();
+    let s = core
+        .tree(ws.clone())
+        .unwrap()
+        .sections
+        .into_iter()
+        .find(|s| s.id == section)
+        .unwrap();
+    assert_eq!(s.default_template_id.as_deref(), Some(t.id.as_str()));
+    let made = core
+        .create_page_from_template(section.clone(), None, Some("default".into()))
+        .unwrap();
+    assert_eq!(made.pending_template.as_ref().unwrap().id, t.id);
+    let claimed = core
+        .claim_pending_template(made.id.clone(), false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(claimed.template_id.as_deref(), Some(t.id.as_str()));
+    assert!(core
+        .claim_pending_template(made.id.clone(), false)
+        .unwrap()
+        .is_none());
+    let blank = core
+        .create_page_from_template(section.clone(), None, None)
+        .unwrap();
+    assert!(blank.pending_template.is_none());
+    core.set_section_default_template(section.clone(), DefaultTemplateChoice::NoDefault)
+        .unwrap();
+    let s = core
+        .tree(ws.clone())
+        .unwrap()
+        .sections
+        .into_iter()
+        .find(|s| s.id == section)
+        .unwrap();
+    assert!(s.no_default_template && s.default_template_id.is_none());
+
+    core.delete_template(t.id.clone()).unwrap();
+    assert!(core.templates(ws).unwrap().is_empty());
+
+    // Push device tokens: register twice (idempotent), reject a bad token, unregister.
+    let token = format!("{:0>64}", format!("{stamp:x}"));
+    core.register_push_device(token.clone(), "ios".into())
+        .unwrap();
+    core.register_push_device(token.clone(), "ios".into())
+        .unwrap();
+    assert_eq!(
+        server_status(
+            core.register_push_device("short".into(), "ios".into())
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+    core.unregister_push_device(token).unwrap();
+    // Snooze needs no session: an unknown token is a 404.
+    let nobody = Core::new(std::env::var("NV_TEST_SERVER").unwrap());
+    assert_eq!(
+        server_status(
+            nobody
+                .snooze_reminder("no-such-token".into(), "10m".into())
+                .unwrap_err()
+        )
+        .0,
+        404
+    );
+}
