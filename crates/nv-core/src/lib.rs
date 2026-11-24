@@ -16,6 +16,7 @@ use nv_model::{DocKind, Page, TaskLine};
 mod account;
 #[cfg(target_os = "android")]
 mod android;
+mod box_clipboard;
 mod boxes;
 mod client;
 mod content;
@@ -31,6 +32,7 @@ mod search;
 mod sharing;
 mod task_detail;
 mod tasks;
+mod templates;
 mod tree_edit;
 mod versions;
 pub use account::*;
@@ -50,6 +52,7 @@ pub use search::*;
 pub use sharing::*;
 pub use task_detail::*;
 pub use tasks::*;
+pub use templates::*;
 pub use tree_edit::*;
 pub use versions::*;
 

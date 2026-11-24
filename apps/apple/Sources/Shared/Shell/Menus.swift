@@ -421,8 +421,8 @@ struct MenuLayer: View {
         return MenuCard(palette: p, width: phone ? width - 16 : 236, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
             Group {
             MenuItem(palette: p, title: "New page", icon: "file-plus") { shell.newPage(in: id, session) }
-            MenuItem(palette: p, title: "New page from template", icon: "layout-template", trailingChevron: true) { shell.notYet("Templates") }
-            MenuItem(palette: p, title: "Default template…", icon: "file-cog") { shell.notYet("Templates") }
+            MenuItem(palette: p, title: "New page from template", icon: "layout-template", trailingChevron: true) { shell.openSheet(.newFromTemplate(id), session, "Templates") }
+            MenuItem(palette: p, title: "Default template…", icon: "file-cog") { shell.openSheet(.defaultTemplate(id), session, "Templates") }
             MenuItem(palette: p, title: "New subsection", icon: "folder-plus") { shell.newSection(in: section?.notebookId ?? "", parent: section, session) }
             MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.rename(.section, id, session) }
             MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.duplicate(.section, id, session) }
@@ -457,7 +457,7 @@ struct MenuLayer: View {
             MenuSeparator(palette: p)
             if let id = openPageId { lockItem(p, id) }
             MenuItem(palette: p, title: "Duplicate", icon: "copy") { if let id = openPageId { shell.duplicate(.page, id, session) } }
-            MenuItem(palette: p, title: "Save as template…", icon: "layout-template") { shell.notYet("Templates") }
+            MenuItem(palette: p, title: "Save as template…", icon: "layout-template") { if let id = openPageId { shell.openSheet(.saveTemplate(id), session, "Templates") } }
             MenuItem(palette: p, title: "Version history", icon: "rotate-ccw-clock") { if let id = openPageId { shell.openSheet(.history(id), session, "Version history") } }
             MenuSeparator(palette: p)
             }

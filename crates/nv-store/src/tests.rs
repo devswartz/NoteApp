@@ -64,6 +64,8 @@ fn tree(pages: Vec<PageMeta>) -> Tree {
             name: "General".into(),
             color: "#996633".into(),
             position: 1.0,
+            default_template_id: None,
+            no_default_template: false,
         }],
         pages,
         trashed_pages: vec![],

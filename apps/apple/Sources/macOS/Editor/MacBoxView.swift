@@ -40,6 +40,16 @@ final class MacBoxView: NSTextView, EditorTarget {
     var palette: Palette = .light {
         didSet { applyColors() }
     }
+    /// The box is selected as a whole (not edited): an accent outline; Delete, copy and cut act on it.
+    var selectedBox = false {
+        didSet { if selectedBox != oldValue { needsDisplay = true } }
+    }
+    /// Right-click on the box when it is not being edited: the canvas's box menu.
+    var onContextMenu: ((MacBoxView, NSEvent) -> NSMenu?)?
+    override func menu(for event: NSEvent) -> NSMenu? {
+        if !chrome, let menu = onContextMenu?(self, event) { return menu }
+        return super.menu(for: event)
+    }
     /// The box is being edited: opaque `--bg`, `--border-strong` border, move bar and width handle.
     var chrome = false {
         didSet {
@@ -222,6 +232,14 @@ final class MacBoxView: NSTextView, EditorTarget {
             // The width handle: 3 × 24 on the right edge.
             p.borderStrong.setFill()
             PlatformPath(roundedRect: CGRect(x: box.maxX - 2, y: box.midY - 12, width: 3, height: 24), cornerRadius: 2).fill()
+        }
+        if selectedBox {
+            let path = PlatformPath(roundedRect: box.insetBy(dx: 1, dy: 1), cornerRadius: 6)
+            p.accent.withAlphaComponent(0.08).setFill()
+            path.fill()
+            p.accent.setStroke()
+            path.lineWidth = 2
+            path.stroke()
         }
         if rendering.blank, let line = lineBox(0) {
             // The lone empty line shows the placeholder (LOOK.md 2.3), on the line's baseline.

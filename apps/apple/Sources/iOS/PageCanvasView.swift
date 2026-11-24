@@ -117,6 +117,8 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         case image(id: String, handle: ImageHandle, start: CGPoint, w: CGFloat, aspect: CGFloat, maxW: CGFloat)
     }
     private var drag: Drag?
+    /// The box selected as a whole (tap its top bar, or the context menu): the accent outline, and Delete, Cmd-C/X/V/D act on it.
+    private var selected: String?
     /// The image being resized: the width last sent to the engine and the one the finger is at.
     private var imageSent: (at: Date, width: CGFloat) = (.distantPast, 0)
     private var imageWanted: CGFloat = 0
@@ -173,6 +175,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             return self.moveHit(touch.location(in: self.surface)) != nil
         }
         addGestureRecognizer(boxPan)
+        addInteraction(UIContextMenuInteraction(delegate: self))
         // The page's own pan never waits on the box pan; `gestureRecognizerShouldBegin` and the box pan failing
         // at touch-down keep them apart: a pan that starts on a box's bar or handle is the box's.
         isScrollEnabled = true
@@ -478,6 +481,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if let settings { surface.configure(rules: settings.rules, originY: oy) }
         contentSize = CGSize(width: size.width * zoomScale, height: size.height * zoomScale)
         layoutHeader()
+        applySelection()
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { surface }
@@ -505,6 +509,12 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             }
         }
         if linkEditor.isShown { hideLinkEditor(refocus: false) }
+        // The top bar of a box that is not being edited selects the whole box.
+        if host != nil, !stacked, let id = barHit(p) {
+            select(id)
+            return
+        }
+        if selected != nil { select(nil) }
         guard let box = box(at: p) else {
             if editing != nil || stacked || host == nil || p.y < originYNow || toolbar.covers(tap.location(in: self)) {
                 stopEditing()
@@ -774,6 +784,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             return
         }
         stopEditing()
+        if selected != nil { selected = nil; applySelection() }
         let focus = { [weak self, weak box] in
             guard let self, let box, box.superview != nil else { return }
             self.editing = box
@@ -917,7 +928,79 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// Cmd-Z and Shift-Cmd-Z on a hardware keyboard while the page (not a box) has the keyboard.
     override var keyCommands: [UIKeyCommand]? {
         [UIKeyCommand(input: "z", modifierFlags: .command, action: #selector(undoKey)),
-         UIKeyCommand(input: "z", modifierFlags: [.command, .shift], action: #selector(redoKey))]
+         UIKeyCommand(input: "z", modifierFlags: [.command, .shift], action: #selector(redoKey)),
+         UIKeyCommand(input: "d", modifierFlags: .command, action: #selector(duplicateSelected)),
+         UIKeyCommand(input: UIKeyCommand.inputDelete, modifierFlags: [], action: #selector(deleteSelected))]
+    }
+
+    // MARK: Selected box
+
+    /// The top bar above a box that is not being edited (the band the web's move bar sits in).
+    private func barHit(_ p: CGPoint) -> String? {
+        for view in surface.subviews.reversed().compactMap({ $0 as? BoxTextView }) where view !== editing {
+            let f = view.frame
+            if CGRect(x: f.minX, y: f.minY - 26, width: f.width, height: 28).contains(p) { return view.boxId }
+        }
+        return nil
+    }
+
+    private func applySelection() {
+        for (id, view) in boxViews { view.selectedBox = id == selected }
+    }
+
+    fileprivate func select(_ id: String?) {
+        if id != nil { stopEditing() }
+        selected = id
+        applySelection()
+        if id != nil { hideToolbar(); _ = becomeFirstResponder() }
+    }
+
+    private var selectedIds: [String] { selected.map { [$0] } ?? [] }
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        let has = selected != nil && editing == nil && host != nil
+        switch action {
+        case #selector(copy(_:)), #selector(cut(_:)), #selector(delete(_:)), #selector(duplicateSelected), #selector(deleteSelected): return has
+        case #selector(paste(_:)): return has && BoxClipboard.canPaste
+        default: return super.canPerformAction(action, withSender: sender)
+        }
+    }
+
+    override func copy(_ sender: Any?) {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.copy(selectedIds, host: host) { [weak self] problem in self?.notify?(problem ?? "Box copied") }
+    }
+
+    override func cut(_ sender: Any?) {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.cut(selectedIds, host: host) { [weak self] problem in
+            if let problem { self?.notify?(problem) } else { self?.select(nil); self?.notify?("Box cut") }
+        }
+    }
+
+    override func paste(_ sender: Any?) {
+        guard let host else { return }
+        BoxActions.paste(host: host) { [weak self] ids, problem in
+            if let problem { self?.notify?(problem); return }
+            if let last = ids.last { self?.selected = last; self?.applySelection() }
+        }
+    }
+
+    override func delete(_ sender: Any?) { deleteSelected() }
+
+    @objc fileprivate func deleteSelected() {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.delete(selectedIds, host: host) { [weak self] problem in
+            if let problem { self?.notify?(problem) } else { self?.select(nil); self?.notify?("Box deleted. Undo with Cmd-Z.") }
+        }
+    }
+
+    @objc fileprivate func duplicateSelected() {
+        guard let host, !selectedIds.isEmpty else { return }
+        BoxActions.duplicate(selectedIds, host: host) { [weak self] ids, problem in
+            if let problem { self?.notify?(problem); return }
+            if let last = ids.last { self?.selected = last; self?.applySelection() }
+        }
     }
 
     @objc private func undoKey() { EditorFocus.shared.undo() }
@@ -972,7 +1055,17 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     /// Look states with a box being edited (`-lookState edit-caret`, CI): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
-              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link"].contains(state) else { return }
+              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected"].contains(state) else { return }
+        if state == "box-selected" {
+            // A box selected as a whole (no caret): the accent outline, as after a click on its top bar.
+            guard let view = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
+            lookDone = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.selected = view.boxId
+                self?.applySelection()
+            }
+            return
+        }
         if state == "edit-new-box" {
             guard !boxViews.isEmpty else { return }
             lookDone = true
@@ -1133,6 +1226,33 @@ final class TitleFieldDelegate: NSObject, UITextViewDelegate {
 
     func textViewDidChange(_ textView: UITextView) { owner?.titleChanged() }
     func textViewDidEndEditing(_ textView: UITextView) { owner?.titleEnded() }
+}
+
+// MARK: Context menu of a box
+
+extension PageScrollView: UIContextMenuInteractionDelegate {
+    /// Long-press (or right-click) on a box that is not being edited: Copy, Cut, Duplicate, Paste, Delete.
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        guard host != nil, !InkTool.shared.inking else { return nil }
+        let p = interaction.location(in: surface)
+        if let editing, editing.frame.contains(p) { return nil }
+        let views = surface.subviews.reversed().compactMap { $0 as? BoxTextView }
+        guard let view = views.first(where: { $0 !== editing && $0.frame.insetBy(dx: 0, dy: -26).contains(p) }) else { return nil }
+        select(view.boxId)
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+            var items: [UIAction] = [
+                UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in self.copy(nil) },
+                UIAction(title: "Cut", image: UIImage(systemName: "scissors")) { _ in self.cut(nil) },
+                UIAction(title: "Duplicate", image: UIImage(systemName: "plus.square.on.square")) { _ in self.duplicateSelected() },
+            ]
+            if BoxClipboard.canPaste {
+                items.append(UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { _ in self.paste(nil) })
+            }
+            items.append(UIAction(title: "Delete", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in self.deleteSelected() })
+            return UIMenu(children: items)
+        }
+    }
 }
 
 // MARK: Print and Save as PDF

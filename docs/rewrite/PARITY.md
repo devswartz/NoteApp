@@ -64,7 +64,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Toasts with Undo | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Offline banner / pill (after 30 s) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | "New version available, reload" prompt | ◐ | ◐ | ◐ | ◐ | ◐ | ● | service worker; bundled apps update via store/updater |
-| Deep links (`notivelo://`, universal links `/w/…`) | ● | ● | ● | ● | ● | — | `DeepLinks.tsx`, `platform/deepLinks.ts` |
+| Deep links (`notivelo://`, universal links `/w/…`) | ● ✓ | ● ✓ | ● ✓ | ● | ● | — | `DeepLinks.tsx`, `platform/deepLinks.ts` |
 | Themes: Light, Dark, Hybrid (default), System | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | native window theme on desktop (`theme.rs`) |
 | Accent colour (8, per device) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | Settings → Appearance |
 | Get the apps page | — | — | — | — | — | ● | Settings → Get the apps (browser only) |
@@ -80,7 +80,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Create page (N, + , ribbon) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `POST /sections/:id/pages` |
 | Rename notebook / section / page | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | Page icon | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `IconPicker.tsx` |
-| Drag to reorder / move in the tree | ● | ◐ | ● | ● ✓ | ◐ | ● | `treeDnd.ts`; phones *(verify)* |
+| Drag to reorder / move in the tree | ● | ◐ | ● ✓ | ● ✓ | ◐ | ● | `treeDnd.ts`; phones *(verify)* |
 | Move dialog; copy page / section | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `MoveDialog.tsx`, `/pages/:id/move`, `/copy` |
 | Notebook shared vs private, share with people | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `PUT /notebooks/:id/shares` |
 | Delete to Trash (60 days) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
@@ -94,7 +94,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 |---|---|---|---|---|---|---|---|
 | Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ ✓ | ● | phones stack boxes one under another with "Add a text box" |
 | See-through boxes (only active box opaque) | ● ✓ | — | ● ✓ | ● ✓ | — | ● | |
-| Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● | ◐ | ● | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
+| Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● ✓ | ◐ | ● ✓ | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
 | Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
@@ -135,13 +135,13 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Start with a template on an empty page (built-in: meeting, project, journal) | ● | ● | ● | ● | ● | ● | `TemplatePicker.tsx`, `defaultTemplates.ts` |
+| Start with a template on an empty page (built-in: meeting, project, journal) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `TemplatePicker.tsx`, `defaultTemplates.ts` |
 | Save as template (workspace or private; per section) | ● | ● | ● | ● | ● | ● | `TemplateDialog.tsx`, `POST /pages/:id/templates` |
-| Tasks in a template become new tasks; attachments copied | ● | ● | ● | ● | ● | ● | `POST /templates/:id/use` |
-| Rename / delete template (creator or admin) | ● | ● | ● | ● | ● | ● | |
+| Tasks in a template become new tasks; attachments copied | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `POST /templates/:id/use` |
+| Rename / delete template (creator or admin) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | `{date}`, `{time}` placeholders | ● | ● | ● | ● | ● | ● | |
-| Default template per section (inherited by subsections) | ● | ● | ● | ● | ● | ● | `PUT /sections/:id/default-template` |
-| New page from template (ribbon, section menu) | ● | ● | ● | ● | ● | ● | |
+| Default template per section (inherited by subsections) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PUT /sections/:id/default-template` |
+| New page from template (ribbon, section menu) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 
 ## 6. Tasks
 
@@ -177,7 +177,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
 | Reminders: fixed time or N minutes before; default time for date-only tasks | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
-| Push reminders with snooze actions (10 min, 1 h, tomorrow) | ● | ● | ◐ | ◐ | ● | ● | iOS APNs, Android FCM (`SnoozeReceiver`), web push; desktop *(verify: webview notifications)* |
+| Push reminders with snooze actions (10 min, 1 h, tomorrow) | ● ✓ | ● ✓ | ◐ | ◐ | ● | ● | iOS APNs, Android FCM (`SnoozeReceiver`), web push; desktop *(verify: webview notifications)* |
 | Local notifications | ● | ● | ○ | ○ | ● | — | `@capacitor/local-notifications` |
 | App icon badge: due today | ● ✓ | ● ✓ | ● ✓ | ◐ ✓ | ● | ○ | Mac Dock badge; Windows tray count |
 | Notification inbox (bell): mentions, replies, assignments; read / read all | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `NotificationBell.tsx`, `/notifications` |
@@ -258,7 +258,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Self-updater (asks before restart) | — | — | ◐ | ● | — | — | direct-download Mac only; Mac App Store build updates via the store |
 | Native window theme | — | — | ● ✓ | ● | — | — | `theme.rs` |
 | Install as PWA | — | — | — | — | — | ● | |
-| Universal links / app links for `/w/…` | ● | ● | ○ | ○ | ● | — | associated domains app.notiveloapp.com, staging |
+| Universal links / app links for `/w/…` | ● ✓ | ● ✓ | ○ | ○ | ● | — | associated domains app.notiveloapp.com, staging |
 
 ## 16. Store and compliance (Apple)
 

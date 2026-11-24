@@ -339,7 +339,7 @@ struct NotesRibbon: View {
         }()
         let canAdd = notebook != nil
         RibbonButton(icon: "file-plus", m: m, enabled: canAdd) { shell.newPage(in: sectionId ?? "", session) }
-        RibbonButton(icon: "layout-template", m: m, enabled: canAdd, caret: true) { shell.notYet("Templates") }
+        RibbonButton(icon: "layout-template", m: m, enabled: canAdd, caret: true) { if let sectionId { shell.openSheet(.newFromTemplate(sectionId), session, "Templates") } }
         RibbonButton(icon: "folder-plus", m: m, enabled: canAdd) { if let notebook { shell.newSection(in: notebook.id, parent: nil, session) } }
         RibbonButton(icon: "book-plus", m: m) { shell.newNotebook(session) }
         RibbonSeparator(m: m)

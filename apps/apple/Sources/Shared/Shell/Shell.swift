@@ -151,6 +151,7 @@ final class Shell {
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
             case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
+            case "templates": route = .page(LookData.pageId("empty"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))
@@ -399,8 +400,10 @@ struct AppShell: View {
             } else {
                 shell.inbox.refresh(session, list: false)
                 AppBadge.askOnce()
+                session.registerPush()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .pushTokenChanged)) { _ in session.registerPush() }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
         // The bell's count: when the app comes to the front, when the inbox opens, and every 60 s while it is in front.
         .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in

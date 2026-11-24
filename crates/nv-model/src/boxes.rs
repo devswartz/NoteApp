@@ -181,6 +181,29 @@ pub fn create_box_with(
     Ok(())
 }
 
+/// Add a box inside the caller's transaction (so a paste of several boxes, their content and
+/// the page settings can be one update and one undo step). Position, width and `wide` as given
+/// are clamped like `create_box`'s; an existing id is `Exists`. The content fragment is
+/// touched, not filled: the caller writes it.
+pub fn insert_box_in(txn: &mut TransactionMut, g: &BoxGeom) -> Result<(), BoxError> {
+    check_id(&g.id)?;
+    let g = BoxGeom {
+        id: g.id.clone(),
+        x: clamp_pos(finite(g.x, "x")?),
+        y: clamp_pos(finite(g.y, "y")?),
+        w: clamp_width(finite(g.w, "width")?),
+        z: finite(g.z, "z")?,
+        wide: g.wide,
+    };
+    let boxes = txn.get_or_insert_map(BOXES_KEY);
+    if boxes.contains_key(txn, &g.id) {
+        return Err(BoxError::Exists(g.id));
+    }
+    boxes.insert(txn, g.id.as_str(), geometry(&g));
+    txn.get_or_insert_xml_fragment(box_field(&g.id));
+    Ok(())
+}
+
 /// Move a box (clamped). One transaction.
 pub fn move_box(doc: &Doc, id: &str, x: f64, y: f64) -> Result<(), BoxError> {
     move_box_with(doc, None, id, x, y)

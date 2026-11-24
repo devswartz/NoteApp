@@ -4,11 +4,27 @@ import SwiftUI
 @main
 struct NotiveloApp: App {
     @State private var session = SessionModel()
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(session)
+                #if os(iOS)
+                .onAppear { Push.openLink = { link in session.pendingLink = link } }
+                // A universal link (https://app.notiveloapp.com/w/…/p/…) opened from Messages, Mail, Safari.
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    guard let url = activity.webpageURL else { return }
+                    let parts = url.pathComponents.filter { $0 != "/" }
+                    if let i = parts.firstIndex(where: { $0 == "invite" || $0 == "invites" }), i + 1 < parts.count {
+                        session.pendingInvite = parts[i + 1]
+                    } else if let link = DeepLink.parse(url) {
+                        session.pendingLink = link
+                    }
+                }
+                #endif
                 .onOpenURL { url in
                     // https://app.notiveloapp.com/invite/<token> or notivelo://invite/<token>
                     let parts = ([url.host] + url.pathComponents).compactMap { $0 }.filter { $0 != "/" }

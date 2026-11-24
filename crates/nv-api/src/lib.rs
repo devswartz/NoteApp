@@ -12,6 +12,7 @@ mod files;
 mod inbox;
 mod locks;
 mod share;
+mod templates;
 mod tree;
 pub mod types;
 mod versions;

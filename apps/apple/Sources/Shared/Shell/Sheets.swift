@@ -31,6 +31,12 @@ enum ShellSheet: Equatable {
     case joinInvite(String?)
     /// Settings > Profile > Delete account.
     case deleteAccount
+    /// Templates: save the open page as one, a new page from one, a section's default, rename and delete a saved one.
+    case saveTemplate(String)
+    case newFromTemplate(String)
+    case defaultTemplate(String)
+    case renameTemplate(String)
+    case deleteTemplate(String)
 }
 
 func copyToClipboard(_ text: String) {

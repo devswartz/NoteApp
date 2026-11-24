@@ -301,7 +301,15 @@ final class SessionModel {
     /// forgets the account too (sign-in token, remembered user, recent and favourite pages, the picture cache) and the app
     /// returns to its sign-in screen.
     func deleteAccount(password: String, then done: @escaping (Result<Void, Error>) -> Void) {
-        call({ try $0.deleteAccount(password: password) }) { result in
+        #if os(iOS)
+        let pushToken = Push.token
+        #else
+        let pushToken: String? = nil
+        #endif
+        call({
+            if let pushToken { try? $0.unregisterPushDevice(token: pushToken) }
+            try $0.deleteAccount(password: password)
+        }) { result in
             if case .success = result {
                 Keychain.delete(account: self.serverURL)
                 let defaults = UserDefaults.standard
@@ -313,10 +321,26 @@ final class SessionModel {
         }
     }
 
+    /// Send this device's push token to the server (iOS; after sign-in and when APNs gives a new token).
+    func registerPush() {
+        #if os(iOS)
+        guard !preview, phase == .signedIn, let token = Push.token else { return }
+        call({ try $0.registerPushDevice(token: token, platform: "ios") }) { _ in }
+        #endif
+    }
+
     func signOut() {
         if !preview {
             let core = self.core
-            queue.async { core.signOut() }
+            #if os(iOS)
+            let pushToken = Push.token
+            #else
+            let pushToken: String? = nil
+            #endif
+            queue.async {
+                if let pushToken { try? core.unregisterPushDevice(token: pushToken) }
+                core.signOut()
+            }
             Keychain.delete(account: serverURL)
         }
         endSession(message: nil)
