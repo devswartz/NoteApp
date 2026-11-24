@@ -1,0 +1,115 @@
+name: Android native
+
+# The native Android app (apps/android-native/, docs/rewrite/PLAN.md): builds the Rust core for Android first
+# (crates/nv-core/build-android.sh, the Gradle module target/android/NotiveloCore), then the app against it:
+# debug APK, JVM unit tests, and the look screenshots (Paparazzi, no emulator) with side-by-sides against
+# docs/rewrite/look/reference/. No signing, no Play Store upload: the APK is an artifact.
+on:
+  push:
+    branches: ['rewrite/**']
+    paths:
+      - 'apps/android-native/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/rewrite/look/side-by-side.py'
+      - '.github/workflows/android-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The same toolchain as rust.yml and android-core.yml.
+  RUST_TOOLCHAIN: '1.99.1'
+  CARGO_TERM_COLOR: always
+  # The app needs arm64 devices and the x86_64 emulator (abiFilters in app/build.gradle.kts).
+  NV_ABIS: 'arm64-v8a x86_64'
+
+jobs:
+  android:
+    name: android app
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-linux-android, x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-native
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache cargo-ndk
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-v1-${{ env.RUST_TOOLCHAIN }}
+      - name: Install cargo-ndk
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk --locked
+
+      - name: Build the core (libnv_core.so, the Kotlin bindings, the NotiveloCore module)
+        run: bash crates/nv-core/build-android.sh
+
+      - name: Debug APK and JVM unit tests
+        working-directory: apps/android-native
+        run: |
+          VER=$(sed -n 's/^rustlsPlatformVerifierVersion=//p' ../../target/android/NotiveloCore/gradle.properties)
+          echo "VERIFIER_VERSION=$VER" >> "$GITHUB_ENV"
+          ./gradlew --no-daemon --console=plain -PrustlsPlatformVerifierVersion="$VER" assembleDebug testDebugUnitTest
+
+      - name: Look screenshots (Paparazzi)
+        working-directory: apps/android-native
+        run: ./gradlew --no-daemon --console=plain -PrustlsPlatformVerifierVersion="$VERIFIER_VERSION" -Pshots recordPaparazziDebug
+
+      - name: Name the shots like the references, side-by-sides
+        if: always()
+        run: |
+          pip install --quiet pillow
+          if [ -d apps/android-native/app/src/test/snapshots/images ]; then
+            python3 apps/android-native/scripts/collect-shots.py apps/android-native/app/src/test/snapshots/images shots
+            python3 docs/rewrite/look/side-by-side.py docs/rewrite/look/reference shots side-by-side
+          fi
+
+      - name: Upload the debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: notivelo-android-debug
+          path: apps/android-native/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+      - name: Upload the shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-shots
+          path: shots
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload the side-by-sides
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-side-by-side
+          path: side-by-side
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-reports
+          path: apps/android-native/app/build/reports
+          if-no-files-found: ignore
+          retention-days: 7

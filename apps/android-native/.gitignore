@@ -1,0 +1,10 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+# Paparazzi goldens: recorded in CI (recordPaparazziDebug), uploaded as the android-shots artifact, not committed.
+app/src/test/snapshots/
+# The repo-root .gitignore ignores any folder named data; ours is a Kotlin package.
+!app/src/main/kotlin/com/notivelo/app/data/

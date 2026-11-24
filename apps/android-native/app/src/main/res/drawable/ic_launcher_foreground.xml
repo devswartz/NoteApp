@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app mark: a white rounded square with a check (the web's logo), inside the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M38,36h32a4,4 0 0 1 4,4v28a4,4 0 0 1 -4,4h-32a4,4 0 0 1 -4,-4v-28a4,4 0 0 1 4,-4z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF4F46E5"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M45,54l6,6l12,-12" />
+</vector>

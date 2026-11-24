@@ -1,0 +1,8 @@
+<resources>
+    <!-- Compose draws everything; this is only the window behind it. -->
+    <style name="Theme.Notivelo" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
