@@ -34,8 +34,8 @@ class AppViewModel(
     private val backend: Backend,
     private val store: SessionStore,
     private val io: CoroutineDispatcher = Dispatchers.IO,
-    private val today: () -> LocalDate = { LocalDate.now() },
     private val media: MediaHooks = NoMediaHooks,
+    private val today: () -> LocalDate = { LocalDate.now() },
 ) : ViewModel(), ShellActions {
     private val _state = MutableStateFlow(AppState(server = store.server))
     val state: StateFlow<AppState> = _state.asStateFlow()
