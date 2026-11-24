@@ -3,6 +3,7 @@ package com.notivelo.app.data
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.notivelo.app.edit.EditingBox
 import com.notivelo.core.PageInfo
 import com.notivelo.core.SignedIn
 import com.notivelo.core.Tree
