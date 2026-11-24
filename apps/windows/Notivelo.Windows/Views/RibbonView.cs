@@ -82,7 +82,7 @@ internal sealed class RibbonView : ThemedControl
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, label);
             it.Click += (_, _) =>
             {
-                var box = BoxTextView.Focused;
+                var box = BoxTextView.Target;
                 if (name is null) box?.RunCommand("unsetColor"); else box?.RunCommand("setColor", "{\"color\":\"" + name + "\"}");
                 box?.Focus(FocusState.Programmatic);
             };
@@ -103,7 +103,7 @@ internal sealed class RibbonView : ThemedControl
             var it = new MenuFlyoutItem { Text = text };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "table-" + PopupMenu.Slug(text));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, text);
-            it.Click += (_, _) => { BoxTextView.Focused?.RunCommand(cmd, args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            it.Click += (_, _) => { var box = BoxTextView.Target; if (cmd == "pickSlash") box?.RibbonInsert(System.Text.Json.JsonDocument.Parse(args).RootElement.GetProperty("title").GetString() ?? ""); else box?.RunCommand(cmd, args); box?.Focus(FocusState.Programmatic); };
             f.Items.Add(it);
         }
         return f;
@@ -133,7 +133,7 @@ internal sealed class RibbonView : ThemedControl
             var it = new MenuFlyoutItem { Text = text };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "block-" + PopupMenu.Slug(text));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, text);
-            it.Click += (_, _) => { BoxTextView.Focused?.RunCommand(cmd, args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            it.Click += (_, _) => { var box = BoxTextView.Target; if (cmd == "pickSlash") box?.RibbonInsert(System.Text.Json.JsonDocument.Parse(args).RootElement.GetProperty("title").GetString() ?? ""); else box?.RunCommand(cmd, args); box?.Focus(FocusState.Programmatic); };
             f.Items.Add(it);
         }
         Add("Normal", "setParagraph");

@@ -35,8 +35,9 @@ internal sealed partial class BoxTextView
             if (kind == "page-link") { _session.InsertText("[["); ok = true; }
             else
             {
+                var title = kind == "divider" ? "Divider" : kind;   // any other kind is a slash item's title (e.g. "Callout")
                 _session.InsertText("/");
-                ok = _session.Command("pickSlash", "{\"title\":\"Divider\"}");
+                ok = _session.Command("pickSlash", System.Text.Json.JsonSerializer.Serialize(new { title }));
                 if (!ok) _session.Key("Backspace");
             }
             Render();
