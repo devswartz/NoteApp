@@ -35,6 +35,8 @@ internal sealed class TaskSheet
     private readonly TextBlock _assignedBy = new();
     private readonly StackPanel _subs = new();
     private readonly TextBox _subInput = new();
+    private readonly StackPanel _subsList = new();
+    private readonly Grid _subsAdd = new() { Height = 40, ColumnSpacing = 10 };
     private readonly TextBlock _crumb = new();
     private readonly TextBlock _created = new();
     private bool _syncing;
@@ -132,6 +134,14 @@ internal sealed class TaskSheet
         AutomationProperties.SetAutomationId(_subs, "task-sheet-subtasks");
         AutomationProperties.SetName(_subs, "Subtasks");
         body.Children.Add(_subs);
+        // the add-a-subtask input lives in one persistent row (never re-parented: moving a focused TextBox during a refresh threw COMException)
+        _subsAdd.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        _subsAdd.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        _subsAdd.Children.Add(new Icon("plus", 15, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
+        Grid.SetColumn(_subInput, 1);
+        _subsAdd.Children.Add(_subInput);
+        _subs.Children.Add(_subsList);
+        _subs.Children.Add(_subsAdd);
         _subInput.Style = Ui.Style("PlainTextBoxStyle"); _subInput.PlaceholderText = "Add a subtask…"; _subInput.FontSize = 14; _subInput.BorderThickness = new Thickness(0);
         _subInput.Background = new SolidColorBrush(Colors.Transparent); _subInput.Padding = new Thickness(0, 6, 0, 6);
         AutomationProperties.SetAutomationId(_subInput, "task-sheet-subtask-input");
@@ -331,7 +341,8 @@ internal sealed class TaskSheet
         var sig = d.ParentId + "|" + d.Editable + "|" + string.Join(";", subs.Select(s => s.Id + s.Title + s.Done + s.Priority));
         if (sig == _subsSig) return;
         _subsSig = sig;
-        _subs.Children.Clear();
+        _subsList.Children.Clear();
+        _subsAdd.Visibility = d.ParentId is null ? Visibility.Visible : Visibility.Collapsed;
         if (d.ParentId is not null) return;
         var done = subs.Count(s => s.Done);
         var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Height = 22 };
@@ -339,7 +350,7 @@ internal sealed class TaskSheet
         head.Children.Add(Ui.Text("Subtasks", 13, B("Text2"), 600).With(t => t.VerticalAlignment = VerticalAlignment.Center));
         if (subs.Count > 0) head.Children.Add(Ui.Text($"{done}/{subs.Count}", 12.5, B("TextMuted")).With(t => t.VerticalAlignment = VerticalAlignment.Center));
         AutomationProperties.SetItemStatus(_subs, $"subtasks={done}/{subs.Count}");
-        _subs.Children.Add(head);
+        _subsList.Children.Add(head);
         if (subs.Count > 0)
         {
             var bar = new Grid { Height = 4, Margin = new Thickness(0, 8, 0, 4) };
@@ -347,7 +358,7 @@ internal sealed class TaskSheet
             bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(subs.Count - done, 0.0001), GridUnitType.Star) });
             bar.Children.Add(new Border { Background = B("BgHover"), CornerRadius = new CornerRadius(2) }.With(b => Grid.SetColumnSpan(b, 2)));
             bar.Children.Add(new Border { Background = B("Success"), CornerRadius = new CornerRadius(2) });
-            _subs.Children.Add(bar);
+            _subsList.Children.Add(bar);
         }
         foreach (var s in subs)
         {
@@ -369,16 +380,9 @@ internal sealed class TaskSheet
             row.Children.Add(title);
             AutomationProperties.SetAutomationId(title, "task-sheet-sub-" + s.Id);
             AutomationProperties.SetName(title, s.Title);
-            _subs.Children.Add(row);
+            _subsList.Children.Add(row);
         }
-        var addRow = new Grid { Height = 40, ColumnSpacing = 10, Margin = new Thickness(2, subs.Count == 0 ? 8 : 0, 0, 0) };
-        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
-        addRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        addRow.Children.Add(new Icon("plus", 15, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
-        Grid.SetColumn(_subInput, 1);
-        if (_subInput.Parent is Panel old) old.Children.Remove(_subInput);
-        addRow.Children.Add(_subInput);
-        _subs.Children.Add(addRow);
+        _subsAdd.Margin = new Thickness(2, subs.Count == 0 ? 8 : 0, 0, 0);
         _subInput.IsEnabled = d.Editable;
     }
 

@@ -56,7 +56,7 @@ internal sealed class InkOverlay : UserControl
         Background = new SolidColorBrush(Colors.Transparent);
         HorizontalAlignment = HorizontalAlignment.Left; VerticalAlignment = VerticalAlignment.Top;
         IsTabStop = true; UseSystemFocusVisuals = false;
-        Content = _c;
+        Content = new Grid { Background = new SolidColorBrush(Colors.Transparent), Children = { _c } };   // a filled backdrop takes the pointer
         AutomationProperties.SetAutomationId(this, "ink-overlay");
         AutomationProperties.SetName(this, "Ink");
         _c.Draw += Draw;
@@ -134,8 +134,8 @@ internal sealed class InkOverlay : UserControl
     {
         if (_mode == Mode.None || e.Pointer.PointerId != _pointerId) return;
         var p = e.GetCurrentPoint(this);
+        End(p);   // before releasing capture: PointerCaptureLost cancels a live gesture
         ReleasePointerCapture(e.Pointer);
-        End(p);
         e.Handled = true;
     }
 
