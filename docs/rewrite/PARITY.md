@@ -31,7 +31,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Release builds locked to app.notiveloapp.com; internal builds have hidden "Change server…" | ● ✓ | ● ✓ | ● ✓ | ● | ● | — | `src/platform/serverUrl.ts`, desktop `config.rs` |
 | Profile: name, avatar colour | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | Settings → Profile |
 | Change password | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `POST /me/password` |
-| Delete account (preview of consequences, password) | ● | ● | ● | ● | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
+| Delete account (preview of consequences, password) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | sign-in screen and Settings → About |
 | Sign out | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
@@ -123,7 +123,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Export page (Markdown / PDF) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `exportPage.ts`, `collabExport.ts` |
 | Version history: list, preview, restore (undoable) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `VersionHistory.tsx`, `/pages/:id/versions` |
 | Share a page with people (view / edit, outside the workspace) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PageShareDialog.tsx`, `/pages/:id/shares` |
-| Share link "Anyone with the link can view" (public read-only page) | ● | ● | ● | ● | ● | ● | `/pages/:id/link`, `server/publicPage.ts` |
+| Share link "Anyone with the link can view" (public read-only page) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/pages/:id/link`, `server/publicPage.ts` |
 | Shared with me | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `SharedWithMe.tsx`, `/shared-pages`, `/shared-tasks` |
 | Handwriting / ink | ○ | ○ | ○ | ○ | ○ | ○ | behind the `ink` flag, off for everyone; native goal is ink on every page (beyond parity) |
 
@@ -175,8 +175,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Reminders: fixed time or N minutes before; default time for date-only tasks | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
 | Push reminders with snooze actions (10 min, 1 h, tomorrow) | ● | ● | ◐ | ◐ | ● | ● | iOS APNs, Android FCM (`SnoozeReceiver`), web push; desktop *(verify: webview notifications)* |
 | Local notifications | ● | ● | ○ | ○ | ● | — | `@capacitor/local-notifications` |
-| App icon badge: due today | ● | ● | ● | ◐ | ● | ○ | Mac Dock badge; Windows tray count |
-| Notification inbox (bell): mentions, replies, assignments; read / read all | ● | ● | ● | ● | ● | ● | `NotificationBell.tsx`, `/notifications` |
+| App icon badge: due today | ● ✓ | ● ✓ | ● ✓ | ◐ | ● | ○ | Mac Dock badge; Windows tray count |
+| Notification inbox (bell): mentions, replies, assignments; read / read all | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `NotificationBell.tsx`, `/notifications` |
 | Settings → Notifications: time zone, default reminder time, email reminders, daily digest, quiet hours per workspace, calendar feed link, test notification | ● | ● | ● | ● | ● | ● | `NotificationSettingsPanel.tsx` |
 | Activity feed (workspace) | ● | ● | ● | ● | ● | ● | `ActivityFeed.tsx`, `/workspaces/:id/activity` |
 
