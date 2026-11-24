@@ -63,6 +63,12 @@ import com.notivelo.app.edit.EditContext
 import com.notivelo.app.edit.LocalEditContext
 import com.notivelo.app.edit.LocalPageActions
 import com.notivelo.app.edit.PageChoice
+import com.notivelo.app.ink.InkBar
+import com.notivelo.app.ink.InkLive
+import com.notivelo.app.ink.InkSettings
+import com.notivelo.app.ink.drawLiveInk
+import com.notivelo.app.ink.inkInput
+import com.notivelo.app.media.LocalMedia
 import com.notivelo.app.look.Ic
 import com.notivelo.app.look.LIcon
 import com.notivelo.app.look.LocalPagePalette
@@ -105,20 +111,26 @@ fun PageScreen(
     Column(modifier.fillMaxSize().background(p.bg)) {
         PageBar(state, meta, index, phone, taskCount, view?.status ?: PageStatus.Connecting, p, view?.canUndo == true, view?.canRedo == true)
         val info = view?.info
+        val actions = LocalPageActions.current
+        // Draw mode needs a live page (the stored copy can't take strokes).
+        val drawOk = info != null && !state.preview
+        if (drawOk && state.ink.open) InkBar(state.ink, p, actions::setInk, actions::toggleDraw)
+        val inkNow = if (drawOk) state.ink else state.ink.copy(open = false)
         val today = LocalToday.current
-        val env = remember(p, phone, state.tasks, state.tree, state.user, today) {
+        val media = LocalMedia.current
+        val env = remember(p, phone, state.tasks, state.tree, state.user, today, media) {
             PageEnv(
                 palette = p, phone = phone,
                 tasks = state.tasks.associateBy { it.id },
                 pageTitles = state.otherPageTitles + (state.tree?.pages?.associate { it.id to it.title.ifEmpty { "Untitled" } } ?: emptyMap()),
                 meId = state.user?.id, meName = state.user?.name ?: "", meColor = state.user?.color ?: "#6366f1",
-                today = today,
+                today = today, media = media,
             )
         }
         val sub = "Edited ${relativeTime(meta.updatedAt, LocalNow.current)}" + if (state.preview) " by you" else ""
         val tint = info?.settings?.color ?: "none"
         val page = if (tint == "none") p else PagePalettes.tinted(p, tint)
-        val envTinted = if (page === p) env else PageEnv(page, phone, env.tasks, env.pageTitles, env.meId, env.meName, env.meColor, env.today)
+        val envTinted = if (page === p) env else PageEnv(page, phone, env.tasks, env.pageTitles, env.meId, env.meName, env.meColor, env.today, env.media)
         val choices = remember(state.tree) {
             state.tree?.pages.orEmpty().filter { !it.locked && it.id != meta.id }.map { pg ->
                 val sec = index.section(pg.sectionId)
@@ -133,8 +145,8 @@ fun PageScreen(
             when {
                 meta.locked -> Message("Locked pages open in the web app for now.", page)
                 view?.status == PageStatus.NoAccess -> Message("You no longer have access to this page.", page)
-                phone -> PhoneCanvas(meta, sub, PageLayout.withDefault(info?.boxes.orEmpty(), info?.content.orEmpty()), info?.content.orEmpty(), view?.ink.orEmpty(), info?.settings?.rules ?: "none", envTinted, scrollPx, view?.editing?.boxId, view?.info != null && !state.preview)
-                else -> TabletCanvas(meta, sub, PageLayout.withDefault(info?.boxes.orEmpty(), info?.content.orEmpty()), info?.content.orEmpty(), view?.ink.orEmpty(), info?.settings?.rules ?: "none", envTinted, scrollPx, ruled, view?.rev ?: 0)
+                phone -> PhoneCanvas(meta, sub, PageLayout.withDefault(info?.boxes.orEmpty(), info?.content.orEmpty()), info?.content.orEmpty(), view?.ink.orEmpty(), info?.settings?.rules ?: "none", envTinted, scrollPx, view?.editing?.boxId, view?.info != null && !state.preview, inkNow, view?.rev ?: 0)
+                else -> TabletCanvas(meta, sub, PageLayout.withDefault(info?.boxes.orEmpty(), info?.content.orEmpty()), info?.content.orEmpty(), view?.ink.orEmpty(), info?.settings?.rules ?: "none", envTinted, scrollPx, ruled, view?.rev ?: 0, inkNow)
             }
           }
         }
@@ -170,6 +182,11 @@ private fun PageBar(state: AppState, meta: PageMeta, index: TreeIndex, phone: Bo
     ) {
         if (phone) {
             Spacer(Modifier.weight(1f))
+            if (state.page?.info != null && !state.preview) {
+                Box(Modifier.testTag("page-draw").size(32.dp).tappable { actions.toggleDraw() }, contentAlignment = Alignment.Center) {
+                    LIcon(Ic.pen, 18.dp, if (state.ink.open) p.accent else p.text2)
+                }
+            }
             Box(Modifier.testTag("page-undo").size(32.dp).alpha(if (canUndo) 1f else 0.4f).then(if (canUndo) Modifier.tappable { actions.undoPage() } else Modifier), contentAlignment = Alignment.Center) { LIcon(Ic.undo2, 18.dp, p.text2) }
             Box(Modifier.testTag("page-redo").size(32.dp).alpha(if (canRedo) 1f else 0.4f).then(if (canRedo) Modifier.tappable { actions.redoPage() } else Modifier), contentAlignment = Alignment.Center) { LIcon(Ic.redo2, 18.dp, p.text2) }
         } else {
@@ -255,9 +272,11 @@ private fun PageHeader(meta: PageMeta, sub: String, p: Palette, phone: Boolean, 
 @Composable
 private fun TabletCanvas(
     meta: PageMeta, sub: String, boxes: List<com.notivelo.core.PageBox>, content: List<BoxContent>,
-    ink: List<InkShape>, rules: String, env: PageEnv, scrollPx: Int, ruled: Boolean, rev: Int,
+    ink: List<InkShape>, rules: String, env: PageEnv, scrollPx: Int, ruled: Boolean, rev: Int, inkSettings: InkSettings,
 ) {
     val p = env.palette
+    val liveInk = remember { InkLive() }
+    LaunchedEffect(rev) { liveInk.clear() }
     val density = LocalDensity.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val visibleW = maxWidth
@@ -283,6 +302,7 @@ private fun TabletCanvas(
         val density1 = density.density
         val editingNow by rememberUpdatedState(editingId)
         val ruledNow by rememberUpdatedState(ruled)
+        val drawingNow by rememberUpdatedState(inkSettings.open)
         CanvasSurface(
             placed = placed, visibleW = visibleW, visibleH = visibleH, hasIcon = hasIcon, editingId = editingId,
             modifier = Modifier
@@ -293,7 +313,9 @@ private fun TabletCanvas(
                         // Empty canvas: a first tap ends editing; otherwise a box is made there (the web's click-to-create).
                         val xDp = o.x / density1
                         val yDp = o.y / density1
-                        if (editingNow != null || yDp < oy) {
+                        if (drawingNow) {
+                            // A finger that does not draw: nothing is made (the bar stays open until a box is tapped).
+                        } else if (editingNow != null || yDp < oy) {
                             actions.stopEditing()
                         } else {
                             val (bx, by) = BoxGeom.atClick((xDp - PageLayout.ORIGIN_X).toDouble(), (yDp - oy).toDouble(), ruledNow)
@@ -301,11 +323,13 @@ private fun TabletCanvas(
                         }
                     }
                 }
+                .inkInput(inkSettings, liveInk, PageLayout.ORIGIN_X, oy, actions::addInkStroke, actions::eraseInk)
                 .drawBehind { drawRules(rules, oy, ruleColor) }
                 .drawWithContent {
                     drawInk(glows, PageLayout.ORIGIN_X, oy)
                     drawContent()
                     drawInk(pens, PageLayout.ORIGIN_X, oy)
+                    drawLiveInk(liveInk, PageLayout.ORIGIN_X, oy, p.text)
                 },
             header = {
                 PageHeader(meta, sub, p, false, Modifier.width((visibleW - (PageLayout.ORIGIN_X + PageLayout.BOX_PAD_X).dp - 40.dp).coerceAtLeast(100.dp)))
@@ -527,9 +551,11 @@ private fun DrawScope.drawInk(shapes: List<InkShape>, originX: Float, originY: F
 @Composable
 private fun PhoneCanvas(
     meta: PageMeta, sub: String, boxes: List<com.notivelo.core.PageBox>, content: List<BoxContent>,
-    ink: List<InkShape>, rules: String, env: PageEnv, scrollPx: Int, editingId: String?, live: Boolean,
+    ink: List<InkShape>, rules: String, env: PageEnv, scrollPx: Int, editingId: String?, live: Boolean, inkSettings: InkSettings, rev: Int,
 ) {
     val p = env.palette
+    val liveInk = remember { InkLive() }
+    LaunchedEffect(rev) { liveInk.clear() }
     val stacked = remember(boxes, content, editingId) { PageLayout.stack(boxes, content, editingId) }
     val byId = remember(content) { content.associateBy { it.boxId ?: "default" } }
     val hasIcon = !meta.icon.isNullOrEmpty()
@@ -545,11 +571,13 @@ private fun PhoneCanvas(
             .fillMaxSize()
             .verticalScroll(scroll)
             .pointerInput(Unit) { detectTapGestures { actions.stopEditing() } }
+            .inkInput(inkSettings, liveInk, 0f, originY, actions::addInkStroke, actions::eraseInk)
             .drawBehind { drawRules(rules, originY, ruleColor) }
             .drawWithContent {
                 drawInk(glows, 0f, originY)
                 drawContent()
                 drawInk(pens, 0f, originY)
+                drawLiveInk(liveInk, 0f, originY, p.text)
             },
     ) {
         Spacer(Modifier.height(12.dp))

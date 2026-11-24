@@ -68,6 +68,13 @@ interface Backend {
     /** The first date of a repeat rule on or after [from] (YYYY-MM-DD), for a rule set on a task with no date. */
     fun firstOccurrence(rule: TaskRecurrence, from: String): String = from
 
+    /** Upload a file into the workspace (onto the page when given). Blocking, up to 25 MB; the server's refusals come as [BackendError.Other] with its message. */
+    fun uploadFile(workspaceId: String, pageId: String?, filename: String, data: ByteArray): Uploaded =
+        throw BackendError.Other("Uploads are not available.")
+
+    /** A stored file's bytes (`/uploads/...`), fetched with the session. Blocking. */
+    fun downloadFile(url: String): Downloaded = throw BackendError.Other("Files are not available.")
+
     /** The page as last stored on the device, if any (instant). */
     fun cachedPage(pageId: String): PageInfo?
 
@@ -98,6 +105,12 @@ interface PageHandle {
 
     /** Remove a box that holds nothing (the core refuses one with content). */
     fun deleteEmptyBox(id: String) {}
+
+    /** Ink: one stroke from its samples (six numbers each: x, y, pressure, altitude, azimuth, t ms; page points), one undo step. [color] is 0xRRGGBBAA. */
+    fun addInkStroke(tool: Int, color: Long, width: Float, pressure: Boolean, samples: DoubleArray) {}
+
+    /** Ink: erase along a track (x, y pairs, page points) with a disc of [radius]; [partial] cuts strokes instead of deleting them. One undo step. */
+    fun eraseInk(track: FloatArray, radius: Float, partial: Boolean) {}
 
     /** The page's one undo stack (text, ink, boxes). */
     fun undo(): Boolean = false
@@ -201,6 +214,16 @@ class CoreBackend(private val storePath: String) : Backend {
         )
     }
 
+    override fun uploadFile(workspaceId: String, pageId: String?, filename: String, data: ByteArray): Uploaded = call {
+        val f = current().uploadFile(workspaceId, pageId, filename, data)
+        Uploaded(f.url, f.name, f.mime, f.size.toLong())
+    }
+
+    override fun downloadFile(url: String): Downloaded = call {
+        val f = current().downloadFile(url)
+        Downloaded(f.bytes, f.mime)
+    }
+
     override fun cachedPage(pageId: String): PageInfo? = try {
         core?.cachedPageDocument(pageId)?.let { readPage(it) }
     } catch (e: Exception) {
@@ -246,6 +269,14 @@ private class CorePageHandle(private val page: LivePage, private val core: Core,
     override fun resizeBox(id: String, w: Double) = boxCall { page.resizeBox(id, w) }
     override fun bringToFront(id: String) { boxCall { page.bringToFront(id) } }
     override fun deleteEmptyBox(id: String) = boxCall { page.deleteBox(id) }
+    override fun addInkStroke(tool: Int, color: Long, width: Float, pressure: Boolean, samples: DoubleArray) {
+        boxCall { page.addInkStrokeFromSamples(tool.toUByte(), color.toUInt(), width, pressure, false, samples.toList()) }
+    }
+
+    override fun eraseInk(track: FloatArray, radius: Float, partial: Boolean) {
+        boxCall { page.eraseInk(track.toList(), radius, partial) }
+    }
+
     override fun undo(): Boolean = boxCall { page.undo() }
     override fun redo(): Boolean = boxCall { page.redo() }
     override fun canUndo(): Boolean = page.canUndo()

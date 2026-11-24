@@ -6,9 +6,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,6 +26,9 @@ import com.notivelo.app.look.LookRoot
 import com.notivelo.app.look.NotiveloTheme
 import com.notivelo.app.look.ThemeMode
 import com.notivelo.app.look.pal
+import com.notivelo.app.media.LocalMedia
+import com.notivelo.app.media.MediaPickers
+import com.notivelo.app.media.openWithSystem
 import com.notivelo.app.ui.NotiveloRoot
 
 class MainActivity : ComponentActivity() {
@@ -32,7 +39,7 @@ class MainActivity : ComponentActivity() {
 
     private val model: AppViewModel by viewModels {
         val app = application as NotiveloApp
-        if (offline) AppViewModel.Factory(OfflineBackend(), MemorySessionStore(refreshToken = "offline-token")) else AppViewModel.Factory(app.backend, app.store)
+        if (offline) AppViewModel.Factory(OfflineBackend(), MemorySessionStore(refreshToken = "offline-token")) else AppViewModel.Factory(app.backend, app.store, app.media)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,7 +68,16 @@ class MainActivity : ComponentActivity() {
                 val state by model.state.collectAsStateWithLifecycle()
                 NotiveloTheme(mode) {
                     SystemBars()
-                    NotiveloRoot(state = state, actions = model, onSignIn = model::signIn)
+                    CompositionLocalProvider(LocalMedia provides (if (offline) null else app.media.cache)) {
+                        NotiveloRoot(state = state, actions = model, onSignIn = model::signIn)
+                        MediaPickers(state.pickRequest, model::clearPickRequest, model::uploadMedia)
+                        val context = LocalContext.current
+                        LaunchedEffect(state.openFile) {
+                            val f = state.openFile ?: return@LaunchedEffect
+                            if (!openWithSystem(context, f)) Toast.makeText(context, "No app can open this file.", Toast.LENGTH_SHORT).show()
+                            model.clearOpenFile()
+                        }
+                    }
                 }
             }
         }

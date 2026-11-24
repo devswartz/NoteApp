@@ -148,6 +148,23 @@ class FakeBackend : Backend {
     var canRedo = false
     var failBox: BackendError? = null
 
+    var uploaded = com.notivelo.app.data.Uploaded("/uploads/abc.png", "pic.png", "image/png", 4)
+    var failUpload: BackendError? = null
+    var download = com.notivelo.app.data.Downloaded(byteArrayOf(1, 2, 3), "application/pdf")
+    val uploads = mutableListOf<String>()
+    val downloads = mutableListOf<String>()
+
+    override fun uploadFile(workspaceId: String, pageId: String?, filename: String, data: ByteArray): com.notivelo.app.data.Uploaded {
+        uploads += "$workspaceId|$pageId|$filename|${data.size}"
+        failUpload?.let { throw it }
+        return uploaded
+    }
+
+    override fun downloadFile(url: String): com.notivelo.app.data.Downloaded {
+        downloads += url
+        return download
+    }
+
     override fun cachedPage(pageId: String): com.notivelo.core.PageInfo? = null
 
     override fun openPage(pageId: String, events: PageEvents): PageHandle {
@@ -177,6 +194,15 @@ class FakeBackend : Backend {
 
             override fun deleteEmptyBox(id: String) {
                 pageCalls += "delete $id"
+            }
+
+            override fun addInkStroke(tool: Int, color: Long, width: Float, pressure: Boolean, samples: DoubleArray) {
+                failBox?.let { throw it }
+                pageCalls += "stroke tool=$tool color=${java.lang.Long.toHexString(color)} w=$width pressure=$pressure n=${samples.size / 6}"
+            }
+
+            override fun eraseInk(track: FloatArray, radius: Float, partial: Boolean) {
+                pageCalls += "erase n=${track.size / 2} r=$radius partial=$partial"
             }
 
             override fun undo(): Boolean {

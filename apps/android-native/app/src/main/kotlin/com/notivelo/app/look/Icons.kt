@@ -110,6 +110,9 @@ object Ic {
     val messageSquareQuote = R.drawable.ic_message_square_quote
     val codeXml = R.drawable.ic_code_xml
     val atSign = R.drawable.ic_at_sign
+    val pen = R.drawable.ic_pen
+    val eraser = R.drawable.ic_eraser
+    val hand = R.drawable.ic_hand
 }
 
 @Composable

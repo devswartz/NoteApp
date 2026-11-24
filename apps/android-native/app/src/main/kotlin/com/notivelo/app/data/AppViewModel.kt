@@ -4,6 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.notivelo.app.edit.EditingBox
+import com.notivelo.app.ink.InkSettings
+import com.notivelo.app.ink.InkStrokeSpec
+import com.notivelo.app.media.MediaKind
+import com.notivelo.app.media.MediaSizing
+import com.notivelo.app.media.PickedFile
 import com.notivelo.core.PageInfo
 import com.notivelo.core.TaskChanges
 import java.time.LocalDate
@@ -30,6 +35,7 @@ class AppViewModel(
     private val store: SessionStore,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val today: () -> LocalDate = { LocalDate.now() },
+    private val media: MediaHooks = NoMediaHooks,
 ) : ViewModel(), ShellActions {
     private val _state = MutableStateFlow(AppState(server = store.server))
     val state: StateFlow<AppState> = _state.asStateFlow()
@@ -456,28 +462,25 @@ class AppViewModel(
     // Editing a box: a core session on it (others' edits come into it, its edits go into the page)
 
     override fun startEditing(boxId: String, tapX: Float, tapY: Float) {
-        nvLog("startEditing $boxId handle=${handle != null} page=${_state.value.pageId} ws=${_state.value.workspaceId}")
+        // A finger tap on text with the pen bar open (finger drawing off) is a wish to type: the bar closes.
+        closeInkBar()
         viewModelScope.launch { openEditing(boxId, tapX, tapY) }
     }
 
     private suspend fun openEditing(boxId: String, tapX: Float, tapY: Float) {
-        nvLog("openEditing $boxId")
         val s = _state.value
         val pid = s.pageId ?: return
         val h = handle ?: return
         val ws = s.workspaceId ?: return
         if (s.page?.editing?.boxId == boxId) return
         try {
-            nvLog("openEditing: opening engine for $boxId")
             val engine = blocking { h.openEditor(boxId, ws) }
-            nvLog("openEditing: engine ready, page still ${_state.value.pageId}, handle same=${handle === h}")
             if (_state.value.pageId != pid || handle !== h) {
                 blocking { engine.close() }
                 return
             }
             val old = _state.value.page?.editing
             editPage(pid) { it.copy(editing = EditingBox(boxId, engine, tapX, tapY)) }
-            nvLog("openEditing: editing set, now ${_state.value.page?.editing?.boxId}")
             if (old != null) {
                 val empty = isEmpty(old)
                 blocking { old.engine.close() }
@@ -489,7 +492,6 @@ class AppViewModel(
             refreshFlags(pid)
             loadMembers(ws)
         } catch (e: Exception) {
-            nvLog("openEditor failed: $e")
             _state.update { it.copy(notice = "This box could not be opened for editing.") }
         }
     }
@@ -501,7 +503,6 @@ class AppViewModel(
     }
 
     override fun stopEditing() {
-        nvLog("stopEditing editing=${_state.value.page?.editing?.boxId}")
         val pid = _state.value.pageId ?: return
         val e = _state.value.page?.editing ?: return
         val h = handle
@@ -516,7 +517,12 @@ class AppViewModel(
 
     // Boxes: create, move, resize (one core call each, so one undo step each)
 
+    private fun closeInkBar() {
+        if (_state.value.ink.open) _state.update { it.copy(ink = it.ink.copy(open = false)) }
+    }
+
     override fun createBox(x: Double, y: Double) {
+        closeInkBar()
         val pid = _state.value.pageId ?: return
         val h = handle ?: return
         val top = _state.value.page?.info?.boxes?.maxOfOrNull { it.z } ?: 0.0
@@ -558,6 +564,108 @@ class AppViewModel(
             }
             reloadPage(pid)
         }
+    }
+
+    // Images and files: the picker (the edited box takes the upload), opening a stored file
+
+    override fun pickMedia(kind: MediaKind) {
+        val editing = _state.value.page?.editing
+        if (editing == null) {
+            _state.update { it.copy(notice = "Tap into a text box first.") }
+            return
+        }
+        _state.update { it.copy(pickRequest = kind) }
+    }
+
+    override fun clearPickRequest() {
+        _state.update { if (it.pickRequest == null) it else it.copy(pickRequest = null) }
+    }
+
+    /** Uploads a picked or pasted file to the page's workspace, then inserts an image or a file card at the caret of the box that was edited. */
+    override fun uploadMedia(file: PickedFile?) {
+        val s = _state.value
+        val pid = s.pageId ?: return
+        val ws = s.workspaceId ?: return
+        if (file == null) {
+            _state.update { it.copy(notice = "Could not read that file.") }
+            return
+        }
+        // Into the box being edited now (the picker leaves the editing as it was), if it still is when the upload ends.
+        val target = s.page?.editing?.boxId
+        if (target == null) {
+            _state.update { it.copy(notice = "Tap into a text box first.") }
+            return
+        }
+        _state.update { it.copy(notice = "Uploading…") }
+        viewModelScope.launch {
+            try {
+                val up = blocking { backend.uploadFile(ws, pid, file.name, file.bytes) }
+                val now = _state.value
+                val editing = now.page?.editing?.takeIf { it.boxId == target && now.pageId == pid }
+                if (editing == null) {
+                    _state.update { it.copy(notice = "Uploaded, but the text box was closed.") }
+                    return@launch
+                }
+                val (command, args) = MediaSizing.insertCommand(up.url, up.name, up.mime, up.size)
+                // The picture is in hand: the box draws it at once, without fetching it back.
+                if (MediaSizing.isImage(up.mime)) media.remember(up.url, file.bytes)
+                if (editing.engine.command(command, args)) {
+                    _state.update { it.copy(notice = null) }
+                    reloadPage(pid)
+                } else {
+                    _state.update { it.copy(notice = "Could not add it to the page.") }
+                }
+            } catch (e: BackendError.SignedOut) {
+                expire()
+            } catch (e: BackendError.Offline) {
+                _state.update { it.copy(notice = "You're offline. Nothing was uploaded.") }
+            } catch (e: BackendError) {
+                _state.update { it.copy(notice = e.message?.takeIf { m -> m.isNotBlank() } ?: "Could not upload the file.") }
+            }
+        }
+    }
+
+    /** Downloads a stored file with the session and hands it to the activity to open with the system. */
+    override fun openMedia(src: String, name: String, mime: String) {
+        if (src.isBlank() || src.startsWith("http://") || src.startsWith("https://")) return
+        _state.update { it.copy(notice = "Opening…") }
+        viewModelScope.launch {
+            try {
+                val f = blocking { backend.downloadFile(src) }
+                val type = f.mime.ifEmpty { mime }
+                val saved = blocking { media.saveForOpen(name, type, f.bytes) }
+                _state.update { if (saved == null) it.copy(notice = "Could not open the file.") else it.copy(openFile = saved, notice = null) }
+            } catch (e: BackendError.SignedOut) {
+                expire()
+            } catch (e: BackendError.Offline) {
+                _state.update { it.copy(notice = "You're offline. The file can't be opened.") }
+            } catch (e: BackendError) {
+                _state.update { it.copy(notice = "Could not open the file.") }
+            }
+        }
+    }
+
+    override fun clearOpenFile() {
+        _state.update { if (it.openFile == null) it else it.copy(openFile = null) }
+    }
+
+    // Draw mode: the pen bar, and the page's ink writes (one core call per gesture, so one undo step each)
+
+    override fun toggleDraw() {
+        stopEditing()
+        _state.update { it.copy(ink = it.ink.copy(open = !it.ink.open)) }
+    }
+
+    override fun setInk(ink: InkSettings) {
+        _state.update { it.copy(ink = ink) }
+    }
+
+    override fun addInkStroke(stroke: InkStrokeSpec) = boxWrite("Could not save the stroke.") { h ->
+        h.addInkStroke(stroke.tool, stroke.color, stroke.width, stroke.pressure, stroke.samples)
+    }
+
+    override fun eraseInk(track: FloatArray, partial: Boolean) = boxWrite("Could not erase.") { h ->
+        h.eraseInk(track, InkSettings.ERASER_RADIUS, partial)
     }
 
     // Page undo: the core's one stack (text of boxes opened live, ink, boxes). While a box is edited this is still the one to call:
@@ -649,13 +757,8 @@ class AppViewModel(
         const val NEW_BOX_WIDTH = 360.0
     }
 
-    class Factory(private val backend: Backend, private val store: SessionStore) : ViewModelProvider.Factory {
+    class Factory(private val backend: Backend, private val store: SessionStore, private val media: MediaHooks = NoMediaHooks) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = AppViewModel(backend, store) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = AppViewModel(backend, store, media = media) as T
     }
-}
-
-/** A line in logcat (tag Notivelo); silent on the JVM, where android.util.Log is not there. */
-private fun nvLog(msg: String) {
-    try { android.util.Log.i("Notivelo", msg) } catch (e: Throwable) { }
 }
