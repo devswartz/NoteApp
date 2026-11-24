@@ -70,7 +70,7 @@ internal sealed class PageTasksPanel : ThemedControl
             var tagged2 = new StackPanel { Children = { root } };
             AutomationProperties.SetAutomationId(tagged2, "page-comments-panel");
             AutomationProperties.SetName(tagged2, "Comments on this page");
-            return new Border { BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged2 };
+            return new Border { Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged2 };
         }
 
         // done / total
@@ -129,7 +129,7 @@ internal sealed class PageTasksPanel : ThemedControl
         AutomationProperties.SetAutomationId(tagged, "page-tasks-panel");
         AutomationProperties.SetName(tagged, "Tasks on this page");
         AutomationProperties.SetItemStatus(tagged, $"tasks={all.Count} open={open.Count} done={done.Count}");
-        return new Border { BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged };
+        return new Border { Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged };
     }
 
     private UIElement Tab(string icon, string text, bool on, string id, Action click)

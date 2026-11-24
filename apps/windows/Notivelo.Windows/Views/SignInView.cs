@@ -121,12 +121,15 @@ internal sealed class SignInView : UserControl
 
             if (_register)
             {
-                var terms = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
-                terms.Children.Add(Ui.Text("By creating an account you agree to the ", 12.5, B("TextMuted")));
-                terms.Children.Add(Link("Terms", 12.5, "/terms"));
-                terms.Children.Add(Ui.Text(" and ", 12.5, B("TextMuted")));
-                terms.Children.Add(Link("Privacy Policy", 12.5, "/privacy"));
-                terms.Children.Add(Ui.Text(".", 12.5, B("TextMuted")));
+                var terms = new StackPanel { Orientation = Orientation.Vertical, Spacing = 2, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 12, 0, 0) };
+                var t1 = Ui.Text("By creating an account you agree to the", 12.5, B("TextMuted")); t1.HorizontalAlignment = HorizontalAlignment.Center;
+                terms.Children.Add(t1);
+                var t2 = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center };
+                t2.Children.Add(Link("Terms", 12.5, "/terms"));
+                t2.Children.Add(Ui.Text("and", 12.5, B("TextMuted")));
+                t2.Children.Add(Link("Privacy Policy", 12.5, "/privacy"));
+                t2.Children.Add(Ui.Text(".", 12.5, B("TextMuted")));
+                terms.Children.Add(t2);
                 card.Children.Add(terms);
             }
 

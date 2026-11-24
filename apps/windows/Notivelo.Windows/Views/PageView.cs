@@ -259,7 +259,7 @@ internal sealed class PageView : ThemedControl
             var panel = new PageTasksPanel(_source, tasksPage, () => { _comments?.Cancel(false); _tasksOpen = false; Rebuild(); }) { Host = Host };
             if (_commentsTab) panel.Comments = CommentsFor(tasksPage);
             panel.SwitchTab = comments => { if (!comments) _comments?.Cancel(false); _commentsTab = comments; Rebuild(); };
-            Grid.SetColumn(panel, 1); Grid.SetRowSpan(panel, 2);
+            panel.VerticalAlignment = VerticalAlignment.Stretch; Grid.SetColumn(panel, 1); Grid.SetRowSpan(panel, 2);
             root.Children.Add(panel);
         }
         return root;

@@ -64,7 +64,7 @@ internal sealed class TreeActions
         items.Add(MenuEntry.Colours(nb.ColorHex, c => Recolour(TreeKind.Notebook, nb.Id, c)));
         items.Add(MenuEntry.Sep());
         items.Add(new("Delete notebook", "trash", () => DeleteDialog(TreeKind.Notebook, nb.Id, nb.Name), Danger: true));
-        PopupMenu.Show(O, items, anchor, endAlign: true, id: "menu-notebook");
+        PopupMenu.Show(O, items, anchor, endAlign: false, id: "menu-notebook");
     }
 
     public void SectionMenu(FrameworkElement? anchor, Notebook? nb, Section s, global::Windows.Foundation.Point? at = null)
@@ -81,7 +81,7 @@ internal sealed class TreeActions
         items.Add(MenuEntry.Colours(s.ColorHex, c => Recolour(TreeKind.Section, s.Id, c)));
         items.Add(MenuEntry.Sep());
         items.Add(new("Delete section", "trash", () => DeleteDialog(TreeKind.Section, s.Id, s.Name), Danger: true));
-        PopupMenu.Show(O, items, anchor, endAlign: true, at: at, id: "menu-section");
+        PopupMenu.Show(O, items, anchor, endAlign: false, at: at, id: "menu-section");
     }
 
     public void PageMenu(FrameworkElement? anchor, PageSummary p, global::Windows.Foundation.Point? at = null, bool current = false)
