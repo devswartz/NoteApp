@@ -19,24 +19,26 @@ Native progress: when a row is done in a native app, append **✓** to that plat
 
 **Windows ✓ (2026-11-24, rewrite/windows-audit): built in the native Windows app, compiled and covered by CI UI tests in offline sample mode where noted; not run against a server unless said.** Unticked Windows rows are listed, with what is missing, in `docs/rewrite/status/windows.md` ("Parity left").
 
+**Android ✓ (2026-11-24, rewrite/android-media): built in the native Android app (`apps/android-native/`), compiled and covered by JVM tests, Paparazzi shots and, where noted, emulator UI tests in offline mode; never run on a device or against a server unless said.** Unticked Android rows are listed, with what is missing, in `docs/rewrite/status/android.md` ("Parity left").
+
 Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout** (rail, panels, ribbon). iPhone, Android and narrow web (≤760 px) use the **phone layout** (bottom tab bar, full-screen editor, floating toolbar).
 
 ## 1. Account and sign-in
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Sign in (email + password) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
+| Sign in (email + password) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `POST /auth/login`, refresh tokens (`/auth/refresh`) |
 | Create account (open sign-up) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `/auth/register`; `/login?mode=register&email=…` prefill (web) |
 | Email confirmation screen (Check your email, Resend, I've verified, Sign out) | ● | ● | ● | ● | ● | ● | `CheckEmail.tsx`, `VerifyEmail.tsx`; unconfirmed accounts deleted after 7 days |
 | Forgot / reset password | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | email link opens web `ResetPassword` |
-| Sign-in kept securely | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ◐ | mobile: secure storage plugin (Keychain/Keystore); desktop: system keychain (`secure.rs`); web: browser storage |
+| Sign-in kept securely | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ◐ | mobile: secure storage plugin (Keychain/Keystore); desktop: system keychain (`secure.rs`); web: browser storage |
 | Release builds locked to app.notiveloapp.com; internal builds have hidden "Change server…" | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | — | `src/platform/serverUrl.ts`, desktop `config.rs` |
 | Profile: name, avatar colour | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | Settings → Profile |
 | Change password | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `POST /me/password` |
 | Delete account (preview of consequences, password) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | sign-in screen and Settings → About |
-| Sign out | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
+| Sign out | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Invite link: open, accept, join workspace | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `/invites/:token`; universal links on iOS |
 
 ## 2. Navigation and shell
@@ -45,16 +47,16 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 |---|---|---|---|---|---|---|---|
 | Rail: Notes, Tasks, Calendar | ● ✓ | — | ● ✓ | ● ✓ | — | ● | `Rail.tsx`; phones use the tab bar |
 | Bottom tab bar (Notes, Today, +, My Tasks, Search) | — | ● ✓ | — | — | ● | ◐ | `MobileChrome.tsx`; web on narrow screens |
-| Workspace switcher (top of sidebar) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
+| Workspace switcher (top of sidebar) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Create workspace | ● | ● | ● | ● | ● | ● | `POST /workspaces` |
-| Notes panel: notebook picker, section tree, pages list | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
+| Notes panel: notebook picker, section tree, pages list | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
 | Section ribbons / colour tabs | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | `SectionRibbons.tsx` *(verify phone form)* |
 | Favourites and Recent | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Resize sidebar, hide sidebar (⌘\) | ● | — | ● | ● ✓ | — | ● | |
-| Notes home overview | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `NotesHome.tsx` |
+| Notes home overview | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `NotesHome.tsx` |
 | OneNote-style ribbon (Text, Lists, Insert, Page, View; Table group; changes per section: Tasks, Calendar) | ● | ○ | ● | ● | ○ | ● | collapse with chevron / Ctrl+F1; phones keep floating toolbar |
 | Floating formatting toolbar (phones) | — | ● ✓ | — | — | ● | ◐ | |
-| Undo/Redo buttons in note top bar (phones) | — | ● ✓ | — | — | ● | ◐ | v1.5.13, screens ≤760 px |
+| Undo/Redo buttons in note top bar (phones) | — | ● ✓ | — | — | ● ✓ | ◐ | v1.5.13, screens ≤760 px |
 | Command palette ⌘K (search + commands) | ● | ● | ● ✓ | ● | ● | ● | `CommandPalette.tsx`, `shell/commands.tsx` |
 | Keyboard shortcut overlay (?) | ● | ◐ | ● ✓ | ● ✓ | ◐ | ● | phones only with a keyboard |
 | F6 region cycling | ● | — | ● | ● | — | ● | `useF6Regions.ts` |
@@ -90,32 +92,32 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | phones stack boxes one under another with "Add a text box" |
+| Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ ✓ | ● | phones stack boxes one under another with "Add a text box" |
 | See-through boxes (only active box opaque) | ● ✓ | — | ● ✓ | ● ✓ | — | ● | |
 | Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● | ◐ | ● | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
 | Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
 | Page title | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | title change refused unless current title known |
-| Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
+| Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
 | Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Links: ⌘K, editor with Text + Address | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `LinkEditor.tsx` |
-| Headings 1–3 | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `#`, Ctrl+Alt+1/2/3 |
-| Bulleted lists (Ctrl+.) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
-| Word-style numbered outlines (1 → a → i; `1.`, `a.`, `i.`, `1)`) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | Tab / Shift+Tab |
-| Plain checklist | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
+| Headings 1–3 | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `#`, Ctrl+Alt+1/2/3 |
+| Bulleted lists (Ctrl+.) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
+| Word-style numbered outlines (1 → a → i; `1.`, `a.`, `i.`, `1)`) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | Tab / Shift+Tab |
+| Plain checklist | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Tables: insert/delete rows and columns, header row, merge/split | ● | ◐ | ● | ● | ◐ | ● | Table ribbon group on wide layout |
 | Callout, toggle, quote, code block (highlighting), divider | ● | ● | ● | ● | ● | ● | `blocks.tsx`, `codeHighlight.ts` |
-| Backspace/Enter leave a block (Word-outline style) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `blockExit.ts` |
+| Backspace/Enter leave a block (Word-outline style) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `blockExit.ts` |
 | Images (insert, resize by corner) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `upload.ts`, `POST /uploads` |
-| File attachments (≤25 MB, type rules, signed short-lived links) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `/files/:id`, `/files/key` |
-| Slash menu (/) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `SlashMenu.tsx` |
-| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
+| File attachments (≤25 MB, type rules, signed short-lived links) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `/files/:id`, `/files/key` |
+| Slash menu (/) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `SlashMenu.tsx` |
+| Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Page links `[[`, create page from link | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PageLink.tsx` |
 | Linked from (backlinks) panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/backlinks` |
 | Drag handle: move a block with its nested lines, drop anywhere; keeps numbering | ● | ◐ | ● | ● | ◐ | ● | `blockMove.ts`, `listDrop.ts`, `handleReach.ts` |
 | Word-style multi-selection (Ctrl/⌘ + click/drag/double-click lines) | ● | — | ● | ● | — | ● | `linePicks*.ts` |
-| Copy keeps formatting; paste rich text and Markdown | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `clipboardOut.ts`, `markdownUtils.ts` |
+| Copy keeps formatting; paste rich text and Markdown | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `clipboardOut.ts`, `markdownUtils.ts` |
 | Outline / table of contents beside long pages | ● | ○ | ● | ● | ○ | ● | `Outline.tsx` *(verify phone)* |
 | Full width option | ● | — | ● | ● | — | ● | |
 | Page colour | ● | ● | ● | ● | ● | ● | syncs, in templates and versions |
@@ -147,17 +149,17 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 |---|---|---|---|---|---|---|---|
 | Task in a note is the real task (one task everywhere) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `TaskRef.tsx`, `taskRefIds.ts` |
 | Insert task: /task, ⌘↵, Ctrl+1, ribbon Task button | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
-| Task chips in notes (date, priority flag, assignee) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone shows icon-only checklist button |
+| Task chips in notes (date, priority flag, assignee) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | phone shows icon-only checklist button |
 | Deleting a task line deletes the task (undoable); cut keeps it; deleted page → standalone tasks | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `taskGate.ts`, v1.5.9 |
-| Notes under a task (bullets, numbers, paragraphs, checklists, subtasks) | ● | ● | ● | ● ✓ | ● | ● | `taskChildren.ts`, v0.5.0 |
-| Subtasks (one level, progress 2/5) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
-| Checklist under a task (not tasks) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
+| Notes under a task (bullets, numbers, paragraphs, checklists, subtasks) | ● | ● | ● | ● ✓ | ● ✓ | ● | `taskChildren.ts`, v0.5.0 |
+| Subtasks (one level, progress 2/5) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
+| Checklist under a task (not tasks) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Tasks on this page panel | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `GET /pages/:id/tasks` |
 | Task detail: title, description, due date/time, priority, assignee, tags, team, assigned-by, reminders, recurrence, From the note | ● | ● | ● | ● | ● | ● | `TaskDetail.tsx`, `GET /tasks/:id/notes`. Native: every field editable (apple-wire); "From the note" not yet |
-| Quick add (Q) with natural language (dates, times, p1–p4, repeats, @assignee) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `QuickAdd.tsx`; phone via + tab |
+| Quick add (Q) with natural language (dates, times, p1–p4, repeats, @assignee) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `QuickAdd.tsx`; phone via + tab |
 | Views: Today (progress strip, streak, 7 days), My Tasks, Upcoming, Team, All tasks (status Open/Completed/All) | ● | ◐ | ● | ● ✓ | ◐ | ● | phones: Today and My Tasks tabs, rest via Notes/Tasks menu *(verify)* |
 | Calendar: month / week, drag to reschedule or onto No date, double-click to add, Mine / Everyone | ● ✓ | ◐ ✓ | ● ✓ | ● | ◐ | ● | `CalendarView.tsx`, `CalendarPanel.tsx`, `MiniCalendar.tsx` |
-| Sidebar counts (Today, My Tasks, Upcoming) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
+| Sidebar counts (Today, My Tasks, Upcoming) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `assigneeGroups.ts` |
 | Saved views (server, optionally shared) | ● | ● | ● | ● | ● | ● | `/workspaces/:id/task-views` |
