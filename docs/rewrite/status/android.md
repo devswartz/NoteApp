@@ -4,8 +4,8 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 
 ## Now
 
-- Emulator UI tests (branch `rewrite/android-uitest`, cut from `rewrite/native` e5ea45a, not merged; **android pauses**): CI run 45343187252 green at c36f489 (jobs "android app" and "emulator UI tests"), 16 instrumented tests, none ignored. Images, attachments and ink editing were skipped this round (manager's timebox) and are next.
-- Steps A-C are merged (e5ea45a) and described under Done.
+- Images, attachments, ink editing and the PARITY audit (branch `rewrite/android-media`, cut from `rewrite/native` 562c7da, not merged; **android pauses**): CI run 45422902949 green at b3d6c0c ("android app" and "emulator UI tests"; the later commits are docs only). Android column ticked in PARITY.md: 24 of 142 rows, 118 left (see Parity left). Nothing has run on a device.
+- Steps A-C and the emulator UI tests are merged (b2780d2) and described under Done.
 
 ## Done
 
@@ -44,6 +44,14 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 - **Tests** (`app/src/androidTest/.../BoxEditingTest`, 16, all passing): hardware keys (typing, Enter, Backspace, arrows, Ctrl+A/C/X/V, Ctrl+Z / Shift+Z / Y); the real view's `InputConnection` (commit, composition, composing region, delete-surrounding, sendKeyEvent, setSelection, context-menu cut/copy/paste); the `/` menu (tap Heading 1, filter + Enter, Down + Escape, the `- ` shortcut); long-press word select and tap caret placement; undo/redo from the bar buttons, including a structural undo; switching boxes. Assertions read the engine's view frame.
 - **Fixed**: the hardware Space key never typed (`isPrintingKey` is false for Space).
 - **Not covered**: soft keyboards (Gboard, Samsung), handle dragging, `[[` and `@`, box create / move / resize, task writes, tablet width, `LivePage` undo across text, ink and boxes (no offline LivePage). Diagnostic logging (`nvLog`, a `Log.i` in the `BoxEditor` factory) is still in `AppViewModel` / `BoxEditor`; remove it when next touching them.
+
+### Images, attachments and ink
+
+- **Images** (`media/`): fetched through the core's `downloadFile`, memory + disk cache, decoded off the main thread with EXIF rotation, sized as the web (own width, capped to the box), in both the static and the edited box view. A just-uploaded picture is cached at once.
+- **Files**: file cards open through `downloadFile`, a FileProvider and `ACTION_VIEW`. Insert: system picker (`GetContent`) -> `uploadFile` -> `insertImage` / `insertFile` in the edited box, from the `/` menu, the tablet ribbon Insert and image paste.
+- **Ink** (`ink/`): a Draw button (tablet ribbon, phone page bar) opens a pen bar: pen, highlighter, eraser, partial eraser, the web's colours and widths, "draw with finger". Stylus and mouse draw, the stylus eraser end erases whole strokes, a finger scrolls unless "draw with finger" is on. One `addInkStrokeFromSamples` / `eraseInk` per gesture with a live preview; the page re-reads after each write; page undo covers it.
+- **Tests** (JVM): `MediaSizingTest`, `InkModelTest` (tool-type gating, samples), 4 `AppViewModelTest` cases (upload -> insert, file open, ink writes), `InkBarShots` (3 Paparazzi). The 16 emulator tests still pass. The leftover diagnostic logging from the UI-test round is removed.
+- **Not done**: camera, full-size image view, image resize, ink settings kept between launches, pressure / smoothing in the live preview (the committed stroke has them), tilt. **Unverified on a device**: the picker, clipboard image paste, FileProvider open, stylus pressure and historical points.
 
 ## Look, per state (step B; CI run 45288154806, side-by-side artifact, two rounds of fixes)
 
@@ -135,6 +143,8 @@ Audit of `docs/rewrite/PARITY.md` (Android column) against `apps/android-native`
 **Counts:** ticked 24; left 118 = no-server 90, Devon 3, M7 25.
 
 ## Requests
+
+- android -> core (optional): image width and height from `uploadFile`, or `insertImage` taking the natural size.
 
 - android -> core: a change notification for `Core.tasks` (a tick or edit on another device or page does not redraw the task views; the app re-reads when the Tasks tab opens and after its own tick).
 - ~~android -> core: `Task` team and recurrence~~ Not a core gap: read from `taskDetails` / `members` / `teams` / `tags` since step C.
