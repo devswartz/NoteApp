@@ -2,6 +2,56 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## 2026-11-24: ink editing and task detail (branch `rewrite/windows-ink`, from `origin/rewrite/native` 5b7f5f4)
+
+Not merged. Nothing was driven with input on this PC: local checks were builds and unit tests; UI tests and screenshots run on the GitHub runner. Of the PARITY batches below, only batch 1 (task detail) was done this round; batches 2-4 are next.
+
+- **Ink editing** (`Views/InkBar.cs`, `Views/InkOverlay.cs`, `SampleNotesSource.Ink.cs`; Apple's InkSession / InkTool / InkBar / MacInk):
+  - **Pen row:** opened by ribbon Draw (`ribbon-draw`) and shown under the ribbon. It has select/type, pen, highlighter, stroke eraser, partial eraser and lasso; Apple's colours and 3 widths (remembered); Delete for a selection; and close. A lasso icon was added to the generated set.
+  - **Input:** an overlay on top of the canvas takes the pointer only while a tool is active.
+    - Pen pressure and intermediate points feed the core stroke builder, with a live preview; the stroke is committed on release.
+    - The pen's eraser end erases. Mouse and touch draw with pressure 0.5.
+  - **Lasso:** select by loop or tap, drag to move, Del/Backspace to delete, Esc to clear.
+  - **Undo:** ink steps are in page undo (`LivePage.Undo`); the sample source has its own in-memory ink and undo.
+  - **Core calls:** `InkStrokeBuilder` (`PushMany`, `Preview`), `LivePage.AddInkStroke`, `EraseInk`, `InkHitLasso`, `InkHitPoint`, `MoveInkStrokes`, `DeleteInkStrokes`, `InkStrokes`.
+  - **Left out:** eraser dimming of the strokes it would take, tilt, Windows Ink `InkCanvas`, the finger-draw toggle; the sample's partial eraser removes whole strokes.
+  - **Bugs found by CI and fixed:**
+    - `Canvas.SetZIndex` on the overlay threw and killed the app; the overlay now sits in a host Grid.
+    - Releasing pointer capture before ending the stroke cancelled every stroke.
+  - **Needs a manual check with a real mouse or pen:**
+    - On the runner, synthetic mouse moves between press and release arrive as a few jumps: the test wave is drawn nearly flat, and a drawn lasso loop collapses into a tap. So the lasso UI test selects by tapping the stroke.
+    - Whether real pointer moves come through densely (they should), the lasso loop, and Ctrl+Z while the overlay has focus.
+  - **Look:** `windows/ink-ink-toolbar-light.png`; there is no reference for the pen row. The grid on "Settings and ink" stops around the content, while `page-settings-and-ink.png` fills the whole page (gap).
+- **Batch 1, task detail** (Apple's TaskDetail, TaskPickers, PageTasks, CalendarScreen):
+  - **Task sheet:** Team, Tags (pick or create), Time, Repeat (presets, clear), Reminders (add, remove), the due date in words, and Subtasks (add, tick, progress).
+  - **Quick add:** the team, tags and assignee chips are pickers.
+  - **Tasks-on-this-page panel:** docked right, opened from the top bar's tasks button.
+  - **Calendar:** week view, Mine / Everyone, and the Status filter (kept on the device).
+  - **Sample source:** all of it in memory.
+  - **Bug fixed:** re-parenting the focused subtask input during a refresh crashed the app (COMException 0x800F1000); the input now lives in a fixed row.
+  - **Left out:**
+    - task sheet: Repeat "Custom…", subtask priority; Time uses the stock WinUI TimePicker;
+    - calendar: drag to re-date, double-click to add, Tags and Team filters;
+    - the page panel's Comments tab is a stub;
+    - assignee menus aren't grouped by team.
+  - **Open question:** in the quick-add pickers test, a real mouse click on a Tasks row did not open the sheet, so the test opens it through search. Check by hand whether clicking a row works.
+  - **Screenshots:** `windows/ink-task-sheet-full-light.png` (the tag picker was left open in that shot), `ink-page-tasks-panel-light.png`, `ink-calendar-light.png`.
+- **PARITY rows done on Windows by this round** (not marked ✓ in PARITY.md; marking is left to the overseer to avoid conflicts there):
+  - from earlier rounds, per the audit: 43 rows such as sign in, profile, change password, sign out, tree actions, Trash, search, quick add;
+  - this round: "Task detail (all fields)", "Quick add (Q)" pickers, "Tasks on this page panel", "Reminders: fixed time or N minutes before", "Recurrence" (presets), "Subtasks (one level, progress 2/5)", "Calendar: month / week, Mine / Everyone", and ink drawing.
+  - The full row-by-row audit (DONE 43, PARTLY 37, TODO with core calls 37, TODO needing core 25, images 2) is in the shared session notes folder as `windows-parity-audit.md` (before batch 1).
+- **Next batches** (core calls exist):
+  - 2, page tools: comments, version history, page sharing, locked pages, Markdown export, Shared with me, page icon.
+  - 3, people and sign-up: native sign-up, the check-email screen, invite links, members, roles and invites.
+  - 4, tree and shell polish: section and notebook colours, notebook sharing, drag to reorder, accent colours, System theme, offline pill, the shortcut sheet, editable page title.
+- **Requests to core** (no calls yet): templates, favourites, saved views, the notification bell and activity feed, workspace create / rename / delete, export and import, backlinks, public share links.
+- **CI runs** (branch `rewrite/windows-ink`): 6.
+  - 45301548389 and 45303817389 on 491aad9 / 42722df: the app crashed (SetZIndex).
+  - 45305927506 on 0940fc4: 7 failures (cancelled strokes, the subtask crash).
+  - 45307980432 on 05f8b3f: 3 failures.
+  - 45309864659 on 2d92053: 1 failure (lasso loop).
+  - 45311303561 on 3c7f6bf: green. Build x64 + arm64, 132 unit tests, 37 UI tests, 46 look screenshots.
+
 ## 2026-11-24: look pass with CI screenshots, Settings on the account calls, sideload MSIX (branch `rewrite/windows-look`, from `origin/rewrite/native` 9ed16e7)
 
 Not merged. Nothing was driven with input on this PC: local checks were builds and 106 unit tests; every screenshot below comes from the GitHub runner.
