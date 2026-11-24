@@ -1,5 +1,6 @@
 namespace Notivelo.Windows.Data;
 using N = Notivelo.Native;
+using Notivelo.Windows.Text;
 using Tsk = System.Threading.Tasks.Task;
 
 // Parity B on the sample data: the tree, Trash, search and task edits all work in memory, so the UI (and the UI tests, in offline mode)
@@ -64,7 +65,7 @@ public sealed partial class SampleNotesSource
         if (_pages.ContainsKey(p.Id)) { _pages[p.Id] = _pages[p.Id] with { Title = p.Title }; return; }
         var basis = source is not null && _pages.TryGetValue(source, out var b) ? b : null;
         _pages[p.Id] = new NotePage(p.Id, p.Title, "Edited just now by you", "Look reference", "#ec4899", new[] { "Corpus" }, PageColour.None, RuleLines.None,
-            basis?.Boxes ?? new CanvasBox[] { new(20, 20, 560, true, new BoxBlock[] { new(BlockKind.Heading1, p.Title), new(BlockKind.Paragraph, "A new page.") }) }, 0, 0);
+            basis?.Boxes ?? new CanvasBox[] { new(20, 20, 560, true, new BoxBlock[] { new(BlockKind.Paragraph, "") }) }, 0, 0);
     }
 
     // ---- tree actions ----
@@ -90,7 +91,14 @@ public sealed partial class SampleNotesSource
     public Task<TreeResult> CreatePage(string sectionId, string title)
     {
         var p = new PageSummary(NewId("page"), title.Length == 0 ? "Untitled" : title, 0);
-        AddPage(sectionId, p); EnsurePage(p); Raise();
+        AddPage(sectionId, p); EnsurePage(p);
+        // the section's default template (its own, else the nearest parent's) starts the page
+        if (title.Length == 0 && TemplateRules.EffectiveDefault(ChainOf(sectionId), _sectionDefaults) is { } def && _savedTemplates.FirstOrDefault(t => t.Id == def) is { } dt)
+        {
+            _pages[p.Id] = _pages[p.Id] with { Boxes = new CanvasBox[] { new(20, 20, 560, true, new BoxBlock[] { new(BlockKind.Heading1, dt.Name), new(BlockKind.Paragraph, "Started from the " + dt.Name + " template.") }) } };
+            Log("page from default template " + dt.Id);
+        }
+        Raise();
         return Done(p.Id);
     }
 

@@ -38,6 +38,8 @@ internal sealed class RibbonView : ThemedControl
         ["Increase indent"] = new("indent"),
         ["Task"] = new("convertToTask"),
         ["Table"] = new("insertTable", "{\"rows\":3,\"cols\":3,\"header\":true}"),
+        ["Add row"] = new("addRowAfter"),
+        ["Add column"] = new("addColumnAfter"),
     };
 
     private readonly List<(ButtonBase Button, string Tip, Spec? Spec)> _bound = new();
@@ -91,6 +93,22 @@ internal sealed class RibbonView : ThemedControl
         return f;
     }
 
+    /// <summary>The table commands of the engine (nv-editor command.rs) that act on the table around the caret.</summary>
+    private MenuFlyout TableToolsMenu()
+    {
+        var f = new MenuFlyout();
+        foreach (var (text, cmd, args) in Notivelo.Windows.Text.TableTools.Menu)
+        {
+            if (cmd.Length == 0) { f.Items.Add(new MenuFlyoutSeparator()); continue; }
+            var it = new MenuFlyoutItem { Text = text };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "table-" + PopupMenu.Slug(text));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, text);
+            it.Click += (_, _) => { BoxTextView.Focused?.RunCommand(cmd, args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            f.Items.Add(it);
+        }
+        return f;
+    }
+
     private MenuFlyout PageMenu(string tip)
     {
         var f = new MenuFlyout();
@@ -113,6 +131,8 @@ internal sealed class RibbonView : ThemedControl
         void Add(string text, string cmd, string args = "{}")
         {
             var it = new MenuFlyoutItem { Text = text };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "block-" + PopupMenu.Slug(text));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, text);
             it.Click += (_, _) => { BoxTextView.Focused?.RunCommand(cmd, args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
             f.Items.Add(it);
         }
@@ -122,6 +142,8 @@ internal sealed class RibbonView : ThemedControl
         Add("Heading 3", "setHeading", "{\"level\":3}");
         Add("Quote", "toggleQuote");
         Add("Code block", "toggleCodeBlock");
+        Add("Callout", "pickSlash", "{\"title\":\"Callout\"}");
+        Add("Toggle", "pickSlash", "{\"title\":\"Toggle\"}");
         b.Flyout = f;
     }
 
@@ -174,7 +196,8 @@ internal sealed class RibbonView : ThemedControl
                 new("table", "Table", true, Word: "Table"), new("image-plus", "Picture", true, Word: "Picture"), new("paperclip", "File", true, Word: "File"), new("link-2", "Link", true),
                 new("file-symlink", "Link to page", true), new("minus", "Divider", true),
             }),
-            new("Page", new Item[] { new("paint-bucket", "Page colour", Menu: false), new("rows-3", "Rule lines"), new("printer", "Print") }),
+            new("Table", new Item[] { new("between-horizontal-end", "Add row", true), new("between-vertical-end", "Add column", true), new("table", "Table tools", true, Menu: true) }),
+            new("Page", new Item[] { new("paint-bucket", "Page colour", Menu: false), new("rows-3", "Rule lines"), new("layout-template", "Templates"), new("printer", "Print") }),
             new("View", new Item[] { new("list-tree", "Outline", Pressed: true) }),
         },
     };
@@ -319,7 +342,7 @@ internal sealed class RibbonView : ThemedControl
                 IsEnabled = !it.Disabled, Margin = new Thickness(0, 0, small ? 2 : 4, 0),
             };
             ToolTipService.SetToolTip(bt, it.Tip);
-            if (Route == AppRoute.Notes) { bt.AllowFocusOnInteraction = false; bt.IsTabStop = false; _blockButton = bt; BlockTypeMenu(bt); }
+            if (Route == AppRoute.Notes) { bt.AllowFocusOnInteraction = false; bt.IsTabStop = false; _blockButton = bt; BlockTypeMenu(bt); Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(bt, "ribbon-block-type"); Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(bt, "Text style"); }
             return bt;
         }
 
@@ -344,7 +367,7 @@ internal sealed class RibbonView : ThemedControl
 
         ButtonBase b;
         Specs.TryGetValue(it.Tip, out var spec);
-        var custom = it.Tip is "Clear formatting" or "Link to page" or "Divider" or "Text colour";
+        var custom = it.Tip is "Clear formatting" or "Link to page" or "Divider" or "Text colour" or "Table tools";
         var editing = Route == AppRoute.Notes && (spec is not null || custom || it.Tip is "Undo" or "Redo" or "Picture" or "File");
         if (it.Pressed || spec?.Active is not null)
             b = new ToggleButton { Style = Ui.Style("RibbonToggleStyle"), IsChecked = it.Pressed };
@@ -368,12 +391,17 @@ internal sealed class RibbonView : ThemedControl
                 var picture = it.Tip == "Picture";
                 b.Click += (_, _) => { if (BoxTextView.Focused is { } box) _ = box.PickMediaAsync(picture); };
             }
-            else if (spec is not null) b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            else if (spec is not null)
+            {
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(it.Tip));
+                b.Click += (_, _) => { BoxTextView.Focused?.RunCommand(spec.Command, spec.Args); BoxTextView.Focused?.Focus(FocusState.Programmatic); };
+            }
             else if (custom)
             {
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(it.Tip));
                 var tip = it.Tip;
                 if (tip == "Text colour") ((Button)b).Flyout = TextColourMenu();
+                else if (tip == "Table tools") ((Button)b).Flyout = TableToolsMenu();
                 else b.Click += (_, _) =>
                 {
                     var box = BoxTextView.Focused;

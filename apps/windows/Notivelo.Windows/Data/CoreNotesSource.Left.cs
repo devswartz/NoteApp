@@ -55,7 +55,7 @@ internal sealed partial class CoreNotesSource
             var chain = SectionChain(sectionId);
             foreach (var t in saved)
                 if (TemplateRules.Offered(t.Scoped, t.Sections.Select(s => (s.SectionId, s.IncludeSubsections)), chain))
-                    items.Add(new TemplateItem(t.Id, t.Name, t.Icon, t.TaskCount > 0 ? $"{t.TaskCount} task{(t.TaskCount == 1 ? "" : "s")}" : "Saved template", false, t.Visibility == "private"));
+                    items.Add(ToItem(t));
             return new PageToolResult<IReadOnlyList<TemplateItem>>(items);
         }
         catch (OperationCanceledException) { return PageToolResult<IReadOnlyList<TemplateItem>>.Fail("You were signed out. Sign in again."); }

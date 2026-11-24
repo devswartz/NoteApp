@@ -211,6 +211,7 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
         if (pageId == _openId) return;
         CloseLive();
         _openId = pageId;
+        _people = Array.Empty<PagePerson>();
         _info = null; _attempts = 0; _stateMessage = null;
         _state = PageState.Connecting;
         _gen++;
@@ -240,6 +241,7 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
             var live = await _session.CallAsync(c => c.OpenPage(id, listener));
             if (gen != _gen || _disposed) { CloseInBackground(live); return; }
             _live = live;
+            StartPresence(live, gen);
             // Synced may have been heard before this hop (an empty page sends no change).
             if (_info is null && _state == PageState.Live) { _info = await Task.Run(() => live.Info()); Raise(); }
         }
@@ -941,7 +943,16 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
     }
 
     public Task<TreeResult> CreateSection(string notebookId, string? parentId, string name) => Change(c => (c.CreateSection(notebookId, name, parentId), null));
-    public Task<TreeResult> CreatePage(string sectionId, string title) => Change(c => (c.CreatePage(sectionId, title), null));
+    public async Task<TreeResult> CreatePage(string sectionId, string title)
+    {
+        if (title.Length > 0) return await Change(c => (c.CreatePage(sectionId, title), null));
+        // the New page button: the section's default template (its own, else the nearest parent's) fills the page once it is open
+        N.CreatedPage? created = null;
+        var r = await Change(c => { created = c.CreatePageFromTemplate(sectionId, null, "default"); return (created.Id, null); });
+        if (!r.Ok) return await Change(c => (c.CreatePage(sectionId, title), null));
+        if (created?.PendingTemplate is not null && r.Id is not null) _pendingTemplate[r.Id] = "claim";
+        return r;
+    }
 
     public Task<TreeResult> Rename(TreeKind kind, string id, string name) => Change(c =>
     {
