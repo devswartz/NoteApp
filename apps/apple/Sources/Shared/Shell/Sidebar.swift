@@ -77,6 +77,7 @@ struct NotesPanel: View {
                 .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
                 .background(shell.menu == .notebookPicker ? p.bgPressed.color : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .anchor("notebook-picker", shell)
+                .treeDnD(drag: nil, target: notebook.map { DropTarget.notebook($0.id) })
                 }
                 if notebook != nil {
                     Button { shell.menu = .notebookOptions } label: {
@@ -246,6 +247,7 @@ struct SectionNode: View {
             .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .section(section.id) }
             .onSecondaryClick { shell.menu = .section(section.id) }
             .anchor("section:\(section.id)", shell)
+            .treeDnD(drag: "section:\(section.id)", target: .section(section.id))
 
             if open {
                 VStack(alignment: .leading, spacing: 0) {
@@ -335,6 +337,7 @@ struct PageRowView: View {
         .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .pageRow(page.id) }
         .onSecondaryClick { shell.menu = .pageRow(page.id) }
         .anchor("page:\(page.id)", shell)
+        .treeDnD(drag: depth < 0 ? nil : "page:\(page.id)", target: depth < 0 ? nil : .page(page.id))
     }
 }
 
