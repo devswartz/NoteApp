@@ -14,7 +14,8 @@ final class ScrollTests: XCTestCase {
         let before = title.frame.minY
         let window = app.windows.firstMatch
 
-        func moved() -> Bool { !title.exists || title.frame.minY < before - 80 }
+        // An editable title scrolled out of view reports an infinite frame: that counts as moved.
+        func moved() -> Bool { !title.exists || !title.frame.minY.isFinite || title.frame.minY < before - 80 }
         var tried: [String] = []
 
         window.swipeUp()

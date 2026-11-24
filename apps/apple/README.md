@@ -41,3 +41,5 @@ Settings: profile edit, password, notifications, connected apps, keyboard shortc
 Images and attachments (show, insert from Photos/Files/camera, paste, drop, resize, open) are in this build.
 
 Editable page title, task filters/sort/group, favourites, offline start, print/PDF, notivelo:// links, swipe rows, privacy manifest are in this build.
+
+Notification inbox, app badge, public share link, delete account, who is on the page are in this build.

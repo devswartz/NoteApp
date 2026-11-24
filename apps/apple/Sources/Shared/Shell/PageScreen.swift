@@ -275,8 +275,9 @@ struct PageTopBar: View {
                 if !phone {
                 HStack(spacing: 5) {
                     Icon(status == "Saved" ? "check" : status == "Offline" ? "cloud-off" : "loader", 14, statusColor.color)
-                    Text(status).font(.web(12))
+                    Text(status).font(.web(12)).lineLimit(1)
                 }
+                .fixedSize()
                 .foregroundStyle(statusColor.color)
                 .padding(.horizontal, 6)
                 }
