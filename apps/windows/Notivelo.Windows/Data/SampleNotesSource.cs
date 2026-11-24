@@ -120,13 +120,14 @@ public sealed partial class SampleNotesSource : INotesSource
                 new("Overdue", 1, true, new[] { launch }),
                 new("Today · Sat 21 Nov", 2, false, new[] { welcome, notes }),
                 new("No date", 1, false, new[] { Task("t-nodate", "Someday: tidy the sandbox", 0, null, DueTone.None, "Sandbox", null) }),
+                new("Later", 1, false, new[] { Task("t-other", "Sam: book the offsite", 3, "Wed", DueTone.Soon, "Weekly sync", null, assignee: "SR") }),
             },
             [TaskViewKind.Team] = Array.Empty<TaskGroup>(),
         };
     }
 
-    private static TaskItem Task(string id, string title, int priority, string? due, DueTone tone, string? page, string? team, bool done = false)
-        => new(id, title, done, priority, due, tone, false, page, team, "DU", Array.Empty<string>(), 0, 0);
+    private static TaskItem Task(string id, string title, int priority, string? due, DueTone tone, string? page, string? team, bool done = false, string assignee = "DU")
+        => new(id, title, done, priority, due, tone, false, page, team, assignee, Array.Empty<string>(), 0, 0);
 
     // ---- canvas boxes (offline test mode only): the page record is replaced with the boxes changed, as the core's page info would be ----
     private void EditBoxes(string pageId, Func<List<CanvasBox>, bool> edit)
@@ -208,7 +209,8 @@ public sealed partial class SampleNotesSource : INotesSource
     public void CreateTask(string id, string title, bool done, string? pageId)
     {
         if (!Offline) return;
-        _made[id] = Task(id, title, 0, null, DueTone.None, null, null, done);
+        _made[id] = Task(id, title, 0, null, DueTone.None, pageId is null ? null : PageTitleOf(pageId), null, done);
+        if (pageId is not null) OnPage(pageId).Add(id);
         Log($"create {id} {title}");
     }
     public void DeleteTask(string id) { if (Offline) { _made.Remove(id); Log($"delete {id}"); } }

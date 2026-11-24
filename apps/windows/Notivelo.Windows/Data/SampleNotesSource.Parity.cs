@@ -1,4 +1,5 @@
 namespace Notivelo.Windows.Data;
+using N = Notivelo.Native;
 using Tsk = System.Threading.Tasks.Task;
 
 // Parity B on the sample data: the tree, Trash, search and task edits all work in memory, so the UI (and the UI tests, in offline mode)
@@ -267,19 +268,94 @@ public sealed partial class SampleNotesSource
         if (_made.TryGetValue(id, out var m)) _made[id] = f(m);
     }
 
+    // the task sheet's fields beyond the list row, in memory (the core source reads them from the core's full task)
+    private sealed record Extra(string? TeamId = null, string[]? Tags = null, string? Time = null, N.TaskRecurrence? Rule = null,
+        List<ReminderInfo>? Reminders = null, List<SubtaskInfo>? Subs = null);
+    private readonly Dictionary<string, Extra> _x = new();
+    private readonly Dictionary<string, List<string>> _onPage = new() { ["tasks"] = new() { "t-welcome", "t-notes", "t-slow" } };
+    private readonly List<TagInfo> _tagList = new() { new("tag-launch", "launch", "#ef4444"), new("tag-docs", "docs", "#3b82f6") };
+    private static readonly TeamInfo[] TeamList =
+    {
+        new("team-staff", "Staff", "Staff", "#0ea5e9", null), new("team-design", "Design", "Design", "#a855f7", null),
+        new("team-eng", "Engineering", "Engineering", "#22c55e", null), new("team-web", "Web", "Engineering › Web", "#16a34a", "team-eng"),
+    };
+
+    private Extra X(string id) => _x.GetValueOrDefault(id) ?? (id == "t-launch" ? new Extra(TeamId: "team-staff") : new Extra());
+    private List<string> OnPage(string pageId) => _onPage.TryGetValue(pageId, out var l) ? l : _onPage[pageId] = new List<string>();
+
+    public IReadOnlyList<TeamInfo> Teams() => TaskLogic.Order(TeamList);
+    public IReadOnlyList<TagInfo> Tags() => _tagList.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+
+    public Task<TagInfo?> CreateTag(string name)
+    {
+        var n = name.Trim().TrimStart('#');
+        if (n.Length == 0) return Tsk.FromResult<TagInfo?>(null);
+        var hit = _tagList.FirstOrDefault(t => string.Equals(t.Name, n, StringComparison.OrdinalIgnoreCase));
+        if (hit is null) { hit = new TagInfo(NewId("tag"), n, "#f59e0b"); _tagList.Add(hit); Raise(); }
+        return Tsk.FromResult<TagInfo?>(hit);
+    }
+
+    public IReadOnlyList<ReminderInfo> Reminders(string taskId) => X(taskId).Reminders ?? new List<ReminderInfo>();
+
+    public Task<string?> AddReminder(string taskId, ReminderInput r)
+    {
+        var x = X(taskId);
+        _x[taskId] = x with { Reminders = (x.Reminders ?? new()).Append(new ReminderInfo(NewId("rem"), TaskLogic.ReminderText(r.BeforeMinutes, r.At), null)).ToList() };
+        Log($"reminder {taskId} {TaskLogic.ReminderText(r.BeforeMinutes, r.At)}");
+        Raise();
+        return Tsk.FromResult<string?>(null);
+    }
+
+    public Task<string?> DeleteReminder(string taskId, string reminderId)
+    {
+        var x = X(taskId);
+        _x[taskId] = x with { Reminders = (x.Reminders ?? new()).Where(r => r.Id != reminderId).ToList() };
+        Raise();
+        return Tsk.FromResult<string?>(null);
+    }
+
+    public Task<string?> AddSubtask(string parentId, string title)
+    {
+        title = title.Trim();
+        if (title.Length == 0) return Tsk.FromResult<string?>(null);
+        var x = X(parentId);
+        _x[parentId] = x with { Subs = (x.Subs ?? new()).Append(new SubtaskInfo(NewId("sub"), title, false, 0)).ToList() };
+        _tasksVersion++;
+        Log($"subtask {parentId} {title}");
+        Raise();
+        return Tsk.FromResult<string?>(null);
+    }
+
+    public IReadOnlyList<TaskItem> PageTasks(string pageId) =>
+        _onPage.TryGetValue(pageId, out var ids) ? ids.Select(i => AllTasks().FirstOrDefault(t => t.Id == i)).Where(t => t is not null).Select(t => t!).ToList() : Array.Empty<TaskItem>();
+
     public TaskDetailItem? GetTaskDetail(string id)
     {
         var t = AllTasks().FirstOrDefault(x => x.Id == id);
         if (t is null) return null;
         var ex = _extra.GetValueOrDefault(id);
+        var xx = X(id);
         return new TaskDetailItem(t.Id, t.Title, _desc.GetValueOrDefault(id, ""), t.Done, t.Priority == 0 ? 4 : t.Priority, ex.Due, t.DueLabel, t.Tone,
-            t.Assignee is null ? null : "u1", t.Assignee is null ? null : "Demo User", null, t.PageTitle, "Created by Demo User · 13m ago");
+            t.Assignee is null ? null : "u1", t.Assignee is null ? null : "Demo User", null, t.PageTitle, "Created by Demo User · 13m ago",
+            xx.Time, xx.TeamId, xx.Tags ?? Array.Empty<string>(), xx.Rule, xx.Rule is { } rule ? TaskLogic.Describe(rule, ex.Due) : null, null, null, xx.Subs ?? new List<SubtaskInfo>());
     }
 
     public void UpdateTask(string id, TaskPatch p)
     {
+        // a subtask ticked in the sheet
+        foreach (var kv in _x.ToList())
+            if (kv.Value.Subs is { } subs && subs.Any(s => s.Id == id))
+                _x[kv.Key] = kv.Value with { Subs = subs.Select(s => s.Id == id ? s with { Title = p.Title ?? s.Title, Done = p.Done ?? s.Done } : s).ToList() };
         if (p.Description is not null) _desc[id] = p.Description;
         if (p.DueDate is not null || p.ClearDue) _extra[id] = (p.ClearDue ? null : p.DueDate, null);
+        var x = X(id);
+        _x[id] = x with
+        {
+            TeamId = p.ClearTeam ? null : p.TeamId ?? x.TeamId, Tags = p.TagIds ?? x.Tags, Rule = p.ClearRecurrence ? null : p.Recurrence ?? x.Rule,
+            Time = p.ClearDueTime || p.ClearDue ? null : p.DueTime ?? x.Time,
+        };
+        var teamLabel = _x[id].TeamId is { } tid ? TeamList.FirstOrDefault(tm => tm.Id == tid)?.Name : null;
+        var tagNames = (_x[id].Tags ?? Array.Empty<string>()).Select(i => _tagList.FirstOrDefault(g => g.Id == i)?.Name).Where(n => n is not null).Select(n => n!).ToList();
         ReplaceTask(id, t =>
         {
             var label = t.DueLabel; var tone = t.Tone;
@@ -289,13 +365,14 @@ public sealed partial class SampleNotesSource
             {
                 Title = p.Title ?? t.Title, Done = p.Done ?? t.Done, Priority = p.Priority is { } pr ? (pr >= 4 ? 0 : pr) : t.Priority,
                 DueLabel = label, Tone = tone, Assignee = p.ClearAssignee ? null : p.AssigneeId is not null ? "DU" : t.Assignee,
+                Team = (p.TeamId is not null || p.ClearTeam) ? teamLabel : t.Team, Tags = p.TagIds is not null ? tagNames : t.Tags,
+                Recurring = (p.Recurrence is not null || p.ClearRecurrence) ? p.Recurrence is not null : t.Recurring,
             };
         });
         _tasksVersion++;
         Log($"task {id} " + (p.Done is { } dn ? (dn ? "done" : "open") : "edit"));
         Raise();
     }
-
     // ---- quick add and the Calendar (in memory) ----
 
     private static DateOnly TodayDay => DateOnly.FromDateTime(DateTime.Now);
@@ -309,7 +386,18 @@ public sealed partial class SampleNotesSource
         var diff = due is { } dd ? dd.DayNumber - TodayDay.DayNumber : 0;
         var (label, tone) = due is null ? ((string?)null, DueTone.None) : diff < 0 ? (due.Value.ToString("d MMM"), DueTone.Overdue) : diff == 0 ? ("Today", DueTone.Today)
             : diff == 1 ? ("Tomorrow", DueTone.Soon) : (due.Value.ToString("d MMM"), diff < 7 ? DueTone.Soon : DueTone.Later);
-        var item = new TaskItem(id, title, false, t.Priority >= 4 ? 0 : t.Priority, label, tone, t.Recurrence is not null, null, null, "DU", t.Tags, 0, 0);
+        var teamName = t.TeamId is { } tmid ? TeamList.FirstOrDefault(tm => tm.Id == tmid)?.Name : t.TeamText;
+        var item = new TaskItem(id, title, false, t.Priority >= 4 ? 0 : t.Priority, label, tone, t.Recurrence is not null, t.PageId is null ? null : PageTitleOf(t.PageId), teamName,
+            t.AssigneeId is { Length: 0 } ? null : t.AssigneeId is not null && t.AssigneeId != "u1" ? "SR" : "DU", t.Tags, 0, 0);
+        if (t.PageId is not null) OnPage(t.PageId).Add(id);
+        var tagIds = new List<string>();
+        foreach (var name in t.Tags)
+        {
+            var tag = _tagList.FirstOrDefault(g => string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase)) ?? new TagInfo(NewId("tag"), name, "#f59e0b");
+            if (!_tagList.Contains(tag)) _tagList.Add(tag);
+            tagIds.Add(tag.Id);
+        }
+        _x[id] = new Extra(TeamId: t.TeamId, Tags: tagIds.ToArray(), Time: t.DueTime, Rule: t.Recurrence);
         if (t.Description.Length > 0) _desc[id] = t.Description;
         if (due is { } dv) _extra[id] = (dv.ToString("yyyy-MM-dd"), null);
         // a new task is shown in the lists it belongs to: Today when due today or earlier, always My Tasks and All tasks
@@ -331,22 +419,24 @@ public sealed partial class SampleNotesSource
         return Tsk.FromResult<string?>(null);
     }
 
-    public IReadOnlyList<CalendarTask> CalendarTasks()
+    public IReadOnlyList<CalendarTask> CalendarTasks() => CalendarTasks(false).Where(t => !t.Task.Done).ToList();
+
+    /// <summary>Mine: assigned to Demo User ("DU"); Everyone: every sample task, open and done, on its day.</summary>
+    public IReadOnlyList<CalendarTask> CalendarTasks(bool everyone)
     {
         var today = TodayDay;
         // the sample tasks' days (their lists carry only labels)
         DateOnly? Seed(string id) => id switch
         {
-            "t-launch" => today.AddDays(-1), "t-welcome" or "t-notes" => today, "t-up1" => today.AddDays(1), "t-up2" or "t-slow" => today.AddDays(2),
+            "t-launch" => today.AddDays(-1), "t-welcome" or "t-notes" or "t-other" or "t-slow" => today, "t-up1" => today.AddDays(1), "t-up2" => today.AddDays(2),
             "t-plan" => today.AddDays(9), _ => null,
         };
-        return AllTasks().DistinctBy(t => t.Id).Where(t => !t.Done && t.Assignee is not null).Select(t =>
+        return AllTasks().DistinctBy(t => t.Id).Where(t => everyone ? t.Assignee is not null : t.Assignee == "DU").Select(t =>
         {
             DateOnly? due = _extra.TryGetValue(t.Id, out var e) ? (e.Due is { } str && DateOnly.TryParse(str, out var p) ? p : null) : Seed(t.Id);
-            return new CalendarTask(due?.ToString("yyyy-MM-dd"), t);
+            return new CalendarTask(due?.ToString("yyyy-MM-dd"), t, X(t.Id).Time);
         }).ToList();
     }
-
     // ---- account (in memory; the core source asks the server) ----
     private string _color = "#f59e0b";
     private NotificationPrefs _notes = new("Europe/London", true, "09:00", false, "08:00");

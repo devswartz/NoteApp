@@ -92,6 +92,9 @@ internal sealed class RibbonView : ThemedControl
     public TaskViewKind TaskView { get; private set; } = TaskViewKind.Today;
     public bool Collapsed { get; private set; }
 
+    /// <summary>Draw the buttons again (the Calendar's Week / Month and Mine / Everyone changed).</summary>
+    public void Refresh() => Rebuild();
+
     public void Update(AppRoute route, RibbonMode mode, TaskViewKind view)
     {
         if (route == Route && mode == Mode && view == TaskView) return;
@@ -124,8 +127,8 @@ internal sealed class RibbonView : ThemedControl
         {
             new("New", new Item[] { new("plus", "New task", Word: "New task") }),
             new("Navigate", new Item[] { new("calendar-days", "Today"), new("chevron-left", "Previous"), new("chevron-right", "Next") }),
-            new("View", new Item[] { new("calendar-range", "Week", true), new("calendar-days", "Month", Pressed: true) }),
-            new("Filter", new Item[] { new("user", "Mine", Pressed: true), new("users", "Everyone"), new("tag", "Tags", Menu: true), new("users-round", "Team", Menu: true) }),
+            new("View", new Item[] { new("calendar-range", "Week", Pressed: CalendarMonthView.Week), new("calendar-days", "Month", Pressed: !CalendarMonthView.Week) }),
+            new("Filter", new Item[] { new("user", "Mine", Pressed: !CalendarMonthView.Everyone), new("users", "Everyone", Pressed: CalendarMonthView.Everyone), new("tag", "Tags", Menu: true), new("users-round", "Team", Menu: true) }),
         },
         AppRoute.Settings => new Group[] { new("Settings", new Item[] { new("arrow-left", "Back", Word: "Back") }) },
         _ => new Group[]

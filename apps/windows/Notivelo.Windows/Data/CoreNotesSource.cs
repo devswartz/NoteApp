@@ -506,13 +506,13 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         try
         {
             var title = t.Title;
-            var assignee = _user.Id;
-            if (t.AssigneeMention is { } mention)
+            string? assignee = t.AssigneeId is { Length: 0 } ? null : t.AssigneeId ?? _user.Id;
+            if (t.AssigneeId is null && t.AssigneeMention is { } mention)
             {
                 if (N.NvCore.ResolveMember(mention, _members, _user.Id) is { } id) assignee = id; else title += " @" + mention;
             }
-            string? teamId = null;
-            if (t.TeamText is { } team)
+            string? teamId = t.TeamId;
+            if (teamId is null && t.TeamText is { } team)
             {
                 var teams = await _session.CallAsync(c => c.Teams(ws));
                 if (N.NvCore.ResolveTeam(team, teams) is { } id) teamId = id; else title += " +" + team;
@@ -539,6 +539,116 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         }
         catch (Exception e) { return ErrorText.Message(e); }
     }
+
+    // ---- task sheet extras: the full task, teams, tags and your reminders (Apple's loadDetail, loadReminders) ----
+
+    private readonly Dictionary<string, N.TaskDetail> _details = new();
+    private readonly Dictionary<string, N.TaskReminder[]> _reminders = new();
+    private N.TaskTeam[] _teams = Array.Empty<N.TaskTeam>();
+    private N.TaskTag[] _tags = Array.Empty<N.TaskTag>();
+
+    private static T? Try<T>(Func<T> f) where T : class { try { return f(); } catch (Exception) { return null; } }
+
+    public async void LoadTaskExtras(string? taskId)
+    {
+        var ws = _wsId;
+        if (ws is null) return;
+        try
+        {
+            var r = await _session.CallAsync(c => (
+                One: taskId is null ? null : Try(() => c.CachedTaskDetail(taskId)), All: taskId is null ? null : Try(() => c.TaskDetails(ws)),
+                Teams: Try(() => c.Teams(ws)), Tags: Try(() => c.Tags(ws)), Rem: taskId is null ? null : Try(() => c.TaskReminders(taskId))));
+            if (ws != _wsId || _disposed) return;
+            if (r.One is not null && taskId is not null && !_details.ContainsKey(taskId)) _details[taskId] = r.One;
+            if (r.All is not null) foreach (var d in r.All) _details[d.Id] = d;
+            if (r.Teams is not null) _teams = r.Teams;
+            if (r.Tags is not null) _tags = r.Tags;
+            if (r.Rem is not null && taskId is not null) _reminders[taskId] = r.Rem;
+            Raise();
+        }
+        catch (Exception) { }
+    }
+
+    public IReadOnlyList<TeamInfo> Teams()
+    {
+        var res = _teams.Select(t => new TeamInfo(t.Id, t.Name, TaskLogic.TeamLabel(t.Name, t.ParentId is { } p ? _teams.FirstOrDefault(x => x.Id == p)?.Name : null), t.Color, t.ParentId)).ToList();
+        return TaskLogic.Order(res);
+    }
+
+    public IReadOnlyList<TagInfo> Tags() => _tags.OrderBy(t => t.Name, StringComparer.CurrentCultureIgnoreCase).Select(t => new TagInfo(t.Id, t.Name, t.Color)).ToList();
+
+    public async Task<TagInfo?> CreateTag(string name)
+    {
+        var ws = _wsId;
+        if (ws is null) return null;
+        try
+        {
+            var t = await _session.CallAsync(c => c.CreateTag(ws, name, null));
+            if (ws == _wsId && _tags.All(x => x.Id != t.Id)) { _tags = _tags.Append(t).ToArray(); Raise(); }
+            return new TagInfo(t.Id, t.Name, t.Color);
+        }
+        catch (Exception) { return null; }
+    }
+
+    public IReadOnlyList<ReminderInfo> Reminders(string taskId)
+    {
+        if (!_reminders.TryGetValue(taskId, out var list)) return Array.Empty<ReminderInfo>();
+        var t = _tasks.FirstOrDefault(x => x.Id == taskId);
+        return list.Select(r =>
+        {
+            var before = r.Spec as N.ReminderSpec.Before;
+            var text = TaskLogic.ReminderText(before?.Minutes, (r.Spec as N.ReminderSpec.At)?.AtValue);
+            return new ReminderInfo(r.Id, text, TaskLogic.ReminderNote(r.NextFireAt is not null, r.LastFiredAt is not null, t?.Done ?? false, before is not null, t?.DueDate is not null));
+        }).ToList();
+    }
+
+    public async Task<string?> AddReminder(string taskId, ReminderInput input)
+    {
+        N.ReminderSpec spec = input.BeforeMinutes is { } m ? new N.ReminderSpec.Before(m) : new N.ReminderSpec.At(input.At ?? "");
+        try
+        {
+            var r = await _session.CallAsync(c => c.AddReminder(taskId, spec));
+            _reminders[taskId] = (_reminders.TryGetValue(taskId, out var cur) ? cur : Array.Empty<N.TaskReminder>()).Append(r).ToArray();
+            Raise();
+            return null;
+        }
+        catch (Exception e) { return ErrorText.Message(e); }
+    }
+
+    public async Task<string?> DeleteReminder(string taskId, string reminderId)
+    {
+        var before = _reminders.TryGetValue(taskId, out var cur) ? cur : Array.Empty<N.TaskReminder>();
+        _reminders[taskId] = before.Where(r => r.Id != reminderId).ToArray();
+        Raise();
+        try { await _session.CallAsync(c => { c.DeleteReminder(reminderId); return 0; }); return null; }
+        catch (Exception e) { _reminders[taskId] = before; Raise(); return ErrorText.Message(e); }
+    }
+
+    public async Task<string?> AddSubtask(string parentId, string title)
+    {
+        var ws = _wsId;
+        var parent = _tasks.FirstOrDefault(t => t.Id == parentId);
+        title = title.Trim();
+        if (ws is null || parent is null || title.Length == 0) return null;
+        try
+        {
+            var made = await _session.CallAsync(c => c.CreateTaskWith(ws, new N.NewTaskInput(title, null, parent.PageId, parentId, false)));
+            if (ws == _wsId) { _tasks = _tasks.Where(t => t.Id != made.Id).Append(made).ToArray(); _tasksVersion++; Raise(); }
+            return null;
+        }
+        catch (Exception e) { return ErrorText.Message(e); }
+    }
+
+    public IReadOnlyList<TaskItem> PageTasks(string pageId)
+    {
+        var today = Today();
+        return _tasks.Where(t => t.PageId == pageId && !t.Locked)
+            .OrderBy(t => t.DueDate is null ? 1 : 0).ThenBy(t => t.DueDate, StringComparer.Ordinal).ThenBy(t => t.Priority)
+            .Select(t => ToItem(t, today)).ToList();
+    }
+
+    public IReadOnlyList<CalendarTask> CalendarTasks(bool everyone) =>
+        (everyone ? Visible() : Mine()).Select(t => new CalendarTask(t.DueDate, ToItem(t, Today()), t.DueTime)).ToList();
 
     public IReadOnlyList<CalendarTask> CalendarTasks() =>
         Mine().Where(t => !t.Done).Select(t => new CalendarTask(t.DueDate, ToItem(t, Today()), t.DueTime)).ToList();
@@ -873,8 +983,15 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         if (t is null || t.Locked) return null;
         var (label, tone) = DueText(Due(t), Today());
         var page = t.PageId is null ? null : _tree?.Pages.FirstOrDefault(p => p.Id == t.PageId)?.Title;
+        _details.TryGetValue(id, out var full);
+        var subs = _tasks.Where(x => x.ParentId == id && !x.Locked).Select(x => new SubtaskInfo(x.Id, x.Title, x.Done, x.Priority)).ToList();
+        var parent = t.ParentId is null ? null : _tasks.FirstOrDefault(x => x.Id == t.ParentId)?.Title;
+        var role = Workspaces.FirstOrDefault(w => w.Id == _wsId)?.Role;
         return new TaskDetailItem(t.Id, t.Title, t.Description, t.Done, t.Priority, t.DueDate, label, tone, t.AssigneeId, NameOf(t.AssigneeId),
-            t.PageId, t.PageId is null ? null : (string.IsNullOrEmpty(page) ? "Untitled" : page), "Created " + Ago(t.CreatedAt));
+            t.PageId, t.PageId is null ? null : (string.IsNullOrEmpty(page) ? "Untitled" : page), "Created by " + (NameOf(full?.CreatedBy ?? _user.Id) ?? "a former member") + " Â· " + Ago(t.CreatedAt),
+            t.DueTime, full?.TeamId, t.TagIds, full?.Recurrence, full?.Recurrence is { } rule ? TaskLogic.Describe(rule, t.DueDate) : null,
+            t.ParentId, t.ParentId is null ? null : (string.IsNullOrEmpty(parent) ? "a task" : parent), subs,
+            full?.AssignedBy is { } by && by != t.AssigneeId ? NameOf(by) ?? "a former member" : null, role != "viewer");
     }
 
     public async void UpdateTask(string id, TaskPatch p)
@@ -887,28 +1004,37 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         {
             Title = p.Title ?? old.Title, Description = p.Description ?? old.Description, Done = p.Done ?? old.Done,
             Priority = p.Priority is { } pr ? (byte)pr : old.Priority,
-            DueDate = p.ClearDue ? null : p.DueDate ?? old.DueDate, DueTime = p.ClearDue ? null : old.DueTime,
+            DueDate = p.ClearDue ? null : p.DueDate ?? old.DueDate, DueTime = p.ClearDue || p.ClearDueTime ? null : p.DueTime ?? old.DueTime,
+            TagIds = p.TagIds ?? old.TagIds,
             AssigneeId = p.ClearAssignee ? null : p.AssigneeId ?? old.AssigneeId,
             CompletedAt = p.Done is true ? DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture) : p.Done is false ? null : old.CompletedAt,
         };
         var copy = (N.Task[])_tasks.Clone();
         copy[i] = now;
         _tasks = copy; _tasksVersion++;
+        if (_details.TryGetValue(id, out var det))
+            _details[id] = det with
+            {
+                TeamId = p.ClearTeam ? null : p.TeamId ?? det.TeamId, Recurrence = p.ClearRecurrence ? null : p.Recurrence ?? det.Recurrence,
+                DueDate = now.DueDate, DueTime = now.DueTime,
+            };
         Raise();
         var changes = new N.TaskChanges(
             Title: p.Title, Description: p.Description, Done: p.Done, Priority: p.Priority is { } q ? (byte)q : null,
-            DueDate: p.DueDate, ClearDueDate: p.ClearDue, AssigneeId: p.AssigneeId, ClearAssignee: p.ClearAssignee);
+            DueDate: p.DueDate, ClearDueDate: p.ClearDue, DueTime: p.DueTime, ClearDueTime: p.ClearDueTime, AssigneeId: p.AssigneeId, ClearAssignee: p.ClearAssignee,
+            TeamId: p.TeamId, ClearTeam: p.ClearTeam, TagIds: p.TagIds, Recurrence: p.Recurrence, ClearRecurrence: p.ClearRecurrence);
         try
         {
             var d = await _session.CallAsync(c => c.UpdateTask(id, changes));
             if (ws != _wsId) return;
+            _details[id] = d;
             var j = Array.FindIndex(_tasks, t => t.Id == id);
             if (j < 0) return;
             var merged = (N.Task[])_tasks.Clone();
             merged[j] = merged[j] with
             {
                 Title = d.Title, Description = d.Description, Done = d.Done, Priority = d.Priority, DueDate = d.DueDate, DueTime = d.DueTime,
-                AssigneeId = d.AssigneeId, CompletedAt = d.CompletedAt, UpdatedAt = d.UpdatedAt,
+                AssigneeId = d.AssigneeId, CompletedAt = d.CompletedAt, UpdatedAt = d.UpdatedAt, TagIds = d.TagIds,
             };
             _tasks = merged; _tasksVersion++;
             Raise();

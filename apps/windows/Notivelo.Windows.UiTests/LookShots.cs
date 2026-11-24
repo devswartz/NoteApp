@@ -113,6 +113,22 @@ public class LookShots
             Invoke("rail-search"); Find("search-input")!.AsTextBox().Text = "launch"; Settle(900);
             Invoke("search-result-task-t-launch"); Find("task-sheet"); Snap("task-sheet");
         });
+        Step("task-sheet-full", () =>   // every field of the sheet filled: due, repeat, tags, a reminder and a subtask (page-tasks-panel is the page's task panel)
+        {
+            Invoke("rail-search"); Find("search-input")!.AsTextBox().Text = "launch"; Settle(900);
+            Invoke("search-result-task-t-launch"); Find("task-sheet");
+            Invoke("task-sheet-due"); Invoke("pick-due-tomorrow"); Settle(300);
+            Invoke("task-sheet-repeat"); Invoke("pick-repeat-2"); Settle(300);
+            Invoke("task-sheet-tags"); Invoke("pick-tag-launch"); h.Press(ESCAPE); Settle(300);
+            Invoke("task-sheet-add-reminder"); Invoke("pick-reminder-60"); Settle(300);
+            var sub = Find("task-sheet-subtask-input")!; sub.AsTextBox().Text = "Draft the announcement"; sub.Focus(); h.Press(ENTER); Settle(500);
+            Snap("task-sheet-full");
+        });
+        Step("page-tasks-panel", () =>
+        {
+            Invoke("page-row-tasks"); Settle(900); Invoke("page-tasks-button"); Find("page-tasks-panel"); Settle(500); Snap("page-tasks-panel");
+            try { Invoke("page-tasks-close"); } catch (Exception) { }
+        });
         Step("trash-dialog", () => { Invoke("rail-workspace"); Invoke("menu-trash"); Find("trash-dialog"); Snap("trash-dialog"); });
         Step("name-dialog", () => { Invoke("page-more-blocks"); Invoke("menu-rename"); Find("prompt-input"); Snap("name-dialog"); });
         Step("tasks", () => { Find("rail-tasks")!.Click(); Settle(900); Snap("tasks"); });

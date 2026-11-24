@@ -147,6 +147,9 @@ internal sealed class PageView : ThemedControl
         root.PointerPressed += (_, _) => { BoxTextView.CloseLinkEditor(); BoxTextView.Focused?.Unfocus(); BoxTextView.LeaveEditing(); };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        // "Tasks on this page" docks at the right of the page (and its top bar)
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (page is null)
         {
             var e = PageId is null || _source.Loading || _source.LoadError is not null ? Overview() : Missing();
@@ -224,6 +227,12 @@ internal sealed class PageView : ThemedControl
             outline.Children.Add(new Border { Width = 16, Height = 2, Background = i == 0 ? B("Accent") : B("BorderStrong"), HorizontalAlignment = HorizontalAlignment.Right });
         Grid.SetRow(outline, 1);
         root.Children.Add(outline);
+        if (_tasksOpen && PageId is { } tasksPage)
+        {
+            var panel = new PageTasksPanel(_source, tasksPage, () => { _tasksOpen = false; Rebuild(); }) { Host = Host };
+            Grid.SetColumn(panel, 1); Grid.SetRowSpan(panel, 2);
+            root.Children.Add(panel);
+        }
         return root;
     }
 
@@ -321,6 +330,7 @@ internal sealed class PageView : ThemedControl
     public event Action<string>? TaskOpened;
     internal ShellHost? Host { get; set; }
     private long _tasksSeen;
+    private bool _tasksOpen;
 
     // ---- top bar ----------------------------------------------------------------------------------------------
 
@@ -345,7 +355,12 @@ internal sealed class PageView : ThemedControl
         saved.Children.Add(new Icon("check", 14, B("Text2")));
         saved.Children.Add(Ui.Text("Saved", 12, B("Text2")));
         right.Children.Add(saved);
-        right.Children.Add(WithBadge(Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8), page.OpenTasks));
+        var tasksBtn = Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(tasksBtn, "page-tasks-button");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(tasksBtn, _tasksOpen ? "panel=open" : "panel=closed");
+        if (_tasksOpen) tasksBtn.Background = B("AccentSoft");
+        tasksBtn.Click += (_, _) => { _tasksOpen = !_tasksOpen; Rebuild(); };
+        right.Children.Add(WithBadge(tasksBtn, page.OpenTasks));
         right.Children.Add(Ui.IconButton("message-square", 18, 32, 32, "Comments", 8));
 
         var share = new Button

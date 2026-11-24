@@ -140,6 +140,8 @@ public sealed partial class ShellView : UserControl
             case "Today" when _route == AppRoute.Calendar: _calendar.GoToday(); break;
             case "Previous" when _route == AppRoute.Calendar: _calendar.Step(-1); break;
             case "Next" when _route == AppRoute.Calendar: _calendar.Step(1); break;
+            case "Week" or "Month" when _route == AppRoute.Calendar: _calendar.SetWeek(tip == "Week"); _ribbon.Refresh(); break;
+            case "Mine" or "Everyone" when _route == AppRoute.Calendar: _calendar.SetEveryone(tip == "Everyone"); _ribbon.Refresh(); break;
             case "Back" when _route == AppRoute.Settings: GoTo(_before == AppRoute.Settings ? AppRoute.Notes : _before); break;
         }
     }

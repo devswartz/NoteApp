@@ -32,6 +32,10 @@ internal sealed class QuickAddDialog
     private string? _dueOverride;
     private bool _dueCleared;
     private byte? _priorityOverride;
+    // the chips' pickers win over the words in the line: an assignee ("" = unassigned), a team, the tags (names)
+    private string? _assigneeId;
+    private string? _teamId;
+    private List<string>? _tagNames;
     private bool _busy;
     private N.QuickAddResult _q = Empty("");
 
@@ -100,6 +104,7 @@ internal sealed class QuickAddDialog
         _text.KeyDown += (_, e) => Key(e);
         _desc.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter && Ctrl()) { e.Handled = true; Submit(true); } };
         _text.Loaded += (_, _) => _text.Focus(FocusState.Programmatic);
+        _h.Source.LoadTaskExtras(null);   // the teams and tags the chips pick from
         Refresh();
     }
 
@@ -122,10 +127,11 @@ internal sealed class QuickAddDialog
         Chip("quickadd-due", "calendar-days", due is null ? "Due date" : DueWords(due, _q.DueTime), due is not null, DueMenu);
         var pr = Priority;
         Chip("quickadd-priority", "flag", pr < 4 ? "P" + pr : "Priority", pr < 4, PriorityMenu, pr < 4 ? TaskParts.PriorityBrush(B, pr) : null);
-        if (_q.Assignee is { } m) Chip("quickadd-assignee", "user-round", "@" + m, true, null);
-        else AssigneeChip();
-        Chip("quickadd-team", "users", _q.Team is { } t ? "+" + t : "Team", _q.Team is not null, null);
-        Chip("quickadd-tags", "tag", _q.Tags.Length == 0 ? "Tags" : string.Join(", ", _q.Tags.Select(x => "#" + x)), _q.Tags.Length > 0, null);
+        AssigneeChip();
+        var team = _teamId is { } tid ? _h.Source.Teams().FirstOrDefault(x => x.Id == tid)?.Label : _teamCleared ? null : _q.Team is { } t ? "+" + t : null;
+        Chip("quickadd-team", "users", team ?? "Team", team is not null, TeamPick);
+        var tags = Tags;
+        Chip("quickadd-tags", "tag", tags.Count == 0 ? "Tags" : string.Join(", ", tags.Select(x => "#" + x)), tags.Count > 0, TagsPick);
         if (_q.Recurrence is { } rule)
         {
             string label;
@@ -164,19 +170,57 @@ internal sealed class QuickAddDialog
         _chips.Children.Add(b);
     }
 
+    private List<string> Tags => _tagNames ?? _q.Tags.ToList();
+
+    /// <summary>The assignee chip: a picked person, else the @name of the line, else you.</summary>
     private void AssigneeChip()
     {
+        string label; UIElement lead; var active = true;
+        if (_assigneeId is { Length: 0 }) { label = "Unassigned"; lead = new Icon("user-round", 13, B("TextMuted")); active = false; }
+        else if (_assigneeId is { } who && _h.Source.People("").FirstOrDefault(x => x.Id == who) is { Label: { } name }) { label = name; lead = Ui.Avatar(Initials(name), 14); }
+        else if (_assigneeId is null && _q.Assignee is { } m) { label = "@" + m; lead = new Icon("user-round", 13, B("Accent")); }
+        else { label = "Me"; lead = Ui.Avatar(_h.Source.Workspace.UserInitials, 14); active = false; }
         var sp = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        sp.Children.Add(Ui.Avatar(_h.Source.Workspace.UserInitials, 14));
-        sp.Children.Add(Ui.Text("Me", 13, B("Text2"), 600));
+        sp.Children.Add(lead);
+        sp.Children.Add(Ui.Text(label, 13, active && label != "Me" ? B("Accent") : B("Text2"), 600));
+        sp.MaxWidth = 220;
         var b = new Button
         {
             Style = Ui.Style("GhostButtonStyle"), Height = 42, Padding = new Thickness(10, 0, 10, 0), CornerRadius = new CornerRadius(8), Content = sp,
-            Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1),
+            Background = _assigneeId is { Length: > 0 } || (_assigneeId is null && _q.Assignee is not null) ? B("AccentSoft") : B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1),
         };
         AutomationProperties.SetAutomationId(b, "quickadd-assignee");
-        AutomationProperties.SetName(b, "Me");
+        AutomationProperties.SetName(b, label);
+        b.Click += (_, _) => AssigneePick(b);
         _chips.Children.Add(b);
+    }
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 ? (parts[0][..1] + parts[^1][..1]).ToUpperInvariant() : name.Length > 1 ? name[..2].ToUpperInvariant() : name.ToUpperInvariant();
+    }
+
+    private void Picked() { Refresh(); _text.Focus(FocusState.Programmatic); }
+
+    private void AssigneePick(Button anchor) =>
+        TaskPickers.AssigneeMenu(_o, _h.Source, anchor, _assigneeId ?? (_q.Assignee is null ? _h.Source.UserId : null), id => { _assigneeId = id ?? ""; Picked(); });
+
+    private void TeamPick(Button anchor) =>
+        TaskPickers.TeamMenu(_o, _h.Source, anchor, _teamId, id => { _teamId = id; if (id is null) _teamCleared = true; Picked(); });
+
+    private bool _teamCleared;
+
+    private void TagsPick(Button anchor)
+    {
+        var known = _h.Source.Tags();
+        var current = Tags.Select(n => known.FirstOrDefault(t => string.Equals(t.Name, n, StringComparison.OrdinalIgnoreCase))?.Id).Where(i => i is not null).Select(i => i!).ToList();
+        TaskPickers.TagsMenu(_o, _h.Source, anchor, current, ids =>
+        {
+            var all = _h.Source.Tags();
+            _tagNames = ids.Select(i => all.FirstOrDefault(t => t.Id == i)?.Name).Where(n => n is not null).Select(n => n!).ToList();
+            Refresh();
+        });
     }
 
     private void DueMenu(Button anchor)
@@ -206,7 +250,7 @@ internal sealed class QuickAddDialog
         var q = _q;
         var due = Due;
         if (due is null && q.DueTime is not null) due = TodayString;   // the web's convenience: a time with no day is today
-        var task = new NewTask(q.Title.Trim(), _desc.Text.Trim(), Priority, due, _dueCleared ? null : q.DueTime, q.Recurrence, q.Assignee, q.Team, q.Tags, _seed.PageId);
+        var task = new NewTask(q.Title.Trim(), _desc.Text.Trim(), Priority, due, _dueCleared ? null : q.DueTime, q.Recurrence, q.Assignee, _teamCleared ? null : q.Team, Tags, _seed.PageId, _assigneeId, _teamId);
         _busy = true; Refresh();
         var err = await _h.Source.AddTask(task);
         _busy = false;
@@ -215,7 +259,7 @@ internal sealed class QuickAddDialog
         if (keepOpen)
         {
             _error.Visibility = Visibility.Collapsed;
-            _desc.Text = ""; _dueOverride = null; _dueCleared = false; _priorityOverride = null;
+            _desc.Text = ""; _dueOverride = null; _dueCleared = false; _priorityOverride = null; _assigneeId = null; _teamId = null; _teamCleared = false; _tagNames = null;
             _text.Text = "";
             Refresh();
             _text.Focus(FocusState.Programmatic);
