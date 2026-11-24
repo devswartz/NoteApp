@@ -151,6 +151,7 @@ final class Shell {
             case "tasks-all", "empty-tasks-all": route = .tasks(.all)
             case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
+            case "templates": route = .page(LookData.pageId("empty"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))

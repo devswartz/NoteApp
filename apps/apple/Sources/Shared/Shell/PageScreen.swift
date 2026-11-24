@@ -64,6 +64,10 @@ struct PageScreen: View {
             openPage()
         }
         .onChange(of: pageId) { _, id in MediaHub.shared.pageId = id }
+        // A page just made from a template or a section default is filled once it is open and in sync.
+        .onChange(of: live?.state == .live && live?.info != nil, initial: true) { _, ready in
+            if ready, let live { TemplatesModel.shared.consume(pageId: pageId, host: live, session, shell) }
+        }
         .onChange(of: session.locksOpen) { _, open in
             if open {
                 openPage()
@@ -99,6 +103,13 @@ struct PageScreen: View {
             return PageSnapshot(id: s.id, title: s.title, info: s.info, tasks: s.tasks, pageTitles: ["page-2": "Canvas"], document: s.document)
         }
         return live?.snapshot
+    }
+
+    /// "Start with a template": an empty page that can be edited (the look state shows it on the corpus's empty page).
+    private func showsTemplatePicker(_ snapshot: PageSnapshot) -> Bool {
+        if LookData.state == "templates" { return snapshot.info.boxes.isEmpty }
+        guard !session.preview, let live, meta != nil, session.canEditTree, live.savesBoxes, live.state == .live else { return false }
+        return snapshot.info.boxes.isEmpty
     }
 
     private var editHost: PageEditHost? {
@@ -181,6 +192,9 @@ struct PageScreen: View {
                        decor: decor, showAddIcon: phone || canEditIcon || ((LookData.state?.hasPrefix("edit") ?? false)), icon: meta?.icon,
                        onIcon: onIcon, onRename: onRename, stacked: phone, notify: { shell.say($0) })
                 .anchor("page-canvas", shell)
+                .overlay(alignment: .topLeading) {
+                    if showsTemplatePicker(snapshot) { TemplatePickerView(pageId: pageId, host: editHost) }
+                }
         } else if let sample, case .failure = sample.page {
             notFound(palette)
         } else if let live, case .ended = live.state {

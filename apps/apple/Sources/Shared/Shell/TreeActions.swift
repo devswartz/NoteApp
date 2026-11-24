@@ -317,9 +317,20 @@ extension Shell {
         }()
         switch op {
         case let .newPage(section):
-            session.changeTree({ core, _ in try core.createPage(sectionId: section, title: nil) }) { result in
+            // A section (or a parent) can have a default template: the server remembers it on the page and this device fills the page
+            // when it opens (TemplatesModel.consume). Offline, a blank page as before.
+            session.changeTree({ core, _ -> (String, Bool) in
+                do {
+                    let c = try core.createPageFromTemplate(sectionId: section, title: nil, template: "default")
+                    return (c.id, c.pendingTemplate != nil)
+                } catch let e as CoreError {
+                    if case .Network = e { return (try core.createPage(sectionId: section, title: nil), false) }
+                    throw e
+                }
+            }) { result in
                 switch result {
-                case let .success(id):
+                case let .success((id, claim)):
+                    if claim { TemplatesModel.shared.pending[id] = .claim }
                     self.expanded.insert(section)
                     self.open(page: id)
                 case let .failure(e):
