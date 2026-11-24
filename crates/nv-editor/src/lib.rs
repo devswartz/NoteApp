@@ -10,6 +10,7 @@ pub mod input;
 pub mod insert;
 pub mod keymap;
 pub mod link;
+pub mod media;
 pub mod node;
 pub mod notation;
 pub mod pos;

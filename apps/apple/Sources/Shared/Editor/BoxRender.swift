@@ -57,6 +57,23 @@ struct BoxDecoration {
     var bottomPad: CGFloat = 0
 }
 
+/// An image or a file card drawn on its own line (the view draws its selection, handles and answers taps from this).
+struct BoxMedia {
+    enum Kind { case image, file }
+    let kind: Kind
+    /// The line's U+FFFC in the view text.
+    let offset: Int
+    /// Where the picture starts, from the container's left.
+    let x: CGFloat
+    /// The size as drawn.
+    let size: CGSize
+    /// An image's `src`, or a file card's `url` (the stored `/uploads/...` path).
+    let src: String
+    let name: String
+    let mime: String
+    let bytes: Double
+}
+
 extension NSAttributedString.Key {
     /// A link's address, on the text it covers (the link editor and taps read it back).
     static let nvHref = NSAttributedString.Key("nvHref")
@@ -82,6 +99,8 @@ struct BoxRendering {
     /// placeholder unfocused). Decided from the tree, not the drawn text: a task line or an image draws only an
     /// object character and is not blank.
     var blank = false
+    /// The images and file cards, in order.
+    var media: [BoxMedia] = []
 
     static let empty = BoxRendering(string: NSAttributedString(), markers: [], decorations: [], length: 0, topMargin: 0)
 }
@@ -134,6 +153,7 @@ struct BoxTextRenderer {
         var markers: [BoxMarker] = []
         var decorations: [BoxDecoration] = []
         var taskTitles: [BoxTaskTitle] = []
+        var media: [BoxMedia] = []
         var lastStyle: NSParagraphStyle?
         var lastLineEmpty = true
         var lines = 0
@@ -173,7 +193,7 @@ struct BoxTextRenderer {
         }
         let blank = doc.content.isEmpty || (doc.content.count == 1 && doc.content[0].type == "paragraph" && doc.content[0].content.isEmpty)
         return BoxRendering(string: out.string, markers: out.markers, decorations: out.decorations, length: length, topMargin: out.topMargin,
-                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf, taskTitles: out.taskTitles, blank: blank)
+                            bottomMargin: max(out.pendingBottom, 0) + out.addAfter - out.prevHalf, taskTitles: out.taskTitles, blank: blank, media: out.media)
     }
 
     // MARK: Blocks (the same walk as nv-editor's `ViewText::blocks`)
@@ -373,19 +393,67 @@ struct BoxTextRenderer {
             }
             line(attachment(image, height: h), ctx, out, lineHeight: h, raise: false)
         case "image":
-            let alt = c.string("alt") ?? ""
-            let label = NSMutableAttributedString(string: alt.isEmpty ? "Image" : alt,
-                                                  attributes: [.font: font(bodySize), .foregroundColor: palette.textMuted])
-            let size = CGSize(width: min(avail, label.size().width + 22), height: 27.2)
-            let image = Self.image(size) { _ in
-                PlatformImage.lucide("image", size: 16, color: palette.textMuted)?.paint(at: CGPoint(x: 0, y: 5.6))
-                label.draw(at: CGPoint(x: 22, y: (27.2 - font(bodySize).lineHeight) / 2))
+            let (image, size, src) = imageNode(c, avail: avail)
+            let offset = out.string.length + (out.lines > 0 ? 1 : 0)
+            if !ctx.hidden {
+                out.media.append(BoxMedia(kind: .image, offset: offset, x: ctx.left, size: size, src: src, name: c.string("alt") ?? "", mime: "", bytes: 0))
             }
-            line(attachment(image, height: 27.2), ctx, out, lineHeight: 27.2, raise: false)
+            line(attachment(image, height: size.height), ctx, out, lineHeight: size.height, raise: false)
         default:
-            let image = fileCard(c, width: min(avail, 520))
+            let width = min(avail, 520)
+            let image = fileCard(c, width: width)
+            let offset = out.string.length + (out.lines > 0 ? 1 : 0)
+            if !ctx.hidden {
+                out.media.append(BoxMedia(kind: .file, offset: offset, x: ctx.left, size: image.size, src: c.string("url") ?? "", name: c.string("name") ?? "file",
+                                          mime: c.string("mime") ?? "", bytes: c.number("size") ?? 0))
+            }
             line(attachment(image, height: image.size.height), ctx, out, lineHeight: image.size.height, raise: false)
         }
+    }
+
+    /// An image node as the web draws it (`img` with max-width 100%, height auto, radius 8): its own width (or its natural
+    /// one) capped to the box, the picture's own aspect. While it loads, or when it can't, a placeholder of the saved size.
+    private func imageNode(_ c: BoxNode, avail: CGFloat) -> (PlatformImage, CGSize, String) {
+        let src = c.string("src") ?? ""
+        let attrW = c.number("width").flatMap { $0 > 0 ? $0 : nil }
+        let attrH = c.number("height").flatMap { $0 > 0 ? $0 : nil }
+        let state: MediaCache.State = src.isEmpty ? .failed : MediaCache.shared.state(src)
+        if case let .ready(picture, natural) = state, natural.width > 0, natural.height > 0 {
+            let w = max(min(attrW ?? natural.width, avail), 1)
+            let size = CGSize(width: w, height: (w * natural.height / natural.width).rounded())
+            let image = Self.image(size) { _ in
+                PlatformPath(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 8).addClip()
+                picture.paint(in: CGRect(origin: .zero, size: size))
+            }
+            return (image, size, src)
+        }
+        let w = max(min(attrW ?? 320, avail), 60)
+        var h = w * 0.6
+        if let attrW, let attrH { h = w * attrH / attrW }
+        let size = CGSize(width: w, height: max(h.rounded(), 40))
+        var failed = false
+        if case .failed = state { failed = true }
+        let p = palette
+        let alt = c.string("alt") ?? ""
+        let label = NSAttributedString(string: failed ? (alt.isEmpty ? "Image can’t be shown" : alt) : "",
+                                       attributes: [.font: WebType.ui(13), .foregroundColor: p.textMuted])
+        let image = Self.image(size) { _ in
+            let box = PlatformPath(roundedRect: CGRect(x: 0.5, y: 0.5, width: size.width - 1, height: size.height - 1), cornerRadius: 8)
+            p.bgSubtle.setFill()
+            box.fill()
+            p.border.setStroke()
+            box.lineWidth = 1
+            box.stroke()
+            let glyph = PlatformImage.lucide("image", size: 22, color: p.textMuted)
+            if failed {
+                let tw = min(label.size().width, size.width - 24)
+                glyph?.paint(at: CGPoint(x: (size.width - 22) / 2, y: size.height / 2 - 24))
+                label.draw(in: CGRect(x: (size.width - tw) / 2, y: size.height / 2 + 6, width: tw + 1, height: 18))
+            } else {
+                glyph?.paint(at: CGPoint(x: (size.width - 22) / 2, y: (size.height - 22) / 2))
+            }
+        }
+        return (image, size, src)
     }
 
     private func taskRef(_ c: BoxNode, _ ctx: Context, _ out: Output) {
@@ -679,15 +747,36 @@ struct BoxTextRenderer {
         }
     }
 
+    /// The web's file icon by type (`fileIcon` in blocks.tsx).
+    static func fileIcon(mime: String, name: String) -> String {
+        let ext = name.split(separator: ".").last.map { $0.lowercased() } ?? ""
+        let m = mime.lowercased()
+        if m.hasPrefix("image/") { return "file-image" }
+        if m.hasPrefix("video/") { return "file-play" }
+        if m.hasPrefix("audio/") { return "file-headphone" }
+        if ["zip", "tar", "gzip", "7z", "rar"].contains(where: { m.contains($0) }) || ["zip", "gz", "7z", "rar", "tar"].contains(ext) { return "file-archive" }
+        if ["sheet", "excel", "csv"].contains(where: { m.contains($0) }) || ["xls", "xlsx", "csv", "numbers"].contains(ext) { return "file-spreadsheet" }
+        if m.hasPrefix("text/") || ["pdf", "word", "document"].contains(where: { m.contains($0) }) { return "file-text" }
+        return "file"
+    }
+
+    /// `formatSize` in blocks.tsx.
+    static func fileSize(_ n: Double) -> String {
+        if n <= 0 { return "" }
+        if n < 1024 { return "\(Int(n)) B" }
+        if n < 1_048_576 { return "\(Int((n / 1024).rounded())) KB" }
+        return String(format: "%.1f MB", n / 1_048_576)
+    }
+
     private func fileCard(_ c: BoxNode, width: CGFloat) -> PlatformImage {
         let p = palette
-        let name = NSAttributedString(string: c.string("name") ?? "File", attributes: [.font: font(bodySize, weight: 500), .foregroundColor: p.text])
-        let sizeText: String = {
-            guard let n = c.number("size") else { return "" }
-            if n >= 1_048_576 { return String(format: "%.1f MB", n / 1_048_576) }
-            return "\(Int((n / 1024).rounded())) KB"
-        }()
-        let size = NSAttributedString(string: sizeText, attributes: [.font: WebType.ui(12), .foregroundColor: p.textMuted])
+        let fileName = c.string("name") ?? "File"
+        let nameStyle = NSMutableParagraphStyle()
+        nameStyle.lineBreakMode = .byTruncatingTail
+        let nameFont = font(bodySize, weight: 500)
+        let name = NSAttributedString(string: fileName, attributes: [.font: nameFont, .foregroundColor: p.text, .paragraphStyle: nameStyle])
+        let size = NSAttributedString(string: Self.fileSize(c.number("size") ?? 0), attributes: [.font: WebType.ui(12), .foregroundColor: p.textMuted])
+        let icon = Self.fileIcon(mime: c.string("mime") ?? "", name: fileName)
         let h: CGFloat = 52
         return Self.image(CGSize(width: width, height: h)) { _ in
             let card = PlatformPath(roundedRect: CGRect(x: 0.5, y: 0.5, width: width - 1, height: h - 1), cornerRadius: 8)
@@ -698,9 +787,10 @@ struct BoxTextRenderer {
             card.stroke()
             p.accentSoft.setFill()
             PlatformPath(roundedRect: CGRect(x: 11, y: 9, width: 34, height: 34), cornerRadius: 7).fill()
-            PlatformImage.lucide("file-text", size: 18, color: p.accent)?.paint(at: CGPoint(x: 19, y: 17))
-            name.draw(at: CGPoint(x: 55, y: (h - name.size().height) / 2))
+            PlatformImage.lucide(icon, size: 20, color: p.accent)?.paint(at: CGPoint(x: 18, y: 16))
             let sw = size.size().width
+            let nameWidth = max(width - 11 - 28 - 8 - sw - 8 - 55, 20)
+            name.draw(in: CGRect(x: 55, y: (h - nameFont.lineHeight) / 2, width: nameWidth, height: ceil(nameFont.lineHeight) + 1))
             size.draw(at: CGPoint(x: width - 11 - 28 - 8 - sw, y: (h - size.size().height) / 2))
             PlatformImage.lucide("download", size: 16, color: p.text2)?.paint(at: CGPoint(x: width - 11 - 22, y: 18))
         }

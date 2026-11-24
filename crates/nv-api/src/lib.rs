@@ -8,6 +8,7 @@
 //! The client is blocking: the core calls it from its own threads, never the UI thread.
 
 mod account;
+mod files;
 mod locks;
 mod share;
 mod tree;
@@ -21,6 +22,7 @@ use base64::Engine;
 use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
+pub use files::{sign_file_name, sign_upload_path, MAX_UPLOAD_BYTES};
 pub use types::*;
 
 /// Why a request failed.
@@ -89,11 +91,73 @@ pub struct Response {
     pub request_id: Option<String>,
 }
 
+/// A file upload: raw bytes, `Content-Type: application/octet-stream`, the name in `X-Filename`.
+/// `Debug` shows the size, not the bytes.
+#[derive(Clone, PartialEq)]
+pub struct UploadRequest<'a> {
+    pub url: String,
+    pub bearer: Option<String>,
+    /// The URI-encoded original file name (the `X-Filename` header).
+    pub filename: String,
+    pub data: &'a [u8],
+}
+
+impl std::fmt::Debug for UploadRequest<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UploadRequest")
+            .field("url", &self.url)
+            .field("bearer", &self.bearer.as_ref().map(|_| "<hidden>"))
+            .field("filename", &self.filename)
+            .field("data", &format!("<{} bytes>", self.data.len()))
+            .finish()
+    }
+}
+
+/// A GET whose answer is bytes (an uploaded file at its signed link).
+#[derive(Debug, Clone, PartialEq)]
+pub struct DownloadRequest {
+    pub url: String,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct BinaryResponse {
+    pub status: u16,
+    pub body: Vec<u8>,
+    /// The `Content-Type` header, parameters included.
+    pub content_type: Option<String>,
+}
+
+impl std::fmt::Debug for BinaryResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BinaryResponse")
+            .field("status", &self.status)
+            .field("body", &format!("<{} bytes>", self.body.len()))
+            .field("content_type", &self.content_type)
+            .finish()
+    }
+}
+
 /// Sends requests. `UreqTransport` in the apps; tests use a scripted one.
 pub trait Transport: Send + Sync {
     /// Err only when no response arrived (network error).
     fn send(&self, req: &Request) -> Result<Response, String>;
+
+    /// Upload raw bytes (the answer is JSON, as for `send`). Transports that only script JSON
+    /// calls leave this alone.
+    fn upload(&self, _req: &UploadRequest<'_>) -> Result<Response, String> {
+        Err("this transport cannot upload files".into())
+    }
+
+    /// GET bytes. Err only when no response arrived.
+    fn download(&self, _req: &DownloadRequest) -> Result<BinaryResponse, String> {
+        Err("this transport cannot download files".into())
+    }
 }
+
+/// The biggest file the transport will read back (the server's upload limit plus a little).
+const MAX_DOWNLOAD_BYTES: u64 = 26 * 1024 * 1024;
+/// Uploads and downloads of up to 25 MB get longer than JSON calls.
+const FILE_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// HTTP over ureq with rustls (ring), certificates checked by the system's verifier.
 pub struct UreqTransport {
@@ -151,6 +215,51 @@ impl Transport for UreqTransport {
         };
         finish(res)
     }
+
+    fn upload(&self, req: &UploadRequest<'_>) -> Result<Response, String> {
+        let mut r = self
+            .agent
+            .post(&req.url)
+            .config()
+            .timeout_global(Some(FILE_TIMEOUT))
+            .build();
+        if let Some(a) = &req.bearer {
+            r = r.header("Authorization", format!("Bearer {a}"));
+        }
+        finish(
+            r.header("Content-Type", "application/octet-stream")
+                .header("X-Filename", &req.filename)
+                .send(req.data),
+        )
+    }
+
+    fn download(&self, req: &DownloadRequest) -> Result<BinaryResponse, String> {
+        let mut res = self
+            .agent
+            .get(&req.url)
+            .config()
+            .timeout_global(Some(FILE_TIMEOUT))
+            .build()
+            .call()
+            .map_err(|e| e.to_string())?;
+        let status = res.status().as_u16();
+        let content_type = res
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+        let body = res
+            .body_mut()
+            .with_config()
+            .limit(MAX_DOWNLOAD_BYTES)
+            .read_to_vec()
+            .map_err(|e| e.to_string())?;
+        Ok(BinaryResponse {
+            status,
+            body,
+            content_type,
+        })
+    }
 }
 
 fn finish(res: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> Result<Response, String> {
@@ -182,6 +291,8 @@ pub struct Client {
     tokens: Mutex<Tokens>,
     /// Serialises refreshes: two must never spend the same refresh token.
     refreshing: Mutex<()>,
+    /// Keys for signing file links (`files.rs`).
+    file_keys: Mutex<files::FileKeys>,
 }
 
 const RETRYABLE: [u16; 3] = [502, 503, 504];
@@ -202,6 +313,7 @@ impl Client {
                 user: None,
             }),
             refreshing: Mutex::new(()),
+            file_keys: Default::default(),
         }
     }
 
@@ -373,6 +485,7 @@ impl Client {
             };
             r
         };
+        *self.file_keys.lock().unwrap() = Default::default();
         if let Some(r) = refresh {
             let _ = self.send(
                 "POST",

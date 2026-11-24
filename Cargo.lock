@@ -734,6 +734,7 @@ name = "nv-api"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "ring",
  "rustls",
  "serde",
  "serde_json",

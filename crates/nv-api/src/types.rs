@@ -876,3 +876,38 @@ pub struct ConnectedApp {
     #[serde(default)]
     pub last_used_at: Option<String>,
 }
+
+/// An uploaded file (shared/types.ts `UploadedFile`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UploadedFile {
+    pub id: String,
+    /// Path on the API origin, `/uploads/<id><ext>`: what documents store. Sign it to open it.
+    pub url: String,
+    pub name: String,
+    /// Reported from the (allow-listed) extension, never from the client.
+    pub mime: String,
+    pub size: u64,
+}
+
+/// A key for signing file links (shared/fileLinks.ts `FileKey`): the server hands out one that
+/// lasts 6 to 12 hours.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FileKey {
+    /// The user it is for.
+    pub u: String,
+    /// Expiry, unix seconds.
+    pub e: u64,
+    /// HMAC key.
+    pub k: String,
+    /// Set on a key for an unlocked sign-in (also opens files on its locked pages).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub l: Option<String>,
+}
+
+/// A file's bytes with the type the server served it as.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FileData {
+    pub bytes: Vec<u8>,
+    /// `Content-Type` without parameters, e.g. `image/png`.
+    pub mime: String,
+}

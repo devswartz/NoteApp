@@ -105,8 +105,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Tables: insert/delete rows and columns, header row, merge/split | ● | ◐ | ● | ● | ◐ | ● | Table ribbon group on wide layout |
 | Callout, toggle, quote, code block (highlighting), divider | ● | ● | ● | ● | ● | ● | `blocks.tsx`, `codeHighlight.ts` |
 | Backspace/Enter leave a block (Word-outline style) | ● | ● | ● | ● | ● | ● | `blockExit.ts` |
-| Images (insert, resize by corner) | ● | ● | ● | ● | ● | ● | `upload.ts`, `POST /uploads` |
-| File attachments (≤25 MB, type rules, signed short-lived links) | ● | ● | ● | ● | ● | ● | `/files/:id`, `/files/key` |
+| Images (insert, resize by corner) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `upload.ts`, `POST /uploads` |
+| File attachments (≤25 MB, type rules, signed short-lived links) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/files/:id`, `/files/key` |
 | Slash menu (/) | ● | ● | ● ✓ | ● | ● | ● | `SlashMenu.tsx` |
 | Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● | ● ✓ | ● | ● | ● | |
 | Page links `[[`, create page from link | ● | ● | ● ✓ | ● | ● | ● | `PageLink.tsx` |

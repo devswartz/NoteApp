@@ -120,6 +120,16 @@ final class BoxTextView: UIView, UITextInput {
         layer.addSublayer(moveBar)
         layer.addSublayer(widthHandle)
         addGestureRecognizer(titleTap)
+        let mediaTap = UITapGestureRecognizer(target: self, action: #selector(mediaTapped(_:)))
+        mediaTap.cancelsTouchesInView = false
+        mediaTap.delegate = self
+        addGestureRecognizer(mediaTap)
+        let mediaDouble = UITapGestureRecognizer(target: self, action: #selector(mediaDoubleTapped(_:)))
+        mediaDouble.numberOfTapsRequired = 2
+        mediaDouble.cancelsTouchesInView = false
+        mediaDouble.delegate = self
+        addGestureRecognizer(mediaDouble)
+        NotificationCenter.default.addObserver(self, selector: #selector(mediaLoaded(_:)), name: MediaCache.loaded, object: nil)
     }
 
     override func layoutSubviews() {
@@ -301,6 +311,62 @@ final class BoxTextView: UIView, UITextInput {
                 tri.fill()
             }
         }
+        if chrome, let m = selectedMedia, let r = mediaRect(m) { BoxPainter(palette: p).mediaSelection(m, rect: r) }
+    }
+
+    // MARK: Images and file cards
+
+    /// The image or file card under `p` (view coordinates).
+    func mediaItem(at p: CGPoint) -> BoxMedia? {
+        rendering.media.first { m in mediaRect(m)?.contains(p) ?? false }
+    }
+
+    /// Where an image or file card is drawn, in view coordinates.
+    func mediaRect(_ m: BoxMedia) -> CGRect? {
+        guard let line = lineBox(m.offset) else { return nil }
+        return CGRect(x: inset.left + m.x, y: line.top, width: m.size.width, height: m.size.height)
+    }
+
+    /// The image or file card selected as a node (a tap on it).
+    var selectedMedia: BoxMedia? {
+        guard editor != nil, sel.hi == sel.lo + 1 else { return nil }
+        return rendering.media.first { $0.offset == sel.lo }
+    }
+
+    /// The handle of the selected image at `p` (view coordinates), with the picture's rect.
+    func imageHandle(at p: CGPoint) -> (handle: ImageHandle, rect: CGRect, aspect: CGFloat, maxWidth: CGFloat)? {
+        guard chrome, let m = selectedMedia, m.kind == .image, let r = mediaRect(m), m.size.width > 0,
+              let h = ImageHandle.at(p, in: r, pad: 14) else { return nil }
+        return (h, r, m.size.height / m.size.width, max(layoutWidth - m.x, 80))
+    }
+
+    /// Resize the selected image (the web's resize handles): the width, and the height that keeps its shape.
+    func resizeImage(width: CGFloat, aspect: CGFloat) {
+        let w = max(width, 80).rounded()
+        runCommand("setImageWidth", ["width": w, "height": (w * aspect).rounded()])
+    }
+
+    private func selectMedia(_ m: BoxMedia) {
+        guard editor != nil else { return }
+        selectByPlatform(BoxTextRange(m.offset, m.offset + 1), notify: true)
+    }
+
+    @objc private func mediaTapped(_ tap: UITapGestureRecognizer) {
+        guard let m = mediaItem(at: tap.location(in: self)) else { return }
+        if m.kind == .file { MediaHub.shared.openFile(url: m.src, name: m.name) }
+        // After the text interaction's own tap (it puts the caret next to the line): select the node.
+        DispatchQueue.main.async { [weak self] in self?.selectMedia(m) }
+    }
+
+    @objc private func mediaDoubleTapped(_ tap: UITapGestureRecognizer) {
+        guard let m = mediaItem(at: tap.location(in: self)), m.kind == .image else { return }
+        MediaHub.shared.openImage(src: m.src, name: m.name)
+    }
+
+    /// A picture arrived (or failed): draw again if this box shows it.
+    @objc private func mediaLoaded(_ note: Notification) {
+        guard let src = note.userInfo?["src"] as? String, rendering.media.contains(where: { $0.src == src }) else { return }
+        rerender()
     }
 
     /// The line that starts at `offset`: its top, height and baseline in view coordinates.
@@ -576,7 +642,12 @@ final class BoxTextView: UIView, UITextInput {
 
     /// Put the caret at `point` (view coordinates), as a tap does.
     func placeCaret(at point: CGPoint) {
-        guard editor != nil, let p = closestPosition(to: point) as? BoxTextPosition else { return }
+        guard editor != nil else { return }
+        if let m = mediaItem(at: point) {
+            selectMedia(m)
+            return
+        }
+        guard let p = closestPosition(to: point) as? BoxTextPosition else { return }
         selectByPlatform(BoxTextRange(p.offset, p.offset), notify: true)
     }
 
@@ -752,7 +823,11 @@ final class BoxTextView: UIView, UITextInput {
         guard menuRows.indices.contains(i) else { return }
         let r = menuRows[i]
         switch menuKind {
-        case .slash: runCommand("pickSlash", ["title": r.id])
+        case .slash:
+            runCommand("pickSlash", ["title": r.id])
+            // The engine only removes the typed "/image"; the pickers are the view's.
+            if r.id == "Image" { MediaHub.shared.pick(.image, into: self) }
+            if r.id == "File attachment" { MediaHub.shared.pick(.file, into: self) }
         case .page: runCommand("pickPage", ["pageId": r.id])
         case .mention: runCommand("pickMention", ["id": r.id, "label": r.title])
         }
@@ -1239,7 +1314,8 @@ final class BoxTextView: UIView, UITextInput {
         case #selector(UIResponderStandardEditActions.copy(_:)), #selector(UIResponderStandardEditActions.cut(_:)):
             return sel.hi > sel.lo
         case #selector(UIResponderStandardEditActions.paste(_:)):
-            return UIPasteboard.general.hasStrings || UIPasteboard.general.contains(pasteboardTypes: ["public.html"])
+            let board = UIPasteboard.general
+            return board.hasStrings || board.hasImages || board.contains(pasteboardTypes: ["public.html", "public.file-url"])
         case #selector(UIResponderStandardEditActions.selectAll(_:)), #selector(UIResponderStandardEditActions.toggleBoldface(_:)), #selector(UIResponderStandardEditActions.toggleItalics(_:)), #selector(UIResponderStandardEditActions.toggleUnderline(_:)):
             return true
         default:
@@ -1261,7 +1337,16 @@ final class BoxTextView: UIView, UITextInput {
         let board = UIPasteboard.general
         let html = board.data(forPasteboardType: "public.html").flatMap { String(data: $0, encoding: .utf8) } ?? ""
         let plain = board.string ?? ""
-        guard !html.isEmpty || !plain.isEmpty else { return }
+        guard !html.isEmpty || !plain.isEmpty else {
+            // No text: a picture or a file is uploaded and inserted.
+            let providers = board.itemProviders.filter(PlatformMedia.wants)
+            guard !providers.isEmpty else { return }
+            PlatformMedia.load(providers) { [weak self] items in
+                guard let self else { return }
+                MediaHub.shared.upload(items, into: self)
+            }
+            return
+        }
         engine(fromProtocol: false) { _ = $0.paste(html: html, text: plain) }
     }
 

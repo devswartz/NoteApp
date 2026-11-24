@@ -282,7 +282,7 @@ jobs:
           shoot canvas-boxes -previewSignedIn YES -page canvas-boxes
           shoot tasks -previewSignedIn YES -lookState tasks-my
           # The iPad look states (Shell.swift, MacCanvas.runLookIfAsked): same names as docs/rewrite/look/reference/.
-          for state in page-canvas-boxes edit-caret edit-selection slash-menu edit-link search task-detail page-settings-and-ink dialog-new-section menu-page-row menu-account quick-add tasks-calendar settings settings-profile settings-notifications settings-connected settings-shortcuts page-tasks-panel; do
+          for state in page-canvas-boxes edit-caret edit-selection slash-menu edit-link search task-detail page-settings-and-ink dialog-new-section menu-page-row menu-account quick-add tasks-calendar settings settings-profile settings-notifications settings-connected settings-shortcuts page-tasks-panel page-media; do
             shoot "$state" -previewSignedIn YES -theme light -lookState "$state"
           done
           shoot ink-demo -previewSignedIn YES -theme light -page settings-and-ink -lookState ink-demo

@@ -2122,3 +2122,87 @@ fn account_against_a_running_server() {
         .sign_in(email, "another long password 2".into())
         .unwrap();
 }
+
+#[test]
+fn files_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let core = Core::new(url.clone());
+    core.register(
+        "Files A".into(),
+        format!("files-{stamp}@example.com"),
+        "correct horse battery staple 1".into(),
+    )
+    .unwrap();
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    let nb = core
+        .create_notebook(ws.clone(), "Files".into(), None, None)
+        .unwrap();
+    let page = core.create_page(nb.section_id.clone(), None).unwrap();
+
+    // A tiny PNG onto the page: the server reports the type from the extension.
+    let png: Vec<u8> = vec![
+        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, b'I', b'H', b'D', b'R',
+    ];
+    let up = core
+        .upload_file(
+            ws.clone(),
+            Some(page.clone()),
+            "cat é.png".into(),
+            png.clone(),
+        )
+        .unwrap();
+    assert_eq!(up.name, "cat é.png");
+    assert_eq!((up.mime.as_str(), up.size), ("image/png", png.len() as u64));
+    assert!(up.url.starts_with("/uploads/") && up.url.ends_with(".png"));
+    assert_eq!(core.file_info(up.id.clone()).unwrap(), up);
+
+    // The signed link opens it, and the bytes come back as uploaded.
+    let link = core.file_url(up.url.clone()).unwrap();
+    assert!(link.starts_with(&url) && link.contains("&s="), "{link}");
+    let got = core.download_file(up.url.clone()).unwrap();
+    assert_eq!((got.bytes, got.mime.as_str()), (png, "image/png"));
+    // An unknown extension is stored without one and served as octet-stream.
+    let other = core
+        .upload_file(ws.clone(), None, "notes.weird".into(), b"hello".to_vec())
+        .unwrap();
+    assert_eq!(other.mime, "application/octet-stream");
+    assert_eq!(
+        core.download_file(other.url.clone()).unwrap().bytes,
+        b"hello"
+    );
+
+    // Too large is refused here, empty here too, and a page that isn't there is the server's 404.
+    let big = vec![0u8; 25 * 1024 * 1024 + 1];
+    let e = core
+        .upload_file(ws.clone(), None, "big.zip".into(), big)
+        .unwrap_err();
+    assert_eq!(server_status(e), (413, Some("file_too_large".to_string())));
+    let e = core
+        .upload_file(ws.clone(), Some("nope".into()), "a.png".into(), vec![1])
+        .unwrap_err();
+    assert_eq!(server_status(e).0, 404);
+
+    // Another account can't see it (404, never 403) or fetch it.
+    let stranger = Core::new(url);
+    stranger
+        .register(
+            "Files B".into(),
+            format!("files-b-{stamp}@example.com"),
+            "correct horse battery staple 1".into(),
+        )
+        .unwrap();
+    assert_eq!(server_status(stranger.file_info(up.id).unwrap_err()).0, 404);
+    let link_for_b = stranger.file_url(up.url.clone()).unwrap();
+    assert!(link_for_b.contains("&s="));
+    assert_eq!(
+        server_status(stranger.download_file(up.url).unwrap_err()).0,
+        403
+    );
+}

@@ -38,6 +38,10 @@ struct CorpusPage: PageSource {
         case "box-empty":
             tasks = [:]
             nodes = [node(.paragraph)]
+        case "media":
+            // Pictures and file cards (`-lookState page-media`): built below, two boxes.
+            tasks = [:]
+            nodes = []
         case "long":
             // Thirty short boxes down the page (taller than any screen): the scroll test (CI) swipes it.
             tasks = [:]
@@ -56,6 +60,29 @@ struct CorpusPage: PageSource {
                 let text = ContentNode(kind: .text, attrs: [], runs: [TextRun(text: "Box \(i + 1): a few words so the page is long enough to scroll.", marks: [])], children: [], markers: [])
                 return BoxContent(boxId: "b\(i)", nodes: [ContentNode(kind: .paragraph, attrs: [], runs: [], children: [text], markers: [])])
             }
+        } else if name == "media" {
+            func para(_ text: String) -> ContentNode {
+                let run = ContentNode(kind: .text, attrs: [], runs: [TextRun(text: text, marks: [])], children: [], markers: [])
+                return ContentNode(kind: .paragraph, attrs: [], runs: [], children: [run], markers: [])
+            }
+            func image(_ src: String, alt: String, width: Double? = nil) -> ContentNode {
+                var attrs = [Attr(name: "src", value: .text(value: src)), Attr(name: "alt", value: .text(value: alt))]
+                if let width { attrs.append(Attr(name: "width", value: .number(value: width))) }
+                return ContentNode(kind: .image, attrs: attrs, runs: [], children: [], markers: [])
+            }
+            func file(_ name: String, size: Double, mime: String) -> ContentNode {
+                ContentNode(kind: .fileAttachment, attrs: [Attr(name: "url", value: .text(value: "/uploads/look-\(name)")), Attr(name: "name", value: .text(value: name)),
+                                                           Attr(name: "size", value: .number(value: size)), Attr(name: "mime", value: .text(value: mime))],
+                            runs: [], children: [], markers: [])
+            }
+            info.boxes = [PageBox(id: "a", x: 20, y: 20, w: 420, z: 1, wide: false), PageBox(id: "b", x: 470, y: 20, w: 300, z: 2, wide: false)]
+            info.content = [
+                BoxContent(boxId: "a", nodes: [para("Site photos and the report"), image("/uploads/look-sample.png", alt: "Sample photo"),
+                                               file("Quarterly report.pdf", size: 2_516_582, mime: "application/pdf"),
+                                               file("Budget 2026.xlsx", size: 151_552, mime: "application/vnd.ms-excel")]),
+                BoxContent(boxId: "b", nodes: [para("Resized, and one that can't load"), image("/uploads/look-sample.png", alt: "Resized photo", width: 200),
+                                               image("/uploads/look-missing.png", alt: "Site plan", width: 240)]),
+            ]
         } else {
             info.boxes = [PageBox(id: "only", x: 20, y: 20, w: 400, z: 1, wide: false)]
             info.content = [BoxContent(boxId: "only", nodes: nodes)]

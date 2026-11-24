@@ -103,6 +103,27 @@ impl Editor {
             "insertPageLink" => self.insert_page_link(s(a, "pageId")),
             "insertMention" => self.insert_mention(s(a, "id"), s(a, "label")),
             "insertTask" => self.insert_task(s(a, "title")),
+            // Images and file cards (media.rs): the paths are what an upload answers.
+            "insertImage" => self.insert_image(
+                s(a, "src"),
+                s(a, "alt"),
+                a["width"].as_f64(),
+                a["height"].as_f64(),
+            ),
+            "insertFile" => self.insert_file(
+                s(a, "url"),
+                s(a, "name"),
+                a["size"].as_u64().unwrap_or(0),
+                s(a, "mime"),
+            ),
+            "setImageWidth" => match a["width"].as_f64() {
+                Some(w) => self.set_image_size(
+                    a["pos"].as_u64().map(|p| p as usize),
+                    w,
+                    a["height"].as_f64(),
+                ),
+                None => false,
+            },
             // Beyond the suite's vocabulary: what the views call from menus and the ribbon.
             "convertToTask" => self.convert_to_task(),
             "indent" => self.tab(),
