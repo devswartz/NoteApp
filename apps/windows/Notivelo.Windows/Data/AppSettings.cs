@@ -21,6 +21,8 @@ internal static class AppSettings
         /// <summary>Appearance, per device: the theme (hybrid, light, dark, system) and the accent colour key (blue ...).</summary>
         public string? Theme { get; set; }
         public string? Accent { get; set; }
+        /// <summary>The task views' filters, sort and group, per view (a JSON <c>TaskViewState</c> each): kept on this device, the server stores none.</summary>
+        public Dictionary<string, string> TaskViews { get; set; } = new();
     }
 
     private static readonly object Gate = new();
@@ -70,6 +72,9 @@ internal static class AppSettings
 
     public static string? Theme { get => Load().Theme; set { Load().Theme = value; Save(); } }
     public static string? Accent { get => Load().Accent; set { Load().Accent = value; Save(); } }
+
+    public static string? TaskView(string view) => Load().TaskViews.GetValueOrDefault(view);
+    public static void SetTaskView(string view, string json) { Load().TaskViews[view] = json; Save(); }
 
     public static string? Workspace(string server) => Load().Workspaces.GetValueOrDefault(server);
 

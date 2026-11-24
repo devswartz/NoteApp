@@ -133,7 +133,7 @@ public class LookShots
                 var r = w.BoundingRectangle;       // a click on the scrim at the window's bottom right closes what Escape didn't
                 if (Exists("menu-account") || Exists("menu-workspace") || Exists("menu-section") || Exists("menu-notebook-picker") || Exists("prompt-input")
                     || Exists("search-input") || Exists("quickadd-card") || Exists("task-sheet") || Exists("trash-dialog") || Exists("confirm-ok")
-                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page") || Exists("shortcuts-sheet") || Exists("notebook-share-dialog") || Exists("menu-notebook"))
+                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page") || Exists("shortcuts-sheet") || Exists("notebook-share-dialog") || Exists("menu-notebook") || Exists("inbox-popover") || Exists("delete-account-dialog") || Exists("menu-priority"))
                     FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point((int)r.Right - 12, (int)r.Bottom - 12));
             }
             catch { }
@@ -239,6 +239,16 @@ public class LookShots
             Find("join-input")!.AsTextBox().Text = "https://app.example.com/invite/sample-invite"; Settle(300); Invoke("join-continue"); Find("join-info"); Settle(700); Snap("join-invite");
         });
         Step("tasks", () => { Find("rail-tasks")!.Click(); Settle(900); Snap("tasks"); });
+        Step("tasks-filters", () =>   // All tasks with a priority and an assignee filter on: the count, the conditions in words and the pressed ribbon buttons
+        {
+            Find("rail-tasks")!.Click(); Settle(500); Invoke("ribbon-all-tasks"); Settle(500);
+            Invoke("ribbon-priority"); Find("menu-priority"); Snap("tasks-filter-menu"); Invoke("menu-priority-2"); Settle(500);
+            Invoke("ribbon-assignee"); Invoke("menu-assignee-me"); Settle(800); Snap("tasks-filters");
+            Invoke("ribbon-clear-filters"); Settle(300);
+        });
+        Step("notifications", () => { Invoke("rail-bell"); Find("inbox-popover"); Find("inbox-item-n1"); Settle(700); Snap("notifications"); });
+        Step("share-link", () => { Invoke("page-row-canvas"); Settle(700); Invoke("page-share"); Find("share-dialog"); Invoke("share-link-create"); Find("share-link-url"); Settle(700); Snap("share-link"); });
+        Step("delete-account", () => { OpenSettings(null); Invoke("settings-delete-account"); Find("delete-account-dialog"); Find("delete-account-preview"); Settle(900); Snap("delete-account"); });
         Step("calendar", () => { Find("rail-calendar")!.Click(); Settle(900); Snap("calendar"); });
         Step("settings", () => { OpenSettings(null); Snap("settings"); });
         Step("settings-password", () => { OpenSettings("password"); Snap("settings-password"); });

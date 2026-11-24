@@ -17,6 +17,7 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = "Notivelo";
+        Activated += (_, e) => { if (e.WindowActivationState != WindowActivationState.Deactivated) WindowActivated?.Invoke(); };
         // NOTIVELO_SOURCE=sample: the fake data of the reference captures, no sign-in (offline screenshots). Default: the Rust core.
         // NOTIVELO_SOURCE=offline: the UI tests' mode: sample data plus a page of editable boxes over local documents, no server.
         var sourceMode = Environment.GetEnvironmentVariable("NOTIVELO_SOURCE");
@@ -67,6 +68,9 @@ public sealed partial class MainWindow : Window
         };
         SetWindowSubclass(hwnd, _subclass, 1, 0);
     }
+
+    /// <summary>The window came to the front (the shell asks the server for new notifications).</summary>
+    public static event Action? WindowActivated;
 
     private AppSession? _session;
     private SessionPhase? _shown;

@@ -17,11 +17,13 @@ internal sealed class ShellHost
     public Action OpenSettings { get; set; } = () => { };
     public Action OpenShortcuts { get; set; } = () => { };
     public TreeActions Tree { get; }
+    public InboxState Inbox { get; }
 
     public ShellHost(INotesSource source, OverlayHost overlay)
     {
         Source = source; Overlay = overlay;
         Tree = new TreeActions(this);
+        Inbox = new InboxState(source);
     }
 
     public void Toast(string text, bool error = false)

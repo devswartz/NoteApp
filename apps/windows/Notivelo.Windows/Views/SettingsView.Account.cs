@@ -128,6 +128,16 @@ internal sealed partial class SettingsView
         p.Children.Add(pw);
         if (toPassword) pw.Loaded += (_, _) => pw.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false, VerticalAlignmentRatio = 0 });
 
+        // Delete account: the server's preview of what happens, your password, then the sign-in screen (App Review wants this in the app)
+        var del = new StackPanel { Spacing = 10, Padding = new Thickness(20) };
+        del.Children.Add(Ui.Text("Delete account", 15, B("Danger"), 700, lineHeight: 22));
+        del.Children.Add(Ui.Text("Permanently deletes your account. Workspaces only you run are deleted for everyone; the dialog shows what will happen to each.", 13, B("TextMuted"), lineHeight: 18).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.Margin = new Thickness(0, -6, 0, 0); }));
+        var delBtn = Dialogs.Btn(_h(), "Delete account…", false, id: "settings-delete-account");
+        delBtn.HorizontalAlignment = HorizontalAlignment.Left;
+        delBtn.Click += (_, _) => DeleteAccountDialog.Show(Host!, _signOut);
+        del.Children.Add(delBtn);
+        p.Children.Add(new Border { Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Child = del, Margin = new Thickness(0, 17, 0, 0) });
+
         if (_signOut is not null)
         {
             var out_ = Dialogs.Btn(_h(), "Sign out", false, id: "settings-signout");

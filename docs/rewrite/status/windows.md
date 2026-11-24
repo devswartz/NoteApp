@@ -8,35 +8,32 @@ Audit of `docs/rewrite/PARITY.md` (Windows column) against `apps/windows` at 824
 
 **Most used no-server rows, in order** (core everyday flows first):
 
-1. Task filters, sort, group, Team view, status filter (159, 156): client code over `Tasks` and the task list; the Tasks ribbon buttons (Group, Sort, Status, Assignee, Tags, Team, Priority, Clear) do nothing today.
-2. Ribbon buttons that do nothing (53): Clear formatting, Link to page, Divider, Page colour, Rule lines, Print, Outline, Table group, text and highlight colour (99). Editor commands (`RunCommand`); `insertPageLink` exists.
-3. Notification inbox and taskbar badge (179, 178): `Notifications(limit, before)`, `UnreadNotificationCount`, `MarkNotificationRead`, `MarkAllNotificationsRead`; the badge from `GetTaskCounts`.
+1. ~~Task filters, sort, group, Team view, status filter (159, 156)~~ built (see above).
+2. Ribbon buttons that do nothing (53): ~~Clear formatting, Link to page, Divider, text colour~~ built; Page colour and Rule lines wait for a core call; Print, Outline, Table group, highlight colour left.
+3. ~~Notification inbox and taskbar badge (179, 178)~~ built.
 4. Table tools, callout/toggle/code block (105, 106): engine commands (row and column add/delete, header toggle); toggle open/close, code copy.
 5. Boxes: select, cut/copy/paste/duplicate/delete, context menu (93): `DeleteBoxWithContent`, `CreateBoxWithId`, selection state in `PageView`.
 6. Cursors and presence, follow a collaborator (94, 95): `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors`.
-7. Save state indicator (96): `UnsentUpdates` / `UnsentPages` for Saving and Connecting (today only Saved or Offline).
+7. ~~Save state indicator (96)~~ built (Saving, Saved, Offline, Offline — changes kept; "Connecting" shows as Offline).
 8. Task keyboard, bulk bar, inline rename, Undo on toasts (162, 163, 164, 60): `UpdateTask`, `SendTaskChanges`; client code.
 9. Opens offline from a cold start (222): open the shell from `CachedWorkspaces` / `CachedTree` / `CachedTasks` when `RestoreSession` fails with Network (today: signed-out screen with "Try again").
-10. Share link "Anyone with the link can view" (126), Delete account (34, App Review needs it in the app): `PageShareLink`, `CreatePageShareLink`, `DeletePageShareLink`; `AccountDeletionPreview`, `DeleteAccount(password)`.
+10. ~~Share link (126), Delete account (34)~~ built.
 
 After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print and PDF (122, 123, 85, 166), Settings > Security > Locked notes (215), command palette commands (56), calendar drag to re-date (157), deep links (63).
+
+**Built since (2026-11-24, `rewrite/windows-audit`, code in `apps/windows`): 7 rows moved to ✓** (compiled, unit tests green, UI tests written but not run; nothing drove a real server or a PC): task filters, sort, group, Team view and the Completed status (159, 156: `TaskViews.cs`, `TasksView.Filters.cs`; the choices are kept per view on the device); the notification inbox and the bell's badge (179: `Inbox.cs`, the rail bell); the taskbar badge (178: `TaskbarBadge.cs`, a numeric `BadgeUpdateManager` badge, which needs package identity, so a build run unpackaged shows none); the save state (96: Saving…, Saved, Offline, Offline — changes kept, polled every 2 s from `UnsentUpdates` / `UnsentPages`); the public share link (126: `ShareLinkBlock.cs` in the Share dialog); Delete account (34: `DeleteAccountDialog.cs`, Settings > Profile). **Row 53 and 99 are partly done:** Clear formatting, Link to page, Divider and the text colour menu work through the engine (`BoxTextView.Ribbon.cs`, `RibbonView.cs`); **Page colour and Rule lines have their menus but no core call to write a page's settings exists** (`PageSettings` is read-only in `nv-core`), so they only change the offline sample and say so on a live page; Print, Outline, the Table group and a highlight colour menu are left. Unverified: the live paths of every call above (`notifications`, `unread_notification_count`, `page_share_link`, `account_deletion_preview`, `delete_account`, `unsent_updates`), the Team cards' numbers against real tasks (a task's team comes from `TaskDetails`, loaded when a view needs it), the page picker opening after Link to page, and the divider picking when the caret is mid-word.
 
 ### no-server
 
 | Row (PARITY line) | Windows today | What it needs |
 |---|---|---|
-| Task filters, sort, group; Views Team and status (159, 156) | partly: Today, My Tasks, Upcoming, All; Team view empty; no status filter; ribbon filter buttons inert | client filters over `Tasks`; team id on list items; Completed list |
-| OneNote-style ribbon (53) | partly: bold, italic, underline, strike, highlight, lists, indent, Task, Table insert, Picture, File, Undo/Redo work | wire Clear formatting, Link to page, Divider, Page colour, Rule lines, Print, Outline, Table group; Tasks ribbon buttons |
-| Marks (99) | partly: no text colour or highlight colour picker (the floating bar has code) | colour menus; engine mark args |
-| Notification inbox (179); app badge (178) | missing | `Notifications`, `UnreadNotificationCount`, `MarkNotificationRead`, `MarkAllNotificationsRead`; taskbar badge from `GetTaskCounts` |
+| OneNote-style ribbon (53) | partly: as before, plus Clear formatting, Link to page, Divider and the Tasks ribbon's Group, Sort, Status, Assignee, Tags, Team, Priority, More filters and Clear filters | Page colour and Rule lines need a core call to write the page's settings (menus are built, live pages refuse); Print, Outline, Table group |
+| Marks (99) | partly: text colour menu works (`setColor`, `unsetColor`); highlight stays a yellow toggle | a highlight colour menu (`setHighlight` with a name) |
 | Tables (105); callout, toggle, code (106) | partly: insert 3x3 and draw; callout, quote and code render | row/column commands, header toggle, merge/split; toggle opens; code highlighting |
 | Boxes: select, cut/copy/paste/duplicate/delete, context menu (93) | partly: create, move, resize, front, delete empty; text right-click menu only | box selection; `DeleteBoxWithContent`, `CreateBoxWithId` |
 | Cursors and presence (94); follow (95) | partly: live edits only | `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors` |
-| Save state (96) | partly: Saved or Offline | `UnsentUpdates`, `UnsentPages` |
 | Task keyboard, bulk, inline rename (162, 163, 164); Toasts with Undo (60) | missing | client code; `UpdateTask`, `SendTaskChanges`; Undo action on `OverlayHost` toasts |
 | Opens offline from a cold start (222) | partly: tree and tasks load from the store once signed in; a cold start without network shows "Try again" | `CachedWorkspaces`/`CachedTree`/`CachedTasks` when `RestoreSession` fails with Network |
-| Share link (126) | missing | `PageShareLink`, `CreatePageShareLink`, `DeletePageShareLink` in the Share dialog |
-| Delete account (34) | missing | `AccountDeletionPreview`, `DeleteAccount`; Settings > Profile; sign-in screen after |
 | Tray icon, close to tray, global quick capture, app shortcuts (250, 251, 252, 253) | missing; only Q, Ctrl+K, Ctrl+Shift+F, Ctrl+Z/Y, Ctrl+/ | NotifyIcon + `GetTaskCounts`; RegisterHotKey + `QuickAddDialog`; Ctrl+N, Ctrl+Shift+T, Ctrl+1-8, Ctrl+, |
 | Print page/selection/PDF, Export PDF, print section/notebook, print task view (122, 123 PDF part, 85, 166) | missing (Markdown export is built) | Windows print APIs / PDF save |
 | Settings > Security > Locked notes (215) | missing (lock, unlock, keepalive are built from the page menu) | `SetLockedNotesPassword` (create/change); Windows Hello needs Devon, reset by code needs a core call |

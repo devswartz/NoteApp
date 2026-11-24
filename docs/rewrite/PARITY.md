@@ -33,7 +33,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Release builds locked to app.notiveloapp.com; internal builds have hidden "Change server…" | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | — | `src/platform/serverUrl.ts`, desktop `config.rs` |
 | Profile: name, avatar colour | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | Settings → Profile |
 | Change password | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `POST /me/password` |
-| Delete account (preview of consequences, password) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
+| Delete account (preview of consequences, password) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `GET /auth/account/deletion-preview`, `DELETE /auth/account`; required by App Review |
 | Export my data | ● | ● | ● | ● | ● | ● | `GET /me/export` |
 | Privacy, Terms, Support links | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | sign-in screen and Settings → About |
 | Sign out | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
@@ -95,7 +95,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● | ◐ | ● | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
 | Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
-| Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | phone hides ✓ when saved |
+| Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
 | Page title | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | title change refused unless current title known |
 | Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
 | Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
@@ -125,7 +125,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Export page (Markdown / PDF) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `exportPage.ts`, `collabExport.ts` |
 | Version history: list, preview, restore (undoable) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `VersionHistory.tsx`, `/pages/:id/versions` |
 | Share a page with people (view / edit, outside the workspace) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `PageShareDialog.tsx`, `/pages/:id/shares` |
-| Share link "Anyone with the link can view" (public read-only page) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/pages/:id/link`, `server/publicPage.ts` |
+| Share link "Anyone with the link can view" (public read-only page) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `/pages/:id/link`, `server/publicPage.ts` |
 | Shared with me | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `SharedWithMe.tsx`, `/shared-pages`, `/shared-tasks` |
 | Handwriting / ink | ○ | ○ | ○ | ○ | ○ | ○ | behind the `ink` flag, off for everyone; native goal is ink on every page (beyond parity) |
 
@@ -155,10 +155,10 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Tasks on this page panel | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `GET /pages/:id/tasks` |
 | Task detail: title, description, due date/time, priority, assignee, tags, team, assigned-by, reminders, recurrence, From the note | ● | ● | ● | ● | ● | ● | `TaskDetail.tsx`, `GET /tasks/:id/notes`. Native: every field editable (apple-wire); "From the note" not yet |
 | Quick add (Q) with natural language (dates, times, p1–p4, repeats, @assignee) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `QuickAdd.tsx`; phone via + tab |
-| Views: Today (progress strip, streak, 7 days), My Tasks, Upcoming, Team, All tasks (status Open/Completed/All) | ● | ◐ | ● | ● | ◐ | ● | phones: Today and My Tasks tabs, rest via Notes/Tasks menu *(verify)* |
+| Views: Today (progress strip, streak, 7 days), My Tasks, Upcoming, Team, All tasks (status Open/Completed/All) | ● | ◐ | ● | ● ✓ | ◐ | ● | phones: Today and My Tasks tabs, rest via Notes/Tasks menu *(verify)* |
 | Calendar: month / week, drag to reschedule or onto No date, double-click to add, Mine / Everyone | ● ✓ | ◐ ✓ | ● ✓ | ● | ◐ | ● | `CalendarView.tsx`, `CalendarPanel.tsx`, `MiniCalendar.tsx` |
 | Sidebar counts (Today, My Tasks, Upcoming) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
-| Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
+| Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `assigneeGroups.ts` |
 | Saved views (server, optionally shared) | ● | ● | ● | ● | ● | ● | `/workspaces/:id/task-views` |
 | Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
@@ -177,8 +177,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Reminders: fixed time or N minutes before; default time for date-only tasks | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `ReminderPicker.tsx`, `/tasks/:id/reminders` |
 | Push reminders with snooze actions (10 min, 1 h, tomorrow) | ● | ● | ◐ | ◐ | ● | ● | iOS APNs, Android FCM (`SnoozeReceiver`), web push; desktop *(verify: webview notifications)* |
 | Local notifications | ● | ● | ○ | ○ | ● | — | `@capacitor/local-notifications` |
-| App icon badge: due today | ● ✓ | ● ✓ | ● ✓ | ◐ | ● | ○ | Mac Dock badge; Windows tray count |
-| Notification inbox (bell): mentions, replies, assignments; read / read all | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `NotificationBell.tsx`, `/notifications` |
+| App icon badge: due today | ● ✓ | ● ✓ | ● ✓ | ◐ ✓ | ● | ○ | Mac Dock badge; Windows tray count |
+| Notification inbox (bell): mentions, replies, assignments; read / read all | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `NotificationBell.tsx`, `/notifications` |
 | Settings → Notifications: time zone, default reminder time, email reminders, daily digest, quiet hours per workspace, calendar feed link, test notification | ● | ● | ● | ● | ● | ● | `NotificationSettingsPanel.tsx` |
 | Activity feed (workspace) | ● | ● | ● | ● | ● | ● | `ActivityFeed.tsx`, `/workspaces/:id/activity` |
 
