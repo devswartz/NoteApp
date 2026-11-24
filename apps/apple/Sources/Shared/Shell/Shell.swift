@@ -414,6 +414,16 @@ struct AppShell: View {
             shell.inbox.refresh(session, list: shell.menu == .inbox)
             AppBadge.set(dueToday)
         }
+        #if os(iOS)
+        // The Today widget's snapshot follows the task list; shares from the Share Extension are taken once the app is in front
+        // and the workspace is loaded (Sources/iOS/Extras.swift).
+        .onChange(of: TodayWidgetFeed.json(session), initial: true) { _, json in
+            if !session.preview { TodayWidgetFeed.publish(json) }
+        }
+        .onChange(of: scenePhase == .active && session.phase == .signedIn && session.tree != nil, initial: true) { _, ready in
+            if ready { shell.takeShares(session) }
+        }
+        #endif
         .onChange(of: session.user?.id) { _, _ in
             shell.inbox.reset()
             shell.inbox.refresh(session, list: false)

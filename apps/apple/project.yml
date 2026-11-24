@@ -40,6 +40,8 @@ targets:
     sources:
       - path: Sources/Shared
       - path: Sources/iOS
+      # The App Group store shared with the share extension and the Today widget (Sources/iOS/Extras.swift uses it).
+      - path: Extensions/Shared
       - path: Resources
         excludes:
           - PrivacyInfo.xcprivacy
@@ -52,6 +54,9 @@ targets:
         buildPhase: resources
     dependencies:
       - package: NotiveloCore
+      # Embedded in Notivelo.app/PlugIns (same bundle IDs as today's app: com.devswartz.notivelo.ShareExtension / .TodayWidget).
+      - target: ShareExtension
+      - target: TodayWidget
     entitlements:
       path: Sources/iOS/Notivelo.entitlements
       properties:
@@ -98,6 +103,78 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+
+  # "Share to Notivelo" (PARITY row 246): queues the shared text or link in the App Group; the app makes the task or note.
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extensions/ShareExtension
+        excludes:
+          - PrivacyInfo.xcprivacy
+      - path: Extensions/ShareExtension/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Extensions/Shared
+    entitlements:
+      path: Extensions/ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.devswartz.notivelo
+    info:
+      path: Extensions/ShareExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Notivelo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsWebPageWithMaxCount: 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.devswartz.notivelo.ShareExtension
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  # The Today widget (PARITY row 247): reads the snapshot the app writes to the App Group.
+  TodayWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Extensions/TodayWidget
+        excludes:
+          - PrivacyInfo.xcprivacy
+      - path: Extensions/TodayWidget/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Extensions/Shared
+    entitlements:
+      path: Extensions/TodayWidget/TodayWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.devswartz.notivelo
+    info:
+      path: Extensions/TodayWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Notivelo
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.devswartz.notivelo.TodayWidget
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
 
   # UI tests (iPhone and iPad simulators): a finger scrolls a long page. Run by scripts/scroll-test.sh in CI.
   NotiveloUITests:
