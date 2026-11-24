@@ -116,7 +116,7 @@ fun BoxEditor(editing: EditingBox, env: PageEnv, ec: EditContext, modifier: Modi
     }
 }
 
-/** The menu for the look scenes: the caret's place from the same layout the view makes, room below. */
+/** The menu for the look scenes: the caret's place from the same layout the view makes, room above (as the reference, which has the box near the page end). */
 private fun lookMenu(editing: EditingBox, env: PageEnv, ec: EditContext, widthPx: Int, density: Float): MenuModel? {
     val r = editing.engine.render()
     val s = r.suggestion ?: return null
@@ -124,5 +124,5 @@ private fun lookMenu(editing: EditingBox, env: PageEnv, ec: EditContext, widthPx
     val padY = 7f * density
     val g = BoxLayoutBuilder.build(r, env, density, maxOf(1, widthPx - (2 * padX).toInt()))
     val caret = g.caretRect(minOf(s.viewFrom.toInt(), r.view.text.length))
-    return Suggestions.model(s, ec.pages, ec.people, 0, caret.left + padX, caret.top + padY, caret.bottom + padY, 0f, 100000f)
+    return Suggestions.model(s, ec.pages, ec.people, 0, caret.left + padX, caret.top + padY, caret.bottom + padY, 100000f, 0f)
 }
