@@ -461,19 +461,23 @@ class AppViewModel(
     }
 
     private suspend fun openEditing(boxId: String, tapX: Float, tapY: Float) {
+        nvLog("openEditing $boxId")
         val s = _state.value
         val pid = s.pageId ?: return
         val h = handle ?: return
         val ws = s.workspaceId ?: return
         if (s.page?.editing?.boxId == boxId) return
         try {
+            nvLog("openEditing: opening engine for $boxId")
             val engine = blocking { h.openEditor(boxId, ws) }
+            nvLog("openEditing: engine ready, page still ${_state.value.pageId}, handle same=${handle === h}")
             if (_state.value.pageId != pid || handle !== h) {
                 blocking { engine.close() }
                 return
             }
             val old = _state.value.page?.editing
             editPage(pid) { it.copy(editing = EditingBox(boxId, engine, tapX, tapY)) }
+            nvLog("openEditing: editing set, now ${_state.value.page?.editing?.boxId}")
             if (old != null) {
                 val empty = isEmpty(old)
                 blocking { old.engine.close() }
