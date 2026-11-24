@@ -142,6 +142,7 @@ public class Left2Tests
         Press(h, "ribbon-table-tools");
         Press(h, "table-delete-row");
         h.B.WaitMedia("tables", v => v == "3x4", "a row deleted");
+        h.Press(DOWN);                                            // deleting the first row leaves the caret on the line above the table
         Press(h, "ribbon-table-tools");
         Press(h, "table-delete-table");
         h.B.WaitMedia("tables", v => v == "", "no table left");
