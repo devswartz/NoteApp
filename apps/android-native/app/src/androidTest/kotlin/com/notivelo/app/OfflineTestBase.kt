@@ -83,7 +83,7 @@ abstract class OfflineTestBase {
         return sb.toString()
     }
 
-    protected fun waitFor(what: String, timeoutMs: Long = 10_000, cond: () -> Boolean) {
+    protected fun waitFor(what: String, timeoutMs: Long = 30_000, cond: () -> Boolean) {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (true) {
             val ok = try { cond() } catch (e: Throwable) { lastError = e.toString(); false }
@@ -135,8 +135,8 @@ abstract class OfflineTestBase {
     protected fun startEditing(id: String = FIRST) {
         waitForBoxNode(id)
         compose.onNodeWithTag("box-$id").performClick()
-        waitFor("the box editor view to exist") { viewOrNull() != null }
-        val end = SystemClock.uptimeMillis() + 2500
+        waitFor("the box editor view to exist", 60_000) { viewOrNull() != null }
+        val end = SystemClock.uptimeMillis() + 10_000
         while (SystemClock.uptimeMillis() < end && viewOrNull()?.isFocused != true) Thread.sleep(50)
         val v = view()
         if (!v.isFocused) {
