@@ -23,6 +23,8 @@ struct PageCanvasView: UIViewRepresentable {
     var icon: String?
     /// The row above the title opens the icon picker here.
     var onIcon: ((CGRect) -> Void)?
+    /// The title is a text field when this is set: (page id, new title), on Return or when the field loses focus.
+    var onRename: ((String, String) -> Void)?
     /// Phones: boxes stacked in reading order, full width (LOOK.md 3.2).
     var stacked = false
     /// A short message for the user (the shell's toast).
@@ -37,6 +39,7 @@ struct PageCanvasView: UIViewRepresentable {
         view.notify = notify
         BoxTextRenderer.phoneChips = stacked
         view.onIcon = onIcon
+        view.onRename = onRename
         view.setHeader(title: title, subline: subline, palette: palette, showAddIcon: showAddIcon, icon: icon)
         view.decor = decor
         view.show(page, host: host)
@@ -50,7 +53,16 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     static let originY: CGFloat = 32 + 28 + 4 + 43.2 + 6 + 18.75 + 22 + 14
     private let surface = PageSurfaceView()
     private var ink: InkController!
-    private let titleLabel = UILabel()
+    private let titleField = UITextView()
+    private let titleHint = UILabel()
+    private let titleDelegate = TitleFieldDelegate()
+    /// The title being typed commits as (page id, title); nil: the title is read-only.
+    var onRename: ((String, String) -> Void)? {
+        didSet { titleField.isEditable = onRename != nil }
+    }
+    private var shownTitle = ""
+    private var wantedTitle = ""
+    private var titleAttrs: [NSAttributedString.Key: Any] = [:]
     private let subLabel = UILabel()
     private let addIcon = UILabel()
     private var palette = Palette.light
@@ -129,9 +141,20 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         PageHistory.shared.beginStep = { [weak self] in self?.beginHistoryStep() }
         surface.onReorder = { [weak self] in self?.ink.layout() }
         NotificationCenter.default.addObserver(self, selector: #selector(inkToolChanged), name: InkTool.changed, object: nil)
-        titleLabel.numberOfLines = 0
         subLabel.numberOfLines = 1
-        surface.addSubview(titleLabel)
+        titleField.isScrollEnabled = false
+        titleField.backgroundColor = .clear
+        titleField.textContainerInset = .zero
+        titleField.textContainer.lineFragmentPadding = 0
+        titleField.returnKeyType = .next
+        titleField.autocapitalizationType = .sentences
+        titleField.isEditable = false
+        titleField.delegate = titleDelegate
+        titleDelegate.owner = self
+        titleHint.numberOfLines = 1
+        titleHint.isUserInteractionEnabled = false
+        surface.addSubview(titleField)
+        surface.addSubview(titleHint)
         surface.addSubview(subLabel)
         surface.addSubview(addIcon)
         doubleTap.addTarget(self, action: #selector(toggleZoom(_:)))
@@ -155,7 +178,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         isScrollEnabled = true
         isUserInteractionEnabled = true
         accessibilityIdentifier = "page-scroll"
-        titleLabel.accessibilityIdentifier = "page-title"
+        titleField.accessibilityIdentifier = "page-title"
         toolbar.isHidden = true
         toolbar.onCommand = { [weak self] name, args in
             EditorFocus.shared.run(name, args)
@@ -215,11 +238,24 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         let style = NSMutableParagraphStyle()
         style.minimumLineHeight = titleLine
         style.maximumLineHeight = titleLine
-        titleLabel.attributedText = NSAttributedString(string: title.isEmpty ? "Untitled" : title, attributes: [
+        let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: titleFont, .kern: -0.025 * titleSize, .paragraphStyle: style,
-            .foregroundColor: title.isEmpty ? palette.borderStrong : palette.text,
+            .foregroundColor: palette.text,
             .baselineOffset: (titleLine - titleFont.lineHeight) / BoxTextRenderer.baselineDivisor,
-        ])
+        ]
+        titleField.typingAttributes = titleAttributes
+        titleAttrs = titleAttributes
+        wantedTitle = title
+        titleField.tintColor = palette.accent
+        // What the person is typing is not overwritten by a refresh.
+        if !titleField.isFirstResponder {
+            shownTitle = title
+            titleField.attributedText = NSAttributedString(string: title, attributes: titleAttributes)
+        }
+        var hintAttributes = titleAttributes
+        hintAttributes[.foregroundColor] = palette.borderStrong
+        titleHint.attributedText = NSAttributedString(string: "Untitled", attributes: hintAttributes)
+        titleHint.isHidden = !titleField.text.isEmpty
         subLabel.attributedText = NSAttributedString(string: subline, attributes: [.font: WebType.ui(12.5), .foregroundColor: palette.textMuted])
         if let icon, !icon.isEmpty {
             let size: CGFloat = stacked ? 44 : 56
@@ -245,19 +281,49 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if iconChanged, shownID != nil { relayout() }
     }
 
+    /// The title field changed text: the hint and the height follow.
+    fileprivate func titleChanged() {
+        titleHint.isHidden = !titleField.text.isEmpty
+        layoutHeader()
+    }
+
+    /// Focus left the title: save it if it changed.
+    fileprivate func titleEnded() {
+        let text = titleField.text.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        titleHint.isHidden = !text.isEmpty
+        guard let id = shownID, text != shownTitle else { return }
+        shownTitle = text
+        onRename?(id, text)
+    }
+
+    /// Return in the title moves into the first box (the web's `onEnter`).
+    fileprivate func titleReturned() {
+        _ = titleField.resignFirstResponder()
+        guard host != nil, let first = boxes.min(by: { ($0.y, $0.x) < ($1.y, $1.x) }), let view = boxViews[first.id] else { return }
+        beginEditing(view, at: nil)
+    }
+
     private func layoutHeader() {
         let left = stacked ? 20 : Self.originX + BoxTextView.pad.left
         let width = max(bounds.width / max(zoomScale, 0.01) - left - (stacked ? 20 : 40), 100)
-        let titleSize = titleLabel.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let titleSize = titleField.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         let top: CGFloat = stacked ? 12 : 32
         let iconRow: CGFloat = (stacked ? 44 : 28) + headerShift
-        titleLabel.frame = CGRect(x: left, y: top + iconRow + 4, width: width, height: max(titleSize.height, stacked ? 33.6 : 43.2))
-        subLabel.frame = CGRect(x: left, y: titleLabel.frame.maxY + 6, width: width, height: 18.75)
+        titleField.frame = CGRect(x: left, y: top + iconRow + 4, width: width, height: max(titleSize.height, stacked ? 33.6 : 43.2))
+        titleHint.frame = titleField.frame
+        subLabel.frame = CGRect(x: left, y: titleField.frame.maxY + 6, width: width, height: 18.75)
         addIcon.frame = CGRect(x: left - (icon != nil ? 4 : (stacked ? 0 : 8)), y: top, width: icon != nil ? 240 : 160, height: iconRow)
     }
 
     func show(_ page: PageSnapshot, host: PageEditHost?) {
         if page.id != shownID {
+            // A title being typed on the page that closes is saved to that page.
+            if titleField.isFirstResponder {
+                _ = titleField.resignFirstResponder()
+                shownTitle = wantedTitle
+                titleField.attributedText = NSAttributedString(string: wantedTitle, attributes: titleAttrs)
+                titleHint.isHidden = !wantedTitle.isEmpty
+            }
             stopEditing()
             boxViews.values.forEach { $0.removeFromSuperview() }
             boxViews = [:]
@@ -862,6 +928,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         // Taps inside the box being edited are its text interaction's (caret, word selection).
         if g === boxPan { return moveHit(g.location(in: surface)) != nil }
         if g === panGestureRecognizer, moveHit(g.location(in: surface)) != nil { return false }
+        if g === singleTap || g === doubleTap, titleField.isEditable, titleField.frame.contains(g.location(in: surface)) { return false }
         if g === singleTap || g === doubleTap, toolbar.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, linkEditor.covers(g.location(in: self)) { return false }
         if g === singleTap || g === doubleTap, menu.covers(g.location(in: self)) { return false }
@@ -1043,4 +1110,26 @@ extension PageScrollView: UIDropInteractionDelegate {
             PlatformMedia.load(providers) { MediaHub.shared.upload($0, into: target) }
         }
     }
+}
+
+/// The page title's text view: Return goes to the first box, a pasted line break is flattened, the end of editing saves the title.
+final class TitleFieldDelegate: NSObject, UITextViewDelegate {
+    weak var owner: PageScrollView?
+
+    func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        if text == "\n" {
+            owner?.titleReturned()
+            return false
+        }
+        if text.contains("\n") {
+            let flat = text.replacingOccurrences(of: "\n", with: " ")
+            textView.textStorage.replaceCharacters(in: range, with: NSAttributedString(string: flat, attributes: textView.typingAttributes))
+            owner?.titleChanged()
+            return false
+        }
+        return true
+    }
+
+    func textViewDidChange(_ textView: UITextView) { owner?.titleChanged() }
+    func textViewDidEndEditing(_ textView: UITextView) { owner?.titleEnded() }
 }

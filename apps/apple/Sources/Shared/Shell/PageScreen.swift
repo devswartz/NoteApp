@@ -175,9 +175,10 @@ struct PageScreen: View {
             // "Add icon" above the title: for a page of the tree that can be edited (the look states keep their own).
             let canEditIcon = meta != nil && sample == nil && LookData.state == nil && !session.preview && session.canEditTree && (editHost?.savesBoxes ?? false)
             let onIcon: ((CGRect) -> Void)? = canEditIcon ? { iconTapped($0) } : nil
+            let onRename: ((String, String) -> Void)? = canEditIcon ? { id, text in shell.commitRename(.page, id, to: text, session) } : nil
             PageCanvas(page: snapshot, host: editHost, title: title, subline: edited, palette: palette,
                        decor: decor, showAddIcon: phone || canEditIcon || ((LookData.state?.hasPrefix("edit") ?? false)), icon: meta?.icon,
-                       onIcon: onIcon, stacked: phone, notify: { shell.say($0) })
+                       onIcon: onIcon, onRename: onRename, stacked: phone, notify: { shell.say($0) })
                 .anchor("page-canvas", shell)
         } else if let sample, case .failure = sample.page {
             notFound(palette)

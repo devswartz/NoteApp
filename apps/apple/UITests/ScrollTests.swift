@@ -8,7 +8,8 @@ final class ScrollTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-previewSignedIn", "YES", "-lookState", "page-long", "-theme", "light"]
         app.launch()
-        let title = app.staticTexts["page-title"]
+        // The title is a text view now (a field when it can be edited): any element with its identifier.
+        let title = app.descendants(matching: .any).matching(identifier: "page-title").firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 40), "the long page did not open")
         let before = title.frame.minY
         let window = app.windows.firstMatch

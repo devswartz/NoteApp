@@ -82,11 +82,11 @@ struct TaskBuckets {
 
     var overdue: Int { mine.filter { (Due.days($0.dueDate) ?? 0) < 0 && $0.dueDate != nil }.count }
 
-    func list(_ l: Shell.TaskList) -> [CoreTask] {
+    func list(_ l: Shell.TaskList, everyone: Bool = false) -> [CoreTask] {
         switch l {
         case .today: return mine.filter { $0.dueDate != nil && (Due.days($0.dueDate) ?? 1) <= 0 }
         case .my: return mine
-        case .upcoming: return mine.filter { if let n = Due.days($0.dueDate) { return n <= 14 } else { return false } }
+        case .upcoming: return (everyone ? open : mine).filter { if let n = Due.days($0.dueDate) { return n <= 14 } else { return false } }
         case .all, .team: return open
         }
     }
@@ -106,8 +106,9 @@ struct TaskBuckets {
     }
 
     /// Groups by due day: Overdue, "Today · Sat 21 Nov", "Tomorrow · Sun 22 Nov", weekdays, dates, then No date.
-    func groups(_ l: Shell.TaskList) -> [(title: String, overdue: Bool, tasks: [CoreTask])] {
-        let items = list(l).sorted { a, b in
+    func groups(_ l: Shell.TaskList, everyone: Bool = false, filter: (([CoreTask]) -> [CoreTask])? = nil) -> [TaskBlock] {
+        let base = list(l, everyone: everyone)
+        let items = (filter?(base) ?? base).sorted { a, b in
             switch (a.dueDate, b.dueDate) {
             case let (x?, y?) where x != y: return x < y
             case (_?, nil): return true
@@ -115,7 +116,7 @@ struct TaskBuckets {
             default: return a.priority < b.priority
             }
         }
-        var out: [(title: String, overdue: Bool, tasks: [CoreTask])] = []
+        var out: [TaskBlock] = []
         for t in items {
             let title: String
             var late = false
@@ -133,68 +134,58 @@ struct TaskBuckets {
             if let i = out.indices.last, out[i].title == title {
                 out[i].tasks.append(t)
             } else {
-                out.append((title, late, [t]))
+                out.append(TaskBlock(key: title, title: title, overdue: late, dueDate: title == "No date" ? nil : t.dueDate, canAdd: !late, tasks: [t]))
             }
         }
         return out
     }
 }
 
-/// Today / My Tasks / Upcoming / All tasks (LOOK.md 4.10).
+/// Today / My Tasks / Upcoming / Team / All tasks (LOOK.md 4.10), filtered, sorted and grouped by `shell.tv`.
 struct TasksScreen: View {
     let list: Shell.TaskList
     @Environment(\.phoneLayout) private var phone
-    @State private var everyone = false
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
     var body: some View {
         let p = theme.chrome
+        let tv = shell.tv
         let buckets = TaskBuckets(tasks: session.shownTasks, session: session)
-        let groups = buckets.groups(list)
+        let blocks = listBlocks(buckets, tv)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 Text(list.title).font(.web(phone ? 24 : 26, 700)).tracking(phone ? -0.48 : -0.52).foregroundStyle(p.text.color).frame(height: phone ? 38 : 34)
                 Text(list.subtitle).font(.web(14)).foregroundStyle(p.textMuted.color).frame(height: 21).padding(.top, 4)
-                if phone {
-                    // The ribbon's filter buttons, as one button (Add filter) under the heading.
-                    Button { shell.notYet("Filters") } label: {
-                        HStack(spacing: 6) {
-                            Icon("plus", 15, p.text.color)
-                            Text("Add filter").font(.web(13.5, 500)).foregroundStyle(p.text.color)
-                        }
-                        .padding(.horizontal, 10).frame(height: 28)
-                        .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
-                        .shadowSm(p)
+                if list != .all {
+                    if phone {
+                        // The ribbon's filter buttons, as one button (Add filter) with a chip for each filter that is on.
+                        TaskFilterBar(list: list, palette: p).padding(.top, 16)
+                    } else {
+                        TaskFilterLine(palette: p).padding(.top, 12)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 16)
-                    if list == .upcoming {
-                        HStack(spacing: 2) {
-                            ForEach(["Mine", "Everyone"], id: \.self) { label in
-                                let active = (label == "Everyone") == everyone
-                                Button { everyone = label == "Everyone" } label: {
-                                    Text(label).font(.web(13.5, 500)).foregroundStyle(p.text.color)
-                                        .padding(.horizontal, 12).frame(height: 26)
-                                        .background(active ? p.bgElevated.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                        .shadow(color: active ? Color.black.opacity(0.08) : .clear, radius: 1, x: 0, y: 1)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(2)
-                        .background(p.bgHover.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                if phone && list == .upcoming {
+                    SegmentedPick(options: ["Mine", "Everyone"], selected: tv.upcomingEveryone ? 1 : 0, palette: p) { tv.upcomingEveryone = $0 == 1 }
                         .padding(.top, 12)
+                }
+                if phone && list == .my {
+                    SegmentedPick(options: ["By date", "By page", "By priority"], selected: [TaskGrouping.due, .note, .priority].firstIndex(of: tv.myGroup) ?? 0, palette: p) {
+                        tv.myGroup = [TaskGrouping.due, .note, .priority][$0]
                     }
+                    .padding(.top, 12)
                 }
                 if list == .today {
                     StatsCard(done: buckets.doneToday, left: buckets.list(.today).count)
                         .padding(.top, phone ? 12 : 20)
                 }
-                if groups.isEmpty {
-                    if list == .today {
+                if list == .team {
+                    TeamTasks(palette: p)
+                } else if list == .all {
+                    allBody(p, tv)
+                } else if blocks.isEmpty || blocks.allSatisfy({ $0.tasks.isEmpty }) {
+                    if list == .today && tv.activeFilters.isEmpty {
                         // The empty Today still lists its day, with Add task, above the message.
                         VStack(alignment: .leading, spacing: 0) {
                             Text("Today · " + Due.format(Date(), "EEE d MMM")).font(.web(13.5, 650)).foregroundStyle(p.text.color)
@@ -215,32 +206,7 @@ struct TasksScreen: View {
                     }
                     emptyState(p).padding(.top, list == .today ? 36 : 20)
                 } else {
-                    VStack(alignment: .leading, spacing: 22) {
-                        ForEach(Array(groups.enumerated()), id: \.offset) { _, g in
-                            VStack(alignment: .leading, spacing: 0) {
-                                HStack(spacing: 8) {
-                                    Text(g.title).font(.web(13.5, 650)).foregroundStyle(g.overdue ? p.danger.color : p.text.color)
-                                    Text("\(g.tasks.count)").font(.web(12, 500)).foregroundStyle(p.textMuted.color)
-                                }
-                                .padding(.top, 8).padding(.bottom, 6)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
-                                ForEach(g.tasks, id: \.id) { t in TaskRowView(task: t) }
-                                if !g.overdue {
-                                    Button { shell.openQuickAdd(session, due: g.title == "No date" ? nil : g.tasks.first?.dueDate) } label: {
-                                        HStack(spacing: 8) {
-                                            Icon("plus", 15, p.textMuted.color)
-                                            Text("Add task").font(.web(13.5)).foregroundStyle(p.textMuted.color)
-                                        }
-                                        .padding(.vertical, 8).padding(.horizontal, 6)
-                                    }
-                                    .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
-                                    .padding(.top, 2)
-                                }
-                            }
-                        }
-                    }
-                    .padding(.top, 20)
+                    TaskBlocksView(blocks: blocks, palette: p).padding(.top, 20)
                 }
             }
             .padding(.top, phone ? 20 : 36).padding(.horizontal, phone ? 16 : 40).padding(.bottom, phone ? 96 : 120)
@@ -248,7 +214,100 @@ struct TasksScreen: View {
         }
         .refreshable { await session.refresh() }
         .noEdgeEffect()
-        .onAppear { session.refreshTasks() }
+        .onAppear {
+            session.refreshTasks()
+            if !session.teams.isEmpty { session.loadAllDetails() }
+        }
+    }
+
+    /// The groups of the lists that have them (Today, My Tasks, Upcoming).
+    private func listBlocks(_ buckets: TaskBuckets, _ tv: TaskViewState) -> [TaskBlock] {
+        let filter: ([CoreTask]) -> [CoreTask] = { tv.filter($0, session: session) }
+        switch list {
+        case .today:
+            return buckets.groups(.today, filter: filter)
+        case .upcoming:
+            return buckets.groups(.upcoming, everyone: tv.upcomingEveryone, filter: filter)
+        case .my:
+            if tv.myGroup == .due { return buckets.groups(.my, filter: filter) }
+            return TaskViewState.grouped(filter(buckets.list(.my)), by: tv.myGroup, sort: .due, session: session)
+        case .all, .team:
+            return []
+        }
+    }
+
+    /// All tasks: search, status, filters, sort and group; finished tasks (Status Completed or All) under the open ones.
+    @ViewBuilder
+    private func allBody(_ p: Palette, _ tv: TaskViewState) -> some View {
+        let open = session.shownTasks.filter { !session.isDone($0) && !$0.locked }
+        let filtered = tv.status == .done ? [] : tv.filter(open, session: session, includeSearch: true)
+        let blocks = TaskViewState.grouped(filtered, by: tv.group, sort: tv.sort, session: session)
+        let finished = session.shownTasks.filter { session.isDone($0) && !$0.locked }
+        let done = (tv.status == .open ? [] : tv.filter(finished, session: session, includeSearch: true))
+            .sorted { ($0.completedAt ?? "") > ($1.completedAt ?? "") }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                TextField("Filter tasks…", text: Bindable(tv).q)
+                    .font(.web(phone ? 16 : 14)).foregroundStyle(p.text.color).tint(p.accent.color)
+                    .padding(.horizontal, 10).frame(height: phone ? 38 : 32)
+                    .background(p.bg.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+                    .autocorrectionDisabled()
+                if phone {
+                    SelectMenu(palette: p, label: "Sort", value: tv.sort.label) {
+                        ForEach(TaskSort.allCases, id: \.self) { s in Button(s.label) { tv.sort = s } }
+                    }
+                    SelectMenu(palette: p, label: "Group", value: tv.group.label) {
+                        ForEach(TaskGrouping.allCases, id: \.self) { g in Button(g.label) { tv.group = g; if g == .team { session.loadAllDetails() } } }
+                    }
+                }
+            }
+            .padding(.top, 16)
+            if phone { TaskFilterBar(list: list, palette: p).padding(.top, 10) }
+            HStack(spacing: 8) {
+                if tv.status != .done {
+                    Text("\(filtered.count) task\(filtered.count == 1 ? "" : "s")").font(.web(13)).foregroundStyle(p.textMuted.color)
+                }
+                if !phone && !tv.activeKinds.isEmpty {
+                    Text(tv.activeKinds.map { tv.summary($0, session: session) }.joined(separator: " · ")).font(.web(13)).foregroundStyle(p.textMuted.color).lineLimit(2)
+                    Button { tv.clearAll(); tv.status = .open } label: {
+                        Text("Clear").font(.web(13, 500)).foregroundStyle(p.text2.color).padding(.horizontal, 8).frame(height: 24)
+                    }
+                    .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
+            if tv.status != .done {
+                if blocks.allSatisfy({ $0.tasks.isEmpty }) {
+                    if tv.status == .open { emptyState(p).padding(.top, 20) }
+                } else {
+                    TaskBlocksView(blocks: blocks, palette: p).padding(.top, 14)
+                }
+            }
+            if tv.status != .open {
+                if done.isEmpty {
+                    if tv.status == .done {
+                        Text("No completed tasks match these filters.").font(.web(14)).foregroundStyle(p.textMuted.color)
+                            .frame(maxWidth: .infinity).padding(.vertical, 40)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if tv.status == .any {
+                            HStack(spacing: 8) {
+                                Text("Completed").font(.web(13.5, 650)).foregroundStyle(p.text.color)
+                                Text("\(done.count)").font(.web(12, 500)).foregroundStyle(p.textMuted.color)
+                            }
+                            .padding(.top, 8).padding(.bottom, 6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
+                        }
+                        ForEach(done, id: \.id) { t in TaskRowView(task: t) }
+                    }
+                    .padding(.top, tv.status == .any ? 22 : 14)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -263,7 +322,7 @@ struct TasksScreen: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40).padding(.horizontal, 16)
         } else {
-            Text(list == .my ? "No tasks assigned to you." : list == .upcoming ? "Nothing scheduled." : "No tasks match these filters.")
+            Text(!shell.tv.activeFilters.isEmpty ? "No tasks match these filters." : list == .my ? "No tasks assigned to you." : list == .upcoming ? "Nothing scheduled." : "No tasks match these filters.")
                 .font(.web(14)).foregroundStyle(p.textMuted.color)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
@@ -330,9 +389,33 @@ struct TaskRowView: View {
     let theme = Theme.shared
 
     var body: some View {
+        #if os(iOS)
+        // On a touch screen: swipe right to complete (or reopen), left to move to tomorrow (the web's SwipeRow).
+        let done = session.isDone(task)
+        SwipeRow(
+            right: .init(label: done ? "Reopen" : "Complete", icon: done ? "rotate-ccw" : "check", success: true) { session.setDone(task, !done) },
+            left: .init(label: "Tomorrow", icon: "calendar-clock") { moveToTomorrow() },
+            disabled: task.locked || session.workspace?.role == "viewer" || session.preview
+        ) { rowBody }
+        #else
+        rowBody
+        #endif
+    }
+
+    /// Swipe left: due tomorrow, with Undo.
+    private func moveToTomorrow() {
+        let was = (date: task.dueDate, time: task.dueTime)
+        let tomorrow = SessionModel.dayString(Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date())
+        session.update(task.id, TaskChanges(dueDate: tomorrow)) { shell.say($0) }
+        shell.say("Moved to tomorrow") {
+            session.update(task.id, TaskChanges(dueDate: was.date, clearDueDate: was.date == nil, dueTime: was.time, clearDueTime: was.time == nil)) { shell.say($0) }
+        }
+    }
+
+    private var rowBody: some View {
         let p = theme.chrome
         let done = session.isDone(task)
-        HStack(alignment: .top, spacing: phone ? 16 : 10) {
+        return HStack(alignment: .top, spacing: phone ? 16 : 10) {
             TaskCircle(priority: task.priority, done: done, size: phone ? 22 : 18, palette: p) {
                 session.setDone(task, !done)
             }
