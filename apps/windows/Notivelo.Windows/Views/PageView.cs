@@ -16,7 +16,7 @@ namespace Notivelo.Windows.Views;
 
 /// <summary>The page (LOOK 4.4 top bar, 4.5 surface): sticky 48 pt bar, scrolling article with title, sub-line and the canvas.
 /// Boxes are static TextBlocks for now; the editor session's text view replaces them later.</summary>
-internal sealed class PageView : ThemedControl
+internal sealed partial class PageView : ThemedControl
 {
     private readonly INotesSource _source;
     public string? PageId { get; private set; }
@@ -25,8 +25,10 @@ internal sealed class PageView : ThemedControl
     {
         _source = source;
         _saveTimer.Tick += (_, _) => PollSave();
-        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
-        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
+        KeyDown += OnPageKey;
+        source.SetBoxTextProbe(field => _views.TryGetValue(field, out var v) ? v.AutomationText : "");
+        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.Escaped += OnBoxEscaped; BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
+        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.Escaped -= OnBoxEscaped; BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
     }
 
     /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
@@ -62,6 +64,7 @@ internal sealed class PageView : ThemedControl
 
     private void FocusChanged()
     {
+        if (BoxTextView.Focused is not null) Select(null);
         foreach (var f in _frames.Values) f.SetEditing(ReferenceEquals(BoxTextView.Focused, f.View) || f.View.LinkEditorOpen);
     }
 
@@ -92,6 +95,7 @@ internal sealed class PageView : ThemedControl
         MediaCache.Clear();
         foreach (var f in _frames.Values) if (f.Parent is Panel fp) fp.Children.Remove(f);
         _frames.Clear();
+        _selectedBox = null;
         _viewsFor = null;
     }
 
@@ -252,6 +256,7 @@ internal sealed class PageView : ThemedControl
         var canvas = new Canvas { Height = surfaceH, Margin = new Thickness(40, 15, 0, 0), Background = new SolidColorBrush(Colors.Transparent) };
         _surface = canvas;
         canvas.PointerPressed += OnSurfacePressed;
+        canvas.RightTapped += OnSurfaceRightTapped;
         // the ink layers are made when the page has ink (a canvas control per layer)
         _inkUnder = null; _inkOver = null; _inkOverlay = null;
         canvas.SizeChanged += (_, e) => { if (_inkUnder is not null) _inkUnder.Width = e.NewSize.Width; if (_inkOver is not null) _inkOver.Width = e.NewSize.Width; if (_inkOverlay is not null) _inkOverlay.Width = e.NewSize.Width; };
@@ -630,7 +635,7 @@ internal sealed class PageView : ThemedControl
         // dev hook: NOTIVELO_FOCUS=1 gives the first box the keyboard (loopback servers only), to exercise the text services without a pointer
         if (Environment.GetEnvironmentVariable("NOTIVELO_FOCUS") is not null && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") && _views.Count > 0)
             _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); if (Environment.GetEnvironmentVariable("NOTIVELO_LINKEDITOR") is not null) v.ShowLinkEditor(); BoxTextView.Trace("focus hook " + ok); }));
-        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { _views[gone].Release(); _views.Remove(gone); if (_frames.Remove(gone, out var fr) && fr.Parent is Panel gp) gp.Children.Remove(fr); }
+        foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { if (gone == _selectedBox) _selectedBox = null; _views[gone].Release(); _views.Remove(gone); if (_frames.Remove(gone, out var fr) && fr.Parent is Panel gp) gp.Children.Remove(fr); }
     }
 
     /// <summary>The session's view of the task list. The core calls these on the session's thread with the session locked: they only note
@@ -777,6 +782,7 @@ internal sealed class PageView : ThemedControl
         if (!ReferenceEquals(e.OriginalSource, sender) || PageId is null) return;
         var pt = e.GetCurrentPoint((UIElement)sender);
         if (!pt.Properties.IsLeftButtonPressed) return;
+        Select(null);
         e.Handled = true;
         var wasEditing = BoxTextView.Focused is not null || BoxTextView.AnyLinkEditorOpen;
         BoxTextView.CloseLinkEditor();
@@ -821,6 +827,7 @@ internal sealed class PageView : ThemedControl
             {
                 if (_surface is null || !e.GetCurrentPoint(el).Properties.IsLeftButtonPressed) return;
                 BoxTextView.CloseLinkEditor();
+                if (f.Box?.Field is { } sel) Select(sel);
                 start = e.GetCurrentPoint(_surface).Position; orig = (f.X, f.Y, f.BoxWidth); moved = false;
                 el.CapturePointer(e.Pointer); _dragging = f; e.Handled = true;
             };
@@ -849,6 +856,8 @@ internal sealed class PageView : ThemedControl
             el.PointerReleased += (_, e) => { End(e); e.Handled = true; };
             el.PointerCaptureLost += (_, _) => { if (ReferenceEquals(_dragging, f)) _dragging = null; };
         }
+        f.Bar.RightTapped += (_, e) => { e.Handled = true; if (f.Box?.Field is { } sel) { Select(sel); ShowBoxMenu(e.GetPosition(null)); } };
+        f.Handle.RightTapped += (_, e) => { e.Handled = true; if (f.Box?.Field is { } sel) { Select(sel); ShowBoxMenu(e.GetPosition(null)); } };
         Hook(f.Bar, false);
         Hook(f.Handle, true);
     }
@@ -866,7 +875,9 @@ internal sealed class PageView : ThemedControl
         public double X { get; private set; }
         public double Y { get; private set; }
         public double BoxWidth { get; private set; }
-        private bool _hover, _editing;
+        private bool _hover, _editing, _selected;
+        public bool Selected => _selected;
+        public void SetSelected(bool on) { if (on == _selected) return; _selected = on; View.BoxSelected = on; Apply(); }
 
         private sealed class CursorBorder : Grid
         {
@@ -922,9 +933,9 @@ internal sealed class PageView : ThemedControl
 
         private void Apply()
         {
-            var show = _hover || _editing;
+            var show = _hover || _editing || _selected;
             var host = View.Host;
-            host.BorderBrush = _editing ? _b("BorderStrong") : _hover ? _b("Border") : new SolidColorBrush(Colors.Transparent);
+            host.BorderBrush = _selected ? _b("Accent") : _editing ? _b("BorderStrong") : _hover ? _b("Border") : new SolidColorBrush(Colors.Transparent);
             host.Background = _editing ? _b("Bg") : new SolidColorBrush(Colors.Transparent);
             if (!CanDrag) return;
             Bar.Background = _b("BgPressed");

@@ -13,10 +13,14 @@ public sealed partial class MainWindow : Window
     // LOOK 3.3: the wide layout needs > 760 pt; the phone layout is not built, so the window never goes below it.
     private const double MinWidthDip = 800, MinHeightDip = 560;
 
+    /// <summary>The window, so a tapped reminder toast can bring it forward.</summary>
+    public static MainWindow? Instance { get; private set; }
+
     public MainWindow()
     {
         InitializeComponent();
         Title = "Notivelo";
+        Instance = this;
         Activated += (_, e) => { if (e.WindowActivationState != WindowActivationState.Deactivated) WindowActivated?.Invoke(); };
         // NOTIVELO_SOURCE=sample: the fake data of the reference captures, no sign-in (offline screenshots). Default: the Rust core.
         // NOTIVELO_SOURCE=offline: the UI tests' mode: sample data plus a page of editable boxes over local documents, no server.

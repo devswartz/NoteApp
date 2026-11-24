@@ -52,6 +52,9 @@ internal sealed partial class BoxTextView
     /// <summary>Raised when the focused box changes, or its marks, block type or undo state do.</summary>
     public static event Action? FocusedStateChanged;
 
+    /// <summary>Escape left a box: the page selects the box as a whole (OneNote: Esc inside a box selects it).</summary>
+    public static event Action<BoxTextView>? Escaped;
+
     /// <summary>Set once by the main window: the screen position of the client area is taken from it for the IME's candidate window.</summary>
     public static IntPtr WindowHandle { get; set; }
 
@@ -720,7 +723,7 @@ internal sealed partial class BoxTextView
             var done = _session.Key(chord);
             Render();
             if (done) { _stickyX = -1; return true; }
-            if (name == "Escape") { Unfocus(); return true; }
+            if (name == "Escape") { Unfocus(); Escaped?.Invoke(this); return true; }
             if (name is "Enter" or "Backspace" or "Delete") return true;
             return false;        // Tab: on to the next control
         }

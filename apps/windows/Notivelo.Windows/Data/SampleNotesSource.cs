@@ -37,6 +37,7 @@ public sealed partial class SampleNotesSource : INotesSource
         // [0, 0] is the empty Yjs update; the "default" field needs no box record in the document
         var s = Notivelo.Native.EditorSession.Open(new byte[] { 0, 0 }, "default", tasks);
         if (field == "box:b") s.InsertText("Second box");
+        else if (field.StartsWith("box:") && _seedText.TryGetValue(field[4..], out var seeded) && seeded.Length > 0) s.InsertText(seeded);
         return s;
     }
 

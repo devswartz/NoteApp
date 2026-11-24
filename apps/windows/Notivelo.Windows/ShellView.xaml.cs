@@ -39,6 +39,8 @@ public sealed partial class ShellView : UserControl
     private DateTime? _offlineSince;
     private bool _pillDismissed;
     private readonly global::Microsoft.UI.Xaml.DispatcherTimer _inboxTimer = new() { Interval = TimeSpan.FromSeconds(60) };
+    private readonly global::Microsoft.UI.Xaml.DispatcherTimer _reminderTimer = new() { Interval = TimeSpan.FromMinutes(5) };
+    private long _remindersFor = -1;
     private static readonly bool ForceOffline = Environment.GetEnvironmentVariable("NOTIVELO_FORCE_OFFLINE") == "1";
 
     public ShellView(INotesSource source, Action? signOut = null, string? server = null)
@@ -70,6 +72,9 @@ public sealed partial class ShellView : UserControl
         KeyDown += OnShellKey;
         // pictures and files added in a box (upload errors, saved files) report through the shell's toasts
         Action<string, bool> notice = (t, err) => _host.Toast(t, err);
+        Action<string> sourceNotice = t => DispatcherQueue.TryEnqueue(() => _host.Toast(t));
+        Loaded += (_, _) => _source.Notice += sourceNotice;
+        Unloaded += (_, _) => _source.Notice -= sourceNotice;
         Loaded += (_, _) => BoxTextView.Notice += notice;
         Unloaded += (_, _) => BoxTextView.Notice -= notice;
 
@@ -97,6 +102,11 @@ public sealed partial class ShellView : UserControl
         Loaded += (_, _) => { MainWindow.WindowActivated += activated; _inboxTimer.Start(); _host.Inbox.Refresh(false); };
         Unloaded += (_, _) => { MainWindow.WindowActivated -= activated; _inboxTimer.Stop(); TaskbarBadge.Set(0); };
         _inboxTimer.Tick += (_, _) => _host.Inbox.Refresh(false);
+        // reminder toasts: planned from the core's reminders on sign-in, every 5 minutes and when the task list changed
+        _reminderTimer.Tick += (_, _) => _ = ReminderToasts.SyncAsync(_source);
+        Action<Dictionary<string, string>, IDictionary<string, string>> toastTapped = (a, input) => DispatcherQueue.TryEnqueue(() => OnReminderToast(a, input));
+        Loaded += (_, _) => { _reminderTimer.Start(); ReminderToasts.RegisterActivation(); ReminderToasts.Activated += toastTapped; _ = ReminderToasts.SyncAsync(_source); };
+        Unloaded += (_, _) => { _reminderTimer.Stop(); ReminderToasts.Activated -= toastTapped; ReminderToasts.Clear(); };
         _rail.ToggleSidebar += () => { _sidebarOpen = !_sidebarOpen; ApplySidebar(); _rail.SetSidebarOpen(_sidebarOpen); };
         _rail.CurrentTheme = () => _theme;
         _rail.ThemeSelected += m => SetTheme(m);
@@ -158,11 +168,26 @@ public sealed partial class ShellView : UserControl
     }
 
     /// <summary>The ribbon buttons that do something outside the page: New task (Tasks, Calendar), the Calendar's navigation, Settings' back arrow.</summary>
+    /// <summary>A reminder toast was tapped: Open task shows the task; Snooze moves the reminder (the core's snooze with a push's token, else this PC's toast).</summary>
+    private async void OnReminderToast(Dictionary<string, string> args, IDictionary<string, string> input)
+    {
+        var action = args.GetValueOrDefault("action", "open");
+        if (action == "snooze")
+        {
+            var option = input.TryGetValue("snooze", out var o) ? o : "10m";
+            _host.Toast(await ReminderToasts.SnoozeAsync(_source, args, option));
+            return;
+        }
+        MainWindow.Instance?.Activate();
+        if (args.GetValueOrDefault("task", "") is { Length: > 0 } task) _host.OpenTask(task);
+    }
+
     private void OnRibbon(string tip)
     {
         switch (tip)
         {
             case "New task": QuickAddDialog.Show(_host, null); break;
+            case "Print" when _route == AppRoute.Notes: _page.Print(); break;
             case "Today" or "Upcoming" or "My Tasks" or "All tasks" when _route == AppRoute.Tasks:
                 _taskView = tip switch { "Today" => TaskViewKind.Today, "Upcoming" => TaskViewKind.Upcoming, "My Tasks" => TaskViewKind.MyTasks, _ => TaskViewKind.All };
                 Refresh(); break;
@@ -255,6 +280,7 @@ public sealed partial class ShellView : UserControl
         _sidebar.Update(_route == AppRoute.Settings ? _before : _route, _pageId, _taskView);
         UpdateOffline();
         TaskbarBadge.Set(_source.GetTaskCounts().Today);
+        if (_source.TasksVersion != _remindersFor) { _remindersFor = _source.TasksVersion; if (IsLoaded) _ = ReminderToasts.SyncAsync(_source, true); }
         if (_page.PageId == _pageId) _page.Refresh(); else _page.SetPage(_pageId);
         _tasks.SetView(_taskView);
         PageCard.Visibility = _route == AppRoute.Notes ? Visibility.Visible : Visibility.Collapsed;
@@ -297,6 +323,12 @@ public sealed partial class ShellView : UserControl
         {
             var undo = e.Key == global::Windows.System.VirtualKey.Z && !shift;
             if (_page.Undo(undo) is not null) e.Handled = true;
+            return;
+        }
+        if (e.Key == global::Windows.System.VirtualKey.P && !shift && _route == AppRoute.Notes && !_overlay.IsOpen)
+        {
+            e.Handled = true;
+            _page.Print();
             return;
         }
         if ((e.Key == global::Windows.System.VirtualKey.K && !shift) || (e.Key == global::Windows.System.VirtualKey.F && shift))

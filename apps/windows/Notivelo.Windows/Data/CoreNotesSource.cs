@@ -48,7 +48,7 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
     public string? LoadError { get; private set; }
     public string? InitialPageId => null;
 
-    private void Raise() { if (!_disposed) Changed?.Invoke(this, EventArgs.Empty); }
+    private void Raise() { if (!_disposed) { Changed?.Invoke(this, EventArgs.Empty); TryApplyPending(); } }
 
     private static string Initials(string name, string email)
     {
