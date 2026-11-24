@@ -403,7 +403,8 @@ struct TemplatePickerView: View {
             }
         }
         .padding(.horizontal, phone ? 16 : 56)
-        .padding(.top, phone ? 150 : 170)
+        // Below the empty box's "Type '/' for commands..." line, not over it.
+        .padding(.top, phone ? 196 : 216)
         .onAppear { model.load(session) }
     }
 

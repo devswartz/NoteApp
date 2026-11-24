@@ -43,3 +43,5 @@ Images and attachments (show, insert from Photos/Files/camera, paste, drop, resi
 Editable page title, task filters/sort/group, favourites, offline start, print/PDF, notivelo:// links, swipe rows, privacy manifest are in this build.
 
 Notification inbox, app badge, public share link, delete account, who is on the page are in this build.
+
+Push reminders with snooze and universal links (iOS), templates, box copy/paste/duplicate, Mac sidebar drag are in this build.
