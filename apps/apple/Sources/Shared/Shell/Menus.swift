@@ -310,7 +310,7 @@ struct MenuLayer: View {
             .padding(.horizontal, 4).padding(.bottom, 2)
             MenuSeparator(palette: p)
             MenuItem(palette: p, title: "Settings", icon: "settings") { shell.openSettings() }
-            MenuItem(palette: p, title: "Keyboard shortcuts", icon: "keyboard", hint: "?") { shell.notYet("The shortcuts list") }
+            MenuItem(palette: p, title: "Keyboard shortcuts", icon: "keyboard", hint: "?") { shell.openSettings("shortcuts") }
             MenuItem(palette: p, title: "Get the apps", icon: "download") { shell.notYet("The app downloads") }
             if !session.preview {
                 MenuItem(palette: p, title: session.lockStatus?.hasPassword == true ? "Change locked pages password…" : "Set a locked pages password…", icon: "lock") {

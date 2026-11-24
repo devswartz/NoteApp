@@ -101,5 +101,5 @@ extension ShellBridge {
         shell.openQuickAdd(session)
     }
 
-    func openSettings() { shell?.openSettings() }
+    func openSettings(_ section: String? = nil) { shell?.openSettings(section) }
 }

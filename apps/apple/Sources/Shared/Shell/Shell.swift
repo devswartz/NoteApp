@@ -155,6 +155,7 @@ final class Shell {
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
             if state == "page-tasks-panel" { pageTasksTab = true; CommentsModel.shared.open = true }
             if state == "search" { searchOpen = true; searchQuery = "plan" }
+            if state.hasPrefix("settings-") { route = .settings; settingsSection = String(state.dropFirst("settings-".count)) }
             if state == "task-detail" { route = .tasks(.my); taskDetailId = "t-review" }
         } else {
             route = .notes
