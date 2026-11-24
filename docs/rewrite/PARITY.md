@@ -47,7 +47,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Create workspace | ● | ● | ● | ● | ● | ● | `POST /workspaces` |
 | Notes panel: notebook picker, section tree, pages list | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
 | Section ribbons / colour tabs | ● ✓ | ◐ | ● ✓ | ● | ◐ | ● | `SectionRibbons.tsx` *(verify phone form)* |
-| Favourites and Recent | ● | ● | ● | ● | ● | ● | |
+| Favourites and Recent | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Resize sidebar, hide sidebar (⌘\) | ● | — | ● | ● | — | ● | |
 | Notes home overview | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `NotesHome.tsx` |
 | OneNote-style ribbon (Text, Lists, Insert, Page, View; Table group; changes per section: Tasks, Calendar) | ● | ○ | ● | ● | ○ | ● | collapse with chevron / Ctrl+F1; phones keep floating toolbar |
@@ -56,7 +56,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Command palette ⌘K (search + commands) | ● | ● | ● ✓ | ● | ● | ● | `CommandPalette.tsx`, `shell/commands.tsx` |
 | Keyboard shortcut overlay (?) | ● | ◐ | ● ✓ | ● | ◐ | ● | phones only with a keyboard |
 | F6 region cycling | ● | — | ● | ● | — | ● | `useF6Regions.ts` |
-| Swipe actions on rows | ● | ● | — | — | ● | ◐ | `SwipeRow.tsx` *(verify which rows)* |
+| Swipe actions on rows | ● ✓ | ● ✓ | — | — | ● | ◐ | `SwipeRow.tsx` *(verify which rows)* |
 | Toasts with Undo | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Offline banner / pill (after 30 s) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | "New version available, reload" prompt | ◐ | ◐ | ◐ | ◐ | ◐ | ● | service worker; bundled apps update via store/updater |
@@ -94,7 +94,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
 | Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | phone hides ✓ when saved |
-| Page title | ● | ● | ● | ● | ● | ● | title change refused unless current title known |
+| Page title | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | title change refused unless current title known |
 | Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
 | Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Links: ⌘K, editor with Text + Address | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `LinkEditor.tsx` |
@@ -120,7 +120,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Rule lines / grid with snapping | ● | ● | ● | ● | ● | ● | `ruleGrid.ts` |
 | Spellcheck | ● | ● | ● ✓ | ◐ | ● | ● | Mac app: native spelling (`spelling.rs`); else system/browser |
 | Print page, print selection; Save as PDF | ● | ● | ● | ● | ● | ● | `print/`, `PrintSelectionMenu.tsx`; iOS via native `print` plugin method |
-| Export page (Markdown / PDF) | ● | ● | ● | ● | ● | ● | `exportPage.ts`, `collabExport.ts` |
+| Export page (Markdown / PDF) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `exportPage.ts`, `collabExport.ts` |
 | Version history: list, preview, restore (undoable) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `VersionHistory.tsx`, `/pages/:id/versions` |
 | Share a page with people (view / edit, outside the workspace) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PageShareDialog.tsx`, `/pages/:id/shares` |
 | Share link "Anyone with the link can view" (public read-only page) | ● | ● | ● | ● | ● | ● | `/pages/:id/link`, `server/publicPage.ts` |
@@ -156,7 +156,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Views: Today (progress strip, streak, 7 days), My Tasks, Upcoming, Team, All tasks (status Open/Completed/All) | ● | ◐ | ● | ● | ◐ | ● | phones: Today and My Tasks tabs, rest via Notes/Tasks menu *(verify)* |
 | Calendar: month / week, drag to reschedule or onto No date, double-click to add, Mine / Everyone | ● ✓ | ◐ ✓ | ● ✓ | ● | ◐ | ● | `CalendarView.tsx`, `CalendarPanel.tsx`, `MiniCalendar.tsx` |
 | Sidebar counts (Today, My Tasks, Upcoming) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
-| Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● | ● | ● | ● | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
+| Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `assigneeGroups.ts` |
 | Saved views (server, optionally shared) | ● | ● | ● | ● | ● | ● | `/workspaces/:id/task-views` |
 | Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
@@ -219,7 +219,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Opens offline from a cold start | ● | ● | ● | ● | ● | ● | bundled web app; service worker on web |
+| Opens offline from a cold start | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | bundled web app; service worker on web |
 | Opened pages editable offline, sync on reconnect | ● | ● | ● | ● | ● | ● | `pageCache.ts`, `offlineCache.ts` |
 | Tree and tasks cached for offline reading | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `store/cache.ts` |
 
