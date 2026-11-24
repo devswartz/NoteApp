@@ -16,6 +16,11 @@ import com.notivelo.core.Notebook
 import com.notivelo.core.PageMeta
 import com.notivelo.core.Section
 import com.notivelo.core.Task
+import com.notivelo.core.TaskDetail
+import com.notivelo.core.TaskRecurrence
+import com.notivelo.core.TaskTag
+import com.notivelo.core.TaskTeam
+import com.notivelo.core.WorkspaceMember
 import com.notivelo.app.data.PageStatus
 import com.notivelo.app.data.PageView
 import com.notivelo.app.data.Tab
@@ -116,9 +121,10 @@ object LookData {
     private fun task(
         id: String, title: String, due: Int? = null, priority: Int = 4, page: String? = null, assignee: String? = "demo",
         done: Boolean = false, parent: String? = null, time: String? = null, checklist: Pair<Int, Int>? = null,
+        tags: List<String> = emptyList(), description: String = "",
     ) = Task(
-        id = id, workspaceId = "demo-team", title = title, description = "", done = done, priority = priority.toUByte(),
-        dueDate = due?.let(::day), dueTime = time, assigneeId = assignee, pageId = page, parentId = parent, tagIds = emptyList(),
+        id = id, workspaceId = "demo-team", title = title, description = description, done = done, priority = priority.toUByte(),
+        dueDate = due?.let(::day), dueTime = time, assigneeId = assignee, pageId = page, parentId = parent, tagIds = tags,
         checklistDone = checklist?.first?.toUInt(), checklistTotal = checklist?.second?.toUInt(),
         completedAt = if (done) "2026-11-21T11:30:00Z" else null, createdAt = ago(10.0), updatedAt = ago(30.0), locked = false,
     )
@@ -140,7 +146,37 @@ object LookData {
         add(task("m-pricing", "Finalise launch pricing", due = 2, priority = 1, page = "weekly-sync", assignee = "sam"))
         add(task("m-sub1", "Check competitor pricing pages", due = 1, parent = "m-pricing", assignee = "sam"))
         add(task("m-sub2", "Draft three pricing options", due = 2, parent = "m-pricing", assignee = "sam"))
-        add(task("m-standup", "Prepare the weekly sync agenda", due = 6, time = "09:30", page = "weekly-sync", assignee = "sam"))
+        add(task(
+            "m-standup", "Prepare the weekly sync agenda", due = 6, time = "09:30", page = "weekly-sync", assignee = "sam",
+            tags = listOf("tg-launch", "tg-meetings"), description = "Pull last week's notes and the open items before Monday.",
+        ))
+    }
+
+    /** The workspace's people, teams and tags (task rows and the task detail read them). */
+    val members = listOf(
+        WorkspaceMember(id = "demo", name = "Demo User", email = "demo@example.com", color = "#f59e0b", role = "owner"),
+        WorkspaceMember(id = "sam", name = "Sam Rivera", email = "sam@example.com", color = "#10b981", role = "member"),
+    )
+    val teams = listOf(TaskTeam(id = "team-staff", name = "Staff", color = "#0ea5e9", parentId = null, memberIds = listOf("demo", "sam")))
+    val tags = listOf(TaskTag("tg-launch", "launch", "#8b5cf6"), TaskTag("tg-meetings", "meetings", "#f43f5e"))
+
+    private fun detail(id: String, team: String? = null, recurrence: TaskRecurrence? = null): TaskDetail {
+        val t = tasks.first { it.id == id }
+        return TaskDetail(
+            id = t.id, workspaceId = t.workspaceId, title = t.title, description = t.description, done = t.done, priority = t.priority,
+            dueDate = t.dueDate, dueTime = t.dueTime, recurrence = recurrence, reminderAt = null, assigneeId = t.assigneeId, assignedBy = null,
+            createdBy = "demo", completedBy = null, pageId = t.pageId, parentId = t.parentId, teamId = team, tagIds = t.tagIds,
+            checklistDone = t.checklistDone, checklistTotal = t.checklistTotal, completedAt = t.completedAt, createdAt = t.createdAt,
+            updatedAt = t.updatedAt, locked = false,
+        )
+    }
+
+    /** The tasks with a team or a repeat rule (the rest read as no team, no repeat). */
+    val details: Map<String, TaskDetail> by lazy {
+        listOf(
+            detail("t-review", team = "team-staff"),
+            detail("m-standup", team = "team-staff", recurrence = TaskRecurrence(freq = "week", interval = 1u)),
+        ).associateBy { it.id }
     }
 
     val otherPageTitles = mapOf("welcome" to "Welcome 👋", "weekly-sync" to "Weekly sync · Saturday 21 November",
@@ -163,6 +199,8 @@ object LookData {
             phase = Phase.SignedIn, user = user, workspaces = workspaces, workspaceId = workspace, tree = tree,
             taskCounts = counts, notebookId = tree.notebooks.firstOrNull { it.id == "look" }?.id ?: tree.notebooks.firstOrNull()?.id,
             tasks = if (workspace == "demo-team") tasks else emptyList(), preview = true, otherPageTitles = otherPageTitles,
+            details = if (workspace == "demo-team") details else emptyMap(), teams = if (workspace == "demo-team") teams else emptyList(),
+            tags = if (workspace == "demo-team") tags else emptyList(), members = if (workspace == "demo-team") members else emptyList(),
         ).edit()
 
     /** A page open in a notebook and section (the page content as the core returns it). */
@@ -211,6 +249,8 @@ object LookData {
             "empty-tasks-today" -> LookScene(signedIn("empty-space", emptyTree, emptyMap()) { copy(tab = Tab.Tasks, taskList = TaskList.Today) }, mode, sidebar = null)
             "empty-tasks-all" -> LookScene(signedIn("empty-space", emptyTree, emptyMap()) { copy(tab = Tab.Tasks, taskList = TaskList.All) }, mode, sidebar = null)
             "task-detail" -> LookScene(signedIn(demo, demoTeamTree) { copy(tab = Tab.Tasks, taskList = TaskList.My, taskDetailId = "t-review") }, mode, sidebar = null)
+            // A task with another person, a team, two tags, a time, a repeat rule and details: every row filled.
+            "task-detail-edit" -> LookScene(signedIn(demo, demoTeamTree) { copy(tab = Tab.Tasks, taskList = TaskList.Upcoming, everyone = true, taskDetailId = "m-standup") }, mode, sidebar = null)
             else -> null
         }
     }

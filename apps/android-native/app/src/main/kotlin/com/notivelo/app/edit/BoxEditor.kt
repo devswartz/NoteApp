@@ -56,11 +56,14 @@ fun BoxEditor(editing: EditingBox, env: PageEnv, ec: EditContext, modifier: Modi
     var menu by remember { mutableStateOf<MenuModel?>(null) }
     var view by remember { mutableStateOf<BoxTextView?>(null) }
     val density = LocalDensity.current
+    val pageActions = LocalPageActions.current
     val content: @Composable (Int) -> Unit = { maxWidthPx ->
         AndroidView(
             factory = { ctx ->
                 BoxTextView(ctx, editing.engine, env).also { v ->
                     v.onMenu = { menu = it }
+                    v.onPageUndo = { redo -> if (redo) pageActions.redoPage() else pageActions.undoPage() }
+                    v.onEdited = { pageActions.pageEdited() }
                     v.pages = ec.pages
                     v.people = ec.people
                     v.lookFocused = look

@@ -322,4 +322,202 @@ class AppViewModelTest {
         vm.goNotes()
         assertEquals(com.notivelo.app.data.Tab.Notes, vm.state.value.tab)
     }
+
+    // Boxes and page undo
+
+    private fun livePage(): AppViewModel {
+        store.refreshToken = "t"
+        val vm = model()
+        vm.openPage("p1")
+        return vm
+    }
+
+    @Test
+    fun aTapOnEmptyCanvasMakesABoxInFrontAndEditsIt() {
+        val vm = livePage()
+        vm.createBox(10.0, 20.0)
+        assertEquals(listOf("create 10,20 w=360 z=1"), backend.pageCalls)
+        assertEquals("nb", vm.state.value.page?.editing?.boxId)
+        assertEquals(listOf("nb@w1"), backend.openedBoxes)
+        assertTrue(vm.state.value.page!!.rev > 0)
+    }
+
+    @Test
+    fun creatingABoxLeavesTheEmptyOneYouWereIn() {
+        val vm = livePage()
+        backend.editorText = ""
+        vm.startEditing("b1")
+        backend.editorText = "hi"
+        vm.createBox(0.0, 0.0)
+        assertTrue(backend.engines[0].closed)
+        assertEquals(listOf("delete b1", "create 0,0 w=360 z=1"), backend.pageCalls)
+        assertEquals("nb", vm.state.value.page?.editing?.boxId)
+    }
+
+    @Test
+    fun aRefusedBoxSaysSo() {
+        val vm = livePage()
+        backend.failBox = BackendError.Other("no")
+        vm.createBox(1.0, 2.0)
+        assertEquals("Could not add a text box.", vm.state.value.notice)
+        assertNull(vm.state.value.page?.editing)
+    }
+
+    @Test
+    fun movesAndResizesGoToTheCoreOnce() {
+        val vm = livePage()
+        vm.moveBox("b1", 30.0, 60.0)
+        vm.resizeBox("b1", 480.0)
+        assertEquals(listOf("move b1 30,60", "resize b1 480"), backend.pageCalls)
+    }
+
+    @Test
+    fun anEmptyBoxGoesWhenEditingEnds() {
+        val vm = livePage()
+        backend.editorText = ""
+        vm.startEditing("b1")
+        vm.stopEditing()
+        assertEquals(listOf("delete b1"), backend.pageCalls)
+        assertTrue(backend.engines[0].closed)
+        assertNull(vm.state.value.page?.editing)
+    }
+
+    @Test
+    fun aBoxWithTextStaysAndThePagesDocumentIsNeverDropped() {
+        val vm = livePage()
+        vm.startEditing("b1")
+        vm.stopEditing()
+        backend.editorText = ""
+        vm.startEditing("default")
+        vm.stopEditing()
+        assertTrue(backend.pageCalls.isEmpty())
+    }
+
+    @Test
+    fun anEmptyBoxGoesWhenThePageIsLeft() {
+        val vm = livePage()
+        backend.editorText = ""
+        vm.startEditing("b1")
+        vm.back()
+        assertEquals(listOf("delete b1"), backend.pageCalls)
+        assertTrue(backend.engines[0].closed)
+    }
+
+    @Test
+    fun undoAndRedoAreThePagesOwnAndTheButtonsFollowTheStack() {
+        val vm = livePage()
+        assertFalse(vm.state.value.page!!.canUndo)
+        backend.canUndo = true
+        vm.pageEdited()
+        assertTrue(vm.state.value.page!!.canUndo)
+        assertFalse(vm.state.value.page!!.canRedo)
+        // While a box is edited, undo is still the page's (one stack across text, ink and boxes).
+        vm.startEditing("b1")
+        backend.canUndo = false
+        backend.canRedo = true
+        vm.undoPage()
+        assertEquals(listOf("undo"), backend.pageCalls)
+        assertFalse(vm.state.value.page!!.canUndo)
+        assertTrue(vm.state.value.page!!.canRedo)
+        vm.redoPage()
+        assertEquals(listOf("undo", "redo"), backend.pageCalls)
+        // The box's own session is not asked to undo.
+        assertFalse(backend.engines[0].calls.contains("undo"))
+    }
+
+    // Task edits
+
+    private val today = java.time.LocalDate.of(2026, 11, 21)
+
+    private fun withTasks(vararg t: Task): AppViewModel {
+        store.refreshToken = "t"
+        backend.tasks = t.toList()
+        return AppViewModel(backend, store, dispatcher) { today }
+    }
+
+    @Test
+    fun taskExtrasComeWithTheWorkspace() {
+        val a = aTask("a")
+        backend.details = listOf(detailOf(a, team = "tm"))
+        backend.teams = listOf(com.notivelo.core.TaskTeam("tm", "Staff", "#0ea5e9", null, emptyList()))
+        backend.tags = listOf(com.notivelo.core.TaskTag("g", "launch", "#8b5cf6"))
+        val vm = withTasks(a)
+        assertEquals("tm", vm.state.value.details["a"]?.teamId)
+        assertEquals(listOf("Staff"), vm.state.value.teams.map { it.name })
+        assertEquals(listOf("launch"), vm.state.value.tags.map { it.name })
+    }
+
+    @Test
+    fun anEditShowsAtOnceAndKeepsTheServersAnswer() {
+        val vm = withTasks(aTask("a"))
+        vm.updateTask("a", com.notivelo.core.TaskChanges(title = "Renamed", priority = 1.toUByte()))
+        assertEquals("a", backend.updates.single().first)
+        val t = vm.state.value.tasks.single()
+        assertEquals("Renamed", t.title)
+        assertEquals(1, t.priority.toInt())
+        assertEquals("Renamed", vm.state.value.details["a"]?.title)
+    }
+
+    @Test
+    fun aRefusedEditPutsTheTaskBack() {
+        val vm = withTasks(aTask("a"))
+        backend.failUpdate = BackendError.Other("403")
+        vm.updateTask("a", com.notivelo.core.TaskChanges(title = "Renamed"))
+        assertEquals("a", vm.state.value.tasks.single().title)
+        assertEquals("Could not update the task.", vm.state.value.notice)
+    }
+
+    @Test
+    fun aTimeOnADatelessTaskAlsoSetsTodayAndARuleItsFirstDate() {
+        val vm = withTasks(aTask("a"), aTask("b"))
+        vm.updateTask("a", com.notivelo.core.TaskChanges(dueTime = "09:30"))
+        assertEquals("2026-11-21", backend.updates[0].second.dueDate)
+        vm.updateTask("b", com.notivelo.core.TaskChanges(recurrence = com.notivelo.core.TaskRecurrence(freq = "week", interval = 1u)))
+        assertEquals("first:2026-11-21", backend.updates[1].second.dueDate)
+        assertEquals("2026-11-21", vm.state.value.tasks.first { it.id == "a" }.dueDate)
+    }
+
+    @Test
+    fun deletingATaskTakesItsSubtasksAndClosesTheDetail() {
+        val vm = withTasks(aTask("a"), aTask("b").copy(parentId = "a"), aTask("c"))
+        vm.openTask("a")
+        vm.deleteTask("a")
+        assertEquals(listOf("a"), backend.deleted)
+        assertEquals(listOf("c"), vm.state.value.tasks.map { it.id })
+        assertNull(vm.state.value.taskDetailId)
+    }
+
+    @Test
+    fun aRefusedDeleteBringsTheTaskBack() {
+        val vm = withTasks(aTask("a"))
+        backend.failDelete = BackendError.Offline("down")
+        vm.deleteTask("a")
+        assertEquals(listOf("a"), vm.state.value.tasks.map { it.id })
+        assertEquals("Could not delete the task.", vm.state.value.notice)
+    }
+
+    @Test
+    fun quickAddOpensWithTheGroupsDateAndAddsTheTask() {
+        val vm = withTasks(aTask("a"))
+        vm.newTask("2026-11-22")
+        assertEquals("2026-11-22", vm.state.value.quickAdd?.dueDate)
+        vm.addQuickTask("Call Sam")
+        assertEquals(listOf("Call Sam|2026-11-21|2026-11-22"), backend.quickAdds)
+        assertNull(vm.state.value.quickAdd)
+        assertEquals(listOf("a", "new-1"), vm.state.value.tasks.map { it.id })
+        // A blank line adds nothing.
+        vm.newTask()
+        vm.addQuickTask("   ")
+        assertEquals(1, backend.quickAdds.size)
+        vm.closeQuickAdd()
+        assertNull(vm.state.value.quickAdd)
+    }
+
+    @Test
+    fun aSubtaskIsAddedUnderItsParent() {
+        val vm = withTasks(aTask("a"))
+        vm.addSubtask("a", "  Step one ")
+        assertEquals(listOf("a|Step one"), backend.subtasks)
+        assertEquals("a", vm.state.value.tasks.last().parentId)
+    }
 }

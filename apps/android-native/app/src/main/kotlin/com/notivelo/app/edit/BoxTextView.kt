@@ -64,6 +64,12 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
     var pages: List<PageChoice> = emptyList()
     var people: List<WorkspaceMember> = emptyList()
 
+    /** Undo (false) or redo (true) asked from the keyboard or the text menu: the host runs the page's undo, one stack (the engine's own undo is text only). */
+    var onPageUndo: ((redo: Boolean) -> Unit)? = null
+
+    /** The box's text changed (typing, paste, someone else's edit): the host reads the undo state again. */
+    var onEdited: (() -> Unit)? = null
+
     /** The menu opened, changed or closed (null): the host shows the popup. */
     var onMenu: ((MenuModel?) -> Unit)? = null
 
@@ -631,8 +637,8 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
         android.R.id.copy -> doCopy()
         android.R.id.paste -> doPaste()
         android.R.id.pasteAsPlainText -> doPaste(plain = true)
-        android.R.id.undo -> input.engine.undo().also { input.refresh(false) }
-        android.R.id.redo -> input.engine.redo().also { input.refresh(false) }
+        android.R.id.undo -> onPageUndo?.let { it(false); true } ?: input.engine.undo().also { input.refresh(false) }
+        android.R.id.redo -> onPageUndo?.let { it(true); true } ?: input.engine.redo().also { input.refresh(false) }
         else -> false
     }
 
@@ -648,6 +654,13 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
         val code = event.keyCode
         val ctrl = event.isCtrlPressed || event.isMetaPressed
         if (ctrl && !event.isAltPressed) {
+            val pageUndo = onPageUndo
+            if (pageUndo != null) {
+                when (code) {
+                    KeyEvent.KEYCODE_Z -> { pageUndo(event.isShiftPressed); return true }
+                    KeyEvent.KEYCODE_Y -> { pageUndo(true); return true }
+                }
+            }
             when (code) {
                 KeyEvent.KEYCODE_C -> return doCopy()
                 KeyEvent.KEYCODE_X -> return doCut()
@@ -799,6 +812,7 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
 
     private fun changed(prev: ViewRender, next: ViewRender, fromIme: Boolean) {
         val relayout = next.textRevision != prev.textRevision
+        if (relayout) onEdited?.invoke()
         if (relayout) {
             val old = geometry?.height
             geometry = null

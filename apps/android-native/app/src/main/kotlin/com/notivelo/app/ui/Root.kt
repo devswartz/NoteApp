@@ -70,6 +70,9 @@ fun NotiveloRoot(
                 PhoneShell(state, actions, drawerOpen, { drawerOpen = it }, scrollPx = scrollPx)
             }
         }
+        state.quickAdd?.let { q ->
+            com.notivelo.app.ui.tasks.QuickAddDialog(q.dueDate, LocalToday.current, actions::addQuickTask, actions::closeQuickAdd)
+        }
         }
     }
 }

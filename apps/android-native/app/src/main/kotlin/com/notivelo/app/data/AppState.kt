@@ -4,6 +4,10 @@ import androidx.compose.runtime.Immutable
 import com.notivelo.app.edit.EditingBox
 import com.notivelo.core.PageInfo
 import com.notivelo.core.Task
+import com.notivelo.core.TaskChanges
+import com.notivelo.core.TaskDetail
+import com.notivelo.core.TaskTag
+import com.notivelo.core.TaskTeam
 import com.notivelo.core.Tree
 import com.notivelo.core.User
 import com.notivelo.core.Workspace
@@ -26,7 +30,16 @@ data class PageView(
     val status: PageStatus = PageStatus.Connecting,
     /** The box being edited (its text engine), if any. */
     val editing: EditingBox? = null,
+    /** The page's undo and redo have a step (the buttons enable from these). */
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
+    /** Counts every box write and undo, so the canvas drops the drag it was showing. */
+    val rev: Int = 0,
 )
+
+/** The quick-add dialog: the date the group it was opened from stands for. */
+@Immutable
+data class QuickAddState(val dueDate: String? = null)
 
 /** Everything the screens show, in one value; [AppViewModel] is the only writer. */
 @Immutable
@@ -65,6 +78,11 @@ data class AppState(
     val otherPageTitles: Map<String, String> = emptyMap(),
     /** The workspace's people (the `@` menu), loaded when a box is first edited. */
     val members: List<WorkspaceMember> = emptyList(),
+    /** The tasks with every field (by id), the workspace's teams and tags: for the team chip, tags, Team and Repeat rows. */
+    val details: Map<String, TaskDetail> = emptyMap(),
+    val teams: List<TaskTeam> = emptyList(),
+    val tags: List<TaskTag> = emptyList(),
+    val quickAdd: QuickAddState? = null,
 ) {
     val workspace: Workspace? get() = workspaces.firstOrNull { it.id == workspaceId }
 }
@@ -101,6 +119,28 @@ interface ShellActions {
     /** Edit a box of the open page; the tap's place (px in the box) puts the caret there. */
     fun startEditing(boxId: String, tapX: Float = -1f, tapY: Float = -1f) {}
     fun stopEditing() {}
+
+    /** Box calls on the open page (page px from the page origin). New boxes open for editing. */
+    fun createBox(x: Double, y: Double) {}
+    fun moveBox(id: String, x: Double, y: Double) {}
+    fun resizeBox(id: String, width: Double) {}
+
+    /** The page's undo and redo: one stack across text, ink and boxes. */
+    fun undoPage() {}
+    fun redoPage() {}
+
+    /** The text view changed a box: the undo buttons read the stack again. */
+    fun pageEdited() {}
+
+    /** Task edits (task detail and lists). */
+    fun updateTask(id: String, changes: TaskChanges) {}
+    fun deleteTask(id: String) {}
+    fun addSubtask(parentId: String, title: String) {}
+
+    /** The quick-add dialog (the lists' Add task, the FAB), with the date of the group it was opened from. */
+    fun newTask(dueDate: String? = null) {}
+    fun closeQuickAdd() {}
+    fun addQuickTask(text: String) {}
 
     fun signOut() {}
 }

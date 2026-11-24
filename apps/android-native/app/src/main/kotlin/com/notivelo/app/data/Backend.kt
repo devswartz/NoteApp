@@ -12,7 +12,16 @@ import com.notivelo.core.LiveStatus
 import com.notivelo.core.PageInfo
 import com.notivelo.core.readPage
 import com.notivelo.core.SignedIn
+import com.notivelo.core.NewTaskInput
 import com.notivelo.core.Task
+import com.notivelo.core.TaskChanges
+import com.notivelo.core.TaskDetail
+import com.notivelo.core.TaskRecurrence
+import com.notivelo.core.TaskTag
+import com.notivelo.core.TaskTeam
+import com.notivelo.core.parseQuickAdd
+import com.notivelo.core.resolveMember
+import com.notivelo.core.resolveTeam
 import com.notivelo.core.Tree
 import com.notivelo.core.Workspace
 import com.notivelo.core.WorkspaceMember
@@ -40,6 +49,25 @@ interface Backend {
     /** Tick or untick a task; returns it as the server has it. */
     fun setTaskDone(taskId: String, done: Boolean): Task
 
+    /** The workspace's tasks with every field (team, repeat rule, ...). Empty when unknown. */
+    fun taskDetails(workspaceId: String): List<TaskDetail> = emptyList()
+    fun teams(workspaceId: String): List<TaskTeam> = emptyList()
+    fun tags(workspaceId: String): List<TaskTag> = emptyList()
+
+    /** Change fields of a task; returns it as the server has it. */
+    fun updateTask(taskId: String, changes: TaskChanges): TaskDetail = throw BackendError.Other("Editing tasks is not available.")
+    fun deleteTask(taskId: String) {}
+
+    /** Quick add: parses [text] (the web's words), resolves @people, #tags and +team, creates the task. [dueDate] is the default date. */
+    fun quickAdd(workspaceId: String, text: String, today: String, meId: String, dueDate: String?, pageId: String?): Task =
+        throw BackendError.Other("Adding tasks is not available.")
+
+    fun createSubtask(workspaceId: String, parentId: String, pageId: String?, title: String): Task =
+        throw BackendError.Other("Adding tasks is not available.")
+
+    /** The first date of a repeat rule on or after [from] (YYYY-MM-DD), for a rule set on a task with no date. */
+    fun firstOccurrence(rule: TaskRecurrence, from: String): String = from
+
     /** The page as last stored on the device, if any (instant). */
     fun cachedPage(pageId: String): PageInfo?
 
@@ -61,6 +89,21 @@ interface PageHandle {
 
     /** A text engine on one box of this page (`box:<id>`, or `default`): its edits go into the live page. */
     fun openEditor(boxId: String, workspaceId: String): TextEngine = throw UnsupportedOperationException("not editable")
+
+    /** Box calls (written with the core's geometry origin, so they join the page's undo). Page pixels from the page origin. */
+    fun createBox(x: Double, y: Double, w: Double, z: Double): String = throw UnsupportedOperationException("not editable")
+    fun moveBox(id: String, x: Double, y: Double) {}
+    fun resizeBox(id: String, w: Double) {}
+    fun bringToFront(id: String) {}
+
+    /** Remove a box that holds nothing (the core refuses one with content). */
+    fun deleteEmptyBox(id: String) {}
+
+    /** The page's one undo stack (text, ink, boxes). */
+    fun undo(): Boolean = false
+    fun redo(): Boolean = false
+    fun canUndo(): Boolean = false
+    fun canRedo(): Boolean = false
     fun close()
 }
 
@@ -124,6 +167,39 @@ class CoreBackend(private val storePath: String) : Backend {
     override fun setTaskDone(taskId: String, done: Boolean): Task = call { current().setTaskDone(taskId, done) }
 
     override fun members(workspaceId: String): List<WorkspaceMember> = call { current().members(workspaceId) }
+    override fun taskDetails(workspaceId: String): List<TaskDetail> = call { current().taskDetails(workspaceId) }
+    override fun teams(workspaceId: String): List<TaskTeam> = call { current().teams(workspaceId) }
+    override fun tags(workspaceId: String): List<TaskTag> = call { current().tags(workspaceId) }
+    override fun updateTask(taskId: String, changes: TaskChanges): TaskDetail = call { current().updateTask(taskId, changes) }
+    override fun deleteTask(taskId: String) = call { current().deleteTask(taskId) }
+    override fun firstOccurrence(rule: TaskRecurrence, from: String): String = try { com.notivelo.core.firstOccurrence(rule, from) } catch (e: Exception) { from }
+
+    override fun createSubtask(workspaceId: String, parentId: String, pageId: String?, title: String): Task = call {
+        current().createTaskWith(workspaceId, NewTaskInput(title = title, pageId = pageId, parentId = parentId))
+    }
+
+    override fun quickAdd(workspaceId: String, text: String, today: String, meId: String, dueDate: String?, pageId: String?): Task = call {
+        val core = current()
+        val r = parseQuickAdd(text, today)
+        val people = try { core.members(workspaceId) } catch (e: CoreException) { emptyList() }
+        val teams = try { core.teams(workspaceId) } catch (e: CoreException) { emptyList() }
+        val known = try { core.tags(workspaceId) } catch (e: CoreException) { emptyList() }
+        var title = r.title
+        val mentioned = r.assignee?.let { resolveMember(it, people, meId) }
+        // As the web: an @name nobody matches stays in the title, and the task is yours.
+        if (r.assignee != null && mentioned == null) title += " @" + r.assignee
+        val teamId = r.team?.let { resolveTeam(it, teams) }
+        if (r.team != null && teamId == null) title += " +" + r.team
+        val tagIds = r.tags.map { name -> known.firstOrNull { it.name.equals(name, ignoreCase = true) }?.id ?: core.createTag(workspaceId, name, "#6b7280").id }
+        core.createTaskWith(
+            workspaceId,
+            NewTaskInput(
+                title = title.trim(), pageId = pageId, dueDate = r.dueDate ?: dueDate, dueTime = r.dueTime,
+                priority = (r.priority ?: 4.toUByte()), recurrence = r.recurrence,
+                assigneeId = mentioned ?: meId, teamId = teamId, tagIds = tagIds.ifEmpty { null },
+            ),
+        )
+    }
 
     override fun cachedPage(pageId: String): PageInfo? = try {
         core?.cachedPageDocument(pageId)?.let { readPage(it) }
@@ -163,6 +239,22 @@ private class CorePageHandle(private val page: LivePage, private val core: Core,
         val field = if (boxId == "default") "default" else "box:$boxId"
         val tasks = core.pageTasks(workspaceId, pageId)
         return CoreTextEngine(EditorSession.openLive(page, field, tasks))
+    }
+
+    override fun createBox(x: Double, y: Double, w: Double, z: Double): String = boxCall { page.createBox(x, y, w, z) }
+    override fun moveBox(id: String, x: Double, y: Double) = boxCall { page.moveBox(id, x, y) }
+    override fun resizeBox(id: String, w: Double) = boxCall { page.resizeBox(id, w) }
+    override fun bringToFront(id: String) { boxCall { page.bringToFront(id) } }
+    override fun deleteEmptyBox(id: String) = boxCall { page.deleteBox(id) }
+    override fun undo(): Boolean = boxCall { page.undo() }
+    override fun redo(): Boolean = boxCall { page.redo() }
+    override fun canUndo(): Boolean = page.canUndo()
+    override fun canRedo(): Boolean = page.canRedo()
+
+    private fun <T> boxCall(block: () -> T): T = try {
+        block()
+    } catch (e: Exception) {
+        throw BackendError.Other(e.message ?: "The page could not be changed.")
     }
 
     override fun ink(): List<InkShape> = page.inkStrokes().filter { it.readable }.mapNotNull { s ->

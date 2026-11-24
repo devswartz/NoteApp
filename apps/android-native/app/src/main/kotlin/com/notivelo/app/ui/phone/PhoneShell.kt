@@ -80,7 +80,7 @@ fun PhoneShell(
                 )
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (tasksTab) TasksScreen(state, actions, phone = true, onNotYet = notYet) else NotesContent(state, index, actions, notYet, scrollPx)
-                    if (!onPage) Fab(Modifier.align(Alignment.BottomEnd)) { notYet("Adding a task") }
+                    if (!onPage) Fab(Modifier.align(Alignment.BottomEnd)) { actions.newTask() }
                 }
                 TabBar(state.tab, actions, onNotYet = notYet)
             }

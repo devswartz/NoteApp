@@ -56,6 +56,7 @@ abstract class DataShots(config: DeviceConfig) : ShotsBase(config) {
     @Test fun empty_tasks_today() = shot("empty-tasks-today")
     @Test fun empty_tasks_all() = shot("empty-tasks-all")
     @Test fun task_detail() = shot("task-detail")
+    @Test fun task_detail_edit() = shot("task-detail-edit")
     @Test fun edit_caret() = shot("edit-caret")
     @Test fun edit_selection() = shot("edit-selection")
     @Test fun slash_menu() = shot("slash-menu")
