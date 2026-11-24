@@ -60,6 +60,10 @@ public sealed partial class ShellView : UserControl
         };
         _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host; _calendar.Host = _host; _settings.Host = _host;
         KeyDown += OnShellKey;
+        // pictures and files added in a box (upload errors, saved files) report through the shell's toasts
+        Action<string, bool> notice = (t, err) => _host.Toast(t, err);
+        Loaded += (_, _) => BoxTextView.Notice += notice;
+        Unloaded += (_, _) => BoxTextView.Notice -= notice;
 
         var ribbonStack = new StackPanel();
         ribbonStack.Children.Add(_ribbon);

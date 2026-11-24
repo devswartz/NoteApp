@@ -39,6 +39,27 @@ internal sealed class Box
 
     public System.Drawing.Rectangle Bounds => Element.BoundingRectangle;
 
+    /// <summary>The raw ItemStatus (<c>...;images=loaded,loading;files=a.pdf|b.zip;sizes=200x100;node=image;upload=0</c>).</summary>
+    public string Status => Element.Properties.ItemStatus.ValueOrDefault ?? "";
+
+    /// <summary>One key of the ItemStatus (<c>images</c>, <c>files</c>, <c>sizes</c>, <c>node</c>, <c>upload</c>).</summary>
+    public string Media(string key) =>
+        Status.Split(';').Select(p => p.Split('=', 2)).Where(p => p.Length == 2 && p[0] == key).Select(p => p[1]).FirstOrDefault() ?? "";
+
+    public void WaitMedia(string key, Func<string, bool> ok, string what, int ms = 15000)
+    {
+        var sw = Stopwatch.StartNew();
+        string last = "";
+        while (sw.ElapsedMilliseconds < ms)
+        {
+            try { last = Media(key); if (ok(last)) return; } catch (Exception) { }
+            Thread.Sleep(100);
+        }
+        Assert.Fail($"waited for {what} in box {Id}; {key}=\"{last}\" status: {(TryStatus() ?? "?")}");
+    }
+
+    private string? TryStatus() { try { return Status; } catch { return null; } }
+
     public BoxState State
     {
         get

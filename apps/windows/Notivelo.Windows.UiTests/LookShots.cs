@@ -27,7 +27,10 @@ public class LookShots
     private static void Run(string theme)
     {
         AppHost host;
-        try { host = AppHost.Launch(new Dictionary<string, string> { ["NOTIVELO_THEME"] = theme }, 1196, 859); }   // outer size: the visible frame is then 1180 wide and 851 high (31 of it the title bar, so the client is 1180x820)
+        // the open dialog is replaced by these files in the offline test mode: a picture and a document (the media step picks both)
+        var pick = new Dictionary<string, string> { ["NOTIVELO_THEME"] = theme };
+        try { foreach (var kv in TestMedia.Pick(TestMedia.WritePng("Team offsite.png", 320, 180), TestMedia.WriteFile("Quarterly report.pdf", 1_258_291))) pick[kv.Key] = kv.Value; } catch { }
+        try { host = AppHost.Launch(pick, 1196, 859); }   // outer size: the visible frame is then 1180 wide and 851 high (31 of it the title bar, so the client is 1180x820)
         catch (Exception e) { Log($"[{theme}] launch failed: {e.Message}"); return; }
         using var h = host;
         var w = h.Window;
@@ -91,6 +94,12 @@ public class LookShots
 
         Step("canvas-unfocused", () => { _ = h.A.State; Snap("canvas-unfocused"); });
         Step("canvas-focused", () => { h.A.Focus(); h.Type("Meeting notes"); Snap("canvas-focused"); });
+        Step("page-media", () =>   // a picture and a file card in the second box (the picker hook returns both), the picture selected with its handles
+        {
+            h.B.Focus(); Invoke("ribbon-picture"); h.B.WaitMedia("images", v => v == "loaded", "the picture drawn"); h.B.WaitMedia("files", v => v.Length > 0, "the file card"); Settle(600);
+            var r = h.B.Bounds; FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point(r.Left + 80, r.Top + 80)); Settle(500);
+            Snap("page-media");
+        });
         Step("page-canvas", () => { Invoke("page-row-canvas"); Settle(900); Snap("page-canvas"); });
         Step("page-ink", () => { Invoke("page-row-settings-ink"); Settle(900); Snap("page-ink"); });
         Step("ink-toolbar", () =>   // the pen row open over the ink page (pen chosen: colours and widths show)

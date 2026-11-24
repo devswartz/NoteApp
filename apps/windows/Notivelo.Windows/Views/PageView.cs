@@ -88,6 +88,7 @@ internal sealed class PageView : ThemedControl
     {
         foreach (var v in _views.Values) { try { v.Release(); } catch { } }
         _views.Clear();
+        MediaCache.Clear();
         foreach (var f in _frames.Values) if (f.Parent is Panel fp) fp.Children.Remove(f);
         _frames.Clear();
         _viewsFor = null;

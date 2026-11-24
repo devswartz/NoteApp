@@ -735,6 +735,39 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     private IEnumerable<N.Task> Visible() => _tasks.Where(t => !t.Locked && t.ParentId is null);
     private IEnumerable<N.Task> Mine() => Visible().Where(t => t.AssigneeId == _user.Id);
 
+    // ---- images and attachments: the core's upload_file / file_url / download_file (online only; each runs on the core's call queue, off the UI thread) ----
+
+    public bool CanUpload(string pageId) => _wsId is not null && LivePageOf(pageId) is not null;
+
+    public async Task<MediaResult<UploadedMedia>> UploadFile(string pageId, string name, byte[] data)
+    {
+        if (_wsId is not { } ws) return MediaResult<UploadedMedia>.Fail("Open a workspace first.");
+        try
+        {
+            var up = await _session.CallAsync(c => c.UploadFile(ws, pageId, name, data));
+            return new MediaResult<UploadedMedia>(new UploadedMedia(up.Url, up.Name, up.Mime, (long)up.Size));
+        }
+        catch (OperationCanceledException) { return MediaResult<UploadedMedia>.Fail("You were signed out. Sign in again."); }
+        catch (Exception e) { return MediaResult<UploadedMedia>.Fail(ErrorText.Media(e, name)); }
+    }
+
+    public async Task<string?> FileUrl(string stored)
+    {
+        try { return await _session.CallAsync(c => c.FileUrl(stored)); }
+        catch { return null; }
+    }
+
+    public async Task<MediaResult<MediaBytes>> DownloadFile(string stored)
+    {
+        try
+        {
+            var f = await _session.CallAsync(c => c.DownloadFile(stored));
+            return new MediaResult<MediaBytes>(new MediaBytes(f.Bytes, f.Mime));
+        }
+        catch (OperationCanceledException) { return MediaResult<MediaBytes>.Fail("You were signed out. Sign in again."); }
+        catch (Exception e) { return MediaResult<MediaBytes>.Fail(ErrorText.Media(e, Path.GetFileName(stored))); }
+    }
+
     public TaskCounts GetTaskCounts()
     {
         var today = Today();

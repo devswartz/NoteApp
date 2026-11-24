@@ -145,6 +145,16 @@ public interface INotesSource
     Task<AccountResult<IReadOnlyList<ConnectedAppInfo>>> LoadConnectedApps() => Task.FromResult(AccountResult<IReadOnlyList<ConnectedAppInfo>>.Off());
     Task<AccountResult<bool>> DisconnectApp(string clientId) => Task.FromResult(AccountResult<bool>.Off());
 
+    // ---- images and attachments (core upload_file / file_url / download_file; online only. The offline sample keeps uploads in memory) ----
+    /// <summary>Files can be added to this page (a live page, or the offline test page).</summary>
+    bool CanUpload(string pageId) => false;
+    /// <summary>Upload a file to the page (off the UI thread). The answer's Url is what the document keeps; an error is one sentence for a toast.</summary>
+    Task<MediaResult<UploadedMedia>> UploadFile(string pageId, string name, byte[] data) => Task.FromResult(MediaResult<UploadedMedia>.Fail("Not available."));
+    /// <summary>An absolute link for a stored path to draw an image from (signed; ask again later rather than keep it). A link that isn't an upload comes back as it is. Null when it can't be made (offline).</summary>
+    Task<string?> FileUrl(string stored) => Task.FromResult<string?>(null);
+    /// <summary>The bytes of a stored file (to open or save it).</summary>
+    Task<MediaResult<MediaBytes>> DownloadFile(string stored) => Task.FromResult(MediaResult<MediaBytes>.Fail("Not available."));
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);
