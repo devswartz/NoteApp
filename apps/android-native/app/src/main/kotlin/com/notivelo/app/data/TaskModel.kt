@@ -61,7 +61,8 @@ object Due {
     }
 }
 
-class TaskGroup(val title: String, val overdue: Boolean, val tasks: List<Task>)
+/** [date] (YYYY-MM-DD): the day the group stands for, which its "Add task" starts with; none for Overdue and No date. */
+class TaskGroup(val title: String, val overdue: Boolean, val tasks: List<Task>, val date: String? = null)
 
 /**
  * The task lists' contents and counts, as the Apple app's `TaskBuckets` (and the web's Tasks views): only open tasks
@@ -120,6 +121,7 @@ class TaskBuckets(
         }
         val out = mutableListOf<Pair<String, MutableList<Task>>>()
         val late = mutableSetOf<String>()
+        val dates = mutableMapOf<String, String>()
         for (t in items) {
             val d = Due.date(t.dueDate)
             val n = Due.days(t.dueDate, today)
@@ -132,10 +134,11 @@ class TaskBuckets(
                 n in 2..6 -> Due.fmt(d, "EEEE")
                 else -> Due.fmt(d, "EEE d MMM")
             }
+            if (d != null && n != null && n >= 0) dates[title] = d.toString()
             val last = out.lastOrNull()
             if (last != null && last.first == title) last.second += t else out += title to mutableListOf(t)
         }
-        return out.map { TaskGroup(it.first, it.first in late, it.second) }
+        return out.map { TaskGroup(it.first, it.first in late, it.second, dates[it.first]) }
     }
 }
 

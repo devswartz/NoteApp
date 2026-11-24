@@ -48,10 +48,10 @@ object PageLayout {
         return maxOf(maxX + 240f, visibleWidth) to maxOf(maxY + 320f, oy + 320f, visibleHeight)
     }
 
-    /** Phone: the boxes in reading order (the core's order), without the ones with no content (they draw nothing). */
-    fun stack(boxes: List<PageBox>, content: List<BoxContent>): List<PageBox> {
+    /** Phone: the boxes in reading order (the core's order), without the ones with no content (they draw nothing) except [keep], the one being edited. */
+    fun stack(boxes: List<PageBox>, content: List<BoxContent>, keep: String? = null): List<PageBox> {
         val empty = content.filter { it.boxId != null && it.nodes.isEmpty() }.map { it.boxId }.toSet()
-        return boxes.filter { it.id !in empty }
+        return boxes.filter { it.id !in empty || it.id == keep }
     }
 
     /** A document page (no boxes, text in `default`) is shown as one wide box. */

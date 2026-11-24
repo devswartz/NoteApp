@@ -39,7 +39,9 @@ import com.notivelo.app.data.AppState
 import com.notivelo.app.data.Due
 import com.notivelo.app.data.ShellActions
 import com.notivelo.app.data.TaskBuckets
+import com.notivelo.app.data.TaskEdit
 import com.notivelo.app.data.TaskList
+import com.notivelo.app.data.person
 import com.notivelo.app.look.Ic
 import com.notivelo.app.look.LIcon
 import com.notivelo.app.look.Palette
@@ -109,7 +111,7 @@ fun TasksScreen(state: AppState, actions: ShellActions, phone: Boolean, modifier
             if (list == TaskList.Today) {
                 Column(Modifier.padding(top = 20.dp)) {
                     GroupHeading("Today · " + Due.fmt(today, "EEE d MMM"), null, false)
-                    AddTaskRow(Modifier.padding(top = 2.dp)) { onNotYet("Adding a task") }
+                    AddTaskRow(Modifier.padding(top = 2.dp)) { actions.newTask(today.toString()) }
                 }
             }
             EmptyState(list, phone, Modifier.padding(top = if (list == TaskList.Today) 36.dp else 20.dp))
@@ -119,7 +121,7 @@ fun TasksScreen(state: AppState, actions: ShellActions, phone: Boolean, modifier
                     Column {
                         GroupHeading(g.title, g.tasks.size, g.overdue)
                         for (t in g.tasks) TaskRow(t, state, actions, phone, today)
-                        if (!g.overdue) AddTaskRow(Modifier.padding(top = 2.dp)) { onNotYet("Adding a task") }
+                        if (!g.overdue) AddTaskRow(Modifier.padding(top = 2.dp)) { actions.newTask(g.date) }
                     }
                 }
             }
@@ -261,7 +263,9 @@ fun TaskRow(task: Task, state: AppState, actions: ShellActions, phone: Boolean, 
                 modifier = Modifier.heightIn(min = 19.6.dp),
             )
             val due = Due.words(task.dueDate, task.dueTime, today)
-            if (due != null || priority < 4 || pageTitle != null) {
+            val team = state.details[task.id]?.teamId?.let { id -> state.teams.firstOrNull { it.id == id } }
+            val tags = task.tagIds.mapNotNull { id -> state.tags.firstOrNull { it.id == id } }
+            if (due != null || priority < 4 || pageTitle != null || team != null || tags.isNotEmpty()) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(if (phone) 9.dp else 6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -276,6 +280,19 @@ fun TaskRow(task: Task, state: AppState, actions: ShellActions, phone: Boolean, 
                     if (priority < 4) {
                         Box(Modifier.height(18.dp), contentAlignment = Alignment.Center) { LIcon(Ic.flagFilled, 13.dp, com.notivelo.app.ui.page.priorityColor(p, priority)) }
                     }
+                    if (team != null) {
+                        val c = parseHex(team.color)
+                        Row(Modifier.height(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            LIcon(Ic.usersRound, 13.dp, c)
+                            WText(TaskEdit.teamLabel(team, state.teams), 12f, c, lineHeight = 1.3f)
+                        }
+                    }
+                    for (tag in tags) {
+                        Row(Modifier.height(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(Modifier.size(7.dp).background(parseHex(tag.color), androidx.compose.foundation.shape.CircleShape))
+                            WText(tag.name, 12f, p.textMuted, lineHeight = 1.3f)
+                        }
+                    }
                     if (pageTitle != null) {
                         Row(Modifier.heightIn(min = 18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             LIcon(Ic.fileText, 13.dp, p.textMuted)
@@ -285,7 +302,7 @@ fun TaskRow(task: Task, state: AppState, actions: ShellActions, phone: Boolean, 
                 }
             }
         }
-        val me = state.user
-        if (me != null && task.assigneeId == me.id) Avatar(me, 20.dp)
+        val who = state.person(task.assigneeId)
+        if (who != null) Avatar(who, 20.dp)
     }
 }

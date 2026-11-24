@@ -3,7 +3,10 @@ package com.notivelo.app.data
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.notivelo.app.edit.EditingBox
 import com.notivelo.core.PageInfo
+import com.notivelo.core.TaskChanges
+import java.time.LocalDate
 import com.notivelo.core.SignedIn
 import com.notivelo.core.Tree
 import kotlinx.coroutines.CoroutineDispatcher
@@ -26,6 +29,7 @@ class AppViewModel(
     private val backend: Backend,
     private val store: SessionStore,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val today: () -> LocalDate = { LocalDate.now() },
 ) : ViewModel(), ShellActions {
     private val _state = MutableStateFlow(AppState(server = store.server))
     val state: StateFlow<AppState> = _state.asStateFlow()
@@ -141,7 +145,7 @@ class AppViewModel(
     private suspend fun switchTo(id: String) {
         _state.update {
             it.copy(
-                workspaceId = id, tree = null, taskCounts = emptyMap(), tasks = emptyList(), taskDetailId = null, treeLoading = true,
+                workspaceId = id, tree = null, taskCounts = emptyMap(), tasks = emptyList(), members = emptyList(), details = emptyMap(), teams = emptyList(), tags = emptyList(), quickAdd = null, taskDetailId = null, treeLoading = true,
                 notebookId = null, phoneNotebookId = null, sectionId = null, pageId = null,
             )
         }
@@ -163,6 +167,27 @@ class AppViewModel(
         } catch (e: BackendError) {
             // Counts are a nicety.
         }
+        loadTaskExtras(id)
+    }
+
+    /** Team, repeat rule, tags, teams and people: from the full task records and the workspace's lists. Online only; quiet when it fails. */
+    private suspend fun loadTaskExtras(ws: String) {
+        try {
+            val d = blocking { backend.taskDetails(ws) }
+            _state.update { if (it.workspaceId == ws) it.copy(details = d.associateBy { x -> x.id }) else it }
+        } catch (e: BackendError) {
+        }
+        try {
+            val t = blocking { backend.teams(ws) }
+            _state.update { if (it.workspaceId == ws) it.copy(teams = t) else it }
+        } catch (e: BackendError) {
+        }
+        try {
+            val t = blocking { backend.tags(ws) }
+            _state.update { if (it.workspaceId == ws) it.copy(tags = t) else it }
+        } catch (e: BackendError) {
+        }
+        loadMembers(ws)
     }
 
     /** Applies a tree if [id] is still the workspace shown; keeps the choice of notebook/section/page when they still exist. */
@@ -278,6 +303,7 @@ class AppViewModel(
             try {
                 val tasks = blocking { backend.tasks(ws) }
                 _state.update { if (it.workspaceId == ws) it.copy(tasks = tasks, taskCounts = openTaskCounts(tasks)) else it }
+                loadTaskExtras(ws)
             } catch (e: BackendError) {
                 // The list on screen stays.
             }
@@ -301,6 +327,86 @@ class AppViewModel(
         }
     }
 
+    /** Shows the change at once, sends it, and keeps the server's answer; a refusal puts the task back and says so. */
+    override fun updateTask(id: String, changes: TaskChanges) {
+        val s = _state.value
+        val before = s.tasks.firstOrNull { it.id == id } ?: return
+        if (before.locked) return
+        val beforeDetail = s.details[id]
+        val c = TaskEdit.complete(changes, before.dueDate, today()) { rule, from -> backend.firstOccurrence(rule, from) }
+        setTasks { list -> list.map { if (it.id == id) it.with(c) else it } }
+        if (beforeDetail != null) _state.update { it.copy(details = it.details + (id to beforeDetail.with(c))) }
+        viewModelScope.launch {
+            try {
+                val saved = blocking { backend.updateTask(id, c) }
+                setTasks { list -> list.map { if (it.id == id) saved.toTask() else it } }
+                _state.update { it.copy(details = it.details + (id to saved)) }
+            } catch (e: BackendError) {
+                setTasks { list -> list.map { if (it.id == id) before else it } }
+                _state.update { st -> st.copy(details = if (beforeDetail != null) st.details + (id to beforeDetail) else st.details, notice = "Could not update the task.") }
+            }
+        }
+    }
+
+    /** Deletes a task (its subtasks go with it): gone from the lists at once, back with a message if the server refuses. */
+    override fun deleteTask(id: String) {
+        val s = _state.value
+        val before = s.tasks
+        val detailsBefore = s.details
+        if (before.none { it.id == id }) return
+        setTasks { list -> list.filter { it.id != id && it.parentId != id } }
+        _state.update { it.copy(details = it.details - id, taskDetailId = if (it.taskDetailId == id) null else it.taskDetailId) }
+        viewModelScope.launch {
+            try {
+                blocking { backend.deleteTask(id) }
+            } catch (e: BackendError) {
+                setTasks { before }
+                _state.update { it.copy(details = detailsBefore, notice = "Could not delete the task.") }
+            }
+        }
+    }
+
+    override fun addSubtask(parentId: String, title: String) {
+        val s = _state.value
+        val parent = s.tasks.firstOrNull { it.id == parentId } ?: return
+        val ws = s.workspaceId ?: return
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val made = blocking { backend.createSubtask(ws, parentId, parent.pageId, title.trim()) }
+                if (_state.value.workspaceId == ws) setTasks { list -> list + made }
+            } catch (e: BackendError) {
+                _state.update { it.copy(notice = "Could not add the subtask.") }
+            }
+        }
+    }
+
+    override fun newTask(dueDate: String?) {
+        _state.update { it.copy(quickAdd = QuickAddState(dueDate)) }
+    }
+
+    override fun closeQuickAdd() {
+        _state.update { it.copy(quickAdd = null) }
+    }
+
+    override fun addQuickTask(text: String) {
+        val s = _state.value
+        val ws = s.workspaceId ?: return
+        val me = s.user?.id ?: return
+        if (text.isBlank()) return
+        val due = s.quickAdd?.dueDate
+        viewModelScope.launch {
+            try {
+                val made = blocking { backend.quickAdd(ws, text.trim(), today().toString(), me, due, null) }
+                _state.update { it.copy(quickAdd = null) }
+                if (_state.value.workspaceId == ws) setTasks { list -> list + made }
+                loadTaskExtras(ws)
+            } catch (e: BackendError) {
+                _state.update { it.copy(quickAdd = null, notice = "Could not add the task.") }
+            }
+        }
+    }
+
     private fun setTasks(f: (List<com.notivelo.core.Task>) -> List<com.notivelo.core.Task>) {
         _state.update { val t = f(it.tasks); it.copy(tasks = t, taskCounts = openTaskCounts(t)) }
     }
@@ -310,6 +416,11 @@ class AppViewModel(
     private suspend fun openPageHandle(id: String?) {
         val old = handle
         handle = null
+        _state.value.page?.editing?.let { e ->
+            val empty = old != null && isEmpty(e)
+            blocking { try { e.engine.close() } catch (x: Exception) { } }
+            if (empty) blocking { try { old?.deleteEmptyBox(e.boxId) } catch (x: Exception) { } }
+        }
         if (old != null) blocking { try { old.close() } catch (e: Exception) { } }
         if (id == null) {
             _state.update { it.copy(page = null) }
@@ -342,14 +453,193 @@ class AppViewModel(
         }
     }
 
+    // Editing a box: a core session on it (others' edits come into it, its edits go into the page)
+
+    override fun startEditing(boxId: String, tapX: Float, tapY: Float) {
+        viewModelScope.launch { openEditing(boxId, tapX, tapY) }
+    }
+
+    private suspend fun openEditing(boxId: String, tapX: Float, tapY: Float) {
+        val s = _state.value
+        val pid = s.pageId ?: return
+        val h = handle ?: return
+        val ws = s.workspaceId ?: return
+        if (s.page?.editing?.boxId == boxId) return
+        try {
+            val engine = blocking { h.openEditor(boxId, ws) }
+            if (_state.value.pageId != pid || handle !== h) {
+                blocking { engine.close() }
+                return
+            }
+            val old = _state.value.page?.editing
+            editPage(pid) { it.copy(editing = EditingBox(boxId, engine, tapX, tapY)) }
+            if (old != null) {
+                val empty = isEmpty(old)
+                blocking { old.engine.close() }
+                if (empty) {
+                    blocking { try { h.deleteEmptyBox(old.boxId) } catch (x: Exception) { } }
+                    reloadPage(pid)
+                }
+            }
+            refreshFlags(pid)
+            loadMembers(ws)
+        } catch (e: Exception) {
+            _state.update { it.copy(notice = "This box could not be opened for editing.") }
+        }
+    }
+
+    /** The box being edited holds nothing (and is not the page's document): it goes when editing ends, as the web drops an empty box you leave. */
+    private suspend fun isEmpty(e: EditingBox): Boolean {
+        if (e.boxId == "default") return false
+        return blocking { try { e.engine.render().view.text.isBlank() } catch (x: Exception) { false } }
+    }
+
+    override fun stopEditing() {
+        val pid = _state.value.pageId ?: return
+        val e = _state.value.page?.editing ?: return
+        val h = handle
+        editPage(pid) { it.copy(editing = null) }
+        viewModelScope.launch {
+            val empty = h != null && isEmpty(e)
+            blocking { try { e.engine.close() } catch (x: Exception) { } }
+            if (empty && h != null) blocking { try { h.deleteEmptyBox(e.boxId) } catch (x: Exception) { } }
+            if (empty) reloadPage(pid) else refreshFlags(pid)
+        }
+    }
+
+    // Boxes: create, move, resize (one core call each, so one undo step each)
+
+    override fun createBox(x: Double, y: Double) {
+        val pid = _state.value.pageId ?: return
+        val h = handle ?: return
+        val top = _state.value.page?.info?.boxes?.maxOfOrNull { it.z } ?: 0.0
+        viewModelScope.launch {
+            val old = _state.value.page?.editing
+            if (old != null) {
+                editPage(pid) { it.copy(editing = null) }
+                val empty = isEmpty(old)
+                blocking { try { old.engine.close() } catch (x: Exception) { } }
+                if (empty) blocking { try { h.deleteEmptyBox(old.boxId) } catch (x: Exception) { } }
+            }
+            try {
+                val id = blocking { h.createBox(x, y, NEW_BOX_WIDTH, top + 1.0) }
+                reloadPage(pid)
+                openEditing(id, -1f, -1f)
+            } catch (e: BackendError) {
+                reloadPage(pid)
+                _state.update { it.copy(notice = "Could not add a text box.") }
+            }
+        }
+    }
+
+    override fun moveBox(id: String, x: Double, y: Double) = boxWrite("Could not move the box.") { h ->
+        h.moveBox(id, x, y)
+    }
+
+    override fun resizeBox(id: String, width: Double) = boxWrite("Could not resize the box.") { h ->
+        h.resizeBox(id, width)
+    }
+
+    private fun boxWrite(failure: String, call: (PageHandle) -> Unit) {
+        val pid = _state.value.pageId ?: return
+        val h = handle ?: return
+        viewModelScope.launch {
+            try {
+                blocking { call(h) }
+            } catch (e: BackendError) {
+                _state.update { it.copy(notice = failure) }
+            }
+            reloadPage(pid)
+        }
+    }
+
+    // Page undo: the core's one stack (text of boxes opened live, ink, boxes). While a box is edited this is still the one to call:
+    // the box's session writes into the same stack, and an undone text step puts the caret back in its box.
+
+    override fun undoPage() = pageUndo(false)
+
+    override fun redoPage() = pageUndo(true)
+
+    private fun pageUndo(redo: Boolean) {
+        val pid = _state.value.pageId ?: return
+        val h = handle ?: return
+        viewModelScope.launch {
+            try {
+                blocking { if (redo) h.redo() else h.undo() }
+            } catch (e: BackendError) {
+                // Nothing to take back.
+            }
+            reloadPage(pid)
+        }
+    }
+
+    private var flagsPending = false
+
+    override fun pageEdited() {
+        val pid = _state.value.pageId ?: return
+        if (flagsPending) return
+        flagsPending = true
+        viewModelScope.launch {
+            try {
+                refreshFlags(pid)
+            } finally {
+                flagsPending = false
+            }
+        }
+    }
+
+    private suspend fun refreshFlags(pid: String) {
+        val h = handle ?: return
+        val (u, r) = blocking { (try { h.canUndo() } catch (e: Exception) { false }) to (try { h.canRedo() } catch (e: Exception) { false }) }
+        editPage(pid) { if (it.canUndo == u && it.canRedo == r) it else it.copy(canUndo = u, canRedo = r) }
+    }
+
+    /** Reads the page again after a local write (the core does not report those): boxes, ink, the undo flags; a box being edited that is gone (its creation undone) stops being edited. */
+    private suspend fun reloadPage(pid: String) {
+        val h = handle ?: return
+        val snap = blocking {
+            val info = try { h.info() } catch (e: Exception) { null }
+            val ink = if (info != null) try { h.ink() } catch (e: Exception) { null } else null
+            val u = try { h.canUndo() } catch (e: Exception) { false }
+            val r = try { h.canRedo() } catch (e: Exception) { false }
+            Reloaded(info, ink, u, r)
+        }
+        var gone: EditingBox? = null
+        editPage(pid) { pv ->
+            var next = pv.copy(canUndo = snap.canUndo, canRedo = snap.canRedo, rev = pv.rev + 1)
+            if (snap.info != null) next = next.copy(info = snap.info, ink = snap.ink ?: pv.ink)
+            val e = pv.editing
+            if (snap.info != null && e != null && e.boxId != "default" && snap.info.boxes.none { it.id == e.boxId }) {
+                gone = e
+                next = next.copy(editing = null)
+            }
+            next
+        }
+        gone?.let { e -> blocking { try { e.engine.close() } catch (x: Exception) { } } }
+    }
+
+    private class Reloaded(val info: PageInfo?, val ink: List<InkShape>?, val canUndo: Boolean, val canRedo: Boolean)
+
+    private suspend fun loadMembers(workspaceId: String) {
+        if (_state.value.members.isNotEmpty()) return
+        val people = try { blocking { backend.members(workspaceId) } } catch (e: Exception) { return }
+        if (_state.value.workspaceId == workspaceId) _state.update { it.copy(members = people) }
+    }
+
     private suspend fun applyPage(id: String, info: PageInfo) {
         val h = handle ?: return
         val (fresh, ink) = blocking { info to h.ink() }
         editPage(id) { it.copy(info = fresh, ink = ink) }
+        refreshFlags(id)
     }
 
     private fun editPage(id: String, f: (PageView) -> PageView) {
         _state.update { s -> val pv = s.page; if (pv != null && pv.pageId == id) s.copy(page = f(pv)) else s }
+    }
+
+    companion object {
+        /** A box made by tapping the canvas (the web's `BOX_DEFAULT_W`). */
+        const val NEW_BOX_WIDTH = 360.0
     }
 
     class Factory(private val backend: Backend, private val store: SessionStore) : ViewModelProvider.Factory {

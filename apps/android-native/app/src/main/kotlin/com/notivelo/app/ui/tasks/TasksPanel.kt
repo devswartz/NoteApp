@@ -34,7 +34,7 @@ fun TasksPanel(state: AppState, actions: ShellActions, onNotYet: (String) -> Uni
         WText("Tasks", 15f, p.text, Modifier.padding(horizontal = 16.dp).height(52.dp).padding(top = 15.dp), weight = 650, lineHeight = 1.3f)
         Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(
-                Modifier.fillMaxWidth().height(32.dp).tappable { onNotYet("Adding a task") }.padding(horizontal = 10.dp),
+                Modifier.fillMaxWidth().height(32.dp).tappable { actions.newTask() }.padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

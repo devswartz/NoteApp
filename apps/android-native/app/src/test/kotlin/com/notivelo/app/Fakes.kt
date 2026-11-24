@@ -11,6 +11,13 @@ import com.notivelo.core.PageMeta
 import com.notivelo.core.Section
 import com.notivelo.core.SignedIn
 import com.notivelo.core.Task
+import com.notivelo.core.TaskChanges
+import com.notivelo.core.TaskDetail
+import com.notivelo.core.TaskRecurrence
+import com.notivelo.core.TaskTag
+import com.notivelo.core.TaskTeam
+import com.notivelo.app.data.toTask
+import com.notivelo.app.data.with
 import com.notivelo.core.Tree
 import com.notivelo.core.User
 import com.notivelo.core.Workspace
@@ -92,8 +99,54 @@ class FakeBackend : Backend {
         return tasks.first { it.id == taskId }.copy(done = done, completedAt = if (done) "2026-11-21T12:00:00Z" else null)
     }
 
+    var details = listOf<TaskDetail>()
+    var teams = listOf<TaskTeam>()
+    var tags = listOf<TaskTag>()
+    var failUpdate: BackendError? = null
+    var failDelete: BackendError? = null
+    val updates = mutableListOf<Pair<String, TaskChanges>>()
+    val deleted = mutableListOf<String>()
+    val quickAdds = mutableListOf<String>()
+    val subtasks = mutableListOf<String>()
+
+    override fun taskDetails(workspaceId: String): List<TaskDetail> = details
+    override fun teams(workspaceId: String): List<TaskTeam> = teams
+    override fun tags(workspaceId: String): List<TaskTag> = tags
+    override fun firstOccurrence(rule: TaskRecurrence, from: String): String = "first:$from"
+
+    override fun updateTask(taskId: String, changes: TaskChanges): TaskDetail {
+        updates += taskId to changes
+        failUpdate?.let { throw it }
+        val d = details.firstOrNull { it.id == taskId } ?: detailOf(tasks.first { it.id == taskId })
+        return d.with(changes)
+    }
+
+    override fun deleteTask(taskId: String) {
+        deleted += taskId
+        failDelete?.let { throw it }
+    }
+
+    override fun quickAdd(workspaceId: String, text: String, today: String, meId: String, dueDate: String?, pageId: String?): Task {
+        quickAdds += "$text|$today|$dueDate"
+        return tasks.firstOrNull()?.copy(id = "new-${quickAdds.size}", title = text, dueDate = dueDate) ?: error("no task to copy")
+    }
+
+    override fun createSubtask(workspaceId: String, parentId: String, pageId: String?, title: String): Task {
+        subtasks += "$parentId|$title"
+        return tasks.first().copy(id = "sub-${subtasks.size}", title = title, parentId = parentId)
+    }
+
     val openedPages = mutableListOf<String>()
     val closedPages = mutableListOf<String>()
+    val openedBoxes = mutableListOf<String>()
+    val engines = mutableListOf<com.notivelo.app.edit.FakeTextEngine>()
+    var editorText = "hi"
+
+    /** What the open page was asked to do, in order ("create 10,20", "move b1 5,6", "resize b1 200", "delete b1", "undo", "redo"). */
+    val pageCalls = mutableListOf<String>()
+    var canUndo = false
+    var canRedo = false
+    var failBox: BackendError? = null
 
     override fun cachedPage(pageId: String): com.notivelo.core.PageInfo? = null
 
@@ -102,6 +155,42 @@ class FakeBackend : Backend {
         return object : PageHandle {
             override fun info(): com.notivelo.core.PageInfo = error("no page content in the fake")
             override fun ink(): List<InkShape> = emptyList()
+            override fun openEditor(boxId: String, workspaceId: String): com.notivelo.app.edit.TextEngine {
+                openedBoxes += "$boxId@$workspaceId"
+                return com.notivelo.app.edit.FakeTextEngine(editorText).also { engines += it }
+            }
+
+            override fun createBox(x: Double, y: Double, w: Double, z: Double): String {
+                failBox?.let { throw it }
+                pageCalls += "create ${x.toInt()},${y.toInt()} w=${w.toInt()} z=${z.toInt()}"
+                return "nb"
+            }
+
+            override fun moveBox(id: String, x: Double, y: Double) {
+                failBox?.let { throw it }
+                pageCalls += "move $id ${x.toInt()},${y.toInt()}"
+            }
+
+            override fun resizeBox(id: String, w: Double) {
+                pageCalls += "resize $id ${w.toInt()}"
+            }
+
+            override fun deleteEmptyBox(id: String) {
+                pageCalls += "delete $id"
+            }
+
+            override fun undo(): Boolean {
+                pageCalls += "undo"
+                return true
+            }
+
+            override fun redo(): Boolean {
+                pageCalls += "redo"
+                return true
+            }
+
+            override fun canUndo(): Boolean = this@FakeBackend.canUndo
+            override fun canRedo(): Boolean = this@FakeBackend.canRedo
             override fun close() {
                 closedPages += pageId
             }
@@ -112,3 +201,11 @@ class FakeBackend : Backend {
         signedOut = true
     }
 }
+
+fun detailOf(t: Task, team: String? = null, recurrence: TaskRecurrence? = null) = TaskDetail(
+    id = t.id, workspaceId = t.workspaceId, title = t.title, description = t.description, done = t.done, priority = t.priority,
+    dueDate = t.dueDate, dueTime = t.dueTime, recurrence = recurrence, reminderAt = null, assigneeId = t.assigneeId, assignedBy = null,
+    createdBy = "u1", completedBy = null, pageId = t.pageId, parentId = t.parentId, teamId = team, tagIds = t.tagIds,
+    checklistDone = t.checklistDone, checklistTotal = t.checklistTotal, completedAt = t.completedAt, createdAt = t.createdAt,
+    updatedAt = t.updatedAt, locked = t.locked,
+)

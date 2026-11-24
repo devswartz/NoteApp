@@ -72,8 +72,8 @@ fun Ribbon(width: Dp, state: AppState, actions: ShellActions, index: TreeIndex?,
         Spacer(Modifier.weight(1f))
         if (onPage && state.tab == Tab.Notes) {
             RbButton(Ic.listTree, m, pressed = true) { onNotYet("Hiding the outline") }
-            RbButton(Ic.undo2, m, enabled = false) {}
-            RbButton(Ic.redo2, m, enabled = false) {}
+            RbButton(Ic.undo2, m, enabled = state.page?.canUndo == true) { actions.undoPage() }
+            RbButton(Ic.redo2, m, enabled = state.page?.canRedo == true) { actions.redoPage() }
         }
         Box(Modifier.padding(start = 4.dp).size(28.dp).tappable { onNotYet("Collapsing the ribbon") }, contentAlignment = Alignment.Center) {
             LIcon(Ic.chevronUp, 16.dp, p.text2)
@@ -160,7 +160,7 @@ private fun NoteRibbon(m: RibbonMetrics, onNotYet: (String) -> Unit) {
 private fun TasksRibbon(m: RibbonMetrics, state: AppState, actions: ShellActions, onNotYet: (String) -> Unit) {
     val list = state.taskList
     val fixed = list == TaskList.Today
-    RbButton(Ic.plus, m) { onNotYet("Adding a task") }
+    RbButton(Ic.plus, m) { actions.newTask() }
     RbSeparator(m)
     RbButton(Ic.sun, m, pressed = list == TaskList.Today) { actions.selectTaskList(TaskList.Today) }
     RbButton(Ic.calendarRange, m, pressed = list == TaskList.Upcoming) { actions.selectTaskList(TaskList.Upcoming) }

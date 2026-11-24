@@ -101,6 +101,15 @@ object Ic {
     val trash = R.drawable.ic_trash
     val repeat = R.drawable.ic_repeat
     val arrowLeft = R.drawable.ic_arrow_left
+    val type = R.drawable.ic_type
+    val heading1 = R.drawable.ic_heading_1
+    val heading2 = R.drawable.ic_heading_2
+    val heading3 = R.drawable.ic_heading_3
+    val squareCheckBig = R.drawable.ic_square_check_big
+    val quote = R.drawable.ic_quote
+    val messageSquareQuote = R.drawable.ic_message_square_quote
+    val codeXml = R.drawable.ic_code_xml
+    val atSign = R.drawable.ic_at_sign
 }
 
 @Composable

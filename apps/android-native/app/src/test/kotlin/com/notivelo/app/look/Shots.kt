@@ -56,6 +56,10 @@ abstract class DataShots(config: DeviceConfig) : ShotsBase(config) {
     @Test fun empty_tasks_today() = shot("empty-tasks-today")
     @Test fun empty_tasks_all() = shot("empty-tasks-all")
     @Test fun task_detail() = shot("task-detail")
+    @Test fun task_detail_edit() = shot("task-detail-edit")
+    @Test fun edit_caret() = shot("edit-caret")
+    @Test fun edit_selection() = shot("edit-selection")
+    @Test fun slash_menu() = shot("slash-menu")
 }
 
 /** Dark and Hybrid variants (iphone and ipad-landscape have them). */
@@ -68,6 +72,8 @@ abstract class ThemedDataShots(config: DeviceConfig) : DataShots(config) {
     @Test fun hybrid_page_meeting() = shot("hybrid-page-meeting")
     @Test fun hybrid_page_settings_and_ink() = shot("hybrid-page-settings-and-ink")
     @Test fun hybrid_tasks_today() = shot("hybrid-tasks-today")
+    @Test fun dark_edit_caret() = shot("dark-edit-caret")
+    @Test fun hybrid_edit_caret() = shot("hybrid-edit-caret")
 }
 
 class PhoneShots : ThemedDataShots(phone) {

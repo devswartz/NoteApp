@@ -46,6 +46,7 @@ fun NotiveloRoot(
     val p = pal()
     BoxWithConstraints(modifier.fillMaxSize().background(p.bg)) {
         val tablet = maxWidth >= TABLET_MIN_WIDTH.dp
+        CompositionLocalProvider(com.notivelo.app.edit.LocalPageActions provides actions) {
         when (state.phase) {
             Phase.Loading -> Box(Modifier.fillMaxSize().background(p.bg))
             Phase.SignedOut -> CompositionLocalProvider(LocalPhone provides !tablet) {
@@ -68,6 +69,10 @@ fun NotiveloRoot(
                 }
                 PhoneShell(state, actions, drawerOpen, { drawerOpen = it }, scrollPx = scrollPx)
             }
+        }
+        state.quickAdd?.let { q ->
+            com.notivelo.app.ui.tasks.QuickAddDialog(q.dueDate, LocalToday.current, actions::addQuickTask, actions::closeQuickAdd)
+        }
         }
     }
 }
