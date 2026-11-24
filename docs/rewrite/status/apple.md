@@ -31,6 +31,55 @@ Progress, requests and handover for the **apple** workstream (`apps/apple/`, `.g
 - **iPad editing done** on branch `rewrite/apple-edit` (not merged): tap a box on the iPad canvas and type. Each box is a `BoxTextView` adopting `UITextInput` over `EditorSession` (EDITOR.md 10.3); edits go out through `LivePage.applyUpdate`, others' edits are merged back. CI green with screenshots of text typed through the UITextInput path (`-demoEdit`); TestFlight **1.99.27** below. **On a real device and against the real server it is untested**: Devon's check below is the first test. Next: whatever that check finds, then the ribbon (marks, lists, headings, task insert), creating/moving boxes, `UIIndirectScribbleInteraction`.
 - **M5 basics done** on branch `rewrite/apple-m5` (not merged): the iPad app signs in through the core, shows the workspace tree, opens pages live and read-only, and lists tasks with ticks. Built and screenshotted in CI; **real sign-in and live updates are untested** (no credentials in CI): Devon's TestFlight check below is the first real test. Next: whatever that check finds, then editing (nv-editor) and the rest of the iPad PARITY column.
 
+## Parity left (round 21, 2026-11-24)
+
+Audit of `docs/rewrite/PARITY.md` (iPad, iPhone, Mac columns) against `apps/apple` at e5ea45a. Rows that were built but not ticked got a ✓ (140 cells in 61 rows); what is below is what is still open. Class: **no-server** = doable now with existing core calls or new core calls on existing server routes; **Devon** = needs Devon (real device, decision, portal); **M7** = needs the server change log / store-backed screens. Not listed: the table rows with ✓ and the rows that are `—`/`○` on all three. Marked ✓ without a run: all native ticks are "compiled and reachable", never run on a Mac or checked on a device (Face ID, Keychain on Mac included). Rows left alone, probably done: "Notes under a task" (150, engine does it; not checked in the UI) and iPhone "Section ribbons / colour tabs" (49). "New version available" is n/a (store builds update through the store).
+
+| Row | iPad | iPhone | Mac | Class | Use | What it needs |
+|---|---|---|---|---|---|---|
+| Push reminders with snooze; local notifications (176, 177) | missing | missing | missing (◐ today) | no-server | high | aps-environment entitlement; token to `POST /notifications/devices`; REMINDER actions to `POST /reminders/snooze`. Devon tests on a device |
+| Page title editable on the page (97) | partly: label, rename only from tree menu | partly: same | partly: same | no-server | high | a title text field in the page header; `renamePage` |
+| Task filters, sort, group, status, filter bar; Team and All views (159, 156) | missing (ribbon buttons say "not yet") | partly: phone has no filter UI; Today/My/Upcoming only | missing | no-server | high | client-side filters over `tasks`; Completed list via `/workspaces/:id/tasks/completed` |
+| Notification inbox (bell) (179) | missing (bell: "not yet") | missing | missing | no-server | medium | core calls for `GET /notifications`, `POST /notifications/read-all`, mark one read |
+| App icon badge: due today (178) | missing | missing | missing | no-server | medium | badge permission; count from the task list |
+| Print and PDF: page, selection, Save as PDF (122, 123 PDF part) | partly: Markdown only | partly: Markdown only | partly: Markdown only | no-server | medium | native print/PDF of the page |
+| Templates: picker on empty page, save as, rename/delete, placeholders, default per section, new from template (134-140) | missing | missing | missing | no-server | medium | core calls on `/workspaces/:id/templates`, `/pages/:id/templates`, `/templates/:id(/use)`, `/sections/:id/default-template`; `defaultTemplateId` on core `Section` |
+| Opens offline from a cold start (222) | missing: signed-out screen with "Try again" | missing | missing | no-server | medium | open from the store when `restoreSession` fails with Network |
+| Share extension: Add as task, Save as note (246) | missing | missing | n/a (○ today) | no-server | medium | new `ShareExtension` target + App Group read in the app |
+| Deep links and universal links (63, 257) | partly: only invite links via `onOpenURL`; no scheme, no Associated Domains | partly: same | partly: same (universal links ○ today) | no-server | medium | `CFBundleURLTypes` + `applinks:` entitlement; route page links. Devon: Associated Domains on the Mac App ID if cloud signing doesn't add it |
+| Home-screen Today widget (247) | missing | missing | n/a (○ today) | no-server | medium | WidgetKit target + snapshot in the App Group |
+| Cursors and presence of others; follow a collaborator (94, 95) | partly: live edits, no cursors/avatars | partly: same | partly: same | no-server | medium | draw `remoteCursors`, send `announcePresence` |
+| Favourites (50) | partly: Recent only; menu says "not yet" | partly: same | partly: same (earlier ✓ removed) | no-server | medium | device-local list (web keeps it in `sidebarState`), no server |
+| Boxes: select, cut/copy/paste/duplicate/delete, context menu (93) | partly: create, move, resize, front only | partly: same | partly: same | no-server | medium | box selection state; `deleteBox`/`createBox` on LivePage |
+| Swipe actions on rows (59) | missing | missing | n/a | no-server | medium | SwiftUI `.swipeActions` / DragGesture on task rows |
+| Share link "Anyone with the link can view" (126) | missing | missing | missing | no-server | medium | core calls on `/pages/:id/link` |
+| Drag to reorder / move in the tree (79) | partly: Move dialog only | partly: same | partly: same | no-server | medium | `.draggable`/`.dropDestination` on tree rows with before/after |
+| Mac extras: menu bar item, keep running when window closed, global quick capture (250, 251, 252) | n/a | n/a | missing | no-server | medium | MenuBarExtra, app delegate, global hotkey |
+| Delete account (34) | missing | missing | missing | no-server | medium | core calls on `GET /auth/account/deletion-preview`, `DELETE /auth/account`; App Review requires it in the app |
+| Workspace: create, rename, delete; General settings (47, 196, 195) | missing ("not yet"; Members and Trash exist) | missing | missing | no-server | low | core calls on `POST /workspaces`, `PATCH/DELETE /workspaces/:id` |
+| Teams and tags management; Activity feed (167, 168, 181) | partly: pickers and create tag only; no manage screens; no Activity | partly: same | partly: same | no-server | low | core calls on `/tags/:id`, `/teams/:id(/members)`, `/workspaces/:id/activity` |
+| Saved views, bulk select, task keyboard, inline rename with Undo, print task view (161, 162, 163, 164, 166) | missing (rename/Undo partly) | missing | missing | no-server | low | core calls on `/workspaces/:id/task-views`; rest is client code |
+| Outline, backlinks, full width, page colour/rule lines setting, snapping (117, 113, 118, 119, 120) | missing (colour and rules are shown, not changeable) | missing (same) | missing (same) | no-server | low | `GET /pages/:id/backlinks`; page settings write on the live doc |
+| Table tools: add/delete row and column, header row, merge/split (105) | partly: insert 3x3 only | partly: same | partly: same | no-server | low | engine commands exist except merge/split |
+| Block drag handle and Word-style multi-select (114, 115) | missing (engine has `moveBlockUp/Down`) | missing | missing | no-server | low | handle view + line picks |
+| Export my data; send feedback; error reporting; resend verification email (35, 67, 68, 28) | missing (Resend: partly) | missing | missing | no-server | low | core calls on `GET /me/export`, `POST /feedback`, `POST /client-errors`, `POST /auth/resend-verification` |
+| Settings -> Notifications extras (180) | partly: no quiet hours, calendar feed link, test notification | partly: same | partly: same | no-server | low | core calls on `/notifications/quiet-hours`, `/calendar-feed`, `/notifications/test` |
+| Locked notes settings and app lock (215, 216, 213 Mac) | partly: no Face ID on/off, no reset by code; app lock missing | partly: same | partly (Mac: no auto-lock on background); Touch ID/app lock n/a (○ today) | no-server | low | core call for the emailed-code reset; LAContext app lock |
+| Export workspace (.zip) and import from export (230, 231) | missing | missing | missing | no-server | low | core calls on `GET /workspaces/:id/export`, import route |
+| Import from OneNote (232) | missing (◐ today: starts in the web app) | missing | missing | no-server | low | `ASWebAuthenticationSession` + `/import/onenote/*` routes |
+| Trashed page opens read-only with Restore (84) | missing | missing | missing | no-server | low | open a trashed page via the core; read-only banner |
+| Print section / notebook (85) | missing | missing | missing | no-server | low | see Print row |
+| Comments: @mentions in comment text (189) | partly: `@` works in pages, not in comments | partly: same | partly: same | no-server | low | mention menu in the comment composer; server reads mentions from the doc |
+| Task detail: "From the note", open the page (154); real streak (156) | partly | partly | partly | no-server | low | `taskNotes` exists in core |
+| Code block syntax highlighting (106) | partly: no highlighting | partly | partly | no-server | low | a tokenizer in BoxRender |
+| Sidebar resize, F6 regions, palette commands, shortcuts overlay "?", haptics (51, 58, 56, 57, 248) | partly/missing | partly/missing | partly/missing | no-server | low | small UI work |
+| Ribbon buttons that say "not yet": clear formatting, link to page, divider, hide outline, Table group (53) | partly | n/a (phone has the floating toolbar) | partly | no-server | low | engine commands (`insertPageLink` exists) and small UI |
+| Spellcheck in the editor on iPad/iPhone (121) | unverified: needs a real device | unverified: same | ok (✓ given earlier) | Devon | high | a device check; custom `UITextInput` views may not get inline spell check |
+| Self-updater (254) | n/a | n/a | missing (◐ today) | Devon | low | decision: the native Mac app ships via the store/TestFlight; a direct-download build would need Sparkle |
+| Opened pages editable offline, sync on reconnect (223) | missing: reconnect only, no stored doc open | missing | missing | M7 | medium | store-backed screens and LivePage reconnect/offline queue (core) |
+
+Counts: 79 PARITY rows still open on iPad/iPhone/Mac: 26 partly, 49 missing, 3 unverified (left unticked), 1 n/a. Of the 75 partly/missing rows: no-server 73, Devon 1, M7 1. Round 21 ticked 140 cells in 61 rows that were already built.
+
 ## Look (2026-11-21, `rewrite/apple-look`)
 
 How it is built (since 2026-11-22 in `Sources/Shared/Look` and `Sources/Shared/Shell`, built for the iPad, iPhone and Mac; the touch-only phone shell is in `Sources/iOS/Phone`):
