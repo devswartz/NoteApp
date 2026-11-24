@@ -39,3 +39,5 @@ Page-level undo and the calendar Status, tag and person filters are in this buil
 Settings: profile edit, password, notifications, connected apps, keyboard shortcuts, bordered fields are in this build.
 
 Images and attachments (show, insert from Photos/Files/camera, paste, drop, resize, open) are in this build.
+
+Editable page title, task filters/sort/group, favourites, offline start, print/PDF, notivelo:// links, swipe rows, privacy manifest are in this build.
