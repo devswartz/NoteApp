@@ -155,6 +155,57 @@ public interface INotesSource
     /// <summary>The bytes of a stored file (to open or save it).</summary>
     Task<MediaResult<MediaBytes>> DownloadFile(string stored) => Task.FromResult(MediaResult<MediaBytes>.Fail("Not available."));
 
+    // ---- page tools (PARITY batch 2): comments, version history, sharing, locked pages, export, icons. Online sources use the core's calls (each off the UI thread,
+    // an error is one sentence); the offline sample keeps everything in memory. ----
+    /// <summary>The signed-in user can comment on / edit this page (not a viewer).</summary>
+    bool CanComment(string pageId) => false;
+    Task<PageToolResult<IReadOnlyList<CommentThreadInfo>>> LoadComments(string pageId) => Task.FromResult(PageToolResult<IReadOnlyList<CommentThreadInfo>>.Fail("Not available."));
+    /// <summary>Start a thread with its first comment (the id is the one the page's comment mark carries).</summary>
+    Task<PageToolResult<CommentThreadInfo>> AddCommentThread(string pageId, string threadId, string quote, string body) => Task.FromResult(PageToolResult<CommentThreadInfo>.Fail("Not available."));
+    Task<PageToolResult<CommentThreadInfo>> ReplyToThread(string threadId, string body) => Task.FromResult(PageToolResult<CommentThreadInfo>.Fail("Not available."));
+    Task<PageToolResult<CommentThreadInfo>> SetThreadResolved(string threadId, bool resolved) => Task.FromResult(PageToolResult<CommentThreadInfo>.Fail("Not available."));
+    Task<PageToolResult<CommentThreadInfo>> EditComment(string commentId, string body) => Task.FromResult(PageToolResult<CommentThreadInfo>.Fail("Not available."));
+    /// <summary>Delete a comment; the value says whether its thread went with it (the last comment).</summary>
+    Task<PageToolResult<bool>> DeleteComment(string commentId) => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    Task<PageToolResult<bool>> DeleteThread(string threadId) => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    /// <summary>Open (unresolved) comment threads of a page, as last loaded (the top bar's badge).</summary>
+    int OpenCommentCount(string pageId) => 0;
+
+    Task<PageToolResult<IReadOnlyList<VersionInfo>>> LoadVersions(string pageId) => Task.FromResult(PageToolResult<IReadOnlyList<VersionInfo>>.Fail("Not available."));
+    /// <summary>A version as Markdown text.</summary>
+    Task<PageToolResult<string>> VersionPreview(string pageId, string versionId) => Task.FromResult(PageToolResult<string>.Fail("Not available."));
+    /// <summary>Restore a version into the open page. The value is the id of the "before restore" version (null for an empty page).</summary>
+    Task<PageToolResult<string?>> RestoreVersion(string pageId, string versionId) => Task.FromResult(PageToolResult<string?>.Fail("Not available."));
+    bool CanRestoreVersion(string pageId) => false;
+
+    IReadOnlyList<MemberInfo> Members() => Array.Empty<MemberInfo>();
+    /// <summary>owner, admin, member or viewer (null when unknown).</summary>
+    string? WorkspaceRole => null;
+    Task<PageToolResult<PageSharesInfo>> LoadShares(string pageId) => Task.FromResult(PageToolResult<PageSharesInfo>.Fail("Not available."));
+    /// <summary>Share with a member (<paramref name="userId"/>) or by email.</summary>
+    Task<PageToolResult<ShareOutcome>> SharePage(string pageId, string? userId, string? email, bool canEdit) => Task.FromResult(PageToolResult<ShareOutcome>.Fail("Not available."));
+    Task<PageToolResult<PageSharesInfo>> SetShareEdit(string pageId, string userId, bool canEdit) => Task.FromResult(PageToolResult<PageSharesInfo>.Fail("Not available."));
+    Task<PageToolResult<PageSharesInfo>> RemoveShare(string pageId, string userId) => Task.FromResult(PageToolResult<PageSharesInfo>.Fail("Not available."));
+    Task<PageToolResult<PageSharesInfo>> RevokeInvite(string pageId, string email) => Task.FromResult(PageToolResult<PageSharesInfo>.Fail("Not available."));
+    /// <summary>Pages shared with you one by one, newest first (the sidebar's "Shared with me"); loaded with the tree.</summary>
+    IReadOnlyList<SharedPageInfo> SharedWithMe => Array.Empty<SharedPageInfo>();
+    /// <summary>"Remove from Shared with me" (the core's remove_page_share with your own id).</summary>
+    Task<string?> LeaveShare(string pageId) => Task.FromResult<string?>("Not available.");
+
+    LockInfo LockState => new(true, true);
+    /// <summary>Set the locked-pages password (or change it: <paramref name="current"/> is then required).</summary>
+    Task<string?> SetLockPassword(string password, string? current) => Task.FromResult<string?>("Not available.");
+    Task<string?> UnlockLocked(string password) => Task.FromResult<string?>("Not available.");
+    Task<string?> LockPage(string pageId) => Task.FromResult<string?>("Not available.");
+    Task<string?> RemovePageLock(string pageId, string password) => Task.FromResult<string?>("Not available.");
+    /// <summary>"Lock now": the locked pages lock again for this sign-in.</summary>
+    Task<string?> LockNow() => Task.FromResult<string?>("Not available.");
+
+    /// <summary>The page as Markdown (the core's page_markdown over the open page; the sample writes it from its blocks).</summary>
+    Task<PageToolResult<string>> ExportMarkdown(string pageId) => Task.FromResult(PageToolResult<string>.Fail("Not available."));
+    /// <summary>Set (or with null remove) the page's icon emoji.</summary>
+    Task<string?> SetPageIcon(string pageId, string? icon) => Task.FromResult<string?>("Not available.");
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

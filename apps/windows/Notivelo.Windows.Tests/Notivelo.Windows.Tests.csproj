@@ -17,6 +17,7 @@
     <Compile Include="..\Notivelo.Windows\Data\AppSettings.cs" Link="Data\AppSettings.cs" />
     <Compile Include="..\Notivelo.Windows\Data\InkTool.cs" Link="Data\InkTool.cs" />
     <Compile Include="..\Notivelo.Windows\Data\Models.cs" Link="Data\Models.cs" />
+    <Compile Include="..\Notivelo.Windows\Data\PageTools.cs" Link="Data\PageTools.cs" />
     <Compile Include="..\Notivelo.Windows\Data\TaskLogic.cs" Link="Data\TaskLogic.cs" />
     <Compile Include="$(NvCoreDir)generated\nv_core.cs" Link="Native\nv_core.cs" />
     <Content Include="$(NvCoreDir)runtimes\win-x64\native\nv_core.dll" Link="nv_core.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(NvCoreDir)runtimes\win-x64\native\nv_core.dll')" />

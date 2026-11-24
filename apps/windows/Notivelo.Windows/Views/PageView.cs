@@ -134,7 +134,7 @@ internal sealed class PageView : ThemedControl
 
     /// <summary>What a full rebuild shows besides the text inside session-backed boxes.</summary>
     private static string Signature(NotePage p) =>
-        string.Join("|", p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked,
+        string.Join("|", p.Title, p.EditedLine, p.State, p.StateMessage, p.Colour, p.Rules, p.OpenTasks, p.Comments, p.Locked, p.Emoji,
             string.Join(";", p.Boxes.Where(b => b.Field is null).Select(b => $"@{b.X},{b.Y},{b.Width},{b.Wide}")));
 
     protected override UIElement Build()
@@ -161,7 +161,18 @@ internal sealed class PageView : ThemedControl
 
         root.Children.Add(TopBar(page));
 
-        var article = new Grid { Padding = new Thickness(0, 37, 40, 0) };
+        if (page.State == PageState.Locked)
+        {
+            // a locked page stays shut until the locked pages' password is given (Apple's UnlockPrompt)
+            DisposeViews();
+            _sig = Signature(page);
+            var prompt = UnlockPrompt(page);
+            Grid.SetRow(prompt, 1);
+            root.Children.Add(prompt);
+            return root;
+        }
+
+        var article =new Grid { Padding = new Thickness(0, 37, 40, 0) };
         article.RowDefinitions.Add(new RowDefinition { Height = new GridLength(28) });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -170,7 +181,22 @@ internal sealed class PageView : ThemedControl
         var title = Ui.Text(page.Title, 36, B("Text"), 700, lineHeight: 43.2, tracking: -0.025);
         title.Margin = new Thickness(51, 0, 0, 0);
         Grid.SetRow(title, 1);
-        article.Children.Add(title);
+        if (!string.IsNullOrEmpty(page.Emoji))
+        {
+            // the page icon sits before the title; a click changes it
+            var icon = new Button { Style = Ui.Style("GhostButtonStyle"), Padding = new Thickness(4, 0, 4, 0), Height = 48, CornerRadius = new CornerRadius(8), VerticalAlignment = VerticalAlignment.Center };
+            icon.Content = new TextBlock { Text = page.Emoji, FontSize = 32, FontFamily = new FontFamily("Segoe UI Emoji"), VerticalAlignment = VerticalAlignment.Center };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(icon, "page-icon");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(icon, "Page icon " + page.Emoji);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(icon, "icon=" + page.Emoji);
+            icon.Click += (_, _) => { if (PageId is not null && Host is not null) PageDialogs.IconPicker(Host, PageId, true); };
+            title.Margin = new Thickness(8, 0, 0, 0);
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(47, 0, 0, 0) };
+            line.Children.Add(icon); line.Children.Add(title);
+            Grid.SetRow(line, 1);
+            article.Children.Add(line);
+        }
+        else article.Children.Add(title);
 
         var sub = Ui.Text(page.EditedLine, 12.5, B("PageTextMuted"), lineHeight: 18.75);
         sub.Margin = new Thickness(51, 4, 0, 22);
@@ -230,11 +256,87 @@ internal sealed class PageView : ThemedControl
         root.Children.Add(outline);
         if (_tasksOpen && PageId is { } tasksPage)
         {
-            var panel = new PageTasksPanel(_source, tasksPage, () => { _tasksOpen = false; Rebuild(); }) { Host = Host };
+            var panel = new PageTasksPanel(_source, tasksPage, () => { _comments?.Cancel(false); _tasksOpen = false; Rebuild(); }) { Host = Host };
+            if (_commentsTab) panel.Comments = CommentsFor(tasksPage);
+            panel.SwitchTab = comments => { if (!comments) _comments?.Cancel(false); _commentsTab = comments; Rebuild(); };
             Grid.SetColumn(panel, 1); Grid.SetRowSpan(panel, 2);
             root.Children.Add(panel);
         }
         return root;
+    }
+
+    // ---- comments (the Comments tab of the page panel) and the lock screen ----
+
+    private bool _commentsTab;
+    private CommentsModel? _comments;
+
+    private CommentsModel CommentsFor(string pageId)
+    {
+        if (_comments is null || _comments.PageId != pageId)
+        {
+            _comments = new CommentsModel(_source, pageId, RemoveCommentMark);
+            _comments.Reload();
+        }
+        return _comments;
+    }
+
+    /// <summary>Open the Comments tab for a thread just started on the selection (its mark is already in the text).</summary>
+    public void BeginComment(string threadId, string quote)
+    {
+        if (PageId is not { } id) return;
+        _tasksOpen = true; _commentsTab = true;
+        CommentsFor(id).Begin(threadId, quote);
+        Rebuild();
+    }
+
+    /// <summary>Take a thread's comment mark off the text (a cancelled or deleted thread).</summary>
+    public void RemoveCommentMark(string threadId)
+    {
+        var args = System.Text.Json.JsonSerializer.Serialize(new { threadId });
+        foreach (var v in _views.Values) { try { v.RunCommand("unsetComment", args); } catch { } }
+    }
+
+    private void ToggleComments()
+    {
+        if (_tasksOpen && _commentsTab) { _comments?.Cancel(false); _tasksOpen = false; }
+        else { _tasksOpen = true; _commentsTab = true; if (PageId is { } id) CommentsFor(id).Reload(); }
+        Rebuild();
+    }
+
+    /// <summary>The locked page's screen: the password (Apple's UnlockPrompt). The source reopens the page once it is unlocked.</summary>
+    private FrameworkElement UnlockPrompt(NotePage page)
+    {
+        var col = new StackPanel { Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Width = 300 };
+        col.Children.Add(new Icon("lock", 28, B("TextMuted")) { HorizontalAlignment = HorizontalAlignment.Center });
+        col.Children.Add(Ui.Text("Locked page", 22, B("Text"), 700).With(t => t.HorizontalAlignment = HorizontalAlignment.Center));
+        col.Children.Add(Ui.Text("Enter your locked pages password to open it.", 14, B("TextMuted")).With(t => { t.HorizontalAlignment = HorizontalAlignment.Center; t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.TextAlignment = TextAlignment.Center; }));
+        var pw = new PasswordBox { PlaceholderText = "Password", Height = 36, FontSize = 14, Padding = new Thickness(10, 7, 10, 7), CornerRadius = new CornerRadius(8), Margin = new Thickness(0, 8, 0, 0) };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(pw, "unlock-password");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(pw, "Locked pages password");
+        col.Children.Add(pw);
+        var err = Ui.Text("", 12.5, B("Danger")).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; t.TextAlignment = TextAlignment.Center; t.Visibility = Visibility.Collapsed; });
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(err, "unlock-error");
+        col.Children.Add(err);
+        var ok = new Button { Style = Ui.Style("SolidButtonStyle"), Height = 32, Padding = new Thickness(18, 0, 18, 0), CornerRadius = new CornerRadius(8), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0), Background = B("AccentSolid"), Content = Ui.Text("Unlock", 14, B("TextOnAccent"), 600) };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(ok, "unlock-ok");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ok, "Unlock");
+        col.Children.Add(ok);
+        var busy = false;
+        async void Go()
+        {
+            if (busy || pw.Password.Length == 0) return;
+            busy = true; ok.IsEnabled = false; err.Visibility = Visibility.Collapsed;
+            var e = await _source.UnlockLocked(pw.Password);
+            busy = false; ok.IsEnabled = true;
+            if (e is not null) { pw.Password = ""; err.Text = e; err.Visibility = Visibility.Visible; }
+        }
+        ok.Click += (_, _) => Go();
+        pw.KeyDown += (_, e) => { if (e.Key == global::Windows.System.VirtualKey.Enter) { e.Handled = true; Go(); } };
+        pw.Loaded += (_, _) => pw.Focus(FocusState.Programmatic);
+        var wrap = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Stretch, Children = { col } };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(wrap, "locked-page");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(wrap, "Locked page");
+        return wrap;
     }
 
     /// <summary>Page colours (LOOK 1.3), light / dark.</summary>
@@ -358,11 +460,17 @@ internal sealed class PageView : ThemedControl
         right.Children.Add(saved);
         var tasksBtn = Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(tasksBtn, "page-tasks-button");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(tasksBtn, _tasksOpen ? "panel=open" : "panel=closed");
-        if (_tasksOpen) tasksBtn.Background = B("AccentSoft");
-        tasksBtn.Click += (_, _) => { _tasksOpen = !_tasksOpen; Rebuild(); };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(tasksBtn, _tasksOpen && !_commentsTab ? "panel=open" : "panel=closed");
+
+        if (_tasksOpen && !_commentsTab) tasksBtn.Background = B("AccentSoft");
+        tasksBtn.Click += (_, _) => { if (_tasksOpen && !_commentsTab) { _tasksOpen = false; } else { _comments?.Cancel(false); _tasksOpen = true; _commentsTab = false; } Rebuild(); };
         right.Children.Add(WithBadge(tasksBtn, page.OpenTasks));
-        right.Children.Add(Ui.IconButton("message-square", 18, 32, 32, "Comments", 8));
+        var commentsBtn = Ui.IconButton("message-square", 18, 32, 32, "Comments", 8);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(commentsBtn, "page-comments-button");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(commentsBtn, (_tasksOpen && _commentsTab ? "panel=open" : "panel=closed") + ";open=" + page.Comments);
+        if (_tasksOpen && _commentsTab) commentsBtn.Background = B("AccentSoft");
+        commentsBtn.Click += (_, _) => ToggleComments();
+        right.Children.Add(WithBadge(commentsBtn, page.Comments));
 
         var share = new Button
         {
@@ -373,6 +481,9 @@ internal sealed class PageView : ThemedControl
         ss.Children.Add(new Icon("user-plus", 14));
         ss.Children.Add(new TextBlock { Text = "Share", FontSize = 13, FontWeight = new FontWeight(500), VerticalAlignment = VerticalAlignment.Center, FontFamily = Ui.Font });
         share.Content = ss;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(share, "page-share");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(share, "Share");
+        share.Click += (_, _) => { if (PageId is not null && Host is not null) PageDialogs.Share(Host, PageId, page.Title == "Untitled" ? "" : page.Title); };
         right.Children.Add(share);
         var options = Ui.IconButton("ellipsis", 18, 32, 32, "Page options", 8);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(options, "page-options");

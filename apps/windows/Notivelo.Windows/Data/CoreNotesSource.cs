@@ -9,7 +9,7 @@ namespace Notivelo.Windows.Data;
 /// thread except the core calls themselves (<see cref="AppSession.CallAsync"/>) and the live page's listener, which hops back through
 /// <see cref="AppSession.Post"/>. <see cref="Changed"/> is raised on the UI thread.
 /// </summary>
-internal sealed class CoreNotesSource : INotesSource, IDisposable
+internal sealed partial class CoreNotesSource : INotesSource, IDisposable
 {
     private readonly AppSession _session;
     private readonly N.User _user;
@@ -76,6 +76,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             Loading = false;
             PickWorkspace();
             Raise();
+            _ = LoadPageToolsAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception e)
@@ -213,7 +214,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
         _info = null; _attempts = 0; _stateMessage = null;
         _state = PageState.Connecting;
         _gen++;
-        if (pageId is not null) StartOpen();
+        if (pageId is not null) { StartOpen(); _ = LoadComments(pageId); }
     }
 
     /// <summary>Close the page's connection off the UI thread (close may wait for the socket thread).</summary>
@@ -231,6 +232,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     {
         var id = _openId;
         if (id is null || _live is not null || _disposed) return;
+        if (PageLockedNow(id)) { _state = PageState.Locked; _stateMessage = null; Raise(); return; }   // the lock screen asks for the password first
         var gen = ++_gen;
         var listener = new Listener(this, gen);
         try
@@ -247,6 +249,7 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
             if (gen != _gen) return;
             if (e is N.CoreException.Server s && (s.status == 403 || s.status == 404))
             {
+                if (s.status == 403 && IsLockedPage(id)) { LockLapsed(); return; }
                 _state = PageState.Ended; _stateMessage = s.status == 404 ? "This page was deleted." : "You don't have access to this page.";
                 Raise(); return;
             }
@@ -278,7 +281,8 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
                 break;
             case N.SyncStatus.Closed c:
                 DropConnection();
-                if (c.Code == 4403) { _state = PageState.Ended; _stateMessage = "You no longer have access to this page."; Raise(); }
+                if (c.Code == 4403 && _openId is { } lockedId && IsLockedPage(lockedId)) LockLapsed();
+                else if (c.Code == 4403) { _state = PageState.Ended; _stateMessage = "You no longer have access to this page."; Raise(); }
                 else if (c.Code == 4401 && _attempts < 3) { _attempts++; StartOpen(); }
                 else { _state = PageState.Offline; _stateMessage = c.Reason.Length == 0 ? $"Disconnected ({c.Code})." : c.Reason; Raise(); RetryLater(); }
                 break;
@@ -355,8 +359,8 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     }
 
     public TaskItem? FindTask(string taskId) => TaskLine(taskId);
-    public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title;
-    public string? EmojiOfPage(string pageId) => null;
+    public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title ?? _shared.FirstOrDefault(s => s.Id == pageId)?.Title;
+    public string? EmojiOfPage(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Icon is { Length: > 0 } i ? i : null;
     public string? UserId => _user.Id;
 
     /// <summary>Pages for the [[ menu: titles starting with the query first, then words starting with it, then containing it (Apple's pageMatches); newest first within each.</summary>
@@ -667,18 +671,25 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     public NotePage? GetPage(string pageId)
     {
         var meta = _tree?.Pages.FirstOrDefault(p => p.Id == pageId);
-        if (meta is null) return null;
+        var live = pageId == _openId;
+        var boxes = live && _info is not null ? BoxesOf(_info) : Array.Empty<CanvasBox>();
+        var settings = live ? _info?.Settings : null;
+        if (meta is null)
+        {
+            // a page someone shared with you, from another workspace (or one not in this tree): its words come from the shared list
+            if (_shared.FirstOrDefault(s => s.Id == pageId) is not { } sh) return null;
+            return new NotePage(pageId, sh.Title.Length == 0 ? "Untitled" : sh.Title, sh.SharedBy is null ? "Shared with you" : "Shared by " + sh.SharedBy, sh.WorkspaceName, "#6366f1", Array.Empty<string>(),
+                ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, 0, OpenCommentCount(pageId), live ? _state : PageState.Connecting, live ? _stateMessage : null,
+                false, sh.Icon, sh.CanEdit);
+        }
         var sec = _tree!.Sections.FirstOrDefault(s => s.Id == meta.SectionId);
         var path = new List<string>();
         for (var cur = sec; cur is not null;) { path.Insert(0, cur.Name); cur = cur.ParentId is { } p ? _tree.Sections.FirstOrDefault(s => s.Id == p) : null; }
         var nb = sec is null ? null : _tree.Notebooks.FirstOrDefault(n => n.Id == sec.NotebookId);
-        var live = pageId == _openId;
-        var boxes = live && _info is not null ? BoxesOf(_info) : Array.Empty<CanvasBox>();
-        var settings = live ? _info?.Settings : null;
         return new NotePage(
             pageId, meta.Title.Length == 0 ? "Untitled" : meta.Title, "Edited " + Ago(meta.UpdatedAt), nb?.Name ?? "", nb?.Color ?? "#6366f1", path,
-            ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, _tasks.Count(t => !t.Done && t.PageId == pageId), 0,
-            live ? _state : PageState.Connecting, live ? _stateMessage : null, meta.Locked);
+            ParseColour(settings?.Color), ParseRules(settings?.Rules), boxes, _tasks.Count(t => !t.Done && t.PageId == pageId), OpenCommentCount(pageId),
+            live ? _state : PageState.Connecting, live ? _stateMessage : null, meta.Locked, meta.Icon is { Length: > 0 } icon ? icon : null, WorkspaceRole != "viewer");
     }
 
     private static PageColour ParseColour(string? c) => Enum.TryParse<PageColour>(c, true, out var v) ? v : PageColour.None;

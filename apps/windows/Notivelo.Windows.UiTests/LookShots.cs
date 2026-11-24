@@ -72,7 +72,8 @@ public class LookShots
             {
                 var r = w.BoundingRectangle;       // a click on the scrim at the window's bottom right closes what Escape didn't
                 if (Exists("menu-account") || Exists("menu-workspace") || Exists("menu-section") || Exists("menu-notebook-picker") || Exists("prompt-input")
-                    || Exists("search-input") || Exists("quickadd-card") || Exists("task-sheet") || Exists("trash-dialog") || Exists("confirm-ok"))
+                    || Exists("search-input") || Exists("quickadd-card") || Exists("task-sheet") || Exists("trash-dialog") || Exists("confirm-ok")
+                    || Exists("version-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page"))
                     FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point((int)r.Right - 12, (int)r.Bottom - 12));
             }
             catch { }
@@ -140,6 +141,24 @@ public class LookShots
         });
         Step("trash-dialog", () => { Invoke("rail-workspace"); Invoke("menu-trash"); Find("trash-dialog"); Snap("trash-dialog"); });
         Step("name-dialog", () => { Invoke("page-more-blocks"); Invoke("menu-rename"); Find("prompt-input"); Snap("name-dialog"); });
+        // page tools (PARITY batch 2): the comments panel, version history, share, the page menu, the icon picker, the lock dialog and the locked page
+        Step("page-comments", () =>
+        {
+            Invoke("page-row-canvas"); Settle(900); Invoke("page-comments-button"); Find("comments-panel"); Settle(700); Snap("page-comments");
+            try { Invoke("page-tasks-close"); } catch (Exception) { }
+        });
+        Step("version-history", () => { Invoke("page-row-canvas"); Settle(700); Invoke("page-options"); Invoke("menu-version-history"); Find("version-dialog"); Settle(900); Snap("version-history"); });
+        Step("share-dialog", () => { Invoke("page-row-canvas"); Settle(700); Invoke("page-share"); Find("share-dialog"); Settle(900); Snap("share-dialog"); });
+        Step("page-menu", () => { Invoke("page-row-canvas"); Settle(700); Invoke("page-options"); Find("menu-page"); Snap("page-menu"); });
+        Step("icon-picker", () => { Invoke("page-row-canvas"); Settle(700); Invoke("page-options"); Invoke("menu-page-icon"); Find("icon-picker"); Settle(500); Snap("icon-picker"); });
+        Step("page-icon", () => { Invoke("page-row-canvas"); Settle(700); Invoke("page-options"); Invoke("menu-page-icon"); Invoke("icon-pick-14"); Settle(900); Snap("page-icon"); });
+        Step("lock-dialog", () => { Invoke("page-row-sandbox"); Settle(700); Invoke("page-options"); Invoke("menu-lock-page"); Find("lock-dialog"); Settle(500); Snap("lock-dialog"); });
+        Step("locked-page", () =>
+        {
+            Invoke("page-row-sandbox"); Settle(700); Invoke("page-options"); Invoke("menu-lock-page"); Find("lock-dialog");
+            h.Type("secret1"); h.Press(TAB); h.Type("secret1"); Settle(300); Invoke("lock-ok"); Settle(900);
+            Invoke("page-options"); Invoke("menu-lock-now"); Find("locked-page"); Settle(700); Snap("locked-page");
+        });
         Step("tasks", () => { Find("rail-tasks")!.Click(); Settle(900); Snap("tasks"); });
         Step("calendar", () => { Find("rail-calendar")!.Click(); Settle(900); Snap("calendar"); });
         Step("settings", () => { OpenSettings(null); Snap("settings"); });

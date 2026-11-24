@@ -69,20 +69,35 @@ internal sealed class TreeActions
         new MenuEntry("Delete section", "trash", () => DeleteDialog(TreeKind.Section, s.Id, s.Name), Danger: true),
     }, anchor, endAlign: true, at: at, id: "menu-section");
 
-    public void PageMenu(FrameworkElement? anchor, PageSummary p, global::Windows.Foundation.Point? at = null) => PopupMenu.Show(O, new[]
+    public void PageMenu(FrameworkElement? anchor, PageSummary p, global::Windows.Foundation.Point? at = null, bool current = false)
     {
-        new MenuEntry("Rename", "pencil", () => RenameDialog(TreeKind.Page, p.Id, p.Title == "Untitled" ? "" : p.Title)),
-        new MenuEntry("Duplicate", "copy", () => Duplicate(TreeKind.Page, p.Id)),
-        new MenuEntry("Move to…", "folder-input", () => MoveDialog(TreeKind.Page, p.Id, p.Title)),
-        MenuEntry.Sep(),
-        new MenuEntry("Delete page", "trash", () => DeleteDialog(TreeKind.Page, p.Id, p.Title), Danger: true),
-    }, anchor, endAlign: true, at: at, id: "menu-page");
+        var items = new List<MenuEntry>
+        {
+            new("Rename", "pencil", () => RenameDialog(TreeKind.Page, p.Id, p.Title == "Untitled" ? "" : p.Title)),
+            new("Change icon", "star", () => PageDialogs.IconPicker(_h, p.Id, !string.IsNullOrEmpty(p.Emoji)), Id: "menu-page-icon"),
+        };
+        if (!p.Locked) items.Add(new("Duplicate", "copy", () => Duplicate(TreeKind.Page, p.Id)));
+        items.Add(new("Move to…", "folder-input", () => MoveDialog(TreeKind.Page, p.Id, p.Title)));
+        items.Add(MenuEntry.Sep());
+        if (!p.Locked) items.Add(new("Share…", "user-plus", () => PageDialogs.Share(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-share"));
+        items.Add(new("Version history", "rotate-ccw", () => PageDialogs.VersionHistory(_h, p.Id), Id: "menu-version-history"));
+        if (current) items.Add(new("Export as Markdown", "download", () => PageDialogs.ExportMarkdown(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-export-markdown"));
+        if (p.Locked)
+        {
+            items.Add(new("Remove lock", "lock-open", () => PageDialogs.Lock(_h, LockMode.RemoveLock, p.Id, p.Title), Id: "menu-remove-lock"));
+            if (S.LockState.Unlocked) items.Add(new("Lock pages now", "lock", async () => { var e = await S.LockNow(); _h.Toast(e ?? "Locked pages are locked", e is not null); }, Id: "menu-lock-now"));
+        }
+        else items.Add(new("Lock page", "lock", () => PageDialogs.Lock(_h, LockMode.LockPage, p.Id, p.Title), Id: "menu-lock-page"));
+        items.Add(MenuEntry.Sep());
+        items.Add(new("Delete page", "trash", () => DeleteDialog(TreeKind.Page, p.Id, p.Title), Danger: true));
+        PopupMenu.Show(O, items, anchor, endAlign: true, at: at, id: "menu-page");
+    }
 
     /// <summary>The page-options "…" menu of the top bar, for the page that is open.</summary>
     public void PageMenuFor(FrameworkElement anchor, string pageId)
     {
-        var p = FindPage(pageId);
-        if (p is not null) PageMenu(anchor, p);
+        var p = FindPage(pageId) ?? (S.GetPage(pageId) is { } np ? new PageSummary(pageId, np.Title, np.OpenTasks, np.Emoji, np.Locked) : null);
+        if (p is not null) PageMenu(anchor, p, null, current: true);
     }
 
     // ---- tree lookups ----
