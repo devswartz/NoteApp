@@ -28,6 +28,11 @@ enum LookData {
         ]
     }
 
+    /// The other people of the demo workspace (inbox actors, presence): id → name and colour.
+    static let people: [String: (name: String, color: String)] = [
+        "ana": ("Ana Silva", "#ec4899"), "ben": ("Ben Okafor", "#0ea5e9"), "chen": ("Chen Wei", "#10b981"),
+    ]
+
     static let workspaces = [
         Workspace(id: "demos-space", name: "Demo's Space", role: "owner", createdAt: "2026-11-21T00:00:00Z"),
         Workspace(id: "demo-team", name: "Demo Team", role: "owner", createdAt: "2026-11-21T00:00:00Z"),

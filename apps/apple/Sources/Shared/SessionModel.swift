@@ -297,6 +297,22 @@ final class SessionModel {
         }
     }
 
+    /// Delete the account (the password is asked again). The core signs out when the server has deleted it: this device then
+    /// forgets the account too (sign-in token, remembered user, recent and favourite pages, the picture cache) and the app
+    /// returns to its sign-in screen.
+    func deleteAccount(password: String, then done: @escaping (Result<Void, Error>) -> Void) {
+        call({ try $0.deleteAccount(password: password) }) { result in
+            if case .success = result {
+                Keychain.delete(account: self.serverURL)
+                let defaults = UserDefaults.standard
+                for key in ["recentPages", "favouritePages", self.workspaceKey, "lastUser \(self.serverURL)"] { defaults.removeObject(forKey: key) }
+                MediaCache.shared.clearAll()
+                self.endSession(message: nil)
+            }
+            done(result)
+        }
+    }
+
     func signOut() {
         if !preview {
             let core = self.core

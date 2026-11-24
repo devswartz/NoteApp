@@ -172,6 +172,7 @@ struct ProfileSettings: View {
             }
         }
         .onChange(of: session.shownUser?.name) { _, new in name = new ?? "" }
+        DeleteAccountSettingsCard()
     }
 
     private func saveName() {

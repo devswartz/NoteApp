@@ -63,6 +63,7 @@ final class Shell {
     }
 
     enum Menu: Equatable {
+        case inbox
         case account, workspace, notebookPicker, notebookOptions, pageOptions
         case section(String)
         case pageRow(String)
@@ -76,6 +77,8 @@ final class Shell {
     }
 
     var route: Route
+    /// The notification inbox behind the bell.
+    let inbox = InboxModel()
     var sidebarOpen: Bool?
     var ribbonCollapsed = false
     var menu: Menu?
@@ -162,6 +165,7 @@ final class Shell {
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
             if state == "page-tasks-panel" { pageTasksTab = true; CommentsModel.shared.open = true }
             if state == "search" { searchOpen = true; searchQuery = "plan" }
+            if state == "delete-account" { route = .settings; settingsSection = "profile" }
             if state.hasPrefix("settings-") { route = .settings; settingsSection = String(state.dropFirst("settings-".count)) }
             if state == "task-detail" { route = .tasks(.my); taskDetailId = "t-review" }
         } else {
@@ -339,6 +343,9 @@ struct AppShell: View {
     @State var shell = Shell()
     let theme = Theme.shared
 
+    /// My open tasks due today or overdue (the Today list): the app icon's badge.
+    private var dueToday: Int { TaskBuckets(tasks: session.tasks, session: session).list(.today).count }
+
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width
@@ -385,8 +392,32 @@ struct AppShell: View {
             ShellBridge.shared.attach(shell, session)
             if mainScreenSize.width <= 760 { shell.configurePhoneLook() }
             openLookMenu()
+            if session.preview {
+                if LookData.state == "inbox" { shell.inbox.seedLook() }
+            } else {
+                shell.inbox.refresh(session, list: false)
+                AppBadge.askOnce()
+            }
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
+        // The bell's count: when the app comes to the front, when the inbox opens, and every 60 s while it is in front.
+        .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            if scenePhase == .active { shell.inbox.refresh(session, list: shell.menu == .inbox) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, !session.preview else { return }
+            shell.inbox.refresh(session, list: shell.menu == .inbox)
+            AppBadge.set(dueToday)
+        }
+        .onChange(of: session.user?.id) { _, _ in
+            shell.inbox.reset()
+            shell.inbox.refresh(session, list: false)
+        }
+        // The app icon's badge follows the tasks due today or overdue.
+        .onChange(of: dueToday, initial: true) { _, n in
+            if !session.preview { AppBadge.set(n) }
+        }
+        .onDisappear { if !session.preview { AppBadge.set(0) } }
         // A link into the app (notivelo://…, or the web address of a page): to its workspace, then the page or list.
         .onChange(of: session.pendingLink, initial: true) { _, link in
             guard let link, session.phase == .signedIn else { return }
@@ -450,7 +481,7 @@ struct AppShell: View {
             "menu-notebook": .notebookOptions, "menu-page-options": .pageOptions,
             "menu-section": .section("corpus"), "menu-page-row": .pageRow(LookData.pageId("canvas-boxes")),
             "ribbon-menu-block": .blockType, "ribbon-menu-text-colour": .textColor, "ribbon-menu-highlight": .highlight,
-            "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines,
+            "inbox": .inbox, "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines,
         ]
         guard session.preview, let state = LookData.state else { return }
         if let menu = menus[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.menu = menu } }
@@ -466,6 +497,9 @@ struct AppShell: View {
             "inline-rename": { shell.rename(.page, corpus, session) },
         ]
         if state == "quick-add" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.openQuickAdd(session) } }
+        // The sharing dialog with the public link on, and the delete-account sheet with a preview (corpus mode has no server).
+        if state == "share-link" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.sheet = .sharePage(corpus) } }
+        if state == "delete-account" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.sheet = .deleteAccount } }
         if let open = dialogs[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { open() } }
     }
 }

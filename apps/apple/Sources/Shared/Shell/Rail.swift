@@ -21,7 +21,7 @@ struct Rail: View {
             Spacer(minLength: 0)
             foot((shell.sidebarOpen ?? true) ? "panel-left-close" : "panel-left-open") { shell.toggleSidebar() }
             foot("search") { shell.openSearch() }
-            foot("bell") { shell.notYet("Notifications") }
+            BellButton(size: 19, box: 40, color: p.textMuted.color, ring: p.bgSidebar.color, anchorId: "rail-bell")
             Button { shell.menu = .workspace } label: {
                 LetterTile(letter: session.shownWorkspace?.name ?? "W",
                            fill: AnyShapeStyle(LinearGradient(colors: [PlatformColor(hex: 0x6366F1).color, PlatformColor(hex: 0x8B5CF6).color],
