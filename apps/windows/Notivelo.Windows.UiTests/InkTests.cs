@@ -28,11 +28,26 @@ public class InkTests
     /// <summary>Draw with the mouse through the given points (screen pixels).</summary>
     private static void Drag(IReadOnlyList<Point> pts)
     {
+        pts = Densify(pts);
         Mouse.MoveTo(pts[0]);
         Mouse.Down(MouseButton.Left);
-        foreach (var p in pts.Skip(1)) { Mouse.MoveTo(p); Thread.Sleep(15); }
+        Thread.Sleep(80);
+        foreach (var p in pts.Skip(1)) { Mouse.MoveTo(p); Thread.Sleep(12); }
         Mouse.Up(MouseButton.Left);
         Thread.Sleep(300);
+    }
+
+    /// <summary>Points at most 6 px apart, so the app gets a pointer move for each (a lasso loop of four corners would otherwise be a few jumps).</summary>
+    private static List<Point> Densify(IReadOnlyList<Point> pts)
+    {
+        var r = new List<Point> { pts[0] };
+        for (var i = 1; i < pts.Count; i++)
+        {
+            var a = pts[i - 1]; var b = pts[i];
+            var n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y)) / 6));
+            for (var k = 1; k <= n; k++) r.Add(new Point(a.X + (b.X - a.X) * k / n, a.Y + (b.Y - a.Y) * k / n));
+        }
+        return r;
     }
 
     /// <summary>An empty area of the canvas (right of box "a", below box "b").</summary>

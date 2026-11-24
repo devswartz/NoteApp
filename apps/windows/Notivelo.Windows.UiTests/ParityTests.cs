@@ -214,7 +214,9 @@ public class ParityTests
         SetText(h, "pick-tag-input", "");
         Invoke(h, "pick-tag-launch");
         AppHost.Wait(() => Status(h, "task-sheet-tags") is var t && t.Contains("ship") && t.Contains("launch") ? "x" : null, "both tags on the task");
+        Retry(() => Find(h, "pick-tag-input").Focus());          // Escape goes to the focused menu (SetText through UIA leaves focus elsewhere)
         h.Press(ESCAPE);                                         // closes the tags menu, not the sheet
+        AppHost.Wait(() => Gone(h, "pick-tag-input") ? "x" : null, "the tags menu closed");
         Find(h, "task-sheet-title");
 
         Invoke(h, "task-sheet-due");
@@ -264,7 +266,9 @@ public class ParityTests
         AppHost.Wait(() => NameOf(h, "quickadd-team") == "Design" ? "x" : null, "the team chip set by its picker");
         Invoke(h, "quickadd-tags");
         Invoke(h, "pick-tag-docs");
+        Retry(() => Find(h, "pick-tag-input").Focus());
         h.Press(ESCAPE);                                         // closes the tags menu, quick add stays
+        AppHost.Wait(() => Gone(h, "pick-tag-input") ? "x" : null, "the tags menu closed");
         AppHost.Wait(() => NameOf(h, "quickadd-tags") == "#docs" ? "x" : null, "the tags chip set by its picker");
         Invoke(h, "quickadd-assignee");
         Invoke(h, "pick-assignee-u2");
@@ -273,14 +277,15 @@ public class ParityTests
         Invoke(h, "quickadd-due-today");
         Invoke(h, "quickadd-ok");
         AppHost.Wait(() => Gone(h, "quickadd-card") ? "x" : null, "the dialog closed");
-        string? row = null;
-        AppHost.Wait(() =>
-        {
-            row = h.Window.FindAllDescendants().FirstOrDefault(e => e.Properties.AutomationId.ValueOrDefault?.StartsWith("task-row-") == true
-                && e.Properties.Name.ValueOrDefault == "Plan the offsite")?.Properties.AutomationId.ValueOrDefault;
-            return row;
-        }, "the new task in the Today list");
-        Retry(() => Find(h, row!).Click());                      // its sheet shows what the pickers set
+        AppHost.Wait(() => h.Window.FindAllDescendants().Any(e => e.Properties.AutomationId.ValueOrDefault?.StartsWith("task-row-") == true
+            && e.Properties.Name.ValueOrDefault == "Plan the offsite") ? "x" : null, "the new task in the Today list");
+        Invoke(h, "rail-search");                                // open its sheet from search (a mouse click on the row is unreliable under UIA)
+        Find(h, "search-input");
+        h.Type("offsite");
+        Thread.Sleep(600);
+        string? hit = null;
+        AppHost.Wait(() => hit = h.Window.FindAllDescendants().Select(e => e.Properties.AutomationId.ValueOrDefault).FirstOrDefault(i => i?.StartsWith("search-result-task-") == true), "the new task in the search results");
+        Invoke(h, hit!);                                         // its sheet shows what the pickers set
         AppHost.Wait(() => Status(h, "task-sheet-team") == "team=team-design" ? "x" : null, "the team on the new task");
         Assert.Contains("docs", Status(h, "task-sheet-tags"));
     });

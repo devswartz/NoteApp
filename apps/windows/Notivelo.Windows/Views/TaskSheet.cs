@@ -119,6 +119,7 @@ internal sealed class TaskSheet
         body.Children.Add(Prop("clock", "Time", timeRow, "task-sheet-time"));
         body.Children.Add(Prop("flag", "Priority", _priority, "task-sheet-priority"));
         body.Children.Add(Prop("repeat", "Repeat", _repeat, "task-sheet-repeat"));
+        AutomationProperties.SetName(_reminders, "Reminders");   // a plain panel has no automation peer without a name
         body.Children.Add(Prop("bell", "Reminders", _reminders, "task-sheet-reminders"));
 
         _desc.AcceptsReturn = true; _desc.TextWrapping = TextWrapping.Wrap; _desc.MinHeight = 120; _desc.PlaceholderText = "Add details…"; _desc.CornerRadius = new CornerRadius(8);
