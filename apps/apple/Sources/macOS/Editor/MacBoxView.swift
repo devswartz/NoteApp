@@ -254,6 +254,7 @@ final class MacBoxView: NSTextView, EditorTarget {
             guard d.to > d.from, let first = lineBox(d.from), let bottom = lineBottom(d.to) else { continue }
             painter.decoration(d, left: inset.width + d.left, right: inset.width + layoutWidth - d.right, first: first, bottom: bottom)
         }
+        drawRemoteTint()
         super.draw(dirtyRect)
         foldHits = []
         for m in rendering.markers {
@@ -269,6 +270,7 @@ final class MacBoxView: NSTextView, EditorTarget {
             }
         }
         if chrome, let m = selectedMedia, let r = mediaRect(m) { painter.mediaSelection(m, rect: r) }
+        drawRemoteCarets()
     }
 
     // MARK: Images and file cards
@@ -355,6 +357,32 @@ final class MacBoxView: NSTextView, EditorTarget {
             return CGRect(x: textContainerInset.width, y: textContainerInset.height, width: 2, height: 20)
         }
         return CGRect(x: r.minX, y: r.minY, width: 2, height: max(r.height, 16))
+    }
+
+    // MARK: Other people's carets
+
+    /// The carets and selections of other people in this box (UTF-16 offsets in the box's text, from `LivePage.remoteCursors()`).
+    var remoteCursors: [BoxCursor] = [] {
+        didSet { if remoteCursors != oldValue { needsDisplay = true } }
+    }
+
+    private func drawRemoteTint() {
+        for c in remoteCursors where c.anchor != c.head {
+            RemoteCursorPaint.tint(c.color, rects: segments(Int(min(c.anchor, c.head)), Int(max(c.anchor, c.head)), type: .selection))
+        }
+    }
+
+    private func drawRemoteCarets() {
+        for c in remoteCursors {
+            RemoteCursorPaint.caret(name: c.name, color: c.color, caret: caretRect(at: Int(c.head)), bounds: bounds)
+        }
+    }
+
+    /// Our own selection as the engine has it (anchor and head, view offsets), for the others' screens; nil without an editor.
+    var viewSelectionNow: (anchor: UInt32, head: UInt32)? {
+        guard let editor else { return nil }
+        let r = editor.session.viewSelection()
+        return (r.anchor, r.head)
     }
 
     /// The character offset nearest `point` (view coordinates).

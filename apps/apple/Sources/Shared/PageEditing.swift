@@ -32,6 +32,11 @@ protocol PageEditHost: AnyObject {
     var pageToken: ObjectIdentifier? { get }
     /// The page's undo flags (`LivePage.canUndo()`, `canRedo()`), read on the page's queue. Main thread; `done` too.
     func pageFlags(_ done: @escaping ((Bool, Bool)) -> Void)
+    /// Other people's carets, when they change (main thread; polled with the presence).
+    var onCursors: (([BoxCursor]) -> Void)? { get set }
+    /// Our caret or selection in a box (view offsets), for the others' screens; throttled by the host. `clearLocalCursor`: editing stopped.
+    func setLocalCursor(boxId: String, anchor: UInt32, head: UInt32)
+    func clearLocalCursor()
 }
 
 enum BoxEditorError: Error {
@@ -168,6 +173,9 @@ final class CorpusEditHost: PageEditHost {
     func openLiveSession(field: String, _ done: @escaping (Result<EditorSession?, Error>) -> Void) { done(.success(nil)) }
     var pageToken: ObjectIdentifier? { nil }
     func pageFlags(_ done: @escaping ((Bool, Bool)) -> Void) { done((false, false)) }
+    var onCursors: (([BoxCursor]) -> Void)?
+    func setLocalCursor(boxId: String, anchor: UInt32, head: UInt32) {}
+    func clearLocalCursor() {}
 
     func boxCall(_ call: @escaping (LivePage) throws -> Void, _ done: @escaping (Error?) -> Void) { done(nil) }
 

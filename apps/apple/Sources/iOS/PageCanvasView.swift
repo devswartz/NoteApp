@@ -346,6 +346,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if self.host !== host {
             self.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
+            host?.onCursors = { [weak self] list in self?.setRemoteCursors(list) }
             host?.onSynced = { [weak self] in
                 self?.reopenStaleEditors()
                 self?.ink.reload()
@@ -422,12 +423,16 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.onLinkKey = { [weak self] in self?.showLinkEditor() }
         view.onCaretChange = { [weak self] box in
             self?.keepCaretVisible(box)
-            if box === self?.editing { EditorFocus.shared.refreshTable() }
+            if box === self?.editing {
+                EditorFocus.shared.refreshTable()
+                if let s = box.viewSelectionNow { self?.host?.setLocalCursor(boxId: box.boxId, anchor: s.anchor, head: s.head) }
+            }
             if box === self?.editing {
                 self?.updateToolbar()
             }
         }
         boxViews[id] = view
+        view.remoteCursors = remoteCursorList.filter { $0.boxId == id }
         surface.addSubview(view)
         return view
     }
@@ -818,6 +823,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func stopEditing(drop: Bool = true) {
         guard let box = editing else { return }
+        host?.clearLocalCursor()
         editing = nil
         hideToolbar()
         if linkEditor.isShown { linkEditor.dismiss() }
@@ -827,6 +833,14 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         _ = box.resignFirstResponder()
         EditorFocus.shared.set(nil)
         relayout()
+    }
+
+    /// Other people's carets (polled by the live page): each box draws its own.
+    private var remoteCursorList: [BoxCursor] = []
+
+    private func setRemoteCursors(_ list: [BoxCursor]) {
+        remoteCursorList = list
+        for (id, view) in boxViews { view.remoteCursors = list.filter { $0.boxId == id } }
     }
 
     /// Someone else changed the page: every open box merges the page document again (the
@@ -1054,8 +1068,20 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
+    /// `-lookState cursors` (CI): Ana's caret and Ben's selection in two boxes, with their name flags.
+    private func runLookCursors() {
+        guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"), boxViews.count > 1 else { return }
+        lookDone = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            let ids = self.boxViews.filter { $0.value.shownText.count > 6 }.sorted { $0.key < $1.key }.map(\.key)
+            self.setRemoteCursors(LookCursors.demo(boxIds: ids))
+        }
+    }
+
     /// Look states with a box being edited (`-lookState edit-caret`, CI): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
+        if LookData.state == "cursors" { runLookCursors(); return }
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
               let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected", "table-tools"].contains(state) else { return }
         if state == "box-selected" {

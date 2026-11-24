@@ -155,7 +155,7 @@ final class Shell {
             case "templates": route = .page(LookData.pageId("empty"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
-            case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools": route = .page(LookData.pageId("sandbox"))
+            case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools", "cursors": route = .page(LookData.pageId("sandbox"))
             default:
                 if state.hasPrefix("page-") {
                     route = .page(LookData.pageId(String(state.dropFirst("page-".count))))

@@ -36,7 +36,7 @@ struct PagePerson: Equatable, Identifiable {
 extension Shell {
     /// Who else is on the open page: the live page's presence, or the demo people in the `presence` look state.
     func presenceList(_ session: SessionModel) -> [PagePerson] {
-        if session.preview { return LookData.state == "presence" ? LookData.presence : [] }
+        if session.preview { return LookData.state == "presence" || LookData.state == "cursors" ? LookData.presence : [] }
         return openLive?.people ?? []
     }
 }

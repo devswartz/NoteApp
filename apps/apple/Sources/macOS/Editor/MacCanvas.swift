@@ -423,6 +423,7 @@ final class MacCanvasView: NSView {
             self.host = host
             ink.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
+            host?.onCursors = { [weak self] list in self?.setRemoteCursors(list) }
             host?.onSynced = { [weak self] in
                 self?.reopenStaleEditors()
                 self?.reloadInk()
@@ -502,9 +503,11 @@ final class MacCanvasView: NSView {
             guard let self, box === self.editing else { return }
             self.keepCaretVisible(box)
             EditorFocus.shared.refreshTable()
+            if let s = box.viewSelectionNow { self.host?.setLocalCursor(boxId: box.boxId, anchor: s.anchor, head: s.head) }
             self.updateToolbar()
         }
         boxViews[id] = view
+        view.remoteCursors = remoteCursorList.filter { $0.boxId == id }
         surface.addSubview(view)
         return view
     }
@@ -761,9 +764,21 @@ final class MacCanvasView: NSView {
 
     // MARK: Look states
 
+    /// `-lookState cursors` (CI): Ana's caret and Ben's selection in two boxes, with their name flags.
+    private func runLookCursors() {
+        guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"), boxViews.count > 1 else { return }
+        lookDone = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            let ids = self.boxViews.filter { $0.value.shownText.count > 6 }.sorted { $0.key < $1.key }.map(\.key)
+            self.setRemoteCursors(LookCursors.demo(boxIds: ids))
+        }
+    }
+
     /// Look states with a box being edited (`-lookState edit-caret` and the like, CI screenshots, as the iPad's
     /// `PageCanvasView.runLookIfAsked`): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
+        if LookData.state == "cursors" { runLookCursors(); return }
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
               let state = LookData.state,
               ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected", "table-tools"].contains(state) else { return }
@@ -1044,6 +1059,7 @@ final class MacCanvasView: NSView {
 
     private func stopEditing(drop: Bool = true) {
         guard let box = editing else { return }
+        host?.clearLocalCursor()
         editing = nil
         hideToolbar()
         hideMenu()
@@ -1054,6 +1070,14 @@ final class MacCanvasView: NSView {
         box.setActive(false)
         EditorFocus.shared.set(nil)
         relayout()
+    }
+
+    /// Other people's carets (polled by the live page): each box draws its own.
+    private var remoteCursorList: [BoxCursor] = []
+
+    private func setRemoteCursors(_ list: [BoxCursor]) {
+        remoteCursorList = list
+        for (id, view) in boxViews { view.remoteCursors = list.filter { $0.boxId == id } }
     }
 
     /// Someone else changed the page: every open box's session is on the live page and takes the change at its next call
