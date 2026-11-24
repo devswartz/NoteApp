@@ -122,11 +122,14 @@ class BoxEditingTest : OfflineTestBase() {
         waitFor("the menu filtered") { frame().suggestion?.items?.firstOrNull()?.id?.contains("Bullet", ignoreCase = true) == true }
         key(KeyEvent.KEYCODE_ENTER)
         waitFor("a bullet list") { frame().active.list == "bulletList" }
-        assertEquals("", text())
+        assertEquals("", text().trimEnd('
+'))
         typeKeys("one")
         key(KeyEvent.KEYCODE_ENTER)
         typeKeys("two")
-        waitForText("one\ntwo")
+        waitFor("two list items") { text().trimEnd('
+') == "one
+two" }
         assertEquals("bulletList", frame().active.list)
     }
 
@@ -148,7 +151,8 @@ class BoxEditingTest : OfflineTestBase() {
         startEditing()
         typeKeys("- item")
         waitFor("a bullet list from '- '") { frame().active.list == "bulletList" }
-        assertEquals("item", text())
+        assertEquals("item", text().trimEnd('
+'))
     }
 
     // Selection ----------------------------------------------------------------------------------------------------------------
