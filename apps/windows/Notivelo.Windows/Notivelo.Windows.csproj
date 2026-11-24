@@ -22,6 +22,8 @@
     <AppxBundle>Never</AppxBundle>
     <UseRidGraph>true</UseRidGraph>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- All sources are UTF-8 (one invalid byte made csc read a whole file as ANSI: mojibake). -->
+    <CodePage>65001</CodePage>
     <!-- The core's generated bindings (crates/nv-core/build-windows.sh) are compiled in; their warnings are not ours. -->
     <NoWarn>$(NoWarn);CS1591;CS8981;CS0108;CS0109;CS8618;CS0169;CS0649;CS8600;CS8601;CS8602;CS8603;CS8604;CS8625;CS8765;CS8767</NoWarn>
     <NvCoreDir>$(MSBuildThisFileDirectory)..\..\..\target\windows\NotiveloCore\</NvCoreDir>

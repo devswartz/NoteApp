@@ -273,7 +273,7 @@ public sealed partial class SampleNotesSource
         if (t is null) return null;
         var ex = _extra.GetValueOrDefault(id);
         return new TaskDetailItem(t.Id, t.Title, _desc.GetValueOrDefault(id, ""), t.Done, t.Priority == 0 ? 4 : t.Priority, ex.Due, t.DueLabel, t.Tone,
-            t.Assignee is null ? null : "u1", t.Assignee is null ? null : "Devon", null, t.PageTitle, "Created by Devon · 13m ago");
+            t.Assignee is null ? null : "u1", t.Assignee is null ? null : "Demo User", null, t.PageTitle, "Created by Demo User · 13m ago");
     }
 
     public void UpdateTask(string id, TaskPatch p)
@@ -345,5 +345,53 @@ public sealed partial class SampleNotesSource
             DateOnly? due = _extra.TryGetValue(t.Id, out var e) ? (e.Due is { } str && DateOnly.TryParse(str, out var p) ? p : null) : Seed(t.Id);
             return new CalendarTask(due?.ToString("yyyy-MM-dd"), t);
         }).ToList();
+    }
+
+    // ---- account (in memory; the core source asks the server) ----
+    private string _color = "#f59e0b";
+    private NotificationPrefs _notes = new("Europe/London", true, "09:00", false, "08:00");
+    private readonly List<ConnectedAppInfo> _apps = new()
+    {
+        new("chatgpt", "ChatGPT", "Read and write notes", "2026-11-02T10:00:00Z", "2026-11-20T09:30:00Z"),
+        new("claude", "Claude", "Read notes", "2026-11-10T16:20:00Z", null),
+    };
+
+    public Task<AccountResult<AccountProfile>> LoadProfile() =>
+        Tsk.FromResult(new AccountResult<AccountProfile>(new AccountProfile(Workspace.UserName, Workspace.UserEmail, _color)));
+
+    public Task<AccountResult<AccountProfile>> UpdateProfile(string? name, string? color)
+    {
+        if (color is not null) _color = color;
+        if (name is not null)
+        {
+            var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var initials = parts.Length >= 2 ? (parts[0][..1] + parts[^1][..1]).ToUpperInvariant() : name[..Math.Min(2, name.Length)].ToUpperInvariant();
+            Workspace = Workspace with { UserName = name, UserInitials = initials };
+            Raise();
+        }
+        return LoadProfile();
+    }
+
+    public Task<AccountResult<bool>> ChangePassword(string current, string next) =>
+        Tsk.FromResult(current == "wrong"
+            ? new AccountResult<bool>(Error: "That is not your current password.", Code: "wrong_password")
+            : new AccountResult<bool>(true));
+
+    public Task<AccountResult<NotificationPrefs>> LoadNotifications() => Tsk.FromResult(new AccountResult<NotificationPrefs>(_notes));
+
+    public Task<AccountResult<NotificationPrefs>> UpdateNotifications(NotificationChange c)
+    {
+        _notes = new NotificationPrefs(c.TimeZone ?? _notes.TimeZone, c.EmailEnabled ?? _notes.EmailEnabled, c.DefaultReminderTime ?? _notes.DefaultReminderTime,
+            c.DigestEnabled ?? _notes.DigestEnabled, c.DigestTime ?? _notes.DigestTime);
+        return LoadNotifications();
+    }
+
+    public Task<AccountResult<IReadOnlyList<ConnectedAppInfo>>> LoadConnectedApps() =>
+        Tsk.FromResult(new AccountResult<IReadOnlyList<ConnectedAppInfo>>(_apps.ToList()));
+
+    public Task<AccountResult<bool>> DisconnectApp(string clientId)
+    {
+        _apps.RemoveAll(a => a.ClientId == clientId);
+        return Tsk.FromResult(new AccountResult<bool>(true));
     }
 }

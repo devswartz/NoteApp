@@ -17,6 +17,8 @@
     <x:Double x:Key="Text2xl">24</x:Double>
     <x:Double x:Key="Text3xl">32</x:Double>
 
+    <Thickness x:Key="TextControlBorderThemeThicknessFocused">1</Thickness>
+
     <CornerRadius x:Key="RadiusXs">4</CornerRadius>
     <CornerRadius x:Key="RadiusSm">6</CornerRadius>
     <CornerRadius x:Key="RadiusMd">8</CornerRadius>
@@ -45,6 +47,7 @@
             <SolidColorBrush x:Key="AccentHover" Color="#4338CA" />
             <SolidColorBrush x:Key="AccentSoft" Color="#1A4F46E5" />
             <SolidColorBrush x:Key="AccentSolid" Color="#4F46E5" />
+            <SolidColorBrush x:Key="AccentSolidDisabled" Color="#A7A2F2" />
             <SolidColorBrush x:Key="AccentSolidHover" Color="#4338CA" />
             <SolidColorBrush x:Key="Danger" Color="#DC2626" />
             <SolidColorBrush x:Key="DangerSoft" Color="#14DC2626" />
@@ -60,6 +63,13 @@
             <SolidColorBrush x:Key="P3Soft" Color="#1A2563EB" />
             <SolidColorBrush x:Key="PageTextMuted" Color="#5C5C65" />
             <SolidColorBrush x:Key="PageRule" Color="#26466EB4" />
+            <!-- LOOK 4.8 input: 1 pt border, accent border on focus (no Fluent bottom line) -->
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#E7E7EA" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#D4D4D8" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#4F46E5" />
+            <SolidColorBrush x:Key="TextControlElevationBorderBrush" Color="#E7E7EA" />
+            <SolidColorBrush x:Key="TextControlElevationBorderPointerOverBrush" Color="#D4D4D8" />
+            <SolidColorBrush x:Key="TextControlElevationBorderFocusedBrush" Color="#4F46E5" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="Bg" Color="#18181B" />
@@ -83,6 +93,7 @@
             <SolidColorBrush x:Key="AccentHover" Color="#A5B4FC" />
             <SolidColorBrush x:Key="AccentSoft" Color="#268B95F9" />
             <SolidColorBrush x:Key="AccentSolid" Color="#5B5BD6" />
+            <SolidColorBrush x:Key="AccentSolidDisabled" Color="#404080" />
             <SolidColorBrush x:Key="AccentSolidHover" Color="#4B4BC4" />
             <SolidColorBrush x:Key="Danger" Color="#F87171" />
             <SolidColorBrush x:Key="DangerSoft" Color="#1FF87171" />
@@ -98,6 +109,13 @@
             <SolidColorBrush x:Key="P3Soft" Color="#1A60A5FA" />
             <SolidColorBrush x:Key="PageTextMuted" Color="#A3A3AC" />
             <SolidColorBrush x:Key="PageRule" Color="#1F96AADC" />
+            <!-- LOOK 4.8 input: 1 pt border, accent border on focus (no Fluent bottom line) -->
+            <SolidColorBrush x:Key="TextControlBorderBrush" Color="#2C2C32" />
+            <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#3A3A42" />
+            <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#5B5BD6" />
+            <SolidColorBrush x:Key="TextControlElevationBorderBrush" Color="#2C2C32" />
+            <SolidColorBrush x:Key="TextControlElevationBorderPointerOverBrush" Color="#3A3A42" />
+            <SolidColorBrush x:Key="TextControlElevationBorderFocusedBrush" Color="#5B5BD6" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

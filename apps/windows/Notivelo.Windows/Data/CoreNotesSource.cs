@@ -674,6 +674,58 @@ internal sealed class CoreNotesSource : INotesSource, IDisposable
     private long _tasksVersion;
     public long TasksVersion => _tasksVersion;
 
+    // ---- account: online only; offline (Network) answers Offline and changes nothing ----
+
+    private async Task<AccountResult<T>> Account<T>(Func<N.Core, T> call)
+    {
+        try { return new AccountResult<T>(await _session.CallAsync(call)); }
+        catch (OperationCanceledException) { return new AccountResult<T>(Error: "Cancelled."); }
+        catch (N.CoreException.Network) { return AccountResult<T>.Off(); }
+        catch (N.CoreException.Server s) { return new AccountResult<T>(Error: ErrorText.Message(s), Code: s.code); }
+        catch (Exception e) { return new AccountResult<T>(Error: ErrorText.Message(e)); }
+    }
+
+    private static AccountProfile Map(N.User u) => new(u.Name, u.Email, u.Color);
+    private static NotificationPrefs Map(N.NotificationSettings n) => new(n.TimeZone, n.EmailEnabled, n.DefaultReminderTime, n.DigestEnabled, n.DigestTime);
+
+    public async Task<AccountResult<AccountProfile>> LoadProfile() => Shown(await Account(c => Map(c.Profile())));
+
+    public async Task<AccountResult<AccountProfile>> UpdateProfile(string? name, string? color) => Shown(await Account(c => Map(c.UpdateProfile(name, color))));
+
+    /// <summary>The name the tree and rail show follows a saved profile.</summary>
+    private AccountResult<AccountProfile> Shown(AccountResult<AccountProfile> r)
+    {
+        if (r is { Ok: true, Value: { } p } && !_disposed)
+        {
+            Workspace = Workspace with { UserInitials = Initials(p.Name, p.Email), UserName = p.Name, UserEmail = p.Email };
+            Raise();
+        }
+        return r;
+    }
+
+    public async Task<AccountResult<bool>> ChangePassword(string current, string next)
+    {
+        var r = await Account(c => c.ChangePassword(current, next));
+        if (r.Value is { } signedIn)
+        {
+            // the old refresh token no longer works: keep the new one now (CallAsync only stores what the core reports later)
+            _session.KeepToken(signedIn.RefreshToken);
+            return new AccountResult<bool>(true);
+        }
+        return r.Code == "wrong_password" ? new AccountResult<bool>(Error: "That is not your current password.", Code: r.Code) : new AccountResult<bool>(false, r.Error, r.Offline, r.Code);
+    }
+
+    public async Task<AccountResult<NotificationPrefs>> LoadNotifications() => await Account(c => Map(c.NotificationSettings()));
+
+    public async Task<AccountResult<NotificationPrefs>> UpdateNotifications(NotificationChange ch) =>
+        await Account(c => Map(c.UpdateNotificationSettings(new N.NotificationSettingsChange(ch.TimeZone, ch.EmailEnabled, ch.DefaultReminderTime, ch.DigestEnabled, ch.DigestTime))));
+
+    public async Task<AccountResult<IReadOnlyList<ConnectedAppInfo>>> LoadConnectedApps() =>
+        await Account<IReadOnlyList<ConnectedAppInfo>>(c => c.ConnectedApps().Select(a =>
+            new ConnectedAppInfo(a.ClientId, a.Name, AccountRules.AccessLabel(a.Scopes), a.ConnectedAt, a.LastUsedAt)).ToList());
+
+    public async Task<AccountResult<bool>> DisconnectApp(string clientId) => await Account(c => { c.DisconnectApp(clientId); return true; });
+
     /// <summary>One tree call on the core thread, then the tree again (Apple's changeTree): the views show the result when <see cref="Changed"/> fires.</summary>
     private async Task<TreeResult> Change(Func<N.Core, (string? Id, string? Note)> call)
     {

@@ -10,7 +10,7 @@ using Notivelo.Windows.Data;
 namespace Notivelo.Windows.Views;
 
 /// <summary>The Calendar (Apple's CalendarScreen.swift, tasks-calendar.png): a month grid of your open tasks by due date, Monday first, today marked, with
-/// Today / previous / next, and a "No date" tray. A task opens the task sheet; the + on a day starts quick add on that day.</summary>
+/// (Today / previous / next are the ribbon's), and a "No date" tray. A task opens the task sheet; the + on a day starts quick add on that day.</summary>
 internal sealed class CalendarMonthView : ThemedControl
 {
     private readonly INotesSource _source;
@@ -34,40 +34,20 @@ internal sealed class CalendarMonthView : ThemedControl
         var byDay = tasks.Where(t => t.Due is not null).GroupBy(t => t.Due!).ToDictionary(g => g.Key, g => g.ToList());
         var undated = tasks.Where(t => t.Due is null).ToList();
 
-        var root = new Grid { Padding = new Thickness(40, 30, 40, 24), ColumnSpacing = 24 };
+        var root = new Grid { Padding = new Thickness(40, 26, 40, 24), ColumnSpacing = 16 };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        // header: month title, Today, previous, next
-        var head = new Grid { Margin = new Thickness(0, 0, 0, 20), ColumnSpacing = 8 };
+        // header: month title
+        var head = new Grid { Margin = new Thickness(0, 0, 0, 23), ColumnSpacing = 8 };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var title = Ui.Text(_month.ToString("MMMM yyyy", CultureInfo.CurrentCulture), 24, B("Text"), 700, lineHeight: 32, tracking: -0.02);
         AutomationProperties.SetAutomationId(title, "calendar-title");
         AutomationProperties.SetName(title, title.Text);
         head.Children.Add(title);
-        var todayBtn = new Button
-        {
-            Style = Ui.Style("GhostButtonStyle"), Height = 30, Padding = new Thickness(10, 0, 10, 0), CornerRadius = new CornerRadius(8),
-            Content = Ui.Text("Today", 13.5, B("Text"), 500), Background = B("BgElevated"), BorderBrush = B("Border"), BorderThickness = new Thickness(1),
-        };
-        AutomationProperties.SetAutomationId(todayBtn, "calendar-today");
-        AutomationProperties.SetName(todayBtn, "Today");
-        todayBtn.Click += (_, _) => GoToday();
-        Grid.SetColumn(todayBtn, 1);
-        head.Children.Add(todayBtn);
-        var prev = Ui.IconButton("chevron-left", 18, 36, 36, "Previous month");
-        var next = Ui.IconButton("chevron-right", 18, 36, 36, "Next month");
-        AutomationProperties.SetAutomationId(prev, "calendar-prev"); AutomationProperties.SetName(prev, "Previous month");
-        AutomationProperties.SetAutomationId(next, "calendar-next"); AutomationProperties.SetName(next, "Next month");
-        prev.Click += (_, _) => Step(-1);
-        next.Click += (_, _) => Step(1);
-        Grid.SetColumn(prev, 2); Grid.SetColumn(next, 3);
-        head.Children.Add(prev); head.Children.Add(next);
+        // Today / previous / next are the ribbon's (tasks-calendar.png has no second set here)
         Grid.SetColumnSpan(head, 2);
         root.Children.Add(head);
 
@@ -75,7 +55,7 @@ internal sealed class CalendarMonthView : ThemedControl
         Grid.SetRow(grid, 1);
         root.Children.Add(grid);
         var tray = Tray(undated);
-        Grid.SetRow(tray, 1); Grid.SetColumn(tray, 1);
+        Grid.SetRow(tray, 1); Grid.SetColumn(tray, 1); tray.Margin = new Thickness(0, -6, 0, 0);
         root.Children.Add(tray);
         return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
     }
@@ -105,7 +85,7 @@ internal sealed class CalendarMonthView : ThemedControl
 
         var body = new Grid { BorderBrush = B("Border"), BorderThickness = new Thickness(1, 1, 0, 0) };
         for (var c = 0; c < 7; c++) body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        for (var r = 0; r < weeks; r++) body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(112) });
+        for (var r = 0; r < weeks; r++) body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(110) });
         for (var i = 0; i < weeks * 7; i++)
         {
             var day = start.AddDays(i);
@@ -124,7 +104,7 @@ internal sealed class CalendarMonthView : ThemedControl
         var num = Ui.Text(day.Day.ToString(), 12.5, isToday ? new SolidColorBrush(Colors.White) : inMonth ? B("Text") : B("TextMuted"), 600);
         var badge = new Border
         {
-            MinWidth = 22, Height = 22, CornerRadius = new CornerRadius(11), Padding = new Thickness(isToday ? 4 : 4, 0, 4, 0), HorizontalAlignment = HorizontalAlignment.Left,
+            MinWidth = isToday ? 26 : 0, Height = isToday ? 20 : 22, CornerRadius = new CornerRadius(10), Padding = new Thickness(isToday ? 4 : 2, 0, isToday ? 4 : 2, 0), HorizontalAlignment = HorizontalAlignment.Left,
             Background = isToday ? B("AccentSolid") : null, Child = num.With(t => t.HorizontalAlignment = HorizontalAlignment.Center),
         };
         AutomationProperties.SetAutomationId(badge, "cal-daynum-" + Key(day) + (isToday ? "-today" : ""));
@@ -176,13 +156,13 @@ internal sealed class CalendarMonthView : ThemedControl
 
     private Border Tray(List<CalendarTask> undated)
     {
-        var panel = new StackPanel { Spacing = 4, Padding = new Thickness(12, 10, 12, 12) };
-        var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 0, 0, 6) };
+        var panel = new StackPanel { Spacing = 2, Padding = new Thickness(8, 16, 8, 8) };
+        var head = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(2, 0, 0, 7) };
         head.Children.Add(Ui.Text("No date", 13.5, B("Text"), 650));
         if (undated.Count > 0) head.Children.Add(Ui.Text(undated.Count.ToString(), 12, B("TextMuted"), 500));
         panel.Children.Add(head);
         panel.Children.Add(Ui.HLine(B("Border")));
-        foreach (var t in undated) panel.Children.Add(TaskChip(t, false).With(c => c.Margin = new Thickness(0, 2, 0, 0)));
+        foreach (var t in undated) panel.Children.Add(TaskChip(t, false).With(c => { c.Margin = new Thickness(0, 2, 0, 0); c.Height = 26; }));
         return new Border
         {
             BorderBrush = B("Border"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), VerticalAlignment = VerticalAlignment.Top, Child = panel,

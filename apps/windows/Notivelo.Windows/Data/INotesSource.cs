@@ -102,6 +102,16 @@ public interface INotesSource
     /// <summary>The open tasks assigned to you (with their due day, null when none) for the Calendar.</summary>
     IReadOnlyList<CalendarTask> CalendarTasks() => Array.Empty<CalendarTask>();
 
+    // ---- account (the core's account calls; online only: offline each answers Offline and changes nothing) ----
+    Task<AccountResult<AccountProfile>> LoadProfile() => Task.FromResult(AccountResult<AccountProfile>.Off());
+    Task<AccountResult<AccountProfile>> UpdateProfile(string? name, string? color) => Task.FromResult(AccountResult<AccountProfile>.Off());
+    /// <summary>Change the password. A wrong current password answers Code "wrong_password". The core's new refresh token is stored by the source.</summary>
+    Task<AccountResult<bool>> ChangePassword(string current, string next) => Task.FromResult(AccountResult<bool>.Off());
+    Task<AccountResult<NotificationPrefs>> LoadNotifications() => Task.FromResult(AccountResult<NotificationPrefs>.Off());
+    Task<AccountResult<NotificationPrefs>> UpdateNotifications(NotificationChange change) => Task.FromResult(AccountResult<NotificationPrefs>.Off());
+    Task<AccountResult<IReadOnlyList<ConnectedAppInfo>>> LoadConnectedApps() => Task.FromResult(AccountResult<IReadOnlyList<ConnectedAppInfo>>.Off());
+    Task<AccountResult<bool>> DisconnectApp(string clientId) => Task.FromResult(AccountResult<bool>.Off());
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

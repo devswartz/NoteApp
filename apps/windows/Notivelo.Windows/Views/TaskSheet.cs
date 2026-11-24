@@ -43,17 +43,17 @@ internal sealed class TaskSheet
 
     private void Open()
     {
-        var body = new StackPanel { Padding = new Thickness(24, 14, 24, 24), Spacing = 4 };
+        var body = new StackPanel { Padding = new Thickness(24, 19, 24, 24), Spacing = 10 };
 
         // title row: tick + title
-        var tr = new Grid { ColumnSpacing = 10, Margin = new Thickness(0, 0, 0, 14) };
+        var tr = new Grid { ColumnSpacing = 2, Margin = new Thickness(0, 0, 0, 22) };
         tr.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         tr.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _tick.Style = Ui.Style("GhostButtonStyle"); _tick.Width = 32; _tick.Height = 32; _tick.Padding = new Thickness(0); _tick.CornerRadius = new CornerRadius(16);
+        _tick.Style = Ui.Style("GhostButtonStyle"); _tick.Width = 26; _tick.Height = 26; _tick.Padding = new Thickness(0); _tick.CornerRadius = new CornerRadius(13); _tick.Margin = new Thickness(-4, 0, 0, 0);
         AutomationProperties.SetAutomationId(_tick, "task-sheet-tick");
         _tick.Click += (_, _) => { if (_d is { } d) _h.Source.UpdateTask(_id, new TaskPatch(Done: !d.Done)); };
         tr.Children.Add(_tick);
-        _title.FontSize = 20; _title.FontWeight = new FontWeight(600); _title.BorderThickness = new Thickness(0); _title.Background = new SolidColorBrush(Colors.Transparent);
+        _title.FontSize = 19; _title.FontWeight = new FontWeight(600); _title.BorderThickness = new Thickness(0); _title.Background = new SolidColorBrush(Colors.Transparent);
         _title.TextWrapping = TextWrapping.Wrap; _title.AcceptsReturn = false; _title.PlaceholderText = "Task title"; _title.Padding = new Thickness(6, 4, 6, 4);
         AutomationProperties.SetAutomationId(_title, "task-sheet-title");
         AutomationProperties.SetName(_title, "Title");
@@ -88,12 +88,12 @@ internal sealed class TaskSheet
         _priority.Click += (_, _) => PriorityMenu();
         foreach (var b in new[] { _assignee, _priority })
         {
-            b.Style = Ui.Style("GhostButtonStyle"); b.Height = 30; b.Padding = new Thickness(8, 0, 8, 0); b.CornerRadius = new CornerRadius(6); b.HorizontalAlignment = HorizontalAlignment.Left;
+            b.Style = Ui.Style("GhostButtonStyle"); b.Height = 30; b.Padding = new Thickness(0, 0, 8, 0); b.CornerRadius = new CornerRadius(6); b.HorizontalAlignment = HorizontalAlignment.Left;
         }
 
         _desc.AcceptsReturn = true; _desc.TextWrapping = TextWrapping.Wrap; _desc.MinHeight = 120; _desc.PlaceholderText = "Add details…"; _desc.CornerRadius = new CornerRadius(8);
         _desc.Background = B("BgSubtle"); _desc.BorderBrush = B("Border"); _desc.FontSize = 14; _desc.Padding = new Thickness(12, 10, 12, 10);
-        _desc.Margin = new Thickness(0, 14, 0, 0);
+        _desc.Margin = new Thickness(0, 12, 0, 0);
         AutomationProperties.SetAutomationId(_desc, "task-sheet-description");
         AutomationProperties.SetName(_desc, "Description");
         _desc.LostFocus += (_, _) => CommitDescription();
@@ -138,7 +138,7 @@ internal sealed class TaskSheet
 
     private UIElement Prop(string icon, string label, UIElement value, string? id)
     {
-        var g = new Grid { MinHeight = 36, ColumnSpacing = 8 };
+        var g = new Grid { MinHeight = 36 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var l = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center };
@@ -160,7 +160,7 @@ internal sealed class TaskSheet
         _syncing = true;
         try
         {
-            _tick.Content = TaskParts.Circle(B, d.Priority, d.Done, 24);
+            _tick.Content = TaskParts.Circle(B, d.Priority, d.Done, 18);
             AutomationProperties.SetName(_tick, d.Done ? "Mark not done" : "Mark done");
             AutomationProperties.SetItemStatus(_tick, d.Done ? "done=1" : "done=0");
             if (first || _title.FocusState == FocusState.Unfocused) { if (_title.Text != d.Title) _title.Text = d.Title; }

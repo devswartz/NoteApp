@@ -175,10 +175,10 @@ public class ParityTests
         AppHost.Wait(() => NameOf(h, "calendar-title") == month ? "x" : null, "the title of this month");
         Find(h, "cal-daynum-" + now.ToString("yyyy-MM-dd") + "-today");          // today is marked
         Find(h, "cal-task-t-welcome");                                           // a sample task due today
-        Invoke(h, "calendar-next");
+        Invoke(h, "ribbon-next");
         var next = new DateTime(now.Year, now.Month, 1).AddMonths(1).ToString("MMMM yyyy");
         AppHost.Wait(() => NameOf(h, "calendar-title") == next ? "x" : null, "next month");
-        Invoke(h, "calendar-today");
+        Invoke(h, "ribbon-today");
         AppHost.Wait(() => NameOf(h, "calendar-title") == month ? "x" : null, "back to this month");
     });
 

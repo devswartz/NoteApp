@@ -5,7 +5,7 @@ public sealed partial class SampleNotesSource : INotesSource
 {
     public event EventHandler? Changed;
 
-    public Workspace Workspace { get; } = new("Workspace", "D", "DU", "Devon", "devon@example.com");
+    public Workspace Workspace { get; private set; } = new("Workspace", "D", "DU", "Demo User", "demo@example.com");
     public IReadOnlyList<WorkspaceInfo> Workspaces { get; } = new WorkspaceInfo[] { new("sample", "Workspace", "owner") };
     public string? CurrentWorkspaceId => "sample";
     public void SelectWorkspace(string id) { }
@@ -16,7 +16,7 @@ public sealed partial class SampleNotesSource : INotesSource
     public string? LoadError => null;
     public void OpenPage(string? pageId) { }
     public IReadOnlyList<(PageSummary Page, string Where, string Edited)> RecentPages(int count) =>
-        Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p, $"{n.Name} › {s.Name}", "2h ago")))).Take(count).ToList();
+        Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p, $"{n.Name} Â· {s.Name}", "2h ago")))).Take(count).ToList();
 
     public IReadOnlyList<Notebook> Notebooks { get; private set; }
 
@@ -218,7 +218,7 @@ public sealed partial class SampleNotesSource : INotesSource
         Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p.Id, p.Title, Crumb: n.Name + " \u203A " + s.Name))))
             .Where(p => query.Length == 0 || p.Title.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(max).ToList();
     public IReadOnlyList<(string Id, string Label, string Detail, string? ColorHex)> People(string query) =>
-        new (string, string, string, string?)[] { ("u1", "Devon", "devon@example.com", "#6366f1"), ("u2", "Sam Rivera", "sam@example.com", "#14b8a6"), ("u3", "Priya Nair", "priya@example.com", "#ec4899") }
+        new (string, string, string, string?)[] { ("u1", "Demo User", "demo@example.com", "#6366f1"), ("u2", "Sam Rivera", "sam@example.com", "#14b8a6"), ("u3", "Priya Nair", "priya@example.com", "#ec4899") }
             .Where(p => query.Length == 0 || p.Item2.Contains(query, StringComparison.OrdinalIgnoreCase)).ToList();
     public NotePage? GetPage(string pageId) => _pages.GetValueOrDefault(pageId);
 

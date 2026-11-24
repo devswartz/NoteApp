@@ -99,7 +99,7 @@ internal sealed class RailView : ThemedControl
         acct.Click += (_, _) =>
         {
             if (Host is null) return;
-            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), new MenuEntry("Settings", "settings", () => Host?.OpenSettings(), Id: "menu-settings"), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48) };
+            var items = new List<MenuEntry> { MenuEntry.Block(AccountHeader, 52), MenuEntry.Sep(), MenuEntry.Label("Theme"), MenuEntry.Block(ThemeSwitch, 48), MenuEntry.Sep(), new MenuEntry("Settings", "settings", () => Host?.OpenSettings(), Id: "menu-settings") };
             if (_signOut is not null)
             {
                 items.Add(MenuEntry.Sep());
@@ -107,7 +107,7 @@ internal sealed class RailView : ThemedControl
             }
             var tl = acct.TransformToVisual(null).TransformPoint(new global::Windows.Foundation.Point(0, 0));
             var h = items.Sum(i => i.Height) + 14;
-            PopupMenu.Show(Host.Overlay, items, null, at: new global::Windows.Foundation.Point(tl.X + acct.ActualWidth + 6, tl.Y + acct.ActualHeight - h), id: "menu-account", width: 262);
+            PopupMenu.Show(Host.Overlay, items, null, at: new global::Windows.Foundation.Point(tl.X + acct.ActualWidth + 6, tl.Y + acct.ActualHeight - h), id: "menu-account", width: 260);
         };
         foot.Children.Add(acct);
         Grid.SetRow(foot, 1);

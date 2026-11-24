@@ -116,7 +116,7 @@ internal sealed class SidebarView : ThemedControl
                 items.Add(MenuEntry.Sep());
                 items.Add(new MenuEntry("New notebook", "book-plus", () => Host?.Tree.NewNotebook(), Id: "new-notebook"));
             }
-            PopupMenu.Show(Host.Overlay, items, picker, id: "menu-notebook-picker", width: 260);
+            PopupMenu.Show(Host.Overlay, items, picker, id: "menu-notebook-picker", width: 272);
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(picker, "notebook-picker");
         head.Children.Add(picker);
@@ -130,6 +130,7 @@ internal sealed class SidebarView : ThemedControl
 
         // scroll area: SECTIONS
         var list = new StackPanel { Padding = new Thickness(8, 3, 8, 16) };
+        list.Children.Add(RecentGroup());
         list.Children.Add(GroupHeading("Sections", true, () => Host?.Tree.NewSection(nb.Id, null)));
         foreach (var s in nb.Sections) AddSection(list, s, 0);
         if (nb.Sections.Count == 0) list.Children.Add(Ui.Text("No sections yet.", 12.5, B("TextMuted")).With(t => t.Margin = new Thickness(10, 6, 0, 0)));
@@ -137,6 +138,34 @@ internal sealed class SidebarView : ThemedControl
         Grid.SetRow(sv, 1);
         root.Children.Add(sv);
         return root;
+    }
+
+    private bool _recentOpen;
+
+    /// <summary>RECENT (LOOK 4.3): a folded group with a clock, up to 5 recently edited pages when opened.</summary>
+    private UIElement RecentGroup()
+    {
+        var box = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
+        var g = Cols(Px(12), Star, Px(12));
+        g.ColumnSpacing = 6;
+        g.Children.Add(new Icon("clock", 12, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center });
+        var t = Ui.Text("RECENT", 11.5, B("TextMuted"), 600, tracking: 0.04);
+        Grid.SetColumn(t, 1);
+        g.Children.Add(t);
+        var chev = new Icon(_recentOpen ? "chevron-down" : "chevron-right", 12, B("TextMuted")) { VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(chev, 2);
+        g.Children.Add(chev);
+        var btn = new Button
+        {
+            Style = Ui.Style("GhostButtonStyle"), Height = 22, Padding = new Thickness(6, 0, 6, 0), CornerRadius = new CornerRadius(4), HorizontalAlignment = HorizontalAlignment.Left, Content = g,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(btn, "sidebar-recent");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(btn, "Recent");
+        btn.Click += (_, _) => { _recentOpen = !_recentOpen; Rebuild(); };
+        box.Children.Add(new Grid { MinHeight = 26, Children = { btn } });
+        if (_recentOpen)
+            foreach (var (p, _, _) in _source.RecentPages(5)) box.Children.Add(PageRow(p, -1));
+        return box;
     }
 
     /// <summary>No notebook to show: still loading, a load error, or an empty workspace (LOOK 4.14).</summary>
@@ -352,6 +381,9 @@ internal sealed class SidebarView : ThemedControl
         return row;
     }
 
+    private DateOnly _mini = new(DateTime.Now.Year, DateTime.Now.Month, 1);
+
+    /// <summary>Calendar panel (LOOK 4.3): "Calendar" title and a mini month: Monday-first, today accent-solid, a dot under days that have open tasks.</summary>
     private UIElement BuildCalendar()
     {
         var root = new StackPanel { Padding = new Thickness(8, 0, 8, 16) };
@@ -359,6 +391,43 @@ internal sealed class SidebarView : ThemedControl
         title.Margin = new Thickness(8, 18, 0, 12);
         title.Height = 24;
         root.Children.Add(title);
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var due = new HashSet<string>(_source.CalendarTasks().Where(t => t.Due is not null).Select(t => t.Due!));
+        var head = Cols(Star, Auto, Auto);
+        head.Margin = new Thickness(10, 0, 6, 6);
+        head.Children.Add(Ui.Text(_mini.ToString("MMMM yyyy", System.Globalization.CultureInfo.CurrentCulture), 12.5, B("Text"), 600));
+        var prev = Ui.IconButton("chevron-left", 14, 24, 24, "Previous month", 6);
+        var next = Ui.IconButton("chevron-right", 14, 24, 24, "Next month", 6);
+        prev.Click += (_, _) => { _mini = _mini.AddMonths(-1); Rebuild(); };
+        next.Click += (_, _) => { _mini = _mini.AddMonths(1); Rebuild(); };
+        Grid.SetColumn(prev, 1); Grid.SetColumn(next, 2);
+        head.Children.Add(prev); head.Children.Add(next);
+        root.Children.Add(head);
+
+        var grid = new Grid { Margin = new Thickness(5, 0, 4, 0) };
+        for (var c = 0; c < 7; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var lead = ((int)_mini.DayOfWeek + 6) % 7;
+        var start = _mini.AddDays(-lead);
+        var weeks = (_mini.AddMonths(1).AddDays(-1).DayNumber - start.DayNumber) / 7 + 1;
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(24) });
+        for (var r = 0; r < weeks; r++) grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(27) });
+        for (var c = 0; c < 7; c++)
+            grid.Children.Add(Ui.Text("MTWTFSS"[c].ToString(), 11, B("TextMuted"), 600).With(t => { t.HorizontalAlignment = HorizontalAlignment.Center; Grid.SetColumn(t, c); }));
+        for (var i = 0; i < weeks * 7; i++)
+        {
+            var d = start.AddDays(i);
+            var isToday = d == today;
+            var cell = new Grid { Width = 24, Height = 24, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            if (isToday) cell.Children.Add(new Border { CornerRadius = new CornerRadius(12), Background = B("AccentSolid") });
+            var fg = isToday ? new SolidColorBrush(Colors.White) : d.Month == _mini.Month ? B("Text2") : B("TextMuted");
+            cell.Children.Add(Ui.Text(d.Day.ToString(), 11.5, fg, isToday ? 700 : 400).With(t => { t.HorizontalAlignment = HorizontalAlignment.Center; t.VerticalAlignment = VerticalAlignment.Center; }));
+            if (due.Contains(d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)) && !isToday)
+                cell.Children.Add(new Border { Width = 3, Height = 3, CornerRadius = new CornerRadius(1.5), Background = B("TextMuted"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, -1) });
+            Grid.SetRow(cell, 1 + i / 7); Grid.SetColumn(cell, i % 7);
+            grid.Children.Add(cell);
+        }
+        root.Children.Add(grid);
         return root;
     }
 }
