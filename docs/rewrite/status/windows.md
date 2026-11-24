@@ -2,6 +2,75 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## Parity left (Windows, 2026-11-24)
+
+Audit of `docs/rewrite/PARITY.md` (Windows column) against `apps/windows` at 8247569 (branch `rewrite/windows-audit`, docs only; no code touched). Of the 144 rows with a Windows ● or ◐, **69 are ticked ✓** (built and reachable in the app: checked by reading the code, with the UI tests in `Notivelo.Windows.UiTests` as evidence where one exists) and **75 are left**: 31 partly built, 44 missing. Class: **no-server** = doable now in the Windows app with core calls that exist (including Apple's new notification, share-link, delete-account and presence calls) or with none; **Devon** = needs Devon (store, signing, decision); **M7** = needs a new core call (the server route exists) or the M7 local-first work. Counts: no-server 46, Devon 3, M7 26 (25 need a new core call, 1 is offline page editing). Apple counted "new core call on an existing route" as no-server; under that rule the 25 move over. A ✓ means built and compiled; nothing ran against a real server and nothing was driven on a PC (every core-backed path is untested, as in the rounds below). Not listed: rows that are `—`/`○` for Windows (ink, local notifications, Face ID rows, app lock, share target, widget, universal links).
+
+**Most used no-server rows, in order** (core everyday flows first):
+
+1. Task filters, sort, group, Team view, status filter (159, 156): client code over `Tasks` and the task list; the Tasks ribbon buttons (Group, Sort, Status, Assignee, Tags, Team, Priority, Clear) do nothing today.
+2. Ribbon buttons that do nothing (53): Clear formatting, Link to page, Divider, Page colour, Rule lines, Print, Outline, Table group, text and highlight colour (99). Editor commands (`RunCommand`); `insertPageLink` exists.
+3. Notification inbox and taskbar badge (179, 178): `Notifications(limit, before)`, `UnreadNotificationCount`, `MarkNotificationRead`, `MarkAllNotificationsRead`; the badge from `GetTaskCounts`.
+4. Table tools, callout/toggle/code block (105, 106): engine commands (row and column add/delete, header toggle); toggle open/close, code copy.
+5. Boxes: select, cut/copy/paste/duplicate/delete, context menu (93): `DeleteBoxWithContent`, `CreateBoxWithId`, selection state in `PageView`.
+6. Cursors and presence, follow a collaborator (94, 95): `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors`.
+7. Save state indicator (96): `UnsentUpdates` / `UnsentPages` for Saving and Connecting (today only Saved or Offline).
+8. Task keyboard, bulk bar, inline rename, Undo on toasts (162, 163, 164, 60): `UpdateTask`, `SendTaskChanges`; client code.
+9. Opens offline from a cold start (222): open the shell from `CachedWorkspaces` / `CachedTree` / `CachedTasks` when `RestoreSession` fails with Network (today: signed-out screen with "Try again").
+10. Share link "Anyone with the link can view" (126), Delete account (34, App Review needs it in the app): `PageShareLink`, `CreatePageShareLink`, `DeletePageShareLink`; `AccountDeletionPreview`, `DeleteAccount(password)`.
+
+After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print and PDF (122, 123, 85, 166), Settings > Security > Locked notes (215), command palette commands (56), calendar drag to re-date (157), deep links (63).
+
+### no-server
+
+| Row (PARITY line) | Windows today | What it needs |
+|---|---|---|
+| Task filters, sort, group; Views Team and status (159, 156) | partly: Today, My Tasks, Upcoming, All; Team view empty; no status filter; ribbon filter buttons inert | client filters over `Tasks`; team id on list items; Completed list |
+| OneNote-style ribbon (53) | partly: bold, italic, underline, strike, highlight, lists, indent, Task, Table insert, Picture, File, Undo/Redo work | wire Clear formatting, Link to page, Divider, Page colour, Rule lines, Print, Outline, Table group; Tasks ribbon buttons |
+| Marks (99) | partly: no text colour or highlight colour picker (the floating bar has code) | colour menus; engine mark args |
+| Notification inbox (179); app badge (178) | missing | `Notifications`, `UnreadNotificationCount`, `MarkNotificationRead`, `MarkAllNotificationsRead`; taskbar badge from `GetTaskCounts` |
+| Tables (105); callout, toggle, code (106) | partly: insert 3x3 and draw; callout, quote and code render | row/column commands, header toggle, merge/split; toggle opens; code highlighting |
+| Boxes: select, cut/copy/paste/duplicate/delete, context menu (93) | partly: create, move, resize, front, delete empty; text right-click menu only | box selection; `DeleteBoxWithContent`, `CreateBoxWithId` |
+| Cursors and presence (94); follow (95) | partly: live edits only | `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors` |
+| Save state (96) | partly: Saved or Offline | `UnsentUpdates`, `UnsentPages` |
+| Task keyboard, bulk, inline rename (162, 163, 164); Toasts with Undo (60) | missing | client code; `UpdateTask`, `SendTaskChanges`; Undo action on `OverlayHost` toasts |
+| Opens offline from a cold start (222) | partly: tree and tasks load from the store once signed in; a cold start without network shows "Try again" | `CachedWorkspaces`/`CachedTree`/`CachedTasks` when `RestoreSession` fails with Network |
+| Share link (126) | missing | `PageShareLink`, `CreatePageShareLink`, `DeletePageShareLink` in the Share dialog |
+| Delete account (34) | missing | `AccountDeletionPreview`, `DeleteAccount`; Settings > Profile; sign-in screen after |
+| Tray icon, close to tray, global quick capture, app shortcuts (250, 251, 252, 253) | missing; only Q, Ctrl+K, Ctrl+Shift+F, Ctrl+Z/Y, Ctrl+/ | NotifyIcon + `GetTaskCounts`; RegisterHotKey + `QuickAddDialog`; Ctrl+N, Ctrl+Shift+T, Ctrl+1-8, Ctrl+, |
+| Print page/selection/PDF, Export PDF, print section/notebook, print task view (122, 123 PDF part, 85, 166) | missing (Markdown export is built) | Windows print APIs / PDF save |
+| Settings > Security > Locked notes (215) | missing (lock, unlock, keepalive are built from the page menu) | `SetLockedNotesPassword` (create/change); Windows Hello needs Devon, reset by code needs a core call |
+| Task detail: From the note, assigned-by (154) | partly: all other fields built | `TaskNotes`, `TaskDetails` |
+| Calendar: drag to re-date, double-click to add, Tags and Team filters (157) | partly: month/week, Mine/Everyone, Status | `UpdateTask` on drop; client |
+| Assignee menus grouped by team (160); recurrence Custom (165) | partly | `Teams`, `WorkspacePeople`; custom repeat editor, `DescribeRecurrence` |
+| Favourites (50) | partly: Recent only | device-local list, no server |
+| Trashed page opens read-only with Restore (84) | missing | `CachedTrashedPages`, `RestoreFromTrash`, `CanRestoreTask`, `RestoreTask`; read-only banner |
+| Page links: create page from link (112); outline (117) | partly: the `[[` menu works; the outline is static bars | `CreatePage`; headings from the page content |
+| Drag handle (114); multi-selection (115) | missing | handle view and line picks (engine `moveBlockUp/Down`); multi-range selection in the editor session |
+| Spellcheck (121) | missing: custom text view | Windows spell-check API; needs a check on a real PC |
+| Command palette commands (56); F6 regions (58); deep links (63); notebook templates picker (74); Privacy/Terms/Support in Settings > About (36); native window theme (255); import from OneNote link-out (232) | partly or missing | small UI work; protocol activation in `Package.appxmanifest` routing to `PageOpened`; title bar colours follow the theme; open the web importer in the browser |
+
+### Devon
+
+| Row | What it needs |
+|---|---|
+| Push reminders with snooze (176) | WNS registration in Partner Center and a core call for the device token |
+| "New version available" (62) | decision: MSIX / Store update path (sideload has none; `.appinstaller` or the Store would do it) |
+| Self-updater (254) | same decision |
+
+### M7 (a new core call on an existing server route, or the local-first work)
+
+| Rows | Missing |
+|---|---|
+| Resend verification email (28); export my data (35); send feedback (67); error reporting (68) | resend-verification, `GET /me/export`, `POST /feedback`, `POST /client-errors` |
+| Create workspace (47); rename/delete workspace (196); workspace settings General, Teams, Tags, Activity (195); activity feed (181) | `/workspaces` create, `PATCH/DELETE /workspaces/:id`, activity |
+| Templates: all seven rows (134-140) | `/workspaces/:id/templates`, `/pages/:id/templates`, `/templates/:id(/use)`, `/sections/:id/default-template` |
+| Backlinks (113); full width, page colour, rule lines write (118, 119, 120) | `GET /pages/:id/backlinks`; a page-settings write on the live doc (colour and lines are shown, not changeable) |
+| Saved views (161); tags rename/colour/delete (167); teams management (168) | `/workspaces/:id/task-views`, `/tags/:id`, `/teams/:id(/members)` |
+| Notification settings extras (180) | quiet hours, calendar feed link, test notification |
+| Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
+| Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
+
 ## 2026-11-24: images and attachments, page tools, people and sign-up, tree and shell polish (branch `rewrite/windows-parity3`, from `origin/rewrite/native` e5ea45a)
 
 Not merged. Nothing was driven with input on this PC: local checks were builds and unit tests; UI tests and screenshots ran on the GitHub runner. Nothing ran against a real server, so every `CoreNotesSource` path added this round is untested; the UI tests use the in-memory sample source.
