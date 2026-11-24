@@ -456,6 +456,7 @@ class AppViewModel(
     // Editing a box: a core session on it (others' edits come into it, its edits go into the page)
 
     override fun startEditing(boxId: String, tapX: Float, tapY: Float) {
+        android.util.Log.i("Notivelo", "startEditing $boxId handle=${handle != null} page=${_state.value.pageId} ws=${_state.value.workspaceId}")
         viewModelScope.launch { openEditing(boxId, tapX, tapY) }
     }
 
@@ -496,6 +497,7 @@ class AppViewModel(
     }
 
     override fun stopEditing() {
+        android.util.Log.i("Notivelo", "stopEditing editing=${_state.value.page?.editing?.boxId}")
         val pid = _state.value.pageId ?: return
         val e = _state.value.page?.editing ?: return
         val h = handle
