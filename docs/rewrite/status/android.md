@@ -4,8 +4,8 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 
 ## Now
 
-- Step C (branch `rewrite/android-edit`, cut from `rewrite/native` 5b7f5f4, not merged; **android pauses**): editing. Box text view with IME, the / [[ @ menus, box create / move / resize, task writes, page undo. CI green (run 45308413289 at b50bfb2); compiled, unit-tested and screenshotted in CI only, nothing has run on a device or emulator (no IME, Gboard or touch tested).
-- Steps A and B (shell, sign-in, tree, tasks, read-only live pages) are merged (5b7f5f4) and described under Done.
+- Emulator UI tests (branch `rewrite/android-uitest`, cut from `rewrite/native` e5ea45a, not merged; **android pauses**): CI run 45343187252 green at c36f489 (jobs "android app" and "emulator UI tests"), 16 instrumented tests, none ignored. Images, attachments and ink editing were skipped this round (manager's timebox) and are next.
+- Steps A-C are merged (e5ea45a) and described under Done.
 
 ## Done
 
@@ -37,6 +37,14 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 - **Tests** (JVM): `BoxInputTest` (22, IME mapping against a fake engine, emoji deletes), `SuggestionsTest`, `BoxGeomTest`, `TaskEditTest`, about 20 new `AppViewModelTest` cases. Shots: edit-caret, edit-selection, slash-menu, task-detail-edit (phone and tablet, light / dark / hybrid caret).
 - **Not done**: floating formatting toolbar and the editor ribbon's formatting buttons; editing a task title inside a page (`focus_task_id`); tables edit as stacked cell lines; callout emoji always 💡 and the code header always "Plain text"; no collapsed-caret handle, stylus handwriting or scroll-above-keyboard; moving a box doesn't bring it to the front; reminders and new tags in the task detail; date / time / assignee pickers are dialogs with no shot.
 
+### Emulator UI tests
+
+- **Offline source** (`data/OfflineBackend.kt`): debug builds only (`FLAG_DEBUGGABLE`), `--es source offline` skips sign-in and opens a one-page workspace whose two boxes are real core `EditorSession`s over local documents (as Windows' `NOTIVELO_SOURCE=offline`). Core has no offline `LivePage`, so offline page undo is the last-edited box's undo. Test tags on boxes and the phone bar's undo/redo.
+- **CI job** "emulator UI tests" in `android-native.yml`: `reactivecircus/android-emulator-runner` v2.35.0, API 34 x86_64 google_apis, pixel_6, KVM, AVD cache, hardware keyboard; builds the x86_64 core only; `scripts/run-ui-tests.sh` runs `connectedDebugAndroidTest`, hides ANR dialogs, pulls failure screenshots and logcat; artifact `android-ui-test-reports`. Took 12 runs to go green (emulator timing and Compose idling in the tests, not the app).
+- **Tests** (`app/src/androidTest/.../BoxEditingTest`, 16, all passing): hardware keys (typing, Enter, Backspace, arrows, Ctrl+A/C/X/V, Ctrl+Z / Shift+Z / Y); the real view's `InputConnection` (commit, composition, composing region, delete-surrounding, sendKeyEvent, setSelection, context-menu cut/copy/paste); the `/` menu (tap Heading 1, filter + Enter, Down + Escape, the `- ` shortcut); long-press word select and tap caret placement; undo/redo from the bar buttons, including a structural undo; switching boxes. Assertions read the engine's view frame.
+- **Fixed**: the hardware Space key never typed (`isPrintingKey` is false for Space).
+- **Not covered**: soft keyboards (Gboard, Samsung), handle dragging, `[[` and `@`, box create / move / resize, task writes, tablet width, `LivePage` undo across text, ink and boxes (no offline LivePage). Diagnostic logging (`nvLog`, a `Log.i` in the `BoxEditor` factory) is still in `AppViewModel` / `BoxEditor`; remove it when next touching them.
+
 ## Look, per state (step B; CI run 45288154806, side-by-side artifact, two rounds of fixes)
 
 | State | Status |
@@ -65,6 +73,7 @@ Progress, requests and handover for the **android** workstream (`apps/android-na
 - ~~android -> core: `Task` team and recurrence~~ Not a core gap: read from `taskDetails` / `members` / `teams` / `tags` since step C.
 - android -> core (step C): the callout emoji and code-block language on `ViewLine` (the view can't draw them); table cell row/column per line; a task-title edit path if the view should handle `focus_task_id`.
 - android -> core (step C): a move or resize that also brings the box to the front in one undo step (or a `bringToFront` outside undo); a delete-empty-box outside undo, as the web's drop-on-leave.
+- android -> core (low priority): an offline `LivePage` opening (local document, no server) so the emulator tests can cover page undo across text, ink and boxes.
 - android -> core: an authenticated image/file fetch (`/uploads/..`) so images and file cards can open.
 
 - android -> core (low priority): `Core.tasks` is used only to count open tasks per page row; a per-page count in `Tree` would save the call.

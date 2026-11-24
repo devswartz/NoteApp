@@ -17,6 +17,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         // arm64 devices and the x86_64 emulator; the core is built for these (CI: NV_ABIS).
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
 
@@ -31,6 +32,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     testOptions { unitTests { isIncludeAndroidResources = true } }
+    packaging { resources.excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "/META-INF/LICENSE*", "/META-INF/NOTICE*") }
 }
 
 // The screenshot tests (package look) only run with -Pshots (CI: recordPaparazziDebug): without goldens a verify run would fail.
@@ -53,4 +55,13 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+
+    // Emulator UI tests (src/androidTest): the offline source (`--es source offline`) with the real core engine.
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

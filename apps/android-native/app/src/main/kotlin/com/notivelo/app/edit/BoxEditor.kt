@@ -60,6 +60,7 @@ fun BoxEditor(editing: EditingBox, env: PageEnv, ec: EditContext, modifier: Modi
     val content: @Composable (Int) -> Unit = { maxWidthPx ->
         AndroidView(
             factory = { ctx ->
+                try { android.util.Log.i("Notivelo", "BoxEditor factory") } catch (e: Throwable) { }
                 BoxTextView(ctx, editing.engine, env).also { v ->
                     v.onMenu = { menu = it }
                     v.onPageUndo = { redo -> if (redo) pageActions.redoPage() else pageActions.undoPage() }

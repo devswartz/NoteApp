@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -169,8 +170,8 @@ private fun PageBar(state: AppState, meta: PageMeta, index: TreeIndex, phone: Bo
     ) {
         if (phone) {
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size(32.dp).alpha(if (canUndo) 1f else 0.4f).then(if (canUndo) Modifier.tappable { actions.undoPage() } else Modifier), contentAlignment = Alignment.Center) { LIcon(Ic.undo2, 18.dp, p.text2) }
-            Box(Modifier.size(32.dp).alpha(if (canRedo) 1f else 0.4f).then(if (canRedo) Modifier.tappable { actions.redoPage() } else Modifier), contentAlignment = Alignment.Center) { LIcon(Ic.redo2, 18.dp, p.text2) }
+            Box(Modifier.testTag("page-undo").size(32.dp).alpha(if (canUndo) 1f else 0.4f).then(if (canUndo) Modifier.tappable { actions.undoPage() } else Modifier), contentAlignment = Alignment.Center) { LIcon(Ic.undo2, 18.dp, p.text2) }
+            Box(Modifier.testTag("page-redo").size(32.dp).alpha(if (canRedo) 1f else 0.4f).then(if (canRedo) Modifier.tappable { actions.redoPage() } else Modifier), contentAlignment = Alignment.Center) { LIcon(Ic.redo2, 18.dp, p.text2) }
         } else {
             if (notebook != null) {
                 Box(Modifier.size(8.dp).background(parseHex(notebook.color), CircleShape))
@@ -384,7 +385,7 @@ private fun BoxView(boxId: String, content: BoxContent?, env: PageEnv, modifier:
         return
     }
     val tap = Modifier.pointerInput(boxId) { detectTapGestures { o -> actions.startEditing(boxId, o.x, o.y) } }
-    Column(modifier.then(tap).padding(horizontal = PageLayout.BOX_PAD_X.dp, vertical = PageLayout.BOX_PAD_Y.dp)) {
+    Column(modifier.testTag("box-$boxId").then(tap).padding(horizontal = PageLayout.BOX_PAD_X.dp, vertical = PageLayout.BOX_PAD_Y.dp)) {
         if (isBlank(nodes)) {
             WText("Type '/' for commands…", env.body, p.textPlaceholder, lineHeight = 1.7f)
         } else {

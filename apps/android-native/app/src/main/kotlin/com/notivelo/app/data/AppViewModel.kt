@@ -456,23 +456,28 @@ class AppViewModel(
     // Editing a box: a core session on it (others' edits come into it, its edits go into the page)
 
     override fun startEditing(boxId: String, tapX: Float, tapY: Float) {
+        nvLog("startEditing $boxId handle=${handle != null} page=${_state.value.pageId} ws=${_state.value.workspaceId}")
         viewModelScope.launch { openEditing(boxId, tapX, tapY) }
     }
 
     private suspend fun openEditing(boxId: String, tapX: Float, tapY: Float) {
+        nvLog("openEditing $boxId")
         val s = _state.value
         val pid = s.pageId ?: return
         val h = handle ?: return
         val ws = s.workspaceId ?: return
         if (s.page?.editing?.boxId == boxId) return
         try {
+            nvLog("openEditing: opening engine for $boxId")
             val engine = blocking { h.openEditor(boxId, ws) }
+            nvLog("openEditing: engine ready, page still ${_state.value.pageId}, handle same=${handle === h}")
             if (_state.value.pageId != pid || handle !== h) {
                 blocking { engine.close() }
                 return
             }
             val old = _state.value.page?.editing
             editPage(pid) { it.copy(editing = EditingBox(boxId, engine, tapX, tapY)) }
+            nvLog("openEditing: editing set, now ${_state.value.page?.editing?.boxId}")
             if (old != null) {
                 val empty = isEmpty(old)
                 blocking { old.engine.close() }
@@ -484,6 +489,7 @@ class AppViewModel(
             refreshFlags(pid)
             loadMembers(ws)
         } catch (e: Exception) {
+            nvLog("openEditor failed: $e")
             _state.update { it.copy(notice = "This box could not be opened for editing.") }
         }
     }
@@ -495,6 +501,7 @@ class AppViewModel(
     }
 
     override fun stopEditing() {
+        nvLog("stopEditing editing=${_state.value.page?.editing?.boxId}")
         val pid = _state.value.pageId ?: return
         val e = _state.value.page?.editing ?: return
         val h = handle
@@ -646,4 +653,9 @@ class AppViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = AppViewModel(backend, store) as T
     }
+}
+
+/** A line in logcat (tag Notivelo); silent on the JVM, where android.util.Log is not there. */
+private fun nvLog(msg: String) {
+    try { android.util.Log.i("Notivelo", msg) } catch (e: Throwable) { }
 }
