@@ -86,6 +86,7 @@ abstract class OfflineTestBase {
     protected fun waitFor(what: String, timeoutMs: Long = 30_000, cond: () -> Boolean) {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (true) {
+            try { compose.waitForIdle() } catch (e: Throwable) { lastError = e.toString() }
             val ok = try { cond() } catch (e: Throwable) { lastError = e.toString(); false }
             if (ok) return
             if (SystemClock.uptimeMillis() > end) {
@@ -137,7 +138,7 @@ abstract class OfflineTestBase {
         compose.onNodeWithTag("box-$id").performClick()
         waitFor("the box editor view to exist", 60_000) { viewOrNull() != null }
         val end = SystemClock.uptimeMillis() + 10_000
-        while (SystemClock.uptimeMillis() < end && viewOrNull()?.isFocused != true) Thread.sleep(50)
+        while (SystemClock.uptimeMillis() < end && viewOrNull()?.isFocused != true) { compose.waitForIdle(); Thread.sleep(50) }
         val v = view()
         if (!v.isFocused) {
             var info = ""
@@ -160,6 +161,7 @@ abstract class OfflineTestBase {
     protected fun typeKeys(s: String) {
         inst.sendStringSync(s)
         inst.waitForIdleSync()
+        compose.waitForIdle()
     }
 
     protected fun key(code: Int, meta: Int = 0) {
@@ -167,6 +169,7 @@ abstract class OfflineTestBase {
         inst.sendKeySync(KeyEvent(now, now, KeyEvent.ACTION_DOWN, code, 0, meta))
         inst.sendKeySync(KeyEvent(now, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP, code, 0, meta))
         inst.waitForIdleSync()
+        compose.waitForIdle()
     }
 
     protected fun ctrl(code: Int, shift: Boolean = false) {
@@ -190,6 +193,7 @@ abstract class OfflineTestBase {
         }
         failure?.let { throw it }
         inst.waitForIdleSync()
+        compose.waitForIdle()
     }
 
     protected fun <T> imeRead(block: (InputConnection) -> T): T {
@@ -216,6 +220,7 @@ abstract class OfflineTestBase {
         Thread.sleep(holdMs)
         inst.runOnMainSync { v.dispatchTouchEvent(MotionEvent.obtain(down, SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, x, y, 0)) }
         inst.waitForIdleSync()
+        compose.waitForIdle()
     }
 
     protected fun density(): Float = inst.targetContext.resources.displayMetrics.density
