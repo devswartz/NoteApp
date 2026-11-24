@@ -260,6 +260,34 @@ public interface INotesSource
     /// <summary>Delete the account. A wrong password answers Code "wrong_password". On success the caller returns to the sign-in screen.</summary>
     Task<AccountResult<bool>> DeleteAccount(string password) => Task.FromResult(AccountResult<bool>.Off());
 
+    /// <summary>A sentence for a toast from background work (a template filling its page).</summary>
+    event Action<string>? Notice { add { } remove { } }
+
+    // ---- left batch: box clipboard, templates, reminder toasts. Box calls are local edits of the open page (one undo step each); the rest go through the core. ----
+    /// <summary>The clip (the core's <c>BoxesJson</c>) of boxes of the open page.</summary>
+    PageToolResult<string> BoxClip(string pageId, IReadOnlyList<string> boxIds) => PageToolResult<string>.Fail("Not available.");
+    /// <summary>Paste a clip: at (<paramref name="x"/>, <paramref name="y"/>) when both are given, else where it came from nudged down and right. The new box ids in clip order.</summary>
+    PageToolResult<IReadOnlyList<string>> PasteBoxes(string pageId, string clipJson, double? x, double? y) => PageToolResult<IReadOnlyList<string>>.Fail("Not available.");
+    PageToolResult<IReadOnlyList<string>> DuplicateBoxes(string pageId, IReadOnlyList<string> boxIds) => PageToolResult<IReadOnlyList<string>>.Fail("Not available.");
+    /// <summary>Remove boxes with what they hold (the core's <c>DeleteBoxWithContent</c>).</summary>
+    PageToolResult<bool> DeleteBoxesWithContent(string pageId, IReadOnlyList<string> boxIds) => PageToolResult<bool>.Fail("Not available.");
+    /// <summary>The page tells an offline source how to read a box's text (the sample has no document to ask).</summary>
+    void SetBoxTextProbe(Func<string, string>? probe) { }
+
+    /// <summary>The templates offered in a section: the built-in three, then the workspace's saved ones (online).</summary>
+    Task<PageToolResult<IReadOnlyList<Notivelo.Windows.Text.TemplateItem>>> LoadTemplates(string sectionId) => Task.FromResult(PageToolResult<IReadOnlyList<Notivelo.Windows.Text.TemplateItem>>.Fail("Not available."));
+    /// <summary>A new page in the section started from a template (the id is the new page's).</summary>
+    Task<TreeResult> CreatePageFromTemplate(string sectionId, Notivelo.Windows.Text.TemplateItem template) => Task.FromResult(new TreeResult(Error: "Not available."));
+    /// <summary>Save the open page as a workspace template. Null: done; else a sentence.</summary>
+    Task<string?> SaveAsTemplate(string pageId, string name) => Task.FromResult<string?>("Not available.");
+
+    /// <summary>This source has reminders worth scheduling as local toasts.</summary>
+    bool SchedulesReminders => false;
+    /// <summary>The reminders of this person's open tasks that fire in the future.</summary>
+    Task<IReadOnlyList<Notivelo.Windows.Text.ReminderEntry>> UpcomingReminders() => Task.FromResult<IReadOnlyList<Notivelo.Windows.Text.ReminderEntry>>(Array.Empty<Notivelo.Windows.Text.ReminderEntry>());
+    /// <summary>Snooze with a push's token (the core's <c>SnoozeReminder</c>; no session needed). Null: done; else a sentence.</summary>
+    Task<string?> SnoozeReminder(string snoozeToken, string option) => Task.FromResult<string?>("Not available.");
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

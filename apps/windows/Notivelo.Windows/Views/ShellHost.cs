@@ -74,6 +74,7 @@ internal sealed class TreeActions
         var items = new List<MenuEntry>
         {
             new("New page", "file-plus", () => NewPage(s.Id)),
+            new("New page from template…", "layout-template", () => TemplatePicker.Show(_h, s.Id, s.Name), Id: "menu-new-from-template"),
             new("New subsection", "folder-plus", () => NewSection(nb?.Id ?? NotebookOf(s.Id) ?? "", s.Id)),
             new("Rename", "pencil", () => RenameDialog(TreeKind.Section, s.Id, s.Name)),
             new("Duplicate", "copy", () => Duplicate(TreeKind.Section, s.Id)),
@@ -99,6 +100,8 @@ internal sealed class TreeActions
         items.Add(MenuEntry.Sep());
         if (!p.Locked) items.Add(new("Share…", "user-plus", () => PageDialogs.Share(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-share"));
         items.Add(new("Version history", "rotate-ccw", () => PageDialogs.VersionHistory(_h, p.Id), Id: "menu-version-history"));
+        if (current && !p.Locked) items.Add(new("Save as template…", "layout-template", () => TemplatePicker.Save(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-save-template"));
+        if (current && !p.Locked) items.Add(new("Print…", "printer", () => PageView.Current?.Print(), Hint: "Ctrl+P", Id: "menu-print"));
         if (current) items.Add(new("Export as Markdown", "download", () => PageDialogs.ExportMarkdown(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-export-markdown"));
         if (p.Locked)
         {

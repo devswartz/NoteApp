@@ -187,6 +187,17 @@ internal sealed partial class SettingsView
         var p = Page("Notifications", "When Notivelo reminds you about tasks, and the daily email.");
         var body = new StackPanel { Spacing = 14 };
         var status = Note("settings-notifications-status");
+        // the reminder toasts on this PC (local scheduled toasts: Snooze 10 minutes, 1 hour, tomorrow morning; Open task); the line is also the UI tests' readout
+        var local = new StackPanel { Spacing = 6 };
+        local.Children.Add(Ui.Text("Reminders on this PC", 14, B("Text"), 600));
+        var localStatus = Ui.Text(ReminderToasts.StatusText, 12.5, B("TextMuted"), lineHeight: 18).With(t => { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; });
+        AutomationProperties.SetAutomationId(localStatus, "settings-reminders-status");
+        AutomationProperties.SetName(localStatus, ReminderToasts.StatusText);
+        local.Children.Add(localStatus);
+        Action refreshLocal = () => DispatcherQueue.TryEnqueue(() => { localStatus.Text = ReminderToasts.StatusText; AutomationProperties.SetName(localStatus, ReminderToasts.StatusText); });
+        ReminderToasts.Changed += refreshLocal;
+        Unloaded += (_, _) => ReminderToasts.Changed -= refreshLocal;
+        p.Children.Add(Card(local));
         p.Children.Add(Card(body));
         _ = Load();
         async Task Load()

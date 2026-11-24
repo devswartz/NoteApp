@@ -94,7 +94,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 |---|---|---|---|---|---|---|---|
 | Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ ✓ | ● | phones stack boxes one under another with "Add a text box" |
 | See-through boxes (only active box opaque) | ● ✓ | — | ● ✓ | ● ✓ | — | ● | |
-| Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● ✓ | ◐ | ● ✓ | ● | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
+| Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
 | Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
@@ -139,7 +139,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Save as template (workspace or private; per section) | ● | ● | ● | ● | ● | ● | `TemplateDialog.tsx`, `POST /pages/:id/templates` |
 | Tasks in a template become new tasks; attachments copied | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `POST /templates/:id/use` |
 | Rename / delete template (creator or admin) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
-| `{date}`, `{time}` placeholders | ● | ● | ● | ● | ● | ● | |
+| `{date}`, `{time}` placeholders | ● | ● | ● | ● ✓ | ● | ● | |
 | Default template per section (inherited by subsections) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PUT /sections/:id/default-template` |
 | New page from template (ribbon, section menu) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 

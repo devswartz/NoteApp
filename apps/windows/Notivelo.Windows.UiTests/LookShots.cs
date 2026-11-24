@@ -172,6 +172,13 @@ public class LookShots
         Step("notebook-picker", () => { Invoke("notebook-picker"); Find("menu-notebook-picker"); Snap("notebook-picker"); });
         Step("account-menu", () => { Invoke("rail-account"); Find("menu-account"); Snap("account-menu"); });
         Step("section-menu", () => { Invoke("section-more-corpus"); Find("menu-section"); Snap("section-menu"); });   // with the colour row
+        Step("template-picker", () => { Invoke("section-more-empty"); Find("menu-section"); Invoke("menu-new-from-template"); Find("template-meeting-notes"); Settle(700); Snap("template-picker"); });
+        Step("box-selected", () =>   // box b selected as a whole (Esc inside it): accent frame, move bar and width handle
+        {
+            h.B.Focus(); h.Press(ESCAPE); Settle(500); Snap("box-selected");
+            var r = h.B.Bounds; FlaUI.Core.Input.Mouse.RightClick(new System.Drawing.Point(r.Left + 120, r.Top - 4));
+            Find("menu-box"); Settle(400); Snap("box-menu");
+        });
         Step("notebook-menu", () => { Invoke("notebook-more"); Find("menu-notebook"); Snap("notebook-menu"); });
         Step("shortcut-sheet", () => { Invoke("rail-account"); Find("menu-account"); Invoke("menu-shortcuts"); Find("shortcuts-sheet"); Settle(500); Snap("shortcut-sheet"); });
         Step("notebook-share", () =>
