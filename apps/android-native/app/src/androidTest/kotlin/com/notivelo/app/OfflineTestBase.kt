@@ -70,16 +70,29 @@ abstract class OfflineTestBase {
 
     // Waiting ------------------------------------------------------------------------------------------------------------
 
+    private var lastError: String? = null
+
+    private fun tree(): String {
+        val sb = StringBuilder()
+        fun walk(v: View, depth: Int) {
+            if (depth > 14 || sb.length > 1500) return
+            sb.append(v.javaClass.simpleName).append('(').append(depth).append(if (v.isFocused) "*" else "").append(") ")
+            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i), depth + 1)
+        }
+        try { scenario.onActivity { walk(it.window.decorView, 0) } } catch (e: Throwable) { sb.append("tree failed: $e") }
+        return sb.toString()
+    }
+
     protected fun waitFor(what: String, timeoutMs: Long = 10_000, cond: () -> Boolean) {
         val end = SystemClock.uptimeMillis() + timeoutMs
         while (true) {
-            val ok = try { cond() } catch (e: Exception) { false }
+            val ok = try { cond() } catch (e: Throwable) { lastError = e.toString(); false }
             if (ok) return
             if (SystemClock.uptimeMillis() > end) {
                 val log = try { device.executeShellCommand("logcat -d -s Notivelo:V AndroidRuntime:E").takeLast(1500) } catch (x: Exception) { "" }
                 android.util.Log.e("NvTest", "timeout waiting for $what; app log: $log")
                 shot("timeout-" + what.take(30).replace(Regex("[^A-Za-z0-9]+"), "_"))
-                throw AssertionError("Timed out waiting for $what [$log] (text=${textOrNull()?.let { "\"" + it.replace("\n", "\\n") + "\"" }})")
+                throw AssertionError("Timed out waiting for $what lastError=$lastError tree=${tree()} (text=${textOrNull()?.let { "\"" + it.replace("\n", "\\n") + "\"" }})")
             }
             Thread.sleep(50)
         }
