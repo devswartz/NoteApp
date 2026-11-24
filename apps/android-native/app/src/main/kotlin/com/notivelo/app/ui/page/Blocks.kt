@@ -62,6 +62,19 @@ import com.notivelo.app.look.WebType
 import com.notivelo.app.look.initialsColor
 import com.notivelo.app.look.initialsOf
 import com.notivelo.app.look.parseHex
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import com.notivelo.app.edit.LocalPageActions
+import com.notivelo.app.media.MediaSizing
+import com.notivelo.app.ui.tappable
 import com.notivelo.core.AttrValue
 import com.notivelo.core.ContentNode
 import com.notivelo.core.Mark
@@ -81,6 +94,8 @@ class PageEnv(
     val meName: String = "",
     val meColor: String = "#6366f1",
     val today: LocalDate = LocalDate.now(),
+    /** Pictures of the page; null in the look scenes (images stay placeholders). */
+    val media: com.notivelo.app.media.MediaCache? = null,
 ) {
     /** 16, phones 16.5 (LOOK.md 2.3); headings are em-based and scale with it. */
     val body: Float get() = if (phone) 16.5f else 16f
@@ -463,13 +478,52 @@ private fun TableBlock(n: ContentNode, env: PageEnv) {
 
 @Composable
 private fun ImageBlock(n: ContentNode, env: PageEnv) {
-    // Uploads need the session (a fetch with the access token): the native preview draws the alt text on a placeholder.
     val p = env.palette
     val alt = n.str("alt") ?: ""
-    Row(Modifier.height(27.2.dp), verticalAlignment = Alignment.CenterVertically) {
-        LIcon(Ic.image, 16.dp, p.textMuted)
-        Spacer(Modifier.width(6.dp))
-        WText(alt.ifEmpty { "Image" }, env.body, p.textMuted, lineHeight = 1.7f)
+    val media = env.media
+    if (media == null) {
+        // The look scenes have no session to fetch with: the alt text on a placeholder.
+        Row(Modifier.height(27.2.dp), verticalAlignment = Alignment.CenterVertically) {
+            LIcon(Ic.image, 16.dp, p.textMuted)
+            Spacer(Modifier.width(6.dp))
+            WText(alt.ifEmpty { "Image" }, env.body, p.textMuted, lineHeight = 1.7f)
+        }
+        return
+    }
+    // The picture is fetched with the session (the core's authenticated file call), decoded off the main thread, cached.
+    val src = n.str("src") ?: ""
+    val aw = n.num("width")
+    val ah = n.num("height")
+    var image by remember(src) { mutableStateOf(media.peek(src)) }
+    var failed by remember(src) { mutableStateOf(false) }
+    LaunchedEffect(src) {
+        if (image == null) {
+            val r = media.load(src)
+            if (r != null) image = r else failed = true
+        }
+    }
+    val shape = RoundedCornerShape(8.dp)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val avail = maxWidth.value
+        val img = image
+        if (img != null) {
+            val (w, h) = MediaSizing.imageSize(aw, ah, img.naturalW, img.naturalH, avail)
+            val bitmap = remember(img) { img.bitmap.asImageBitmap() }
+            Image(bitmap, alt, Modifier.size(w.dp, h.dp).clip(shape), contentScale = ContentScale.FillBounds)
+        } else {
+            val (w, h) = MediaSizing.placeholderSize(aw, ah, avail)
+            Column(
+                Modifier.size(w.dp, h.dp).background(p.bgSubtle, shape).border(1.dp, p.border, shape).padding(horizontal = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                LIcon(Ic.image, 22.dp, p.textMuted)
+                if (failed) {
+                    Spacer(Modifier.height(6.dp))
+                    WText(alt.ifEmpty { "Image can’t be shown" }, 13f, p.textMuted, lineHeight = 1.3f)
+                }
+            }
+        }
     }
 }
 
@@ -477,9 +531,11 @@ private fun ImageBlock(n: ContentNode, env: PageEnv) {
 private fun FileCard(n: ContentNode, env: PageEnv) {
     val p = env.palette
     val shape = RoundedCornerShape(8.dp)
-    val size = n.num("size")?.let { if (it >= 1_048_576) String.format("%.1f MB", it / 1_048_576) else "${Math.round(it / 1024)} KB" } ?: ""
+    val size = n.num("size")?.let { MediaSizing.sizeText(it) } ?: ""
+    val actions = LocalPageActions.current
+    val open = if (env.media != null) Modifier.tappable { actions.openMedia(n.str("url") ?: "", n.str("name") ?: "file", n.str("mime") ?: "") } else Modifier
     Row(
-        Modifier.widthIn(max = 520.dp).fillMaxWidth().height(52.dp).background(p.bg, shape).border(1.dp, p.border, shape).padding(horizontal = 11.dp),
+        Modifier.widthIn(max = 520.dp).fillMaxWidth().height(52.dp).background(p.bg, shape).border(1.dp, p.border, shape).then(open).padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(34.dp).background(p.accentSoft, RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) {

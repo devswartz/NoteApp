@@ -73,6 +73,18 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
     /** The menu opened, changed or closed (null): the host shows the popup. */
     var onMenu: ((MenuModel?) -> Unit)? = null
 
+    /** The slash menu's Image (false) or File attachment (true) was picked: the host opens the system picker. */
+    var onPickMedia: ((file: Boolean) -> Unit)? = null
+
+    /** A file card was tapped: the host downloads and opens it (url, name, mime). */
+    var onOpenMedia: ((String, String, String) -> Unit)? = null
+
+    /** An image was pasted from the clipboard (a content Uri): the host uploads it. */
+    var onPasteImage: ((android.net.Uri) -> Unit)? = null
+
+    private var unlistenMedia: (() -> Unit)? = null
+    private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
     /** Draw as focused (caret, handles) without the keyboard: the look scenes. */
     var lookFocused: Boolean = false
         set(value) {
@@ -333,9 +345,39 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
                 c.drawText(name, l.x + 55f * d, l.top + l.height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f, textPaint)
             }
             else -> {
-                val alt = BoxLayoutBuilder.jsonField(l.line.attrsJson ?: "", "alt").orEmpty().ifEmpty { "Image" }
-                textPaint.color = px(p.textMuted)
-                c.drawText(alt, l.x + 22f * d, l.top + l.height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f, textPaint)
+                val json = l.line.attrsJson ?: ""
+                val media = env.media
+                val img = media?.peek(BoxLayoutBuilder.jsonField(json, "src").orEmpty())
+                if (img != null) {
+                    // The picture at its size (the web's `img`: radius 8), as the layout sized the line.
+                    val size = com.notivelo.app.media.MediaSizing.imageSize(
+                        BoxLayoutBuilder.jsonNumber(json, "width"), BoxLayoutBuilder.jsonNumber(json, "height"), img.naturalW, img.naturalH, l.width / d,
+                    )
+                    val rect = RectF(l.x, l.top, l.x + size.first * d, l.top + size.second * d)
+                    c.save()
+                    val clip = Path()
+                    clip.addRoundRect(rect, 8f * d, 8f * d, Path.Direction.CW)
+                    c.clipPath(clip)
+                    c.drawBitmap(img.bitmap, null, rect, bitmapPaint)
+                    c.restore()
+                } else {
+                    val alt = BoxLayoutBuilder.jsonField(json, "alt").orEmpty().ifEmpty { "Image" }
+                    if (media != null) {
+                        val rect = RectF(l.x, l.top + 0.5f * d, l.x + 320f * d, l.top + l.height - 0.5f * d)
+                        rect.right = min(rect.right, width - 2 * padX)
+                        fill.style = Paint.Style.FILL
+                        fill.color = px(p.bgSubtle)
+                        c.drawRoundRect(rect, 8f * d, 8f * d, fill)
+                        stroke.strokeWidth = d
+                        stroke.color = px(p.border)
+                        c.drawRoundRect(rect, 8f * d, 8f * d, stroke)
+                        textPaint.color = px(p.textMuted)
+                        c.drawText(alt, rect.left + 12f * d, rect.centerY() - (textPaint.ascent() + textPaint.descent()) / 2f, textPaint)
+                    } else {
+                        textPaint.color = px(p.textMuted)
+                        c.drawText(alt, l.x + 22f * d, l.top + l.height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f, textPaint)
+                    }
+                }
             }
         }
     }
@@ -501,7 +543,18 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
         stopActionMode()
         if (!isFocused) requestFocus()
         placeCaretAt(x, y)
+        openFileAt(x, y)
         showKeyboard()
+    }
+
+    /** A tap on a file card opens its file (the node is selected too). */
+    private fun openFileAt(x: Float, y: Float) {
+        val g = geo()
+        val line = g.lineAt(g.offsetAt(x - padX, y - padY)) ?: return
+        if (line.line.kind != "fileAttachment") return
+        val json = line.line.attrsJson ?: return
+        val url = BoxLayoutBuilder.jsonField(json, "url") ?: return
+        onOpenMedia?.invoke(url, BoxLayoutBuilder.jsonField(json, "name") ?: "file", BoxLayoutBuilder.jsonField(json, "mime").orEmpty())
     }
 
     /** Put the caret at a point of this view (px). */
@@ -621,6 +674,11 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
         val clip = clipboard()?.primaryClip ?: return false
         if (clip.itemCount == 0) return false
         val item = clip.getItemAt(0)
+        val uri = item.uri
+        if (uri != null && clip.description.hasMimeType("image/*") && !clip.description.hasMimeType("text/*") && onPasteImage != null) {
+            onPasteImage?.invoke(uri)
+            return true
+        }
         val text = item.coerceToText(context)?.toString().orEmpty()
         val html = if (plain) "" else item.htmlText.orEmpty()
         if (text.isEmpty() && html.isEmpty()) return false
@@ -865,8 +923,8 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
             return when {
                 up -> input.sendChord("ArrowUp")
                 down -> input.sendChord("ArrowDown")
-                code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER -> input.sendChord("Enter")
-                code == KeyEvent.KEYCODE_TAB -> input.sendChord("Tab")
+                code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER -> slashChord("Enter", m)
+                code == KeyEvent.KEYCODE_TAB -> slashChord("Tab", m)
                 code == KeyEvent.KEYCODE_ESCAPE -> input.sendChord("Escape")
                 else -> false
             }
@@ -901,6 +959,23 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
         if (input.composing) input.engine.finishComposition()
         input.engine.command(name, args)
         input.refresh(false)
+        // The engine only removes the typed "/image"; the pickers are the host's.
+        if (m.kind == SuggestionTrigger.SLASH) mediaFor(row.id)
+    }
+
+    private fun mediaFor(id: String?) {
+        when (id) {
+            "Image" -> onPickMedia?.invoke(false)
+            "File attachment" -> onPickMedia?.invoke(true)
+        }
+    }
+
+    /** Enter or Tab on the slash menu: the engine runs the highlighted item; Image and File attachment then open their pickers. */
+    private fun slashChord(chord: String, m: MenuModel): Boolean {
+        val id = m.highlighted?.let { m.rows.getOrNull(it)?.id }
+        val done = input.sendChord(chord)
+        if (done) mediaFor(id)
+        return done
     }
 
     /** Read the engine's open suggestion and hand the popup its model (or null when none). */
@@ -966,6 +1041,12 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        // Pictures finishing their load change the lines' heights: lay out again.
+        unlistenMedia = env.media?.addListener {
+            builtRevision = null
+            requestLayout()
+            invalidate()
+        }
         // The drops hang under the last line, past the box: do not clip them to the box's parents.
         var p = parent
         var n = 0
@@ -977,6 +1058,8 @@ class BoxTextView(context: Context, engine: TextEngine, env: PageEnv) : View(con
     }
 
     override fun onDetachedFromWindow() {
+        unlistenMedia?.invoke()
+        unlistenMedia = null
         removeCallbacks(blink)
         stopActionMode()
         super.onDetachedFromWindow()

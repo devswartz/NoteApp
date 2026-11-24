@@ -25,6 +25,7 @@ import com.notivelo.app.data.Tab
 import com.notivelo.app.data.TaskList
 import com.notivelo.app.data.TreeIndex
 import com.notivelo.app.look.Ic
+import com.notivelo.app.media.MediaKind
 import com.notivelo.app.look.LIcon
 import com.notivelo.app.look.WText
 import com.notivelo.app.look.pal
@@ -66,7 +67,7 @@ fun Ribbon(width: Dp, state: AppState, actions: ShellActions, index: TreeIndex?,
     ) {
         when {
             state.tab == Tab.Tasks -> TasksRibbon(m, state, actions, onNotYet)
-            onPage -> NoteRibbon(m, onNotYet)
+            onPage -> NoteRibbon(m, state, actions, onNotYet)
             else -> NotesRibbon(m, index, state, onNotYet)
         }
         Spacer(Modifier.weight(1f))
@@ -123,8 +124,11 @@ private fun NotesRibbon(m: RibbonMetrics, index: TreeIndex?, state: AppState, on
 
 /** Text, Lists, Insert, Page: the editing controls are dimmed (no box is being edited); Page colour, Rule lines and Print are on. */
 @Composable
-private fun NoteRibbon(m: RibbonMetrics, onNotYet: (String) -> Unit) {
+private fun NoteRibbon(m: RibbonMetrics, state: AppState, actions: ShellActions, onNotYet: (String) -> Unit) {
     val p = pal()
+    // Images and files go into the box being edited; Draw needs a live page.
+    val editing = state.page?.editing != null
+    val live = state.page?.info != null && !state.preview
     Row(
         Modifier
             .width(m.block)
@@ -148,8 +152,16 @@ private fun NoteRibbon(m: RibbonMetrics, onNotYet: (String) -> Unit) {
         LIcon(Ic.chevronDown, 14.dp, p.text2, Modifier.padding(horizontal = 2.dp))
     }
     RbSeparator(m)
-    for (icon in listOf(Ic.table, Ic.imagePlus, Ic.paperclip, Ic.link2, Ic.fileSymlink, Ic.minus)) RbButton(icon, m, enabled = false) {}
+    RbButton(Ic.table, m, enabled = false) {}
+    RbButton(Ic.imagePlus, m, enabled = editing) { actions.pickMedia(MediaKind.Image) }
+    RbButton(Ic.paperclip, m, enabled = editing) { actions.pickMedia(MediaKind.File) }
+    for (icon in listOf(Ic.link2, Ic.fileSymlink, Ic.minus)) RbButton(icon, m, enabled = false) {}
     RbSeparator(m)
+    if (live) {
+        // Draw (the web's ink bar): the pen bar opens under the ribbon. Not in the look scenes, which have no live page.
+        RbButton(Ic.pen, m, pressed = state.ink.open) { actions.toggleDraw() }
+        RbSeparator(m)
+    }
     RbButton(Ic.paintBucket, m) { onNotYet("Page colour") }
     RbButton(Ic.rows3, m) { onNotYet("Rule lines") }
     RbButton(Ic.printer, m) { onNotYet("Printing") }

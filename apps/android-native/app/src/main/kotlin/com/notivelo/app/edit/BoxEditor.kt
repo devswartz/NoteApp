@@ -25,6 +25,8 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.notivelo.app.data.NoActions
 import com.notivelo.app.data.ShellActions
+import com.notivelo.app.media.MediaKind
+import com.notivelo.app.media.PickedFiles
 import com.notivelo.app.ui.page.PageEnv
 import com.notivelo.core.WorkspaceMember
 
@@ -60,11 +62,19 @@ fun BoxEditor(editing: EditingBox, env: PageEnv, ec: EditContext, modifier: Modi
     val content: @Composable (Int) -> Unit = { maxWidthPx ->
         AndroidView(
             factory = { ctx ->
-                try { android.util.Log.i("Notivelo", "BoxEditor factory") } catch (e: Throwable) { }
                 BoxTextView(ctx, editing.engine, env).also { v ->
                     v.onMenu = { menu = it }
                     v.onPageUndo = { redo -> if (redo) pageActions.redoPage() else pageActions.undoPage() }
                     v.onEdited = { pageActions.pageEdited() }
+                    v.onPickMedia = { file -> pageActions.pickMedia(if (file) MediaKind.File else MediaKind.Image) }
+                    v.onOpenMedia = { src, name, mime -> pageActions.openMedia(src, name, mime) }
+                    v.onPasteImage = { uri ->
+                        val resolver = ctx.contentResolver
+                        Thread {
+                            val picked = PickedFiles.read(resolver, uri)
+                            v.post { pageActions.uploadMedia(picked) }
+                        }.start()
+                    }
                     v.pages = ec.pages
                     v.people = ec.people
                     v.lookFocused = look

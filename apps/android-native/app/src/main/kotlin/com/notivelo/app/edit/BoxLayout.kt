@@ -366,6 +366,7 @@ object BoxLayoutBuilder {
                 "horizontalRule" -> 45.8f
                 "fileAttachment" -> 52f
                 "taskRef" -> 28f
+                "image" -> imageHeight(line, env, width / d)
                 else -> body * 1.7f
             }
             return LineBox(index, line, start, end, top, h * d, px, width, null, (h * d).roundToInt(), kind, MarkerKind.None, 0f, 0, "", false)
@@ -485,6 +486,23 @@ object BoxLayoutBuilder {
         }
         return sp
     }
+
+    /** An image line's height (dp): the picture's own size once it is loaded (as the web's `img`), else the placeholder's; the old one-line placeholder when there is no media (look scenes). */
+    internal fun imageHeight(line: ViewLine, env: PageEnv, availDp: Float): Float {
+        val media = env.media ?: return env.body * 1.7f
+        val json = line.attrsJson ?: ""
+        val src = jsonField(json, "src").orEmpty()
+        val aw = jsonNumber(json, "width")
+        val ah = jsonNumber(json, "height")
+        val img = media.peek(src)
+        if (img == null) media.request(src)
+        return if (img != null) com.notivelo.app.media.MediaSizing.imageSize(aw, ah, img.naturalW, img.naturalH, availDp).second
+        else com.notivelo.app.media.MediaSizing.placeholderSize(aw, ah, availDp).second
+    }
+
+    /** A number field of a small JSON object. */
+    internal fun jsonNumber(json: String, name: String): Double? =
+        Regex("\"" + Regex.escape(name) + "\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)").find(json)?.groupValues?.get(1)?.toDoubleOrNull()
 
     /** A string field of a small JSON object, without a JSON parser (the attrs are flat: `{"id":"u1","label":"Sam"}`). */
     internal fun jsonField(json: String, name: String): String? {

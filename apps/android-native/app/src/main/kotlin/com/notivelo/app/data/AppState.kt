@@ -2,6 +2,10 @@ package com.notivelo.app.data
 
 import androidx.compose.runtime.Immutable
 import com.notivelo.app.edit.EditingBox
+import com.notivelo.app.ink.InkSettings
+import com.notivelo.app.ink.InkStrokeSpec
+import com.notivelo.app.media.MediaKind
+import com.notivelo.app.media.PickedFile
 import com.notivelo.core.PageInfo
 import com.notivelo.core.Task
 import com.notivelo.core.TaskChanges
@@ -83,6 +87,12 @@ data class AppState(
     val teams: List<TaskTeam> = emptyList(),
     val tags: List<TaskTag> = emptyList(),
     val quickAdd: QuickAddState? = null,
+    /** The pen bar (draw mode): open, tool, colours, widths, finger drawing. */
+    val ink: InkSettings = InkSettings(),
+    /** A picker the activity should open (the slash menu's Image or File, the ribbon's Insert); it clears this when it has. */
+    val pickRequest: MediaKind? = null,
+    /** A downloaded file the activity should open with the system (then clears this). */
+    val openFile: OpenFile? = null,
 ) {
     val workspace: Workspace? get() = workspaces.firstOrNull { it.id == workspaceId }
 }
@@ -141,6 +151,19 @@ interface ShellActions {
     fun newTask(dueDate: String? = null) {}
     fun closeQuickAdd() {}
     fun addQuickTask(text: String) {}
+
+    /** Images and files: ask for the picker (the edited box takes the result), upload a picked or pasted file (null: it could not be read), open a stored file. */
+    fun pickMedia(kind: MediaKind) {}
+    fun clearPickRequest() {}
+    fun uploadMedia(file: PickedFile?) {}
+    fun openMedia(src: String, name: String, mime: String) {}
+    fun clearOpenFile() {}
+
+    /** Draw mode: the pen bar's open state and settings, and the page's ink writes (page points, one undo step each). */
+    fun toggleDraw() {}
+    fun setInk(ink: InkSettings) {}
+    fun addInkStroke(stroke: InkStrokeSpec) {}
+    fun eraseInk(track: FloatArray, partial: Boolean) {}
 
     fun signOut() {}
 }

@@ -520,4 +520,103 @@ class AppViewModelTest {
         assertEquals(listOf("a|Step one"), backend.subtasks)
         assertEquals("a", vm.state.value.tasks.last().parentId)
     }
+
+    // Images, files and ink
+
+    private class Hooks : com.notivelo.app.data.MediaHooks {
+        val remembered = mutableListOf<String>()
+        val saved = mutableListOf<String>()
+        override fun saveForOpen(name: String, mime: String, bytes: ByteArray) =
+            com.notivelo.app.data.OpenFile("/cache/open/$name", name, mime).also { saved += "$name|$mime|${bytes.size}" }
+
+        override fun remember(src: String, bytes: ByteArray) {
+            remembered += "$src|${bytes.size}"
+        }
+    }
+
+    private fun mediaModel(hooks: Hooks): AppViewModel {
+        store.refreshToken = "t"
+        val vm = AppViewModel(backend, store, dispatcher, media = hooks)
+        vm.openPage("p1")
+        return vm
+    }
+
+    @Test
+    fun anUploadedPictureIsInsertedIntoTheEditedBoxAndKeptForDrawing() {
+        val hooks = Hooks()
+        val vm = mediaModel(hooks)
+        vm.startEditing("b1")
+        vm.pickMedia(com.notivelo.app.media.MediaKind.Image)
+        assertEquals(com.notivelo.app.media.MediaKind.Image, vm.state.value.pickRequest)
+        vm.clearPickRequest()
+        assertNull(vm.state.value.pickRequest)
+        vm.uploadMedia(com.notivelo.app.media.PickedFile("pic.png", byteArrayOf(1, 2, 3, 4)))
+        assertEquals(listOf("w1|p1|pic.png|4"), backend.uploads)
+        assertEquals(listOf("command:insertImage:{\"src\":\"/uploads/abc.png\",\"alt\":\"pic.png\"}"), backend.engines[0].calls.filter { it.startsWith("command:") })
+        assertEquals(listOf("/uploads/abc.png|4"), hooks.remembered)
+        assertNull(vm.state.value.notice)
+    }
+
+    @Test
+    fun aNonImageFileBecomesAFileCard() {
+        val vm = mediaModel(Hooks())
+        backend.uploaded = com.notivelo.app.data.Uploaded("/uploads/x.pdf", "Plan \"v2\".pdf", "application/pdf", 1234)
+        vm.startEditing("b1")
+        vm.uploadMedia(com.notivelo.app.media.PickedFile("Plan.pdf", byteArrayOf(1)))
+        assertEquals(
+            listOf("command:insertFile:{\"url\":\"/uploads/x.pdf\",\"name\":\"Plan \\\"v2\\\".pdf\",\"size\":1234,\"mime\":\"application/pdf\"}"),
+            backend.engines[0].calls.filter { it.startsWith("command:") },
+        )
+    }
+
+    @Test
+    fun uploadNeedsAnEditedBoxAndReportsRefusals() {
+        val vm = mediaModel(Hooks())
+        vm.pickMedia(com.notivelo.app.media.MediaKind.File)
+        assertEquals("Tap into a text box first.", vm.state.value.notice)
+        assertNull(vm.state.value.pickRequest)
+        vm.uploadMedia(com.notivelo.app.media.PickedFile("a.txt", byteArrayOf(1)))
+        assertTrue(backend.uploads.isEmpty())
+        vm.startEditing("b1")
+        backend.failUpload = BackendError.Other("“big.zip” is larger than 25 MB")
+        vm.uploadMedia(com.notivelo.app.media.PickedFile("big.zip", byteArrayOf(1)))
+        assertEquals("“big.zip” is larger than 25 MB", vm.state.value.notice)
+        backend.failUpload = BackendError.Offline("down")
+        vm.uploadMedia(com.notivelo.app.media.PickedFile("a.png", byteArrayOf(1)))
+        assertEquals("You're offline. Nothing was uploaded.", vm.state.value.notice)
+        vm.uploadMedia(null)
+        assertEquals("Could not read that file.", vm.state.value.notice)
+    }
+
+    @Test
+    fun aFileCardIsDownloadedAndHandedToTheActivity() {
+        val hooks = Hooks()
+        val vm = mediaModel(hooks)
+        vm.openMedia("/uploads/x.pdf", "Plan.pdf", "")
+        assertEquals(listOf("/uploads/x.pdf"), backend.downloads)
+        assertEquals(listOf("Plan.pdf|application/pdf|3"), hooks.saved)
+        assertEquals(com.notivelo.app.data.OpenFile("/cache/open/Plan.pdf", "Plan.pdf", "application/pdf"), vm.state.value.openFile)
+        vm.clearOpenFile()
+        assertNull(vm.state.value.openFile)
+        // An outside address is not ours to fetch.
+        vm.openMedia("https://example.com/a.png", "a.png", "image/png")
+        assertEquals(1, backend.downloads.size)
+    }
+
+    @Test
+    fun drawModeStopsEditingAndStrokesAreOneCallEach() {
+        val vm = livePage()
+        vm.startEditing("b1")
+        vm.toggleDraw()
+        assertTrue(vm.state.value.ink.open)
+        assertNull(vm.state.value.page?.editing)
+        vm.setInk(vm.state.value.ink.copy(kind = com.notivelo.app.ink.InkKind.Highlighter))
+        val style = vm.state.value.ink.style()!!
+        vm.addInkStroke(com.notivelo.app.ink.InkStrokeSpec(style.first, style.second, style.third, false, DoubleArray(12)))
+        vm.eraseInk(floatArrayOf(1f, 2f, 3f, 4f), true)
+        assertEquals(listOf("stroke tool=1 color=facc1559 w=18.0 pressure=false n=2", "erase n=2 r=8.0 partial=true"), backend.pageCalls)
+        // A finger tap on text closes the bar.
+        vm.startEditing("b2")
+        assertFalse(vm.state.value.ink.open)
+    }
 }

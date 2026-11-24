@@ -31,7 +31,7 @@ ICONS = {
     "sliders-horizontal": [], "funnel-x": [], "bookmark": [], "bookmark-plus": [], "list-todo": [],
     "message-square": [], "user-plus": [], "face-slightly-smiling-plus": [], "square-check": [], "list-plus": [],
     "maximize-2": [], "file-x-corner": [], "image": [], "download": [], "trash": [], "repeat": [], "arrow-left": [],
-    "type": [], "heading-1": [], "heading-2": [], "heading-3": [], "square-check-big": [], "quote": [], "message-square-quote": [], "code-xml": [], "at-sign": [],
+    "type": [], "heading-1": [], "heading-2": [], "heading-3": [], "square-check-big": [], "quote": [], "message-square-quote": [], "code-xml": [], "at-sign": [], "pen": [], "eraser": [], "hand": [],
 }
 # Icons drawn filled as well (the priority flag): ic_<name>_filled.xml
 FILLED = ["flag"]
