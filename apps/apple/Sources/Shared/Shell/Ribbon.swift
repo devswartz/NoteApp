@@ -200,6 +200,7 @@ struct CollapsedRibbon: View {
 struct NoteRibbon: View {
     let m: RibbonMetrics
     @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
     let focus = EditorFocus.shared
     let theme = Theme.shared
 
@@ -261,7 +262,7 @@ struct NoteRibbon: View {
         Group {
         RibbonButton(icon: "paint-bucket", m: m, bar: Color.clear, anchor: "rb-page-colour") { shell.menu = .pageColor }
         RibbonButton(icon: "rows-3", m: m, anchor: "rb-rule-lines") { shell.menu = .ruleLines }
-        RibbonButton(icon: "printer", m: m) { shell.notYet("Printing") }
+        RibbonButton(icon: "printer", m: m) { shell.printPage(session) }
         RibbonSeparator(m: m)
         RibbonButton(icon: "list-tree", m: m, pressed: true) { shell.notYet("Hiding the outline") }
         }

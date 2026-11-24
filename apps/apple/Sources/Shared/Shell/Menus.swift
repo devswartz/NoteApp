@@ -452,9 +452,9 @@ struct MenuLayer: View {
             }
             Group {
             MenuItem(palette: p, title: "Export as Markdown", icon: "file-down") { shell.exportMarkdown(session) }
-            MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.notYet("Export") }
-            MenuItem(palette: p, title: "Print", icon: "printer", hint: "Ctrl+P") { shell.notYet("Printing") }
-            MenuItem(palette: p, title: "Print page colour") { shell.notYet("Printing") }
+            MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.exportPDF(session) }
+            MenuItem(palette: p, title: "Print", icon: "printer", hint: "Ctrl+P") { shell.printPage(session) }
+            MenuItem(palette: p, title: "Print page colour") { shell.printPage(session, colour: true) }
             MenuItem(palette: p, title: "Import Markdown…", icon: "file-up") { shell.notYet("Import") }
             MenuSeparator(palette: p)
             }

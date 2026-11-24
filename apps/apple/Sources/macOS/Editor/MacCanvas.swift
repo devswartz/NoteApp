@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import NotiveloCore
 import SwiftUI
 
@@ -61,6 +62,8 @@ final class MacSurfaceView: NSView {
     var addGlyph: NSImage?
     var addLabel: NSAttributedString?
     var showAdd = false
+    /// Printing: the page's colour behind the page (nil: plain paper). Never drawn on screen.
+    var printFill: NSColor?
     private var rules = "none"
     private var originY: CGFloat = 0
 
@@ -81,6 +84,10 @@ final class MacSurfaceView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if let fill = printFill, !NSGraphicsContext.currentContextDrawingToScreen() {
+            fill.setFill()
+            dirtyRect.fill()
+        }
         if rules == "lines" || rules == "grid" {
             ruleColor.setFill()
             let step = Self.rule
@@ -391,6 +398,7 @@ final class MacCanvasView: NSView {
     }
 
     func show(_ page: PageSnapshot, host: PageEditHost?) {
+        Self.current = self
         if page.id != shownID {
             // A title being typed on the page that closes is saved to that page.
             if titleField.currentEditor() != nil {
@@ -1120,5 +1128,67 @@ extension MacCanvasView: NSTextFieldDelegate {
             return true
         }
         return false
+    }
+}
+
+// MARK: Print and Save as PDF
+
+extension MacCanvasView {
+    /// The canvas on screen now (the page being shown), for Print and Save as PDF.
+    static weak var current: MacCanvasView?
+
+    /// Print the page, or (with `url`) save it there as a PDF with no print panel. The page's surface (title, boxes, ink) is the
+    /// printed view: fitted to the paper's width and cut into pages. White paper; with the page colour (or in the dark theme,
+    /// so the text can be read) on its colour.
+    fileprivate func printPage(title: String, colour: Bool, saveTo url: URL?) {
+        stopEditing()
+        window?.makeFirstResponder(nil)
+        let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.isHorizontallyCentered = false
+        info.isVerticallyCentered = false
+        info.leftMargin = 36
+        info.rightMargin = 36
+        info.topMargin = 36
+        info.bottomMargin = 36
+        if let url {
+            info.jobDisposition = .save
+            info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
+        }
+        surface.printFill = (colour || palette.isDark) ? palette.bg : nil
+        defer { surface.printFill = nil }
+        let operation = NSPrintOperation(view: surface, printInfo: info)
+        operation.jobTitle = title.isEmpty ? "Untitled" : title
+        if url != nil {
+            operation.showsPrintPanel = false
+            operation.showsProgressPanel = false
+        }
+        operation.run()
+    }
+}
+
+/// Print and Save as PDF of the page on screen (the page menu and the ribbon).
+enum PagePrinter {
+    @discardableResult
+    static func print(title: String, colour: Bool) -> Bool {
+        guard let canvas = MacCanvasView.current else { return false }
+        canvas.printPage(title: title, colour: colour, saveTo: nil)
+        return true
+    }
+
+    /// The save panel, then the page as a PDF there.
+    @discardableResult
+    static func savePDF(title: String, colour: Bool) -> Bool {
+        guard let canvas = MacCanvasView.current else { return false }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = FileExport.fileName(title, ext: "pdf")
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            canvas.printPage(title: title, colour: colour, saveTo: url)
+        }
+        return true
     }
 }

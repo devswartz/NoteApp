@@ -316,6 +316,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     }
 
     func show(_ page: PageSnapshot, host: PageEditHost?) {
+        Self.current = self
         if page.id != shownID {
             // A title being typed on the page that closes is saved to that page.
             if titleField.isFirstResponder {
@@ -1132,4 +1133,76 @@ final class TitleFieldDelegate: NSObject, UITextViewDelegate {
 
     func textViewDidChange(_ textView: UITextView) { owner?.titleChanged() }
     func textViewDidEndEditing(_ textView: UITextView) { owner?.titleEnded() }
+}
+
+// MARK: Print and Save as PDF
+
+extension PageScrollView {
+    /// The canvas on screen now (the page being shown), for Print and Save as PDF.
+    static weak var current: PageScrollView?
+
+    /// The page as a PDF: the canvas (title, boxes, ink) laid on pages 612 × 792 pt with 36 pt margins, scaled down to the page's
+    /// width and cut into pages. White paper; with the page colour (or in the dark theme, so the text can be read) on its colour.
+    func pdfData(colour: Bool) -> Data? {
+        stopEditing()
+        _ = titleField.resignFirstResponder()
+        let content = surface.bounds
+        guard content.width > 1, content.height > 1 else { return nil }
+        let page = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let inner = page.insetBy(dx: 36, dy: 36)
+        let scale = min(1, inner.width / content.width)
+        let span = inner.height / scale
+        let pages = max(1, Int(ceil(content.height / span)))
+        let fill: UIColor? = (colour || palette.isDark) ? palette.bg : nil
+        // "Add icon" is an editing hint, not part of the page.
+        let hideAdd = !addIcon.isHidden && (icon ?? "").isEmpty
+        if hideAdd { addIcon.isHidden = true }
+        defer { if hideAdd { addIcon.isHidden = false } }
+        return UIGraphicsPDFRenderer(bounds: page).pdfData { ctx in
+            for i in 0..<pages {
+                ctx.beginPage()
+                let cg = ctx.cgContext
+                if let fill {
+                    fill.setFill()
+                    cg.fill(page)
+                }
+                cg.saveGState()
+                cg.clip(to: inner)
+                cg.translateBy(x: inner.minX, y: inner.minY)
+                cg.scaleBy(x: scale, y: scale)
+                cg.translateBy(x: 0, y: -CGFloat(i) * span)
+                surface.layer.render(in: cg)
+                cg.restoreGState()
+            }
+        }
+    }
+}
+
+/// Print and Save as PDF of the page on screen (the page menu and the ribbon).
+enum PagePrinter {
+    /// The print sheet (AirPrint) for the page. False: no page to print.
+    @discardableResult
+    static func print(title: String, colour: Bool) -> Bool {
+        guard let data = PageScrollView.current?.pdfData(colour: colour) else { return false }
+        let info = UIPrintInfo(dictionary: nil)
+        info.outputType = .general
+        info.jobName = title.isEmpty ? "Untitled" : title
+        let controller = UIPrintInteractionController.shared
+        controller.printInfo = info
+        controller.printingItem = data
+        guard let top = FileExport.topViewController() else { return false }
+        // On the iPad the print sheet is a popover: anchor it in the middle of the screen.
+        controller.present(from: CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1), in: top.view, animated: true, completionHandler: nil)
+        return true
+    }
+
+    /// A PDF of the page to the share sheet (Save to Files, AirDrop, Mail …).
+    @discardableResult
+    static func savePDF(title: String, colour: Bool) -> Bool {
+        guard let data = PageScrollView.current?.pdfData(colour: colour) else { return false }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(FileExport.fileName(title, ext: "pdf"))
+        do { try data.write(to: url, options: .atomic) } catch { return false }
+        FileExport.share(file: url)
+        return true
+    }
 }

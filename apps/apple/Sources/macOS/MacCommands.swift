@@ -38,6 +38,12 @@ struct MacCommands: Commands {
             Button("Sign Out") { bridge.signOut() }
         }
 
+        // File > Print (Cmd-P) and Export as PDF: the open page.
+        CommandGroup(replacing: .printItem) {
+            Button("Print…") { bridge.printPage() }.keyboardShortcut("p", modifiers: .command)
+            Button("Export as PDF…") { bridge.exportPDF() }
+        }
+
         // Edit
         // Undo and Redo: the page's one undo (`PageHistory`, core's `LivePage.undo()`: text, ink and boxes). A text field that has
         // the keyboard (the sidebar's rename, search) keeps its own.

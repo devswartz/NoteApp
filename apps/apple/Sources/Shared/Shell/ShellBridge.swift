@@ -102,4 +102,17 @@ extension ShellBridge {
     }
 
     func openSettings(_ section: String? = nil) { shell?.openSettings(section) }
+
+    /// File > Print and Export as PDF: the open page.
+    func printPage() {
+        guard let shell, let session else { return }
+        guard case .page = shell.route else { shell.say("Open a page first."); return }
+        shell.printPage(session)
+    }
+
+    func exportPDF() {
+        guard let shell, let session else { return }
+        guard case .page = shell.route else { shell.say("Open a page first."); return }
+        shell.exportPDF(session)
+    }
 }
