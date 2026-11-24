@@ -7,6 +7,9 @@ struct NotiveloApp: App {
     #if os(iOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     #endif
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+    #endif
 
     var body: some Scene {
         WindowGroup {
