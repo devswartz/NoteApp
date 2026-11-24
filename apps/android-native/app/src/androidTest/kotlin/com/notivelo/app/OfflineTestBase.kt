@@ -122,17 +122,21 @@ abstract class OfflineTestBase {
     protected fun startEditing(id: String = FIRST) {
         waitForBoxNode(id)
         compose.onNodeWithTag("box-$id").performClick()
-        // The Compose-injected tap, else a real touch from the device at the node's place on screen.
+        waitFor("the box editor view to exist") { viewOrNull() != null }
         val end = SystemClock.uptimeMillis() + 2500
         while (SystemClock.uptimeMillis() < end && viewOrNull()?.isFocused != true) Thread.sleep(50)
-        if (viewOrNull()?.isFocused != true) {
-            val b = compose.onNodeWithTag("box-$id").fetchSemanticsNode().boundsInWindow
-            val loc = IntArray(2)
-            scenario.onActivity { it.window.decorView.getLocationOnScreen(loc) }
-            android.util.Log.w("NvTest", "performClick did not start editing; device click at ${b.center} + ${loc.toList()}")
-            device.click((b.center.x + loc[0]).toInt(), (b.center.y + loc[1]).toInt())
+        val v = view()
+        if (!v.isFocused) {
+            var info = ""
+            inst.runOnMainSync {
+                info = "attached=${v.isAttachedToWindow} shown=${v.isShown} size=${v.width}x${v.height} windowFocus=${v.hasWindowFocus()} " +
+                    "focusable=${v.isFocusable} touchFocusable=${v.isFocusableInTouchMode} touchMode=${v.isInTouchMode} parent=${v.parent}"
+                v.requestFocus()
+            }
+            android.util.Log.w("NvTest", "box view not focused after the tap: $info")
+            if (!view().isFocused) throw AssertionError("box view not focused after the tap and requestFocus: $info")
+            throw AssertionError("box view was not focused after the tap (focus came only from requestFocus): $info")
         }
-        waitFor("the box editor to have focus") { viewOrNull()?.isFocused == true }
     }
 
     protected fun waitForText(expected: String) = waitFor("text \"${expected.replace("\n", "\\n")}\"") { text() == expected }
