@@ -124,6 +124,19 @@ impl Core {
         self.maybe_unlocked.load(Ordering::SeqCst)
     }
 
+    /// An unlock, a lock or a sign-out: links signed for the old unlock stop working.
+    pub(crate) fn set_maybe_unlocked(&self, v: bool) {
+        self.maybe_unlocked.store(v, Ordering::SeqCst);
+        self.api.forget_locked_file_key();
+    }
+
+    /// A status answer: the same unlock keeps its file key.
+    pub(crate) fn sync_maybe_unlocked(&self, v: bool) {
+        if self.maybe_unlocked.swap(v, Ordering::SeqCst) != v {
+            self.api.forget_locked_file_key();
+        }
+    }
+
     /// While the sign-in may be unlocked, fetch the tree of `workspace` again and store it, so
     /// that a page locked elsewhere is known to be locked before anything of it is stored.
     pub(crate) fn refresh_lock_knowledge(&self, workspace: Option<String>) {
@@ -145,7 +158,7 @@ impl Core {
     /// treat locked pages as unlocked (see the module docs).
     pub fn locked_notes_status(&self) -> Result<LockedNotesStatus, CoreError> {
         let s = self.api.locked_notes()?;
-        self.maybe_unlocked.store(s.unlocked, Ordering::SeqCst);
+        self.sync_maybe_unlocked(s.unlocked);
         Ok(status(s))
     }
 
@@ -162,7 +175,7 @@ impl Core {
         let r = self
             .api
             .set_locked_password(&password, current_password.as_deref())?;
-        self.maybe_unlocked.store(true, Ordering::SeqCst);
+        self.set_maybe_unlocked(true);
         Ok(r)
     }
 
@@ -173,7 +186,7 @@ impl Core {
     /// forgotten.
     pub fn unlock_locked_notes(&self, password: String) -> Result<String, CoreError> {
         let r = self.api.unlock_locked(&password)?;
-        self.maybe_unlocked.store(true, Ordering::SeqCst);
+        self.set_maybe_unlocked(true);
         Ok(r)
     }
 
@@ -191,7 +204,7 @@ impl Core {
         let r = self
             .api
             .unlock_locked_with_device(&device_id, &secret, &install_id)?;
-        self.maybe_unlocked.store(true, Ordering::SeqCst);
+        self.set_maybe_unlocked(true);
         Ok(r)
     }
 
@@ -221,7 +234,7 @@ impl Core {
     /// sockets (4403, `LiveEnd::NoAccess`). Close open locked pages yourself as well.
     pub fn lock_locked_notes(&self) -> Result<(), CoreError> {
         self.api.relock()?;
-        self.maybe_unlocked.store(false, Ordering::SeqCst);
+        self.set_maybe_unlocked(false);
         Ok(())
     }
 
@@ -229,7 +242,7 @@ impl Core {
     /// page is being edited). Call it about every minute while a locked page is on screen.
     pub fn keep_locked_notes_unlocked(&self) -> Result<LockKeepalive, CoreError> {
         let (unlocked, expires_at) = self.api.locked_keepalive()?;
-        self.maybe_unlocked.store(unlocked, Ordering::SeqCst);
+        self.sync_maybe_unlocked(unlocked);
         Ok(LockKeepalive {
             unlocked,
             expires_at,

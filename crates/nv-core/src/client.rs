@@ -565,7 +565,7 @@ impl Core {
     pub fn sign_out(&self) {
         self.api.logout();
         self.tasks.clear();
-        self.maybe_unlocked.store(false, Ordering::SeqCst);
+        self.set_maybe_unlocked(false);
         if let Some(s) = &self.store {
             let _ = s.clear();
         }

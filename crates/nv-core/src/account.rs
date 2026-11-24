@@ -92,8 +92,7 @@ impl Core {
         new_password: String,
     ) -> Result<SignedIn, CoreError> {
         let s = self.api.change_password(&current_password, &new_password)?;
-        self.maybe_unlocked
-            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.set_maybe_unlocked(false);
         Ok(self.signed_in(s))
     }
 
