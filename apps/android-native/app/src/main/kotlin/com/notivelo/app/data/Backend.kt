@@ -1,7 +1,10 @@
 package com.notivelo.app.data
 
+import com.notivelo.app.edit.CoreTextEngine
+import com.notivelo.app.edit.TextEngine
 import com.notivelo.core.Core
 import com.notivelo.core.CoreException
+import com.notivelo.core.EditorSession
 import com.notivelo.core.LiveEnd
 import com.notivelo.core.LivePage
 import com.notivelo.core.LivePageListener
@@ -12,6 +15,7 @@ import com.notivelo.core.SignedIn
 import com.notivelo.core.Task
 import com.notivelo.core.Tree
 import com.notivelo.core.Workspace
+import com.notivelo.core.WorkspaceMember
 
 const val DEFAULT_SERVER = "https://app.notiveloapp.com"
 
@@ -29,6 +33,9 @@ interface Backend {
     fun cachedTree(workspaceId: String): Tree?
     fun tree(workspaceId: String): Tree
     fun tasks(workspaceId: String): List<Task>
+
+    /** The workspace's people, for the `@` menu. Empty when unknown. */
+    fun members(workspaceId: String): List<WorkspaceMember> = emptyList()
 
     /** Tick or untick a task; returns it as the server has it. */
     fun setTaskDone(taskId: String, done: Boolean): Task
@@ -51,6 +58,9 @@ interface PageHandle {
 
     /** The strokes in drawing order, with their outlines. */
     fun ink(): List<InkShape>
+
+    /** A text engine on one box of this page (`box:<id>`, or `default`): its edits go into the live page. */
+    fun openEditor(boxId: String, workspaceId: String): TextEngine = throw UnsupportedOperationException("not editable")
     fun close()
 }
 
@@ -113,6 +123,8 @@ class CoreBackend(private val storePath: String) : Backend {
 
     override fun setTaskDone(taskId: String, done: Boolean): Task = call { current().setTaskDone(taskId, done) }
 
+    override fun members(workspaceId: String): List<WorkspaceMember> = call { current().members(workspaceId) }
+
     override fun cachedPage(pageId: String): PageInfo? = try {
         core?.cachedPageDocument(pageId)?.let { readPage(it) }
     } catch (e: Exception) {
@@ -136,7 +148,7 @@ class CoreBackend(private val storePath: String) : Backend {
                 override fun onChange(page: PageInfo) = events.onChange(page)
             })
         }
-        return CorePageHandle(page)
+        return CorePageHandle(page, current(), pageId)
     }
 
     override fun signOut() {
@@ -144,8 +156,14 @@ class CoreBackend(private val storePath: String) : Backend {
     }
 }
 
-private class CorePageHandle(private val page: LivePage) : PageHandle {
+private class CorePageHandle(private val page: LivePage, private val core: Core, private val pageId: String) : PageHandle {
     override fun info(): PageInfo = page.info()
+
+    override fun openEditor(boxId: String, workspaceId: String): TextEngine {
+        val field = if (boxId == "default") "default" else "box:$boxId"
+        val tasks = core.pageTasks(workspaceId, pageId)
+        return CoreTextEngine(EditorSession.openLive(page, field, tasks))
+    }
 
     override fun ink(): List<InkShape> = page.inkStrokes().filter { it.readable }.mapNotNull { s ->
         val ops = page.inkOutline(s.id)

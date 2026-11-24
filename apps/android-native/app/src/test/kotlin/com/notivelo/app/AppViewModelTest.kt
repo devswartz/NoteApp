@@ -278,6 +278,36 @@ class AppViewModelTest {
     }
 
     @Test
+    fun aBoxIsEditedThroughASessionOnTheLivePage() {
+        store.refreshToken = "t"
+        val vm = model()
+        vm.openPage("p1")
+        vm.startEditing("b1", 12f, 30f)
+        val editing = vm.state.value.page?.editing
+        assertEquals("b1", editing?.boxId)
+        assertEquals(12f, editing?.tapX)
+        assertEquals(listOf("b1@w1"), backend.openedBoxes)
+        // Another box replaces it, and the first session is closed.
+        vm.startEditing("b2")
+        assertEquals("b2", vm.state.value.page?.editing?.boxId)
+        assertTrue(backend.engines[0].closed)
+        vm.stopEditing()
+        assertNull(vm.state.value.page?.editing)
+        assertTrue(backend.engines[1].closed)
+    }
+
+    @Test
+    fun leavingThePageClosesTheBoxSession() {
+        store.refreshToken = "t"
+        val vm = model()
+        vm.openPage("p1")
+        vm.startEditing("b1")
+        vm.back()
+        assertTrue(backend.engines[0].closed)
+        assertNull(vm.state.value.page)
+    }
+
+    @Test
     fun taskViewsAreChosenFromTheTab() {
         store.refreshToken = "t"
         val vm = model()

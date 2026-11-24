@@ -1,11 +1,13 @@
 package com.notivelo.app.data
 
 import androidx.compose.runtime.Immutable
+import com.notivelo.app.edit.EditingBox
 import com.notivelo.core.PageInfo
 import com.notivelo.core.Task
 import com.notivelo.core.Tree
 import com.notivelo.core.User
 import com.notivelo.core.Workspace
+import com.notivelo.core.WorkspaceMember
 
 enum class Phase { Loading, SignedOut, SignedIn }
 
@@ -22,6 +24,8 @@ data class PageView(
     val info: PageInfo? = null,
     val ink: List<InkShape> = emptyList(),
     val status: PageStatus = PageStatus.Connecting,
+    /** The box being edited (its text engine), if any. */
+    val editing: EditingBox? = null,
 )
 
 /** Everything the screens show, in one value; [AppViewModel] is the only writer. */
@@ -59,6 +63,8 @@ data class AppState(
     val preview: Boolean = false,
     /** Titles of pages the tasks are written on that the tree doesn't list (the look scenes). */
     val otherPageTitles: Map<String, String> = emptyMap(),
+    /** The workspace's people (the `@` menu), loaded when a box is first edited. */
+    val members: List<WorkspaceMember> = emptyList(),
 ) {
     val workspace: Workspace? get() = workspaces.firstOrNull { it.id == workspaceId }
 }
@@ -91,6 +97,10 @@ interface ShellActions {
     /** Open (or close, with null) a task's detail sheet. */
     fun openTask(id: String?) {}
     fun clearNotice() {}
+
+    /** Edit a box of the open page; the tap's place (px in the box) puts the caret there. */
+    fun startEditing(boxId: String, tapX: Float = -1f, tapY: Float = -1f) {}
+    fun stopEditing() {}
 
     fun signOut() {}
 }

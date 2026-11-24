@@ -141,7 +141,7 @@ class AppViewModel(
     private suspend fun switchTo(id: String) {
         _state.update {
             it.copy(
-                workspaceId = id, tree = null, taskCounts = emptyMap(), tasks = emptyList(), taskDetailId = null, treeLoading = true,
+                workspaceId = id, tree = null, taskCounts = emptyMap(), tasks = emptyList(), members = emptyList(), taskDetailId = null, treeLoading = true,
                 notebookId = null, phoneNotebookId = null, sectionId = null, pageId = null,
             )
         }
@@ -310,6 +310,7 @@ class AppViewModel(
     private suspend fun openPageHandle(id: String?) {
         val old = handle
         handle = null
+        _state.value.page?.editing?.let { e -> blocking { try { e.engine.close() } catch (x: Exception) { } } }
         if (old != null) blocking { try { old.close() } catch (e: Exception) { } }
         if (id == null) {
             _state.update { it.copy(page = null) }
@@ -340,6 +341,44 @@ class AppViewModel(
         } catch (e: BackendError) {
             editPage(id) { it.copy(status = PageStatus.Offline) }
         }
+    }
+
+    // Editing a box: a core session on it (others' edits come into it, its edits go into the page)
+
+    override fun startEditing(boxId: String, tapX: Float, tapY: Float) {
+        val s = _state.value
+        val pid = s.pageId ?: return
+        val h = handle ?: return
+        val ws = s.workspaceId ?: return
+        if (s.page?.editing?.boxId == boxId) return
+        viewModelScope.launch {
+            try {
+                val engine = blocking { h.openEditor(boxId, ws) }
+                if (_state.value.pageId != pid || handle !== h) {
+                    blocking { engine.close() }
+                    return@launch
+                }
+                val old = _state.value.page?.editing
+                editPage(pid) { it.copy(editing = EditingBox(boxId, engine, tapX, tapY)) }
+                if (old != null) blocking { old.engine.close() }
+                loadMembers(ws)
+            } catch (e: Exception) {
+                _state.update { it.copy(notice = "This box could not be opened for editing.") }
+            }
+        }
+    }
+
+    override fun stopEditing() {
+        val pid = _state.value.pageId ?: return
+        val e = _state.value.page?.editing ?: return
+        editPage(pid) { it.copy(editing = null) }
+        viewModelScope.launch { blocking { try { e.engine.close() } catch (x: Exception) { } } }
+    }
+
+    private suspend fun loadMembers(workspaceId: String) {
+        if (_state.value.members.isNotEmpty()) return
+        val people = try { blocking { backend.members(workspaceId) } } catch (e: Exception) { return }
+        if (_state.value.workspaceId == workspaceId) _state.update { it.copy(members = people) }
     }
 
     private suspend fun applyPage(id: String, info: PageInfo) {

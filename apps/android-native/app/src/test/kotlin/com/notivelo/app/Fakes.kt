@@ -94,6 +94,8 @@ class FakeBackend : Backend {
 
     val openedPages = mutableListOf<String>()
     val closedPages = mutableListOf<String>()
+    val openedBoxes = mutableListOf<String>()
+    val engines = mutableListOf<com.notivelo.app.edit.FakeTextEngine>()
 
     override fun cachedPage(pageId: String): com.notivelo.core.PageInfo? = null
 
@@ -102,6 +104,10 @@ class FakeBackend : Backend {
         return object : PageHandle {
             override fun info(): com.notivelo.core.PageInfo = error("no page content in the fake")
             override fun ink(): List<InkShape> = emptyList()
+            override fun openEditor(boxId: String, workspaceId: String): com.notivelo.app.edit.TextEngine {
+                openedBoxes += "$boxId@$workspaceId"
+                return com.notivelo.app.edit.FakeTextEngine("hi").also { engines += it }
+            }
             override fun close() {
                 closedPages += pageId
             }
