@@ -79,7 +79,7 @@ internal static class DeleteAccountDialog
             }
             Update();
         }
-        pw.PasswordChanged += (_, _) => { error.Visibility = Visibility.Collapsed; Update(); };
+        pw.PasswordChanged += (_, _) => { if (pw.Password.Length > 0) error.Visibility = Visibility.Collapsed; Update(); };   // our own clear after a failure keeps the message
         pw.KeyDown += (_, e) => { if (e.Key == VirtualKey.Enter && ok.IsEnabled) { e.Handled = true; Go(); } };
         ok.Click += (_, _) => Go();
         async void Go()
@@ -95,8 +95,9 @@ internal static class DeleteAccountDialog
                 if (signOut is not null) signOut(); else h.Toast("Account deleted (sample data: nothing was deleted)");
                 return;
             }
+            pw.Password = "";
             Fail(r.Offline ? AccountRules.OfflineDetail : r.Code == "wrong_password" ? "That password is not right. Try again." : r.Error ?? "Something went wrong.");
-            pw.Password = ""; error.Visibility = Visibility.Visible; pw.Focus(FocusState.Programmatic);
+            pw.Focus(FocusState.Programmatic);
             Update();
         }
     }

@@ -73,7 +73,7 @@ public class AuditBatchTests
         Press(h, "menu-sort-title");
         Find(h, "ribbon-sort");
         Press(h, "ribbon-status");
-        Press(h, "menu-status-completed");
+        Press(h, "menu-status-done");
         Find(h, "task-row-t-slow");                              // the done sample task
         AppHost.Wait(() => Gone(h, "task-row-t-welcome") ? "x" : null, "open tasks hidden while the status is Completed");
         Press(h, "ribbon-clear-filters");
