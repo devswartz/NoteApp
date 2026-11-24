@@ -24,7 +24,7 @@ public class ShellPolishTests
         }
     }
 
-    private static void Invoke(AppHost h, string id) => Retry(() => Find(h, id).Patterns.Invoke.Pattern.Invoke());
+    private static void Invoke(AppHost h, string id) => Retry(() => { var e = Find(h, id); if (e.Patterns.Invoke.IsSupported) e.Patterns.Invoke.Pattern.Invoke(); else { e.Click(); Thread.Sleep(250); } });
     private static void SetText(AppHost h, string id, string text) => Retry(() => Find(h, id).AsTextBox().Text = text);
     private static string NameOf(AppHost h, string id) => Find(h, id).Properties.Name.ValueOrDefault ?? "";
     private static string Status(AppHost h, string id) => Find(h, id).Properties.ItemStatus.ValueOrDefault ?? "";

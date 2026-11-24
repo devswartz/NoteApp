@@ -23,7 +23,13 @@ public class PageToolsTests
         }
     }
 
-    private static void Invoke(AppHost h, string id) => Retry(() => Find(h, id).Patterns.Invoke.Pattern.Invoke());
+    // tree rows have no Invoke pattern: click those
+    private static void Invoke(AppHost h, string id) => Retry(() =>
+    {
+        var e = Find(h, id);
+        if (e.Patterns.Invoke.IsSupported) e.Patterns.Invoke.Pattern.Invoke();
+        else { e.Click(); Thread.Sleep(250); }
+    });
     private static void SetText(AppHost h, string id, string text) => Retry(() => Find(h, id).AsTextBox().Text = text);
     private static string Status(AppHost h, string id) => Find(h, id).Properties.ItemStatus.ValueOrDefault ?? "";
     private static string Log(AppHost h) => File.Exists(h.TaskLog) ? File.ReadAllText(h.TaskLog) : "";
