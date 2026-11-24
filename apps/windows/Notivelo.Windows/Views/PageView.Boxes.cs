@@ -48,6 +48,16 @@ internal sealed partial class PageView
         if (e.Handled || PageId is null || BoxTextView.Focused is not null || e.OriginalSource is Microsoft.UI.Xaml.Controls.TextBox) return;
         var ctrl = Down(global::Windows.System.VirtualKey.Control);
         var shift = Down(global::Windows.System.VirtualKey.Shift);
+        // the context-menu key or Shift+F10 opens the selected box's menu at its frame's top left
+        if (_selectedBox is { } sb && (e.Key == global::Windows.System.VirtualKey.Application || (shift && e.Key == global::Windows.System.VirtualKey.F10))
+            && _frames.TryGetValue(sb, out var fr))
+        {
+            e.Handled = true;
+            Point at;
+            try { at = fr.Bar.TransformToVisual(null).TransformPoint(new Point(0, fr.Bar.ActualHeight)); } catch { at = new Point(200, 200); }
+            ShowBoxMenu(at);
+            return;
+        }
         var action = BoxClipboardRules.KeyAction(e.Key.ToString(), ctrl, shift);
         if (action is null) return;
         if (action == "paste") { e.Handled = true; _pasteAt = null; _ = PasteAsync(null); return; }

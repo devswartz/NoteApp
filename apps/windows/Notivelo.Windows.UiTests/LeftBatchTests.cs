@@ -109,15 +109,13 @@ public class LeftBatchTests
     public void The_box_context_menu_duplicates_and_deletes() => AppHost.Run(nameof(The_box_context_menu_duplicates_and_deletes), h =>
     {
         SelectB(h);
-        var r = h.B.Bounds;
-        Mouse.RightClick(new System.Drawing.Point(r.Left + 120, r.Top - 4));   // the move bar sits just above the box
+        h.Chord(SHIFT, F10);                                                     // the box's menu from the keyboard (a right-click needs the bar's exact place)
         Find(h, "menu-box");
         Press(h, "menu-box-duplicate");
         WaitBoxCount(h, 3);
         var made = new Box(h, NewBox(h));
         WaitSelected(made);
-        var m = made.Bounds;
-        Mouse.RightClick(new System.Drawing.Point(m.Left + 120, m.Top - 4));
+        h.Chord(SHIFT, F10);
         Find(h, "menu-box");
         Press(h, "menu-box-delete");
         WaitBoxCount(h, 2);
