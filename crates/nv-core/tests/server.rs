@@ -2278,7 +2278,6 @@ fn templates_push_devices_and_box_clipboard_against_a_running_server() {
     let ws = core.workspaces().unwrap()[0].id.clone();
     let tree = core.tree(ws.clone()).unwrap();
     let section = tree.sections[0].id.clone();
-    assert_eq!(tree.sections[0].default_template_id, None);
     assert!(core.templates(ws.clone()).unwrap().is_empty());
 
     // A page with two boxes: paste them in, save the page as a template.
@@ -2348,14 +2347,9 @@ fn templates_push_devices_and_box_clipboard_against_a_running_server() {
         DefaultTemplateChoice::Template { id: t.id.clone() },
     )
     .unwrap();
-    let s = core
-        .tree(ws.clone())
-        .unwrap()
-        .sections
-        .into_iter()
-        .find(|s| s.id == section)
-        .unwrap();
-    assert_eq!(s.default_template_id.as_deref(), Some(t.id.as_str()));
+    let s = core.section_default_templates(ws.clone()).unwrap();
+    assert_eq!(s[0].section_id, section);
+    assert_eq!(s[0].default_template_id.as_deref(), Some(t.id.as_str()));
     let made = core
         .create_page_from_template(section.clone(), None, Some("default".into()))
         .unwrap();
@@ -2375,14 +2369,8 @@ fn templates_push_devices_and_box_clipboard_against_a_running_server() {
     assert!(blank.pending_template.is_none());
     core.set_section_default_template(section.clone(), DefaultTemplateChoice::NoDefault)
         .unwrap();
-    let s = core
-        .tree(ws.clone())
-        .unwrap()
-        .sections
-        .into_iter()
-        .find(|s| s.id == section)
-        .unwrap();
-    assert!(s.no_default_template && s.default_template_id.is_none());
+    let s = core.section_default_templates(ws.clone()).unwrap();
+    assert!(s[0].no_default_template && s[0].default_template_id.is_none());
 
     core.delete_template(t.id.clone()).unwrap();
     assert!(core.templates(ws).unwrap().is_empty());

@@ -166,7 +166,7 @@ impl Core {
     /// "canvas". `name` 1 to 100 characters; `sections` ties it to sections (none: everywhere).
     /// A page in a private notebook makes a private template; a locked page can't be saved (400);
     /// 403 for someone with only a page share. Counts: at most 100 templates per workspace.
-    #[uniffi::method(default(icon = None, kind = "canvas", sections = None))]
+    #[uniffi::method(default(kind = "canvas", sections = None))]
     pub fn save_page_as_template(
         &self,
         page_id: String,
@@ -231,8 +231,8 @@ impl Core {
     }
 
     /// Choose the template new pages in a section start from (editors only; the template must
-    /// be workspace-visible and offered in the section, else 400). Refreshes the cached tree:
-    /// `Section.default_template_id` / `no_default_template` show the choice.
+    /// be workspace-visible and offered in the section, else 400). Read the result back with
+    /// `section_default_templates`.
     pub fn set_section_default_template(
         &self,
         section_id: String,
@@ -321,5 +321,40 @@ impl Core {
             task_id: r.task_id,
             until: r.until,
         })
+    }
+}
+
+/// A section's own default template setting (see `Core::section_default_templates`).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SectionDefaultTemplate {
+    pub section_id: String,
+    /// The section's own default template id; none: it inherits the nearest parent's.
+    pub default_template_id: Option<String>,
+    /// "None" chosen for this section: no default here even if a parent has one.
+    pub no_default_template: bool,
+}
+
+#[uniffi::export]
+impl Core {
+    /// The default-template setting of each section of the workspace that has one (own choice
+    /// or "None"; sections that inherit are left out). Effective default of a section: its own
+    /// `default_template_id`, else the nearest ancestor's, unless `no_default_template` stops
+    /// the search. Read from the server (online).
+    pub fn section_default_templates(
+        &self,
+        workspace_id: String,
+    ) -> Result<Vec<SectionDefaultTemplate>, CoreError> {
+        Ok(self
+            .api
+            .tree(&workspace_id)?
+            .sections
+            .into_iter()
+            .filter(|s| s.default_template_id.is_some() || s.no_default_template)
+            .map(|s| SectionDefaultTemplate {
+                section_id: s.id,
+                default_template_id: s.default_template_id,
+                no_default_template: s.no_default_template,
+            })
+            .collect())
     }
 }

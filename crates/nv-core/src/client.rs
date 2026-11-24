@@ -122,10 +122,6 @@ pub struct Section {
     pub name: String,
     pub color: String,
     pub position: f64,
-    /// The section's own default template id; none: inherits the parent section's default.
-    pub default_template_id: Option<String>,
-    /// "None" chosen for this section: no default here even if a parent has one.
-    pub no_default_template: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -241,8 +237,6 @@ fn tree(t: nv_api::Tree) -> Tree {
                 name: s.name,
                 color: s.color,
                 position: s.position,
-                default_template_id: s.default_template_id,
-                no_default_template: s.no_default_template,
             })
             .collect(),
         pages: t
