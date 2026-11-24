@@ -189,6 +189,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
+          enable-hw-keyboard: true
           working-directory: apps/android-native
           script: bash scripts/run-ui-tests.sh
 

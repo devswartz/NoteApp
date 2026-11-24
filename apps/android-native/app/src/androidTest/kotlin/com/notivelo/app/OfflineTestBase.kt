@@ -75,8 +75,19 @@ abstract class OfflineTestBase {
         while (true) {
             val ok = try { cond() } catch (e: Exception) { false }
             if (ok) return
-            if (SystemClock.uptimeMillis() > end) throw AssertionError("Timed out waiting for $what (text=${textOrNull()?.let { "\"" + it.replace("\n", "\\n") + "\"" }})")
+            if (SystemClock.uptimeMillis() > end) {
+                shot("timeout-" + what.take(30).replace(Regex("[^A-Za-z0-9]+"), "_"))
+                throw AssertionError("Timed out waiting for $what (text=${textOrNull()?.let { "\"" + it.replace("\n", "\\n") + "\"" }})")
+            }
             Thread.sleep(50)
+        }
+    }
+
+    protected fun shot(name: String) {
+        try {
+            device.executeShellCommand("mkdir -p /sdcard/Download/nv-shots")
+            device.executeShellCommand("screencap -p /sdcard/Download/nv-shots/${this.javaClass.simpleName}-$name.png")
+        } catch (x: Exception) {
         }
     }
 

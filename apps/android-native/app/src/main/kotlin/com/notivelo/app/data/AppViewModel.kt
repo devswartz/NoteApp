@@ -484,6 +484,7 @@ class AppViewModel(
             refreshFlags(pid)
             loadMembers(ws)
         } catch (e: Exception) {
+            android.util.Log.w("Notivelo", "openEditor failed", e)
             _state.update { it.copy(notice = "This box could not be opened for editing.") }
         }
     }
