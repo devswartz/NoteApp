@@ -51,7 +51,7 @@ Not merged. Nothing was driven with input on this PC: local checks were builds a
   - 45323584416 on 4c4acc6: 1 failure (resize test hit the wrong corner; fixed by reading the corner from the box).
   - 45325725142 on fb52402: 2 failures (tree rows have no Invoke pattern; tests now click).
   - 45328154688 on 1585d70: green. Build x64 + arm64, 253 unit tests, 67 UI tests, 83 look shots.
-  - A last run covers the look fixes in 7c99a83 and this status.
+  - 45330277630 on 3256c45 (look fixes and this status): one failure in `Search_finds_tasks_and_the_sheet_edits_them` (the Tasks row not found in time; nothing this round touched it), green on a re-run of the UI job: 67 UI tests, look shots. That test looks flaky.
 
 ## 2026-11-24: ink editing and task detail (branch `rewrite/windows-ink`, from `origin/rewrite/native` 5b7f5f4)
 
