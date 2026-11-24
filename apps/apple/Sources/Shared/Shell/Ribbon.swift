@@ -200,6 +200,7 @@ struct CollapsedRibbon: View {
 struct NoteRibbon: View {
     let m: RibbonMetrics
     @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
     let focus = EditorFocus.shared
     let theme = Theme.shared
 
@@ -261,7 +262,7 @@ struct NoteRibbon: View {
         Group {
         RibbonButton(icon: "paint-bucket", m: m, bar: Color.clear, anchor: "rb-page-colour") { shell.menu = .pageColor }
         RibbonButton(icon: "rows-3", m: m, anchor: "rb-rule-lines") { shell.menu = .ruleLines }
-        RibbonButton(icon: "printer", m: m) { shell.notYet("Printing") }
+        RibbonButton(icon: "printer", m: m) { shell.printPage(session) }
         RibbonSeparator(m: m)
         RibbonButton(icon: "list-tree", m: m, pressed: true) { shell.notYet("Hiding the outline") }
         }
@@ -286,7 +287,7 @@ struct TasksRibbon: View {
     @Environment(SessionModel.self) private var session
 
     var body: some View {
-        let fixed = list == .today
+        let tv = shell.tv
         Group {
         RibbonButton(icon: "plus", m: m) { shell.openQuickAdd(session) }
         RibbonSeparator(m: m)
@@ -295,18 +296,21 @@ struct TasksRibbon: View {
         RibbonButton(icon: "inbox", m: m, pressed: list == .my) { shell.route = .tasks(.my) }
         RibbonButton(icon: "list-checks", m: m, pressed: list == .all) { shell.route = .tasks(.all) }
         RibbonSeparator(m: m)
-        RibbonButton(icon: "layers", m: m, enabled: !fixed, caret: true) { shell.notYet("Grouping") }
-        RibbonButton(icon: "arrow-up-down", m: m, enabled: !fixed, caret: true) { shell.notYet("Sorting") }
+        // Group by and Sort don't apply to Today, Upcoming and Team (their grouping is fixed); My Tasks groups but sorts by date.
+        RibbonButton(icon: "layers", m: m, enabled: list == .my || list == .all, caret: true, anchor: "rb-taskGroup") { shell.menu = .taskGroup }
+        RibbonButton(icon: "arrow-up-down", m: m, enabled: list == .all, caret: true, anchor: "rb-taskSort") { shell.menu = .taskSort }
         RibbonSeparator(m: m)
         }
         Group {
-        RibbonButton(icon: "eye", m: m, caret: true) { shell.notYet("Filters") }
-        RibbonButton(icon: "user", m: m, enabled: !fixed && list != .my, caret: true) { shell.notYet("Filters") }
-        RibbonButton(icon: "tag", m: m, caret: true) { shell.notYet("Filters") }
-        RibbonButton(icon: "users-round", m: m, caret: true) { shell.notYet("Filters") }
-        RibbonButton(icon: "flag", m: m, caret: true) { shell.notYet("Filters") }
-        RibbonButton(icon: "sliders-horizontal", m: m, caret: true) { shell.notYet("Filters") }
-        RibbonButton(icon: "funnel-x", m: m, enabled: false) {}
+        // Status applies to All tasks (the other views show open tasks).
+        RibbonButton(icon: "eye", m: m, enabled: list == .all, pressed: tv.isOn(.status), caret: true, anchor: "rb-taskStatus") { shell.menu = .taskStatus }
+        RibbonButton(icon: "user", m: m, enabled: list != .my, pressed: tv.isOn(.assignee) || (list == .upcoming && !tv.upcomingEveryone), caret: true,
+                     anchor: "rb-taskAssignee") { shell.menu = .taskAssignee }
+        RibbonButton(icon: "tag", m: m, pressed: tv.isOn(.tags), caret: true, anchor: "rb-taskTags") { shell.menu = .taskTags }
+        RibbonButton(icon: "users-round", m: m, pressed: tv.isOn(.team), caret: true, anchor: "rb-taskTeam") { shell.menu = .taskTeam; session.loadAllDetails() }
+        RibbonButton(icon: "flag", m: m, pressed: tv.isOn(.priority), caret: true, anchor: "rb-taskPriority") { shell.menu = .taskPriority }
+        RibbonButton(icon: "sliders-horizontal", m: m, pressed: tv.isOn(.due) || tv.isOn(.source), caret: true, anchor: "rb-taskMore") { shell.menu = .taskMore }
+        RibbonButton(icon: "funnel-x", m: m, enabled: !tv.activeKinds.isEmpty) { tv.clearAll(); tv.status = .open }
         RibbonSeparator(m: m)
         }
         Group {

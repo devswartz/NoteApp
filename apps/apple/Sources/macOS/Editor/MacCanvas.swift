@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import NotiveloCore
 import SwiftUI
 
@@ -24,6 +25,8 @@ struct MacCanvas: NSViewRepresentable {
     var canEditIcon = false
     var showAddIcon = false
     var onIcon: ((CGRect) -> Void)?
+    /// The title is a text field when this is set: (page id, new title), when Return is pressed or the field loses focus.
+    var onRename: ((String, String) -> Void)?
     /// A short message for the user (the shell's toast).
     var notify: ((String) -> Void)?
 
@@ -35,6 +38,7 @@ struct MacCanvas: NSViewRepresentable {
         view.notify = notify
         view.onZoom = onZoom
         view.onIcon = onIcon
+        view.onRename = onRename
         view.setHeader(title: title, subline: subline, palette: palette, icon: icon, canEditIcon: canEditIcon, showAddIcon: showAddIcon)
         view.decor = decor
         view.setZoom(zoom)
@@ -58,6 +62,8 @@ final class MacSurfaceView: NSView {
     var addGlyph: NSImage?
     var addLabel: NSAttributedString?
     var showAdd = false
+    /// Printing: the page's colour behind the page (nil: plain paper). Never drawn on screen.
+    var printFill: NSColor?
     private var rules = "none"
     private var originY: CGFloat = 0
 
@@ -78,6 +84,10 @@ final class MacSurfaceView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if let fill = printFill, !NSGraphicsContext.currentContextDrawingToScreen() {
+            fill.setFill()
+            dirtyRect.fill()
+        }
         if rules == "lines" || rules == "grid" {
             ruleColor.setFill()
             let step = Self.rule
@@ -98,7 +108,6 @@ final class MacSurfaceView: NSView {
                 }
             }
         }
-        title.draw(with: titleRect, options: [.usesLineFragmentOrigin], context: nil)
         subline.draw(with: sublineRect, options: [.usesLineFragmentOrigin], context: nil)
         if let iconEmoji {
             iconEmoji.draw(with: iconRect, options: [.usesLineFragmentOrigin], context: nil)
@@ -165,6 +174,14 @@ final class MacCanvasView: NSView {
     private var hovering = false
     private var tracking: NSTrackingArea?
     var onIcon: ((CGRect) -> Void)?
+    /// The page title: a text field (the web's textarea). (page id, title) go to onRename when it ends editing.
+    private let titleField = NSTextField()
+    private var shownTitle = ""
+    private var wantedTitle = ""
+    private var titleAttrs: [NSAttributedString.Key: Any] = [:]
+    var onRename: ((String, String) -> Void)? {
+        didSet { titleField.isEditable = onRename != nil }
+    }
     /// A page's icon is 56 pt (line 1.1, padding 2) in a row taller than the empty one (28 pt): the title and the page's
     /// origin move down with it.
     private var headerShift: CGFloat { icon.map { $0.isEmpty ? 0 : 56 * 1.1 + 4 - 28 } ?? 0 }
@@ -193,6 +210,19 @@ final class MacCanvasView: NSView {
         PageHistory.shared.beginStep = { [weak self] in self?.beginHistoryStep() }
         scroll.contentView.postsBoundsChangedNotifications = true
         addSubview(scroll)
+        titleField.isBordered = false
+        titleField.drawsBackground = false
+        titleField.focusRingType = .none
+        titleField.isEditable = false
+        titleField.isSelectable = true
+        titleField.usesSingleLineMode = false
+        titleField.cell?.wraps = true
+        titleField.cell?.isScrollable = false
+        titleField.lineBreakMode = .byWordWrapping
+        titleField.maximumNumberOfLines = 0
+        titleField.delegate = self
+        titleField.setAccessibilityIdentifier("page-title")
+        surface.addSubview(titleField)
         surface.onMouseDown = { [weak self] event in self?.surfaceMouseDown(event) }
         setAccessibilityIdentifier("page-scroll")
         let center = NotificationCenter.default
@@ -274,11 +304,24 @@ final class MacCanvasView: NSView {
         let style = NSMutableParagraphStyle()
         style.minimumLineHeight = titleLine
         style.maximumLineHeight = titleLine
-        surface.title = NSAttributedString(string: title.isEmpty ? "Untitled" : title, attributes: [
+        let titleAttributes: [NSAttributedString.Key: Any] = [
             .font: titleFont, .kern: -0.025 * titleSize, .paragraphStyle: style,
-            .foregroundColor: title.isEmpty ? palette.borderStrong : palette.text,
+            .foregroundColor: palette.text,
             .baselineOffset: (titleLine - titleFont.lineHeight) / BoxTextRenderer.baselineDivisor,
-        ])
+        ]
+        var hintAttributes = titleAttributes
+        hintAttributes[.foregroundColor] = palette.borderStrong
+        surface.title = NSAttributedString(string: title.isEmpty ? "Untitled" : title, attributes: title.isEmpty ? hintAttributes : titleAttributes)
+        titleAttrs = titleAttributes
+        wantedTitle = title
+        titleField.font = titleFont
+        titleField.textColor = palette.text
+        titleField.placeholderAttributedString = NSAttributedString(string: "Untitled", attributes: hintAttributes)
+        // What the person is typing is not overwritten by a refresh.
+        if titleField.currentEditor() == nil {
+            shownTitle = title
+            titleField.attributedStringValue = NSAttributedString(string: title, attributes: titleAttributes)
+        }
         surface.subline = NSAttributedString(string: subline, attributes: [.font: WebType.ui(12.5), .foregroundColor: palette.textMuted])
         if let icon, !icon.isEmpty {
             let line = NSMutableParagraphStyle()
@@ -327,17 +370,42 @@ final class MacCanvasView: NSView {
     private func layoutHeader() {
         let left = Self.originX + MacBoxView.padX
         let width = max(visible.width - left - 40, 100)
-        let used = surface.title.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
+        let measured = titleField.attributedStringValue.length > 0 ? titleField.attributedStringValue : surface.title
+        let used = measured.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil).height
         let row = 28 + headerShift
         let hasIcon = !(icon ?? "").isEmpty
         surface.iconRect = CGRect(x: left - (hasIcon ? 4 : 8), y: 32, width: hasIcon ? 240 : 160, height: row)
         surface.titleRect = CGRect(x: left, y: 32 + row + 4, width: width, height: max(ceil(used), 43.2))
         surface.sublineRect = CGRect(x: left, y: surface.titleRect.maxY + 6, width: width, height: 18.75)
+        // The field's cell insets its text 2 pt: the frame is 2 pt wider on each side so the text sits where it was drawn.
+        titleField.frame = surface.titleRect.insetBy(dx: -2, dy: 0)
         surface.needsDisplay = true
     }
 
+    /// Return in the title moves into the first box (the web's onEnter).
+    fileprivate func titleReturned() {
+        window?.makeFirstResponder(nil)
+        guard host != nil, let first = boxes.min(by: { ($0.y, $0.x) < ($1.y, $1.x) }), let view = boxViews[first.id] else { return }
+        beginEditing(view, at: nil)
+    }
+
+    /// Focus left the title: save it if it changed.
+    fileprivate func titleEnded() {
+        let text = titleField.stringValue.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        guard let id = shownID, text != shownTitle else { return }
+        shownTitle = text
+        onRename?(id, text)
+    }
+
     func show(_ page: PageSnapshot, host: PageEditHost?) {
+        Self.current = self
         if page.id != shownID {
+            // A title being typed on the page that closes is saved to that page.
+            if titleField.currentEditor() != nil {
+                window?.makeFirstResponder(nil)
+                shownTitle = wantedTitle
+                titleField.attributedStringValue = NSAttributedString(string: wantedTitle, attributes: titleAttrs)
+            }
             stopEditing()
             boxViews.values.forEach { $0.removeFromSuperview() }
             boxViews = [:]
@@ -1042,5 +1110,85 @@ final class MacCanvasView: NSView {
         box.refocus()
         EditorFocus.shared.run("unsetLink")
         updateToolbar()
+    }
+}
+
+extension MacCanvasView: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) { layoutHeader() }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard (obj.object as? NSTextField) === titleField else { return }
+        titleEnded()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard control === titleField else { return false }
+        if selector == #selector(NSResponder.insertNewline(_:)) || selector == #selector(NSResponder.moveDown(_:)) {
+            titleReturned()
+            return true
+        }
+        return false
+    }
+}
+
+// MARK: Print and Save as PDF
+
+extension MacCanvasView {
+    /// The canvas on screen now (the page being shown), for Print and Save as PDF.
+    static weak var current: MacCanvasView?
+
+    /// Print the page, or (with `url`) save it there as a PDF with no print panel. The page's surface (title, boxes, ink) is the
+    /// printed view: fitted to the paper's width and cut into pages. White paper; with the page colour (or in the dark theme,
+    /// so the text can be read) on its colour.
+    fileprivate func printPage(title: String, colour: Bool, saveTo url: URL?) {
+        stopEditing()
+        window?.makeFirstResponder(nil)
+        let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.isHorizontallyCentered = false
+        info.isVerticallyCentered = false
+        info.leftMargin = 36
+        info.rightMargin = 36
+        info.topMargin = 36
+        info.bottomMargin = 36
+        if let url {
+            info.jobDisposition = .save
+            info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
+        }
+        surface.printFill = (colour || palette.isDark) ? palette.bg : nil
+        defer { surface.printFill = nil }
+        let operation = NSPrintOperation(view: surface, printInfo: info)
+        operation.jobTitle = title.isEmpty ? "Untitled" : title
+        if url != nil {
+            operation.showsPrintPanel = false
+            operation.showsProgressPanel = false
+        }
+        operation.run()
+    }
+}
+
+/// Print and Save as PDF of the page on screen (the page menu and the ribbon).
+enum PagePrinter {
+    @discardableResult
+    static func print(title: String, colour: Bool) -> Bool {
+        guard let canvas = MacCanvasView.current else { return false }
+        canvas.printPage(title: title, colour: colour, saveTo: nil)
+        return true
+    }
+
+    /// The save panel, then the page as a PDF there.
+    @discardableResult
+    static func savePDF(title: String, colour: Bool) -> Bool {
+        guard let canvas = MacCanvasView.current else { return false }
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = FileExport.fileName(title, ext: "pdf")
+        panel.allowedContentTypes = [.pdf]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            canvas.printPage(title: title, colour: colour, saveTo: url)
+        }
+        return true
     }
 }

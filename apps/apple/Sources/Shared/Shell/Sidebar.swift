@@ -95,6 +95,17 @@ struct NotesPanel: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if let tree, let notebook {
                         let index = TreeIndex(tree)
+                        let favourites = shell.favouriteIds(session).compactMap { id in tree.pages.first { $0.id == id } }
+                        if !favourites.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                GroupHeading(title: "Favourites", icon: "star", open: shell.favouritesOpen, plus: nil) {
+                                    shell.favouritesOpen.toggle()
+                                }
+                                if shell.favouritesOpen {
+                                    ForEach(favourites, id: \.id) { page in PageRowView(page: page, depth: -1) }
+                                }
+                            }
+                        }
                         let recents = shell.recents.compactMap { id in tree.pages.first { $0.id == id } }
                         if !recents.isEmpty {
                             VStack(alignment: .leading, spacing: 0) {

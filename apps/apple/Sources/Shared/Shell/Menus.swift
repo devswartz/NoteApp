@@ -151,6 +151,7 @@ struct MenuLayer: View {
         guard phone else { return false }
         switch menu {
         case .notebookOptions, .section, .pageRow, .pageIcon: return true
+        case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore: return true
         default: return false
         }
     }
@@ -265,6 +266,13 @@ struct MenuLayer: View {
         case .calPeople:
             let f = anchorFrame("rb-cal-people")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, calPeopleMenu(p))
+        case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore:
+            if phone {
+                sheet(TaskFilterMenu(menu: menu, palette: p))
+            } else {
+                let f = anchorFrame("rb-" + String(describing: menu))
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, TaskFilterMenu(menu: menu, palette: p))
+            }
         }
     }
 
@@ -418,8 +426,8 @@ struct MenuLayer: View {
 
     private func pageRowMenu(_ p: Palette, _ id: String) -> some View {
         MenuCard(palette: p, width: phone ? width - 16 : 236, radius: phone ? 16 : 12, padding: phone ? 8 : 6) {
-            MenuItem(palette: p, title: "Add to favourites", icon: "star") { shell.notYet("Favourites") }
-            MenuItem(palette: p, title: "Copy link", icon: "link-2") { shell.notYet("Copying links") }
+            MenuItem(palette: p, title: shell.isFavourite(id, session) ? "Remove from favourites" : "Add to favourites", icon: shell.isFavourite(id, session) ? "star-off" : "star") { shell.toggleFavourite(id, session) }
+            MenuItem(palette: p, title: "Copy link", icon: "link-2") { shell.copyPageLink(id, session) }
             MenuItem(palette: p, title: "Rename", icon: "pencil") { shell.rename(.page, id, session) }
             lockItem(p, id)
             MenuItem(palette: p, title: "Duplicate", icon: "copy") { shell.duplicate(.page, id, session) }
@@ -444,9 +452,9 @@ struct MenuLayer: View {
             }
             Group {
             MenuItem(palette: p, title: "Export as Markdown", icon: "file-down") { shell.exportMarkdown(session) }
-            MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.notYet("Export") }
-            MenuItem(palette: p, title: "Print", icon: "printer", hint: "Ctrl+P") { shell.notYet("Printing") }
-            MenuItem(palette: p, title: "Print page colour") { shell.notYet("Printing") }
+            MenuItem(palette: p, title: "Export as PDF…", icon: "file-down") { shell.exportPDF(session) }
+            MenuItem(palette: p, title: "Print", icon: "printer", hint: "Ctrl+P") { shell.printPage(session) }
+            MenuItem(palette: p, title: "Print page colour") { shell.printPage(session, colour: true) }
             MenuItem(palette: p, title: "Import Markdown…", icon: "file-up") { shell.notYet("Import") }
             MenuSeparator(palette: p)
             }

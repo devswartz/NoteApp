@@ -14,18 +14,20 @@ struct PageCanvas: View {
     /// The page's icon (an emoji), and what a tap on the row above the title does (nil: it can't be changed).
     var icon: String?
     var onIcon: ((CGRect) -> Void)?
+    /// (page id, title): the title is a text field when this is set.
+    var onRename: ((String, String) -> Void)?
     var stacked = false
     var notify: ((String) -> Void)?
 
     var body: some View {
         #if os(iOS)
         PageCanvasView(page: page, host: host, title: title, subline: subline, palette: palette,
-                       decor: decor, showAddIcon: showAddIcon, icon: icon, onIcon: onIcon, stacked: stacked, notify: notify)
+                       decor: decor, showAddIcon: showAddIcon, icon: icon, onIcon: onIcon, onRename: onRename, stacked: stacked, notify: notify)
             .ignoresSafeArea(.container, edges: .bottom)
             .ignoresSafeArea(.keyboard)
         #else
         MacPageCanvas(page: page, host: host, title: title, subline: subline, palette: palette, decor: decor, canEditIcon: onIcon != nil,
-                      showAddIcon: showAddIcon && onIcon == nil, icon: icon, onIcon: onIcon, notify: notify)
+                      showAddIcon: showAddIcon && onIcon == nil, icon: icon, onIcon: onIcon, onRename: onRename, notify: notify)
         #endif
     }
 }

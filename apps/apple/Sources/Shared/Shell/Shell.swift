@@ -71,6 +71,8 @@ final class Shell {
         case blockType, textColor, highlight, taskSplit, pageColor, ruleLines
         /// The Calendar ribbon's Tags and person filters.
         case calTags, calPeople
+        /// The Tasks ribbon's menus (and the phone's filter sheets): group, sort, and the filter kinds.
+        case taskGroup, taskSort, taskKinds, taskStatus, taskAssignee, taskTags, taskTeam, taskPriority, taskMore
     }
 
     var route: Route
@@ -101,6 +103,8 @@ final class Shell {
     /// state and the calendar's URL); another workspace starts clean.
     var calStatus: CalendarStatus = .open
     var calTags: Set<String> = []
+    /// The task views' filters, sort and group (kept while the app runs; another workspace starts clean).
+    let tv = TaskViewState()
     /// Settings: the open section (nil: the list on phones, Profile on wide screens).
     var settingsSection: String?
     /// The page panel shows the page's tasks instead of its comments.
@@ -110,6 +114,9 @@ final class Shell {
     /// Sections open in the tree.
     var expanded: Set<String> = []
     var recentOpen = false
+    /// Favourite pages, kept on this device ("<account>|<workspace>" → page ids), and whether their sidebar group is open.
+    var favourites: [String: [String]] = [:]
+    var favouritesOpen = true
     /// The page canvas's zoom (View ▸ Zoom In / Out / Actual Size on the Mac).
     var zoom = 1.0
     /// Phone: the notes drawer is open.
@@ -161,6 +168,7 @@ final class Shell {
             route = .notes
             if defaults.object(forKey: "sidebarOpen") != nil { sidebarOpen = defaults.bool(forKey: "sidebarOpen") }
             recents = defaults.stringArray(forKey: "recentPages") ?? []
+            favourites = (defaults.dictionary(forKey: "favouritePages") as? [String: [String]]) ?? [:]
         }
     }
 
@@ -379,6 +387,15 @@ struct AppShell: View {
             openLookMenu()
         }
         .onChange(of: scheme) { _, s in theme.systemDark = s == .dark }
+        // A link into the app (notivelo://…, or the web address of a page): to its workspace, then the page or list.
+        .onChange(of: session.pendingLink, initial: true) { _, link in
+            guard let link, session.phase == .signedIn else { return }
+            if shell.follow(link, session) { session.pendingLink = nil }
+        }
+        .onChange(of: session.tree?.pages.count) {
+            guard let link = session.pendingLink, session.phase == .signedIn else { return }
+            if shell.follow(link, session) { session.pendingLink = nil }
+        }
         // An invite link opened in the app (NotiveloApp.onOpenURL): the join dialog, with the link looked up.
         .onChange(of: session.pendingInvite, initial: true) { _, token in
             guard let token, session.phase == .signedIn else { return }
@@ -397,6 +414,11 @@ struct AppShell: View {
             shell.calStatus = .open
             shell.calTags = []
             shell.calWho = .mine
+            shell.tv.reset()
+        }
+        // Status is Open each time a task view is opened.
+        .onChange(of: shell.route) { old, new in
+            if case .tasks = new, old != new { shell.tv.status = .open }
         }
     }
 

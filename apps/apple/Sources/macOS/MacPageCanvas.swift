@@ -16,13 +16,14 @@ struct MacPageCanvas: View {
     var showAddIcon = false
     var icon: String?
     var onIcon: ((CGRect) -> Void)?
+    var onRename: ((String, String) -> Void)?
     var notify: ((String) -> Void)?
     @Environment(Shell.self) private var shell
 
     var body: some View {
         MacCanvas(page: page, host: host, title: title, subline: subline, palette: palette, decor: decor,
                   zoom: shell.zoom, onZoom: { shell.zoom = $0 }, icon: icon, canEditIcon: canEditIcon, showAddIcon: showAddIcon,
-                  onIcon: onIcon, notify: notify)
+                  onIcon: onIcon, onRename: onRename, notify: notify)
             .background(palette.bg.color)
     }
 }

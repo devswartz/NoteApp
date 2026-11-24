@@ -37,6 +37,11 @@ final class SessionModel {
     private(set) var loading = false
     /// The device has a network path (the offline banner waits 30 s after this turns false).
     private(set) var online = true
+    /// The app opened from the device's stored copy because the server could not be reached at start: nothing is sent until
+    /// the sign-in could be resumed (tried again when the network comes back, and every 30 seconds).
+    private(set) var offlineRestore = false
+    @ObservationIgnored private var pathSatisfied = true
+    @ObservationIgnored private var retryingRestore = false
     /// The workspace's members, tags and teams (what a task's assignee, tag and team ids point at).
     private(set) var members: [WorkspaceMember] = []
     private(set) var tags: [TaskTag] = []
@@ -52,6 +57,8 @@ final class SessionModel {
     var sharedPages: [SharedPageEntry] = []
     /// An invite link (its token) opened in the app: the shell offers to join once signed in.
     var pendingInvite: String?
+    /// A link to a page, task or list opened in the app: the shell goes there once signed in and the workspace is loaded.
+    var pendingLink: DeepLink?
     /// What the server says about the locked pages (password set, unlocked, tries).
     var lockStatus: LockedNotesStatus?
     /// This sign-in has unlocked the locked pages (they stay open until 5 minutes without activity).
@@ -93,9 +100,12 @@ final class SessionModel {
             DispatchQueue.main.async {
                 guard let self else { return }
                 let now = path.status == .satisfied
+                self.pathSatisfied = now
                 let wasOffline = !self.online
-                self.online = now
-                if now && wasOffline && self.phase == .signedIn { self.reload() }
+                self.online = now && !self.offlineRestore
+                if now && wasOffline && self.phase == .signedIn {
+                    if self.offlineRestore { self.retryOfflineRestore() } else { self.reload() }
+                }
             }
         }
         monitor.start(queue: DispatchQueue(label: "com.devswartz.notivelo.path"))
@@ -122,6 +132,12 @@ final class SessionModel {
                 case let .success(s):
                     self.didSignIn(s.user, token: latest ?? s.refreshToken)
                 case let .failure(e):
+                    // No connection at start, but this device has the account's stored copy: open from it (read-only until the
+                    // sign-in can be resumed) instead of the sign-in screen.
+                    if Self.isNetwork(e), let stored = Self.storedUser(self.serverURL), self.core.cachedWorkspaces()?.isEmpty == false {
+                        self.openOffline(stored, token: token)
+                        return
+                    }
                     self.phase = .signedOut
                     if Self.tokenRejected(e) {
                         Keychain.delete(account: self.serverURL)
@@ -134,6 +150,75 @@ final class SessionModel {
                 }
             }
         }
+    }
+
+    /// Open the app from the store with the offline indicator on.
+    private func openOffline(_ stored: User, token: String) {
+        offlineRestore = true
+        online = false
+        savedToken = token
+        user = stored
+        error = nil
+        canRetryRestore = false
+        phase = .signedIn
+        loadWorkspaces()
+        scheduleOfflineRetry()
+    }
+
+    private func scheduleOfflineRetry() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self, self.offlineRestore else { return }
+            self.retryOfflineRestore()
+        }
+    }
+
+    /// Resume the sign-in now that the network may be back: on success the lists are read from the server; if the server
+    /// refuses the token the sign-in screen comes back; otherwise it stays offline and tries again later.
+    func retryOfflineRestore() {
+        guard offlineRestore, !retryingRestore, let token = savedToken ?? Keychain.read(account: serverURL) else { return }
+        retryingRestore = true
+        let core = self.core
+        queue.async {
+            let result = Result { try core.restoreSession(refreshToken: token) }
+            let latest = core.refreshToken()
+            DispatchQueue.main.async {
+                guard core === self.core else { return }
+                self.retryingRestore = false
+                switch result {
+                case let .success(s):
+                    self.offlineRestore = false
+                    self.online = self.pathSatisfied
+                    self.didSignIn(s.user, token: latest ?? s.refreshToken)
+                    self.reload()
+                case let .failure(e):
+                    if Self.tokenRejected(e) {
+                        Keychain.delete(account: self.serverURL)
+                        self.offlineRestore = false
+                        self.endSession(message: "You were signed out. Sign in again.")
+                    } else {
+                        self.scheduleOfflineRetry()
+                    }
+                }
+            }
+        }
+    }
+
+    private static func isNetwork(_ e: Error) -> Bool {
+        if case .Network? = e as? CoreError { return true }
+        return false
+    }
+
+    /// The signed-in person as last seen on this device (kept so the app can open offline).
+    private static func storedUser(_ server: String) -> User? {
+        guard let d = UserDefaults.standard.dictionary(forKey: "lastUser \(server)"),
+              let id = d["id"] as? String, let email = d["email"] as? String, let name = d["name"] as? String,
+              let color = d["color"] as? String else { return nil }
+        return User(id: id, email: email, name: name, color: color, emailVerified: d["verified"] as? Bool ?? true)
+    }
+
+    private func rememberUser(_ u: User) {
+        guard !preview, u.emailVerified else { return }
+        UserDefaults.standard.set(["id": u.id, "email": u.email, "name": u.name, "color": u.color, "verified": u.emailVerified], forKey: "lastUser \(serverURL)")
     }
 
     func signIn(email: String, password: String) {
@@ -225,6 +310,7 @@ final class SessionModel {
     func profileChanged(_ updated: User) {
         guard phase == .signedIn else { return }
         user = updated
+        rememberUser(updated)
     }
 
     /// Change the sign-in password. The server signs out every other device and gives this one a fresh session: its refresh
@@ -262,6 +348,7 @@ final class SessionModel {
     private func didSignIn(_ user: User, token: String) {
         store(token)
         self.user = user
+        rememberUser(user)
         error = nil
         canRetryRestore = false
         phase = .signedIn
@@ -272,6 +359,9 @@ final class SessionModel {
         core = preview ? Core(serverUrl: serverURL) : Self.makeCore(serverURL)
         savedToken = nil
         user = nil
+        offlineRestore = false
+        online = pathSatisfied
+        UserDefaults.standard.removeObject(forKey: "lastUser \(serverURL)")
         workspaces = []
         workspaceId = nil
         tree = nil
@@ -328,7 +418,7 @@ final class SessionModel {
     /// Run `work` on the core queue; `done` gets the result on the main thread. A call that
     /// finds the session gone ends it here too.
     func call<T>(_ work: @escaping (Core) throws -> T, then done: @escaping (Result<T, Error>) -> Void) {
-        guard !preview, phase == .signedIn else {
+        guard !preview, phase == .signedIn, !offlineRestore else {
             done(.failure(CancellationError()))
             return
         }
@@ -642,6 +732,16 @@ extension SessionModel {
         if let m = member(id) { return m.name }
         if id == user?.id, let name = user?.name { return name }
         return id == "deleted-user" ? "a deleted user" : "someone"
+    }
+
+    /// Every task with all its fields (the lists carry no team): the stored copies at once, then the server's.
+    func loadAllDetails() {
+        guard !preview, let ws = workspaceId else { return }
+        if details.isEmpty, let cached = core.cachedTaskDetails(workspaceId: ws) { for d in cached { details[d.id] = d } }
+        call({ try $0.taskDetails(workspaceId: ws) }) { result in
+            guard ws == self.workspaceId, case let .success(list) = result else { return }
+            for d in list { self.details[d.id] = d }
+        }
     }
 
     /// The task with every field: the stored copy at once, then the server's.

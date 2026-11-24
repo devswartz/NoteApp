@@ -41,6 +41,11 @@ targets:
       - path: Sources/Shared
       - path: Sources/iOS
       - path: Resources
+        excludes:
+          - PrivacyInfo.xcprivacy
+      # The privacy manifest (no tracking; the data the app collects and the required-reason APIs it uses) goes in the bundle.
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
       # The page-format corpus as sample pages (a folder reference: Notivelo.app/cases/<name>/page.bin …).
       - path: ../../tests/corpus/cases
         type: folder
@@ -62,6 +67,12 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSFaceIDUsageDescription: Unlock your locked pages with Face ID.
         NSCameraUsageDescription: Take a photo to put on a page.
+        # notivelo://page/<id>, notivelo://w/<workspace>/p/<page> (the web's own paths). No Associated Domains yet.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.devswartz.notivelo
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - notivelo
         LSRequiresIPhoneOS: true
         UILaunchScreen:
           UIColorName: AccentColor
@@ -103,6 +114,11 @@ targets:
       - path: Sources/Shared
       - path: Sources/macOS
       - path: Resources
+        excludes:
+          - PrivacyInfo.xcprivacy
+      # The privacy manifest (no tracking; the data the app collects and the required-reason APIs it uses) goes in the bundle.
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
       # The page-format corpus as sample pages (a folder reference: Notivelo.app/cases/<name>/page.bin …).
       - path: ../../tests/corpus/cases
         type: folder
@@ -124,6 +140,11 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.productivity
+        CFBundleURLTypes:
+          - CFBundleURLName: com.devswartz.notivelo
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - notivelo
     settings:
       base:
         PRODUCT_NAME: Notivelo
