@@ -247,6 +247,9 @@ struct MenuLayer: View {
                 let f = anchorFrame("page-icon")
                 at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, iconPicker(p, id))
             }
+        case .presence:
+            let f = anchorFrame("page-presence")
+            at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, PresenceMenu(palette: p, people: shell.presenceList(session)))
         case .pageOptions:
             let f = anchorFrame("page-options")
             at(CGPoint(x: f.maxX, y: f.maxY + 6), .topTrailing, pageOptions(p))

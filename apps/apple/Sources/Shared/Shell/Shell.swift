@@ -64,6 +64,8 @@ final class Shell {
 
     enum Menu: Equatable {
         case inbox
+        /// "On this page now" (the page bar's avatars).
+        case presence
         case account, workspace, notebookPicker, notebookOptions, pageOptions
         case section(String)
         case pageRow(String)
@@ -481,7 +483,7 @@ struct AppShell: View {
             "menu-notebook": .notebookOptions, "menu-page-options": .pageOptions,
             "menu-section": .section("corpus"), "menu-page-row": .pageRow(LookData.pageId("canvas-boxes")),
             "ribbon-menu-block": .blockType, "ribbon-menu-text-colour": .textColor, "ribbon-menu-highlight": .highlight,
-            "inbox": .inbox, "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines,
+            "inbox": .inbox, "presence": .presence, "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines,
         ]
         guard session.preview, let state = LookData.state else { return }
         if let menu = menus[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.menu = menu } }

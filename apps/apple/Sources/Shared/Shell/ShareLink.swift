@@ -91,7 +91,7 @@ struct PublicLinkSection: View {
         }
         session.call({ try $0.pageShareLink(pageId: pageId) }) { result in
             switch result {
-            case let .success(l): link = l.map { .on($0.url) } ?? .off
+            case let .success(l): link = l.map { LinkState.on($0.url) } ?? LinkState.off
             case let .failure(e):
                 // 403 and 409 mean the switch can't be used here: it stays off, with the reason shown.
                 link = .off
