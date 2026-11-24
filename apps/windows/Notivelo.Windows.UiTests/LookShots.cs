@@ -24,6 +24,44 @@ public class LookShots
     [Fact] public void Light() => Run("light");
     [Fact] public void Hybrid() => Run("hybrid");
 
+    /// <summary>The signed-out screens (no server: NOTIVELO_SOURCE=signup): sign in, create account (empty form, then a problem shown), check your email.</summary>
+    [Fact]
+    public void Auth()
+    {
+        AppHost host;
+        try { host = AppHost.Launch(new Dictionary<string, string> { ["NOTIVELO_SOURCE"] = "signup" }, 1196, 859); }
+        catch (Exception e) { Log($"[auth] launch failed: {e.Message}"); return; }
+        using var h = host;
+        var w = h.Window;
+        AutomationElement? Find(string id, int ms = 8000)
+        {
+            try { return AppHost.Wait(() => w.FindFirstDescendant(w.ConditionFactory.ByAutomationId(id)), id, ms); } catch (TimeoutException) { return null; }
+        }
+        void Invoke(string id) { var e = Find(id) ?? throw new InvalidOperationException("no element " + id); if (e.Patterns.Invoke.IsSupported) e.Patterns.Invoke.Pattern.Invoke(); else e.Click(); }
+        void Snap(string name)
+        {
+            Thread.Sleep(600);
+            try
+            {
+                Directory.CreateDirectory(Dir);
+                var file = Path.Combine(Dir, $"{name}-dark.png");
+                if (DwmGetWindowAttribute(w.Properties.NativeWindowHandle.Value, 9, out var fr, Marshal.SizeOf<Rect>()) == 0 && fr.Right > fr.Left)
+                    Capture.Rectangle(new Rectangle(fr.Left, fr.Top, fr.Right - fr.Left, fr.Bottom - fr.Top)).ToFile(file);
+                else Capture.Element(w).ToFile(file);
+            }
+            catch (Exception e) { Log($"[auth] {name}: capture failed: {e.Message}"); }
+        }
+        try
+        {
+            Find("signin"); Snap("sign-in");
+            Invoke("signin-toggle-mode"); Find("signup"); Snap("sign-up");
+            Invoke("signin-submit"); Find("signin-error"); Snap("sign-up-problem");
+            Find("signup-name")!.AsTextBox().Text = "Demo User"; Find("signin-email")!.AsTextBox().Text = "demo@example.com"; Find("signin-password")!.Focus(); h.Type("correct horse");
+            Invoke("signin-submit"); Find("check-email"); Snap("check-email");
+        }
+        catch (Exception e) { Log($"[auth] {e.GetType().Name}: {e.Message}"); }
+    }
+
     private static void Run(string theme)
     {
         AppHost host;
@@ -73,7 +111,7 @@ public class LookShots
                 var r = w.BoundingRectangle;       // a click on the scrim at the window's bottom right closes what Escape didn't
                 if (Exists("menu-account") || Exists("menu-workspace") || Exists("menu-section") || Exists("menu-notebook-picker") || Exists("prompt-input")
                     || Exists("search-input") || Exists("quickadd-card") || Exists("task-sheet") || Exists("trash-dialog") || Exists("confirm-ok")
-                    || Exists("version-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page"))
+                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page"))
                     FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point((int)r.Right - 12, (int)r.Bottom - 12));
             }
             catch { }
@@ -158,6 +196,18 @@ public class LookShots
             Invoke("page-row-sandbox"); Settle(700); Invoke("page-options"); Invoke("menu-lock-page"); Find("lock-dialog");
             h.Type("secret1"); h.Press(TAB); h.Type("secret1"); Settle(300); Invoke("lock-ok"); Settle(900);
             Invoke("page-options"); Invoke("menu-lock-now"); Find("locked-page"); Settle(700); Snap("locked-page");
+        });
+        // people (PARITY batch 3): the workspace menu with Members and Join with invite link, the Members dialog (roles, pending invites, a link made) and the join dialog
+        Step("members", () => { Invoke("rail-workspace"); Invoke("menu-members"); Find("members-dialog"); Settle(900); Snap("members"); });
+        Step("members-invite", () =>
+        {
+            Invoke("rail-workspace"); Invoke("menu-members"); Find("members-dialog"); Settle(500);
+            Find("members-invite-email")!.AsTextBox().Text = "casey@example.com"; Settle(300); Invoke("members-invite-submit"); Find("members-invite-url"); Settle(700); Snap("members-invite");
+        });
+        Step("join-invite", () =>
+        {
+            Invoke("rail-workspace"); Invoke("menu-join-invite"); Find("join-dialog");
+            Find("join-input")!.AsTextBox().Text = "https://app.example.com/invite/sample-invite"; Settle(300); Invoke("join-continue"); Find("join-info"); Settle(700); Snap("join-invite");
         });
         Step("tasks", () => { Find("rail-tasks")!.Click(); Settle(900); Snap("tasks"); });
         Step("calendar", () => { Find("rail-calendar")!.Click(); Settle(900); Snap("calendar"); });

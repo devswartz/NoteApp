@@ -144,7 +144,8 @@ internal sealed class AppHost : IDisposable
             try { w.Patterns.Window.Pattern.SetWindowVisualState(WindowVisualState.Maximized); } catch { }
         }
         try { w.SetForeground(); w.Focus(); } catch { }
-        // the page and its boxes appear once the shell has laid out
+        // the page and its boxes appear once the shell has laid out (not in the sign-in preview: NOTIVELO_SOURCE=signup shows no shell)
+        if (env is not null && env.TryGetValue("NOTIVELO_SOURCE", out var mode) && mode != "offline") return host;
         try { _ = host.A.State; _ = host.B.State; }
         catch { host.Shot("launch"); host.Dispose(); throw; }
         return host;

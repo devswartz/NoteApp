@@ -33,7 +33,7 @@ public sealed partial class SampleNotesSource
     };
 
     public string? WorkspaceRole => "owner";
-    public IReadOnlyList<MemberInfo> Members() => SampleMembers;
+    public IReadOnlyList<MemberInfo> Members() => _people;
     public IReadOnlyList<SharedPageInfo> SharedWithMe => _sharedWithMe;
     public LockInfo LockState => new(_lockPassword is not null, _unlocked);
     public bool CanComment(string pageId) => true;
@@ -214,7 +214,7 @@ public sealed partial class SampleNotesSource
         if (_lockedPages.Contains(pageId)) return Tsk.FromResult(PageToolResult<ShareOutcome>.Fail("A locked page can't be shared."));
         var shares = _shares.TryGetValue(pageId, out var s) ? s : _shares[pageId] = new();
         var invites = _invites.TryGetValue(pageId, out var iv) ? iv : _invites[pageId] = new();
-        var member = userId is not null ? SampleMembers.FirstOrDefault(m => m.Id == userId) : SampleMembers.FirstOrDefault(m => m.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
+        var member = userId is not null ? _people.FirstOrDefault(m => m.Id == userId) : _people.FirstOrDefault(m => m.Email.Equals(email, StringComparison.OrdinalIgnoreCase));
         if (member is not null)
         {
             shares.RemoveAll(x => x.UserId == member.Id);

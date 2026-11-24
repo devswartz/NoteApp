@@ -82,6 +82,8 @@ internal sealed class RailView : ThemedControl
             if (_source.CanEditTree)
             {
                 if (items.Count > 0) items.Add(MenuEntry.Sep());
+                items.Add(new MenuEntry("Members", "users", () => { if (Host is { } hh) PeopleDialogs.Members(hh); }, Id: "menu-members"));
+                items.Add(new MenuEntry("Join with invite link", "link-2", () => { if (Host is { } hh) PeopleDialogs.JoinInvite(hh); }, Id: "menu-join-invite"));
                 items.Add(new MenuEntry("Trash", "trash", () => Host?.OpenTrash()));
             }
             if (items.Count == 0) return;

@@ -33,8 +33,13 @@ internal sealed class AppSession
     public CoreNotesSource? Source { get; private set; }
     public event Action? Changed;
 
-    public AppSession()
+    /// <summary>Preview mode (NOTIVELO_SOURCE=signup, for screenshots and UI tests): the sign-in and sign-up screens with no server and no stored sign-in;
+    /// sign-up goes to the check-email screen on a fake success.</summary>
+    public bool Preview { get; }
+
+    public AppSession(bool preview = false)
     {
+        Preview = preview;
         var env = Environment.GetEnvironmentVariable("NOTIVELO_SERVER")?.Trim().TrimEnd('/');
         ServerFixedByEnv = !string.IsNullOrEmpty(env);
         ServerUrl = ServerFixedByEnv ? env! : AppSettings.Staging ? Staging : Production;
@@ -87,8 +92,66 @@ internal sealed class AppSession
         }
     }
 
+    /// <summary>Signed in but the address is not confirmed yet: the "Check your email" screen stands in for the app (the server refuses everything else with 403 email_unverified).</summary>
+    public bool NeedsEmailCheck => Phase == SessionPhase.SignedIn && User is { EmailVerified: false };
+
+    public void ClearError() { if (Error is null) return; Error = null; Raise(); }
+
+    /// <summary>Create an account (core <c>register</c>) and sign in to it; the server then wants the address confirmed (<see cref="NeedsEmailCheck"/>).</summary>
+    public async void Register(string name, string email, string password)
+    {
+        name = name.Trim(); email = email.Trim();
+        if (PeopleRules.SignUpProblem(name, email, password) is { } problem) { Error = problem; Raise(); return; }
+        Busy = true; Error = null; Raise();
+        if (Preview)
+        {
+            await Task.Delay(150);
+            Busy = false;
+            User = new N.User("preview", email, name, "#6366f1", false);
+            Phase = SessionPhase.SignedIn; Raise();
+            return;
+        }
+        var core = _core;
+        try
+        {
+            var (signedIn, latest) = await RunAsync(core, c => (c.Register(name, email, password), c.RefreshToken()));
+            if (core != _core) return;
+            Busy = false;
+            DidSignIn(signedIn.User, latest ?? signedIn.RefreshToken);
+        }
+        catch (Exception e)
+        {
+            if (core != _core) return;
+            Busy = false; Error = ErrorText.Message(e); Raise();
+        }
+    }
+
+    /// <summary>"I've verified, continue": ask the server again (the kept sign-in carries the user as it is now). Calls <paramref name="done"/> on the UI thread with a
+    /// sentence to show, or null when the address is confirmed (the app follows).</summary>
+    public async void RecheckEmail(Action<string?> done)
+    {
+        const string NotYet = "Not confirmed yet. Open the link in the email we sent, then try again.";
+        if (Preview) { await Task.Delay(150); done(NotYet); return; }
+        var token = _savedToken ?? CredentialStore.Read(ServerUrl);
+        if (token is null) { done("Sign in again."); return; }
+        var core = _core;
+        try
+        {
+            var (signedIn, latest) = await RunAsync(core, c => (c.RestoreSession(token), c.RefreshToken()));
+            if (core != _core) return;
+            DidSignIn(signedIn.User, latest ?? signedIn.RefreshToken);
+            done(signedIn.User.EmailVerified ? null : NotYet);
+        }
+        catch (Exception e)
+        {
+            if (core != _core) return;
+            done(ErrorText.Message(e));
+        }
+    }
+
     public async void SignIn(string email, string password)
     {
+        if (Preview) { Error = "Sign-in is not available in this preview."; Raise(); return; }
         email = email.Trim();
         if (email.Length == 0 || password.Length == 0) { Error = "Enter your email and password."; Raise(); return; }
         Busy = true; Error = null; Raise();
@@ -110,8 +173,7 @@ internal sealed class AppSession
     public void SignOut()
     {
         var core = _core;
-        _ = Task.Run(() => { try { core.SignOut(); } catch { } });
-        CredentialStore.Delete(ServerUrl);
+        if (!Preview) { _ = Task.Run(() => { try { core.SignOut(); } catch { } }); CredentialStore.Delete(ServerUrl); }
         EndSession(null);
     }
 
@@ -132,8 +194,10 @@ internal sealed class AppSession
     {
         Store(token);
         User = user; Error = null; CanRetryRestore = false;
-        Source = new CoreNotesSource(this, user);
         Phase = SessionPhase.SignedIn;
+        if (!user.EmailVerified) { Source?.Dispose(); Source = null; Raise(); return; }   // the check-email screen; no data calls until confirmed
+        if (Source is not null) { Raise(); return; }
+        Source = new CoreNotesSource(this, user);
         Raise();
         Source.Start();
     }

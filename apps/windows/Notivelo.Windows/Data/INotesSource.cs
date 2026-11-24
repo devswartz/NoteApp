@@ -206,6 +206,21 @@ public interface INotesSource
     /// <summary>Set (or with null remove) the page's icon emoji.</summary>
     Task<string?> SetPageIcon(string pageId, string? icon) => Task.FromResult<string?>("Not available.");
 
+    // ---- people (PARITY batch 3): workspace members, roles, email invites and invite links (core workspace_people, invite_member, resend_invite, revoke_invite,
+    // set_member_role, remove_member, leave_workspace, invite_info, accept_invite; online only). The offline sample keeps them in memory. ----
+    Task<PageToolResult<PeopleInfo>> LoadPeople() => Task.FromResult(PageToolResult<PeopleInfo>.Fail("Not available."));
+    Task<PageToolResult<InviteOutcome>> InviteToWorkspace(string email, string role) => Task.FromResult(PageToolResult<InviteOutcome>.Fail("Not available."));
+    Task<PageToolResult<InviteOutcome>> ResendWorkspaceInvite(string email) => Task.FromResult(PageToolResult<InviteOutcome>.Fail("Not available."));
+    Task<PageToolResult<bool>> RevokeWorkspaceInvite(string email) => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    Task<PageToolResult<bool>> SetMemberRole(string userId, string role) => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    Task<PageToolResult<bool>> RemoveMember(string userId) => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    /// <summary>Leave the open workspace; the source then shows another one.</summary>
+    Task<PageToolResult<bool>> LeaveWorkspace() => Task.FromResult(PageToolResult<bool>.Fail("Not available."));
+    /// <summary>What an invite link (or its token) is for.</summary>
+    Task<PageToolResult<InviteLinkInfo>> LookUpInvite(string token) => Task.FromResult(PageToolResult<InviteLinkInfo>.Fail("Not available."));
+    /// <summary>Accept it as the signed-in user; a workspace invite makes that workspace the open one.</summary>
+    Task<PageToolResult<JoinedInfo>> AcceptInvite(string token) => Task.FromResult(PageToolResult<JoinedInfo>.Fail("Not available."));
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

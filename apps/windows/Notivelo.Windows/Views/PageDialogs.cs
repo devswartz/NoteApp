@@ -17,9 +17,9 @@ public enum LockMode { SetPassword, ChangePassword, LockPage, RemoveLock }
 /// Each is a card named for UI Automation (a StackPanel with a Name, since a Border has no peer) and fetches through the source off the UI thread.</summary>
 internal static class PageDialogs
 {
-    private static Brush Br(OverlayHost o, string k) => ThemeBrushes.Get(k, o);
+    internal static Brush Br(OverlayHost o, string k) => ThemeBrushes.Get(k, o);
 
-    private static StackPanel Named(string id, string name, double spacing = 10)
+    internal static StackPanel Named(string id, string name, double spacing = 10)
     {
         var p = new StackPanel { Spacing = spacing };
         AutomationProperties.SetAutomationId(p, id);
@@ -27,16 +27,16 @@ internal static class PageDialogs
         return p;
     }
 
-    private static TextBlock Wrap(TextBlock t) { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; return t; }
+    internal static TextBlock Wrap(TextBlock t) { t.TextWrapping = TextWrapping.Wrap; t.TextTrimming = TextTrimming.None; return t; }
 
-    private static TextBlock Note(OverlayHost o, string text, bool danger = false, string? id = null)
+    internal static TextBlock Note(OverlayHost o, string text, bool danger = false, string? id = null)
     {
         var t = Wrap(Ui.Text(text, 12.5, Br(o, danger ? "Danger" : "TextMuted"), lineHeight: 18));
         if (id is not null) { AutomationProperties.SetAutomationId(t, id); AutomationProperties.SetName(t, text); }
         return t;
     }
 
-    private static Grid Header(OverlayHost o, string title, string? description, Action close, string closeId)
+    internal static Grid Header(OverlayHost o, string title, string? description, Action close, string closeId)
     {
         var g = new Grid { ColumnSpacing = 8 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -55,14 +55,14 @@ internal static class PageDialogs
         return g;
     }
 
-    private static StackPanel Foot(params UIElement[] buttons)
+    internal static StackPanel Foot(params UIElement[] buttons)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 6, 0, 0) };
         foreach (var b in buttons) row.Children.Add(b);
         return row;
     }
 
-    private static TextBox Field(OverlayHost o, string id, string placeholder)
+    internal static TextBox Field(OverlayHost o, string id, string placeholder)
     {
         var t = new TextBox { PlaceholderText = placeholder, Height = 36, FontSize = 14, Padding = new Thickness(10, 7, 10, 7), CornerRadius = new CornerRadius(8) };
         AutomationProperties.SetAutomationId(t, id);
@@ -78,7 +78,7 @@ internal static class PageDialogs
         return p;
     }
 
-    private static UIElement Labelled(OverlayHost o, string label, UIElement field)
+    internal static UIElement Labelled(OverlayHost o, string label, UIElement field)
     {
         var s = new StackPanel { Spacing = 4 };
         s.Children.Add(Ui.Text(label, 12.5, Br(o, "TextMuted")));
@@ -86,7 +86,7 @@ internal static class PageDialogs
         return s;
     }
 
-    private static OverlayHost.Layer Open(OverlayHost o, double width, UIElement content, double top = 90) =>
+    internal static OverlayHost.Layer Open(OverlayHost o, double width, UIElement content, double top = 90) =>
         o.Show(Dialogs.Card(o, width, content), HorizontalAlignment.Center, VerticalAlignment.Top, new Thickness(0, top, 0, 0));
 
     // ---------------------------------------------------------------- version history
@@ -373,7 +373,7 @@ internal static class PageDialogs
         }
     }
 
-    private static UIElement Person(OverlayHost o, string name, string email, string color, string? chip)
+    internal static UIElement Person(OverlayHost o, string name, string email, string color, string? chip)
     {
         var g = new Grid { ColumnSpacing = 8 };
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
