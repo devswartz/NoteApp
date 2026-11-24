@@ -61,7 +61,7 @@ object MediaSizing {
 
     /** A safe file name for the cache: no separators, and an extension (from the type when the name has none). */
     fun cleanName(name: String, mime: String): String {
-        var n = name.replace('/', '-').replace('\', '-').replace(':', '-').trim()
+        var n = name.replace('/', '-').replace('\\', '-').replace(':', '-').trim()
         if (n.isEmpty()) n = "file"
         if (!n.contains('.')) {
             val ext = when (mime.lowercase()) {
@@ -83,11 +83,11 @@ object MediaSizing {
         for (c in s) {
             when {
                 c == '"' -> b.append("\\\"")
-                c == '\' -> b.append("\\\\")
-                c == '\n' -> b.append("\n")
-                c == '\r' -> b.append("\r")
-                c == '\t' -> b.append("\t")
-                c < ' ' -> b.append(String.format("\u%04x", c.code))
+                c == '\\' -> b.append("\\\\")
+                c == '\n' -> b.append("\\n")
+                c == '\r' -> b.append("\\r")
+                c == '\t' -> b.append("\\t")
+                c < ' ' -> b.append(String.format("\\u%04x", c.code))
                 else -> b.append(c)
             }
         }

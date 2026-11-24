@@ -46,7 +46,7 @@ class MediaSizingTest {
             "insertFile" to """{"url":"/uploads/b.pdf","name":"b \"x\".pdf","size":2048,"mime":"application/pdf"}""",
             MediaSizing.insertCommand("/uploads/b.pdf", "b \"x\".pdf", "application/pdf", 2048),
         )
-        assertEquals("\"a\nb\\\\\"", MediaSizing.quote("a\nb\\"))
+        assertEquals("\"a\\nb\\\\\"", MediaSizing.quote("a\nb\\"))
     }
 
     @Test

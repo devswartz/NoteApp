@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -88,6 +89,7 @@ private fun toolType(t: PointerType): Int = when (t) {
  * One stroke or one erase per gesture goes to [onStroke] / [onErase] (page points from the page origin: [originX] and [originY] in dp
  * are where that origin is on the surface); [live] shows it meanwhile.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun Modifier.inkInput(
     ink: InkSettings,
@@ -157,8 +159,10 @@ fun DrawScope.drawLiveInk(live: InkLive, originX: Float, originY: Float, discCol
     val pts = live.points
     if (pts.size < 2) return
     val d = density
+    val ox = originX.dp.toPx()
+    val oy = originY.dp.toPx()
     withTransform({
-        translate(originX.dp.toPx(), originY.dp.toPx())
+        translate(ox, oy)
         scale(d, d, Offset.Zero)
     }) {
         val n = pts.size
