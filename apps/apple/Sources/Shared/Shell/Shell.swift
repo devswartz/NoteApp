@@ -519,7 +519,7 @@ struct AppShell: View {
         guard session.preview, let state = LookData.state else { return }
         if state == "bulk-select" {
             shell.bulk.active = true
-            shell.bulk.ids = Set(LookData.tasks.filter { $0.dueDate != nil }.prefix(2).map(.id))
+            shell.bulk.ids = Set(LookData.tasks.filter { $0.dueDate != nil }.prefix(2).map { $0.id })
         }
         if state == "saved-views" {
             shell.views.load(session)
