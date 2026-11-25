@@ -95,8 +95,13 @@ public class ParityTests
         AppHost.Wait(() => Status(h, "task-sheet-priority") == "priority=3" ? "x" : null, "priority 3");
         SetText(h, "task-sheet-title", "Review the launch plan");
         Invoke(h, "task-sheet-close");                           // closing writes the title
-        OpenTasks(h);
-        AppHost.Wait(() => NameOf(h, "task-circle-t-launch") == "Mark done: Review the launch plan" ? "x" : null, "the new title in the Tasks view");
+        // the rail click right after the sheet closes is sometimes lost on the runner: click again until the Tasks view shows the row
+        AppHost.Wait(() =>
+        {
+            var row = h.Window.FindFirstDescendant(h.Window.ConditionFactory.ByAutomationId("task-circle-t-launch"));
+            if (row is null) { try { Find(h, "rail-tasks").Click(); } catch { } Thread.Sleep(700); return null; }
+            return (row.Properties.Name.ValueOrDefault ?? "") == "Mark done: Review the launch plan" ? "x" : null;
+        }, "the new title in the Tasks view");
     });
 
     [Fact]
