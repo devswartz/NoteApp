@@ -179,6 +179,13 @@ public class LookShots
             var r = h.B.Bounds; FlaUI.Core.Input.Mouse.RightClick(new System.Drawing.Point(r.Left + 120, r.Top - 4));
             Find("menu-box"); Settle(400); Snap("box-menu");
         });
+        Step("table", () =>   // a table inserted by the ribbon's Table button into box b, a row added; undone after the shot so the shots after it see the same page
+        {
+            h.B.Focus(); Invoke("ribbon-table"); h.B.WaitMedia("tables", v => v == "3x3", "a 3x3 table"); Invoke("ribbon-add-row"); h.B.WaitMedia("tables", v => v == "4x3", "a fourth row"); Settle(700); Snap("table");
+            Invoke("ribbon-table-tools"); Find("table-delete-table"); Settle(400); Snap("table-menu");
+        });
+        Step("table-undo", () => { h.B.Focus(); for (var i = 0; i < 2; i++) { h.Chord(CONTROL, KEY_Z); Settle(150); } });
+        Step("presence-list", () => { Invoke("page-presence"); Find("menu-presence"); Find("presence-sample-viewer"); Settle(500); Snap("presence-list"); });
         Step("notebook-menu", () => { Invoke("notebook-more"); Find("menu-notebook"); Snap("notebook-menu"); });
         Step("shortcut-sheet", () => { Invoke("rail-account"); Find("menu-account"); Invoke("menu-shortcuts"); Find("shortcuts-sheet"); Settle(500); Snap("shortcut-sheet"); });
         Step("notebook-share", () =>
@@ -263,5 +270,12 @@ public class LookShots
         Step("settings-apps", () => { OpenSettings("apps"); Snap("settings-apps"); });
         Step("settings-appearance", () => { OpenSettings("appearance"); Snap("settings-appearance"); });
         Step("settings-accent", () => { OpenSettings("appearance"); Invoke("settings-accent-teal"); Settle(500); Snap("settings-accent"); Invoke("settings-accent-blue"); });
+        Step("template-empty-page", () =>   // a new, blank page: the strip offers the templates; then one is used and "Start blank" shows
+        {
+            Invoke("section-more-empty"); Find("menu-section"); Invoke("menu-new-page"); Find("empty-template-more"); Settle(900); Snap("template-empty-page");
+            Invoke("empty-template-meeting-notes"); Find("page-start-blank"); Settle(900); Snap("template-applied");
+        });
+        Step("template-manager", () => { Invoke("section-more-empty"); Find("menu-section"); Invoke("menu-manage-templates"); Find("template-rename-weekly-review"); Settle(600); Snap("template-manager"); });
+        Step("default-template", () => { Invoke("section-more-empty"); Find("menu-section"); Invoke("menu-default-template"); Find("default-template-inherit"); Settle(600); Snap("default-template"); });
     }
 }

@@ -252,6 +252,9 @@ public interface INotesSource
     Task RefreshSaveState() => Task.CompletedTask;
     /// <summary>Change the page's colour (kind "colour": none, yellow, green, blue, purple, pink, grey) or rule lines (kind "rules": none, lines, grid). Null: done; else a sentence.</summary>
     Task<string?> SetPageSetting(string pageId, string kind, string value) => Task.FromResult<string?>("Changing the page colour and rule lines isn't available here yet.");
+    /// <summary>Everyone else who has the page open now (polled every 3 s while it is live); empty for a source with no presence.</summary>
+    IReadOnlyList<PagePerson> PagePeople(string pageId) => Array.Empty<PagePerson>();
+
     /// <summary>The page's public link (null in the value: it is off).</summary>
     Task<PageToolResult<string?>> LoadShareLink(string pageId) => Task.FromResult(PageToolResult<string?>.Fail("Not available."));
     Task<PageToolResult<string>> CreateShareLink(string pageId) => Task.FromResult(PageToolResult<string>.Fail("Not available."));
@@ -280,6 +283,19 @@ public interface INotesSource
     Task<TreeResult> CreatePageFromTemplate(string sectionId, Notivelo.Windows.Text.TemplateItem template) => Task.FromResult(new TreeResult(Error: "Not available."));
     /// <summary>Save the open page as a workspace template. Null: done; else a sentence.</summary>
     Task<string?> SaveAsTemplate(string pageId, string name) => Task.FromResult<string?>("Not available.");
+
+    // ---- left2 batch: templates on an open page, rename / delete / scope, a default per section ----
+    /// <summary>Every saved template of the workspace (the manager's list; built-ins aren't stored).</summary>
+    Task<PageToolResult<IReadOnlyList<Notivelo.Windows.Text.TemplateItem>>> LoadSavedTemplates() => Task.FromResult(PageToolResult<IReadOnlyList<Notivelo.Windows.Text.TemplateItem>>.Fail("Not available."));
+    Task<string?> RenameTemplate(string templateId, string name) => Task.FromResult<string?>("Not available.");
+    Task<string?> DeleteTemplate(string templateId) => Task.FromResult<string?>("Not available.");
+    /// <summary>Where a template is offered: the sections (with whether their subsections too); empty: everywhere.</summary>
+    Task<string?> SetTemplateScope(string templateId, IReadOnlyList<(string SectionId, bool IncludeSub)> sections) => Task.FromResult<string?>("Not available.");
+    Task<PageToolResult<Notivelo.Windows.Text.SectionDefault>> LoadSectionDefault(string sectionId) => Task.FromResult(PageToolResult<Notivelo.Windows.Text.SectionDefault>.Fail("Not available."));
+    /// <summary>The section's own choice: inherit its parent's, no default, or a saved template (the core takes only workspace-visible saved ones).</summary>
+    Task<string?> SetSectionDefault(string sectionId, Notivelo.Windows.Text.DefaultChoice choice, string? templateId) => Task.FromResult<string?>("Not available.");
+    /// <summary>Put a template's boxes on the open page (one undo step), set its title and icon when the page has none, and say how to start blank again.</summary>
+    Task<Notivelo.Windows.Text.TemplateApplied> ApplyTemplate(string pageId, Notivelo.Windows.Text.TemplateItem template) => Task.FromResult(new Notivelo.Windows.Text.TemplateApplied("Not available."));
 
     /// <summary>This source has reminders worth scheduling as local toasts.</summary>
     bool SchedulesReminders => false;

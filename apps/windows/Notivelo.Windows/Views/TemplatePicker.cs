@@ -12,12 +12,30 @@ namespace Notivelo.Windows.Views;
 /// the section. A pick makes the page in the section and opens it; the template's content is written into it once it is live.</summary>
 internal static class TemplatePicker
 {
-    public static async void Show(ShellHost host, string sectionId, string sectionName)
+    public static void Show(ShellHost host, string sectionId, string sectionName) =>
+        Open(host, sectionId, sectionName, "New page from template", async t =>
+        {
+            var r = await host.Source.CreatePageFromTemplate(sectionId, t);
+            if (r.Ok && r.Id is not null) host.OpenPage(r.Id);
+            return r.Error is null ? null : (r.Error.Length == 0 ? "Couldn't make the page." : r.Error);
+        });
+
+    /// <summary>"Templates" on the ribbon and the page menu: pick one and it goes onto the open page (one undo step), with "Start blank" to take it back.</summary>
+    public static void ShowForPage(ShellHost host, string pageId, string sectionId, string sectionName) =>
+        Open(host, sectionId, sectionName, "Use a template", async t =>
+        {
+            var a = await host.Source.ApplyTemplate(pageId, t);
+            if (!a.Ok) return a.Error;
+            PageView.Current?.NoteTemplateApplied(pageId, a);
+            return null;
+        });
+
+    private static async void Open(ShellHost host, string sectionId, string sectionName, string title, Func<TemplateItem, Task<string?>> pick)
     {
         var O = host.Overlay;
         Brush B(string k) => ThemeBrushes.Get(k, O);
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(Ui.Text("New page from template", 16, B("Text"), 650));
+        panel.Children.Add(Ui.Text(title, 16, B("Text"), 650));
         panel.Children.Add(Ui.Text("In " + sectionName, 12.5, B("TextMuted")));
         var list = new StackPanel();
         var error = Ui.Text("", 12.5, B("Danger"));
@@ -66,11 +84,10 @@ internal static class TemplatePicker
             b.Click += async (_, _) =>
             {
                 b.IsEnabled = false;
-                var r = await host.Source.CreatePageFromTemplate(sectionId, t);
+                var err = await pick(t);
                 b.IsEnabled = true;
-                if (!r.Ok) { error.Text = r.Error ?? "Couldn't make the page."; error.Visibility = Visibility.Visible; return; }
+                if (err is not null) { error.Text = err; error.Visibility = Visibility.Visible; return; }
                 layer.Close();
-                if (r.Id is not null) host.OpenPage(r.Id);
             };
             return b;
         }

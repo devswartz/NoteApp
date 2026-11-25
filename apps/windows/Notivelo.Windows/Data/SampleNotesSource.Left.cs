@@ -93,7 +93,7 @@ public sealed partial class SampleNotesSource
     };
 
     public Task<PageToolResult<IReadOnlyList<TemplateItem>>> LoadTemplates(string sectionId) =>
-        Tsk.FromResult(new PageToolResult<IReadOnlyList<TemplateItem>>(TemplateRules.Builtins.Concat(_savedTemplates).ToList()));
+        Tsk.FromResult(new PageToolResult<IReadOnlyList<TemplateItem>>(TemplateRules.Builtins.Concat(SavedNow().Where(t => !t.Scoped || TemplateRules.Offered(true, t.Scopes ?? new List<(string, bool)>(), ChainOf(sectionId)))).ToList()));
 
     public Task<TreeResult> CreatePageFromTemplate(string sectionId, TemplateItem template)
     {

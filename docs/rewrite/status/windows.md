@@ -11,9 +11,9 @@ Audit of `docs/rewrite/PARITY.md` (Windows column) against `apps/windows` at 824
 1. ~~Task filters, sort, group, Team view, status filter (159, 156)~~ built (see above).
 2. Ribbon buttons that do nothing (53): ~~Clear formatting, Link to page, Divider, text colour~~ built; Page colour and Rule lines wait for a core call; Print, Outline, Table group, highlight colour left.
 3. ~~Notification inbox and taskbar badge (179, 178)~~ built.
-4. Table tools, callout/toggle/code block (105, 106): engine commands (row and column add/delete, header toggle); toggle open/close, code copy.
+4. Table tools, callout/toggle/code block (105, 106): partly built (left2: Table group, block menu; merge/split and toggle/code extras wait for apple-left3): engine commands (row and column add/delete, header toggle); toggle open/close, code copy.
 5. ~~Boxes: select, cut/copy/paste/duplicate/delete, context menu (93)~~ built (see the left batch below).
-6. Cursors and presence, follow a collaborator (94, 95): `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors`.
+6. Cursors and presence, follow a collaborator (94, 95): presence avatars and the "On this page now" list built (left2); carets and follow wait for apple-left3: `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors`.
 7. ~~Save state indicator (96)~~ built (Saving, Saved, Offline, Offline — changes kept; "Connecting" shows as Offline).
 8. Task keyboard, bulk bar, inline rename, Undo on toasts (162, 163, 164, 60): `UpdateTask`, `SendTaskChanges`; client code.
 9. Opens offline from a cold start (222): open the shell from `CachedWorkspaces` / `CachedTree` / `CachedTasks` when `RestoreSession` fails with Network (today: signed-out screen with "Try again").
@@ -29,9 +29,9 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 |---|---|---|
 | OneNote-style ribbon (53) | partly: as before, plus Clear formatting, Link to page, Divider and the Tasks ribbon's Group, Sort, Status, Assignee, Tags, Team, Priority, More filters and Clear filters | Page colour and Rule lines need a core call to write the page's settings (menus are built, live pages refuse); Print, Outline, Table group |
 | Marks (99) | partly: text colour menu works (`setColor`, `unsetColor`); highlight stays a yellow toggle | a highlight colour menu (`setHighlight` with a name) |
-| Tables (105); callout, toggle, code (106) | partly: insert 3x3 and draw; callout, quote and code render | row/column commands, header toggle, merge/split; toggle opens; code highlighting |
+| Tables (105); callout, toggle, code (106) | partly (left2): ribbon Table group (Add row, Add column, Table tools menu: row and column insert and delete, header row, delete table) and callout and toggle in the Text style menu; merge/split cells, column width, toggle open/close and code copy wait for apple-left3 | row/column commands, header toggle, merge/split; toggle opens; code highlighting |
 | ~~Boxes: select, cut/copy/paste/duplicate/delete, context menu (93)~~ | built in the left batch (one box at a time; copies keep the same tasks) | multi-box selection waits for the multi-range selection (115) |
-| Cursors and presence (94); follow (95) | partly: live edits only | `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors` |
+| Cursors and presence (94); follow (95) | partly (left2): who is on the page (avatars, list; polled every 3 s). Other people's carets in boxes and follow wait for apple-left3 (presence states carry the user only) | `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors` |
 | Task keyboard, bulk, inline rename (162, 163, 164); Toasts with Undo (60) | missing | client code; `UpdateTask`, `SendTaskChanges`; Undo action on `OverlayHost` toasts |
 | Opens offline from a cold start (222) | partly: tree and tasks load from the store once signed in; a cold start without network shows "Try again" | `CachedWorkspaces`/`CachedTree`/`CachedTasks` when `RestoreSession` fails with Network |
 | Tray icon, close to tray, global quick capture, app shortcuts (250, 251, 252, 253) | missing; only Q, Ctrl+K, Ctrl+Shift+F, Ctrl+Z/Y, Ctrl+/ | NotifyIcon + `GetTaskCounts`; RegisterHotKey + `QuickAddDialog`; Ctrl+N, Ctrl+Shift+T, Ctrl+1-8, Ctrl+, |
@@ -61,12 +61,38 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 |---|---|
 | Resend verification email (28); export my data (35); send feedback (67); error reporting (68) | resend-verification, `GET /me/export`, `POST /feedback`, `POST /client-errors` |
 | Create workspace (47); rename/delete workspace (196); workspace settings General, Teams, Tags, Activity (195); activity feed (181) | `/workspaces` create, `PATCH/DELETE /workspaces/:id`, activity |
-| Templates (134-140) | core calls now exist (Apple, apple-left2-core.md). Built in the left batch: New page from template (section menu), Save as template, `{date}` and `{time}`. Left: the empty-page picker, the ribbon entry, per-section scope, rename and delete, the default per section | UI only |
+| ~~Templates (134-140)~~ | built in left2 (see the dated section). Was: core calls now exist (Apple, apple-left2-core.md). Built in the left batch: New page from template (section menu), Save as template, `{date}` and `{time}`. Left: the empty-page picker, the ribbon entry, per-section scope, rename and delete, the default per section | UI only |
 | Backlinks (113); full width, page colour, rule lines write (118, 119, 120) | `GET /pages/:id/backlinks`; a page-settings write on the live doc (colour and lines are shown, not changeable) |
 | Saved views (161); tags rename/colour/delete (167); teams management (168) | `/workspaces/:id/task-views`, `/tags/:id`, `/teams/:id(/members)` |
 | Notification settings extras (180) | quiet hours, calendar feed link, test notification |
 | Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
 | Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
+
+## 2026-11-24: left2: templates finished, table tools, who is on the page, notebook drag (branch `rewrite/windows-left2`, from `rewrite/native` f30d23b)
+
+Not merged; pushed. Built and 319 unit tests green on this PC (`dotnet build` of the sln, the UI test project and `dotnet test`); nothing was driven with input and nothing ran against a server (the UI tests in `Left2Tests.cs` and the shots in `LookShots.cs` are written for CI only).
+
+- **CI** (branch `rewrite/windows-left2`):
+  - 45497160372 on 16a43bc: 2 failures.
+    - A ribbon flyout menu takes the keyboard, so Table tools and the Text style menu acted on no box. Fixed in 40b65f3: they now act on the box that last had focus (`BoxTextView.Target`).
+  - 45501494077 on 40b65f3: 3 failures.
+    - A typed "/" opens the slash menu only at a line start or after a space, so Callout and Toggle did nothing after other text. Fixed in aabee32: a space goes in first and is taken back after the pick.
+    - After the first row of a table is deleted, the engine puts the caret on the line above the table (core quirk, for apple-left3). The test now steps back in with Down.
+    - `Search_finds_tasks_and_the_sheet_edits_them` failed again. It is the second flaky run of this test, and nothing in this batch touches it.
+  - 45505179122 on aabee32: green. Build x64 + arm64, 319 unit tests, 93 UI tests, look shots.
+- **Waits for apple-left3** (core calls; nothing added to `crates/` here):
+  - tables: merge and split cells, column width, header column, cell colours, and the caret after deleting a first row;
+  - blocks: toggle open/close, code-block copy and highlighting;
+  - other people's carets in boxes, and follow mode;
+  - workspace, team and tag management.
+
+- **Templates (134-140: all ✓ in PARITY).** An empty new page shows a strip with the three built-ins, "More…" and "Start blank" (dismiss); a template put on a page shows "Started from X" with **Start blank**, which undoes the insert (`LivePage.Undo`), deletes the template's tasks and clears a title or icon the template set (`PageView.Left2.cs`, `CoreNotesSource.Templates.cs` `ApplyTemplate`). Ribbon Page group > **Templates** and the page menu **Use a template…** open the picker for the open page (built-ins by `InsertTemplateContent`, saved ones by `UseTemplate`). Section menu: **Default template…** (inherit, None, or a saved template: `SetSectionDefaultTemplate`, read back with `SectionDefaultTemplates`, the effective one worked out up the section chain) and **Manage templates…** (rename, delete, and a button that cycles where a template is offered: everywhere, this section, not this section: `UpdateTemplate`). The New page button now asks the core for the section's default (`CreatePageFromTemplate` with "default", then the pending claim). Not possible with the core: a built-in template can't be a section default or be renamed (only saved ones are stored); the subsections flag is always on when a section is added to a scope; a saved template made private can't be a default (the core refuses). The template's tasks appear in the task list at once (`RefreshTasksNow`).
+- **Tables and blocks (105, 106: partly).** Ribbon **Table** group: Add row, Add column and **Table tools** (insert row above and below, column left and right, header row, delete row, column, table), all engine commands (`addRowAfter`, `addRowBefore`, `addColumnAfter`, `addColumnBefore`, `toggleHeaderRow`, `deleteRow`, `deleteColumn`, `deleteTable`). The Text style menu gained Callout and Toggle (`pickSlash`); the slash menu already had them. **Waits for apple-left3:** merge and split cells, column width, a header column, cell colours (no engine command), toggle open/close from the keyboard, code copy and highlighting.
+- **Presence (94: partly; 95: not).** The page bar shows an avatar stack (up to 4 circles, "+N") and its list **On this page now** (editing or viewing, devices); `LivePage.AnnouncePresence` plus `Presence` every 3 s (`CoreNotesSource.Presence.cs`, `PresenceRules.From` merges one person's devices). The sample shows one viewer, "Sample Viewer". **Waits for apple-left3:** other people's carets and selections in boxes (the presence states carry `{user}` only; `RemoteCursors`/`SetRemoteCursors` take offsets in a box with no way to learn them), and so follow mode.
+- **Notebook drag.** In the notebook picker a notebook row drags before or after another (`MenuEntry.DragId/DropOn`, `TreeActions.DropNotebook`); **Move up / Move down** in the notebook menu is the keyboard path and is what the test drives.
+- **Checked, one gap fixed (179, 126, 34).** Inbox, share link and account deletion read right against the core (`Notifications`, `PageShareLink`, `DeleteAccount` signs out in the core and the app clears the stored token). Gap fixed: a notification from another workspace now switches to that workspace before opening its page or task. Push registration stays out: the core takes only ios and android and WNS needs Devon.
+- **UI readouts added** for the tests: a box's ItemStatus has `tables=RxC,…` and `in=<containers>`; ids `ribbon-add-row`, `ribbon-add-column`, `ribbon-table-tools`, `table-*`, `ribbon-block-type`, `block-*`, `ribbon-templates`, `empty-template-*`, `template-strip-blank`, `page-start-blank`, `page-presence`, `menu-presence`, `menu-default-template`, `menu-manage-templates`.
+- **Unverified.** Everything on a real PC and server: the strip's layout, the live `Start blank` (undo of a template insert with several boxes), the default-template claim on a new page, the avatar stack colours, the notebook drag path with a pointer, and that the Table tools menu keeps the box's caret.
 
 ## 2026-11-24: the left batch: box clipboard, templates, reminder toasts, print (branch `rewrite/windows-left`, from `rewrite/native` cf41927)
 

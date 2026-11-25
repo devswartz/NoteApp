@@ -4,7 +4,19 @@ using System.Text.Json.Nodes;
 namespace Notivelo.Windows.Text;
 
 /// <summary>A page template the picker offers: one of the app's built-in three, or one the workspace saved.</summary>
-public sealed record TemplateItem(string Id, string Name, string? Icon, string Description, bool Builtin, bool Private = false);
+public sealed record TemplateItem(string Id, string Name, string? Icon, string Description, bool Builtin, bool Private = false, bool CanManage = false, bool Scoped = false,
+    IReadOnlyList<(string SectionId, bool IncludeSub)>? Scopes = null);
+
+/// <summary>The outcome of putting a template on an open page: an error sentence, or what to say and how to take it back ("Start blank": the page's undo step, the template's tasks and any title and icon it set).</summary>
+public sealed record TemplateApplied(string? Error = null, string Name = "", Func<Task<string?>>? StartBlank = null)
+{
+    public bool Ok => Error is null;
+}
+
+public enum DefaultChoice { Inherit, None, Template }
+
+/// <summary>A section's own default-template choice (the core's SectionDefaultTemplate) and what a new page there gets (<see cref="EffectiveId"/>; null: a blank page).</summary>
+public sealed record SectionDefault(DefaultChoice Own, string? OwnTemplateId, string? EffectiveId);
 
 /// <summary>The XAML-free rules of templates (Apple's Templates.swift; the web's <c>defaultTemplates.ts</c>): the built-in templates as editor JSON, where a saved
 /// template is offered, and the {date} / {time} words.</summary>
@@ -40,6 +52,35 @@ internal static class TemplateRules
         for (var i = 0; i < chain.Count; i++)
             if (list.Any(s => s.SectionId == chain[i] && (i == 0 || s.IncludeSub))) return true;
         return false;
+    }
+
+    /// <summary>The template a new page in a section gets: the nearest section up the <paramref name="chain"/> (the section first, then its parents) with a choice of its own
+    /// decides; "None" stops the search (a blank page). <paramref name="own"/> holds only sections with a choice: a template id, or null for "None".</summary>
+    public static string? EffectiveDefault(IReadOnlyList<string> chain, IReadOnlyDictionary<string, string?> own)
+    {
+        foreach (var id in chain)
+            if (own.TryGetValue(id, out var t)) return t;
+        return null;
+    }
+
+    /// <summary>A page that shows the template picker: no ink, and no box holds any text or task.</summary>
+    public static bool PageIsBlank(IEnumerable<Notivelo.Windows.Data.CanvasBox> boxes, int inkStrokes) =>
+        inkStrokes == 0 && boxes.All(b => b.Blocks.All(k => k.Task is null && k.Kind != Notivelo.Windows.Data.BlockKind.Rule && string.IsNullOrWhiteSpace(k.Text)));
+
+    /// <summary>Where a saved template is offered, for its row in the manager.</summary>
+    public static string ScopeText(bool scoped, IReadOnlyList<(string SectionId, bool IncludeSub)>? scopes, Func<string, string?> sectionName)
+    {
+        if (!scoped) return "Offered in every section";
+        var names = (scopes ?? Array.Empty<(string, bool)>()).Select(s => sectionName(s.SectionId)).Where(n => n is not null).ToList();
+        return names.Count == 0 ? "Offered in some sections" : "Offered in " + string.Join(", ", names);
+    }
+
+    /// <summary>The scopes after one section is added to (or taken off) a template's list; adding keeps the others (its subsections flag set as given).</summary>
+    public static List<(string SectionId, bool IncludeSub)> WithScope(IEnumerable<(string SectionId, bool IncludeSub)>? current, string sectionId, bool offered, bool includeSub = true)
+    {
+        var list = (current ?? Array.Empty<(string, bool)>()).Where(s => s.SectionId != sectionId).ToList();
+        if (offered) list.Add((sectionId, includeSub));
+        return list;
     }
 
     /// <summary>The editor JSON (a doc of canvasBox nodes) of a built-in template.</summary>

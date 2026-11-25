@@ -124,6 +124,7 @@ internal sealed partial class PageView : ThemedControl
                     foreach (var box in page.Boxes)
                         if (box.Field is not null && _views.ContainsKey(box.Field) && !_frames.ContainsKey(box.Field)) _surface.Children.Add(Box(box));
                 foreach (var v in _views.Values) v.OnPageChanged(tasksChanged);   // task lines are drawn again when a task changed
+                DrawPresence(); UpdateStrip(page);
                 ApplyGeometry(page);
                 UpdateInk(page);
                 UndoStateChanged?.Invoke();
@@ -208,6 +209,7 @@ internal sealed partial class PageView : ThemedControl
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        article.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var title = TitleHost(page);
         title.Margin = new Thickness(51, 0, 0, 0);
@@ -264,8 +266,11 @@ internal sealed partial class PageView : ThemedControl
         _firstBox = page.Boxes.FirstOrDefault();
         var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
         foreach (var box in page.Boxes) { var el = Box(box); Canvas.SetZIndex(el, rank[box]); canvas.Children.Add(el); }
-        Grid.SetRow(canvas, 3);
+        Grid.SetRow(canvas, 4);
         if (page.Rules != RuleLines.None) article.Children.Add(RuleLayer(page.Rules, surfaceH));
+        var strip = TemplateStrip(page);
+        Grid.SetRow(strip, 3);
+        article.Children.Add(strip);
         article.Children.Add(canvas);
 
         var sv = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = article };
@@ -393,7 +398,7 @@ internal sealed partial class PageView : ThemedControl
     private UIElement RuleLayer(RuleLines rules, double height)
     {
         var layer = new Canvas { Height = height, Margin = new Thickness(0, 15, 0, 0), IsHitTestVisible = false };
-        Grid.SetRow(layer, 3);
+        Grid.SetRow(layer, 4);
         var brush = B("PageRule");
         void Fill(double w)
         {
@@ -541,6 +546,7 @@ internal sealed partial class PageView : ThemedControl
         bar.Children.Add(crumbs);
 
         var right = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        right.Children.Add(PresenceHost());
         var saved = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
         // the save state: Saved, Saving… (edits the server has not confirmed), Offline (a page that cannot connect, a lost network) or Offline — changes kept; drawn again as it is polled
         _saved = saved;

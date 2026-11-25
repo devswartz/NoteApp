@@ -19,6 +19,7 @@
     <Compile Include="..\Notivelo.Windows\Data\Models.cs" Link="Data\Models.cs" />
     <Compile Include="..\Notivelo.Windows\Data\PageTools.cs" Link="Data\PageTools.cs" />
     <Compile Include="..\Notivelo.Windows\Data\People.cs" Link="Data\People.cs" />
+    <Compile Include="..\Notivelo.Windows\Data\Presence.cs" Link="Data\Presence.cs" />
     <Compile Include="..\Notivelo.Windows\Data\ShellPolish.cs" Link="Data\ShellPolish.cs" />
     <Compile Include="..\Notivelo.Windows\Data\AuditBatch.cs" Link="Data\AuditBatch.cs" />
     <Compile Include="..\Notivelo.Windows\Data\TaskLogic.cs" Link="Data\TaskLogic.cs" />

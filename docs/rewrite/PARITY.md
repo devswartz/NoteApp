@@ -135,13 +135,13 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Start with a template on an empty page (built-in: meeting, project, journal) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `TemplatePicker.tsx`, `defaultTemplates.ts` |
-| Save as template (workspace or private; per section) | ● | ● | ● | ● | ● | ● | `TemplateDialog.tsx`, `POST /pages/:id/templates` |
-| Tasks in a template become new tasks; attachments copied | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `POST /templates/:id/use` |
-| Rename / delete template (creator or admin) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
+| Start with a template on an empty page (built-in: meeting, project, journal) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `TemplatePicker.tsx`, `defaultTemplates.ts` |
+| Save as template (workspace or private; per section) | ● | ● | ● | ● ✓ | ● | ● | `TemplateDialog.tsx`, `POST /pages/:id/templates` |
+| Tasks in a template become new tasks; attachments copied | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `POST /templates/:id/use` |
+| Rename / delete template (creator or admin) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | `{date}`, `{time}` placeholders | ● | ● | ● | ● ✓ | ● | ● | |
-| Default template per section (inherited by subsections) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PUT /sections/:id/default-template` |
-| New page from template (ribbon, section menu) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
+| Default template per section (inherited by subsections) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `PUT /sections/:id/default-template` |
+| New page from template (ribbon, section menu) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 
 ## 6. Tasks
 

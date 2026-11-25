@@ -49,6 +49,12 @@ internal sealed partial class BoxTextView
     /// <summary>The box that has the keyboard, for the ribbon.</summary>
     public static BoxTextView? Focused { get; private set; }
 
+    /// <summary>The box that had the keyboard last (kept while a ribbon flyout menu holds focus), or null once it is unloaded.</summary>
+    public static BoxTextView? LastFocused { get; private set; }
+
+    /// <summary>The box a ribbon command acts on: the focused one, or the one a menu just took focus from.</summary>
+    public static BoxTextView? Target => Focused ?? (LastFocused is { IsLoaded: true } l ? l : null);
+
     /// <summary>Raised when the focused box changes, or its marks, block type or undo state do.</summary>
     public static event Action? FocusedStateChanged;
 
@@ -84,7 +90,7 @@ internal sealed partial class BoxTextView
         _root.PointerReleased += OnPointerReleased;
         _root.PointerCaptureLost += (_, _) => { _dragging = false; _rz = null; };
         CharacterReceived += OnCharacter;
-        Unloaded += (_, _) => { StopBlink(); HideMenu(); HideFloatingBar(); if (Focused == this) { Focused = null; FocusedStateChanged?.Invoke(); } };
+        Unloaded += (_, _) => { StopBlink(); HideMenu(); HideFloatingBar(); if (LastFocused == this) LastFocused = null; if (Focused == this) { Focused = null; FocusedStateChanged?.Invoke(); } };
         SizeChanged += (_, _) => NotifyLayout();
     }
 
@@ -109,7 +115,7 @@ internal sealed partial class BoxTextView
         if (_lastEdited is { } prev && !ReferenceEquals(prev, this)) prev.Left?.Invoke();
         _lastEdited = this;
         _focused = true;
-        Focused = this;
+        Focused = this; LastFocused = this;
         EnsureContext();
         try { _ctx?.NotifyFocusEnter(); } catch (Exception e) { Log("focus enter", e); }
         ResetBlink();

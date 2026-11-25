@@ -188,6 +188,7 @@ public sealed partial class ShellView : UserControl
         {
             case "New task": QuickAddDialog.Show(_host, null); break;
             case "Print" when _route == AppRoute.Notes: _page.Print(); break;
+            case "Templates" when _route == AppRoute.Notes: _page.OpenTemplates(); break;
             case "Today" or "Upcoming" or "My Tasks" or "All tasks" when _route == AppRoute.Tasks:
                 _taskView = tip switch { "Today" => TaskViewKind.Today, "Upcoming" => TaskViewKind.Upcoming, "My Tasks" => TaskViewKind.MyTasks, _ => TaskViewKind.All };
                 Refresh(); break;

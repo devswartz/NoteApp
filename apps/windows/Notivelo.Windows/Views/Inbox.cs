@@ -181,6 +181,8 @@ internal static class InboxPopover
             {
                 inbox.MarkRead(n.Id);
                 layer?.Close();
+                // a notification from another workspace switches to it first
+                if (n.WorkspaceId is { Length: > 0 } nw && nw != host.Source.CurrentWorkspaceId && host.Source.Workspaces.Any(w => w.Id == nw)) host.Source.SelectWorkspace(nw);
                 if (n.TaskId is { } t) host.OpenTask(t); else if (n.PageId is { } p) host.OpenPage(p);
             };
             return b;

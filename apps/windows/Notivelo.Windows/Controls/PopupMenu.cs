@@ -9,7 +9,8 @@ namespace Notivelo.Windows.Controls;
 
 /// <summary>One row of a popup menu (LOOK 4.9): icon, label, optional hint, danger styling, or a separator.</summary>
 internal sealed record MenuEntry(string Text, string? Icon = null, Action? Click = null, bool Danger = false, string? Hint = null, bool Separator = false,
-    string? TileColor = null, bool Check = false, bool Lock = false, bool Heading = false, Func<Func<string, Brush>, Action, UIElement>? Custom = null, double CustomHeight = 0, string? Id = null)
+    string? TileColor = null, bool Check = false, bool Lock = false, bool Heading = false, Func<Func<string, Brush>, Action, UIElement>? Custom = null, double CustomHeight = 0, string? Id = null,
+    string? DragId = null, Action<string, bool>? DropOn = null)
 {
     public static MenuEntry Sep() => new("", Separator: true);
     /// <summary>A small muted section label ("MY NOTEBOOKS").</summary>
@@ -53,6 +54,35 @@ internal static class PopupMenu
     }
 
     public static string Slug(string text) => System.Text.RegularExpressions.Regex.Replace(new string(text.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray()), "-+", "-").Trim('-');
+
+    private static string? _dragging;
+
+    /// <summary>A row that can be dragged onto another reorderable row (the notebook picker): the top half drops before it, the bottom half after. Move up and Move down in the notebook menu are the keyboard path.</summary>
+    private static void MakeReorderable(Button b, string dragId, Action<string, bool> dropOn, Func<string, Brush> brush, Action close)
+    {
+        b.CanDrag = true; b.AllowDrop = true;
+        b.DragStarting += (_, e) => { _dragging = dragId; e.Data.SetText("notivelo:notebook:" + dragId); e.Data.RequestedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move; };
+        b.DropCompleted += (_, _) => { _dragging = null; b.BorderThickness = new Thickness(0); };
+        b.DragOver += (_, e) =>
+        {
+            if (_dragging is null || _dragging == dragId) { e.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.None; return; }
+            e.AcceptedOperation = global::Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+            e.DragUIOverride.IsCaptionVisible = false;
+            var after = e.GetPosition(b).Y > b.ActualHeight / 2;
+            b.BorderBrush = brush("Accent"); b.BorderThickness = after ? new Thickness(0, 0, 0, 2) : new Thickness(0, 2, 0, 0);
+            e.Handled = true;
+        };
+        b.DragLeave += (_, _) => b.BorderThickness = new Thickness(0);
+        b.Drop += (_, e) =>
+        {
+            var from = _dragging; _dragging = null; b.BorderThickness = new Thickness(0);
+            e.Handled = true;
+            if (from is null || from == dragId) return;
+            var after = e.GetPosition(b).Y > b.ActualHeight / 2;
+            close();
+            dropOn(from, after);
+        };
+    }
 
     /// <summary>Open the menu under <paramref name="anchor"/> (end-aligned for "..." buttons) or, with <paramref name="at"/>, at a point in the host's coordinates.</summary>
     public static void Show(OverlayHost host, IReadOnlyList<MenuEntry> items, FrameworkElement? anchor, bool endAlign = false, Point? at = null, string? id = null, double width = 252)
@@ -116,6 +146,7 @@ internal static class PopupMenu
             AutomationProperties.SetName(b, it.Text);
             var click = it.Click;
             b.Click += (_, _) => { layer?.Close(); click?.Invoke(); };
+            if (it.DragId is { } dragId && it.DropOn is { } dropOn) MakeReorderable(b, dragId, dropOn, B, () => layer?.Close());
             list.Children.Add(b);
         }
         var card = new Border

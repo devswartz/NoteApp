@@ -183,7 +183,8 @@ internal sealed class SidebarView : ThemedControl
             foreach (var n in _source.Notebooks)
             {
                 var id = n.Id;
-                items.Add(new MenuEntry(n.Name, Click: () => { _source.SelectNotebook(id); Rebuild(); }, TileColor: n.ColorHex, Check: id == nb.Id, Lock: n.IsPrivate, Id: "notebook-" + PopupMenu.Slug(n.Name)));
+                items.Add(new MenuEntry(n.Name, Click: () => { _source.SelectNotebook(id); Rebuild(); }, TileColor: n.ColorHex, Check: id == nb.Id, Lock: n.IsPrivate, Id: "notebook-" + PopupMenu.Slug(n.Name),
+                    DragId: _source.CanEditTree ? id : null, DropOn: (from, after) => Host?.Tree.DropNotebook(from, id, after)));
             }
             if (_source.CanEditTree)
             {

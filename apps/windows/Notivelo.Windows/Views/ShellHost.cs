@@ -75,6 +75,8 @@ internal sealed class TreeActions
         {
             new("New page", "file-plus", () => NewPage(s.Id)),
             new("New page from template…", "layout-template", () => TemplatePicker.Show(_h, s.Id, s.Name), Id: "menu-new-from-template"),
+            new("Default template…", "file-cog", () => TemplateManager.Default(_h, s.Id, s.Name), Id: "menu-default-template"),
+            new("Manage templates…", "layout-template", () => TemplateManager.Manage(_h, s.Id, s.Name), Id: "menu-manage-templates"),
             new("New subsection", "folder-plus", () => NewSection(nb?.Id ?? NotebookOf(s.Id) ?? "", s.Id)),
             new("Rename", "pencil", () => RenameDialog(TreeKind.Section, s.Id, s.Name)),
             new("Duplicate", "copy", () => Duplicate(TreeKind.Section, s.Id)),
@@ -100,6 +102,7 @@ internal sealed class TreeActions
         items.Add(MenuEntry.Sep());
         if (!p.Locked) items.Add(new("Share…", "user-plus", () => PageDialogs.Share(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-share"));
         items.Add(new("Version history", "rotate-ccw", () => PageDialogs.VersionHistory(_h, p.Id), Id: "menu-version-history"));
+        if (current && !p.Locked) items.Add(new("Use a template…", "layout-template", () => PageView.Current?.OpenTemplates(), Id: "menu-use-template"));
         if (current && !p.Locked) items.Add(new("Save as template…", "layout-template", () => TemplatePicker.Save(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-save-template"));
         if (current && !p.Locked) items.Add(new("Print…", "printer", () => PageView.Current?.Print(), Hint: "Ctrl+P", Id: "menu-print"));
         if (current) items.Add(new("Export as Markdown", "download", () => PageDialogs.ExportMarkdown(_h, p.Id, p.Title == "Untitled" ? "" : p.Title), Id: "menu-export-markdown"));
@@ -191,6 +194,13 @@ internal sealed class TreeActions
     {
         var err = await Run(S.MoveTo(kind, id, notebookId, parentId, index));
         if (err is not null) _h.Toast(err, true);
+    }
+
+    /// <summary>A notebook dropped before or after another in the notebook picker (the same move as Move up / Move down, with a place).</summary>
+    public void DropNotebook(string dragId, string targetId, bool after)
+    {
+        var sibs = S.Notebooks.Select(n => n.Id).Where(i => i != dragId).ToList();
+        Drop(TreeKind.Notebook, dragId, dragId, null, ShellRules.DropIndex(sibs, targetId, after));
     }
 
     /// <summary>Whether <paramref name="candidate"/> is the section <paramref name="id"/> or inside it (a section cannot go into itself).</summary>

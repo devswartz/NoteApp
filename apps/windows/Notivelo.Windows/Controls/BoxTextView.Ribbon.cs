@@ -35,9 +35,17 @@ internal sealed partial class BoxTextView
             if (kind == "page-link") { _session.InsertText("[["); ok = true; }
             else
             {
+                var title = kind == "divider" ? "Divider" : kind;   // any other kind is a slash item's title (e.g. "Callout")
+                // a "/" opens the menu only at a line start or after a space: type " /" when the caret follows other text, and take the space back after the pick
                 _session.InsertText("/");
-                ok = _session.Command("pickSlash", "{\"title\":\"Divider\"}");
-                if (!ok) _session.Key("Backspace");
+                var spaced = false;
+                if (_session.ViewRender().Suggestion is null)
+                {
+                    _session.Key("Backspace"); _session.InsertText(" /"); spaced = true;
+                }
+                ok = _session.Command("pickSlash", System.Text.Json.JsonSerializer.Serialize(new { title }));
+                if (!ok) { _session.Key("Backspace"); if (spaced) _session.Key("Backspace"); }
+                else if (spaced) _session.Key("Backspace");
             }
             Render();
             return ok;
