@@ -40,6 +40,9 @@ struct PageScreen: View {
                 ZStack(alignment: .topTrailing) {
                     content(snapshot, palette)
                     FollowChip().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    if snapshot != nil, meta != nil, sample == nil || LookData.state == "backlinks" {
+                        BacklinksBar(pageId: pageId, palette: palette).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    }
                     if let snapshot, snapshot.info.headings.count >= 3, !phone, !shell.outlineHidden, (shell.frames["page-canvas"]?.width ?? 1000) >= 700 {
                         PageOutline(headings: snapshot.info.headings, palette: palette, live: live).padding(.top, 33).padding(.trailing, 18)
                     }
@@ -66,7 +69,7 @@ struct PageScreen: View {
         }
         .onChange(of: pageId) { _, id in MediaHub.shared.pageId = id }
         // Following someone who left the page ends.
-        .onChange(of: live?.people.map(.id) ?? []) { _, ids in
+        .onChange(of: live?.people.map { $0.id } ?? []) { _, ids in
             if let f = CanvasNav.shared.following, !ids.contains(f.id), !session.preview { CanvasNav.shared.stopFollowing() }
         }
         // A page just made from a template or a section default is filled once it is open and in sync.
