@@ -1,4 +1,5 @@
 import Foundation
+import NotiveloCore
 import CoreGraphics
 #if canImport(UIKit)
 import UIKit
@@ -11,6 +12,8 @@ import AppKit
 protocol EditorTarget: AnyObject {
     /// An engine command (`EditorSession.command`, EDITOR.md 4); false when it was not applied.
     @discardableResult func command(_ name: String, _ argsJSON: String) -> Bool
+    /// The table the caret is in (header row, can merge, can split), nil outside a table.
+    func tableState() -> TableState?
 }
 
 /// What the renderers read about the signed-in person and the open comment threads (set by the shell).

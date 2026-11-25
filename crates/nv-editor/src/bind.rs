@@ -418,6 +418,41 @@ fn stick_one<T: ReadTxn>(txn: &T, slots: &[Slot], pos: usize) -> Option<StickyIn
     None
 }
 
+// ───────────── Relative positions without a binding (cursors on the wire) ─────────────
+
+/// A Yjs relative position for tree position `pos` of fragment `field`, the form
+/// y-prosemirror's cursor plugin puts in awareness. None where the position can't be tied to
+/// the fragment (no such fragment, or it doesn't line up with the tree).
+pub fn relative_position(doc: &Doc, field: &str, pos: usize) -> Option<StickyIndex> {
+    let tree = read_tree(doc, field);
+    let txn = doc.transact();
+    let frag = txn.get_xml_fragment(field)?;
+    let mut slots = Vec::new();
+    if !walk(&txn, &frag, &tree.content, 0, &mut slots) {
+        return None;
+    }
+    stick_one(&txn, &slots, pos)
+}
+
+/// The tree position of a Yjs relative position inside fragment `field`; None when it points
+/// somewhere else (another box, another page) or can't be resolved.
+pub fn locate_relative(doc: &Doc, field: &str, st: &StickyIndex) -> Option<usize> {
+    let tree = read_tree(doc, field);
+    let txn = doc.transact();
+    let frag = txn.get_xml_fragment(field)?;
+    let mut slots = Vec::new();
+    if !walk(&txn, &frag, &tree.content, 0, &mut slots) {
+        return None;
+    }
+    let off = st.get_offset(&txn)?;
+    let slot = slots.iter().find(|s| s.branch == off.branch)?;
+    let i = off.index as usize;
+    Some(match &slot.kind {
+        SlotKind::Text { start, len } => start + i.min(*len),
+        SlotKind::Kids { starts, end } => starts.get(i).copied().unwrap_or(*end),
+    })
+}
+
 // ───────────── Reading (through nv-model) ─────────────
 
 /// What `field` of `doc` holds, as a tree (through `nv_model::Page::read`, so a `box:<id>`

@@ -71,7 +71,7 @@ final class Shell {
         case pageRow(String)
         /// The emoji picker of a page's icon (the row above its title).
         case pageIcon(String)
-        case blockType, textColor, highlight, taskSplit, pageColor, ruleLines
+        case blockType, textColor, highlight, taskSplit, pageColor, ruleLines, tableMenu
         /// The Calendar ribbon's Tags and person filters.
         case calTags, calPeople
         /// The Tasks ribbon's menus (and the phone's filter sheets): group, sort, and the filter kinds.
@@ -112,6 +112,8 @@ final class Shell {
     let tv = TaskViewState()
     /// Settings: the open section (nil: the list on phones, Profile on wide screens).
     var settingsSection: String?
+    /// Settings shows the workspace's sections (General, Teams, Tags, Activity) instead of the person's.
+    var settingsWorkspace = false
     /// The page panel shows the page's tasks instead of its comments.
     var pageTasksTab = false
     /// Where Settings' Back goes.
@@ -154,7 +156,7 @@ final class Shell {
             case "templates": route = .page(LookData.pageId("empty"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
-            case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu": route = .page(LookData.pageId("sandbox"))
+            case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools", "cursors": route = .page(LookData.pageId("sandbox"))
             default:
                 if state.hasPrefix("page-") {
                     route = .page(LookData.pageId(String(state.dropFirst("page-".count))))
@@ -168,6 +170,8 @@ final class Shell {
             if state == "ribbon-collapsed" { ribbonCollapsed = true }
             if state == "page-tasks-panel" { pageTasksTab = true; CommentsModel.shared.open = true }
             if state == "search" { searchOpen = true; searchQuery = "plan" }
+            if state == "workspace-settings" { route = .settings; settingsSection = "workspace"; settingsWorkspace = true }
+            if state == "teams-settings" { route = .settings; settingsSection = "teams"; settingsWorkspace = true }
             if state == "delete-account" { route = .settings; settingsSection = "profile" }
             if state.hasPrefix("settings-") { route = .settings; settingsSection = String(state.dropFirst("settings-".count)) }
             if state == "task-detail" { route = .tasks(.my); taskDetailId = "t-review" }
@@ -275,7 +279,8 @@ final class Shell {
         sheet = .quickAdd(QuickAddSeed(pageId: pageId, dueDate: due, text: text))
     }
 
-    func openSettings(_ section: String? = nil) {
+    func openSettings(_ section: String? = nil, workspace: Bool = false) {
+        settingsWorkspace = workspace
         menu = nil
         searchOpen = false
         taskDetailId = nil
@@ -391,6 +396,7 @@ struct AppShell: View {
             Color.clear.onAppear { if shell.sidebarOpen == nil { shell.sidebarOpen = g.size.width >= 900 } }
         })
         .onAppear {
+            EditorFocus.shared.onTableMenu = { [weak shell] in shell?.menu = .tableMenu }
             theme.systemDark = scheme == .dark
             ShellBridge.shared.attach(shell, session)
             if mainScreenSize.width <= 760 { shell.configurePhoneLook() }
@@ -414,6 +420,11 @@ struct AppShell: View {
             shell.inbox.refresh(session, list: shell.menu == .inbox)
             AppBadge.set(dueToday)
         }
+        #if os(iOS)
+        // The Today widget's snapshot follows the task list; shares from the Share Extension are taken once the app is in front
+        // and the workspace is loaded (Sources/iOS/Extras.swift).
+        .modifier(IOSExtras(shell: shell, session: session))
+        #endif
         .onChange(of: session.user?.id) { _, _ in
             shell.inbox.reset()
             shell.inbox.refresh(session, list: false)

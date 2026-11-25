@@ -1073,3 +1073,20 @@ pub struct Snoozed {
     /// ISO instant the reminder fires again.
     pub until: String,
 }
+
+/// One entry of a workspace's activity feed (GET /workspaces/:id/activity).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityItem {
+    pub id: i64,
+    #[serde(default)]
+    pub workspace_id: String,
+    #[serde(default)]
+    pub actor_id: Option<String>,
+    pub verb: String,
+    /// page, notebook, section, task, member, comment or workspace.
+    pub target_type: String,
+    pub target_id: String,
+    pub summary: String,
+    pub created_at: String,
+}

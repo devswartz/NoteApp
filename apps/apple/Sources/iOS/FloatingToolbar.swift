@@ -34,8 +34,12 @@ final class FloatingToolbarView: UIView {
     /// Does `point` (the superview's coordinates) fall on the toolbar or its colour popover?
     func covers(_ point: CGPoint) -> Bool { !isHidden && frame.contains(point) }
 
-    func build(palette p: Palette, maxWidth: CGFloat = .greatestFiniteMagnitude) {
-        guard p.bg != palette.bg || buttons.isEmpty || p.isDark != palette.isDark || maxWidth != limit else { return }
+    private var hasTable = false
+    var onTable: (() -> Void)?
+
+    func build(palette p: Palette, maxWidth: CGFloat = .greatestFiniteMagnitude, table: Bool = false) {
+        guard p.bg != palette.bg || buttons.isEmpty || p.isDark != palette.isDark || maxWidth != limit || table != hasTable else { return }
+        hasTable = table
         palette = p
         limit = maxWidth
         bar.subviews.forEach { $0.removeFromSuperview() }
@@ -106,6 +110,7 @@ final class FloatingToolbarView: UIView {
         separator()
         word("circle-check", "Task") { [weak self] in self?.run("convertToTask") }
         word("message-square", "Comment") { [weak self] in self?.onComment?() }
+        if table { word("table", "Table") { [weak self] in self?.onTable?() } }
         x += 2
         right = max(right, x)
         barSize = CGSize(width: y > 3 ? min(maxWidth, right + 1) : right, height: y + h + 3)

@@ -150,7 +150,7 @@ struct MenuLayer: View {
     private func isSheet(_ menu: Shell.Menu) -> Bool {
         guard phone else { return false }
         switch menu {
-        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon: return true
+        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon, .tableMenu: return true
         case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore: return true
         default: return false
         }
@@ -271,6 +271,13 @@ struct MenuLayer: View {
         case .ruleLines:
             let f = anchorFrame("rb-rule-lines")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, ruleMenu(p))
+        case .tableMenu:
+            if phone {
+                sheet(TableMenuCard(palette: p, state: focus.table, width: width))
+            } else {
+                let f = anchorFrame("rb-table")
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, TableMenuCard(palette: p, state: focus.table, width: width))
+            }
         case .calTags:
             let f = anchorFrame("rb-cal-tags")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, calTagsMenu(p))
@@ -363,11 +370,11 @@ struct MenuLayer: View {
                 }
             }
             MenuSeparator(palette: p)
-            MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.notYet("New workspace") }
-            MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.notYet("Workspace settings") }
+            MenuItem(palette: p, title: "New workspace", icon: "plus") { shell.openSheet(.workspaceDialog(.newWorkspace), session, "New workspace") }
+            MenuItem(palette: p, title: "Workspace settings", icon: "settings") { shell.openSettings("workspace", workspace: true) }
             MenuItem(palette: p, title: "Members", icon: "users") { shell.openSheet(.members, session, "Members") }
             MenuItem(palette: p, title: "Join with invite link", icon: "link-2") { shell.openSheet(.joinInvite(nil), session, "Joining a workspace") }
-            MenuItem(palette: p, title: "Activity", icon: "activity") { shell.notYet("Activity") }
+            MenuItem(palette: p, title: "Activity", icon: "activity") { shell.openSettings("activity", workspace: true) }
             MenuItem(palette: p, title: "Trash", icon: "trash") { shell.openSheet(.trash, session, "Trash") }
         }
     }

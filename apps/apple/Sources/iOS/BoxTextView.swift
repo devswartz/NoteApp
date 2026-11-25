@@ -156,6 +156,8 @@ final class BoxTextView: UIView, UITextInput {
     /// The plain text drawn (to find a box by its words, CI).
     var shownText: String { rendering.string.string }
 
+    func tableState() -> TableState? { editor?.session.tableState() }
+
     /// An engine command (`EditorSession.command`) from the ribbon or a menu, sent like any edit.
     @discardableResult
     func command(_ name: String, _ argsJSON: String) -> Bool {
@@ -262,6 +264,7 @@ final class BoxTextView: UIView, UITextInput {
             p.accent.withAlphaComponent(0.16).setFill()
             for r in selectionRects(for: BoxTextRange(sel.lo, sel.hi)).map(\.rect) { UIRectFill(r) }
         }
+        drawRemoteTint()
         layoutManager.enumerateTextLayoutFragments(from: layoutManager.documentRange.location, options: [.ensuresLayout]) { fragment in
             let frame = fragment.layoutFragmentFrame.offsetBy(dx: inset.left, dy: inset.top)
             if frame.intersects(rect.insetBy(dx: -20, dy: -20)) {
@@ -324,6 +327,7 @@ final class BoxTextView: UIView, UITextInput {
             }
         }
         if chrome, let m = selectedMedia, let r = mediaRect(m) { BoxPainter(palette: p).mediaSelection(m, rect: r) }
+        drawRemoteCarets()
     }
 
     // MARK: Images and file cards
@@ -1081,6 +1085,32 @@ final class BoxTextView: UIView, UITextInput {
             return CGRect(x: inset.left, y: inset.top, width: 2, height: 20)
         }
         return CGRect(x: r.minX, y: r.minY, width: 2, height: max(r.height, 16))
+    }
+
+    // MARK: Other people's carets
+
+    /// The carets and selections of other people in this box (UTF-16 offsets in the box's text, from `LivePage.remoteCursors()`).
+    var remoteCursors: [BoxCursor] = [] {
+        didSet { if remoteCursors != oldValue { setNeedsDisplay() } }
+    }
+
+    private func drawRemoteTint() {
+        for c in remoteCursors where c.anchor != c.head {
+            RemoteCursorPaint.tint(c.color, rects: segments(Int(min(c.anchor, c.head)), Int(max(c.anchor, c.head)), type: .selection))
+        }
+    }
+
+    private func drawRemoteCarets() {
+        for c in remoteCursors {
+            RemoteCursorPaint.caret(name: c.name, color: c.color, caret: caretRect(for: BoxTextPosition(Int(c.head))), bounds: bounds)
+        }
+    }
+
+    /// Our own selection as the engine has it (anchor and head, view offsets), for the others' screens; nil without an editor.
+    var viewSelectionNow: (anchor: UInt32, head: UInt32)? {
+        guard let editor else { return nil }
+        let r = editor.session.viewSelection()
+        return (r.anchor, r.head)
     }
 
     func firstRect(for range: UITextRange) -> CGRect {

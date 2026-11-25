@@ -10,11 +10,17 @@ final class ShellBridge {
     @ObservationIgnored private(set) weak var shell: Shell?
     @ObservationIgnored private(set) weak var session: SessionModel?
     private(set) var attached = false
+    /// Quick capture was asked for while no window was open: the window that comes opens it.
+    @ObservationIgnored private var pendingQuickCapture = false
 
     func attach(_ shell: Shell, _ session: SessionModel) {
         self.shell = shell
         self.session = session
         attached = true
+        if pendingQuickCapture {
+            pendingQuickCapture = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.newTask() }
+        }
     }
 
     func detach(_ shell: Shell) {
@@ -92,6 +98,13 @@ final class ShellBridge {
     }
 
     func zoomActual() { shell?.zoom = 1 }
+}
+
+extension ShellBridge {
+    /// The menu bar icon and the global shortcut: quick add now, or once the window is there.
+    func quickCapture() {
+        if shell != nil { newTask() } else { pendingQuickCapture = true }
+    }
 }
 
 extension ShellBridge {

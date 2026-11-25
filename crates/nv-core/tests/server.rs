@@ -2402,3 +2402,279 @@ fn templates_push_devices_and_box_clipboard_against_a_running_server() {
         404
     );
 }
+
+#[test]
+fn workspaces_teams_tags_and_activity_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let pw = "correct horse battery staple 1";
+    let a = Core::new(url.clone());
+    let me = a
+        .register("Ws A".into(), format!("wsa-{stamp}@example.com"), pw.into())
+        .unwrap()
+        .user;
+    let b = Core::new(url);
+    let bob = b
+        .register("Ws B".into(), format!("wsb-{stamp}@example.com"), pw.into())
+        .unwrap()
+        .user;
+
+    // Workspaces: make, rename, see it in the list (and the stored one), invite, leave, delete.
+    let before = a.workspaces().unwrap().len();
+    let ws = a.create_workspace("Projects".into()).unwrap();
+    let list = a.workspaces().unwrap();
+    assert_eq!(list.len(), before + 1);
+    assert_eq!(
+        list.iter()
+            .find(|w| w.id == ws)
+            .map(|w| (&*w.name, &*w.role)),
+        Some(("Projects", "owner"))
+    );
+    a.rename_workspace(ws.clone(), "Projects 2".into()).unwrap();
+    assert!(a
+        .workspaces()
+        .unwrap()
+        .iter()
+        .any(|w| w.name == "Projects 2"));
+    assert_eq!(
+        server_status(a.rename_workspace(ws.clone(), "".into()).unwrap_err()).0,
+        400
+    );
+    a.invite_member(ws.clone(), bob.email.clone(), Some("member".into()))
+        .unwrap();
+    assert!(b.workspaces().unwrap().iter().any(|w| w.id == ws));
+    // A member may not rename or delete.
+    assert_eq!(
+        server_status(b.rename_workspace(ws.clone(), "Mine".into()).unwrap_err()).0,
+        403
+    );
+    assert_eq!(
+        server_status(b.delete_workspace(ws.clone()).unwrap_err()).0,
+        403
+    );
+
+    // Tags: a member makes one, an owner renames, recolours and deletes.
+    let t = b.create_tag(ws.clone(), "#waiting".into(), None).unwrap();
+    assert_eq!(
+        server_status(b.rename_tag(t.id.clone(), "x".into()).unwrap_err()).0,
+        403
+    );
+    let t2 = a
+        .create_tag(ws.clone(), "later".into(), Some("#112233".into()))
+        .unwrap();
+    let r = a.rename_tag(t.id.clone(), "#blocked".into()).unwrap();
+    assert_eq!(r.name, "blocked");
+    assert_eq!(
+        server_status(a.rename_tag(t.id.clone(), "later".into()).unwrap_err()).0,
+        409
+    );
+    let r = a.recolor_tag(t.id.clone(), "#ABCDEF".into()).unwrap();
+    assert_eq!((r.name.as_str(), r.color.as_str()), ("blocked", "#abcdef"));
+    assert_eq!(
+        server_status(a.recolor_tag(t.id.clone(), "red".into()).unwrap_err()).0,
+        400
+    );
+    a.delete_tag(t.id.clone()).unwrap();
+    let names: Vec<String> = a
+        .tags(ws.clone())
+        .unwrap()
+        .into_iter()
+        .map(|t| t.name)
+        .collect();
+    assert_eq!(names, ["later"]);
+    assert_eq!(a.tags(ws.clone()).unwrap()[0].id, t2.id);
+
+    // Teams: a team and a subteam, rename, recolour, move, members, delete.
+    let eng = a
+        .create_team(ws.clone(), "Eng".into(), None, None, vec![me.id.clone()])
+        .unwrap();
+    assert_eq!(eng.member_ids, vec![me.id.clone()]);
+    let web = a
+        .create_team(
+            ws.clone(),
+            "Web".into(),
+            Some("#0ea5e9".into()),
+            Some(eng.id.clone()),
+            vec![],
+        )
+        .unwrap();
+    assert_eq!(web.parent_id.as_deref(), Some(eng.id.as_str()));
+    // Subteams are one level deep.
+    assert_eq!(
+        server_status(
+            a.create_team(
+                ws.clone(),
+                "Deep".into(),
+                None,
+                Some(web.id.clone()),
+                vec![]
+            )
+            .unwrap_err()
+        )
+        .0,
+        400
+    );
+    assert_eq!(
+        a.rename_team(web.id.clone(), "Frontend".into())
+            .unwrap()
+            .name,
+        "Frontend"
+    );
+    assert_eq!(
+        a.recolor_team(web.id.clone(), "#10b981".into())
+            .unwrap()
+            .color,
+        "#10b981"
+    );
+    let moved = a.move_team(web.id.clone(), None).unwrap();
+    assert_eq!(moved.parent_id, None);
+    let moved = a.move_team(web.id.clone(), Some(eng.id.clone())).unwrap();
+    assert_eq!(moved.parent_id.as_deref(), Some(eng.id.as_str()));
+    // A team with subteams can't become one.
+    assert_eq!(
+        server_status(
+            a.move_team(eng.id.clone(), Some(web.id.clone()))
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+    let t = a
+        .add_team_member(ws.clone(), web.id.clone(), bob.id.clone())
+        .unwrap();
+    assert_eq!(t.member_ids, vec![bob.id.clone()]);
+    let t = a
+        .add_team_member(ws.clone(), web.id.clone(), bob.id.clone())
+        .unwrap();
+    assert_eq!(t.member_ids.len(), 1);
+    let t = a
+        .add_team_member(ws.clone(), web.id.clone(), me.id.clone())
+        .unwrap();
+    assert_eq!(t.member_ids.len(), 2);
+    let t = a
+        .remove_team_member(ws.clone(), web.id.clone(), bob.id.clone())
+        .unwrap();
+    assert_eq!(t.member_ids, vec![me.id.clone()]);
+    let t = a.set_team_members(web.id.clone(), vec![]).unwrap();
+    assert!(t.member_ids.is_empty());
+    assert_eq!(
+        server_status(
+            a.set_team_members(web.id.clone(), vec!["nobody".into()])
+                .unwrap_err()
+        )
+        .0,
+        400
+    );
+    let bigger = a.reorder_team(web.id.clone(), 10.0).unwrap();
+    assert_eq!(bigger.id, web.id);
+    // Members may read teams but not change them.
+    assert_eq!(b.teams(ws.clone()).unwrap().len(), 2);
+    assert_eq!(
+        server_status(b.rename_team(web.id.clone(), "x".into()).unwrap_err()).0,
+        403
+    );
+    // Deleting the team takes its subteam.
+    a.delete_team(eng.id.clone()).unwrap();
+    assert!(a.teams(ws.clone()).unwrap().is_empty());
+
+    // Activity: newest first, paged by id. (Entries are written as the requests finish.)
+    a.rename_workspace(ws.clone(), "Projects 3".into()).unwrap();
+    a.rename_workspace(ws.clone(), "Projects 4".into()).unwrap();
+    wait_for("the activity", 10, || {
+        a.activity(ws.clone(), None, None).unwrap().len() >= 3
+    });
+    let all = a.activity(ws.clone(), Some(100), None).unwrap();
+    assert!(all.windows(2).all(|w| w[0].id > w[1].id));
+    assert!(all.iter().all(|e| e.workspace_id == ws));
+    assert!(all
+        .iter()
+        .any(|e| e.verb == "renamed" && e.target_type == "workspace"));
+    assert!(all
+        .iter()
+        .any(|e| e.verb == "added" && e.target_type == "member"));
+    assert_eq!(all[0].actor_id.as_deref(), Some(me.id.as_str()));
+    let first = a.activity(ws.clone(), Some(2), None).unwrap();
+    assert_eq!(first.len(), 2);
+    let next = a
+        .activity(ws.clone(), Some(100), Some(first[1].id))
+        .unwrap();
+    assert_eq!(next.len(), all.len() - 2);
+    assert_eq!(next[0].id, all[2].id);
+
+    // Leave and delete: Bob leaves; the owner deletes; it is gone for both.
+    b.leave_workspace(ws.clone()).unwrap();
+    assert!(!b.workspaces().unwrap().iter().any(|w| w.id == ws));
+    a.delete_workspace(ws.clone()).unwrap();
+    assert!(!a.workspaces().unwrap().iter().any(|w| w.id == ws));
+    assert_eq!(a.workspaces().unwrap().len(), before);
+    assert_eq!(server_status(a.delete_workspace(ws).unwrap_err()).0, 404);
+}
+
+#[test]
+fn cursors_between_two_windows_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let email = format!("cur-{stamp}@example.com");
+    let pw = "correct horse battery staple 1";
+    let one = Core::new(url.clone());
+    one.register("Cur One".into(), email.clone(), pw.into())
+        .unwrap();
+    let two = Core::new(url);
+    two.sign_in(email, pw.into()).unwrap();
+    let ws = one.workspaces().unwrap()[0].id.clone();
+    let section = one.tree(ws).unwrap().sections[0].id.clone();
+    let page = one.create_page(section, Some("Cursors".into())).unwrap();
+    let (e1, e2) = (
+        Arc::new(LiveEvents::default()),
+        Arc::new(LiveEvents::default()),
+    );
+    let l1 = one.open_live_page(page.clone(), e1.clone()).unwrap();
+    wait_for("synced", 20, || {
+        e1.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
+    let clip = r#"[{"x":40,"y":60,"w":300,"content":[{"type":"paragraph","content":[{"type":"text","text":"Hello there"}]}]}]"#;
+    let ids = l1
+        .paste_boxes(clip.into(), Some(40.0), Some(60.0), Default::default())
+        .unwrap();
+    let l2 = two.open_live_page(page, e2.clone()).unwrap();
+    wait_for("synced", 20, || {
+        e2.statuses.lock().unwrap().contains(&LiveStatus::Synced)
+    });
+    wait_for("the box", 10, || {
+        l2.info().boxes.iter().any(|b| b.id == ids[0])
+    });
+    l1.announce_presence(true);
+    l2.announce_presence(true);
+    l1.set_local_cursor(ids[0].clone(), 2, 5);
+    wait_for("the other window caret", 10, || {
+        !l2.remote_cursors().is_empty()
+    });
+    let c = l2.remote_cursors().remove(0);
+    assert_eq!(
+        (c.name.as_str(), c.box_id.as_str(), c.anchor, c.head),
+        ("Cur One", ids[0].as_str(), 2, 5)
+    );
+    assert_ne!(c.client_id, 0);
+    assert!(l1.remote_cursors().is_empty(), "no caret of the other yet");
+    l2.set_local_cursor(ids[0].clone(), 0, 0);
+    wait_for("the first window sees it", 10, || {
+        !l1.remote_cursors().is_empty()
+    });
+    assert_eq!(l1.remote_cursors()[0].anchor, 0);
+    l1.clear_local_cursor();
+    wait_for("the caret goes", 10, || l2.remote_cursors().is_empty());
+    l1.close();
+    l2.close();
+}

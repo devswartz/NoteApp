@@ -126,7 +126,7 @@ enum TemplateOffer { case section, everywhere }
 final class TemplatesModel {
     static let shared = TemplatesModel()
 
-    enum Pending { case builtin(String), claim }
+    enum Pending { case builtin(String), claim, body(String) }
 
     var items: [TemplateInfo] = []
     var defaults: [SectionDefaultTemplate] = []
@@ -256,6 +256,11 @@ final class TemplatesModel {
         switch p {
         case let .builtin(id):
             if let t = BuiltinTemplate.all.first(where: { $0.id == id }) { applyBuiltin(t, pageId: pageId, host: host, session, shell) }
+        case let .body(json):
+            // A note shared into the app (Shell.takeShares): its text, as one box.
+            host.boxCall({ live in _ = try live.insertTemplateContent(contentJson: json, kind: "document", date: "", time: "") }) { err in
+                if let err { shell.say(SessionModel.plainMessage(err)) }
+            }
         case .claim:
             // Someone typed first: the pending template is dropped.
             let empty = host.snapshot?.info.boxes.isEmpty ?? true

@@ -117,6 +117,10 @@ final class LivePageModel: PageSource {
     /// Everyone else who has the page open (the page bar's avatars): polled from the core's presence while the page is live.
     private(set) var people: [PagePerson] = []
     @ObservationIgnored private var presenceToken = 0
+    @ObservationIgnored private var carets: [BoxCursor] = []
+    @ObservationIgnored var onCursors: (([BoxCursor]) -> Void)?
+    @ObservationIgnored private var cursorPending: (boxId: String, anchor: UInt32, head: UInt32)?
+    @ObservationIgnored private var cursorSent: (boxId: String, anchor: UInt32, head: UInt32)?
 
     @ObservationIgnored private weak var session: SessionModel?
     @ObservationIgnored private var live: LivePage?
@@ -267,10 +271,17 @@ final class LivePageModel: PageSource {
         let me = session?.user?.id
         editQueue.async { [weak self] in
             let list = PagePerson.from(states: live.presence(), excluding: me)
+            let carets = live.remoteCursors()
             DispatchQueue.main.async {
                 guard let self, token == self.presenceToken, gen == self.generation, !self.isClosed else { return }
                 if list != self.people { self.people = list }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.pollPresence(token, gen) }
+                if carets != self.carets {
+                    self.carets = carets
+                    self.onCursors?(carets)
+                }
+                // Faster while someone else is here (their carets move), as the web follows awareness.
+                let delay = list.isEmpty ? 3.0 : 0.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.pollPresence(token, gen) }
             }
         }
     }
@@ -433,5 +444,30 @@ private final class Listener: PageListener, @unchecked Sendable {
         pending = nil
         lock.unlock()
         if let page { model?.changed(page, generation: generation) }
+    }
+}
+
+extension LivePageModel {
+    /// Our caret for the others' screens: sent at most every 100 ms (the latest wins), on the page's queue.
+    func setLocalCursor(boxId: String, anchor: UInt32, head: UInt32) {
+        guard live != nil, !isClosed else { return }
+        let schedule = cursorPending == nil
+        cursorPending = (boxId, anchor, head)
+        guard schedule else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, let live = self.live, !self.isClosed, let c = self.cursorPending else { return }
+            self.cursorPending = nil
+            if let sent = self.cursorSent, sent == c { return }
+            self.cursorSent = c
+            self.editQueue.async { live.setLocalCursor(boxId: c.boxId, anchor: c.anchor, head: c.head) }
+        }
+    }
+
+    /// Editing stopped: take the caret off the others' screens.
+    func clearLocalCursor() {
+        cursorPending = nil
+        cursorSent = nil
+        guard let live, !isClosed else { return }
+        editQueue.async { live.clearLocalCursor() }
     }
 }

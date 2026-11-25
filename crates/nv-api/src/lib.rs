@@ -16,6 +16,7 @@ mod templates;
 mod tree;
 pub mod types;
 mod versions;
+mod workspace_admin;
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

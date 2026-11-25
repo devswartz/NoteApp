@@ -169,6 +169,7 @@ struct DialogLayer: View {
         case let .defaultTemplate(id): DefaultTemplateCard(sectionId: id, width: min(440, width - 32), listHeight: h * 0.6)
         case let .renameTemplate(id): ManageTemplateCard(id: id, delete: false, width: min(400, width - 32))
         case let .deleteTemplate(id): ManageTemplateCard(id: id, delete: true, width: min(400, width - 32))
+        case let .workspaceDialog(kind): WorkspaceDialogCard(kind: kind, width: min(420, width - 32))
         case .deleteAccount: DeleteAccountCard(width: min(480, width - 32), maxBodyHeight: height * (phone ? 0.3 : 0.34))
         }
     }

@@ -100,6 +100,17 @@ impl Editor {
             "deleteRow" => self.delete_row(),
             "deleteColumn" => self.delete_column(),
             "deleteTable" => self.delete_table(),
+            // Merge the cells between the selection's ends, or the inclusive grid rectangle
+            // `{top, left, bottom, right}` of the caret's table; split the caret's merged cell.
+            "mergeCells" => {
+                let n = |k: &str| a[k].as_u64().map(|v| v as usize);
+                let rect = match (n("top"), n("left"), n("bottom"), n("right")) {
+                    (Some(t), Some(l), Some(b), Some(r)) => Some((t, l, b, r)),
+                    _ => None,
+                };
+                self.merge_cells(rect)
+            }
+            "splitCell" => self.split_cell(),
             "insertPageLink" => self.insert_page_link(s(a, "pageId")),
             "insertMention" => self.insert_mention(s(a, "id"), s(a, "label")),
             "insertTask" => self.insert_task(s(a, "title")),

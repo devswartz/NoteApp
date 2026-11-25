@@ -83,6 +83,9 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
   for state in dialog-new-section dialog-new-subsection dialog-new-notebook dialog-move-page dialog-move-section dialog-delete-notebook inline-rename                empty-notebook loading-sidebar offline-banner page-empty page-not-found; do
     shoot "$UDID" $L 1 light "$state"
   done
+  for state in table-tools cursors workspace-settings teams-settings; do
+    shoot "$UDID" $L 1 light "$state"
+  done
   P=ipad-portrait
   shoot "$UDID" $P 0 light sign-in signed-out
   for state in page-canvas-boxes page-blocks page-lists page-tasks edit-caret tasks-today menu-account empty-no-page empty-section empty-workspace-notes search task-detail page-box-task-open page-box-task-done page-box-empty page-media quick-add tasks-calendar settings settings-profile settings-notifications settings-connected settings-shortcuts page-tasks-panel inbox share-link delete-account presence; do
@@ -106,7 +109,7 @@ if PHONE="$(pick "iPhone 16e" "iPhone 14" "iPhone 13" "iPhone 12")"; then
       shoot "$UDID" $V 0 $theme "$state"
     done
   done
-  for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail page-box-task-open page-box-task-done page-box-task-hidden page-box-empty page-media page-empty quick-add tasks-calendar settings settings-profile settings-notifications settings-connected settings-shortcuts page-tasks-panel inbox share-link delete-account presence templates box-selected; do
+  for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail page-box-task-open page-box-task-done page-box-task-hidden page-box-empty page-media page-empty quick-add tasks-calendar settings settings-profile settings-notifications settings-connected settings-shortcuts page-tasks-panel inbox share-link delete-account presence templates box-selected table-tools cursors workspace-settings teams-settings; do
     shoot "$UDID" $V 0 light "$state"
   done
   for state in dialog-new-section dialog-new-notebook dialog-move-page dialog-delete-notebook inline-rename empty-notebook loading-sidebar offline-banner                page-empty page-not-found; do

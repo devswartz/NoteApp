@@ -37,6 +37,8 @@ enum ShellSheet: Equatable {
     case defaultTemplate(String)
     case renameTemplate(String)
     case deleteTemplate(String)
+    /// Workspace management: new, delete, leave; teams and tags (`WorkspaceDialogs.swift`).
+    case workspaceDialog(WorkspaceDialog)
 }
 
 func copyToClipboard(_ text: String) {

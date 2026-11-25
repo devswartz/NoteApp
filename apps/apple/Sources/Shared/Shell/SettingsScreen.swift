@@ -18,6 +18,10 @@ struct SettingsSection: Identifiable {
         SettingsSection(id: "security", title: "Security", description: "Locked notes, and locking the app on this device.", icon: "lock", group: "Account"),
         SettingsSection(id: "notifications", title: "Notifications", description: "How and when you hear about due tasks.", icon: "bell", group: "Account"),
         SettingsSection(id: "connected", title: "Connected apps", description: "AI assistants and other apps you’ve allowed to use your notes.", icon: "plug", group: "Account"),
+        SettingsSection(id: "workspace", title: "General", description: "Name, role and leaving or deleting this workspace.", icon: "settings", group: "Workspace"),
+        SettingsSection(id: "teams", title: "Teams", description: "Groups of people that tasks can belong to, with subteams.", icon: "users-round", group: "Workspace"),
+        SettingsSection(id: "tags", title: "Tags", description: "Labels for tasks, shared across the workspace.", icon: "tag", group: "Workspace"),
+        SettingsSection(id: "activity", title: "Activity", description: "Who changed what in this workspace, newest first.", icon: "activity", group: "Workspace"),
         SettingsSection(id: "shortcuts", title: "Keyboard shortcuts", description: "For a keyboard, and the Mac’s menus.", icon: "keyboard", group: "App"),
         SettingsSection(id: "about", title: "About", description: "", icon: "info", group: "App"),
     ]
@@ -29,9 +33,14 @@ struct SettingsScreen: View {
     @Environment(\.phoneLayout) private var phone
     let theme = Theme.shared
 
+    private var workspaceScope: Bool { shell.settingsWorkspace }
+    private var groups: [String] { workspaceScope ? ["Workspace"] : ["Account", "App"] }
+    private var sections: [SettingsSection] { SettingsSection.all.filter { groups.contains($0.group) } }
+    private var pageTitle: String { workspaceScope ? "\(session.shownWorkspace?.name ?? "Workspace") settings" : "Settings" }
+
     private var current: SettingsSection? {
-        let id = phone ? shell.settingsSection : (shell.settingsSection ?? "profile")
-        return SettingsSection.all.first { $0.id == id }
+        let id = phone ? shell.settingsSection : (shell.settingsSection ?? sections.first?.id)
+        return sections.first { $0.id == id }
     }
 
     var body: some View {
@@ -55,7 +64,7 @@ struct SettingsScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Settings").font(.web(24, 700)).tracking(-0.48).foregroundStyle(p.text.color).padding(.bottom, 16)
+                        Text(pageTitle).font(.web(24, 700)).tracking(-0.48).foregroundStyle(p.text.color).padding(.bottom, 16)
                         nav(p)
                     }
                     .padding(.horizontal, 16).padding(.top, 20).padding(.bottom, 40)
@@ -64,7 +73,7 @@ struct SettingsScreen: View {
             } else {
                 HStack(alignment: .top, spacing: 32) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Settings").font(.web(17, 600)).tracking(-0.255).foregroundStyle(p.text.color)
+                        Text(pageTitle).font(.web(17, 600)).tracking(-0.255).foregroundStyle(p.text.color)
                             .padding(.horizontal, 8).padding(.bottom, 20)
                         nav(p)
                     }
@@ -85,11 +94,13 @@ struct SettingsScreen: View {
 
     private func nav(_ p: Palette) -> some View {
         VStack(alignment: .leading, spacing: phone ? 20 : 18) {
-            ForEach(["Account", "App"], id: \.self) { group in
+            ForEach(groups, id: \.self) { group in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(group).font(.web(11.5, 500)).foregroundStyle(p.textMuted.color)
-                        .padding(.horizontal, phone ? 0 : 8).padding(.bottom, 4)
-                    ForEach(SettingsSection.all.filter { $0.group == group }) { s in
+                    if !workspaceScope {
+                        Text(group).font(.web(11.5, 500)).foregroundStyle(p.textMuted.color)
+                            .padding(.horizontal, phone ? 0 : 8).padding(.bottom, 4)
+                    }
+                    ForEach(sections.filter { $0.group == group }) { s in
                         let active = !phone && current?.id == s.id
                         Button { shell.settingsSection = s.id } label: {
                             HStack(spacing: 10) {
@@ -128,6 +139,10 @@ struct SettingsScreen: View {
             case "security": SecuritySettings()
             case "connected": ConnectedAppsSection()
             case "shortcuts": ShortcutsSection()
+            case "workspace": WorkspaceGeneralSettings()
+            case "teams": TeamsSettings()
+            case "tags": TagsSettings()
+            case "activity": ActivitySettings()
             default: AboutSettings()
             }
         }

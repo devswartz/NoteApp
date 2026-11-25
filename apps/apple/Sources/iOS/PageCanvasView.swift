@@ -189,6 +189,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
         toolbar.onLink = { [weak self] in self?.showLinkEditor() }
         toolbar.onComment = { [weak self] in self?.startComment() }
+        toolbar.onTable = { EditorFocus.shared.onTableMenu?() }
         NotificationCenter.default.addObserver(self, selector: #selector(commentsChanged), name: CommentsModel.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(commentUnset(_:)), name: CommentsModel.unset, object: nil)
         EditorFocus.shared.onLink = { [weak self] in self?.showLinkEditor() }
@@ -345,6 +346,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         if self.host !== host {
             self.host = host
             host?.onRemoteChange = { [weak self] in self?.remoteChanged() }
+            host?.onCursors = { [weak self] list in self?.setRemoteCursors(list) }
             host?.onSynced = { [weak self] in
                 self?.reopenStaleEditors()
                 self?.ink.reload()
@@ -422,10 +424,15 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         view.onCaretChange = { [weak self] box in
             self?.keepCaretVisible(box)
             if box === self?.editing {
+                EditorFocus.shared.refreshTable()
+                if let s = box.viewSelectionNow { self?.host?.setLocalCursor(boxId: box.boxId, anchor: s.anchor, head: s.head) }
+            }
+            if box === self?.editing {
                 self?.updateToolbar()
             }
         }
         boxViews[id] = view
+        view.remoteCursors = remoteCursorList.filter { $0.boxId == id }
         surface.addSubview(view)
         return view
     }
@@ -763,7 +770,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
             return
         }
         if toolbar.superview == nil { addSubview(toolbar) }
-        toolbar.build(palette: palette, maxWidth: stacked ? bounds.width - 16 : .greatestFiniteMagnitude)
+        toolbar.build(palette: palette, maxWidth: stacked ? bounds.width - 16 : .greatestFiniteMagnitude, table: EditorFocus.shared.table != nil)
         let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
         toolbar.isHidden = false
         toolbar.place(over: convert(rect, from: box), visible: visible)
@@ -816,6 +823,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func stopEditing(drop: Bool = true) {
         guard let box = editing else { return }
+        host?.clearLocalCursor()
         editing = nil
         hideToolbar()
         if linkEditor.isShown { linkEditor.dismiss() }
@@ -825,6 +833,14 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         _ = box.resignFirstResponder()
         EditorFocus.shared.set(nil)
         relayout()
+    }
+
+    /// Other people's carets (polled by the live page): each box draws its own.
+    private var remoteCursorList: [BoxCursor] = []
+
+    private func setRemoteCursors(_ list: [BoxCursor]) {
+        remoteCursorList = list
+        for (id, view) in boxViews { view.remoteCursors = list.filter { $0.boxId == id } }
     }
 
     /// Someone else changed the page: every open box merges the page document again (the
@@ -1052,10 +1068,22 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         }
     }
 
+    /// `-lookState cursors` (CI): Ana's caret and Ben's selection in two boxes, with their name flags.
+    private func runLookCursors() {
+        guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"), boxViews.count > 1 else { return }
+        lookDone = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            let ids = self.boxViews.filter { $0.value.shownText.count > 6 }.sorted { $0.key < $1.key }.map(\.key)
+            self.setRemoteCursors(LookCursors.demo(boxIds: ids))
+        }
+    }
+
     /// Look states with a box being edited (`-lookState edit-caret`, CI): the caret at the end of "Box c", as the web reference.
     private func runLookIfAsked() {
+        if LookData.state == "cursors" { runLookCursors(); return }
         guard !lookDone, UserDefaults.standard.bool(forKey: "previewSignedIn"),
-              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected"].contains(state) else { return }
+              let state = LookData.state, ["edit-caret", "ribbon-page-active", "edit-selection", "slash-menu", "edit-new-box", "edit-link", "box-selected", "table-tools"].contains(state) else { return }
         if state == "box-selected" {
             // A box selected as a whole (no caret): the accent outline, as after a click on its top bar.
             guard let view = boxViews.values.first(where: { $0.shownText.contains("Box c") }) else { return }
@@ -1100,6 +1128,13 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
                         EditorFocus.shared.run("editLink", ["text": shown.substring(from: start), "href": "example.com/notes"])
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.showLinkEditor() }
+                }
+                if state == "table-tools" {
+                    // A 3 x 3 table after "Box c", the caret in its first cell: the ribbon's Table group (the phone: the table menu).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        EditorFocus.shared.run("insertTable", ["rows": 3, "cols": 3, "header": true])
+                        if self.stacked { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { EditorFocus.shared.onTableMenu?() } }
+                    }
                 }
                 if state == "edit-selection" {
                     // The last line ("Box c"), as the web reference selects.
