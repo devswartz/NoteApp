@@ -387,7 +387,6 @@ struct AppShell: View {
             .frame(width: width, height: geo.size.height)
             .background(chrome.bgSidebar.color)
             .overlay { MenuLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
-            .overlay { TreeDragPreview() }
             .overlay { SearchLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { TaskDetailLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { DialogLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
@@ -511,6 +510,7 @@ struct AppShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .overlay { TreeDragPreview() }
     }
 
     /// Look states that show a menu open (CI screenshots).
