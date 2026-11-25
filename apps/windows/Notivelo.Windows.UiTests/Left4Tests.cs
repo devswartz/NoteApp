@@ -155,14 +155,14 @@ public class Left4Tests
     private static void TypeHeadings(AppHost h)
     {
         h.A.Focus();
-        Press(h, "ribbon-block-type"); Press(h, "block-heading-1");
+        Press(h, "ribbon-block-type"); Press(h, "block-heading-1"); h.A.WaitFor(s => s.Focus && s.Block == "heading", "a heading with the keyboard back");
         h.Type("Intro"); h.Press(ENTER);
         h.Type("body"); h.Press(ENTER);
-        Press(h, "ribbon-block-type"); Press(h, "block-heading-2");
+        Press(h, "ribbon-block-type"); Press(h, "block-heading-2"); h.A.WaitFor(s => s.Focus && s.Block == "heading", "a heading with the keyboard back");
         h.Type("Details"); h.Press(ENTER);
-        Press(h, "ribbon-block-type"); Press(h, "block-heading-3");
+        Press(h, "ribbon-block-type"); Press(h, "block-heading-3"); h.A.WaitFor(s => s.Focus && s.Block == "heading", "a heading with the keyboard back");
         h.Type("Third");
-        h.A.WaitText("Intro\nbody\nDetails\nThird");
+        Lines(h, "Intro\nbody\nDetails\nThird");
     }
 
     [Fact]
@@ -205,11 +205,14 @@ public class Left4Tests
 
     // ---- block menu ----
 
+    /// <summary>The box text without trailing line feeds (the engine keeps an empty paragraph after some blocks).</summary>
+    private static void Lines(AppHost h, string text) => h.A.WaitFor(s => s.Text.TrimEnd((char)10) == text, "text " + text.Replace((char)10, (char)124));
+
     private static void ThreeLines(AppHost h)
     {
         h.A.Focus();
         h.Type("one"); h.Press(ENTER); h.Type("two"); h.Press(ENTER); h.Type("three");
-        h.A.WaitText("one\ntwo\nthree");
+        Lines(h, "one\ntwo\nthree");
     }
 
     [Fact]
@@ -219,16 +222,16 @@ public class Left4Tests
         Press(h, "block-handle");                                       // the handle is at the caret's block ("three")
         Find(h, "menu-block");
         Press(h, "block-menu-up");
-        h.A.WaitText("one\nthree\ntwo");
+        Lines(h, "one\nthree\ntwo");
         Press(h, "block-handle");
         Press(h, "block-turn-heading-1");
         h.A.WaitFor(s => s.Block == "heading", "the moved block turned into a heading");
         Press(h, "block-handle");
         Press(h, "block-menu-duplicate");
-        h.A.WaitText("one\nthree\nthree\ntwo");
+        Lines(h, "one\nthree\nthree\ntwo");
         Press(h, "block-handle");
         Press(h, "block-menu-delete");
-        h.A.WaitText("one\nthree\ntwo");
+        Lines(h, "one\nthree\ntwo");
     });
 
     [Fact]
@@ -238,8 +241,8 @@ public class Left4Tests
         h.Chord(CONTROL, SHIFT, KEY_M);
         Find(h, "menu-block");
         Press(h, "block-menu-up");
-        h.A.WaitText("one\nthree\ntwo");
+        Lines(h, "one\nthree\ntwo");
         h.Chord(ALT, SHIFT, DOWN);                                      // the engine's own key for the same move
-        h.A.WaitText("one\ntwo\nthree");
+        Lines(h, "one\ntwo\nthree");
     });
 }

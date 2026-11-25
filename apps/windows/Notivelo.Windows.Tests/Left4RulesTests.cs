@@ -97,6 +97,21 @@ public class Left4RulesTests
     }
 
     [Fact]
+    public void Deleting_a_heading_leaves_the_block_below_with_its_own_kind()
+    {
+        var s = Open();
+        s.InsertText("one"); s.Key("Enter"); s.InsertText("head"); s.Command("setHeading", "{\"level\":1}"); s.Key("Enter"); s.InsertText("two");
+        Assert.True(BlockOps.Delete(s, 1));
+        Assert.Equal("one\ntwo", Text(s));
+        Assert.StartsWith("paragraph,paragraph", Kinds(s));   // the engine may keep an empty paragraph after it
+        s = Open();
+        s.InsertText("head"); s.Command("setHeading", "{\"level\":1}"); s.Key("Enter"); s.InsertText("two");
+        Assert.True(BlockOps.Delete(s, 0));
+        Assert.Equal("two", Text(s));
+        Assert.StartsWith("paragraph", Kinds(s));
+    }
+
+    [Fact]
     public void Delete_of_the_only_block_empties_it()
     {
         var s = Open();

@@ -110,10 +110,24 @@ public static class BlockOps
             Place(s, line);
             return s.Command("setParagraph", "{}") & s.ReplaceViewRange((uint)span.From, (uint)span.To, "");
         }
-        uint from = (uint)span.From, to = (uint)span.To;
-        if (span.LastLine + 1 < v.Lines.Length) to = (uint)v.Lines[span.LastLine + 1].Offset;   // up to the next block's start
-        else from = (uint)(v.Lines[span.FirstLine - 1].Offset + v.Lines[span.FirstLine - 1].Len);   // the last block: from the end of the one above
-        return s.ReplaceViewRange(from, to, "");
+        if (span.FirstLine == 0)
+        {
+            // the first block: joining its end to the next block would give the next one this block's kind, so it first swaps places with the next, then goes as a later block does
+            if (!Move(s, line, up: false)) return false;
+            var now = s.ViewState();
+            var moved = RunMap.LineAt(now.Lines, (int)now.Selection.Head);
+            return moved > 0 && DeleteLater(s, moved);
+        }
+        return DeleteLater(s, line);
+    }
+
+    /// <summary>Delete a block that has a block above: from the end of that block to the end of this one, so the block below keeps its own kind.</summary>
+    private static bool DeleteLater(N.EditorSession s, int line)
+    {
+        var v = s.ViewState();
+        if (BlockOps.Of(v.Lines, line) is not { } span || span.FirstLine == 0) return false;
+        var above = v.Lines[span.FirstLine - 1];
+        return s.ReplaceViewRange((uint)(above.Offset + above.Len), (uint)span.To, "");
     }
 
     /// <summary>Copy the block under itself: it is copied with the engine's own clipboard (marks and block kind kept) and pasted in a new line after it.</summary>

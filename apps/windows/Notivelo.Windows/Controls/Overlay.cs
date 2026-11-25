@@ -66,7 +66,7 @@ internal sealed class OverlayHost : Grid
         var t = new Border
         {
             Background = bg, BorderBrush = border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 9, 14, 9),
-            Child = content, MaxWidth = 520, IsHitTestVisible = undo is not null,
+            Child = undo is null ? content : null, MaxWidth = 520, IsHitTestVisible = undo is not null,
         };
         if (undo is not null)
         {
