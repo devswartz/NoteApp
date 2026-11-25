@@ -48,7 +48,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Rail: Notes, Tasks, Calendar | ● ✓ | — | ● ✓ | ● ✓ | — | ● | `Rail.tsx`; phones use the tab bar |
 | Bottom tab bar (Notes, Today, +, My Tasks, Search) | — | ● ✓ | — | — | ● | ◐ | `MobileChrome.tsx`; web on narrow screens |
 | Workspace switcher (top of sidebar) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
-| Create workspace | ● | ● | ● | ● | ● | ● | `POST /workspaces` |
+| Create workspace | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `POST /workspaces` |
 | Notes panel: notebook picker, section tree, pages list | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `NotesPanel.tsx`; separate sections/pages panels from 1200 pt wide |
 | Section ribbons / colour tabs | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | `SectionRibbons.tsx` *(verify phone form)* |
 | Favourites and Recent | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
@@ -95,7 +95,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Canvas page: click anywhere for a text box; move box by top edge, resize by right edge | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ ✓ | ● | phones stack boxes one under another with "Add a text box" |
 | See-through boxes (only active box opaque) | ● ✓ | — | ● ✓ | ● ✓ | — | ● | |
 | Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
-| Live collaboration: edits, cursors, presence | ● | ● | ● | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
+| Live collaboration: edits, cursors, presence | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | Yjs over y-websocket, `collab*.ts` |
 | Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
 | Page title | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | title change refused unless current title known |
@@ -106,7 +106,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Bulleted lists (Ctrl+.) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Word-style numbered outlines (1 → a → i; `1.`, `a.`, `i.`, `1)`) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | Tab / Shift+Tab |
 | Plain checklist | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
-| Tables: insert/delete rows and columns, header row, merge/split | ● | ◐ | ● | ● | ◐ | ● | Table ribbon group on wide layout |
+| Tables: insert/delete rows and columns, header row, merge/split | ● ✓ | ◐ ✓ | ● ✓ | ● | ◐ | ● | Table ribbon group on wide layout |
 | Callout, toggle, quote, code block (highlighting), divider | ● | ● | ● | ● | ● | ● | `blocks.tsx`, `codeHighlight.ts` |
 | Backspace/Enter leave a block (Word-outline style) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `blockExit.ts` |
 | Images (insert, resize by corner) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `upload.ts`, `POST /uploads` |
@@ -168,8 +168,8 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Inline rename, complete with Undo | ● | ● | ● | ● | ● | ● | |
 | Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
 | Print task view (⌘P) | ● | ● | ● | ● | ● | ● | |
-| Tags: create, rename, colour, delete | ● | ● | ● | ● | ● | ● | `Labels.tsx`, `/tags` |
-| Teams and subteams, members | ● | ● | ● | ● | ● | ● | `TeamsSettings.tsx`, `/teams` |
+| Tags: create, rename, colour, delete | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `Labels.tsx`, `/tags` |
+| Teams and subteams, members | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `TeamsSettings.tsx`, `/teams` |
 | Tasks offline: read-only | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | native target M7: editable offline |
 
 ## 7. Reminders and notifications
@@ -182,7 +182,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | App icon badge: due today | ● ✓ | ● ✓ | ● ✓ | ◐ ✓ | ● | ○ | Mac Dock badge; Windows tray count |
 | Notification inbox (bell): mentions, replies, assignments; read / read all | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `NotificationBell.tsx`, `/notifications` |
 | Settings → Notifications: time zone, default reminder time, email reminders, daily digest, quiet hours per workspace, calendar feed link, test notification | ● | ● | ● | ● | ● | ● | `NotificationSettingsPanel.tsx` |
-| Activity feed (workspace) | ● | ● | ● | ● | ● | ● | `ActivityFeed.tsx`, `/workspaces/:id/activity` |
+| Activity feed (workspace) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `ActivityFeed.tsx`, `/workspaces/:id/activity` |
 
 ## 8. Comments and mentions
 
@@ -197,7 +197,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
 | Workspace settings: General, Members, Teams, Tags, Activity, Trash | ● | ● | ● | ● | ● | ● | separate from personal settings (v0.4.10) |
-| Rename / delete workspace (owner) | ● | ● | ● | ● | ● | ● | |
+| Rename / delete workspace (owner) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
 | Invite by email; copy, resend, revoke pending invites; invite link shown | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `MembersPanel.tsx`, `InvitePage.tsx` |
 | Roles: owner, admin, member, viewer; change role, remove member | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | Access changes take effect immediately (open pages too) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | server-driven |
@@ -247,13 +247,13 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Share sheet / share target: Add as task, Save as note (Inbox section) | ● | ● | ○ | ○ | ● | ○ | iOS ShareExtension + App Group `group.com.devswartz.notivelo`; Android SEND intent |
-| Home-screen Today widget | ● | ● | ○ | ○ | ● | — | iOS TodayWidget (WidgetKit), Android `TodayWidgetProvider` |
+| Share sheet / share target: Add as task, Save as note (Inbox section) | ● ✓ | ● ✓ | ○ | ○ | ● | ○ | iOS ShareExtension + App Group `group.com.devswartz.notivelo`; Android SEND intent |
+| Home-screen Today widget | ● ✓ | ● ✓ | ○ | ○ | ● | — | iOS TodayWidget (WidgetKit), Android `TodayWidgetProvider` |
 | Haptics | ● | ● | — | — | ● | — | |
 | Keyboard-aware layout | ● ✓ | ● ✓ | — | — | ● | ◐ | `keyboardInset.ts` |
 | Menu bar / tray icon with due-today count and quick actions | — | — | ● | ● | — | — | `tray.rs` |
 | Close window keeps app running in tray | — | — | ● | ● | — | — | |
-| Global quick capture ⌥⌘N / Ctrl+Alt+N (task or note, Tab switches) | — | — | ● | ● | — | — | `quick.rs` |
+| Global quick capture ⌥⌘N / Ctrl+Alt+N (task or note, Tab switches) | — | — | ● ✓ | ● | — | — | `quick.rs` |
 | App menu shortcuts (⌘N, ⇧⌘T, ⌘1–8, ⌘,) | — | — | ● ✓ | ● | — | — | `menu.rs` |
 | Self-updater (asks before restart) | — | — | ◐ | ● | — | — | direct-download Mac only; Mac App Store build updates via the store |
 | Native window theme | — | — | ● ✓ | ● | — | — | `theme.rs` |
