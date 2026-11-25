@@ -156,7 +156,11 @@ struct TasksScreen: View {
         let blocks = listBlocks(buckets, tv)
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(list.title).font(.web(phone ? 24 : 26, 700)).tracking(phone ? -0.48 : -0.52).foregroundStyle(p.text.color).frame(height: phone ? 38 : 34)
+                HStack(spacing: 8) {
+                    Text(list.title).font(.web(phone ? 24 : 26, 700)).tracking(phone ? -0.48 : -0.52).foregroundStyle(p.text.color).frame(height: phone ? 38 : 34)
+                    Spacer(minLength: 0)
+                    if list != .team { SelectButton(palette: p) }
+                }
                 Text(list.subtitle).font(.web(14)).foregroundStyle(p.textMuted.color).frame(height: 21).padding(.top, 4)
                 if list != .all {
                     if phone {
@@ -214,6 +218,8 @@ struct TasksScreen: View {
         }
         .refreshable { await session.refresh() }
         .noEdgeEffect()
+        .overlay(alignment: .bottom) { if shell.bulk.active { BulkBar(palette: p) } }
+        .onChange(of: session.tasks.count) { shell.bulk.prune(session) }
         .onAppear {
             session.refreshTasks()
             if !session.teams.isEmpty { session.loadAllDetails() }
@@ -264,6 +270,7 @@ struct TasksScreen: View {
             }
             .padding(.top, 16)
             if phone { TaskFilterBar(list: list, palette: p).padding(.top, 10) }
+            if phone { SavedViewChips(palette: p).padding(.top, 10) }
             HStack(spacing: 8) {
                 if tv.status != .done {
                     Text("\(filtered.count) task\(filtered.count == 1 ? "" : "s")").font(.web(13)).foregroundStyle(p.textMuted.color)
@@ -395,7 +402,7 @@ struct TaskRowView: View {
         SwipeRow(
             right: .init(label: done ? "Reopen" : "Complete", icon: done ? "rotate-ccw" : "check", success: true) { session.setDone(task, !done) },
             left: .init(label: "Tomorrow", icon: "calendar-clock") { moveToTomorrow() },
-            disabled: task.locked || session.workspace?.role == "viewer" || session.preview
+            disabled: task.locked || session.workspace?.role == "viewer" || session.preview || shell.bulk.active
         ) { rowBody }
         #else
         rowBody
@@ -416,11 +423,15 @@ struct TaskRowView: View {
         let p = theme.chrome
         let done = session.isDone(task)
         return HStack(alignment: .top, spacing: phone ? 16 : 10) {
+            if shell.bulk.active {
+                SelectBox(on: shell.bulk.ids.contains(task.id), size: phone ? 22 : 18, palette: p).padding(.top, 1)
+            } else {
             TaskCircle(priority: task.priority, done: done, size: phone ? 22 : 18, palette: p) {
                 session.setDone(task, !done)
             }
             .padding(.top, 1)
             .disabled(task.locked)
+            }
             VStack(alignment: .leading, spacing: phone ? 6 : 3) {
                 Text(task.locked ? "Locked task" : task.title)
                     .font(.web(14))
@@ -438,7 +449,16 @@ struct TaskRowView: View {
         .padding(.vertical, phone ? 12 : 13).padding(.horizontal, phone ? 12 : 6)
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
         .contentShape(Rectangle())
-        .onTapGesture { if !task.locked { shell.openTask(task.id) } }
+        .background(shell.bulk.ids.contains(task.id) ? p.accentSoft.color : Color.clear)
+        .onTapGesture {
+            if task.locked { return }
+            if shell.bulk.active || TaskRowView.modifierSelects() {
+                shell.bulk.active = true
+                shell.bulk.toggle(task.id)
+            } else {
+                shell.openTask(task.id)
+            }
+        }
     }
 
     @ViewBuilder

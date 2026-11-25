@@ -23,7 +23,11 @@ enum AppBadge {
         #if os(iOS)
         UNUserNotificationCenter.current().setBadgeCount(count) { _ in }
         #else
-        DispatchQueue.main.async { NSApp?.dockTile.badgeLabel = count > 0 ? "\(count)" : nil }
+        DispatchQueue.main.async {
+            NSApp?.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+            // The menu bar icon shows the same count (tray.rs).
+            MacMenuBar.shared.setDue(count)
+        }
         #endif
     }
 }

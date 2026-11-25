@@ -244,9 +244,10 @@ struct SectionNode: View {
             .onTapGesture {
                 if open { shell.expanded.remove(section.id) } else { shell.expanded.insert(section.id) }
             }
-            .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .section(section.id) }
+            .treeRowPress(drag: "section:" + section.id, label: section.name) { shell.menu = .section(section.id) }
             .onSecondaryClick { shell.menu = .section(section.id) }
             .anchor("section:\(section.id)", shell)
+            .dropRing(.section(section.id), shell)
             .treeDnD(drag: "section:\(section.id)", target: .section(section.id))
 
             if open {
@@ -334,7 +335,8 @@ struct PageRowView: View {
         .background(active ? p.bgActive.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { shell.open(page: page.id) }
-        .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .pageRow(page.id) }
+        .treeRowPress(drag: depth < 0 ? nil : "page:" + page.id, label: page.title.isEmpty ? "Untitled" : page.title) { shell.menu = .pageRow(page.id) }
+        .dropRing(.page(page.id), shell)
         .onSecondaryClick { shell.menu = .pageRow(page.id) }
         .anchor("page:\(page.id)", shell)
         .treeDnD(drag: depth < 0 ? nil : "page:\(page.id)", target: depth < 0 ? nil : .page(page.id))
@@ -391,7 +393,20 @@ struct TasksPanel: View {
                 }
                 GroupHeading(title: "Views", icon: nil, open: true, plus: nil, toggle: {})
                     .padding(.top, 16)
-                Button { shell.notYet("Saved views") } label: {
+                ForEach(shell.views.views, id: \.id) { v in
+                    let active = shell.route == .tasks(.all) && shell.views.openedId == v.id
+                    Button { shell.views.open(v, shell, session) } label: {
+                        HStack(spacing: 10) {
+                            Icon(v.shared ? "users" : "bookmark", 15, active ? p.accent.color : p.text2.color)
+                            Text(v.name).font(.web(14, 500)).foregroundStyle(active ? p.accent.color : p.text2.color).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10).frame(height: 32)
+                        .background(active ? p.bgActive.color : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(PressStyle(radius: 7, pressed: p.bgPressed.color))
+                }
+                Button { shell.views.startNew(shell) } label: {
                     HStack(spacing: 10) {
                         Icon("plus", 16, p.text2.color)
                         Text("New view").font(.web(14, 500)).foregroundStyle(p.text2.color)

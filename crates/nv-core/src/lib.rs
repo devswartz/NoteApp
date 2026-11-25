@@ -28,6 +28,7 @@ mod locked;
 mod page_undo;
 mod quickadd;
 mod recurrence;
+mod saved_views;
 mod search;
 mod sharing;
 mod task_detail;
@@ -49,6 +50,7 @@ pub use ink::{
 };
 pub use locked::*;
 pub use quickadd::{QuickAddKind, QuickAddResult, QuickAddToken};
+pub use saved_views::*;
 pub use search::*;
 pub use sharing::*;
 pub use task_detail::*;

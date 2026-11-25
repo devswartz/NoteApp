@@ -80,7 +80,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Create page (N, + , ribbon) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `POST /sections/:id/pages` |
 | Rename notebook / section / page | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | Page icon | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `IconPicker.tsx` |
-| Drag to reorder / move in the tree | ● | ◐ | ● ✓ | ● ✓ | ◐ | ● | `treeDnd.ts`; phones *(verify)* |
+| Drag to reorder / move in the tree | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | `treeDnd.ts`; phones *(verify)* |
 | Move dialog; copy page / section | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `MoveDialog.tsx`, `/pages/:id/move`, `/copy` |
 | Notebook shared vs private, share with people | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `PUT /notebooks/:id/shares` |
 | Delete to Trash (60 days) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
@@ -96,7 +96,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | See-through boxes (only active box opaque) | ● ✓ | — | ● ✓ | ● ✓ | — | ● | |
 | Select boxes; cut/copy/paste/duplicate/delete boxes; context menu | ● ✓ | ◐ | ● ✓ | ● ✓ | ◐ | ● | `boxSelection.ts`, `boxClipboard.ts` |
 | Live collaboration: edits, cursors, presence | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | Yjs over y-websocket, `collab*.ts` |
-| Follow a collaborator | ● | ● | ● | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
+| Follow a collaborator | ● ✓ | ● | ● ✓ | ● | ● | ● | `collabFollow.ts` *(verify phone)* |
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
 | Page title | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | title change refused unless current title known |
 | Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
@@ -114,11 +114,11 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Slash menu (/) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `SlashMenu.tsx` |
 | Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Page links `[[`, create page from link | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PageLink.tsx` |
-| Linked from (backlinks) panel | ● | ● | ● | ● | ● | ● | `GET /pages/:id/backlinks` |
+| Linked from (backlinks) panel | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `GET /pages/:id/backlinks` |
 | Drag handle: move a block with its nested lines, drop anywhere; keeps numbering | ● | ◐ | ● | ● | ◐ | ● | `blockMove.ts`, `listDrop.ts`, `handleReach.ts` |
 | Word-style multi-selection (Ctrl/⌘ + click/drag/double-click lines) | ● | — | ● | ● | — | ● | `linePicks*.ts` |
 | Copy keeps formatting; paste rich text and Markdown | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `clipboardOut.ts`, `markdownUtils.ts` |
-| Outline / table of contents beside long pages | ● | ○ | ● | ● | ○ | ● | `Outline.tsx` *(verify phone)* |
+| Outline / table of contents beside long pages | ● ✓ | ○ | ● ✓ | ● | ○ | ● | `Outline.tsx` *(verify phone)* |
 | Full width option | ● | — | ● | ● | — | ● | |
 | Page colour | ● | ● | ● | ● | ● | ● | syncs, in templates and versions |
 | Rule lines / grid with snapping | ● | ● | ● | ● | ● | ● | `ruleGrid.ts` |
@@ -162,7 +162,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Sidebar counts (Today, My Tasks, Upcoming) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `assigneeGroups.ts` |
-| Saved views (server, optionally shared) | ● | ● | ● | ● | ● | ● | `/workspaces/:id/task-views` |
+| Saved views (server, optionally shared) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/workspaces/:id/task-views` |
 | Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
 | Bulk select and bulk bar (complete, reschedule, assign, priority, delete; one Undo) | ● | ◐ | ● | ● | ◐ | ● | `BulkBar.tsx`, `selection.ts` |
 | Inline rename, complete with Undo | ● | ● | ● | ● | ● | ● | |
@@ -251,7 +251,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Home-screen Today widget | ● ✓ | ● ✓ | ○ | ○ | ● | — | iOS TodayWidget (WidgetKit), Android `TodayWidgetProvider` |
 | Haptics | ● | ● | — | — | ● | — | |
 | Keyboard-aware layout | ● ✓ | ● ✓ | — | — | ● | ◐ | `keyboardInset.ts` |
-| Menu bar / tray icon with due-today count and quick actions | — | — | ● | ● | — | — | `tray.rs` |
+| Menu bar / tray icon with due-today count and quick actions | — | — | ● ✓ | ● | — | — | `tray.rs` |
 | Close window keeps app running in tray | — | — | ● | ● | — | — | |
 | Global quick capture ⌥⌘N / Ctrl+Alt+N (task or note, Tab switches) | — | — | ● ✓ | ● | — | — | `quick.rs` |
 | App menu shortcuts (⌘N, ⇧⌘T, ⌘1–8, ⌘,) | — | — | ● ✓ | ● | — | — | `menu.rs` |

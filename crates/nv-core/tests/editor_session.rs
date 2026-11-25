@@ -1186,3 +1186,70 @@ fn table_commands_through_the_session() {
     assert!(s.command("deleteTable".into(), "".into()).unwrap());
     assert_eq!(s.table_state(), None);
 }
+
+fn lines(s: &EditorSession) -> Vec<String> {
+    s.text_for_view().split('\n').map(String::from).collect()
+}
+
+/// The view offset of the start of line `n`.
+fn line_offset(s: &EditorSession, n: usize) -> u32 {
+    s.view_state().lines[n].offset
+}
+
+#[test]
+fn a_block_moves_to_any_place_in_one_undo_step() {
+    let (s, _) = open(page("canvas-boxes"), "box:a");
+    s.set_view_selection(0, s.text_for_view().encode_utf16().count() as u32);
+    s.paste(
+        "<p>one</p><p>two</p><p>three</p><ul><li><p>x</p></li><li><p>y</p></li></ul>".into(),
+        String::new(),
+    );
+    let before = lines(&s);
+    let find = |s: &EditorSession, t: &str| lines(s).iter().position(|l| l.contains(t)).unwrap();
+    let (one, three, x, y) = (
+        find(&s, "one"),
+        find(&s, "three"),
+        find(&s, "x"),
+        find(&s, "y"),
+    );
+    // "one" after "three".
+    assert!(s.move_block(line_offset(&s, one), line_offset(&s, three), true));
+    let l = lines(&s);
+    assert!(l.iter().position(|t| t.contains("two")) < l.iter().position(|t| t.contains("three")));
+    assert!(l.iter().position(|t| t.contains("three")) < l.iter().position(|t| t.contains("one")));
+    // One undo takes the move back.
+    assert!(s.undo());
+    assert_eq!(lines(&s), before);
+    // A list item before the other item of its list; into itself is refused.
+    assert!(s.move_block(line_offset(&s, y), line_offset(&s, x), false));
+    let l = lines(&s);
+    assert!(l.iter().position(|t| t.contains('y')) < l.iter().position(|t| t.contains('x')));
+    let (a, b) = (find(&s, "two"), find(&s, "two"));
+    assert!(!s.move_block(line_offset(&s, a), line_offset(&s, b), true));
+    // A list item dropped on a paragraph becomes a list of its own there.
+    let (two, y2) = (find(&s, "two"), find(&s, "y"));
+    assert!(s.move_block(line_offset(&s, y2), line_offset(&s, two), false));
+    let st = s.view_state();
+    let yi = st
+        .lines
+        .iter()
+        .position(|l| {
+            l.containers.contains(&"listItem".to_string())
+                && lines(&s)[st.lines.iter().position(|m| m.offset == l.offset).unwrap()]
+                    .contains('y')
+        })
+        .unwrap();
+    let ti = find(&s, "two");
+    assert_eq!(
+        yi + 1,
+        ti,
+        "y sits as its own list right before two: {:?}",
+        lines(&s)
+    );
+    assert!(st.lines[yi].marker.is_some());
+    assert!(s.undo());
+    assert!(
+        find(&s, "y") < find(&s, "x"),
+        "undo took back only the last move"
+    );
+}

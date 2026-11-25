@@ -47,3 +47,5 @@ Notification inbox, app badge, public share link, delete account, who is on the 
 Push reminders with snooze and universal links (iOS), templates, box copy/paste/duplicate, Mac sidebar drag are in this build.
 
 Share extension, Today widget, table tools, collaborator carets, workspace/teams/tags/activity, Mac menu bar extras are in this build.
+
+iPad tree drag, saved views, bulk select, outline, backlinks, follow, block handle, Members section, Mac menu bar count are in this build.

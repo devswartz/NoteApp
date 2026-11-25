@@ -150,7 +150,7 @@ struct MenuLayer: View {
     private func isSheet(_ menu: Shell.Menu) -> Bool {
         guard phone else { return false }
         switch menu {
-        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon, .tableMenu: return true
+        case .inbox, .notebookOptions, .section, .pageRow, .pageIcon, .tableMenu, .savedViews: return true
         case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore: return true
         default: return false
         }
@@ -284,6 +284,13 @@ struct MenuLayer: View {
         case .calPeople:
             let f = anchorFrame("rb-cal-people")
             at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, calPeopleMenu(p))
+        case .savedViews:
+            if phone {
+                sheet(SavedViewsMenu(palette: p))
+            } else {
+                let f = anchorFrame("rb-savedViews")
+                at(CGPoint(x: f.minX, y: f.maxY + 6), .topLeading, SavedViewsMenu(palette: p))
+            }
         case .taskGroup, .taskSort, .taskKinds, .taskStatus, .taskAssignee, .taskTags, .taskTeam, .taskPriority, .taskMore:
             if phone {
                 sheet(TaskFilterMenu(menu: menu, palette: p))

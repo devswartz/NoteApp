@@ -2678,3 +2678,82 @@ fn cursors_between_two_windows_against_a_running_server() {
     l1.close();
     l2.close();
 }
+
+#[test]
+fn saved_views_backlinks_and_outline_against_a_running_server() {
+    let Ok(url) = std::env::var("NV_TEST_SERVER") else {
+        eprintln!("skipped: set NV_TEST_SERVER to run against a server");
+        return;
+    };
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    let core = Core::new(url);
+    core.register(
+        "Views A".into(),
+        format!("views-{stamp}@example.com"),
+        "correct horse battery staple 1".into(),
+    )
+    .unwrap();
+    let ws = core.workspaces().unwrap()[0].id.clone();
+    let section = core.tree(ws.clone()).unwrap().sections[0].id.clone();
+
+    // Saved views: the JSON goes back as stored.
+    assert!(core.task_views(ws.clone()).unwrap().is_empty());
+    let q = r#"{"filters":{"status":"open"},"sort":"due","group":"none"}"#;
+    let v = core
+        .create_task_view(ws.clone(), "Open".into(), q.into(), false)
+        .unwrap();
+    assert_eq!((v.name.as_str(), v.shared), ("Open", false));
+    let back: serde_json::Value = serde_json::from_str(&v.query_json).unwrap();
+    assert_eq!(back["filters"]["status"], "open");
+    let v2 = core
+        .update_task_view(v.id.clone(), Some("Open now".into()), None, None, None)
+        .unwrap();
+    assert_eq!(v2.name, "Open now");
+    assert_eq!(core.task_views(ws.clone()).unwrap(), vec![v2.clone()]);
+    assert!(core
+        .create_task_view(ws.clone(), "Bad".into(), "[1]".into(), false)
+        .is_err());
+    core.delete_task_view(v.id).unwrap();
+    assert!(core.task_views(ws.clone()).unwrap().is_empty());
+
+    // Backlinks and the outline: page B links to page A; A has a heading.
+    let a = core
+        .create_page(section.clone(), Some("Target".into()))
+        .unwrap();
+    let b = core.create_page(section, Some("Linker".into())).unwrap();
+    let (la, _) = open_live(&core, &a);
+    let (lb, _) = open_live(&core, &b);
+    let clip_a = r#"[{"x":40,"y":60,"w":300,"content":[{"type":"heading","attrs":{"level":2},"content":[{"type":"text","text":"Plan"}]},{"type":"paragraph","content":[{"type":"text","text":"body"}]},{"type":"heading","attrs":{"level":1},"content":[{"type":"text","text":"Zoë 😀 end"}]}]}]"#;
+    let ids = la
+        .paste_boxes(clip_a.into(), Some(40.0), Some(60.0), Default::default())
+        .unwrap();
+    let o = la.outline();
+    assert_eq!(
+        o.iter()
+            .map(|h| (h.level, h.text.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(2, "Plan"), (1, "Zoë 😀 end")]
+    );
+    assert_eq!(o[0].box_id, ids[0]);
+    assert_eq!(o[0].offset, 0);
+    assert_eq!(o[1].offset, "Plan\nbody\n".encode_utf16().count() as u32);
+    let clip_b = format!(
+        r#"[{{"x":40,"y":60,"w":300,"content":[{{"type":"paragraph","content":[{{"type":"pageLink","attrs":{{"pageId":"{}"}}}}]}}]}}]"#,
+        a
+    );
+    lb.paste_boxes(clip_b, Some(40.0), Some(60.0), Default::default())
+        .unwrap();
+    wait_for("the backlink", 15, || {
+        core.backlinks(a.clone())
+            .map(|v| v.iter().any(|l| l.page_id == b))
+            .unwrap_or(false)
+    });
+    let bl = core.backlinks(a.clone()).unwrap();
+    assert_eq!(bl[0].title, "Linker");
+    assert!(core.backlinks(b.clone()).unwrap().is_empty());
+    la.close();
+    lb.close();
+}

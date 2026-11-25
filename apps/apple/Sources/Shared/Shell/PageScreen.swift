@@ -27,30 +27,18 @@ struct PageScreen: View {
 
     private var meta: PageMeta? { session.shownTree?.pages.first { $0.id == pageId } }
 
+    /// Who else is on the page (ids), to end following someone who left.
+    private var peopleIds: [String] {
+        guard let people = live?.people else { return [] }
+        return people.map { $0.id }
+    }
+
     var body: some View {
         let snapshot = currentSnapshot
         let palette = theme.page.tinted(snapshot?.info.settings.color ?? "none")
         let hybrid = theme.isHybrid && !phone
         let shape = UnevenRoundedRectangle(cornerRadii: .init(topLeading: hybrid ? 12 : 0, bottomLeading: 0, bottomTrailing: 0, topTrailing: hybrid ? 12 : 0), style: .continuous)
-        // The side panel sits beside the whole page column (top bar included), as the web's does.
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone,
-                           people: session.preview ? shell.presenceList(session) : (live?.people ?? []))
-                ZStack(alignment: .topTrailing) {
-                    content(snapshot, palette)
-                    if let snapshot, !snapshot.info.headings.isEmpty, !phone {
-                        OutlineBars(count: snapshot.info.headings.count, palette: palette).padding(.top, 33).padding(.trailing, 18)
-                    }
-                }
-            }
-            // The comments panel: the iPad's side panel (320 wide).
-            if comments.open && !phone { CommentsPanel(palette: theme.chrome, phone: false) }
-        }
-        // The phone's bottom sheet (max 55 % of the height).
-        .overlay(alignment: .bottom) {
-            if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: mainScreenSize.height * 0.55) }
-        }
+        pageColumns(snapshot, palette)
         .background(palette.bg.color)
         .clipShape(shape)
         .background(
@@ -64,20 +52,15 @@ struct PageScreen: View {
             openPage()
         }
         .onChange(of: pageId) { _, id in MediaHub.shared.pageId = id }
+        // Following someone who left the page ends.
+        .onChange(of: peopleIds) { _, ids in
+            if let f = CanvasNav.shared.following, !ids.contains(f.id), !session.preview { CanvasNav.shared.stopFollowing() }
+        }
         // A page just made from a template or a section default is filled once it is open and in sync.
         .onChange(of: live?.state == .live && live?.info != nil, initial: true) { _, ready in
             if ready, let live { TemplatesModel.shared.consume(pageId: pageId, host: live, session, shell) }
         }
-        .onChange(of: session.locksOpen) { _, open in
-            if open {
-                openPage()
-            } else if meta?.locked == true {
-                // Locked again: the page closes and the unlock prompt comes back.
-                comments.detach(pageId: pageId)
-                live?.close()
-                live = nil
-            }
-        }
+        .onChange(of: session.locksOpen) { _, open in locksChanged(open) }
         // While a locked page is open, ask the server about once a minute so it stays unlocked.
         .task(id: session.locksOpen && meta?.locked == true) {
             guard session.locksOpen, meta?.locked == true else { return }
@@ -87,14 +70,68 @@ struct PageScreen: View {
                 session.keepLocksAlive()
             }
         }
-        .onDisappear {
+        .onDisappear { pageGone() }
+    }
+
+    /// The page column (top bar, canvas) with the comments panel beside it (the iPad's side panel) or over it (the phone's sheet).
+    @ViewBuilder
+    private func pageColumns(_ snapshot: PageSnapshot?, _ palette: Palette) -> some View {
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone,
+                           people: session.preview ? shell.presenceList(session) : (live?.people ?? []))
+                canvasLayers(snapshot, palette)
+            }
+            if comments.open && !phone { CommentsPanel(palette: theme.chrome, phone: false) }
+        }
+        .overlay(alignment: .bottom) {
+            if comments.open && phone { CommentsPanel(palette: theme.chrome, phone: true, maxHeight: mainScreenSize.height * 0.55) }
+        }
+    }
+
+    private func locksChanged(_ open: Bool) {
+        if open {
+            openPage()
+        } else if meta?.locked == true {
+            // Locked again: the page closes and the unlock prompt comes back.
             comments.detach(pageId: pageId)
-            if shell.openLive === live { shell.openLive = nil }
-            if let live, PageHistory.shared.host === live { PageHistory.shared.host = nil }
             live?.close()
             live = nil
-            EditorFocus.shared.set(nil)
         }
+    }
+
+    private func pageGone() {
+        comments.detach(pageId: pageId)
+        if shell.openLive === live { shell.openLive = nil }
+        if let live, PageHistory.shared.host === live { PageHistory.shared.host = nil }
+        live?.close()
+        live = nil
+        EditorFocus.shared.set(nil)
+        CanvasNav.shared.reset()
+    }
+
+    /// The canvas with what floats over it: the follow chip, the backlinks bar, the outline.
+    @ViewBuilder
+    private func canvasLayers(_ snapshot: PageSnapshot?, _ palette: Palette) -> some View {
+        ZStack(alignment: .topTrailing) {
+            content(snapshot, palette)
+            FollowChip().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            if showsBacklinks(snapshot) {
+                BacklinksBar(pageId: pageId, palette: palette).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            }
+            if let snapshot, showsOutline(snapshot) {
+                PageOutline(headings: snapshot.info.headings, palette: palette, live: live).padding(.top, 33).padding(.trailing, 18)
+            }
+        }
+    }
+
+    private func showsBacklinks(_ snapshot: PageSnapshot?) -> Bool {
+        snapshot != nil && meta != nil && (sample == nil || LookData.state == "backlinks")
+    }
+
+    private func showsOutline(_ snapshot: PageSnapshot) -> Bool {
+        guard snapshot.info.headings.count >= 3, !phone, !shell.outlineHidden else { return false }
+        return (shell.frames["page-canvas"]?.width ?? 1000) >= 700
     }
 
     private var currentSnapshot: PageSnapshot? {

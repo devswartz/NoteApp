@@ -62,13 +62,18 @@ final class WindowInsets {
 /// compact (no group names, no words). Wider windows get the compact ribbon too for now.
 struct RibbonMetrics {
     let small: Bool
+    /// A contextual group (Table) shows on a small window: every button tightens (toolbar.css `.has-context`), so the ribbon stays one row.
+    let tight: Bool
     /// The Mac window's traffic lights take `WindowInsets.leading` of the ribbon's width (0 on iPad/iPhone).
-    init(width: CGFloat) { small = width - WindowInsets.shared.leading <= 1023 }
+    init(width: CGFloat, context: Bool = false) {
+        small = width - WindowInsets.shared.leading <= 1023
+        tight = small && context
+    }
     var height: CGFloat { small ? 30 : 36 }
-    var minWidth: CGFloat { small ? 25 : 36 }
-    var pad: CGFloat { small ? 3 : 8 }
+    var minWidth: CGFloat { tight ? 21 : small ? 25 : 36 }
+    var pad: CGFloat { tight ? 1 : small ? 3 : 8 }
     var icon: CGFloat { small ? 16 : 18 }
-    var block: CGFloat { small ? 84 : 124 }
+    var block: CGFloat { tight ? 64 : small ? 84 : 124 }
     var gap: CGFloat { small ? 0 : 2 }
     var sepMargin: CGFloat { small ? 2 : 4 }
     var padLeft: CGFloat { small ? 6 : 12 }
@@ -134,19 +139,31 @@ struct Ribbon: View {
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
+    /// A table is under the caret on a page: the ribbon shows the Table group and tightens.
+    private var hasTableContext: Bool {
+        guard case .page = shell.route else { return false }
+        return EditorFocus.shared.active && EditorFocus.shared.table != nil
+    }
+
     var body: some View {
         let p = theme.chrome
-        let m = RibbonMetrics(width: width)
+        let m = RibbonMetrics(width: width, context: hasTableContext)
         VStack(spacing: 0) {
             HStack(spacing: m.gap) {
-                switch shell.route {
-                case .page: NoteRibbon(m: m)
-                case let .tasks(list): TasksRibbon(m: m, list: list)
-                case .notes, .section: NotesRibbon(m: m)
-                case .calendar: CalendarRibbon(m: m)
-                case .settings: SettingsRibbon(m: m)
+                // The groups scroll only as a last resort, and start at the leading edge (the block style picker comes first).
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: m.gap) {
+                        switch shell.route {
+                        case .page: NoteRibbon(m: m)
+                        case let .tasks(list): TasksRibbon(m: m, list: list)
+                        case .notes, .section: NotesRibbon(m: m)
+                        case .calendar: CalendarRibbon(m: m)
+                        case .settings: SettingsRibbon(m: m)
+                        }
+                    }
                 }
-                Spacer(minLength: 0)
+                .defaultScrollAnchor(.leading)
+                .scrollBounceBehavior(.basedOnSize)
                 if case .page = shell.route { DrawToggle(m: m) }
                 if case .page = shell.route { HistoryGroup(m: m) }
                 Button { shell.ribbonCollapsed = true } label: {
@@ -279,7 +296,7 @@ struct NoteRibbon: View {
         RibbonButton(icon: "rows-3", m: m, anchor: "rb-rule-lines") { shell.menu = .ruleLines }
         RibbonButton(icon: "printer", m: m) { shell.printPage(session) }
         RibbonSeparator(m: m)
-        RibbonButton(icon: "list-tree", m: m, pressed: true) { shell.notYet("Hiding the outline") }
+        RibbonButton(icon: "list-tree", m: m, pressed: !shell.outlineHidden) { shell.outlineHidden.toggle() }
         }
     }
 }
@@ -329,8 +346,8 @@ struct TasksRibbon: View {
         RibbonSeparator(m: m)
         }
         Group {
-        RibbonButton(icon: "bookmark", m: m, caret: true) { shell.notYet("Saved views") }
-        RibbonButton(icon: "bookmark-plus", m: m, enabled: false) {}
+        RibbonButton(icon: "bookmark", m: m, pressed: shell.views.current(tv) != nil, caret: true, anchor: "rb-savedViews") { shell.menu = .savedViews }
+        RibbonButton(icon: "bookmark-plus", m: m, enabled: list == .all && shell.views.current(tv) == nil && !ViewQuery(tv).isPlain) { shell.sheet = .savedView(.save) }
         RibbonSeparator(m: m)
         RibbonButton(icon: "printer", m: m) { shell.notYet("Printing") }
         }

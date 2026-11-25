@@ -141,6 +141,14 @@ impl Editor {
             "outdent" => self.shift_tab(),
             "moveBlockUp" => self.move_block(true),
             "moveBlockDown" => self.move_block(false),
+            "moveBlockTo" => match (a["from"].as_u64(), a["to"].as_u64()) {
+                (Some(f), Some(t)) => self.move_block_to(
+                    f as usize,
+                    t as usize,
+                    a["after"].as_bool().unwrap_or(false),
+                ),
+                _ => false,
+            },
             "hardBreak" => self.hard_break(),
             "focusTitle" => {
                 self.focus_title(s(a, "id"));

@@ -165,6 +165,10 @@ final class MacCanvasView: NSView {
 
     // Ink: highlighters behind the boxes, pens in front; the mouse and trackpad draw while a pen tool is chosen.
     private let ink = MacInkController()
+    private let blockHandle = MacBlockHandle()
+    private let dropLine = NSView()
+    /// The offset of the block being dragged by its handle (nil: no drag).
+    private var blockFrom: Int?
     private var inkNeeded = true
 
     // The row above the title: the page's icon, or "Add icon" on hover (src/pages/PageView.tsx `PageIcon`).
@@ -228,6 +232,8 @@ final class MacCanvasView: NSView {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(clipBoundsChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         center.addObserver(self, selector: #selector(magnified), name: NSScrollView.didEndLiveMagnifyNotification, object: scroll)
+        center.addObserver(self, selector: #selector(revealRequested(_:)), name: CanvasNav.revealNote, object: nil)
+        center.addObserver(self, selector: #selector(userScrolled), name: NSScrollView.willStartLiveScrollNotification, object: scroll)
         center.addObserver(self, selector: #selector(commentsChanged), name: CommentsModel.changed, object: nil)
         center.addObserver(self, selector: #selector(commentUnset(_:)), name: CommentsModel.unset, object: nil)
         EditorFocus.shared.onLink = { [weak self] in self?.showLinkEditor() }
@@ -1061,6 +1067,7 @@ final class MacCanvasView: NSView {
         guard let box = editing else { return }
         host?.clearLocalCursor()
         editing = nil
+        blockHandle.isHidden = true
         hideToolbar()
         hideMenu()
         if linkEditorShown { hideLinkEditor(refocus: false) }
@@ -1077,6 +1084,7 @@ final class MacCanvasView: NSView {
 
     private func setRemoteCursors(_ list: [BoxCursor]) {
         remoteCursorList = list
+        CanvasNav.shared.publish(list)
         for (id, view) in boxViews { view.remoteCursors = list.filter { $0.boxId == id } }
     }
 
@@ -1127,6 +1135,95 @@ final class MacCanvasView: NSView {
         }
     }
 
+    // MARK: Going to a heading, following someone
+
+    @objc private func userScrolled() { CanvasNav.shared.userMoved() }
+
+    @objc private func revealRequested(_ note: Notification) {
+        guard let id = note.userInfo?["box"] as? String else { return }
+        reveal(boxId: id, offset: (note.userInfo?["offset"] as? UInt32).map { Int($0) }, caret: note.userInfo?["caret"] as? Bool ?? false,
+               onlyIfHidden: note.userInfo?["onlyIfHidden"] as? Bool ?? false)
+    }
+
+    /// Scroll to a box, or to the line at `offset` in it (view offset). `caret`: edit there. `onlyIfHidden`: leave it when it is in view.
+    func reveal(boxId: String, offset: Int?, caret: Bool, onlyIfHidden: Bool) {
+        guard let view = boxViews[boxId] else { return }
+        var local = view.bounds
+        if let offset { local = view.caretRect(at: offset).insetBy(dx: -4, dy: -10) }
+        let r = surface.convert(local, from: view)
+        let visible = scroll.contentView.bounds
+        if !(onlyIfHidden && visible.insetBy(dx: 0, dy: 60).contains(r)) {
+            let wanted = onlyIfHidden ? r.midY - visible.height / 2 : r.minY - 80
+            let bottom = max(0, surface.bounds.height - visible.height)
+            scroll.contentView.scroll(to: CGPoint(x: visible.minX, y: min(max(wanted, 0), bottom)))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        if caret, host != nil, let offset {
+            beginEditing(view, at: nil) { [weak view] in view?.placeCaret(offset: offset) }
+        }
+    }
+
+    // MARK: Block handle
+
+    /// The ⋮⋮ handle left of the block the caret is in, while a box is edited: drag it to move the block within the box
+    /// (`EditorSession.moveBlock`); a line shows where it lands.
+    private func updateBlockHandle() {
+        guard let box = editing, !dragging, host?.savesBoxes ?? false, blockFrom == nil, let rect = box.caretLineRect else {
+            if blockFrom == nil { blockHandle.isHidden = true }
+            return
+        }
+        if blockHandle.superview == nil {
+            blockHandle.onBegan = { [weak self] in self?.blockBegan() }
+            blockHandle.onMoved = { [weak self] p in self?.blockMoved(to: p) }
+            blockHandle.onEnded = { [weak self] p in self?.blockEnded(at: p) }
+            dropLine.wantsLayer = true
+            dropLine.isHidden = true
+            surface.addSubview(blockHandle)
+            surface.addSubview(dropLine)
+        }
+        blockHandle.image = PlatformImage.lucide("grip-vertical", size: 16, color: palette.textMuted)
+        let c = surface.convert(CGPoint(x: box.boxRect.minX - 11, y: rect.midY), from: box)
+        blockHandle.frame = CGRect(x: c.x - 9, y: c.y - 14, width: 18, height: 28)
+        surface.addSubview(blockHandle, positioned: .above, relativeTo: nil)
+        blockHandle.isHidden = false
+    }
+
+    private func blockBegan() {
+        guard let box = editing else { return }
+        blockFrom = box.caretOffset
+        blockHandle.alphaValue = 0.6
+    }
+
+    private func blockMoved(to p: CGPoint) {
+        guard let box = editing, blockFrom != nil else { return }
+        let t = blockTarget(box, surface.convert(p, to: box))
+        dropLine.layer?.backgroundColor = palette.accent.cgColor
+        let y = surface.convert(CGPoint(x: 0, y: t.after ? t.rect.maxY : t.rect.minY), from: box).y
+        let r = surface.convert(box.boxRect, from: box)
+        dropLine.frame = CGRect(x: r.minX, y: y - 1, width: r.width, height: 2)
+        dropLine.isHidden = false
+        surface.addSubview(dropLine, positioned: .above, relativeTo: nil)
+    }
+
+    private func blockEnded(at p: CGPoint) {
+        if let box = editing, let from = blockFrom {
+            let t = blockTarget(box, surface.convert(p, to: box))
+            if box.moveBlock(from: from, to: t.offset, after: t.after) { notify?("Block moved") }
+        }
+        blockFrom = nil
+        blockHandle.alphaValue = 1
+        dropLine.isHidden = true
+        updateBlockHandle()
+    }
+
+    /// Where a block dropped at `p` (box coordinates) lands: the line there, before or after it.
+    private func blockTarget(_ box: MacBoxView, _ p: CGPoint) -> (offset: Int, rect: CGRect, after: Bool) {
+        let y = min(max(p.y, MacBoxView.gutterTop + 1), max(box.bounds.height - 1, 1))
+        let offset = box.offset(at: CGPoint(x: max(p.x, MacBoxView.gutterLeft + 4), y: y))
+        let rect = box.lineRect(at: offset)
+        return (offset, rect, y > rect.midY)
+    }
+
     private func keepCaretVisible(_ box: MacBoxView) {
         guard box.isEditable, !dragging else { return }
         _ = box.scrollToVisible(box.caretNow.insetBy(dx: -20, dy: -40))
@@ -1157,6 +1254,7 @@ final class MacCanvasView: NSView {
 
     /// Show the toolbar over the selected text of the box being edited, or hide it.
     private func updateToolbar() {
+        updateBlockHandle()
         guard let box = editing, !dragging, !linkEditorShown, menuHost?.isHidden ?? true, let rect = box.selectionBounds else {
             hideToolbar()
             return
@@ -1351,4 +1449,29 @@ enum PagePrinter {
         }
         return true
     }
+}
+
+/// The ⋮⋮ block handle: it takes its own presses (the page and the box under it don't see them) and reports the drag in surface points.
+final class MacBlockHandle: NSView {
+    var image: NSImage? { didSet { needsDisplay = true } }
+    var onBegan: (() -> Void)?
+    var onMoved: ((CGPoint) -> Void)?
+    var onEnded: ((CGPoint) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let image else { return }
+        let s = image.size
+        image.draw(in: CGRect(x: (bounds.width - s.width) / 2, y: (bounds.height - s.height) / 2, width: s.width, height: s.height))
+    }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+
+    private func point(_ e: NSEvent) -> CGPoint { superview?.convert(e.locationInWindow, from: nil) ?? .zero }
+
+    override func mouseDown(with event: NSEvent) { onBegan?() }
+    override func mouseDragged(with event: NSEvent) { onMoved?(point(event)) }
+    override func mouseUp(with event: NSEvent) { onEnded?(point(event)) }
 }

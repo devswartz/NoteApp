@@ -11,6 +11,7 @@ mod account;
 mod files;
 mod inbox;
 mod locks;
+mod saved_views;
 mod share;
 mod templates;
 mod tree;

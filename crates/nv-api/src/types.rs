@@ -1090,3 +1090,31 @@ pub struct ActivityItem {
     pub summary: String,
     pub created_at: String,
 }
+
+/// A saved view of All Tasks (GET /workspaces/:id/task-views).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskView {
+    pub id: String,
+    pub workspace_id: String,
+    pub owner_id: String,
+    pub shared: bool,
+    pub name: String,
+    /// `{filters, sort, group}` exactly as the web stores it.
+    pub query: serde_json::Value,
+    pub position: f64,
+    pub created_at: String,
+}
+
+/// A page that links to another (GET /pages/:id/backlinks).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageBacklink {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    pub section_name: String,
+    pub notebook_name: String,
+    pub updated_at: String,
+}

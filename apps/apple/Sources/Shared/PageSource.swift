@@ -166,6 +166,15 @@ final class LivePageModel: PageSource {
                             pageChoices: session?.pageChoices(excluding: pageId) ?? [], people: session?.people ?? [])
     }
 
+    /// The page's outline (`LivePage.outline()`), read on the page's queue; `done` on the main thread.
+    func outlineRead(_ done: @escaping ([OutlineItem]) -> Void) {
+        guard let page = live else { return done([]) }
+        editQueue.async {
+            let items = page.outline()
+            DispatchQueue.main.async { done(items) }
+        }
+    }
+
     func open() {
         guard let session, live == nil, !isClosed else { return }
         generation += 1

@@ -76,6 +76,8 @@ final class Shell {
         case calTags, calPeople
         /// The Tasks ribbon's menus (and the phone's filter sheets): group, sort, and the filter kinds.
         case taskGroup, taskSort, taskKinds, taskStatus, taskAssignee, taskTags, taskTeam, taskPriority, taskMore
+        /// The Tasks ribbon's saved views list (and the phone's view options).
+        case savedViews
     }
 
     var route: Route
@@ -95,6 +97,8 @@ final class Shell {
     @ObservationIgnored weak var openLive: LivePageModel?
     /// The tree row being renamed in place: `page:<id>`, `section:<id>` or `notebook:<id>`.
     var renaming: String?
+    /// A row being dragged in the tree (the iPad), see `TreeDrop.swift`.
+    var treeDrag: TreeDragState?
     /// The search palette (Cmd+K, the rail's and the phone's search buttons) and what is typed in it.
     var searchOpen = false
     var searchQuery = ""
@@ -110,6 +114,10 @@ final class Shell {
     var calTags: Set<String> = []
     /// The task views' filters, sort and group (kept while the app runs; another workspace starts clean).
     let tv = TaskViewState()
+    /// The workspace's saved task views (`SavedViews.swift`).
+    let views = SavedViewsModel()
+    /// The tasks selected for a bulk action (`Bulk.swift`).
+    let bulk = BulkSelection()
     /// Settings: the open section (nil: the list on phones, Profile on wide screens).
     var settingsSection: String?
     /// Settings shows the workspace's sections (General, Teams, Tags, Activity) instead of the person's.
@@ -124,6 +132,10 @@ final class Shell {
     /// Favourite pages, kept on this device ("<account>|<workspace>" → page ids), and whether their sidebar group is open.
     var favourites: [String: [String]] = [:]
     var favouritesOpen = true
+    /// The page outline beside long pages is hidden (the ribbon's Outline button), kept on this device.
+    var outlineHidden = UserDefaults.standard.bool(forKey: "outlineHidden") {
+        didSet { UserDefaults.standard.set(outlineHidden, forKey: "outlineHidden") }
+    }
     /// The page canvas's zoom (View ▸ Zoom In / Out / Actual Size on the Mac).
     var zoom = 1.0
     /// Phone: the notes drawer is open.
@@ -150,10 +162,13 @@ final class Shell {
             case "page-tasks-panel": route = .page(LookData.pageId("tasks"))
             case "tasks-upcoming": route = .tasks(.upcoming)
             case "tasks-my": route = .tasks(.my)
-            case "tasks-all", "empty-tasks-all": route = .tasks(.all)
+            case "tasks-all", "empty-tasks-all", "saved-views": route = .tasks(.all)
+            case "bulk-select": route = .tasks(.my)
             case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
             case "templates": route = .page(LookData.pageId("empty"))
+            case "outline": route = .page(LookData.pageId("blocks"))
+            case "backlinks": route = .page(LookData.pageId("canvas-boxes"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools", "cursors": route = .page(LookData.pageId("sandbox"))
@@ -401,6 +416,7 @@ struct AppShell: View {
             ShellBridge.shared.attach(shell, session)
             if mainScreenSize.width <= 760 { shell.configurePhoneLook() }
             openLookMenu()
+            if case .tasks = shell.route { shell.views.load(session) }
             if session.preview {
                 if LookData.state == "inbox" { shell.inbox.seedLook() }
             } else {
@@ -462,10 +478,16 @@ struct AppShell: View {
             shell.calTags = []
             shell.calWho = .mine
             shell.tv.reset()
+            shell.views.reset()
+            if case .tasks = shell.route { shell.views.load(session) }
         }
         // Status is Open each time a task view is opened.
         .onChange(of: shell.route) { old, new in
-            if case .tasks = new, old != new { shell.tv.status = .open }
+            shell.bulk.clear()
+            if case .tasks = new, old != new {
+                if shell.views.keepStatus { shell.views.keepStatus = false } else { shell.tv.status = .open }
+                shell.views.load(session)
+            }
         }
     }
 
@@ -488,6 +510,7 @@ struct AppShell: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .overlay { TreeDragPreview() }
     }
 
     /// Look states that show a menu open (CI screenshots).
@@ -497,10 +520,18 @@ struct AppShell: View {
             "menu-notebook": .notebookOptions, "menu-page-options": .pageOptions,
             "menu-section": .section("corpus"), "menu-page-row": .pageRow(LookData.pageId("canvas-boxes")),
             "ribbon-menu-block": .blockType, "ribbon-menu-text-colour": .textColor, "ribbon-menu-highlight": .highlight,
-            "inbox": .inbox, "presence": .presence, "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines,
+            "inbox": .inbox, "presence": .presence, "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines, "saved-views": .savedViews,
         ]
         guard session.preview, let state = LookData.state else { return }
-        if let menu = menus[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.menu = menu } }
+        if state == "bulk-select" {
+            shell.bulk.active = true
+            shell.bulk.ids = Set(LookData.tasks.filter { $0.dueDate != nil }.prefix(2).map { $0.id })
+        }
+        if state == "saved-views" {
+            shell.views.load(session)
+            if let v = shell.views.view("v-urgent") { shell.views.open(v, shell, session) }
+        }
+        if let menu = menus[state], !(state == "saved-views" && mainScreenSize.width <= 760) { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.menu = menu } }
         // Native-only dialogs (the web's dialogs have no reference shot).
         let corpus = LookData.pageId("canvas-boxes")
         let dialogs: [String: () -> Void] = [
