@@ -11,13 +11,19 @@ struct TableRibbonGroup: View {
 
     var body: some View {
         RibbonSeparator(m: m)
-        RibbonButton(icon: "between-horizontal-start", m: m) { focus.run("addRowBefore") }
-        RibbonButton(icon: "between-horizontal-end", m: m) { focus.run("addRowAfter") }
-        RibbonButton(icon: "between-vertical-start", m: m) { focus.run("addColumnBefore") }
-        RibbonButton(icon: "between-vertical-end", m: m) { focus.run("addColumnAfter") }
-        RibbonButton(icon: "panel-top", m: m, pressed: state.headerRow) { focus.run("toggleHeaderRow") }
-        RibbonButton(icon: "table-cells-merge", m: m, enabled: state.canMerge) { focus.run("mergeCells") }
-        RibbonButton(icon: "table-cells-split", m: m, enabled: state.canSplit) { focus.run("splitCell") }
+        // On a small window the group is the two most used buttons and the menu (which has the rest, with words).
+        if m.small {
+            RibbonButton(icon: "between-horizontal-end", m: m) { focus.run("addRowAfter") }
+            RibbonButton(icon: "between-vertical-end", m: m) { focus.run("addColumnAfter") }
+        } else {
+            RibbonButton(icon: "between-horizontal-start", m: m) { focus.run("addRowBefore") }
+            RibbonButton(icon: "between-horizontal-end", m: m) { focus.run("addRowAfter") }
+            RibbonButton(icon: "between-vertical-start", m: m) { focus.run("addColumnBefore") }
+            RibbonButton(icon: "between-vertical-end", m: m) { focus.run("addColumnAfter") }
+            RibbonButton(icon: "panel-top", m: m, pressed: state.headerRow) { focus.run("toggleHeaderRow") }
+            RibbonButton(icon: "table-cells-merge", m: m, enabled: state.canMerge) { focus.run("mergeCells") }
+            RibbonButton(icon: "table-cells-split", m: m, enabled: state.canSplit) { focus.run("splitCell") }
+        }
         RibbonButton(icon: "table", m: m, caret: true, anchor: "rb-table") { shell.menu = .tableMenu }
     }
 }
