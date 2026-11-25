@@ -2,6 +2,71 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
+## How to work on the Windows app (handover, 2026-11-25)
+
+For a fresh session taking over the Windows stream. The newest dated section below says where the last round stopped, and "Parity left" says what comes next.
+
+- **Rounds.** The overseer ("Notivelo manager" session) sends each round.
+  - Cut `rewrite/windows-<name>` from `origin/rewrite/native` and push it.
+  - Never merge, never open a PR, never tag.
+  - Do the work through Sonnet subagents and keep CI runs few.
+  - End each batch with one Sonnet review subagent over that batch's diff only (bugs, dead code, drift from `docs/rewrite/look/LOOK.md`). Apply its fixes before reporting.
+  - Then update this file and `PARITY.md` (append ` ✓` to a Windows cell only when the row is fully built), push, and pause.
+  - Commit messages start with `windows:` and end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Docs-only commits add `[skip ci]`.
+- **Ownership.**
+  - Core (`crates/nv-core`, `crates/nv-model`, `crates/nv-editor`) belongs to other streams: never edit it. Write requests here instead. Apple adds the core calls; their contracts are `apple-*-core.md` in the shared notes folder.
+  - Don't edit `src/`, `server/`, `shared/` or `docs/rewrite/STATUS.md`.
+- **Safety.**
+  - No UI automation, synthetic input or SendInput on Devon's PC: computer use was declined. Locally only build, run unit tests and look at screenshots; UI tests run only on GitHub's runner.
+  - No production or real credentials: use offline/sample mode, or the local dev server on 127.0.0.1:4417 with the seeded demo account.
+  - No signing keys and no Store or Partner Center.
+  - Sample data uses "Demo User" / demo@example.com.
+  - Never use a bare `git stash`. Leave the untracked `out-ui/` alone.
+- **Build locally** (Git Bash from the repo root):
+  1. When core changed: `NV_TARGETS=x86_64-pc-windows-msvc bash crates/nv-core/build-windows.sh` (builds `nv_core.dll` and the C# bindings).
+  2. `dotnet build apps/windows/Notivelo.Windows.sln -c Release -p:Platform=x64`
+  3. `dotnet build apps/windows/Notivelo.Windows.UiTests -c Release` (this project is not in the sln).
+  4. `dotnet test apps/windows/Notivelo.Windows.Tests`
+- **App layout** (`apps/windows/Notivelo.Windows`): WinUI 3, Windows App SDK 1.6, .NET 8, Win2D, single-project MSIX.
+  - **Data:** `INotesSource`, with two implementations: `CoreNotesSource`, which runs the uniffi core calls off the UI thread, and `SampleNotesSource`, which keeps everything in memory.
+  - **Offline and sample modes:** `NOTIVELO_SOURCE=offline|sample` selects them. `signup` shows the signed-out screens.
+  - **Editor boxes:** `Controls/BoxTextView*.cs`.
+  - **Overlays and menus:** `Controls/Overlay.cs`, `PopupMenu.cs`, `Views/Dialogs.cs`.
+  - **Pages:** `Views/PageView*.cs`. The ribbon is `Views/RibbonView.cs`.
+  - **Optional core calls:** when they aren't on `rewrite/native` yet, the csproj defines a symbol only if the generated bindings contain them (today `NV_LEFT4`, for saved views and backlinks).
+- **CI** (`.github/workflows/windows.yml`, "Windows native"; runs on every push to `rewrite/**`):
+  - Job 1 builds x64 + arm64, runs the unit tests and uploads the unsigned MSIX (`apps/windows/SIDELOAD.md`).
+  - Job 2 runs the FlaUI UI tests in offline mode on a 1920x1080 runner display, then the "Look screenshots" step (`LookShots.cs`, continue-on-error).
+  - Artifacts: `uitest-screenshots` (failure shots and app logs, including `notivelo-crash.log`) and `windows-look-screenshots` (light and hybrid).
+  - To read results with `gh` (use Bash; PowerShell mangles `{owner}`): `gh run list --branch <b>`, `gh run view <id> --log-failed | grep -A2 "Error Message"`, `gh run download <id> -n uitest-screenshots -D <dir>`.
+- **UI-test readouts.**
+  - Tests read the app's state from UIA `ItemStatus` strings on named elements.
+  - A box gives `block=…;sel=A,H;focus=…;menu=…;tables=…;in=…;images=…;remote=…`.
+  - The ink overlay gives `strokes=N;selected=M`.
+  - Look for `UiTests/Harness.cs` (`AppHost`, `Box`).
+  - Hooks:
+    - `NOTIVELO_TEST_PICK=path`: a file picker returns this file.
+    - `NOTIVELO_TEST_SAVE`: a save picker uses this path.
+    - `NOTIVELO_TEST_NOLAUNCH`: files aren't launched after a save or open.
+    - `NOTIVELO_FORCE_OFFLINE=1`: the app acts offline.
+- **WinUI and test quirks** (each one cost a CI run):
+  - An AutomationId on a plain `Border`, or on a StackPanel without `AutomationProperties.Name`, is invisible to UIA.
+  - Tree rows have no Invoke pattern, so test helpers click when Invoke isn't supported.
+  - Moving a live element to a new parent during a rebuild crashes with COMException 0x800F1000 ("No installed components were detected"). Keep elements persistent. Toasts, the task sheet and subtasks have all hit this.
+  - `Canvas.SetZIndex` with large values throws: host overlays in a Grid with small z values.
+  - Release pointer capture after ending a gesture, not before: CaptureLost cancels it.
+  - Synthetic mouse moves on the runner arrive coalesced. Never test a drag path or a guessed pixel; give every pointer feature a keyboard or menu path and test that.
+  - A rail click right after an overlay closes is sometimes lost: retry until the view shows.
+  - A ribbon `MenuFlyout` takes focus from the box, so ribbon menus act on `BoxTextView.Target`, not `Focused`.
+  - A typed "/" opens the slash menu only at a line start or after a space (`BoxTextView.RibbonInsert`). Callout and Toggle go through the slash pick.
+  - Clearing a TextBox or PasswordBox in code fires its Changed handler, so don't let it undo your own state.
+  - After a menu pick, wait for the box to have focus again before typing.
+  - The engine leaves a trailing empty paragraph after some blocks; compare text with trailing newlines trimmed.
+  - Deleting a table's first row puts the caret above the table (core quirk).
+- **Known gaps:**
+  - A few unchecked look items are listed in the dated sections.
+  - Nothing has run against a real server or on Devon's PC.
+
 ## Parity left (Windows, 2026-11-24; updated after left4)
 
 **Left4 (2026-11-25, `rewrite/windows-left4`) moved 5 more PARITY rows to ✓** (saved views, bulk select, outline, backlinks, toasts with Undo; the block menu and the task keyboard are partly done): see the left4 section below. The saved-view and backlink calls need the apple-left4 core (`NV_LEFT4`).
