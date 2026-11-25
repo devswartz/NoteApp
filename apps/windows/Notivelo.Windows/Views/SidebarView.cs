@@ -493,14 +493,53 @@ internal sealed class SidebarView : ThemedControl
         var views = Ui.Text("VIEWS", 11.5, B("TextMuted"), 600, tracking: 0.04);
         views.Margin = new Thickness(10, 22, 0, 6);
         root.Children.Add(views);
+        _source.LoadSavedViews();
+        var list = SavedViewRules.Ordered(_source.SavedViews, _source.UserId);
+        var shown = TaskView == TaskViewKind.All && Host?.TasksState() is { } st ? SavedViewRules.Matching(list, st) : null;
+        foreach (var v in list) root.Children.Add(SavedViewRow(v, shown?.Id == v.Id));
         var nv = Cols(Px(16), Star);
         nv.ColumnSpacing = 10;
         nv.Children.Add(new Icon("plus", 15, B("TextMuted")));
         var nt = Ui.Text("New view", 14, B("Text2"), 500);
         Grid.SetColumn(nt, 1);
         nv.Children.Add(nt);
+        // a Button over the row carries the id (a Border has no UI Automation peer)
+        var newBtn = new Button { Style = Ui.Style("GhostButtonStyle"), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Opacity = 0, Content = new Border() };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(newBtn, "sidebar-new-view");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(newBtn, "New view");
+        newBtn.Click += (_, _) => Host?.NewTasksView();
+        Grid.SetColumnSpan(newBtn, 2);
+        nv.Children.Add(newBtn);
         root.Children.Add(Row(32, 7, false, null, nv, new Thickness(10, 0, 10, 0)));
         return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    }
+
+    /// <summary>A saved view of the Tasks panel (the web's SavedViews list, Apple's sidebar rows): its name opens it on All tasks, "…" has rename, update, share and delete.</summary>
+    private UIElement SavedViewRow(SavedView v, bool selected)
+    {
+        var g = Cols(Px(16), Star, Auto);
+        g.ColumnSpacing = 10;
+        g.Children.Add(new Icon(v.Shared ? "users-round" : "bookmark", 15, selected ? B("Accent") : B("Text2")) { VerticalAlignment = VerticalAlignment.Center });
+        var name = Ui.Text(v.Name, 14, selected ? B("Accent") : B("Text2"), 500);
+        Grid.SetColumn(name, 1);
+        g.Children.Add(name);
+        // the row's own button (under the "…"): a click on the name opens the view, and it carries the id for the UI tests
+        var open = new Button { Style = Ui.Style("GhostButtonStyle"), HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Stretch, Opacity = 0, Content = new Border() };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(open, "sidebar-view-" + v.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(open, v.Name);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(open, selected ? "selected=1" : "selected=0");
+        open.Click += (_, _) => Host?.OpenSavedView(v);
+        Grid.SetColumnSpan(open, 3);
+        g.Children.Add(open);
+        var more = Ui.IconButton("ellipsis", 15, 24, 24, "View options");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(more, "sidebar-view-more-" + v.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, "View options: " + v.Name);
+        more.Click += (_, _) => { if (Host is not null) SavedViewsUi.RowMenu(Host, more, v, TaskView == TaskViewKind.All ? Host.TasksState() : null); };
+        Grid.SetColumn(more, 2);
+        g.Children.Add(more);
+        var row = Row(32, 7, selected, null, g, new Thickness(10, 0, 4, 0));
+        row.Margin = new Thickness(0, 0, 0, 1);
+        return row;
     }
 
     private UIElement TaskItemRow(string icon, string label, TaskViewKind kind, int count, bool danger)

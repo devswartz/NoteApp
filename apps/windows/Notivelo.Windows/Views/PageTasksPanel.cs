@@ -23,13 +23,20 @@ internal sealed class PageTasksPanel : ThemedControl
     internal CommentsModel? Comments { get; set; }
     /// <summary>Switch tab: true for Comments.</summary>
     internal Action<bool>? SwitchTab { get; set; }
+    /// <summary>Set: the Linked tab shows (the pages that link here).</summary>
+    internal BacklinksModel? Links { get; set; }
+    internal Action? SwitchLinks { get; set; }
+    /// <summary>How many pages link here, once known (the tab says it).</summary>
+    internal BacklinksModel? LinkModel { get; set; }
 
     public PageTasksPanel(INotesSource src, string pageId, Action close)
     {
         _src = src; _pageId = pageId; _close = close;
-        Loaded += (_, _) => _src.Changed += OnChanged;
-        Unloaded += (_, _) => _src.Changed -= OnChanged;
+        Loaded += (_, _) => { _src.Changed += OnChanged; if (LinkModel is not null) LinkModel.Changed += OnLinkChanged; };
+        Unloaded += (_, _) => { _src.Changed -= OnChanged; if (LinkModel is not null) LinkModel.Changed -= OnLinkChanged; };
     }
+
+    private void OnLinkChanged() { if (Comments is null && Links is null) Rebuild(); }
 
     private void OnChanged(object? s, EventArgs e) { if (Comments is null) Rebuild(); }   // the Comments tab keeps its text boxes: it redraws from its own model
 
@@ -50,10 +57,13 @@ internal sealed class PageTasksPanel : ThemedControl
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Padding = new Thickness(2), CornerRadius = new CornerRadius(8), Background = B("BgHover"), HorizontalAlignment = HorizontalAlignment.Left };
         var onComments = Comments is not null;
-        var tasksTab = Tab("list-todo", "Tasks", !onComments, "page-tab-tasks", () => SwitchTab?.Invoke(false));
+        var onLinks = Links is not null;
+        var tasksTab = Tab("list-todo", "Tasks", !onComments && !onLinks, "page-tab-tasks", () => SwitchTab?.Invoke(false));
         var commentsTab = Tab("message-square", "Comments", onComments, "page-tab-comments", () => SwitchTab?.Invoke(true));
         tabs.Children.Add(tasksTab);
         tabs.Children.Add(commentsTab);
+        var linkedLabel = LinkModel is { Loaded: true, Items.Count: > 0 } lkm ? "Linked " + lkm.Items.Count : "Linked";
+        tabs.Children.Add(Tab("link-2", linkedLabel, onLinks, "page-tab-links", () => SwitchLinks?.Invoke()));
         head.Children.Add(tabs);
         var close = Ui.IconButton("x", 14, 28, 28, "Close");
         AutomationProperties.SetAutomationId(close, "page-tasks-close");
@@ -71,6 +81,17 @@ internal sealed class PageTasksPanel : ThemedControl
             AutomationProperties.SetAutomationId(tagged2, "page-comments-panel");
             AutomationProperties.SetName(tagged2, "Comments on this page");
             return new Border { Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged2 };
+        }
+
+        if (Links is { } lm)
+        {
+            var body = new BacklinksBody(lm) { Host = Host };
+            Grid.SetRow(body, 1); Grid.SetRowSpan(body, 2);
+            root.Children.Add(body);
+            var tagged3 = new StackPanel { Children = { root } };
+            AutomationProperties.SetAutomationId(tagged3, "page-links-panel");
+            AutomationProperties.SetName(tagged3, "Pages linking to this page");
+            return new Border { Background = B("Bg"), BorderBrush = B("Border"), BorderThickness = new Thickness(1, 0, 0, 0), Child = tagged3 };
         }
 
         // done / total

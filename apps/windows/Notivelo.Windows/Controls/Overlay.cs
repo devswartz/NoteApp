@@ -20,7 +20,7 @@ internal sealed class OverlayHost : Grid
     }
 
     private readonly List<Layer> _layers = new();
-    private readonly StackPanel _toasts = new() { VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 28), Spacing = 8, IsHitTestVisible = false };
+    private readonly StackPanel _toasts = new() { VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 0, 0, 28), Spacing = 8, IsHitTestVisible = true };
 
     public OverlayHost()
     {
@@ -60,18 +60,31 @@ internal sealed class OverlayHost : Grid
     public void CloseAll() { foreach (var l in _layers.ToList()) Remove(l); }
 
     /// <summary>A short notice at the bottom (a result such as "Restored to Corpus", or an error).</summary>
-    public void Toast(string text, Brush fg, Brush bg, Brush border)
+    public void Toast(string text, Brush fg, Brush bg, Brush border, Action? undo = null, Brush? accent = null)
     {
+        UIElement content = Ui.Text(text, 13, fg, 500);
         var t = new Border
         {
             Background = bg, BorderBrush = border, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 9, 14, 9),
-            Child = Ui.Text(text, 13, fg, 500), MaxWidth = 520,
+            Child = content, MaxWidth = 520, IsHitTestVisible = undo is not null,
         };
+        if (undo is not null)
+        {
+            // a toast with Undo (Apple's say(_:undo:)): the text and a button; it stays a little longer
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 14 };
+            row.Children.Add(content);
+            var b = new Button { Style = Ui.Style("GhostButtonStyle"), Height = 24, Padding = new Thickness(8, 0, 8, 0), CornerRadius = new CornerRadius(6), Content = Ui.Text("Undo", 13, accent ?? fg, 650) };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "toast-undo");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(b, "Undo");
+            b.Click += (_, _) => { _toasts.Children.Remove(t); if (_layers.Count == 0 && _toasts.Children.Count == 0) Visibility = Visibility.Collapsed; undo(); };
+            row.Children.Add(b);
+            t.Child = row;
+        }
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(t, "toast");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(t, text);
         _toasts.Children.Add(t);
         Visibility = Visibility.Visible;
-        _ = Task.Delay(3200).ContinueWith(_ => DispatcherQueue.TryEnqueue(() =>
+        _ = Task.Delay(undo is null ? 3200 : 7000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() =>
         {
             _toasts.Children.Remove(t);
             if (_layers.Count == 0 && _toasts.Children.Count == 0) Visibility = Visibility.Collapsed;

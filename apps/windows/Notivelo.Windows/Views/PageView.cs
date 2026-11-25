@@ -27,8 +27,8 @@ internal sealed partial class PageView : ThemedControl
         _saveTimer.Tick += (_, _) => PollSave();
         KeyDown += OnPageKey;
         source.SetBoxTextProbe(field => _views.TryGetValue(field, out var v) ? v.AutomationText : "");
-        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.Escaped += OnBoxEscaped; BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; _source.CaretsChanged += OnCaretsChanged; Current = this; ShowCarets(); };
-        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.Escaped -= OnBoxEscaped; BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; _source.CaretsChanged -= OnCaretsChanged; if (ReferenceEquals(Current, this)) Current = null; };
+        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.Escaped += OnBoxEscaped; BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; _source.CaretsChanged += OnCaretsChanged; BoxTextView.BlockMenuRequested += OnBlockMenu; Current = this; ShowCarets(); };
+        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.Escaped -= OnBoxEscaped; BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; _source.CaretsChanged -= OnCaretsChanged; BoxTextView.BlockMenuRequested -= OnBlockMenu; _hoverTimer.Stop(); if (ReferenceEquals(Current, this)) Current = null; };
     }
 
     /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
@@ -66,6 +66,7 @@ internal sealed partial class PageView : ThemedControl
     {
         if (BoxTextView.Focused is not null) Select(null);
         foreach (var f in _frames.Values) f.SetEditing(ReferenceEquals(BoxTextView.Focused, f.View) || f.View.LinkEditorOpen);
+        PlaceHandle(); RefreshRail();
     }
 
     private ScrollViewer? _scroll;
@@ -124,7 +125,7 @@ internal sealed partial class PageView : ThemedControl
                     foreach (var box in page.Boxes)
                         if (box.Field is not null && _views.ContainsKey(box.Field) && !_frames.ContainsKey(box.Field)) _surface.Children.Add(Box(box));
                 foreach (var v in _views.Values) v.OnPageChanged(tasksChanged);   // task lines are drawn again when a task changed
-                DrawPresence(); UpdateStrip(page);
+                DrawPresence(); UpdateStrip(page); RefreshRail();
                 ApplyGeometry(page);
                 UpdateInk(page);
                 UndoStateChanged?.Invoke();
@@ -266,6 +267,7 @@ internal sealed partial class PageView : ThemedControl
         _firstBox = page.Boxes.FirstOrDefault();
         var rank = page.Boxes.OrderBy(b => b.Z).Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
         foreach (var box in page.Boxes) { var el = Box(box); Canvas.SetZIndex(el, rank[box]); canvas.Children.Add(el); }
+        canvas.Children.Add(NewHandle());
         Grid.SetRow(canvas, 4);
         if (page.Rules != RuleLines.None) article.Children.Add(RuleLayer(page.Rules, surfaceH));
         var strip = TemplateStrip(page);
@@ -285,17 +287,18 @@ internal sealed partial class PageView : ThemedControl
         Grid.SetRow(sv, 1);
         root.Children.Add(sv);
 
-        // outline rail: 16x2 bars, 12 apart, current in accent (LOOK 4.5.4)
-        var outline = new StackPanel { Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 72, 20, 0), IsHitTestVisible = false };
-        for (var i = 0; i < 3; i++)
-            outline.Children.Add(new Border { Width = 16, Height = 2, Background = i == 0 ? B("Accent") : B("BorderStrong"), HorizontalAlignment = HorizontalAlignment.Right });
-        Grid.SetRow(outline, 1);
-        root.Children.Add(outline);
+        // outline rail: 16x2 bars, 12 apart, current in accent (LOOK 4.5.4); with three headings or more there is a bar per heading and a click opens "On this page"
+        var rail = OutlineRail();
+        Grid.SetRow(rail, 1);
+        root.Children.Add(rail);
         if (_tasksOpen && PageId is { } tasksPage)
         {
             var panel = new PageTasksPanel(_source, tasksPage, () => { _comments?.Cancel(false); _tasksOpen = false; Rebuild(); }) { Host = Host };
             if (_commentsTab) panel.Comments = CommentsFor(tasksPage);
-            panel.SwitchTab = comments => { if (!comments) _comments?.Cancel(false); _commentsTab = comments; Rebuild(); };
+            panel.SwitchTab = comments => { if (!comments) _comments?.Cancel(false); _commentsTab = comments; _linksTab = false; Rebuild(); };
+            panel.SwitchLinks = () => { _comments?.Cancel(false); _commentsTab = false; _linksTab = true; LinksFor(tasksPage); Rebuild(); };
+            if (_linksTab) panel.Links = LinksFor(tasksPage);
+            panel.LinkModel = LinksFor(tasksPage);
             panel.VerticalAlignment = VerticalAlignment.Stretch; Grid.SetColumn(panel, 1); Grid.SetRowSpan(panel, 2);
             root.Children.Add(panel);
         }
@@ -321,7 +324,7 @@ internal sealed partial class PageView : ThemedControl
     public void BeginComment(string threadId, string quote)
     {
         if (PageId is not { } id) return;
-        _tasksOpen = true; _commentsTab = true;
+        _tasksOpen = true; _commentsTab = true; _linksTab = false;
         CommentsFor(id).Begin(threadId, quote);
         Rebuild();
     }
@@ -336,7 +339,7 @@ internal sealed partial class PageView : ThemedControl
     private void ToggleComments()
     {
         if (_tasksOpen && _commentsTab) { _comments?.Cancel(false); _tasksOpen = false; }
-        else { _tasksOpen = true; _commentsTab = true; if (PageId is { } id) CommentsFor(id).Reload(); }
+        else { _tasksOpen = true; _commentsTab = true; _linksTab = false; if (PageId is { } id) CommentsFor(id).Reload(); }
         Rebuild();
     }
 
@@ -555,17 +558,18 @@ internal sealed partial class PageView : ThemedControl
         right.Children.Add(saved);
         var tasksBtn = Ui.IconButton("list-todo", 18, 32, 32, "Tasks on this page", 8);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(tasksBtn, "page-tasks-button");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(tasksBtn, _tasksOpen && !_commentsTab ? "panel=open" : "panel=closed");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(tasksBtn, _tasksOpen && !_commentsTab && !_linksTab ? "panel=open" : "panel=closed");
 
-        if (_tasksOpen && !_commentsTab) tasksBtn.Background = B("AccentSoft");
-        tasksBtn.Click += (_, _) => { if (_tasksOpen && !_commentsTab) { _tasksOpen = false; } else { _comments?.Cancel(false); _tasksOpen = true; _commentsTab = false; } Rebuild(); };
+        if (_tasksOpen && !_commentsTab && !_linksTab) tasksBtn.Background = B("AccentSoft");
+        tasksBtn.Click += (_, _) => { if (_tasksOpen && !_commentsTab && !_linksTab) { _tasksOpen = false; } else { _comments?.Cancel(false); _tasksOpen = true; _commentsTab = false; _linksTab = false; } Rebuild(); };
         right.Children.Add(WithBadge(tasksBtn, page.OpenTasks));
         var commentsBtn = Ui.IconButton("message-square", 18, 32, 32, "Comments", 8);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(commentsBtn, "page-comments-button");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(commentsBtn, (_tasksOpen && _commentsTab ? "panel=open" : "panel=closed") + ";open=" + page.Comments);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(commentsBtn, (_tasksOpen && _commentsTab && !_linksTab ? "panel=open" : "panel=closed") + ";open=" + page.Comments);
         if (_tasksOpen && _commentsTab) commentsBtn.Background = B("AccentSoft");
         commentsBtn.Click += (_, _) => ToggleComments();
         right.Children.Add(WithBadge(commentsBtn, page.Comments));
+        right.Children.Add(LinksButton());
 
         var share = new Button
         {
@@ -821,6 +825,7 @@ internal sealed partial class PageView : ThemedControl
 
     private void WireFrame(BoxFrame f)
     {
+        WireHandle(f);
         f.View.PageLinkOpened += id => PageOpened?.Invoke(id);
         f.View.TaskOpened = id => TaskOpened?.Invoke(id);
         // left empty: gone (after the event that left it is over)

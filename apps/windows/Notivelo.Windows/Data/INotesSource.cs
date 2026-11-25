@@ -330,6 +330,32 @@ public interface INotesSource
     void SetLocalCaret(string pageId, string boxId, int anchor, int head) { }
     void ClearLocalCaret(string pageId) { }
 
+    // ---- left4: saved task views and backlinks (the core's apple-left4 calls; online only) and bulk task edits (the server has no bulk route: these loop over the single calls) ----
+    /// <summary>The open workspace's saved task views as last read (the person's own and shared ones).</summary>
+    IReadOnlyList<SavedView> SavedViews => Array.Empty<SavedView>();
+    /// <summary>The source can keep saved views (a live account with the left4 core, or the sample).</summary>
+    bool CanSaveViews => false;
+    /// <summary>Read the saved views again (once per workspace unless <paramref name="force"/>); raises Changed when they arrive.</summary>
+    void LoadSavedViews(bool force = false) { }
+    Task<PageToolResult<SavedView>> CreateSavedView(string name, string queryJson, bool shared) => Task.FromResult(PageToolResult<SavedView>.Fail("Saved views aren't available here."));
+    /// <summary>Change a view's name, query or sharing (null: keep). Null result: done; else a sentence.</summary>
+    Task<string?> UpdateSavedView(string id, string? name = null, string? queryJson = null, bool? shared = null) => Task.FromResult<string?>("Saved views aren't available here.");
+    Task<string?> DeleteSavedView(string id) => Task.FromResult<string?>("Saved views aren't available here.");
+    /// <summary>Pages with a [[link]] to this page, newest edit first.</summary>
+    Task<PageToolResult<IReadOnlyList<BacklinkItem>>> LoadBacklinks(string pageId) => Task.FromResult(PageToolResult<IReadOnlyList<BacklinkItem>>.Fail("Backlinks aren't available here."));
+    /// <summary>The same change on several tasks (each shown at once, then sent). Returns the tasks as they were, for an Undo.</summary>
+    IReadOnlyList<(string Id, TaskPatch Undo)> BulkUpdateTasks(IReadOnlyList<string> ids, TaskPatch patch)
+    {
+        var was = new List<(string, TaskPatch)>();
+        foreach (var id in ids)
+        {
+            if (GetTaskDetail(id) is { } d) was.Add((id, TaskPatches.Undo(patch, d)));
+            UpdateTask(id, patch);
+        }
+        return was;
+    }
+    void BulkDeleteTasks(IReadOnlyList<string> ids) { foreach (var id in ids) DeleteTask(id); }
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

@@ -68,6 +68,10 @@ public sealed partial class ShellView : UserControl
             OpenSettings = () => { _overlay.CloseAll(); GoTo(AppRoute.Settings); },
             OpenSettingsAt = section => { _overlay.CloseAll(); _settings.Show(section); GoTo(AppRoute.Settings); },
             OpenShortcuts = () => ShortcutSheet.Show(_host!),
+            OpenSavedView = v => { _overlay.CloseAll(); _tasks.OpenSavedView(v); _taskView = TaskViewKind.All; _route = AppRoute.Tasks; Refresh(); },
+            NewTasksView = () => { _overlay.CloseAll(); _tasks.NewView(); _taskView = TaskViewKind.All; _route = AppRoute.Tasks; Refresh(); },
+            SaveTasksView = () => _tasks.SaveView(),
+            TasksState = () => _tasks.StateOf(TaskViewKind.All),
         };
         _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host; _calendar.Host = _host; _settings.Host = _host;
         KeyDown += OnShellKey;
@@ -95,9 +99,10 @@ public sealed partial class ShellView : UserControl
         _rail.RouteChanged += r => GoTo(r);
         _ribbon.Invoked += OnRibbon;
         _ribbon.TaskState = () => _tasks.State;
-        _ribbon.MenuRequested += (tip, anchor) => _tasks.ShowMenu(tip, anchor);
-        _tasks.StateChanged += () => _ribbon.Refresh();
+        _ribbon.MenuRequested += (tip, anchor) => { if (tip == "Saved views") _tasks.ShowSavedViews(anchor); else _tasks.ShowMenu(tip, anchor); };
+        _tasks.StateChanged += () => { _ribbon.Refresh(); if (_route == AppRoute.Tasks) _sidebar.Refresh(); };
         _ribbon.PageSettingChosen += OnPageSetting;
+        _ribbon.OutlineRequested += anchor => _page.ShowOutline(anchor);
         // the bell: the unread count on sign-in, when the window comes to the front and every minute
         Action activated = () => DispatcherQueue.TryEnqueue(() => _host.Inbox.Refresh(false));
         Loaded += (_, _) => { MainWindow.WindowActivated += activated; _inboxTimer.Start(); _host.Inbox.Refresh(false); };
@@ -199,6 +204,7 @@ public sealed partial class ShellView : UserControl
             case "Week" or "Month" when _route == AppRoute.Calendar: _calendar.SetWeek(tip == "Week"); _ribbon.Refresh(); break;
             case "Mine" or "Everyone" when _route == AppRoute.Calendar: _calendar.SetEveryone(tip == "Everyone"); _ribbon.Refresh(); break;
             case "Clear filters" when _route == AppRoute.Tasks: _tasks.ClearFilters(); break;
+            case "Save view" when _route == AppRoute.Tasks: _tasks.SaveView(); break;
             case "Back" when _route == AppRoute.Settings: GoTo(_before == AppRoute.Settings ? AppRoute.Notes : _before); break;
         }
     }

@@ -2,7 +2,9 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
-## Parity left (Windows, 2026-11-24; updated after left3)
+## Parity left (Windows, 2026-11-24; updated after left4)
+
+**Left4 (2026-11-25, `rewrite/windows-left4`) moved 5 more PARITY rows to ✓** (saved views, bulk select, outline, backlinks, toasts with Undo; the block menu and the task keyboard are partly done): see the left4 section below. The saved-view and backlink calls need the apple-left4 core (`NV_LEFT4`).
 
 **Left3 (2026-11-24, `rewrite/windows-left3`) moved 8 more PARITY rows to ✓** (live collaboration with carets, tables incl. merge/split, create workspace, rename/delete workspace, workspace settings, teams, tags, activity feed): see the left3 section below. Still left from this audit: toggle open/close and code copy/highlight (106), follow (95), table column width / header column / cell colours (no engine command), and everything else listed below that left3 does not name.
 
@@ -11,13 +13,13 @@ Audit of `docs/rewrite/PARITY.md` (Windows column) against `apps/windows` at 824
 **Most used no-server rows, in order** (core everyday flows first):
 
 1. ~~Task filters, sort, group, Team view, status filter (159, 156)~~ built (see above).
-2. Ribbon buttons that do nothing (53): ~~Clear formatting, Link to page, Divider, text colour~~ built; Page colour and Rule lines wait for a core call; Print, Outline, Table group, highlight colour left.
+2. Ribbon buttons that do nothing (53): ~~Clear formatting, Link to page, Divider, text colour~~ built; Page colour and Rule lines wait for a core call; Print, Table group, highlight colour left (~~Outline~~ built in left4).
 3. ~~Notification inbox and taskbar badge (179, 178)~~ built.
 4. ~~Table tools (105)~~ built in left3 (merge and split too); callout/toggle/code block (106) partly: toggle open/close and code copy/highlighting have no core call, they are view state (left3 did not build them).
 5. ~~Boxes: select, cut/copy/paste/duplicate/delete, context menu (93)~~ built (see the left batch below).
 6. ~~Cursors and presence (94)~~ built in left3 (other people's carets and selections with a name flag, ours sent); follow a collaborator (95) left: the core has no follow call (Apple has none either).
 7. ~~Save state indicator (96)~~ built (Saving, Saved, Offline, Offline — changes kept; "Connecting" shows as Offline).
-8. Task keyboard, bulk bar, inline rename, Undo on toasts (162, 163, 164, 60): `UpdateTask`, `SendTaskChanges`; client code.
+8. ~~Task keyboard (partly: J/K, X, 1-4, D, Ctrl+A, Esc), bulk bar, Undo on toasts~~ built in left4; inline rename (164) and the keys A, R/F2, S left (162).
 9. Opens offline from a cold start (222): open the shell from `CachedWorkspaces` / `CachedTree` / `CachedTasks` when `RestoreSession` fails with Network (today: signed-out screen with "Try again").
 10. ~~Share link (126), Delete account (34)~~ built.
 
@@ -44,8 +46,8 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 | Assignee menus grouped by team (160); recurrence Custom (165) | partly | `Teams`, `WorkspacePeople`; custom repeat editor, `DescribeRecurrence` |
 | Favourites (50) | partly: Recent only | device-local list, no server |
 | Trashed page opens read-only with Restore (84) | missing | `CachedTrashedPages`, `RestoreFromTrash`, `CanRestoreTask`, `RestoreTask`; read-only banner |
-| Page links: create page from link (112); outline (117) | partly: the `[[` menu works; the outline is static bars | `CreatePage`; headings from the page content |
-| Drag handle (114); multi-selection (115) | missing | handle view and line picks (engine `moveBlockUp/Down`); multi-range selection in the editor session |
+| Page links: create page from link (112); ~~outline (117)~~ | partly: the `[[` menu works; the outline is built (left4) | `CreatePage` |
+| Drag handle (114); multi-selection (115) | the block menu is built in left4 (handle, Ctrl+Shift+M, move, duplicate, delete, turn into); dragging a block and multi-selection are missing | handle view and line picks (engine `moveBlockUp/Down`); multi-range selection in the editor session |
 | Spellcheck (121) | missing: custom text view | Windows spell-check API; needs a check on a real PC |
 | Command palette commands (56); F6 regions (58); deep links (63); notebook templates picker (74); Privacy/Terms/Support in Settings > About (36); native window theme (255); import from OneNote link-out (232) | partly or missing | small UI work; protocol activation in `Package.appxmanifest` routing to `PageOpened`; title bar colours follow the theme; open the web importer in the browser |
 
@@ -64,11 +66,26 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 | Resend verification email (28); export my data (35); send feedback (67); error reporting (68) | resend-verification, `GET /me/export`, `POST /feedback`, `POST /client-errors` |
 | ~~Create workspace (47); rename/delete workspace (196); workspace settings General, Teams, Tags, Activity (195); activity feed (181)~~ | built in left3 |
 | ~~Templates (134-140)~~ | built in left2 (see the dated section). Was: core calls now exist (Apple, apple-left2-core.md). Built in the left batch: New page from template (section menu), Save as template, `{date}` and `{time}`. Left: the empty-page picker, the ribbon entry, per-section scope, rename and delete, the default per section | UI only |
-| Backlinks (113); full width, page colour, rule lines write (118, 119, 120) | `GET /pages/:id/backlinks`; a page-settings write on the live doc (colour and lines are shown, not changeable) |
-| Saved views (161); ~~tags rename/colour/delete (167); teams management (168)~~ (built in left3) | `/workspaces/:id/task-views` |
+| ~~Backlinks (113)~~ (built in left4); full width, page colour, rule lines write (118, 119, 120) | `GET /pages/:id/backlinks`; a page-settings write on the live doc (colour and lines are shown, not changeable) |
+| ~~Saved views (161)~~ (built in left4); ~~tags rename/colour/delete (167); teams management (168)~~ (built in left3) | `/workspaces/:id/task-views` |
 | Notification settings extras (180) | quiet hours, calendar feed link, test notification |
 | Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
 | Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
+
+## 2026-11-25: left4: saved views, bulk select, outline, backlinks, block menu (branch `rewrite/windows-left4`, from `rewrite/native` e80bfb9)
+
+Not merged, not pushed. Nothing was driven with input on this PC and nothing ran against a server; the UI tests (`Left4Tests.cs`) and look shots (`LookShots.cs`) are written for the CI runner and use the in-memory sample. Unit tests: 347 green (20 new, `Left4RulesTests.cs`, several over the real engine). Build x64 and the UI test project build.
+
+- **The core.** `rewrite/native` has no left4 core, so `crates/` was not touched and the live calls are behind a build switch: `Notivelo.Windows.csproj` defines `NV_LEFT4` when the generated bindings contain `CreateTaskView` (`NvLeft4`). `CoreNotesSource.Left4.cs` (saved views, backlinks) compiles only then. It was compiled and linked here against bindings built from `rewrite/apple-left4`'s `crates/` (a scratch copy, `-p:NvCoreDir=...`), not against a server. On this branch's own core those two features say "not available" on a live account; once `rewrite/apple-left4`'s core commits (`e44aa5f`, `96809de`) are merged in they light up with no code change. Outline and block moves need no new core call (below).
+- **Saved views (161).** `Data/SavedViews.cs` (`SavedViewRules`: the web's query JSON written and read as Apple's `ViewQuery` does, matching, names), `Views/SavedViewsUi.cs`. The Tasks ribbon's Saved views menu lists the views (tick on the one on screen, shared ones marked) with New view and "Save the filters as a viewâ¦"; **Save view** is enabled on All tasks once a filter, sort or group is set. The sidebar's VIEWS list has a row per view (open) and a "â¦" menu: Open, Rename, Update to the filters on screen, Share with the workspace / Only me (owners and admins), Delete. Opening a view puts its conditions on All tasks (kept on the device like the other view choices) and a "Saved view: name" line shows while they are exactly the view's. `INotesSource.SavedViews / LoadSavedViews / CreateSavedView / UpdateSavedView / DeleteSavedView`; `SampleNotesSource.Left4.cs` seeds two views.
+- **Bulk select (163) and the task keyboard (162, partly).** A Select button (`tasks-select`) beside the filter box, Ctrl-click and Shift-click on a row, or the keyboard: with the list focused (Tab, or the Select button) J/K or Down/Up move the row (Shift extends the pick), X or Space picks it, 1-4 set the priority, D opens the date menu, Enter opens the task, Ctrl+A picks all, Delete asks, Esc leaves. The bar at the bottom: Complete/Reopen, Date (today, tomorrow, next week, no date), Priority, Assign (me, unassigned, members), Delete (a confirm), Done. There is no bulk route on the server: the bar loops over `UpdateTask` / `DeleteTask`. Every change but Delete has **Undo on its toast** (`TaskPatches.Undo`). A, R/F2 and S of the web's list keys are not built; no "Move" (tasks have no move other than a new date).
+- **Undo on toasts (60).** `OverlayHost.Toast` and `ShellHost.Toast` take an Undo action (a button, 7 s); used by the bulk bar and by "Moved to the Trash" (restores from the Trash).
+- **Outline (117).** The page's headings are read from the boxes' editor sessions (`Text/BlockOps.cs` `OutlineRules`), so it works offline and with the sample. The ribbon's Outline button opens "On this page" under it (Check on the heading the caret is under, H1-H3 hints, indented by level); with three headings or more the bars at the right edge become one per heading (the current one in accent) and open the same list; a pick puts the caret at the start of the heading and scrolls to it (`PageView.JumpTo`). Fewer than three headings: the three quiet bars of the look reference. The core's `LivePage.Outline()` is not used (it adds nothing for open pages).
+- **Backlinks (113).** The page panel has a third tab, **Linked** (`page-tab-links`; the count in its label), and the top bar a link button with a badge; rows open the page (`Views/Backlinks.cs`).
+- **Block handle / menu (114, partly).** A grip beside the caret's block (or the block under the pointer in another box), `block-handle`, and **Ctrl+Shift+M** in a box (also "Block optionsâ¦" in the box's right-click menu) open the block menu: Move up, Move down (the engine's `moveBlockUp/Down`, as Alt+Shift+Up/Down), Duplicate, Delete, Turn into Text / Heading 1-3 / Bulleted / Numbered list / Quote / Code block. Edits are one undo step each. Checked over the real engine in unit tests; a duplicated list item goes in as plain text (the engine's html for a list item holds the whole list), and a task line can't be duplicated. **Not built: dragging a block** (the web's drop anywhere); the row stays â.
+- **Tree reorder.** Nothing left: drag, Move up/Move down and the notebook drag were built earlier (PARITY row 83 is â).
+- **PARITY ticks:** Toasts with Undo, Linked from (backlinks), Outline, Saved views, Bulk select. Not ticked: the keyboard row (A, R/F2, S missing), drag handle (no drag), inline rename.
+- **Unverified.** Everything on a real PC and server. The live saved-view and backlink calls (never run), the handle's placement beside a box at small X (it overlaps the box edge), Shift/Ctrl row clicks (they read the key state), the keyboard focus moving to the list after Select, Undo of a tree delete, and the guard against the page behind the handle making a box.
 
 ## 2026-11-24: left3: table merge/split, other people's carets, workspace/team/tag screens, activity (branch `rewrite/windows-left3`, from `rewrite/native` e9c98fb)
 

@@ -704,6 +704,7 @@ internal sealed partial class BoxTextView
                 case "z": DoUndoRedo(!shift); return true;
                 case "y": DoUndoRedo(false); return true;
                 case "k": if (!shift) { ShowLinkEditor(); return true; } break;
+                case "m": if (shift) { OpenBlockMenu(BlockOps.CaretLine(_r!.View)); return true; } break;
             }
         }
         if (name == "Enter" && !ctrl && !alt && !shift && _r!.Suggestion is null && SelectedMedia() is { Line: >= 0 } sm) { _ = OpenMediaAsync(sm.Line); return true; }
@@ -935,6 +936,8 @@ internal sealed partial class BoxTextView
         f.Items.Add(Item("Paste", () => _ = PasteAsync(false), true, "Ctrl+V"));
         f.Items.Add(new MenuFlyoutSeparator());
         f.Items.Add(Item("Select all", () => { _session.Key("Mod+a"); Render(); }, true, "Ctrl+A"));
+        f.Items.Add(new MenuFlyoutSeparator());
+        f.Items.Add(Item("Block options…", () => OpenBlockMenu(_r is { } rr ? BlockOps.CaretLine(rr.View) : -1), true, "Ctrl+Shift+M"));
         f.ShowAt(_root, new FlyoutShowOptions { Position = at });
     }
 

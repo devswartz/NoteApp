@@ -20,13 +20,13 @@ internal sealed partial class TasksView
     /// <summary>A filter, sort or group was chosen: the ribbon draws its pressed states again.</summary>
     public event Action? StateChanged;
 
-    public TaskViewState State
+    public TaskViewState State => StateOf(View);
+
+    /// <summary>The conditions of a view (kept per view on this device).</summary>
+    public TaskViewState StateOf(TaskViewKind kind)
     {
-        get
-        {
-            if (!_states.TryGetValue(View, out var s)) _states[View] = s = TaskViewState.FromJson(AppSettings.TaskView(View.ToString()));
-            return s;
-        }
+        if (!_states.TryGetValue(kind, out var s)) _states[kind] = s = TaskViewState.FromJson(AppSettings.TaskView(kind.ToString()));
+        return s;
     }
 
     private void Save() { AppSettings.SetTaskView(View.ToString(), State.ToJson()); StateChanged?.Invoke(); }
@@ -74,9 +74,17 @@ internal sealed partial class TasksView
             Grid.SetColumn(seg, 1);
             row.Children.Add(seg);
         }
+        if (View != TaskViewKind.Team)
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var sel = SelectButton();
+            Grid.SetColumn(sel, 2);
+            row.Children.Add(sel);
+        }
         col.Children.Add(row);
 
         var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        if (ViewChip() is { } chip) line.Children.Add(chip);
         _count = Ui.Text("", 13, B("TextMuted"));
         AutomationProperties.SetAutomationId(_count, "tasks-count");
         _summary = Ui.Text("", 13, B("TextMuted"));
@@ -110,6 +118,13 @@ internal sealed partial class TasksView
         else if (s.IsDefault) groups = _source.GetTaskGroups(View);
         else groups = Computed();
         var total = groups.Sum(g => g.Count);
+        _order = groups.SelectMany(g => g.Tasks).Select(t => t.Id).ToList();
+        _byId = new Dictionary<string, TaskItem>();
+        foreach (var t in groups.SelectMany(g => g.Tasks)) _byId.TryAdd(t.Id, t);
+        _rows.Clear();
+        _sel.Prune(_order);
+        if (team is not null && _sel.Active) _sel.Clear();
+        UpdateBulkBar();
         if (_count is not null)
         {
             var text = View == TaskViewKind.Team ? "" : $"{total} task{(total == 1 ? "" : "s")}";
