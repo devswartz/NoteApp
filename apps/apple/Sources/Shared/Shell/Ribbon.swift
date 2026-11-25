@@ -292,7 +292,7 @@ struct NoteRibbon: View {
         RibbonButton(icon: "rows-3", m: m, anchor: "rb-rule-lines") { shell.menu = .ruleLines }
         RibbonButton(icon: "printer", m: m) { shell.printPage(session) }
         RibbonSeparator(m: m)
-        RibbonButton(icon: "list-tree", m: m, pressed: true) { shell.notYet("Hiding the outline") }
+        RibbonButton(icon: "list-tree", m: m, pressed: !shell.outlineHidden) { shell.outlineHidden.toggle() }
         }
     }
 }

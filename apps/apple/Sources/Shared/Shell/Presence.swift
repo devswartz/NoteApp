@@ -79,10 +79,11 @@ struct PresenceStack: View {
 struct PresenceMenu: View {
     let palette: Palette
     let people: [PagePerson]
+    @Environment(Shell.self) private var shell
 
     var body: some View {
         let p = palette
-        MenuCard(palette: p, width: 270) {
+        MenuCard(palette: p, width: 330) {
             MenuLabel(palette: p, text: "On this page now")
             ForEach(people) { u in
                 HStack(spacing: 10) {
@@ -91,6 +92,18 @@ struct PresenceMenu: View {
                     Spacer(minLength: 8)
                     Text((u.canEdit ? "editing" : "viewing") + (u.sessions > 1 ? " · \(u.sessions) devices" : ""))
                         .font(.web(12)).foregroundStyle(p.textMuted.color)
+                    do {
+                        let following = CanvasNav.shared.following?.id == u.id
+                        Button {
+                            CanvasNav.shared.follow(u)
+                            shell.menu = nil
+                        } label: {
+                            Text(following ? "Following" : "Follow").font(.web(12, 500)).foregroundStyle(following ? p.accent.color : p.text2.color)
+                                .padding(.horizontal, 8).frame(height: 24)
+                                .background(following ? p.accentSoft.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                        .buttonStyle(PressStyle(radius: 6, pressed: p.bgPressed.color))
+                    }
                 }
                 .padding(.horizontal, 10).frame(minHeight: 32)
             }

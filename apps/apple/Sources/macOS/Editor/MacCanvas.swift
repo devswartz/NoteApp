@@ -228,6 +228,8 @@ final class MacCanvasView: NSView {
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(clipBoundsChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         center.addObserver(self, selector: #selector(magnified), name: NSScrollView.didEndLiveMagnifyNotification, object: scroll)
+        center.addObserver(self, selector: #selector(revealRequested(_:)), name: CanvasNav.revealNote, object: nil)
+        center.addObserver(self, selector: #selector(userScrolled), name: NSScrollView.willStartLiveScrollNotification, object: scroll)
         center.addObserver(self, selector: #selector(commentsChanged), name: CommentsModel.changed, object: nil)
         center.addObserver(self, selector: #selector(commentUnset(_:)), name: CommentsModel.unset, object: nil)
         EditorFocus.shared.onLink = { [weak self] in self?.showLinkEditor() }
@@ -1077,6 +1079,7 @@ final class MacCanvasView: NSView {
 
     private func setRemoteCursors(_ list: [BoxCursor]) {
         remoteCursorList = list
+        CanvasNav.shared.publish(list)
         for (id, view) in boxViews { view.remoteCursors = list.filter { $0.boxId == id } }
     }
 
@@ -1124,6 +1127,34 @@ final class MacCanvasView: NSView {
             beginEditing(view, at: nil, restoreSelection: true)
         } else {
             editing?.refocus()
+        }
+    }
+
+    // MARK: Going to a heading, following someone
+
+    @objc private func userScrolled() { CanvasNav.shared.userMoved() }
+
+    @objc private func revealRequested(_ note: Notification) {
+        guard let id = note.userInfo?["box"] as? String else { return }
+        reveal(boxId: id, offset: (note.userInfo?["offset"] as? UInt32).map { Int($0) }, caret: note.userInfo?["caret"] as? Bool ?? false,
+               onlyIfHidden: note.userInfo?["onlyIfHidden"] as? Bool ?? false)
+    }
+
+    /// Scroll to a box, or to the line at `offset` in it (view offset). `caret`: edit there. `onlyIfHidden`: leave it when it is in view.
+    func reveal(boxId: String, offset: Int?, caret: Bool, onlyIfHidden: Bool) {
+        guard let view = boxViews[boxId] else { return }
+        var local = view.bounds
+        if let offset { local = view.caretRect(at: offset).insetBy(dx: -4, dy: -10) }
+        let r = surface.convert(local, from: view)
+        let visible = scroll.contentView.bounds
+        if !(onlyIfHidden && visible.insetBy(dx: 0, dy: 60).contains(r)) {
+            let wanted = onlyIfHidden ? r.midY - visible.height / 2 : r.minY - 80
+            let bottom = max(0, surface.bounds.height - visible.height)
+            scroll.contentView.scroll(to: CGPoint(x: visible.minX, y: min(max(wanted, 0), bottom)))
+            scroll.reflectScrolledClipView(scroll.contentView)
+        }
+        if caret, host != nil, let offset {
+            beginEditing(view, at: nil) { [weak view] in view?.placeCaret(offset: offset) }
         }
     }
 

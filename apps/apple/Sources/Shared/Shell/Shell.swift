@@ -132,6 +132,10 @@ final class Shell {
     /// Favourite pages, kept on this device ("<account>|<workspace>" → page ids), and whether their sidebar group is open.
     var favourites: [String: [String]] = [:]
     var favouritesOpen = true
+    /// The page outline beside long pages is hidden (the ribbon's Outline button), kept on this device.
+    var outlineHidden = UserDefaults.standard.bool(forKey: "outlineHidden") {
+        didSet { UserDefaults.standard.set(outlineHidden, forKey: "outlineHidden") }
+    }
     /// The page canvas's zoom (View ▸ Zoom In / Out / Actual Size on the Mac).
     var zoom = 1.0
     /// Phone: the notes drawer is open.
@@ -163,6 +167,8 @@ final class Shell {
             case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
             case "templates": route = .page(LookData.pageId("empty"))
+            case "outline": route = .page(LookData.pageId("blocks"))
+            case "backlinks": route = .page(LookData.pageId("canvas-boxes"))
             case "empty-notebook": route = .notes
             case "page-not-found": route = .page(LookData.pageId("not-found"))
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools", "cursors": route = .page(LookData.pageId("sandbox"))

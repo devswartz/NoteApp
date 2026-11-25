@@ -682,6 +682,12 @@ final class MacBoxView: NSTextView, EditorTarget {
         selectByPlatform(lo: o, hi: o)
     }
 
+    /// Put the caret at a view offset of the text (the outline's "go to this heading").
+    func placeCaret(offset: Int) {
+        guard editor != nil else { return }
+        selectByPlatform(lo: offset, hi: offset)
+    }
+
     /// Put the caret at the end of the box.
     func placeCaretAtEnd() {
         selectByPlatform(lo: text.length, hi: text.length)

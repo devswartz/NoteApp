@@ -143,6 +143,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         PageHistory.shared.beginStep = { [weak self] in self?.beginHistoryStep() }
         surface.onReorder = { [weak self] in self?.ink.layout() }
         NotificationCenter.default.addObserver(self, selector: #selector(inkToolChanged), name: InkTool.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(revealRequested(_:)), name: CanvasNav.revealNote, object: nil)
         subLabel.numberOfLines = 1
         titleField.isScrollEnabled = false
         titleField.backgroundColor = .clear
@@ -494,6 +495,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { surface }
 
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) { updateToolbar() }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { CanvasNav.shared.userMoved() }
 
     // MARK: Editing
 
@@ -840,6 +842,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func setRemoteCursors(_ list: [BoxCursor]) {
         remoteCursorList = list
+        CanvasNav.shared.publish(list)
         for (id, view) in boxViews { view.remoteCursors = list.filter { $0.boxId == id } }
     }
 
@@ -907,6 +910,33 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         menu.place(anchor: convert(content.anchor, from: box), visible: visible)
         menu.isHidden = false
         bringSubviewToFront(menu)
+    }
+
+
+    // MARK: Going to a heading, following someone
+
+    @objc private func revealRequested(_ note: Notification) {
+        guard let id = note.userInfo?["box"] as? String else { return }
+        reveal(boxId: id, offset: (note.userInfo?["offset"] as? UInt32).map { Int($0) }, caret: note.userInfo?["caret"] as? Bool ?? false,
+               onlyIfHidden: note.userInfo?["onlyIfHidden"] as? Bool ?? false)
+    }
+
+    /// Scroll to a box, or to the line at `offset` in it (view offset). `caret`: edit there. `onlyIfHidden`: leave it when it is in view.
+    func reveal(boxId: String, offset: Int?, caret: Bool, onlyIfHidden: Bool) {
+        guard let view = boxViews[boxId] else { return }
+        var local = view.bounds
+        if let offset { local = view.caretRect(for: BoxTextPosition(offset)).insetBy(dx: -4, dy: -10) }
+        let r = convert(local, from: view)
+        let visible = CGRect(x: contentOffset.x, y: contentOffset.y, width: bounds.width, height: max(bounds.height - contentInset.bottom, 100))
+        if !(onlyIfHidden && visible.insetBy(dx: 0, dy: 60).contains(r)) {
+            let wanted = onlyIfHidden ? r.midY - visible.height / 2 : r.minY - 80
+            let top = -contentInset.top
+            let bottom = max(top, contentSize.height - bounds.height + contentInset.bottom)
+            setContentOffset(CGPoint(x: contentOffset.x, y: min(max(wanted, top), bottom)), animated: true)
+        }
+        if caret, host != nil, let offset {
+            beginEditing(view, at: nil) { [weak view] in view?.placeCaret(offset: offset) }
+        }
     }
 
     private func keepCaretVisible(_ box: BoxTextView) {

@@ -667,6 +667,13 @@ final class BoxTextView: UIView, UITextInput {
         selectByPlatform(BoxTextRange(p.offset, p.offset), notify: true)
     }
 
+    /// Put the caret at a view offset of the text (the outline's "go to this heading").
+    func placeCaret(offset: Int) {
+        guard editor != nil else { return }
+        let o = min(max(offset, 0), text.length)
+        selectByPlatform(BoxTextRange(o, o), notify: true)
+    }
+
     /// Put the caret at the end of the box.
     func placeCaretAtEnd() {
         selectByPlatform(BoxTextRange(text.length, text.length), notify: true)
