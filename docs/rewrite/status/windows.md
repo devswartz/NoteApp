@@ -74,7 +74,19 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 
 ## 2026-11-25: left4: saved views, bulk select, outline, backlinks, block menu (branch `rewrite/windows-left4`, from `rewrite/native` e80bfb9)
 
-Not merged, not pushed. Nothing was driven with input on this PC and nothing ran against a server; the UI tests (`Left4Tests.cs`) and look shots (`LookShots.cs`) are written for the CI runner and use the in-memory sample. Unit tests: 347 green (20 new, `Left4RulesTests.cs`, several over the real engine). Build x64 and the UI test project build.
+Not merged; pushed. Nothing was driven with input on this PC and nothing ran against a server; the UI tests use the in-memory sample.
+
+- **CI** (branch `rewrite/windows-left4`):
+  - 45566715787 on 39346e2: 5 failures.
+    - The new Undo toast re-parented its text (WinUI crash 0x800F1000). It took down the delete-page Trash test and two bulk-bar tests.
+    - The outline test typed before the box had the keyboard back.
+    - The block-move test didn't allow for the engine's trailing empty paragraph.
+  - All fixed in 0bf9fad. That commit also fixes a real bug: deleting a heading block turned the block below it into a heading.
+  - 45570318861 on 0bf9fad: green. Build x64 + arm64, 348 unit tests, 111 UI tests, look shots.
+- **Core:** `rewrite/native` (e80bfb9) does not have apple-left4's core calls yet: saved views and backlinks (e44aa5f, 96809de on `rewrite/apple-left4`).
+  - The app checks the generated bindings and builds in those calls (`NV_LEFT4` in the csproj) only when they are there.
+  - Until apple-left4 merges, saved views and backlinks answer "not available" on a live account; the offline sample has both.
+  - No change to `crates/` here.
 
 - **The core.** `rewrite/native` has no left4 core, so `crates/` was not touched and the live calls are behind a build switch: `Notivelo.Windows.csproj` defines `NV_LEFT4` when the generated bindings contain `CreateTaskView` (`NvLeft4`). `CoreNotesSource.Left4.cs` (saved views, backlinks) compiles only then. It was compiled and linked here against bindings built from `rewrite/apple-left4`'s `crates/` (a scratch copy, `-p:NvCoreDir=...`), not against a server. On this branch's own core those two features say "not available" on a live account; once `rewrite/apple-left4`'s core commits (`e44aa5f`, `96809de`) are merged in they light up with no code change. Outline and block moves need no new core call (below).
 - **Saved views (161).** `Data/SavedViews.cs` (`SavedViewRules`: the web's query JSON written and read as Apple's `ViewQuery` does, matching, names), `Views/SavedViewsUi.cs`. The Tasks ribbon's Saved views menu lists the views (tick on the one on screen, shared ones marked) with New view and "Save the filters as a viewâ¦"; **Save view** is enabled on All tasks once a filter, sort or group is set. The sidebar's VIEWS list has a row per view (open) and a "â¦" menu: Open, Rename, Update to the filters on screen, Share with the workspace / Only me (owners and admins), Delete. Opening a view puts its conditions on All tasks (kept on the device like the other view choices) and a "Saved view: name" line shows while they are exactly the view's. `INotesSource.SavedViews / LoadSavedViews / CreateSavedView / UpdateSavedView / DeleteSavedView`; `SampleNotesSource.Left4.cs` seeds two views.
