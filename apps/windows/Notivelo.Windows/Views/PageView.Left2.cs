@@ -26,6 +26,15 @@ internal sealed partial class PageView
         return _presence;
     }
 
+    private void OnCaretsChanged() => DispatcherQueue?.TryEnqueue(ShowCarets);
+
+    /// <summary>Hand each box the carets of other people that sit in it (the core's remote cursors, polled with the presence; the sample has a fake viewer).</summary>
+    private void ShowCarets()
+    {
+        var all = PageId is null ? Array.Empty<RemoteCaret>() : _source.RemoteCarets(PageId);
+        foreach (var v in _views.Values) v.SetRemoteCarets(v.BoxId is null ? Array.Empty<RemoteCaret>() : all.Where(c => c.BoxId == v.BoxId).ToList());
+    }
+
     private IReadOnlyList<PagePerson> People => PageId is null ? Array.Empty<PagePerson>() : _source.PagePeople(PageId);
 
     private void DrawPresence()

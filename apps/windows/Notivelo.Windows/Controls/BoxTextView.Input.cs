@@ -136,6 +136,7 @@ internal sealed partial class BoxTextView
         HideMenu();
         Render();
         _canvas.Invalidate();
+        ClearLocalCaret();
         if (Focused == this) { Focused = null; FocusedStateChanged?.Invoke(); }
     }
 
@@ -190,6 +191,7 @@ internal sealed partial class BoxTextView
     private void AfterRender(N.ViewRender? prev, N.ViewRender next)
     {
         if (_focused) ResetBlink();
+        if (_focused) SendLocalCaret(next);
         UpdateMenu();
         UpdateFloatingBar();
         if (_focused || ReferenceEquals(Focused, this)) FocusedStateChanged?.Invoke();

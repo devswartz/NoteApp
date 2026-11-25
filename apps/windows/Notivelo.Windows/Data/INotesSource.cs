@@ -304,6 +304,32 @@ public interface INotesSource
     /// <summary>Snooze with a push's token (the core's <c>SnoozeReminder</c>; no session needed). Null: done; else a sentence.</summary>
     Task<string?> SnoozeReminder(string snoozeToken, string option) => Task.FromResult<string?>("Not available.");
 
+    // ---- left3: workspaces, teams, tags, activity and other people's carets (the core's apple-left3 calls; online only: offline the core calls answer a sentence and change nothing) ----
+    Task<string?> CreateWorkspace(string name) => Task.FromResult<string?>("Not available.");
+    /// <summary>Rename the open workspace (owners and admins).</summary>
+    Task<string?> RenameWorkspace(string name) => Task.FromResult<string?>("Not available.");
+    /// <summary>Delete the open workspace and everything in it (owners only); the source then shows another one.</summary>
+    Task<string?> DeleteWorkspace() => Task.FromResult<string?>("Not available.");
+    Task<PageToolResult<IReadOnlyList<TeamDetail>>> LoadTeams() => Task.FromResult(PageToolResult<IReadOnlyList<TeamDetail>>.Fail("Not available."));
+    Task<string?> CreateTeam(string name, string? parentId) => Task.FromResult<string?>("Not available.");
+    Task<string?> RenameTeam(string teamId, string name) => Task.FromResult<string?>("Not available.");
+    Task<string?> DeleteTeam(string teamId) => Task.FromResult<string?>("Not available.");
+    Task<string?> SetTeamMembers(string teamId, IReadOnlyList<string> userIds) => Task.FromResult<string?>("Not available.");
+    Task<PageToolResult<IReadOnlyList<TagInfo>>> LoadTags() => Task.FromResult(PageToolResult<IReadOnlyList<TagInfo>>.Fail("Not available."));
+    Task<string?> RenameTag(string tagId, string name) => Task.FromResult<string?>("Not available.");
+    Task<string?> RecolorTag(string tagId, string color) => Task.FromResult<string?>("Not available.");
+    Task<string?> DeleteTag(string tagId) => Task.FromResult<string?>("Not available.");
+    /// <summary>The open workspace's activity, newest first; <paramref name="before"/> is the id of the oldest entry you have (the next older page); empty: the end.</summary>
+    Task<PageToolResult<IReadOnlyList<ActivityItem>>> LoadActivity(long? before) => Task.FromResult(PageToolResult<IReadOnlyList<ActivityItem>>.Fail("Not available."));
+
+    /// <summary>Other people's carets and selections on the open page (polled with the presence).</summary>
+    IReadOnlyList<RemoteCaret> RemoteCarets(string pageId) => Array.Empty<RemoteCaret>();
+    /// <summary>Raised on any thread when <see cref="RemoteCarets"/> changed.</summary>
+    event Action? CaretsChanged { add { } remove { } }
+    /// <summary>Our caret in a box for the others' screens (view offsets); sent off the UI thread, at most every 100 ms.</summary>
+    void SetLocalCaret(string pageId, string boxId, int anchor, int head) { }
+    void ClearLocalCaret(string pageId) { }
+
     TaskCounts GetTaskCounts();
     TodayStats GetTodayStats();
     string TasksSubtitle(TaskViewKind view);

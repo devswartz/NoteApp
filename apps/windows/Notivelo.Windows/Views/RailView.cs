@@ -84,9 +84,12 @@ internal sealed class RailView : ThemedControl
                 var id = w.Id;
                 items.Add(new MenuEntry(w.Name, id == _source.CurrentWorkspaceId ? "check" : null, () => WorkspaceSelected?.Invoke(id), Hint: w.Role));
             }
+            if (items.Count > 0) items.Add(MenuEntry.Sep());
+            items.Add(new MenuEntry("New workspace", "plus", () => { if (Host is { } hh) SettingsView.NewWorkspace(hh); }, Id: "menu-new-workspace"));
+            items.Add(new MenuEntry("Workspace settings", "settings", () => Host?.OpenSettingsAt("ws-general"), Id: "menu-workspace-settings"));
+            items.Add(new MenuEntry("Activity", "activity", () => Host?.OpenSettingsAt("ws-activity"), Id: "menu-activity"));
             if (_source.CanEditTree)
             {
-                if (items.Count > 0) items.Add(MenuEntry.Sep());
                 items.Add(new MenuEntry("Members", "users", () => { if (Host is { } hh) PeopleDialogs.Members(hh); }, Id: "menu-members"));
                 items.Add(new MenuEntry("Join with invite link", "link-2", () => { if (Host is { } hh) PeopleDialogs.JoinInvite(hh); }, Id: "menu-join-invite"));
                 items.Add(new MenuEntry("Trash", "trash", () => Host?.OpenTrash()));

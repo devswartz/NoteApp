@@ -4,6 +4,9 @@ namespace Notivelo.Windows.Text;
 
 /// <summary>What the line table doesn't say (callout emoji, code language, toggle state, table shape), read from the box's
 /// <c>doc_json</c> in document order until the editor puts it on the lines (requests R4 and R5 in status/windows.md).</summary>
+/// <summary>A cell's spans and its colour (the cell's <c>background</c> attribute, null for none).</summary>
+public sealed record CellSpan(int ColSpan, int RowSpan, string? Background = null);
+
 public sealed class DocInfo
 {
     public List<string> CalloutEmoji { get; } = new();
@@ -13,7 +16,8 @@ public sealed class DocInfo
     public List<bool> DetailsOpen { get; } = new();
     /// <summary>Per table: its rows, each a list with the number of lines every cell holds.</summary>
     public List<List<List<int>>> Tables { get; } = new();
-
+    /// <summary>Per table, per row, per cell: (colspan, rowspan, header fill), 1 and 1 for a plain cell. A merged cell spans several grid slots.</summary>
+    public List<List<List<CellSpan>>> TableSpans { get; } = new();
     public static DocInfo Parse(string docJson)
     {
         var d = new DocInfo();
@@ -36,6 +40,8 @@ public sealed class DocInfo
             ? v.ValueKind switch { JsonValueKind.String => v.GetString(), JsonValueKind.True => "true", JsonValueKind.False => "false", JsonValueKind.Null => null, _ => v.ToString() }
             : null;
 
+    private static int Num(JsonElement e, string name) => int.TryParse(Attr(e, name), out var n) && n > 1 ? n : 1;
+
     private static void Walk(JsonElement e, DocInfo d)
     {
         switch (Type(e))
@@ -45,6 +51,7 @@ public sealed class DocInfo
             case "details": d.DetailsOpen.Add(Attr(e, "open") == "true"); break;
             case "table":
                 d.Tables.Add(Kids(e).Where(r => Type(r) == "tableRow").Select(r => Kids(r).Select(LineCount).ToList()).ToList());
+                d.TableSpans.Add(Kids(e).Where(r => Type(r) == "tableRow").Select(r => Kids(r).Select(c => new CellSpan(Num(c, "colspan"), Num(c, "rowspan"), Attr(c, "background"))).ToList()).ToList());
                 break;
         }
         foreach (var k in Kids(e)) Walk(k, d);

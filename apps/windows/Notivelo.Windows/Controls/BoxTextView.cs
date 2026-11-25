@@ -256,7 +256,7 @@ internal sealed partial class BoxTextView : UserControl
         var lines = r.View.Lines;
         var text = r.View.Text;
         var doc = DocInfo.Parse(SafeDoc());
-        var tables = TableMap.Find(lines, doc.Tables);
+        var tables = TableMap.Find(lines, doc.Tables, doc.TableSpans);
         var cellOf = new Dictionary<int, TableCell>();
         foreach (var t in tables) foreach (var c in t.Cells) cellOf[c.Line] = c;
         var tableAt = tables.ToDictionary(t => t.FirstLine);
@@ -646,7 +646,7 @@ internal sealed partial class BoxTextView : UserControl
         return g;
     }
 
-    /// <summary>A table as a unit: equal columns, a row as tall as its tallest cell, header row shaded.</summary>
+    /// <summary>A table as a unit: equal columns, a row as tall as its tallest cell, header row shaded. A merged cell (colspan, rowspan) covers its slots.</summary>
     private double LayoutTable(TableLayoutInfo tbl, double y, string text)
     {
         var dev = CanvasDevice.GetSharedDevice();
@@ -656,16 +656,18 @@ internal sealed partial class BoxTextView : UserControl
         var rowH = new double[tbl.Rows];
         var cellH = new Dictionary<(int, int), double>();
         var perCell = new Dictionary<(int, int), List<LineBox>>();
+        var spanOf = new Dictionary<(int, int), TableCell>();
         foreach (var c in tbl.Cells)
         {
             var line = lines[c.Line];
             var lb = _boxes[c.Line];
             var m = Metrics.Of(line);
             lb.M = m;
-            var cw = colW - 2 * Metrics.CellPadX;
+            var cw = colW * c.ColSpan - 2 * Metrics.CellPadX;
             lb.X = c.Col * colW + Metrics.CellPadX; lb.W = cw;
             if (line.IsText) BuildText(lb, text, dev, cw, new DocInfo()); else { lb.H = LineMetrics.BasePitch; }
             var key = (c.Row, c.Col);
+            spanOf.TryAdd(key, c);
             if (!perCell.TryGetValue(key, out var lst)) perCell[key] = lst = new List<LineBox>();
             lst.Add(lb);
         }
@@ -673,16 +675,26 @@ internal sealed partial class BoxTextView : UserControl
         {
             var h = lst.Sum(b => b.H) + 2 * Metrics.CellPadY;
             cellH[key] = h;
-            rowH[key.Item1] = Math.Max(rowH[key.Item1], h);
+            if (spanOf[key].RowSpan <= 1) rowH[key.Item1] = Math.Max(rowH[key.Item1], h);
         }
-        var top = y;
+        // a cell that spans rows needs the rows together to be tall enough: the last row it covers takes the difference
+        foreach (var (key, h) in cellH)
+        {
+            var rs = Math.Min(spanOf[key].RowSpan, tbl.Rows - key.Item1);
+            if (rs <= 1) continue;
+            var have = 0.0;
+            for (var r = key.Item1; r < key.Item1 + rs; r++) have += rowH[r] == 0 ? LineMetrics.BasePitch + 12 : rowH[r];
+            if (have < h) rowH[key.Item1 + rs - 1] += h - have;
+        }
         var rowY = new double[tbl.Rows];
         var acc = y;
         for (var r = 0; r < tbl.Rows; r++) { rowY[r] = acc; acc += rowH[r] == 0 ? LineMetrics.BasePitch + 12 : rowH[r]; }
-        foreach (var c in tbl.Cells.GroupBy(c => (c.Row, c.Col)).Select(g => g.First()))
+        foreach (var (key, c) in spanOf)
         {
+            var rs = Math.Max(1, Math.Min(c.RowSpan, tbl.Rows - c.Row));
+            var bottom = c.Row + rs < tbl.Rows ? rowY[c.Row + rs] : acc;
             var header = tbl.Cells.Any(k => k.Row == c.Row && k.Col == c.Col && k.Header);
-            _decos.Add(new Deco(DecoKind.TableCell, new Rect(c.Col * colW, rowY[c.Row], colW, rowH[c.Row] == 0 ? LineMetrics.BasePitch + 12 : rowH[c.Row]), null, header ? 1 : 0));
+            _decos.Add(new Deco(DecoKind.TableCell, new Rect(c.Col * colW, rowY[c.Row], colW * c.ColSpan, bottom - rowY[c.Row]), c.Background, header ? 1 : 0));
         }
         foreach (var ((row, col), lst) in perCell)
         {
@@ -744,6 +756,7 @@ internal sealed partial class BoxTextView : UserControl
                 case DecoKind.TableCell:
                 {
                     if (d.Flag == 1) ds.FillRectangle(d.Rect, C("BgSubtle"));
+                    if (d.Text is { Length: 7 } fill && fill[0] == '#') ds.FillRectangle(d.Rect, Alpha(Hex(fill), 0.28));   // a coloured cell (the web's cell background)
                     ds.DrawRectangle(Inset(new Rect(d.Rect.X, d.Rect.Y, d.Rect.Width + 1, d.Rect.Height + 1), 0.5), border, 1);
                     break;
                 }
@@ -828,6 +841,7 @@ internal sealed partial class BoxTextView : UserControl
 
         DrawIme(ds, r);
         if (ShowSelection || (_focused && _caretOn)) DrawCaret(ds, r);
+        DrawRemoteCarets(ds, r);
     }
 
     private static Rect Inset(Rect r, double d) => new(r.X + d, r.Y + d, Math.Max(0, r.Width - 2 * d), Math.Max(0, r.Height - 2 * d));
@@ -965,7 +979,12 @@ internal sealed partial class BoxTextView : UserControl
         var sel = r.View.Selection;
         if (sel.Anchor == sel.Head) return;
         int a = (int)Math.Min(sel.Anchor, sel.Head), e = (int)Math.Max(sel.Anchor, sel.Head);
-        var fill = C("AccentSoft");   // LOOK 4.4: ::selection is --accent-soft (accent at 10 %, 15 % dark), text colour unchanged
+        DrawRange(ds, a, e, C("AccentSoft"));   // LOOK 4.4: ::selection is --accent-soft (accent at 10 %, 15 % dark), text colour unchanged
+    }
+
+    /// <summary>Fill the view range [a, e) with a colour, line by line (our selection, and other people's).</summary>
+    private void DrawRange(CanvasDrawingSession ds, int a, int e, Color fill)
+    {
         foreach (var b in _boxes)
         {
             if (b.Hidden) continue;
@@ -995,17 +1014,19 @@ internal sealed partial class BoxTextView : UserControl
     {
         var sel = r.View.Selection;
         if (sel.Anchor != sel.Head) return;
-        var (li, col) = RunMap.ToLine(r.View.Lines, (int)sel.Head);
-        if (li < 0 || li >= _boxes.Count) return;
+        if (CaretAt(r, (int)sel.Head) is not { } c) return;
+        ds.FillRectangle(new Rect(c.X - 0.75, c.Y + 2, 1.5, Math.Max(c.H - 4, 10)), C("Text"));
+    }
+
+    /// <summary>Where a caret at a view offset is drawn: x, top of the line, line height (null when that line is hidden).</summary>
+    private (double X, double Y, double H)? CaretAt(N.ViewRender r, int offset)
+    {
+        var (li, col) = RunMap.ToLine(r.View.Lines, offset);
+        if (li < 0 || li >= _boxes.Count) return null;
         var b = _boxes[li];
-        if (b.Hidden) return;
-        double x, y, h;
-        if (b.Text is null) { x = b.X; y = b.Y; h = Math.Max(1, b.H); }
-        else
-        {
-            var cp = b.Text.GetCaretPosition(col, false);
-            x = b.X + cp.X; y = b.Y + cp.Y; h = b.M.Pitch;
-        }
-        ds.FillRectangle(new Rect(x - 0.75, y + 2, 1.5, Math.Max(h - 4, 10)), C("Text"));
+        if (b.Hidden) return null;
+        if (b.Text is null) return (b.X, b.Y, Math.Max(1, b.H));
+        var cp = b.Text.GetCaretPosition(col, false);
+        return (b.X + cp.X, b.Y + cp.Y, b.M.Pitch);
     }
 }

@@ -6,9 +6,10 @@ public sealed partial class SampleNotesSource : INotesSource
     public event EventHandler? Changed;
 
     public Workspace Workspace { get; private set; } = new("Workspace", "D", "DU", "Demo User", "demo@example.com");
-    public IReadOnlyList<WorkspaceInfo> Workspaces { get; } = new WorkspaceInfo[] { new("sample", "Workspace", "owner") };
-    public string? CurrentWorkspaceId => "sample";
-    public void SelectWorkspace(string id) { }
+    public IReadOnlyList<WorkspaceInfo> Workspaces { get; private set; } = new WorkspaceInfo[] { new("sample", "Workspace", "owner") };
+    private string _wsId = "sample";
+    public string? CurrentWorkspaceId => _wsId;
+    public void SelectWorkspace(string id) { if (Workspaces.Any(w => w.Id == id)) { _wsId = id; var w = Workspaces.First(x => x.Id == id); Workspace = Workspace with { Name = w.Name, Initial = w.Name[..1].ToUpperInvariant() }; Changed?.Invoke(this, EventArgs.Empty); } }
     private string? _nb;
     public string? CurrentNotebookId => Notebooks.Any(n => n.Id == _nb) ? _nb : Notebooks.Count > 0 ? Notebooks[0].Id : null;
     public void SelectNotebook(string id) { _nb = id; Changed?.Invoke(this, EventArgs.Empty); }
