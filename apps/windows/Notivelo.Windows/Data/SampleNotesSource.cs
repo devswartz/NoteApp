@@ -215,7 +215,12 @@ public sealed partial class SampleNotesSource : INotesSource
         if (pageId is not null) OnPage(pageId).Add(id);
         Log($"create {id} {title}");
     }
-    public void DeleteTask(string id) { if (Offline) { _made.Remove(id); Log($"delete {id}"); } }
+    public void DeleteTask(string id)
+    {
+        var gone = RemoveTask(id);
+        if (Offline) Log($"delete {id}");
+        if (gone) { _tasksVersion++; Raise(); }
+    }
     public IReadOnlyList<(string Id, string Title, string Crumb)> SearchPages(string query, int max) =>
         Notebooks.SelectMany(n => n.Sections.SelectMany(s => s.Pages.Select(p => (p.Id, p.Title, Crumb: n.Name + " \u203A " + s.Name))))
             .Where(p => query.Length == 0 || p.Title.Contains(query, StringComparison.OrdinalIgnoreCase)).Take(max).ToList();

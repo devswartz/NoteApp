@@ -212,7 +212,7 @@ internal sealed class RibbonView : ThemedControl
             }),
             new("Table", new Item[] { new("between-horizontal-end", "Add row", true), new("between-vertical-end", "Add column", true), new("table", "Table tools", true, Menu: true) }),
             new("Page", new Item[] { new("paint-bucket", "Page colour", Menu: false), new("rows-3", "Rule lines"), new("layout-template", "Templates"), new("printer", "Print") }),
-            new("View", new Item[] { new("list-tree", "Outline", Pressed: true) }),
+            new("View", new Item[] { new("list-tree", "Outline", Word: "Outline") }),
         },
     };
 
@@ -224,6 +224,9 @@ internal sealed class RibbonView : ThemedControl
 
     /// <summary>Page colour or Rule lines was picked (the setting and its value: none/yellow/..., none/lines/grid).</summary>
     public event Action<string, string>? PageSettingChosen;
+
+    /// <summary>The Outline button was pressed (the button, to open the heading list under).</summary>
+    public event Action<FrameworkElement>? OutlineRequested;
 
     private Group[] TasksGroups()
     {
@@ -249,7 +252,7 @@ internal sealed class RibbonView : ThemedControl
                 new("flag", "Priority", Menu: true, Pressed: On("priority")), new("sliders-horizontal", "More filters", Menu: true, Pressed: On("due") || On("source")),
                 new("funnel-x", "Clear filters", st is null || !st.AnyFilter),
             }),
-            new("Views", new Item[] { new("bookmark", "Saved views", Menu: true), new("bookmark-plus", "Save view", true) }),
+            new("Views", new Item[] { new("bookmark", "Saved views", Menu: true), new("bookmark-plus", "Save view", !(TaskView == TaskViewKind.All && st is { IsDefault: false }), Word: "Save view") }),
             new("Print", new Item[] { new("printer", "Print") }),
         };
     }
@@ -429,8 +432,9 @@ internal sealed class RibbonView : ThemedControl
             var tip = it.Tip;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(tip));
             if (tip == "Draw") { b.AllowFocusOnInteraction = false; b.IsTabStop = false; b.Click += (_, _) => InkTool.Shared.ToggleBar(); }
+            else if (tip == "Outline" && Route == AppRoute.Notes) { b.AllowFocusOnInteraction = false; b.IsTabStop = false; b.Click += (_, _) => OutlineRequested?.Invoke(b); }
             else if (Route == AppRoute.Notes && tip is "Page colour" or "Rule lines") ((Button)b).Flyout = PageMenu(tip);
-            else if (it.Menu && Route == AppRoute.Tasks && tip != "Saved views") b.Click += (_, _) => MenuRequested?.Invoke(tip, b);
+            else if (it.Menu && Route == AppRoute.Tasks) b.Click += (_, _) => MenuRequested?.Invoke(tip, b);
             else b.Click += (_, _) => Invoked?.Invoke(tip);
         }
         return b;

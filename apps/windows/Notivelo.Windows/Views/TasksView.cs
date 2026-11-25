@@ -15,9 +15,15 @@ internal sealed partial class TasksView : ThemedControl
     public TaskViewKind View { get; private set; } = TaskViewKind.Today;
     internal ShellHost? Host { get; set; }
 
-    public TasksView(INotesSource source) => _source = source;
+    public TasksView(INotesSource source)
+    {
+        _source = source;
+        // the list keeps the keyboard for bulk selecting (Down/Up, Space, Shift, Ctrl+A, Esc): the view itself is the focus stop, so a rebuild never loses it
+        IsTabStop = true; UseSystemFocusVisuals = false;
+        KeyDown += OnTasksKey;
+    }
 
-    public void SetView(TaskViewKind v) { View = v; EnsureTeams(); Rebuild(); }
+    public void SetView(TaskViewKind v) { View = v; EnsureTeams(); _source.LoadSavedViews(); Rebuild(); }
 
     private static string Title(TaskViewKind v) => v switch
     {
@@ -37,6 +43,7 @@ internal sealed partial class TasksView : ThemedControl
         root.Children.Add(sub);
         if (View == TaskViewKind.Today) root.Children.Add(StatsCard());
 
+        _bulkHost = new Border { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(16, 0, 16, 18), Visibility = Visibility.Collapsed };
         root.Children.Add(ControlsRow());
         _list = new StackPanel();
         root.Children.Add(_list);
@@ -50,7 +57,13 @@ internal sealed partial class TasksView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(add, "tasks-add-task");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(add, "Add task");
         root.Children.Add(add);
-        return new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var sv = new ScrollViewer { Content = root, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        _scrollView = sv;
+        var frame = new Grid();
+        frame.Children.Add(sv);
+        frame.Children.Add(_bulkHost);
+        UpdateBulkBar();
+        return frame;
     }
 
     /// <summary>LOOK 4.14: Today has the sun and "You're all caught up"; the others a muted line.</summary>
@@ -129,24 +142,45 @@ internal sealed partial class TasksView : ThemedControl
     private UIElement Row(TaskItem t)
     {
         var normal = new SolidColorBrush(Colors.Transparent);
+        var picked = _sel.Contains(t.Id);
+        var cursor = _sel.Active && _sel.Cursor == t.Id;
+        var rest = picked ? B("AccentSoft") : normal;
         var row = new Grid
         {
-            Padding = new Thickness(12, 11, 12, 11), ColumnSpacing = 10, Background = normal,
-            BorderBrush = B("Border"), BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(12, 11, 12, 11), ColumnSpacing = 10, Background = rest,
+            BorderBrush = cursor ? B("Accent") : B("Border"), BorderThickness = cursor ? new Thickness(2, 0, 0, 1) : new Thickness(0, 0, 0, 1),
         };
+        var o = _sel.Active ? 1 : 0;   // a check box column while tasks are being selected
+        if (o == 1) row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var sub = B("BgSubtle");
-        row.PointerEntered += (_, _) => row.Background = sub;
-        row.PointerExited += (_, _) => row.Background = normal;
+        row.PointerEntered += (_, _) => { if (!picked) row.Background = sub; };
+        row.PointerExited += (_, _) => row.Background = rest;
 
-        // the check circle ticks the task (written through the core's update_task); a click elsewhere on the row opens the detail sheet
+        if (o == 1)
+        {
+            var box = new Button
+            {
+                Style = Ui.Style("GhostButtonStyle"), Width = 26, Height = 26, Padding = new Thickness(0), CornerRadius = new CornerRadius(6), VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(-4, -3, 0, 0), Content = CheckBox(picked),
+            };
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(box, "task-select-" + t.Id);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(box, (picked ? "Deselect: " : "Select: ") + t.Title);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(box, picked ? "selected=1" : "selected=0");
+            box.Tapped += (_, e) => e.Handled = true;
+            box.Click += (_, _) => { _sel.Toggle(t.Id); RefreshSelection(); };
+            row.Children.Add(box);
+        }
+
+        // the check circle ticks the task (written through the core's update_task); a click elsewhere on the row opens the detail sheet (or, while selecting, picks it)
         var circle = new Button
         {
             Style = Ui.Style("GhostButtonStyle"), Width = 26, Height = 26, Padding = new Thickness(0), CornerRadius = new CornerRadius(13), VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(-4, -3, 0, 0), Content = TaskParts.Circle(B, t.Priority, t.Done),
         };
+        Grid.SetColumn(circle, o);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(circle, "task-circle-" + t.Id);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(circle, (t.Done ? "Mark not done: " : "Mark done: ") + t.Title);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(circle, t.Done ? "done=1" : "done=0");
@@ -154,6 +188,10 @@ internal sealed partial class TasksView : ThemedControl
         circle.Click += (_, _) => _source.UpdateTask(t.Id, new TaskPatch(Done: !t.Done));
         row.Children.Add(circle);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "task-row-" + t.Id);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, t.Title);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(row, picked ? "selected=1" : "selected=0");
+        row.Tapped += (_, _) => RowTapped(t.Id);
+        _rows[t.Id] = row;
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, t.Title);
         row.Tapped += (_, _) => Host?.OpenTask(t.Id);
 
@@ -177,7 +215,7 @@ internal sealed partial class TasksView : ThemedControl
         if (t.PageTitle is not null) meta.Children.Add(TaskParts.IconText("file-text", 13, t.PageTitle, 12, B("TextMuted"), B("TextMuted")));
         if (t.Team is not null) meta.Children.Add(TaskParts.IconText("users-round", 13, t.Team, 12, Ui.Hex("#0ea5e9"), B("TextMuted")));
         body.Children.Add(meta);
-        Grid.SetColumn(body, 1);
+        Grid.SetColumn(body, o + 1);
         row.Children.Add(body);
 
         if (t.Assignee is not null)
@@ -185,7 +223,7 @@ internal sealed partial class TasksView : ThemedControl
             var av = Ui.Avatar(t.Assignee, 20);
             av.VerticalAlignment = VerticalAlignment.Top;
             av.Margin = new Thickness(0, 2, 0, 0);
-            Grid.SetColumn(av, 2);
+            Grid.SetColumn(av, o + 2);
             row.Children.Add(av);
         }
         return row;

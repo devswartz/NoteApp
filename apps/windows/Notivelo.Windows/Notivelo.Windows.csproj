@@ -29,6 +29,15 @@
     <NvCoreDir>$(MSBuildThisFileDirectory)..\..\..\target\windows\NotiveloCore\</NvCoreDir>
   </PropertyGroup>
 
+  <!-- apple-left4 core calls (saved task views, backlinks): compiled in only when the generated bindings have them (the core of rewrite/apple-left4 or later). Without them
+       the app builds and those two features answer "not available" on a live account; the offline sample has both. -->
+  <PropertyGroup Condition="Exists('$(NvCoreDir)generated\nv_core.cs')">
+    <NvLeft4 Condition="$([System.IO.File]::ReadAllText('$(NvCoreDir)generated\nv_core.cs').Contains('TaskViewInfo CreateTaskView'))">true</NvLeft4>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(NvLeft4)' == 'true'">
+    <DefineConstants>$(DefineConstants);NV_LEFT4</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Platform)' == 'ARM64'">
     <RuntimeIdentifier>win-arm64</RuntimeIdentifier>
   </PropertyGroup>

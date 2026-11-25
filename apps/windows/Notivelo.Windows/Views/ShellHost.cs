@@ -28,11 +28,23 @@ internal sealed class ShellHost
         Inbox = new InboxState(source);
     }
 
-    public void Toast(string text, bool error = false)
+    /// <summary>A short notice; with <paramref name="undo"/> it has an Undo button (the web's and Apple's toast with Undo) and stays a little longer.</summary>
+    public void Toast(string text, bool error = false, Action? undo = null)
     {
         Microsoft.UI.Xaml.Media.Brush B(string k) => ThemeBrushes.Get(k, Overlay);
-        Overlay.Toast(text, error ? B("Danger") : B("Text"), B("BgElevated"), B("Border"));
+        Overlay.Toast(text, error ? B("Danger") : B("Text"), B("BgElevated"), B("Border"), undo, B("Accent"));
     }
+
+    /// <summary>Open a saved task view: All tasks with its filters, sort and group.</summary>
+    public Action<SavedView> OpenSavedView { get; set; } = _ => { };
+    /// <summary>"New view": All tasks from a clean slate, to build the filters and save them.</summary>
+    public Action NewTasksView { get; set; } = () => { };
+    /// <summary>"Save view": name the filters of All tasks as a view.</summary>
+    public Action SaveTasksView { get; set; } = () => { };
+    /// <summary>The conditions of All tasks (what a saved view stores, what the sidebar compares with).</summary>
+    public Func<TaskViewState?> TasksState { get; set; } = () => null;
+    /// <summary>The outline of the page on screen (its headings in reading order), for the ribbon, the right-edge bars and the tests.</summary>
+    public Func<IReadOnlyList<Notivelo.Windows.Text.OutlineEntry>> PageOutline { get; set; } = () => Array.Empty<Notivelo.Windows.Text.OutlineEntry>();
 }
 
 /// <summary>Create, rename, duplicate, move and delete on notebooks, sections and pages, through the source's tree calls (the core's, as Apple's TreeActions).
@@ -271,7 +283,17 @@ internal sealed class TreeActions
     {
         var what = kind.ToString().ToLowerInvariant();
         Dialogs.Confirm(O, $"Delete {what}?", $"“{name}” moves to the Trash. You can restore it from there for 60 days.", "Delete", true,
-            () => Run(S.Delete(kind, id), _ => _h.Toast("Moved to the Trash")));
+            () => Run(S.Delete(kind, id), _ => _h.Toast("Moved to the Trash", false, () => UndoDelete(kind, id))));
+    }
+
+    /// <summary>The Undo of the "Moved to the Trash" toast: the item is found in the Trash and restored (the web's and Apple's toast with Undo).</summary>
+    private async void UndoDelete(TreeKind kind, string id)
+    {
+        var list = await S.LoadTrash();
+        var item = list.Items.FirstOrDefault(i => i.Kind == kind && i.Id == id);
+        if (item is null) { _h.Toast(list.Error ?? "It is no longer in the Trash", true); return; }
+        var err = await Run(S.Restore(item));
+        if (err is not null) _h.Toast(err, true);
     }
 
     public void MoveDialog(TreeKind kind, string id, string name)

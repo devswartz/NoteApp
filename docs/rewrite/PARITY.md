@@ -61,7 +61,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Keyboard shortcut overlay (?) | ● | ◐ | ● ✓ | ● ✓ | ◐ | ● | phones only with a keyboard |
 | F6 region cycling | ● | — | ● | ● | — | ● | `useF6Regions.ts` |
 | Swipe actions on rows | ● ✓ | ● ✓ | — | — | ● | ◐ | `SwipeRow.tsx` *(verify which rows)* |
-| Toasts with Undo | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
+| Toasts with Undo | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | Offline banner / pill (after 30 s) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | "New version available, reload" prompt | ◐ | ◐ | ◐ | ◐ | ◐ | ● | service worker; bundled apps update via store/updater |
 | Deep links (`notivelo://`, universal links `/w/…`) | ● ✓ | ● ✓ | ● ✓ | ● | ● | — | `DeepLinks.tsx`, `platform/deepLinks.ts` |
@@ -114,11 +114,11 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Slash menu (/) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `SlashMenu.tsx` |
 | Markdown input rules (#, -, *, 1., >, ```) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Page links `[[`, create page from link | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `PageLink.tsx` |
-| Linked from (backlinks) panel | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `GET /pages/:id/backlinks` |
+| Linked from (backlinks) panel | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `GET /pages/:id/backlinks` |
 | Drag handle: move a block with its nested lines, drop anywhere; keeps numbering | ● | ◐ | ● | ● | ◐ | ● | `blockMove.ts`, `listDrop.ts`, `handleReach.ts` |
 | Word-style multi-selection (Ctrl/⌘ + click/drag/double-click lines) | ● | — | ● | ● | — | ● | `linePicks*.ts` |
 | Copy keeps formatting; paste rich text and Markdown | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `clipboardOut.ts`, `markdownUtils.ts` |
-| Outline / table of contents beside long pages | ● ✓ | ○ | ● ✓ | ● | ○ | ● | `Outline.tsx` *(verify phone)* |
+| Outline / table of contents beside long pages | ● ✓ | ○ | ● ✓ | ● ✓ | ○ | ● | `Outline.tsx` *(verify phone)* |
 | Full width option | ● | — | ● | ● | — | ● | |
 | Page colour | ● | ● | ● | ● | ● | ● | syncs, in templates and versions |
 | Rule lines / grid with snapping | ● | ● | ● | ● | ● | ● | `ruleGrid.ts` |
@@ -162,9 +162,9 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Sidebar counts (Today, My Tasks, Upcoming) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
 | Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `assigneeGroups.ts` |
-| Saved views (server, optionally shared) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `/workspaces/:id/task-views` |
+| Saved views (server, optionally shared) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `/workspaces/:id/task-views` |
 | Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
-| Bulk select and bulk bar (complete, reschedule, assign, priority, delete; one Undo) | ● | ◐ | ● | ● | ◐ | ● | `BulkBar.tsx`, `selection.ts` |
+| Bulk select and bulk bar (complete, reschedule, assign, priority, delete; one Undo) | ● | ◐ | ● | ● ✓ | ◐ | ● | `BulkBar.tsx`, `selection.ts` |
 | Inline rename, complete with Undo | ● | ● | ● | ● | ● | ● | |
 | Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
 | Print task view (⌘P) | ● | ● | ● | ● | ● | ● | |

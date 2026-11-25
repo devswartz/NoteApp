@@ -133,7 +133,7 @@ public class LookShots
                 var r = w.BoundingRectangle;       // a click on the scrim at the window's bottom right closes what Escape didn't
                 if (Exists("menu-account") || Exists("menu-workspace") || Exists("menu-section") || Exists("menu-notebook-picker") || Exists("prompt-input")
                     || Exists("search-input") || Exists("quickadd-card") || Exists("task-sheet") || Exists("trash-dialog") || Exists("confirm-ok")
-                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page") || Exists("shortcuts-sheet") || Exists("notebook-share-dialog") || Exists("menu-notebook") || Exists("inbox-popover") || Exists("delete-account-dialog") || Exists("menu-priority"))
+                    || Exists("version-dialog") || Exists("members-dialog") || Exists("join-dialog") || Exists("share-dialog") || Exists("icon-picker") || Exists("lock-dialog") || Exists("menu-page") || Exists("shortcuts-sheet") || Exists("notebook-share-dialog") || Exists("menu-notebook") || Exists("inbox-popover") || Exists("delete-account-dialog") || Exists("menu-priority") || Exists("menu-saved-views") || Exists("menu-view") || Exists("menu-block") || Exists("menu-outline") || Exists("bulk-date-menu"))
                     FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point((int)r.Right - 12, (int)r.Bottom - 12));
             }
             catch { }
@@ -161,6 +161,15 @@ public class LookShots
             var r = h.B.Bounds; FlaUI.Core.Input.Mouse.Click(new System.Drawing.Point(r.Left + 80, r.Top + 80)); Settle(500);
             Snap("page-media");
         });
+        Step("outline", () =>   // headings in box a, the list open under the ribbon's Outline button
+        {
+            h.A.Focus(); h.Press(ENTER); Invoke("ribbon-block-type"); Invoke("block-heading-1"); h.Type("Agenda"); h.Press(ENTER); h.Type("Short notes on the agenda"); h.Press(ENTER);
+            Invoke("ribbon-block-type"); Invoke("block-heading-2"); h.Type("Decisions"); h.Press(ENTER);
+            Invoke("ribbon-block-type"); Invoke("block-heading-2"); h.Type("Next steps"); Settle(700);
+            Invoke("ribbon-outline"); Find("menu-outline"); Settle(400); Snap("outline");
+        });
+        Step("block-menu", () => { h.A.Focus(); Settle(400); Invoke("block-handle"); Find("menu-block"); Settle(400); Snap("block-menu"); });
+        Step("backlinks", () => { Invoke("page-links-button"); Find("backlink-canvas"); Settle(700); Snap("backlinks"); try { Invoke("page-tasks-close"); } catch (Exception) { } });
         Step("page-canvas", () => { Invoke("page-row-canvas"); Settle(900); Snap("page-canvas"); });
         Step("page-ink", () => { Invoke("page-row-settings-ink"); Settle(900); Snap("page-ink"); });
         Step("ink-toolbar", () =>   // the pen row open over the ink page (pen chosen: colours and widths show)
@@ -288,5 +297,21 @@ public class LookShots
         });
         Step("template-manager", () => { Invoke("section-more-empty"); Find("menu-section"); Invoke("menu-manage-templates"); Find("template-rename-weekly-review"); Settle(600); Snap("template-manager"); });
         Step("default-template", () => { Invoke("section-more-empty"); Find("menu-section"); Invoke("menu-default-template"); Find("default-template-inherit"); Settle(600); Snap("default-template"); });
+        // left4: saved views (the sidebar list, the ribbon's menu, a view opened), the bulk bar and its date menu, the outline list, the block menu, the Linked tab
+        Step("saved-views", () =>
+        {
+            Find("rail-tasks")!.Click(); Settle(500); Invoke("ribbon-all-tasks"); Settle(500);
+            Invoke("ribbon-saved-views"); Find("menu-saved-views"); Settle(400); Snap("saved-views-menu");
+            Invoke("menu-view-view-urgent"); Find("tasks-view-name"); Settle(800); Snap("saved-views");
+            Invoke("ribbon-clear-filters"); Settle(300);
+        });
+        Step("bulk-bar", () =>
+        {
+            Find("rail-tasks")!.Click(); Settle(500); Invoke("ribbon-all-tasks"); Settle(500);
+            Invoke("tasks-select"); Find("bulk-bar"); Invoke("task-select-t-launch"); Invoke("task-select-t-welcome"); Settle(700); Snap("bulk-bar");
+            Invoke("bulk-date"); Find("bulk-date-menu"); Settle(400); Snap("bulk-date-menu");
+            h.Press(ESCAPE); Settle(300);
+            try { Invoke("bulk-done"); } catch (Exception) { }
+        });
     }
 }
