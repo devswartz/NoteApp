@@ -667,6 +667,22 @@ final class BoxTextView: UIView, UITextInput {
         selectByPlatform(BoxTextRange(p.offset, p.offset), notify: true)
     }
 
+    // MARK: Moving blocks
+
+    /// The line the caret is on (box coordinates), where the block handle sits.
+    var caretLineRect: CGRect? { editor == nil ? nil : caretRect(for: BoxTextPosition(sel.hi)) }
+    /// Where the caret is, as a view offset: any offset in the block names the block.
+    var caretOffset: Int { sel.hi }
+    /// The view offset closest to `point` (box coordinates).
+    func offset(at point: CGPoint) -> Int { (closestPosition(to: point) as? BoxTextPosition)?.offset ?? 0 }
+    /// The line at a view offset (box coordinates).
+    func lineRect(at offset: Int) -> CGRect { caretRect(for: BoxTextPosition(offset)) }
+
+    /// Move the block at `from` before or after the block at `to` (`EditorSession.moveBlock`); one undo step. False: nothing moved.
+    func moveBlock(from: Int, to: Int, after: Bool) -> Bool {
+        engine(fromProtocol: false) { $0.moveBlock(from: UInt32(from), to: UInt32(to), after: after) } ?? false
+    }
+
     /// Put the caret at a view offset of the text (the outline's "go to this heading").
     func placeCaret(offset: Int) {
         guard editor != nil else { return }

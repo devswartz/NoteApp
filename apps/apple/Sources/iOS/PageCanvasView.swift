@@ -103,6 +103,10 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
     private let doubleTap = UITapGestureRecognizer()
     private let boxPan = BoxDragRecognizer()
     private let toolbar = FloatingToolbarView()
+    private let blockHandle = UIImageView()
+    private let dropLine = UIView()
+    /// The offset of the block being dragged by its handle (nil: no drag).
+    private var blockFrom: Int?
     private let linkEditor = LinkEditorView()
     var notify: ((String) -> Void)?
     private var geometry: BoxGeometryStore = LocalBoxGeometry()
@@ -503,6 +507,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         // With a pen tool chosen a finger only scrolls and zooms: it neither creates nor opens boxes.
         if InkTool.shared.inking { return }
         let p = tap.location(in: surface)
+        if !blockHandle.isHidden, blockHandle.frame.insetBy(dx: -8, dy: -8).contains(p) { return }
         // The icon row ("Add icon", or the icon): the shell's icon picker.
         if !addIcon.isHidden, host != nil, let onIcon, addIcon.frame.insetBy(dx: -6, dy: -4).contains(p) {
             let r = convert(addIcon.frame, from: surface)
@@ -719,6 +724,80 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     private func hideToolbar() { toolbar.hide() }
 
+    // MARK: Block handle
+
+    /// The ⋮⋮ handle left of the block the caret is in, while a box is edited: drag it to move the block within the box
+    /// (`EditorSession.moveBlock`), a line shows where it lands.
+    private func updateBlockHandle() {
+        guard let box = editing, drag == nil, host?.savesBoxes ?? false, !stacked, blockFrom == nil, let rect = box.caretLineRect else {
+            if blockFrom == nil { blockHandle.isHidden = true }
+            return
+        }
+        if blockHandle.superview == nil {
+            blockHandle.contentMode = .center
+            blockHandle.isUserInteractionEnabled = true
+            blockHandle.accessibilityLabel = "Move block"
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(blockPanned(_:)))
+            pan.maximumNumberOfTouches = 1
+            blockHandle.addGestureRecognizer(pan)
+            dropLine.isUserInteractionEnabled = false
+            dropLine.isHidden = true
+            surface.addSubview(blockHandle)
+            surface.addSubview(dropLine)
+        }
+        blockHandle.image = UIImage(named: "lucide-grip-vertical")?.withRenderingMode(.alwaysTemplate)
+        blockHandle.tintColor = UIColor(cgColor: palette.textMuted.cgColor)
+        let c = surface.convert(CGPoint(x: -16, y: rect.midY), from: box)
+        blockHandle.bounds = CGRect(x: 0, y: 0, width: 28, height: 36)
+        blockHandle.center = c
+        surface.bringSubviewToFront(blockHandle)
+        blockHandle.isHidden = false
+    }
+
+    @objc private func blockPanned(_ pan: UIPanGestureRecognizer) {
+        guard let box = editing else { return }
+        let p = pan.location(in: surface)
+        let local = surface.convert(p, to: box)
+        switch pan.state {
+        case .began:
+            blockFrom = box.caretOffset
+            isScrollEnabled = false
+            blockHandle.alpha = 0.6
+        case .changed:
+            guard blockFrom != nil else { return }
+            let t = blockTarget(box, local)
+            dropLine.backgroundColor = UIColor(cgColor: palette.accent.cgColor)
+            let y = surface.convert(CGPoint(x: 0, y: t.after ? t.rect.maxY : t.rect.minY), from: box).y
+            dropLine.frame = CGRect(x: box.frame.minX, y: y - 1, width: box.frame.width, height: 2)
+            dropLine.isHidden = false
+            surface.bringSubviewToFront(dropLine)
+        case .ended:
+            if let from = blockFrom {
+                let t = blockTarget(box, local)
+                if box.moveBlock(from: from, to: t.offset, after: t.after) { notify?("Block moved") }
+            }
+            endBlockDrag()
+        default:
+            endBlockDrag()
+        }
+    }
+
+    private func endBlockDrag() {
+        blockFrom = nil
+        isScrollEnabled = true
+        blockHandle.alpha = 1
+        dropLine.isHidden = true
+        updateBlockHandle()
+    }
+
+    /// Where a block dropped at `p` (box coordinates) lands: the line there, before or after it.
+    private func blockTarget(_ box: BoxTextView, _ p: CGPoint) -> (offset: Int, rect: CGRect, after: Bool) {
+        let y = min(max(p.y, 1), max(box.bounds.height - 1, 1))
+        let offset = box.offset(at: CGPoint(x: max(p.x, 4), y: y))
+        let rect = box.lineRect(at: offset)
+        return (offset, rect, y > rect.midY)
+    }
+
     // MARK: Link editor
 
     /// Show the link editor under the selection or caret of the box being edited (the toolbar and
@@ -767,6 +846,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
 
     /// Show the toolbar over the selected text of the box being edited, or hide it.
     private func updateToolbar() {
+        updateBlockHandle()
         guard let box = editing, drag == nil, !linkEditor.isShown, menu.superview == nil || menu.isHidden, let rect = box.selectionBounds else {
             hideToolbar()
             return
@@ -827,6 +907,7 @@ final class PageScrollView: UIScrollView, UIScrollViewDelegate {
         guard let box = editing else { return }
         host?.clearLocalCursor()
         editing = nil
+        blockHandle.isHidden = true
         hideToolbar()
         if linkEditor.isShown { linkEditor.dismiss() }
         if drop { removeIfEmpty(box) }
