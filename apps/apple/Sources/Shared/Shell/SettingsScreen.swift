@@ -19,6 +19,7 @@ struct SettingsSection: Identifiable {
         SettingsSection(id: "notifications", title: "Notifications", description: "How and when you hear about due tasks.", icon: "bell", group: "Account"),
         SettingsSection(id: "connected", title: "Connected apps", description: "AI assistants and other apps you’ve allowed to use your notes.", icon: "plug", group: "Account"),
         SettingsSection(id: "workspace", title: "General", description: "Name, role and leaving or deleting this workspace.", icon: "settings", group: "Workspace"),
+        SettingsSection(id: "members", title: "Members", description: "People in this workspace, their roles and invites.", icon: "users", group: "Workspace"),
         SettingsSection(id: "teams", title: "Teams", description: "Groups of people that tasks can belong to, with subteams.", icon: "users-round", group: "Workspace"),
         SettingsSection(id: "tags", title: "Tags", description: "Labels for tasks, shared across the workspace.", icon: "tag", group: "Workspace"),
         SettingsSection(id: "activity", title: "Activity", description: "Who changed what in this workspace, newest first.", icon: "activity", group: "Workspace"),
@@ -140,6 +141,7 @@ struct SettingsScreen: View {
             case "connected": ConnectedAppsSection()
             case "shortcuts": ShortcutsSection()
             case "workspace": WorkspaceGeneralSettings()
+            case "members": MembersCard(width: 0, listHeight: 360, embedded: true)
             case "teams": TeamsSettings()
             case "tags": TagsSettings()
             case "activity": ActivitySettings()

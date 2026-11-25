@@ -34,28 +34,55 @@ struct MembersCard: View {
     private var canManage: Bool { myRole == "owner" || myRole == "admin" }
     private var roles: [String] { myRole == "owner" ? ["owner", "admin", "member", "viewer"] : ["admin", "member", "viewer"] }
 
+    /// In Settings (Workspace > Members) the list sits on the page; as a sheet it is a dialog with Done.
+    var embedded = false
+
+    private var intro: String {
+        "People in “\(session.workspace?.name ?? "Workspace")”." + (canManage ? " Invite someone by email, or change what a member can do." : "")
+    }
+
+    @ViewBuilder private func inner(_ p: Palette) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if canManage { inviteRow(p) }
+            if let inviteUrl { inviteBox(inviteUrl, p) }
+            if let error { SheetNote(text: error, danger: true) }
+            list(p)
+        }
+    }
+
     var body: some View {
         let p = theme.chrome
         let name = session.workspace?.name ?? "Workspace"
-        DialogCard(title: "Members",
-                   description: "People in “\(name)”." + (canManage ? " Invite someone by email, or change what a member can do." : ""),
-                   width: width, close: { shell.sheet = nil }) {
-            VStack(alignment: .leading, spacing: 12) {
-                if canManage { inviteRow(p) }
-                if let inviteUrl { inviteBox(inviteUrl, p) }
-                if let error { SheetNote(text: error, danger: true) }
-                list(p)
+        if embedded {
+            SettingsCard(detail: intro) {
+                VStack(alignment: .leading, spacing: 12) {
+                    inner(p)
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        if confirmLeave {
+                            DialogButton(title: "Cancel") { confirmLeave = false }
+                            DialogButton(title: "Leave “\(name)”", style: .danger, enabled: !busy) { leave() }
+                        } else {
+                            DialogButton(title: "Leave workspace") { confirmLeave = true }
+                        }
+                    }
+                }
             }
-        } foot: {
-            if confirmLeave {
-                DialogButton(title: "Cancel") { confirmLeave = false }
-                DialogButton(title: "Leave “\(name)”", style: .danger, enabled: !busy) { leave() }
-            } else {
-                DialogButton(title: "Leave workspace") { confirmLeave = true }
-                DialogButton(title: "Done", style: .primary) { shell.sheet = nil }
+            .onAppear { load() }
+        } else {
+            DialogCard(title: "Members", description: intro, width: width, close: { shell.sheet = nil }) {
+                inner(p)
+            } foot: {
+                if confirmLeave {
+                    DialogButton(title: "Cancel") { confirmLeave = false }
+                    DialogButton(title: "Leave “\(name)”", style: .danger, enabled: !busy) { leave() }
+                } else {
+                    DialogButton(title: "Leave workspace") { confirmLeave = true }
+                    DialogButton(title: "Done", style: .primary) { shell.sheet = nil }
+                }
             }
+            .onAppear { load() }
         }
-        .onAppear { load() }
     }
 
     private func inviteRow(_ p: Palette) -> some View {

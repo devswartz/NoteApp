@@ -23,6 +23,24 @@ final class MacMenuBar: NSObject {
     private var hotKey: EventHotKeyRef?
     private var started = false
 
+    private var due = 0
+    private var dueItem: NSMenuItem?
+
+    /// The tasks due today or overdue: the count beside the icon, and a line in the menu (tray.rs shows the same).
+    func setDue(_ n: Int) {
+        due = n
+        apply()
+    }
+
+    private func apply() {
+        guard let item else { return }
+        if let button = item.button {
+            button.imagePosition = .imageLeft
+            button.title = due > 0 ? " \(due)" : ""
+        }
+        dueItem?.title = due == 0 ? "Nothing due today" : due == 1 ? "1 task due today" : "\(due) tasks due today"
+    }
+
     func start() {
         guard !started else { return }
         started = true
@@ -34,6 +52,11 @@ final class MacMenuBar: NSObject {
             button.toolTip = "Notivelo"
         }
         let menu = NSMenu()
+        let dueLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        dueLine.isEnabled = false
+        menu.addItem(dueLine)
+        dueItem = dueLine
+        menu.addItem(.separator())
         let quick = NSMenuItem(title: "Quick Capture…", action: #selector(quickCapture), keyEquivalent: "n")
         quick.keyEquivalentModifierMask = [.option, .command]
         quick.target = self
@@ -47,6 +70,7 @@ final class MacMenuBar: NSObject {
         menu.addItem(quit)
         item.menu = menu
         self.item = item
+        apply()
         registerHotKey()
     }
 
