@@ -1248,9 +1248,8 @@ fn a_block_moves_to_any_place_in_one_undo_step() {
     );
     assert!(st.lines[yi].marker.is_some());
     assert!(s.undo());
-    assert_eq!(
-        find(&s, "y") > find(&s, "x"),
-        false,
-        "undo restores the list order"
+    assert!(
+        find(&s, "y") < find(&s, "x"),
+        "undo took back only the last move"
     );
 }
