@@ -116,6 +116,8 @@ final class Shell {
     let tv = TaskViewState()
     /// The workspace's saved task views (`SavedViews.swift`).
     let views = SavedViewsModel()
+    /// The tasks selected for a bulk action (`Bulk.swift`).
+    let bulk = BulkSelection()
     /// Settings: the open section (nil: the list on phones, Profile on wide screens).
     var settingsSection: String?
     /// Settings shows the workspace's sections (General, Teams, Tags, Activity) instead of the person's.
@@ -157,6 +159,7 @@ final class Shell {
             case "tasks-upcoming": route = .tasks(.upcoming)
             case "tasks-my": route = .tasks(.my)
             case "tasks-all", "empty-tasks-all", "saved-views": route = .tasks(.all)
+            case "bulk-select": route = .tasks(.my)
             case "empty-no-page", "notes-home", "empty-workspace-notes": route = .notes
             case "empty-section": route = .section("empty-section")
             case "templates": route = .page(LookData.pageId("empty"))
@@ -475,6 +478,7 @@ struct AppShell: View {
         }
         // Status is Open each time a task view is opened.
         .onChange(of: shell.route) { old, new in
+            shell.bulk.clear()
             if case .tasks = new, old != new {
                 if shell.views.keepStatus { shell.views.keepStatus = false } else { shell.tv.status = .open }
                 shell.views.load(session)
@@ -513,6 +517,10 @@ struct AppShell: View {
             "inbox": .inbox, "presence": .presence, "ribbon-menu-task": .taskSplit, "ribbon-menu-page-colour": .pageColor, "ribbon-menu-rule-lines": .ruleLines, "saved-views": .savedViews,
         ]
         guard session.preview, let state = LookData.state else { return }
+        if state == "bulk-select" {
+            shell.bulk.active = true
+            shell.bulk.ids = Set(LookData.tasks.filter { $0.dueDate != nil }.prefix(2).map(.id))
+        }
         if state == "saved-views" {
             shell.views.load(session)
             if let v = shell.views.view("v-urgent") { shell.views.open(v, shell, session) }
