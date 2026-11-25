@@ -95,6 +95,8 @@ final class Shell {
     @ObservationIgnored weak var openLive: LivePageModel?
     /// The tree row being renamed in place: `page:<id>`, `section:<id>` or `notebook:<id>`.
     var renaming: String?
+    /// A row being dragged in the tree (the iPad), see `TreeDrop.swift`.
+    var treeDrag: TreeDragState?
     /// The search palette (Cmd+K, the rail's and the phone's search buttons) and what is typed in it.
     var searchOpen = false
     var searchQuery = ""
@@ -372,6 +374,7 @@ struct AppShell: View {
             .frame(width: width, height: geo.size.height)
             .background(chrome.bgSidebar.color)
             .overlay { MenuLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
+            .overlay { TreeDragPreview() }
             .overlay { SearchLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { TaskDetailLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }
             .overlay { DialogLayer(width: width, height: geo.size.height).environment(\.phoneLayout, width <= 760) }

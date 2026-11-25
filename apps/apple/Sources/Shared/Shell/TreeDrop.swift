@@ -1,5 +1,8 @@
 import NotiveloCore
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 /// Drag in the sidebar tree (the Mac): a page onto another page goes just before it (also in another section), a page onto a
 /// section goes to its end, a section onto a section nests inside it, a section onto the notebook name moves it to that notebook's
@@ -84,4 +87,122 @@ struct TreeDnD: ViewModifier {
 
 extension View {
     func treeDnD(drag: String?, target: DropTarget?) -> some View { modifier(TreeDnD(drag: drag, target: target)) }
+}
+
+/// The tree drag on the iPad (the Mac has `draggable`): press and hold, then move to drag a row; press, hold and let go opens
+/// the row's menu (as the long press did before). Targets come from the rows' frames (`Shell.frames`), the drops are the
+/// Mac's (`Shell.dropped`). The iPhone keeps "Move to…" (the web's phone has no drag).
+struct TreeDragState: Equatable {
+    var payload: String
+    var label: String
+    var point: CGPoint
+    var over: DropTarget?
+}
+
+/// Long press on a tree row: the row's menu, and on the iPad also the drag (`drag`: "page:<id>" or "section:<id>").
+struct TreeRowPress: ViewModifier {
+    let drag: String?
+    let label: String
+    let menu: () -> Void
+    @Environment(\.phoneLayout) private var phone
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if phone || drag == nil {
+            content.onLongPressGesture(minimumDuration: 0.5) { menu() }
+        } else if let drag {
+            content.modifier(TouchTreeDrag(drag: drag, label: label, menu: menu))
+        }
+        #else
+        content.onLongPressGesture(minimumDuration: 0.5) { menu() }
+        #endif
+    }
+}
+
+#if os(iOS)
+struct TouchTreeDrag: ViewModifier {
+    let drag: String
+    let label: String
+    let menu: () -> Void
+    @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
+    @State private var start: CGPoint?
+    @State private var moved = false
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("shell")))
+                .onChanged { value in
+                    guard case let .second(true, d?) = value else { return }
+                    if start == nil { start = d.location }
+                    if !moved, let s = start, hypot(d.location.x - s.x, d.location.y - s.y) > 8 {
+                        moved = true
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
+                    if moved { shell.treeDrag = TreeDragState(payload: drag, label: label, point: d.location, over: target(at: d.location)) }
+                }
+                .onEnded { _ in
+                    let wasDrag = moved
+                    let over = shell.treeDrag?.over
+                    start = nil
+                    moved = false
+                    shell.treeDrag = nil
+                    if !wasDrag { menu() } else if let over { _ = shell.dropped([drag], on: over, session) }
+                }
+        )
+    }
+
+    /// The row under the finger that takes this drag.
+    private func target(at p: CGPoint) -> DropTarget? {
+        let isPage = drag.hasPrefix("page:")
+        for (id, f) in shell.frames where f.contains(p) {
+            if id.hasPrefix("section:") { return .section(String(id.dropFirst("section:".count))) }
+            if id.hasPrefix("page:"), isPage {
+                let over = String(id.dropFirst("page:".count))
+                if "page:" + over != drag { return .page(over) }
+            }
+            if id == "notebook-picker", !isPage, let nb = currentNotebook(session.shownTree, shell) { return .notebook(nb.id) }
+        }
+        return nil
+    }
+}
+#endif
+
+/// The row being dragged, under the finger.
+struct TreeDragPreview: View {
+    @Environment(Shell.self) private var shell
+    let theme = Theme.shared
+
+    var body: some View {
+        if let d = shell.treeDrag {
+            let p = theme.chrome
+            HStack(spacing: 6) {
+                Icon(d.payload.hasPrefix("page:") ? "file-text" : "folder", 14, p.text2.color)
+                Text(d.label).font(.web(14, 500)).foregroundStyle(p.text.color).lineLimit(1)
+            }
+            .padding(.horizontal, 10).frame(height: 32).frame(maxWidth: 220)
+            .background(p.bg.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.accent.color, lineWidth: 1))
+            .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+            .position(x: d.point.x + 70, y: d.point.y - 24)
+            .allowsHitTesting(false)
+        }
+    }
+}
+
+extension View {
+    /// The row's long press: menu, and the touch drag on the iPad.
+    func treeRowPress(drag: String?, label: String, menu: @escaping () -> Void) -> some View {
+        modifier(TreeRowPress(drag: drag, label: label, menu: menu))
+    }
+
+    /// A ring around the row a drag would drop on.
+    func dropRing(_ target: DropTarget, _ shell: Shell) -> some View {
+        overlay {
+            if shell.treeDrag?.over == target {
+                RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Theme.shared.chrome.accent.color, lineWidth: 2)
+            }
+        }
+    }
 }

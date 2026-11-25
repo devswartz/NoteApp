@@ -244,9 +244,10 @@ struct SectionNode: View {
             .onTapGesture {
                 if open { shell.expanded.remove(section.id) } else { shell.expanded.insert(section.id) }
             }
-            .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .section(section.id) }
+            .treeRowPress(drag: "section:" + section.id, label: section.name) { shell.menu = .section(section.id) }
             .onSecondaryClick { shell.menu = .section(section.id) }
             .anchor("section:\(section.id)", shell)
+            .dropRing(.section(section.id), shell)
             .treeDnD(drag: "section:\(section.id)", target: .section(section.id))
 
             if open {
@@ -334,7 +335,8 @@ struct PageRowView: View {
         .background(active ? p.bgActive.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { shell.open(page: page.id) }
-        .onLongPressGesture(minimumDuration: 0.5) { shell.menu = .pageRow(page.id) }
+        .treeRowPress(drag: depth < 0 ? nil : "page:" + page.id, label: page.title.isEmpty ? "Untitled" : page.title) { shell.menu = .pageRow(page.id) }
+        .dropRing(.page(page.id), shell)
         .onSecondaryClick { shell.menu = .pageRow(page.id) }
         .anchor("page:\(page.id)", shell)
         .treeDnD(drag: depth < 0 ? nil : "page:\(page.id)", target: depth < 0 ? nil : .page(page.id))
