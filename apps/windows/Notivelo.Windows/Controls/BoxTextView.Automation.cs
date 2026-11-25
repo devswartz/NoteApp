@@ -29,7 +29,7 @@ internal sealed partial class BoxTextView
             var menu = r.Suggestion is { } s ? $"{s.Trigger.ToString().ToLowerInvariant()}:{s.Highlighted ?? 0}/{s.Items.Length}" : "none";
             var line = r.View.Lines.LastOrDefault(l => l.Offset <= sel.Head) ?? r.View.Lines.FirstOrDefault();
             var block = line is null ? "none" : line.Kind + (line.Marker is { Length: > 0 } m ? "/" + m : "");
-            return $"block={block};sel={sel.Anchor},{sel.Head};focus={(_focused ? 1 : 0)};menu={menu};undo={(r.CanUndo ? 1 : 0)};redo={(r.CanRedo ? 1 : 0)};boxsel={(BoxSelected ? 1 : 0)};marked={(r.View.Marked is not null ? 1 : 0)};tables={TableShapes()};in={string.Join("/", line?.Containers ?? Array.Empty<string>())};editor={(LinkEditorOpen ? 1 : 0)};link={(HrefAt((int)sel.Head - 1) ?? HrefAt((int)sel.Head) ?? "").Replace(";", "%3B")};{MediaState()}";
+            return $"block={block};sel={sel.Anchor},{sel.Head};focus={(_focused ? 1 : 0)};menu={menu};undo={(r.CanUndo ? 1 : 0)};redo={(r.CanRedo ? 1 : 0)};boxsel={(BoxSelected ? 1 : 0)};marked={(r.View.Marked is not null ? 1 : 0)};tables={TableShapes()};{TableReadout()};remote={RemoteReadout()};in={string.Join("/", line?.Containers ?? Array.Empty<string>())};editor={(LinkEditorOpen ? 1 : 0)};link={(HrefAt((int)sel.Head - 1) ?? HrefAt((int)sel.Head) ?? "").Replace(";", "%3B")};{MediaState()}";
         }
     }
 }

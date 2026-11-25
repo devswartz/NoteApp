@@ -15,6 +15,8 @@ internal sealed class ShellHost
     public Action OpenTrash { get; set; } = () => { };
     public Action<QuickAddDialog.Seed?> OpenQuickAdd { get; set; } = _ => { };
     public Action OpenSettings { get; set; } = () => { };
+    /// <summary>Open Settings on a section ("ws-general", "ws-teams", "ws-tags", "ws-activity", ...).</summary>
+    public Action<string> OpenSettingsAt { get; set; } = _ => { };
     public Action OpenShortcuts { get; set; } = () => { };
     public TreeActions Tree { get; }
     public InboxState Inbox { get; }

@@ -43,11 +43,16 @@ internal sealed partial class SettingsView : ThemedControl
         nav.Children.Add(NavRow("password", "lock", "Security"));
         nav.Children.Add(NavRow("notifications", "bell", "Notifications"));
         nav.Children.Add(NavRow("apps", "plug", "Connected apps"));
+        nav.Children.Add(Ui.Text("Workspace", 12, B("TextMuted"), 600).With(t => t.Margin = new Thickness(0, 18, 0, 7)));
+        nav.Children.Add(NavRow("ws-general", "building-complex", "General"));
+        nav.Children.Add(NavRow("ws-teams", "users-round", "Teams"));
+        nav.Children.Add(NavRow("ws-tags", "tag", "Tags"));
+        nav.Children.Add(NavRow("ws-activity", "activity", "Activity"));
         nav.Children.Add(Ui.Text("App", 12, B("TextMuted"), 600).With(t => t.Margin = new Thickness(0, 18, 0, 7)));
         nav.Children.Add(NavRow("about", "info", "About"));
         root.Children.Add(nav);
 
-        var content = _section switch { "notifications" => Notifications(), "apps" => Apps(), "appearance" => Appearance(), "about" => About(), _ => Profile(_section == "password") };
+        var content = _section switch { "ws-general" => WsGeneral(), "ws-teams" => WsTeams(), "ws-tags" => WsTags(), "ws-activity" => WsActivity(), "notifications" => Notifications(), "apps" => Apps(), "appearance" => Appearance(), "about" => About(), _ => Profile(_section == "password") };
         content.HorizontalAlignment = HorizontalAlignment.Stretch;
         Grid.SetColumn(content, 1);
         root.Children.Add(content);

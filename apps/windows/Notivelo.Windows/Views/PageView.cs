@@ -27,8 +27,8 @@ internal sealed partial class PageView : ThemedControl
         _saveTimer.Tick += (_, _) => PollSave();
         KeyDown += OnPageKey;
         source.SetBoxTextProbe(field => _views.TryGetValue(field, out var v) ? v.AutomationText : "");
-        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.Escaped += OnBoxEscaped; BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; Current = this; };
-        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.Escaped -= OnBoxEscaped; BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; if (ReferenceEquals(Current, this)) Current = null; };
+        Loaded += (_, _) => { _saveTimer.Start(); BoxTextView.Escaped += OnBoxEscaped; BoxTextView.FocusedStateChanged += FocusChanged; InkTool.Shared.Changed += OnInkTool; _source.CaretsChanged += OnCaretsChanged; Current = this; ShowCarets(); };
+        Unloaded += (_, _) => { _saveTimer.Stop(); BoxTextView.Escaped -= OnBoxEscaped; BoxTextView.FocusedStateChanged -= FocusChanged; InkTool.Shared.Changed -= OnInkTool; _source.CaretsChanged -= OnCaretsChanged; if (ReferenceEquals(Current, this)) Current = null; };
     }
 
     /// <summary>The page on screen, for the ribbon and the page-level undo keys.</summary>
@@ -627,7 +627,7 @@ internal sealed partial class PageView : ThemedControl
                 var tasks = new BoxTasks(_source, DispatcherQueue, () => PageId);
                 var session = live is not null ? Notivelo.Native.EditorSession.OpenLive(live, box.Field, tasks) : _source.OpenOfflineBox(PageId, box.Field, tasks);
                 if (session is null) continue;
-                _views[box.Field] = new BoxTextView(session, _source) { PageId = PageId };
+                _views[box.Field] = new BoxTextView(session, _source) { PageId = PageId, BoxId = box.Field.StartsWith("box:") ? box.Field["box:".Length..] : box.Field };
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_views[box.Field], "box-" + box.Field.Replace(':', '-'));
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_views[box.Field], "Text box");
             }
@@ -641,6 +641,7 @@ internal sealed partial class PageView : ThemedControl
         // dev hook: NOTIVELO_FOCUS=1 gives the first box the keyboard (loopback servers only), to exercise the text services without a pointer
         if (Environment.GetEnvironmentVariable("NOTIVELO_FOCUS") is not null && (Environment.GetEnvironmentVariable("NOTIVELO_SERVER") ?? "").Contains("127.0.0.1") && _views.Count > 0)
             _ = Task.Delay(6000).ContinueWith(_ => DispatcherQueue.TryEnqueue(() => { var v = _views.Values.First(); var ok = v.Focus(Microsoft.UI.Xaml.FocusState.Programmatic); if (SelectHook is { } sh2) v.SetSelection(sh2.A, sh2.H); if (Environment.GetEnvironmentVariable("NOTIVELO_LINKEDITOR") is not null) v.ShowLinkEditor(); BoxTextView.Trace("focus hook " + ok); }));
+        ShowCarets();
         foreach (var gone in _views.Keys.Where(k => !wanted.Contains(k)).ToList()) { if (gone == _selectedBox) _selectedBox = null; _views[gone].Release(); _views.Remove(gone); if (_frames.Remove(gone, out var fr) && fr.Parent is Panel gp) gp.Children.Remove(fr); }
     }
 

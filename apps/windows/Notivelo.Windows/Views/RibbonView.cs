@@ -103,9 +103,23 @@ internal sealed class RibbonView : ThemedControl
             var it = new MenuFlyoutItem { Text = text };
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "table-" + PopupMenu.Slug(text));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, text);
-            it.Click += (_, _) => { var box = BoxTextView.Target; if (cmd == "pickSlash") box?.RibbonInsert(System.Text.Json.JsonDocument.Parse(args).RootElement.GetProperty("title").GetString() ?? ""); else box?.RunCommand(cmd, args); box?.Focus(FocusState.Programmatic); };
+            it.Click += (_, _) =>
+            {
+                var box = BoxTextView.Target;
+                if (cmd == "pickSlash") box?.RibbonInsert(System.Text.Json.JsonDocument.Parse(args).RootElement.GetProperty("title").GetString() ?? "");
+                else if (cmd == "mergeRight") box?.MergeCells();
+                else if (cmd == "mergeDown") box?.MergeCells(down: true);
+                else box?.RunCommand(cmd, args);
+                box?.Focus(FocusState.Programmatic);
+            };
             f.Items.Add(it);
         }
+        // Split is offered only on a merged cell, as the engine says (TableState)
+        f.Opening += (_, _) =>
+        {
+            var st = BoxTextView.Target?.TableStateNow();
+            foreach (var i in f.Items.OfType<MenuFlyoutItem>()) if (i.Text == "Split cell") i.IsEnabled = st?.CanSplit ?? false;
+        };
         return f;
     }
 

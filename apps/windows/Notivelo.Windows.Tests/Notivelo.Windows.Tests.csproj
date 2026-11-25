@@ -22,6 +22,7 @@
     <Compile Include="..\Notivelo.Windows\Data\Presence.cs" Link="Data\Presence.cs" />
     <Compile Include="..\Notivelo.Windows\Data\ShellPolish.cs" Link="Data\ShellPolish.cs" />
     <Compile Include="..\Notivelo.Windows\Data\AuditBatch.cs" Link="Data\AuditBatch.cs" />
+    <Compile Include="..\Notivelo.Windows\Data\WorkspaceAdmin.cs" Link="Data\WorkspaceAdmin.cs" />
     <Compile Include="..\Notivelo.Windows\Data\TaskLogic.cs" Link="Data\TaskLogic.cs" />
     <Compile Include="..\Notivelo.Windows\Data\TaskViews.cs" Link="Data\TaskViews.cs" />
     <Compile Include="$(NvCoreDir)generated\nv_core.cs" Link="Native\nv_core.cs" />

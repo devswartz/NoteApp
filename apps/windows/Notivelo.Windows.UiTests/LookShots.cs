@@ -185,6 +185,17 @@ public class LookShots
             Invoke("ribbon-table-tools"); Find("table-delete-table"); Settle(400); Snap("table-menu");
         });
         Step("table-undo", () => { h.B.Focus(); for (var i = 0; i < 2; i++) { h.Chord(CONTROL, KEY_Z); Settle(150); } });
+        Step("remote-caret", () => { h.B.WaitMedia("remote", v => v.StartsWith("Sample Viewer@"), "the sample viewer's caret"); Settle(500); Snap("remote-caret"); });   // a coloured caret with a name flag in box b
+        Step("table-merged", () =>   // a table with two header cells merged (the caret's cell with its right neighbour), undone after the shot
+        {
+            h.B.Focus(); Invoke("ribbon-table"); h.B.WaitMedia("tables", v => v == "3x3", "a 3x3 table"); Invoke("ribbon-table-tools"); Invoke("table-merge-cells");
+            h.B.WaitMedia("merged", v => v == "1", "a merged cell"); Settle(700); Snap("table-merged");
+            h.B.Focus(); for (var i = 0; i < 2; i++) { h.Chord(CONTROL, KEY_Z); Settle(150); }
+        });
+        Step("workspace-settings", () => { Invoke("rail-workspace"); Find("menu-workspace"); Invoke("menu-workspace-settings"); Find("settings-root"); Settle(900); Snap("workspace-settings"); });
+        Step("workspace-teams", () => { Invoke("rail-workspace"); Find("menu-workspace"); Invoke("menu-workspace-settings"); Find("settings-root"); Invoke("settings-section-ws-teams"); Find("team-row-staff"); Settle(700); Snap("workspace-teams"); });
+        Step("workspace-tags", () => { Invoke("rail-workspace"); Find("menu-workspace"); Invoke("menu-workspace-settings"); Find("settings-root"); Invoke("settings-section-ws-tags"); Find("tag-row-launch"); Settle(700); Snap("workspace-tags"); });
+        Step("activity", () => { Invoke("rail-workspace"); Find("menu-workspace"); Invoke("menu-activity"); Find("activity-list"); Settle(900); Snap("activity"); });
         Step("presence-list", () => { Invoke("page-presence"); Find("menu-presence"); Find("presence-sample-viewer"); Settle(500); Snap("presence-list"); });
         Step("notebook-menu", () => { Invoke("notebook-more"); Find("menu-notebook"); Snap("notebook-menu"); });
         Step("shortcut-sheet", () => { Invoke("rail-account"); Find("menu-account"); Invoke("menu-shortcuts"); Find("shortcuts-sheet"); Settle(500); Snap("shortcut-sheet"); });

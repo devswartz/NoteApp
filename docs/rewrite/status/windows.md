@@ -2,7 +2,9 @@
 
 Newest first. The overseeing session folds this into `docs/rewrite/STATUS.md`.
 
-## Parity left (Windows, 2026-11-24)
+## Parity left (Windows, 2026-11-24; updated after left3)
+
+**Left3 (2026-11-24, `rewrite/windows-left3`) moved 8 more PARITY rows to ✓** (live collaboration with carets, tables incl. merge/split, create workspace, rename/delete workspace, workspace settings, teams, tags, activity feed): see the left3 section below. Still left from this audit: toggle open/close and code copy/highlight (106), follow (95), table column width / header column / cell colours (no engine command), and everything else listed below that left3 does not name.
 
 Audit of `docs/rewrite/PARITY.md` (Windows column) against `apps/windows` at 8247569 (branch `rewrite/windows-audit`, docs only; no code touched). Of the 144 rows with a Windows ● or ◐, **69 are ticked ✓** (built and reachable in the app: checked by reading the code, with the UI tests in `Notivelo.Windows.UiTests` as evidence where one exists) and **75 are left**: 31 partly built, 44 missing. Class: **no-server** = doable now in the Windows app with core calls that exist (including Apple's new notification, share-link, delete-account and presence calls) or with none; **Devon** = needs Devon (store, signing, decision); **M7** = needs a new core call (the server route exists) or the M7 local-first work. Counts: no-server 46, Devon 3, M7 26 (25 need a new core call, 1 is offline page editing). Apple counted "new core call on an existing route" as no-server; under that rule the 25 move over. A ✓ means built and compiled; nothing ran against a real server and nothing was driven on a PC (every core-backed path is untested, as in the rounds below). Not listed: rows that are `—`/`○` for Windows (ink, local notifications, Face ID rows, app lock, share target, widget, universal links).
 
@@ -11,9 +13,9 @@ Audit of `docs/rewrite/PARITY.md` (Windows column) against `apps/windows` at 824
 1. ~~Task filters, sort, group, Team view, status filter (159, 156)~~ built (see above).
 2. Ribbon buttons that do nothing (53): ~~Clear formatting, Link to page, Divider, text colour~~ built; Page colour and Rule lines wait for a core call; Print, Outline, Table group, highlight colour left.
 3. ~~Notification inbox and taskbar badge (179, 178)~~ built.
-4. Table tools, callout/toggle/code block (105, 106): partly built (left2: Table group, block menu; merge/split and toggle/code extras wait for apple-left3): engine commands (row and column add/delete, header toggle); toggle open/close, code copy.
+4. ~~Table tools (105)~~ built in left3 (merge and split too); callout/toggle/code block (106) partly: toggle open/close and code copy/highlighting have no core call, they are view state (left3 did not build them).
 5. ~~Boxes: select, cut/copy/paste/duplicate/delete, context menu (93)~~ built (see the left batch below).
-6. Cursors and presence, follow a collaborator (94, 95): presence avatars and the "On this page now" list built (left2); carets and follow wait for apple-left3: `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors`.
+6. ~~Cursors and presence (94)~~ built in left3 (other people's carets and selections with a name flag, ours sent); follow a collaborator (95) left: the core has no follow call (Apple has none either).
 7. ~~Save state indicator (96)~~ built (Saving, Saved, Offline, Offline — changes kept; "Connecting" shows as Offline).
 8. Task keyboard, bulk bar, inline rename, Undo on toasts (162, 163, 164, 60): `UpdateTask`, `SendTaskChanges`; client code.
 9. Opens offline from a cold start (222): open the shell from `CachedWorkspaces` / `CachedTree` / `CachedTasks` when `RestoreSession` fails with Network (today: signed-out screen with "Try again").
@@ -29,9 +31,9 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 |---|---|---|
 | OneNote-style ribbon (53) | partly: as before, plus Clear formatting, Link to page, Divider and the Tasks ribbon's Group, Sort, Status, Assignee, Tags, Team, Priority, More filters and Clear filters | Page colour and Rule lines need a core call to write the page's settings (menus are built, live pages refuse); Print, Outline, Table group |
 | Marks (99) | partly: text colour menu works (`setColor`, `unsetColor`); highlight stays a yellow toggle | a highlight colour menu (`setHighlight` with a name) |
-| Tables (105); callout, toggle, code (106) | partly (left2): ribbon Table group (Add row, Add column, Table tools menu: row and column insert and delete, header row, delete table) and callout and toggle in the Text style menu; merge/split cells, column width, toggle open/close and code copy wait for apple-left3 | row/column commands, header toggle, merge/split; toggle opens; code highlighting |
+| ~~Tables (105)~~; callout, toggle, code (106) | tables built (left3: merge/split too). Left: column width, header column and cell colours (the engine has no command; the document's `colwidth`/`background` are kept and the cell colour is drawn); toggle open/close and code copy/highlighting (no core call) | the core / engine to grow them |
 | ~~Boxes: select, cut/copy/paste/duplicate/delete, context menu (93)~~ | built in the left batch (one box at a time; copies keep the same tasks) | multi-box selection waits for the multi-range selection (115) |
-| Cursors and presence (94); follow (95) | partly (left2): who is on the page (avatars, list; polled every 3 s). Other people's carets in boxes and follow wait for apple-left3 (presence states carry the user only) | `AnnouncePresence`, `Presence`, `RemoteCursors`, `SetRemoteCursors` |
+| ~~Cursors and presence (94)~~; follow (95) | built in left3 (carets, selections, name flags); follow has no core call | follow: a core call |
 | Task keyboard, bulk, inline rename (162, 163, 164); Toasts with Undo (60) | missing | client code; `UpdateTask`, `SendTaskChanges`; Undo action on `OverlayHost` toasts |
 | Opens offline from a cold start (222) | partly: tree and tasks load from the store once signed in; a cold start without network shows "Try again" | `CachedWorkspaces`/`CachedTree`/`CachedTasks` when `RestoreSession` fails with Network |
 | Tray icon, close to tray, global quick capture, app shortcuts (250, 251, 252, 253) | missing; only Q, Ctrl+K, Ctrl+Shift+F, Ctrl+Z/Y, Ctrl+/ | NotifyIcon + `GetTaskCounts`; RegisterHotKey + `QuickAddDialog`; Ctrl+N, Ctrl+Shift+T, Ctrl+1-8, Ctrl+, |
@@ -60,13 +62,24 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 | Rows | Missing |
 |---|---|
 | Resend verification email (28); export my data (35); send feedback (67); error reporting (68) | resend-verification, `GET /me/export`, `POST /feedback`, `POST /client-errors` |
-| Create workspace (47); rename/delete workspace (196); workspace settings General, Teams, Tags, Activity (195); activity feed (181) | `/workspaces` create, `PATCH/DELETE /workspaces/:id`, activity |
+| ~~Create workspace (47); rename/delete workspace (196); workspace settings General, Teams, Tags, Activity (195); activity feed (181)~~ | built in left3 |
 | ~~Templates (134-140)~~ | built in left2 (see the dated section). Was: core calls now exist (Apple, apple-left2-core.md). Built in the left batch: New page from template (section menu), Save as template, `{date}` and `{time}`. Left: the empty-page picker, the ribbon entry, per-section scope, rename and delete, the default per section | UI only |
 | Backlinks (113); full width, page colour, rule lines write (118, 119, 120) | `GET /pages/:id/backlinks`; a page-settings write on the live doc (colour and lines are shown, not changeable) |
-| Saved views (161); tags rename/colour/delete (167); teams management (168) | `/workspaces/:id/task-views`, `/tags/:id`, `/teams/:id(/members)` |
+| Saved views (161); ~~tags rename/colour/delete (167); teams management (168)~~ (built in left3) | `/workspaces/:id/task-views` |
 | Notification settings extras (180) | quiet hours, calendar feed link, test notification |
 | Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
 | Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
+
+## 2026-11-24: left3: table merge/split, other people's carets, workspace/team/tag screens, activity (branch `rewrite/windows-left3`, from `rewrite/native` e9c98fb)
+
+Not merged; pushed. Nothing was driven with input on this PC and nothing ran against a server (UI tests use the in-memory sample source). CI: 45522459464 on 7f97fb4: every new test passed. The one failure was `Search_finds_tasks_and_the_sheet_edits_them`, its third flaky run: the failure shot shows the rail click on Tasks lost right after the task sheet closed. In a5521ed the test clicks again until the Tasks view shows. 45525746015 on a5521ed is green: build x64 + arm64, 327 unit tests, 103 UI tests, and the look shots. Every call is online only in the core (offline it answers a sentence); the sample source keeps all of it in memory.
+
+- **Tables (105)**: `Table tools` has Merge cells, Merge with cell below and Split cell (engine `mergeCells`, `splitCell`; Split is enabled from `TableState.CanSplit`). Merge acts on the selected cells (a text selection from one cell into another), and when the selection stays in one cell it merges the caret's cell with its right neighbour (an explicit `top/left/bottom/right`), so there is a menu path without a drag. The layout reads `colspan`/`rowspan`/`background` from the document (`DocInfo.TableSpans`, `TableMap` puts cells on grid slots that merged cells leave free) and draws a spanning cell over its slots, with its colour. Box status gains `merged=N;tstate=MSH`. **Not built (no engine command)**: column width, header column, setting a cell colour. The "caret after deleting a first row" quirk is still there (the editor still puts it on the line above the table); not changed.
+- **Blocks (106)**: not done: toggle open/close and code copy/highlight have no core call.
+- **Carets (94)**: the presence poll also reads `RemoteCursors()` (every 3 s alone, 0.5 s while someone is here); a box draws each caret in the person's colour with a name flag and a selection at 25 %. Our caret goes out through `SetLocalCursor` on each selection change (at most every 100 ms, off the UI thread) and `ClearLocalCursor` on blur. `INotesSource.RemoteCarets/SetLocalCaret/ClearLocalCaret/CaretsChanged`. The sample's "Sample Viewer" has a caret at offset 7 of box b on the offline page. Box status gains `remote=Name@head/...`. **Follow (95)**: not built: the core has no follow call.
+- **Workspace screens**: Settings gets a Workspace group (General, Teams, Tags, Activity); the workspace menu gets New workspace, Workspace settings and Activity. General: rename (owners and admins), your role, New workspace, Delete workspace (owners; a confirm that says it can't be undone) or Leave workspace. Teams: create, subteam, rename, members (a check list), delete. Tags: create, rename, colour (ten colours), delete (confirm). Activity: the feed, newest first, "Show older" pages by the oldest id, a line opens its page or task. `SettingsView.Workspace.cs`, `CoreNotesSource.Admin.cs`, `SampleNotesSource.Admin.cs`, `WorkspaceAdmin.cs` (names, ordering, times: unit tested).
+- **Unverified**: every live call (`create/rename/delete_workspace`, the team and tag calls, `activity`, `remote_cursors`, `set_local_cursor`), caret positions against a real second client, the name flag's look, the Members flyout in a real window, and the new look shots.
+- **PARITY ✓ added**: create workspace, live collaboration (edits, cursors, presence), tables (merge/split), tags, teams, activity feed, workspace settings, rename/delete workspace.
 
 ## 2026-11-24: left2: templates finished, table tools, who is on the page, notebook drag (branch `rewrite/windows-left2`, from `rewrite/native` f30d23b)
 

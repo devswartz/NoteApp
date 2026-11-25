@@ -66,6 +66,7 @@ public sealed partial class ShellView : UserControl
             OpenTrash = () => TrashDialog.Show(_host!),
             OpenQuickAdd = s => QuickAddDialog.Show(_host!, s),
             OpenSettings = () => { _overlay.CloseAll(); GoTo(AppRoute.Settings); },
+            OpenSettingsAt = section => { _overlay.CloseAll(); _settings.Show(section); GoTo(AppRoute.Settings); },
             OpenShortcuts = () => ShortcutSheet.Show(_host!),
         };
         _rail.Host = _host; _sidebar.Host = _host; _tasks.Host = _host; _page.Host = _host; _calendar.Host = _host; _settings.Host = _host;

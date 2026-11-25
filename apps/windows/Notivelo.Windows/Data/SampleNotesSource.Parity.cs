@@ -282,7 +282,7 @@ public sealed partial class SampleNotesSource
     private readonly Dictionary<string, Extra> _x = new();
     private readonly Dictionary<string, List<string>> _onPage = new() { ["tasks"] = new() { "t-welcome", "t-notes", "t-slow" } };
     private readonly List<TagInfo> _tagList = new() { new("tag-launch", "launch", "#ef4444"), new("tag-docs", "docs", "#3b82f6") };
-    private static readonly TeamInfo[] TeamList =
+    private readonly List<TeamInfo> TeamList = new()
     {
         new("team-staff", "Staff", "Staff", "#0ea5e9", null), new("team-design", "Design", "Design", "#a855f7", null),
         new("team-eng", "Engineering", "Engineering", "#22c55e", null), new("team-web", "Web", "Engineering › Web", "#16a34a", "team-eng"),
