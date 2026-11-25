@@ -45,3 +45,5 @@ Editable page title, task filters/sort/group, favourites, offline start, print/P
 Notification inbox, app badge, public share link, delete account, who is on the page are in this build.
 
 Push reminders with snooze and universal links (iOS), templates, box copy/paste/duplicate, Mac sidebar drag are in this build.
+
+Share extension, Today widget, table tools, collaborator carets, workspace/teams/tags/activity, Mac menu bar extras are in this build.
