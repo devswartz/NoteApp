@@ -744,6 +744,24 @@ impl EditorSession {
             .map_err(|_| EditorError::UnknownCommand { name })
     }
 
+    /// Drag a block (the web's drag handle): the block holding view offset `from` moves before
+    /// (`after` false) or after the block holding view offset `to`, both offsets in
+    /// `text_for_view()` (any offset on one of the block's lines, e.g. a line's `offset`). A block
+    /// is a list item when the offset is in a list (its sub-points go with it), else the
+    /// top-level block (a task moves with its notes). A list item dropped on another list's item
+    /// of the same kind joins that list; otherwise it keeps its own list type in a list of its
+    /// own. Blocks move within the box only (the web has no drag between boxes). False when
+    /// nothing moved (same place, `to` inside the moved block, an offset in no block). One
+    /// undo step; the caret ends in the moved block. Same as `command("moveBlockTo", ...)` with
+    /// engine positions.
+    pub fn move_block(&self, from: u32, to: u32, after: bool) -> bool {
+        let (f, t) = self.read(|i| {
+            let v = i.view();
+            (v.to_pos(from as usize), v.to_pos(to as usize))
+        });
+        self.edit(|ed| ed.move_block_to(f, t, after))
+    }
+
     /// The table the caret is in, or none outside tables. Table commands (`command`): `insertTable
     /// {rows, cols, header}`, `addRowBefore`, `addRowAfter`, `addColumnBefore`, `addColumnAfter`,
     /// `deleteRow`, `deleteColumn`, `deleteTable`, `toggleHeaderRow`, `mergeCells`, `splitCell`.

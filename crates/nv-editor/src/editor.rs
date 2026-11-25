@@ -1238,6 +1238,136 @@ impl Editor {
         true
     }
 
+    /// Drag a block to another place in the box: the block at engine position `from` (its list
+    /// item when in a list, else its top-level block) goes before or after the block at `to`.
+    /// A list item dropped on a list item joins that list when both are the same kind of item,
+    /// else it becomes a one-item list of its own kind next to the target's list. A list item
+    /// dropped on another block gets wrapped in a copy of its list; a plain block dropped on a
+    /// list item goes before or after the target's whole list. Refused (false): either position
+    /// outside a block, `to` inside the moved block, or no change. One undo step; the caret
+    /// lands in the moved block.
+    pub fn move_block_to(&mut self, from: usize, to: usize, after: bool) -> bool {
+        let size = self.doc.content_size();
+        if from > size || to > size {
+            return false;
+        }
+        let block_path = |ed: &Editor, p: usize| -> Option<Vec<usize>> {
+            let r = ed.resolve(p);
+            if r.depth() == 0 {
+                // Between top-level blocks (an object line's position): the block after it.
+                let i = r.index_at(0);
+                return (i < ed.doc.content.len()).then(|| vec![i]);
+            }
+            let d = (1..=r.depth())
+                .rev()
+                .find(|&d| r.node(&ed.doc, d).is_list_item())
+                .unwrap_or(1);
+            let mut path = r.path_to(d - 1);
+            path.push(r.index_at(d - 1));
+            Some(path)
+        };
+        let (Some(src), Some(tgt)) = (block_path(self, from), block_path(self, to)) else {
+            return false;
+        };
+        if tgt.starts_with(&src) {
+            return false;
+        }
+        let src_is_item = self.doc.at(&src).is_list_item();
+        let tgt_is_item = self.doc.at(&tgt).is_list_item();
+        // Where the block goes, as the path of its new parent and the index among its children.
+        // Worked out against the tree before the removal, then adjusted for it.
+        let (mut dest_parent, mut dest_idx, wrap) = if src_is_item && tgt_is_item {
+            if self.doc.at(&src).kind == self.doc.at(&tgt).kind {
+                (
+                    tgt[..tgt.len() - 1].to_vec(),
+                    tgt[tgt.len() - 1] + after as usize,
+                    false,
+                )
+            } else {
+                let list = &tgt[..tgt.len() - 1];
+                (
+                    list[..list.len() - 1].to_vec(),
+                    list[list.len() - 1] + after as usize,
+                    true,
+                )
+            }
+        } else if src_is_item {
+            (
+                tgt[..tgt.len() - 1].to_vec(),
+                tgt[tgt.len() - 1] + after as usize,
+                true,
+            )
+        } else if tgt_is_item {
+            let list = &tgt[..tgt.len() - 1];
+            (
+                list[..list.len() - 1].to_vec(),
+                list[list.len() - 1] + after as usize,
+                false,
+            )
+        } else {
+            (
+                tgt[..tgt.len() - 1].to_vec(),
+                tgt[tgt.len() - 1] + after as usize,
+                false,
+            )
+        };
+        // Dropping a block next to itself changes nothing.
+        if dest_parent == src[..src.len() - 1]
+            && (dest_idx == src[src.len() - 1] || dest_idx == src[src.len() - 1] + 1)
+            && !wrap
+        {
+            return false;
+        }
+        self.checkpoint();
+        // Take the block out (and its list when that leaves it empty).
+        let (sp, si) = (src[..src.len() - 1].to_vec(), src[src.len() - 1]);
+        let node = self.doc.at_mut(&sp).content.remove(si);
+        let mut removed: Vec<Vec<usize>> = vec![src.clone()];
+        let mut list_copy: Option<Node> = None;
+        if src_is_item {
+            let list = self.doc.at(&sp);
+            list_copy = Some(list.copy(vec![]));
+            if list.content.is_empty() {
+                let (lp, li) = (sp[..sp.len() - 1].to_vec(), sp[sp.len() - 1]);
+                self.doc.at_mut(&lp).content.remove(li);
+                removed.push(sp.clone());
+            }
+        }
+        // A removal before the destination (among its ancestors' children) shifts it up.
+        for r in &removed {
+            let (rp, ri) = (&r[..r.len() - 1], r[r.len() - 1]);
+            if dest_parent.len() > rp.len()
+                && dest_parent.starts_with(rp)
+                && dest_parent[rp.len()] > ri
+            {
+                dest_parent[rp.len()] -= 1;
+            } else if dest_parent == rp && dest_idx > ri {
+                dest_idx -= 1;
+            }
+        }
+        let node = match (wrap, list_copy) {
+            (true, Some(l)) => l.copy(vec![node]),
+            _ => node,
+        };
+        let parent = self.doc.at_mut(&dest_parent);
+        let dest_idx = dest_idx.min(parent.content.len());
+        parent.content.insert(dest_idx, node);
+        // Before the moved block: the sum of what precedes it on its way down.
+        let mut path = dest_parent.clone();
+        path.push(dest_idx);
+        let (mut at, mut n) = (0usize, &self.doc);
+        for (k, &i) in path.iter().enumerate() {
+            at += n.content[..i].iter().map(Node::node_size).sum::<usize>();
+            n = &n.content[i];
+            if k + 1 < path.len() {
+                at += 1;
+            }
+        }
+        self.sel = Selection::caret(near_text(&self.doc, at + 1, 1));
+        self.checkpoint();
+        true
+    }
+
     // ───────────── After every change ─────────────
 
     /// What runs after every input (TipTap's appendTransaction plugins): the trailing paragraph.
