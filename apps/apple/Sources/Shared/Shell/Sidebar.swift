@@ -393,7 +393,20 @@ struct TasksPanel: View {
                 }
                 GroupHeading(title: "Views", icon: nil, open: true, plus: nil, toggle: {})
                     .padding(.top, 16)
-                Button { shell.notYet("Saved views") } label: {
+                ForEach(shell.views.views, id: \.id) { v in
+                    let active = shell.route == .tasks(.all) && shell.views.openedId == v.id
+                    Button { shell.views.open(v, shell, session) } label: {
+                        HStack(spacing: 10) {
+                            Icon(v.shared ? "users" : "bookmark", 15, active ? p.accent.color : p.text2.color)
+                            Text(v.name).font(.web(14, 500)).foregroundStyle(active ? p.accent.color : p.text2.color).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 10).frame(height: 32)
+                        .background(active ? p.bgActive.color : Color.clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(PressStyle(radius: 7, pressed: p.bgPressed.color))
+                }
+                Button { shell.views.startNew(shell) } label: {
                     HStack(spacing: 10) {
                         Icon("plus", 16, p.text2.color)
                         Text("New view").font(.web(14, 500)).foregroundStyle(p.text2.color)

@@ -342,8 +342,8 @@ struct TasksRibbon: View {
         RibbonSeparator(m: m)
         }
         Group {
-        RibbonButton(icon: "bookmark", m: m, caret: true) { shell.notYet("Saved views") }
-        RibbonButton(icon: "bookmark-plus", m: m, enabled: false) {}
+        RibbonButton(icon: "bookmark", m: m, pressed: shell.views.current(tv) != nil, caret: true, anchor: "rb-savedViews") { shell.menu = .savedViews }
+        RibbonButton(icon: "bookmark-plus", m: m, enabled: list == .all && shell.views.current(tv) == nil && !ViewQuery(tv).isPlain) { shell.sheet = .savedView(.save) }
         RibbonSeparator(m: m)
         RibbonButton(icon: "printer", m: m) { shell.notYet("Printing") }
         }

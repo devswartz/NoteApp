@@ -264,6 +264,7 @@ struct TasksScreen: View {
             }
             .padding(.top, 16)
             if phone { TaskFilterBar(list: list, palette: p).padding(.top, 10) }
+            if phone { SavedViewChips(palette: p).padding(.top, 10) }
             HStack(spacing: 8) {
                 if tv.status != .done {
                     Text("\(filtered.count) task\(filtered.count == 1 ? "" : "s")").font(.web(13)).foregroundStyle(p.textMuted.color)
