@@ -37,16 +37,7 @@ struct PageScreen: View {
             VStack(spacing: 0) {
                 PageTopBar(meta: meta, palette: palette, status: status, taskCount: taskCount, phone: phone,
                            people: session.preview ? shell.presenceList(session) : (live?.people ?? []))
-                ZStack(alignment: .topTrailing) {
-                    content(snapshot, palette)
-                    FollowChip().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    if snapshot != nil, meta != nil, sample == nil || LookData.state == "backlinks" {
-                        BacklinksBar(pageId: pageId, palette: palette).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    }
-                    if let snapshot, snapshot.info.headings.count >= 3, !phone, !shell.outlineHidden, (shell.frames["page-canvas"]?.width ?? 1000) >= 700 {
-                        PageOutline(headings: snapshot.info.headings, palette: palette, live: live).padding(.top, 33).padding(.trailing, 18)
-                    }
-                }
+                canvasLayers(snapshot, palette)
             }
             // The comments panel: the iPad's side panel (320 wide).
             if comments.open && !phone { CommentsPanel(palette: theme.chrome, phone: false) }
@@ -104,6 +95,30 @@ struct PageScreen: View {
             EditorFocus.shared.set(nil)
             CanvasNav.shared.reset()
         }
+    }
+
+    /// The canvas with what floats over it: the follow chip, the backlinks bar, the outline.
+    @ViewBuilder
+    private func canvasLayers(_ snapshot: PageSnapshot?, _ palette: Palette) -> some View {
+        ZStack(alignment: .topTrailing) {
+            content(snapshot, palette)
+            FollowChip().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            if showsBacklinks(snapshot) {
+                BacklinksBar(pageId: pageId, palette: palette).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            }
+            if let snapshot, showsOutline(snapshot) {
+                PageOutline(headings: snapshot.info.headings, palette: palette, live: live).padding(.top, 33).padding(.trailing, 18)
+            }
+        }
+    }
+
+    private func showsBacklinks(_ snapshot: PageSnapshot?) -> Bool {
+        snapshot != nil && meta != nil && (sample == nil || LookData.state == "backlinks")
+    }
+
+    private func showsOutline(_ snapshot: PageSnapshot) -> Bool {
+        guard snapshot.info.headings.count >= 3, !phone, !shell.outlineHidden else { return false }
+        return (shell.frames["page-canvas"]?.width ?? 1000) >= 700
     }
 
     private var currentSnapshot: PageSnapshot? {

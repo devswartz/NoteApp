@@ -139,11 +139,15 @@ struct Ribbon: View {
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
 
+    /// A table is under the caret on a page: the ribbon shows the Table group and tightens.
+    private var hasTableContext: Bool {
+        guard case .page = shell.route else { return false }
+        return EditorFocus.shared.active && EditorFocus.shared.table != nil
+    }
+
     var body: some View {
         let p = theme.chrome
-        var context = false
-        if case .page = shell.route, EditorFocus.shared.active, EditorFocus.shared.table != nil { context = true }
-        let m = RibbonMetrics(width: width, context: context)
+        let m = RibbonMetrics(width: width, context: hasTableContext)
         VStack(spacing: 0) {
             HStack(spacing: m.gap) {
                 // The groups scroll only as a last resort, and start at the leading edge (the block style picker comes first).
