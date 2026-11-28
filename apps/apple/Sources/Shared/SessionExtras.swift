@@ -113,7 +113,7 @@ extension SessionModel {
     }
 
     /// After a password unlock: a device secret for Face ID, kept in the keychain behind the biometric check.
-    private func registerDevice() {
+    func registerDevice() {
         guard DeviceUnlock.available else { return }
         let account = serverURL
         let install = DeviceUnlock.installId

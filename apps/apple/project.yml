@@ -76,7 +76,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
-        NSFaceIDUsageDescription: Unlock your locked pages with Face ID.
+        NSFaceIDUsageDescription: Unlock the app and your locked pages with Face ID.
         NSCameraUsageDescription: Take a photo to put on a page.
         # notivelo://page/<id>, notivelo://w/<workspace>/p/<page> (the web's own paths); web addresses open through Associated Domains.
         CFBundleURLTypes:

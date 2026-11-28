@@ -80,7 +80,7 @@ if IPAD="$(pick "iPad Air 11-inch (M3)" "iPad Air 11-inch (M2)" "iPad (A16)" "iP
     shoot "$UDID" $L 1 light "$state"
   done
   # Native-only states (no web reference): the tree dialogs, inline rename, loading, offline, empty notebook, empty page, page not found.
-  for state in dialog-new-section dialog-new-subsection dialog-new-notebook dialog-move-page dialog-move-section dialog-delete-notebook inline-rename                empty-notebook loading-sidebar offline-banner page-empty page-not-found; do
+  for state in dialog-new-section dialog-new-subsection dialog-new-notebook dialog-move-page dialog-move-section dialog-delete-notebook inline-rename                empty-notebook loading-sidebar offline-banner page-empty page-not-found app-lock; do
     shoot "$UDID" $L 1 light "$state"
   done
   for state in table-tools cursors workspace-settings teams-settings saved-views bulk-select outline backlinks; do
@@ -112,7 +112,7 @@ if PHONE="$(pick "iPhone 16e" "iPhone 14" "iPhone 13" "iPhone 12")"; then
   for state in page-blocks page-lists page-tasks notes-home edit-selection slash-menu                tasks-upcoming tasks-my tasks-all empty-tasks-today empty-tasks-all                menu-page-options menu-section menu-page-row menu-notebook menu-notebook-picker menu-workspace menu-account                empty-section empty-workspace-notes empty-workspace-drawer search task-detail page-box-task-open page-box-task-done page-box-task-hidden page-box-empty page-media page-empty quick-add tasks-calendar settings settings-profile settings-notifications settings-connected settings-shortcuts page-tasks-panel inbox share-link delete-account presence templates box-selected table-tools cursors workspace-settings teams-settings saved-views bulk-select outline backlinks; do
     shoot "$UDID" $V 0 light "$state"
   done
-  for state in dialog-new-section dialog-new-notebook dialog-move-page dialog-delete-notebook inline-rename empty-notebook loading-sidebar offline-banner                page-empty page-not-found; do
+  for state in dialog-new-section dialog-new-notebook dialog-move-page dialog-delete-notebook inline-rename empty-notebook loading-sidebar offline-banner                page-empty page-not-found app-lock; do
     shoot "$UDID" $V 0 light "$state"
   done
   xcrun simctl shutdown "$UDID" || true

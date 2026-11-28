@@ -366,7 +366,7 @@ struct StatsCard: View {
         HStack(alignment: .center, spacing: 24) {
             stat("\(done)", "done today", p)
             stat("\(left)", "left", p)
-            stat("(progress.streak)" + (progress.streak >= 30 ? "+" : ""), "day streak" + (progress.streak >= 3 ? " {1F525}" : ""), p)
+            stat(String(progress.streak) + (progress.streak >= 30 ? "+" : ""), "day streak" + (progress.streak >= 3 ? " \u{1F525}" : ""), p)
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 6) {
                 // The last seven days, today at the right.
