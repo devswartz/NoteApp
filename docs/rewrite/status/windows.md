@@ -67,7 +67,9 @@ For a fresh session taking over the Windows stream. The newest dated section bel
   - A few unchecked look items are listed in the dated sections.
   - Nothing has run against a real server or on Devon's PC.
 
-## Parity left (Windows, 2026-11-24; updated after left4)
+## Parity left (Windows, 2026-11-24; updated after left5)
+
+**Left5 (2026-11-28, `rewrite/windows-left5`) moved 4 more PARITY rows to ✓**: the highlight colour menu, the task keyboard (A, S, R/F2), inline rename with complete-and-Undo, and the app shortcuts (Ctrl+N, Ctrl+Shift+T, Ctrl+1–8, Ctrl+,). Opens offline from a cold start (222) is partly built: it needs a sign-in made under this build. See the left5 section below. **Next most-used no-server rows:** tray, close to tray and Ctrl+Alt+N quick capture (250-252), Print and PDF (122, 123, 85, 166), the ribbon Table group, Settings > Security > Locked notes (215), command palette commands (56), calendar drag to re-date (157), deep links (63).
 
 **Left4 (2026-11-25, `rewrite/windows-left4`) moved 5 more PARITY rows to ✓** (saved views, bulk select, outline, backlinks, toasts with Undo; the block menu and the task keyboard are partly done): see the left4 section below. The saved-view and backlink calls need the apple-left4 core (`NV_LEFT4`).
 
@@ -136,6 +138,41 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 | Notification settings extras (180) | quiet hours, calendar feed link, test notification |
 | Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
 | Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
+
+## 2026-11-28: left5: highlight colours, task keys and inline rename, offline cold start, app shortcuts (branch `rewrite/windows-left5`, from `rewrite/native` a4e8535)
+
+Not merged; pushed. Nothing was driven with input on this PC and nothing ran against a server; the UI tests use the in-memory sample. No change to `crates/`: every call used exists on `rewrite/native`.
+
+- **CI:** 46149544128 on b473ec3: green. Build x64 + arm64, 380 unit tests, every UI test passed (6 new in `Left5Tests.cs`), look shots. The run on fbbaafb was cancelled because b473ec3 replaced it.
+- **Highlight (99).** The ribbon's Highlight button opens a colour menu: Default (`unsetHighlight`) and the web's eight names (`setHighlight`), as in the web's `Toolbar.tsx`. The plain yellow toggle is gone, as on the web. Ids are `colour-highlight-*`. The ribbon's text and highlight lists share `TextColors.Names`.
+- **Task keys (162).** The rest of the web's list keys:
+  - A opens the assign menu.
+  - S picks the row.
+  - R or F2 renames the row in place.
+
+  Like the left4 keys, they act on the row the keyboard is on and need a focused row.
+- **Inline rename and complete with Undo (164).**
+  - R or F2 swaps the title for a TextBox. Enter or leaving the box saves through `UpdateTask`, and Esc cancels.
+  - Only the box from the latest build can save, so a rebuild's LostFocus never saves. That bug was found in review and fixed in b473ec3.
+  - Completing from the check circle gives a "Task completed" toast with Undo. Recurring tasks get no toast, as on the web.
+  - Not built: double-click to rename.
+- **Opens offline from a cold start (222), partly.**
+  - When `RestoreSession` fails with Network, the shell opens from `CachedWorkspaces` / `CachedTree` / `CachedTasks` in place of "Try again". This needs the core to have cached workspaces and a kept last-user record (`AppSettings.LastUsers`, new, written at each sign-in). An install that never signed in under this build still shows "Try again" on its first offline start.
+  - The save state shows Offline. `AppSession` retries the session with backoff from 5 s up to 60 s and goes live through `CoreNotesSource.GoLive`.
+  - A SignedOut answer while the session is still unconfirmed doesn't wipe the stored sign-in. Signing out, a rejected token or a confirmed SignedOut clears the kept user (`Data/OfflineStart.cs`).
+  - Unit tests only; there is no UI test, because it needs a stored sign-in and an unreachable server.
+- **App shortcuts (253).** As in the Mac app's `menu.rs` (`Data/ShellKeys.cs`):
+  - Ctrl+N makes a new page in the open page's section, or else in the shown notebook's first section.
+  - Ctrl+Shift+T opens quick add.
+  - Ctrl+1–6 and Ctrl+8 switch views. 7 is unused, as on the Mac.
+  - Ctrl+, opens Settings.
+
+  The shortcut sheet lists them. Q and Ctrl+K are unchanged.
+- **PARITY ticks:** Marks (highlight), the task keyboard, inline rename with Undo, app menu shortcuts. Not ticked: opens offline from a cold start (partly, above).
+- **Unverified.**
+  - Everything on a real PC and against a server.
+  - The offline cold start and the go-live retry.
+  - Whether Ctrl+N or Ctrl+digit reach the shell while a box has focus. The UI tests press them with no box focused.
 
 ## 2026-11-25: left4: saved views, bulk select, outline, backlinks, block menu (branch `rewrite/windows-left4`, from `rewrite/native` e80bfb9)
 
