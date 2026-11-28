@@ -1,12 +1,16 @@
+import NotiveloCore
 import SwiftUI
 
 /// "Check your email" (src/pages/CheckEmail.tsx): shown instead of the app to a signed-in person whose address isn't
 /// confirmed yet (the server refuses everything else with 403 `email_unverified`). "I've verified, continue" asks the
-/// server again; "Sign out" is for a wrong address. There is no Resend: the core has no resend-verification call yet.
+/// server again; "Resend email" sends a new link (then waits a minute, as the web does); "Sign out" is for a wrong address.
 struct CheckEmailScreen: View {
     @Environment(SessionModel.self) private var session
     @State private var checking = false
     @State private var info: String?
+    @State private var error: String?
+    @State private var sending = false
+    @State private var cooldown = 0
     let theme = Theme.shared
 
     var body: some View {
@@ -33,10 +37,14 @@ struct CheckEmailScreen: View {
                     if let info {
                         Text(info).font(.web(12.5)).foregroundStyle(p.textMuted.color).padding(.top, 14)
                     }
+                    if let error {
+                        Text(error).font(.web(13)).foregroundStyle(p.danger.color).padding(.top, 14)
+                    }
                     Button {
                         guard !checking else { return }
                         checking = true
                         info = nil
+                        error = nil
                         session.recheckEmail { message in
                             checking = false
                             info = message
@@ -49,6 +57,7 @@ struct CheckEmailScreen: View {
                     .buttonStyle(PressStyle(radius: 8, pressed: Color.black.opacity(0.1)))
                     .disabled(checking)
                     .padding(.top, 20)
+                    resendButton(p)
                     HStack(spacing: 4) {
                         Text("Wrong address?").foregroundStyle(p.textMuted.color)
                         Button { session.signOut() } label: { Text("Sign out").font(.web(12.5, 500)).foregroundStyle(p.accent.color) }
@@ -68,5 +77,49 @@ struct CheckEmailScreen: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .task(id: cooldown) {
+            guard cooldown > 0 else { return }
+            try? await _Concurrency.Task.sleep(nanoseconds: 1_000_000_000)
+            if !_Concurrency.Task.isCancelled { cooldown -= 1 }
+        }
     }
+
+    /// "Resend email" (secondary button): a new link; "Resend email (42s)" while it waits.
+    private func resendButton(_ p: Palette) -> some View {
+        Button { resend() } label: {
+            Text(cooldown > 0 ? "Resend email (\(cooldown)s)" : (sending ? "Sending…" : "Resend email"))
+                .font(.web(15, 500)).foregroundStyle(p.text.color)
+                .frame(maxWidth: .infinity).frame(height: 40)
+                .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(p.border.color, lineWidth: 1))
+        }
+        .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
+        .disabled(sending || cooldown > 0)
+        .opacity(sending || cooldown > 0 ? 0.5 : 1)
+        .padding(.top, 10)
+    }
+
+    private func resend() {
+        sending = true
+        error = nil
+        info = nil
+        session.call({ try $0.resendVerification() }) { result in
+            sending = false
+            switch result {
+            case let .success(alreadyVerified):
+                if alreadyVerified {
+                    // Confirmed meanwhile: ask again, and the app takes over.
+                    session.recheckEmail { message in info = message }
+                } else {
+                    info = "We sent a new link to \(session.user?.email ?? ""). Older links no longer work."
+                    cooldown = Self.cooldownSeconds
+                }
+            case let .failure(e):
+                if case let .Server(status, _, _)? = e as? CoreError, status == 429 { cooldown = Self.cooldownSeconds }
+                error = SettingsMessage.text(e)
+            }
+        }
+    }
+
+    private static let cooldownSeconds = 60
 }
