@@ -552,6 +552,8 @@ struct ConnectedAppsSection: View {
 /// The app's shortcuts: the Mac menu's (`MacCommands.swift`) and the editor's, grouped as the web's list.
 struct ShortcutsSection: View {
     @Environment(\.phoneLayout) private var phone
+    @Environment(Shell.self) private var shell
+    @Environment(SessionModel.self) private var session
     let theme = Theme.shared
 
     private struct Item: Identifiable {
@@ -628,6 +630,19 @@ struct ShortcutsSection: View {
                     }
                 }
             }
+        }
+        helpCard(p)
+    }
+
+    /// The web's "Help" group at the foot of its shortcuts list.
+    private func helpCard(_ p: Palette) -> some View {
+        SettingsCard(title: "Help") {
+            Button { shell.openFeedback(session) } label: {
+                Text("Send feedback").font(.web(phone ? 15 : 14)).foregroundStyle(p.accent.color)
+                    .frame(minHeight: phone ? 44 : 24, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

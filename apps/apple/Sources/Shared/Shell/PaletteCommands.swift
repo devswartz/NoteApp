@@ -21,6 +21,7 @@ struct PaletteCommand {
 enum PaletteCommands {
     static let all: [PaletteCommand] = [
         PaletteCommand(id: "app.shortcuts", icon: "keyboard", title: "Keyboard shortcuts", group: "General", keys: "?"),
+        PaletteCommand(id: "app.feedback", icon: "message-square", title: "Send feedback", group: "General", keywords: "bug idea suggestion report problem help contact"),
         PaletteCommand(id: "app.sidebar", icon: "panel-left", title: "Toggle sidebar", group: "General", keys: "⌘\\"),
         PaletteCommand(id: "app.theme", icon: "sun-moon", title: "Switch theme (light / dark / hybrid / system)", group: "General", keywords: "dark mode appearance"),
         PaletteCommand(id: "tasks.new", icon: "plus", title: "New task", group: "Create", keys: "Q", keywords: "add todo quick", needsEdit: true),
@@ -55,6 +56,7 @@ enum PaletteCommands {
         let bridge = ShellBridge.shared
         switch id {
         case "app.shortcuts": shell.openSettings("shortcuts")
+        case "app.feedback": shell.openFeedback(session)
         case "app.sidebar": shell.toggleSidebar()
         case "app.theme":
             let modes = ThemeMode.allCases

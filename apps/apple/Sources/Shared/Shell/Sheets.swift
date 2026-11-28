@@ -31,6 +31,8 @@ enum ShellSheet: Equatable {
     case joinInvite(String?)
     /// Settings > Profile > Delete account.
     case deleteAccount
+    /// "Send feedback" (`Feedback.swift`).
+    case feedback
     /// Templates: save the open page as one, a new page from one, a section's default, rename and delete a saved one.
     case saveTemplate(String)
     case newFromTemplate(String)

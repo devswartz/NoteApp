@@ -93,6 +93,8 @@ final class Shell {
     var dialog: TreeDialog?
     /// The open sharing, version history, Trash or lock dialog (`Sheets.swift`).
     var sheet: ShellSheet?
+    /// What is typed in "Send feedback": kept when it is closed or the send fails.
+    var feedbackDraft = ""
     /// The live page on screen (version history restores into it).
     @ObservationIgnored weak var openLive: LivePageModel?
     /// The tree row being renamed in place: `page:<id>`, `section:<id>` or `notebook:<id>`.
@@ -551,6 +553,10 @@ struct AppShell: View {
         // The sharing dialog with the public link on, and the delete-account sheet with a preview (corpus mode has no server).
         if state == "share-link" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.sheet = .sharePage(corpus) } }
         if state == "delete-account" { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.sheet = .deleteAccount } }
+        if state == "feedback" {
+            shell.feedbackDraft = "The new page colours are lovely. Could the grid be a little fainter?"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { shell.sheet = .feedback }
+        }
         if let open = dialogs[state] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { open() } }
     }
 }

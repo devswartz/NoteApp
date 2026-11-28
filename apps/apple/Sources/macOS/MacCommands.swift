@@ -116,6 +116,7 @@ struct MacCommands: Commands {
                 if let url = URL(string: SessionModel.production + "/support") { NSWorkspace.shared.open(url) }
             }
             Button("Keyboard Shortcuts") { bridge.openSettings("shortcuts") }.keyboardShortcut("/", modifiers: .command)
+            Button("Send Feedback…") { bridge.sendFeedback() }
         }
     }
 }

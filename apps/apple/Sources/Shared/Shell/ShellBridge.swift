@@ -116,6 +116,12 @@ extension ShellBridge {
 
     func openSettings(_ section: String? = nil) { shell?.openSettings(section) }
 
+    /// Help > Send Feedback.
+    func sendFeedback() {
+        guard let shell, let session else { return }
+        shell.openFeedback(session)
+    }
+
     /// File > Print and Export as PDF: the open page.
     func printPage() {
         guard let shell, let session else { return }
