@@ -50,6 +50,7 @@ struct TaskNotesSection: View {
                 if case let .success(s) = result { cont.resume(returning: s) } else { cont.resume(returning: "") }
             }
         }
+        guard !Task.isCancelled else { return }
         markdown = text
     }
 

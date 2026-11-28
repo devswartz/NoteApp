@@ -1,6 +1,7 @@
 import LocalAuthentication
 import Observation
 import SwiftUI
+import UIKit
 
 // The optional app lock (src/components/shell/AppLockSettings.tsx, platform.appLock in src/platform/capacitor.ts):
 // Settings > Security > This device > "Lock with Face ID". When on, the app asks to unlock when it opens and when it has
@@ -83,9 +84,11 @@ final class AppLock {
         case .background:
             if leftAt == nil { leftAt = Date() }
         case .active:
+            let wasAway = leftAt != nil
             if let at = leftAt, Date().timeIntervalSince(at) > Self.relockAfter { locked = true }
             leftAt = nil
-            if locked { unlock() }
+            // Only when coming back from the background: a cancelled prompt must not ask again by itself (Unlock does).
+            if locked && wasAway { unlock() }
         default:
             break
         }
@@ -109,6 +112,10 @@ struct AppLockOverlay: ViewModifier {
                 if showing { cover }
             }
             .onChange(of: scenePhase) { _, phase in lock.scene(phase) }
+            .onChange(of: showing) { _, on in
+                // Put the keyboard away so it does not stay over the cover.
+                if on { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) }
+            }
             .onAppear { if lock.locked && lock.enabled && LookData.state != "app-lock" && scenePhase == .active { lock.unlock() } }
     }
 

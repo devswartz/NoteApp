@@ -578,7 +578,7 @@ struct TaskRowView: View {
                     let c = PlatformColor(css: team.color).color
                     HStack(spacing: 4) {
                         Icon("users-round", 13, c)
-                        Text(teamLabel(team, session.shownTeams)).font(.web(12)).foregroundStyle(c).lineLimit(1)
+                        Text(teamLabel(team, session.shownTeams)).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
                     }
                     .frame(maxWidth: phone ? 110 : 160, alignment: .leading)
                 }

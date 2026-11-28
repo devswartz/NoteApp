@@ -24,7 +24,12 @@ extension SessionModel {
                     assigneeId: t.assigneeId, teamId: nil, tagIds: t.tagIds.isEmpty ? nil : t.tagIds))
             }
         }
-        for id in ids {
+        // Parents before their subtasks, so a restore never makes a subtask before its parent.
+        let ordered = ids.sorted { a, b in
+            let pa = tasks.first(where: { $0.id == a })?.parentId, pb = tasks.first(where: { $0.id == b })?.parentId
+            return (pa == nil ? 0 : 1) < (pb == nil ? 0 : 1)
+        }
+        for id in ordered {
             guard let t = tasks.first(where: { $0.id == id }) else { continue }
             copy(t)
             for c in tasks where c.parentId == id { copy(c) }
@@ -38,7 +43,12 @@ extension SessionModel {
         guard !copies.isEmpty else { return }
         for id in ids { delete(taskId: id) }
         let n = ids.count
-        say("\(n == 1 ? "Task" : "\(n) tasks") deleted") { [weak self] in self?.restore(copies) }
+        let ws = workspaceId, who = user?.id
+        say("\(n == 1 ? "Task" : "\(n) tasks") deleted") { [weak self] in
+            // Not into another workspace or account if either changed in the meantime.
+            guard let self, self.workspaceId == ws, self.user?.id == who else { return }
+            self.restore(copies)
+        }
     }
 
     /// Make deleted tasks again (same ids and fields).
