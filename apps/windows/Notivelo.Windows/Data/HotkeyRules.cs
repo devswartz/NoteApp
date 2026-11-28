@@ -28,8 +28,6 @@ public sealed class HotkeyService
 
     public HotkeyService(IHotkeyApi api, string text = QuickCapture) { _api = api; _text = text; }
 
-    public string Text => _text;
-
     /// <summary>Why the shortcut is off, in a sentence for the user; null when it works.</summary>
     public string? Problem => State switch
     {

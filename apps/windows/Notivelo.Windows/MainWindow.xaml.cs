@@ -64,6 +64,7 @@ public sealed partial class MainWindow : Window
         _subclass = (h, msg, w, l, id, data) =>
         {
             if (msg == App.ShowMessage) { ShowMain(); return IntPtr.Zero; }
+            if (msg == 0x0016 && w != IntPtr.Zero) { _quitting = true; Cleanup(); }   // WM_ENDSESSION: the OS is shutting down or the user signs out; never hold that up in the tray
             if (msg == 0x0312 && _hotkeys?.Owns((int)w) == true) { ToggleQuickCapture(); return IntPtr.Zero; }   // WM_HOTKEY
             if (_tray?.HandleMessage(msg, w, l) == true) return IntPtr.Zero;
             if (msg == 0x0024) // WM_GETMINMAXINFO: ptMinTrackSize is at offset 24
@@ -170,6 +171,7 @@ public sealed partial class MainWindow : Window
         {
             if (TrayRules.HideOnClose(_quitting, _tray?.Installed == true)) { e.Cancel = true; AppWindow.Hide(); return; }
             Cleanup();
+            _quick?.Quit();   // its hidden window would keep the process alive
         };
     }
 

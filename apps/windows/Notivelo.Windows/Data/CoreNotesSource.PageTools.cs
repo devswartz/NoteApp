@@ -157,9 +157,10 @@ internal sealed partial class CoreNotesSource
 
     public async Task<string?> LeaveShare(string pageId)
     {
+        if (UserId is not { } me) return "Connect to the internet first.";
         try
         {
-            await _session.CallAsync(c => c.RemovePageShare(pageId, _user.Id));
+            await _session.CallAsync(c => c.RemovePageShare(pageId, me));
             _shared = _shared.Where(s => s.Id != pageId).ToList();
             if (_openId == pageId) OpenPage(null);
             Raise();

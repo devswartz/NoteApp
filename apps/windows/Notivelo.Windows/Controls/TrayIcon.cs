@@ -18,7 +18,7 @@ internal sealed class TrayIcon : IDisposable
     private readonly uint _taskbarCreated = RegisterWindowMessage("TaskbarCreated");
     private IntPtr _icon;
     private string _tip;
-    private bool _added;
+    private bool _added, _v4;
 
     /// <summary>The icon is in the notification area.</summary>
     public bool Installed => _added;
@@ -56,7 +56,7 @@ internal sealed class TrayIcon : IDisposable
         try
         {
             if (!Shell_NotifyIcon(message, ref d)) return false;
-            if (message == 0) { d.uTimeoutOrVersion = 4; Shell_NotifyIcon(4, ref d); }   // NOTIFYICON_VERSION_4: WM_CONTEXTMENU and NIN_SELECT also come from the keyboard
+            if (message == 0) { d.uTimeoutOrVersion = 4; _v4 = Shell_NotifyIcon(4, ref d); }   // NOTIFYICON_VERSION_4: WM_CONTEXTMENU and NIN_SELECT also come from the keyboard
             return true;
         }
         catch (Exception) { return false; }
@@ -67,10 +67,13 @@ internal sealed class TrayIcon : IDisposable
     {
         if (msg == _taskbarCreated && _added) { Notify(0); return true; }
         if (msg != CallbackMessage) return false;
+        // version 4 sends both the mouse message and NIN_SELECT / WM_CONTEXTMENU for one click: act on the second kind only, or the menu would open twice
         switch ((uint)(lParam.ToInt64() & 0xFFFF))
         {
-            case WM_LBUTTONUP or NIN_SELECT or NIN_KEYSELECT: Activated?.Invoke(); break;
-            case WM_RBUTTONUP or WM_CONTEXTMENU: ShowMenu(); break;
+            case NIN_SELECT or NIN_KEYSELECT: Activated?.Invoke(); break;
+            case WM_LBUTTONUP when !_v4: Activated?.Invoke(); break;
+            case WM_CONTEXTMENU: ShowMenu(); break;
+            case WM_RBUTTONUP when !_v4: ShowMenu(); break;
         }
         return true;
     }
@@ -113,7 +116,8 @@ internal sealed class TrayIcon : IDisposable
             if (pixels is not null)
             {
                 if (TaskbarIsDark()) for (var i = 0; i < pixels.Length; i += 4) { pixels[i] = 255; pixels[i + 1] = 255; pixels[i + 2] = 255; }
-                return FromBgra(pixels, size);
+                var made = FromBgra(pixels, size);
+                if (made != IntPtr.Zero) return made;
             }
         }
         catch (Exception) { }
@@ -150,7 +154,7 @@ internal sealed class TrayIcon : IDisposable
         var color = CreateDIBSection(dc, ref bi, 0, out var bits, IntPtr.Zero, 0);
         var mask = CreateBitmap(size, size, 1, 1, null);
         ReleaseDC(IntPtr.Zero, dc);
-        if (color == IntPtr.Zero) return IntPtr.Zero;
+        if (color == IntPtr.Zero) { if (mask != IntPtr.Zero) DeleteObject(mask); return IntPtr.Zero; }
         var pre = new byte[bgra.Length];
         for (var i = 0; i < bgra.Length; i += 4)
         {
