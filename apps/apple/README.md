@@ -49,3 +49,5 @@ Push reminders with snooze and universal links (iOS), templates, box copy/paste/
 Share extension, Today widget, table tools, collaborator carets, workspace/teams/tags/activity, Mac menu bar extras are in this build.
 
 iPad tree drag, saved views, bulk select, outline, backlinks, follow, block handle, Members section, Mac menu bar count are in this build.
+
+Team chips, bulk delete Undo, inline rename, complete Undo, real streak, From the note, code colours, app lock, palette commands are in this build.

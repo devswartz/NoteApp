@@ -542,7 +542,8 @@ struct TaskRowView: View {
         let done = session.isDone(task)
         Haptics.tap()
         session.setDone(task, !done)
-        if !done, session.details[task.id]?.recurrence == nil {
+        // Undo only when the full copy shows the task doesn't repeat: undoing a repeating task would reopen the next one.
+        if !done, let detail = session.details[task.id], detail.recurrence == nil {
             shell.say("Task completed") { session.setDone(task, false) }
         }
     }

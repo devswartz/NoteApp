@@ -50,6 +50,9 @@ struct TaskNotesSection: View {
                 if case let .success(s) = result { cont.resume(returning: s) } else { cont.resume(returning: "") }
             }
         }
+        // `.task(id:)` cancels a load for an earlier task; its late answer must not replace the current notes.
+        // (`_Concurrency.Task`: the app's own `Task` record shadows Swift's.)
+        if _Concurrency.Task.isCancelled { return }
         markdown = text
     }
 
