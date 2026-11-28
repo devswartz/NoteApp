@@ -3,7 +3,7 @@ import SwiftUI
 
 /// One row of the search palette.
 struct SearchHit: Identifiable {
-    enum Kind { case page(String), task(String), create }
+    enum Kind { case page(String), task(String), command(String), create }
     let id: String
     let kind: Kind
     var icon: String
@@ -35,6 +35,13 @@ enum SearchLogic {
         return names.joined(separator: " › ")
     }
 
+    /// The palette's commands (PaletteCommands) as rows.
+    static func actionHits(_ q: String, _ session: SessionModel) -> [SearchHit] {
+        PaletteCommands.matching(q, session: session).map {
+            SearchHit(id: "c:" + $0.id, kind: .command($0.id), icon: $0.icon, title: $0.title, sub: $0.sub)
+        }
+    }
+
     static func groups(query q: String, session: SessionModel) -> [(title: String, hits: [SearchHit])] {
         let tree = session.shownTree ?? Tree(notebooks: [], sections: [], pages: [])
         let needle = q.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -44,7 +51,10 @@ enum SearchLogic {
         }
         if needle.isEmpty {
             let recent = tree.pages.filter { !$0.locked }.sorted { $0.updatedAt > $1.updatedAt }.prefix(6)
-            return recent.isEmpty ? [] : [("Recent pages", recent.map { pageHit($0) })]
+            var out: [(title: String, hits: [SearchHit])] = []
+            if !recent.isEmpty { out.append(("Recent pages", recent.map { pageHit($0) })) }
+            out.append(("Actions", actionHits("", session)))
+            return out
         }
         var pages = tree.pages.filter { !$0.locked && (($0.title.isEmpty ? "untitled" : $0.title).lowercased().contains(needle)) }
             .prefix(8).map { pageHit($0) }
@@ -88,6 +98,8 @@ enum SearchLogic {
         var out: [(title: String, hits: [SearchHit])] = []
         if !pages.isEmpty { out.append(("Pages", pages)) }
         if !tasks.isEmpty { out.append(("Tasks", tasks)) }
+        let actions = actionHits(q, session)
+        if !actions.isEmpty { out.append(("Actions", actions)) }
         out.append(("", [SearchHit(id: "create", kind: .create, icon: "plus", title: q)]))
         return out
     }
@@ -267,6 +279,8 @@ struct SearchLayer: View {
                 shell.closeSearch()
                 shell.say("That task isn’t in the native preview.")
             }
+        case let .command(id):
+            PaletteCommands.run(id, shell, session)
         case .create:
             shell.closeSearch()
             shell.openQuickAdd(session, text: shell.searchQuery)

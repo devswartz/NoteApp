@@ -98,11 +98,27 @@ struct TaskBuckets {
         }
     }
 
-    var doneToday: Int {
-        tasks.filter { t in
-            guard session.isDone(t), t.assigneeId == me, let at = t.completedAt, let d = Due.instant(at) else { return false }
-            return Calendar.current.isDateInToday(d)
-        }.count
+    /// My completions per day (the web's `productivity`: completed by me, by local day), keyed yyyy-MM-dd.
+    private var perDay: [String: Int] {
+        var out: [String: Int] = [:]
+        for t in tasks {
+            guard session.isDone(t), let at = t.completedAt, let d = Due.instant(at) else { continue }
+            if let by = session.details[t.id]?.completedBy { if by != me { continue } } else if t.assigneeId != me { continue }
+            out[SessionModel.dayString(d), default: 0] += 1
+        }
+        return out
+    }
+
+    var doneToday: Int { perDay[SessionModel.todayString] ?? 0 }
+
+    /// Days in a row (ending today, or yesterday while nothing is done yet today) with a completion; and the last seven days, oldest first.
+    var progress: (streak: Int, week: [Int]) {
+        let days = perDay
+        func day(_ offset: Int) -> String { SessionModel.dayString(Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()) }
+        var streak = 0
+        var offset = days[day(0)] != nil ? 0 : -1
+        while days[day(offset)] != nil, streak < 400 { streak += 1; offset -= 1 }
+        return (streak, (0..<7).map { days[day($0 - 6)] ?? 0 })
     }
 
     /// Groups by due day: Overdue, "Today · Sat 21 Nov", "Tomorrow · Sun 22 Nov", weekdays, dates, then No date.
@@ -159,7 +175,6 @@ struct TasksScreen: View {
                 HStack(spacing: 8) {
                     Text(list.title).font(.web(phone ? 24 : 26, 700)).tracking(phone ? -0.48 : -0.52).foregroundStyle(p.text.color).frame(height: phone ? 38 : 34)
                     Spacer(minLength: 0)
-                    if list != .team { SelectButton(palette: p) }
                 }
                 Text(list.subtitle).font(.web(14)).foregroundStyle(p.textMuted.color).frame(height: 21).padding(.top, 4)
                 if list != .all {
@@ -181,7 +196,7 @@ struct TasksScreen: View {
                     .padding(.top, 12)
                 }
                 if list == .today {
-                    StatsCard(done: buckets.doneToday, left: buckets.list(.today).count)
+                    StatsCard(done: buckets.doneToday, left: buckets.list(.today).count, progress: buckets.progress)
                         .padding(.top, phone ? 12 : 20)
                 }
                 if list == .team {
@@ -341,15 +356,17 @@ struct TasksScreen: View {
 struct StatsCard: View {
     let done: Int
     let left: Int
+    let progress: (streak: Int, week: [Int])
     let theme = Theme.shared
 
     var body: some View {
         let p = theme.chrome
+        let most = max(1, progress.week.max() ?? 1)
         let total = max(done + left, 1)
         HStack(alignment: .center, spacing: 24) {
             stat("\(done)", "done today", p)
             stat("\(left)", "left", p)
-            stat(done > 0 ? "1" : "0", "day streak", p)
+            stat(String(progress.streak) + (progress.streak >= 30 ? "+" : ""), "day streak" + (progress.streak >= 3 ? " \u{1F525}" : ""), p)
             Spacer(minLength: 0)
             HStack(alignment: .bottom, spacing: 6) {
                 // The last seven days, today at the right.
@@ -357,8 +374,14 @@ struct StatsCard: View {
                 ForEach(0..<7, id: \.self) { i in
                     VStack(spacing: 3) {
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(i == 6 ? p.accent.color : p.bgHover.color)
+                            .fill(p.bgHover.color)
                             .frame(width: 10, height: 32)
+                            .overlay(alignment: .bottom) {
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(i == 6 ? p.accent.color : p.textMuted.color)
+                                    .frame(height: 32 * CGFloat(progress.week[i]) / CGFloat(most))
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
                         Text(["S", "M", "T", "W", "T", "F", "S"][((today - (6 - i)) % 7 + 7) % 7]).font(.web(10.5)).foregroundStyle(p.textMuted.color)
                     }
                 }
@@ -394,13 +417,16 @@ struct TaskRowView: View {
     @Environment(SessionModel.self) private var session
     @Environment(Shell.self) private var shell
     let theme = Theme.shared
+    @State private var renaming = false
+    @State private var draft = ""
+    @FocusState private var titleFocus: Bool
 
     var body: some View {
         #if os(iOS)
         // On a touch screen: swipe right to complete (or reopen), left to move to tomorrow (the web's SwipeRow).
         let done = session.isDone(task)
         SwipeRow(
-            right: .init(label: done ? "Reopen" : "Complete", icon: done ? "rotate-ccw" : "check", success: true) { session.setDone(task, !done) },
+            right: .init(label: done ? "Reopen" : "Complete", icon: done ? "rotate-ccw" : "check", success: true) { toggleDone() },
             left: .init(label: "Tomorrow", icon: "calendar-clock") { moveToTomorrow() },
             disabled: task.locked || session.workspace?.role == "viewer" || session.preview || shell.bulk.active
         ) { rowBody }
@@ -427,18 +453,13 @@ struct TaskRowView: View {
                 SelectBox(on: shell.bulk.ids.contains(task.id), size: phone ? 22 : 18, palette: p).padding(.top, 1)
             } else {
             TaskCircle(priority: task.priority, done: done, size: phone ? 22 : 18, palette: p) {
-                session.setDone(task, !done)
+                toggleDone()
             }
             .padding(.top, 1)
             .disabled(task.locked)
             }
             VStack(alignment: .leading, spacing: phone ? 6 : 3) {
-                Text(task.locked ? "Locked task" : task.title)
-                    .font(.web(14))
-                    .lineSpacing(phone ? 4 : 0)
-                    .strikethrough(done)
-                    .foregroundStyle(done ? p.textMuted.color : p.text.color)
-                    .frame(minHeight: 19.6)
+                titleView(p, done)
                 meta(p)
             }
             Spacer(minLength: 0)
@@ -450,8 +471,9 @@ struct TaskRowView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(p.border.color).frame(height: 1) }
         .contentShape(Rectangle())
         .background(shell.bulk.ids.contains(task.id) ? p.accentSoft.color : Color.clear)
+        .onTapGesture(count: 2) { startRename() }
         .onTapGesture {
-            if task.locked { return }
+            if task.locked || renaming { return }
             if shell.bulk.active || TaskRowView.modifierSelects() {
                 shell.bulk.active = true
                 shell.bulk.toggle(task.id)
@@ -459,6 +481,78 @@ struct TaskRowView: View {
                 shell.openTask(task.id)
             }
         }
+        #if os(iOS)
+        .onLongPressGesture(minimumDuration: 0.45) { startSelecting() }
+        #endif
+    }
+
+    private var canEditTitle: Bool { !task.locked && !session.preview && session.workspace?.role != "viewer" && !shell.bulk.active }
+
+    /// The title, or its field while renaming (double-click or double-tap; Enter or leaving saves, Escape cancels).
+    @ViewBuilder
+    private func titleView(_ p: Palette, _ done: Bool) -> some View {
+        if renaming {
+            TextField("Task title", text: $draft)
+                .textFieldStyle(.plain)
+                .font(.web(14))
+                .foregroundStyle(p.text.color)
+                .focused($titleFocus)
+                .onSubmit { commitRename() }
+                .onChange(of: titleFocus) { _, on in if !on { commitRename() } }
+                #if os(macOS)
+                .onExitCommand { renaming = false }
+                #endif
+                .padding(.horizontal, 6).frame(minHeight: 28)
+                .background(p.bgElevated.color, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(p.accent.color, lineWidth: 1))
+        } else {
+            Text(task.locked ? "Locked task" : task.title)
+                .font(.web(14))
+                .lineSpacing(phone ? 4 : 0)
+                .strikethrough(done)
+                .foregroundStyle(done ? p.textMuted.color : p.text.color)
+                .frame(minHeight: 19.6)
+        }
+    }
+
+    private func startRename() {
+        guard canEditTitle, !renaming else { return }
+        draft = task.title
+        renaming = true
+        titleFocus = true
+    }
+
+    private func commitRename() {
+        guard renaming else { return }
+        renaming = false
+        let v = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !v.isEmpty, v != task.title { session.update(task.id, TaskChanges(title: v)) { shell.say($0) } }
+    }
+
+    /// A long-press on a touch screen starts selecting several tasks, with this one picked.
+    private func startSelecting() {
+        guard !task.locked, !session.preview, session.workspace?.role != "viewer" else { return }
+        Haptics.tap()
+        shell.bulk.active = true
+        shell.bulk.ids.insert(task.id)
+    }
+
+    /// Tick or untick; ticking says so with Undo (the web's "Task completed" toast, not for repeating tasks).
+    private func toggleDone() {
+        let done = session.isDone(task)
+        Haptics.tap()
+        session.setDone(task, !done)
+        // Undo only when the full copy shows the task doesn't repeat: undoing a repeating task would reopen the next one.
+        if !done, let detail = session.details[task.id], detail.recurrence == nil {
+            shell.say("Task completed") { session.setDone(task, false) }
+        }
+    }
+
+    /// The task's team (the lists carry none: the stored full copy has it).
+    private var rowTeam: TaskTeam? {
+        if session.preview { return LookData.rowTeams[task.id] }
+        guard let id = session.details[task.id]?.teamId else { return nil }
+        return session.teams.first { $0.id == id }
     }
 
     @ViewBuilder
@@ -467,7 +561,8 @@ struct TaskRowView: View {
         let pageTitle = task.pageId.flatMap { id in
             session.shownTree?.pages.first(where: { $0.id == id })?.title ?? LookData.otherPageTitles[id]
         }
-        if due != nil || task.priority < 4 || pageTitle != nil {
+        let team = rowTeam
+        if due != nil || task.priority < 4 || pageTitle != nil || team != nil {
             FlowLayout(spacing: phone ? 9 : 6, lineSpacing: 6) {
                 Color.clear.frame(width: 0, height: 18)
                 if let due {
@@ -479,6 +574,14 @@ struct TaskRowView: View {
                 }
                 if task.priority < 4 {
                     Icon("flag-filled", 13, priorityColor(task.priority, p).color)
+                }
+                if let team {
+                    let c = PlatformColor(css: team.color).color
+                    HStack(spacing: 4) {
+                        Icon("users-round", 13, c)
+                        Text(teamLabel(team, session.shownTeams)).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
+                    }
+                    .frame(maxWidth: phone ? 110 : 160, alignment: .leading)
                 }
                 if let pageTitle {
                     HStack(spacing: 4) {

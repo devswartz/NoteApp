@@ -279,9 +279,65 @@ struct SecuritySettings: View {
                         button("Lock pages now", p) { session.lockNow() }
                     }
                 }
+                #if os(iOS)
+                if DeviceUnlock.available, has { faceRow(p) }
+                #endif
             }
         }
+        #if os(iOS)
+        SettingsCard(title: "This device") {
+            SettingsRow(title: "Lock with \(lockMethod)",
+                        detail: AppLock.method == nil ? "Set up Face ID, a fingerprint or a passcode on this device to use this."
+                            : "Asks to unlock when the app opens or has been in the background for more than a minute.") {
+                Toggle("Lock with \(lockMethod)", isOn: Binding(get: { appLock.enabled }, set: { setAppLock($0) }))
+                    .labelsHidden().tint(p.accentSolid.color)
+                    .disabled(AppLock.method == nil || lockBusy)
+            }
+            if let lockError { Text(lockError).font(.web(12.5)).foregroundStyle(p.danger.color).padding(.top, 8) }
+        }
+        #endif
     }
+
+    #if os(iOS)
+    @State private var appLock = AppLock.shared
+    @State private var lockBusy = false
+    @State private var lockError: String?
+    @State private var faceOn = false
+    private var lockMethod: String { AppLock.method ?? "Face ID" }
+
+    private func setAppLock(_ on: Bool) {
+        lockBusy = true
+        lockError = nil
+        appLock.setEnabled(on) { problem in
+            lockBusy = false
+            lockError = problem
+        }
+    }
+
+    /// "Use Face ID for locked notes": on after the password unlock has made a device secret, off removes it here and on the server.
+    private func faceRow(_ p: Palette) -> some View {
+        let account = session.serverURL
+        let on = faceOn || DeviceUnlock.has(account: account)
+        return SettingsRow(title: "Use Face ID for locked notes",
+                           detail: on || session.locksOpen ? "Open locked pages on this device without typing the password. Ends after 30 days, on sign-out, and when either password changes."
+                               : "Unlock your locked notes with the password first.") {
+            Toggle("Use Face ID for locked notes", isOn: Binding(get: { on }, set: { want in
+                if want {
+                    session.registerDevice()
+                    faceOn = true
+                } else {
+                    DeviceUnlock.read(account: account) { cred in
+                        if let cred { session.call({ try $0.removeUnlockDevice(deviceId: cred.id) }) { _ in session.loadLockStatus() } }
+                        DeviceUnlock.forget(account: account)
+                        faceOn = false
+                    }
+                }
+            }))
+            .labelsHidden().tint(p.accentSolid.color)
+            .disabled(!on && !session.locksOpen)
+        }
+    }
+    #endif
 
     private func button(_ title: String, _ p: Palette, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {

@@ -115,7 +115,7 @@ final class SavedViewsModel {
         if session.preview {
             if loadedFor == nil {
                 loadedFor = "preview"
-                views = LookData.savedViews
+                views = LookData.state == "saved-views" ? LookData.savedViews : []
             }
             return
         }

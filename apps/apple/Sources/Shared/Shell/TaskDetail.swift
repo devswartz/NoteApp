@@ -75,6 +75,7 @@ struct TaskSheet: View {
                     titleRow(p)
                     props(p).padding(.top, 18)
                     descriptionBox(p).padding(.top, 18)
+                    if task.pageId != nil { TaskNotesSection(task: task, palette: p) }
                     subtasks(p)
                     foot(p)
                 }
@@ -166,9 +167,9 @@ struct TaskSheet: View {
         HStack(spacing: 16) {
             crumb(p).frame(maxWidth: .infinity, alignment: .leading)
             iconButton("trash", 16, p, "Delete task") {
-                session.delete(taskId: task.id)
+                let shell = self.shell
+                session.deleteWithUndo([task.id]) { text, undo in shell.say(text, undo: undo) }
                 shell.taskDetailId = nil
-                shell.say("Task deleted")
             }
             iconButton("x", 18, p, "Close") { shell.taskDetailId = nil }
         }

@@ -28,6 +28,11 @@ enum LookData {
         ]
     }
 
+    /// The team shown on a demo task row (the web demo's "Staff" team on the overdue task).
+    static let rowTeams: [String: TaskTeam] = [
+        "t-review": TaskTeam(id: "team-staff", name: "Staff", color: "#0ea5e9", parentId: nil, memberIds: ["demo"]),
+    ]
+
     /// The other people of the demo workspace (inbox actors, presence): id → name and colour.
     static let people: [String: (name: String, color: String)] = [
         "ana": ("Ana Silva", "#ec4899"), "ben": ("Ben Okafor", "#0ea5e9"), "chen": ("Chen Wei", "#10b981"),

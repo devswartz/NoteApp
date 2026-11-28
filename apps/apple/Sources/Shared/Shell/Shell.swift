@@ -440,6 +440,7 @@ struct AppShell: View {
         // The Today widget's snapshot follows the task list; shares from the Share Extension are taken once the app is in front
         // and the workspace is loaded (Sources/iOS/Extras.swift).
         .modifier(IOSExtras(shell: shell, session: session))
+        .modifier(AppLockOverlay())
         #endif
         .onChange(of: session.user?.id) { _, _ in
             shell.inbox.reset()
