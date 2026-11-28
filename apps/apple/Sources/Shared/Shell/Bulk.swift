@@ -2,7 +2,7 @@ import NotiveloCore
 import Observation
 import SwiftUI
 
-// Selecting several tasks (src/pages/tasks/BulkBar.tsx, selection.ts): a "Select" button in the task lists (and Cmd- or
+// Selecting several tasks (src/pages/tasks/BulkBar.tsx, selection.ts): a long-press on a task row on touch screens (and Cmd- or
 // Shift-click on the Mac), a bar at the bottom with Complete, Date, Assign, Priority, Tomorrow and Delete. The server has
 // no bulk route (the web loops over single updates), so this does too; the toast has Undo as the web's has.
 
@@ -157,34 +157,9 @@ struct BulkBar: View {
     }
 
     private func delete(_ list: [CoreTask]) {
-        for t in list { session.delete(taskId: t.id) }
-        shell.say("Deleted \(list.count) task\(list.count == 1 ? "" : "s")")
+        let shell = self.shell
+        session.deleteWithUndo(list.map { $0.id }) { text, undo in shell.say(text, undo: undo) }
         shell.bulk.clear()
-    }
-}
-
-/// The "Select" button beside a task list's title.
-struct SelectButton: View {
-    let palette: Palette
-    @Environment(Shell.self) private var shell
-    @Environment(SessionModel.self) private var session
-
-    var body: some View {
-        let p = palette
-        if session.workspace?.role != "viewer" {
-            Button {
-                if shell.bulk.active { shell.bulk.clear() } else { shell.bulk.active = true }
-            } label: {
-                HStack(spacing: 5) {
-                    Icon("list-checks", 15, shell.bulk.active ? p.accent.color : p.text2.color)
-                    Text(shell.bulk.active ? "Done" : "Select").font(.web(13.5, 500)).foregroundStyle(shell.bulk.active ? p.accent.color : p.text2.color)
-                }
-                .padding(.horizontal, 10).frame(height: 30)
-                .background(shell.bulk.active ? p.accentSoft.color : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PressStyle(radius: 8, pressed: p.bgPressed.color))
-        }
     }
 }
 
