@@ -204,6 +204,28 @@ pub fn insert_box_in(txn: &mut TransactionMut, g: &BoxGeom) -> Result<(), BoxErr
     Ok(())
 }
 
+/// Change the page's colour and/or rule lines in one transaction, as the web's
+/// `setPageSettings` does (`shared/pageDoc.ts`): a value that is not one of `PAGE_COLORS` /
+/// `RULE_LINES` is ignored, and a key is only written when it differs. No origin: the web's
+/// change is not undoable either (its undo manager tracks boxes and ink only). Answers whether
+/// anything was written.
+pub fn set_page_settings(doc: &Doc, color: Option<&str>, rules: Option<&str>) -> bool {
+    let color = color.filter(|c| crate::page::PAGE_COLORS.contains(c));
+    let rules = rules.filter(|r| crate::page::RULE_LINES.contains(r));
+    let mut txn = doc.transact_mut();
+    let map = txn.get_or_insert_map(crate::page::PAGE_SETTINGS_KEY);
+    let mut wrote = false;
+    for (k, v) in [("color", color), ("rules", rules)] {
+        let Some(v) = v else { continue };
+        let same = matches!(map.get(&txn, k), Some(Out::Any(Any::String(s))) if &*s == v);
+        if !same {
+            map.insert(&mut txn, k, v);
+            wrote = true;
+        }
+    }
+    wrote
+}
+
 /// Move a box (clamped). One transaction.
 pub fn move_box(doc: &Doc, id: &str, x: f64, y: f64) -> Result<(), BoxError> {
     move_box_with(doc, None, id, x, y)
@@ -343,6 +365,20 @@ mod tests {
         let frag = txn.get_or_insert_xml_fragment(box_field(id));
         let p = frag.push_back(&mut txn, XmlElementPrelim::empty("paragraph"));
         p.push_back(&mut txn, XmlTextPrelim::new(text));
+    }
+
+    #[test]
+    fn page_settings_write_like_the_web_and_ignore_invalid_values() {
+        let doc = new_doc();
+        assert!(set_page_settings(&doc, Some("yellow"), None));
+        assert!(!set_page_settings(&doc, Some("yellow"), None));
+        assert!(!set_page_settings(&doc, Some("teal"), Some("dots")));
+        assert!(set_page_settings(&doc, None, Some("grid")));
+        // A valid value beside an invalid one is still written.
+        assert!(set_page_settings(&doc, Some("bogus"), Some("lines")));
+        let txn = doc.transact();
+        let s = crate::page::page_settings(&txn);
+        assert_eq!((s.color.as_str(), s.rules.as_str()), ("yellow", "lines"));
     }
 
     #[test]

@@ -123,6 +123,42 @@ pub struct DownloadRequest {
     pub url: String,
 }
 
+/// A GET with the session's bearer token whose answer is bytes (`GET /me/export`).
+#[derive(Clone, PartialEq)]
+pub struct AuthedDownloadRequest {
+    pub url: String,
+    pub bearer: String,
+}
+
+impl std::fmt::Debug for AuthedDownloadRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthedDownloadRequest")
+            .field("url", &self.url)
+            .field("bearer", &"<hidden>")
+            .finish()
+    }
+}
+
+/// The answer to an `AuthedDownloadRequest`: the body (JSON text for an error) and the headers
+/// that name the file.
+#[derive(Clone, PartialEq)]
+pub struct AuthedDownloadResponse {
+    pub status: u16,
+    pub body: Vec<u8>,
+    pub content_disposition: Option<String>,
+    pub request_id: Option<String>,
+}
+
+impl std::fmt::Debug for AuthedDownloadResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthedDownloadResponse")
+            .field("status", &self.status)
+            .field("body", &format!("<{} bytes>", self.body.len()))
+            .field("content_disposition", &self.content_disposition)
+            .finish()
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct BinaryResponse {
     pub status: u16,
@@ -156,10 +192,20 @@ pub trait Transport: Send + Sync {
     fn download(&self, _req: &DownloadRequest) -> Result<BinaryResponse, String> {
         Err("this transport cannot download files".into())
     }
+
+    /// GET bytes with a bearer token. Err only when no response arrived.
+    fn download_authed(
+        &self,
+        _req: &AuthedDownloadRequest,
+    ) -> Result<AuthedDownloadResponse, String> {
+        Err("this transport cannot download files".into())
+    }
 }
 
 /// The biggest file the transport will read back (the server's upload limit plus a little).
 const MAX_DOWNLOAD_BYTES: u64 = 26 * 1024 * 1024;
+/// The biggest "Export my data" zip the transport will read back.
+const MAX_EXPORT_BYTES: u64 = 512 * 1024 * 1024;
 /// Uploads and downloads of up to 25 MB get longer than JSON calls.
 const FILE_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -270,6 +316,42 @@ impl Transport for UreqTransport {
             status,
             body,
             content_type,
+        })
+    }
+
+    fn download_authed(
+        &self,
+        req: &AuthedDownloadRequest,
+    ) -> Result<AuthedDownloadResponse, String> {
+        let mut res = self
+            .agent
+            .get(&req.url)
+            .config()
+            .timeout_global(Some(FILE_TIMEOUT))
+            .build()
+            .header("Authorization", format!("Bearer {}", req.bearer))
+            .call()
+            .map_err(|e| e.to_string())?;
+        let status = res.status().as_u16();
+        let header = |h: &str| {
+            res.headers()
+                .get(h)
+                .and_then(|v| v.to_str().ok())
+                .map(String::from)
+        };
+        let content_disposition = header("content-disposition");
+        let request_id = header("x-request-id");
+        let body = res
+            .body_mut()
+            .with_config()
+            .limit(MAX_EXPORT_BYTES)
+            .read_to_vec()
+            .map_err(|e| e.to_string())?;
+        Ok(AuthedDownloadResponse {
+            status,
+            body,
+            content_disposition,
+            request_id,
         })
     }
 }

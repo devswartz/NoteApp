@@ -196,3 +196,42 @@ fn another_page_reader_sees_a_created_box_like_the_webs() {
     assert_eq!(s.text_for_view(), "x");
     live.close();
 }
+
+#[test]
+fn page_settings_write_reaches_the_server_and_is_not_undoable() {
+    let server = TestServer::start(&["acc"]);
+    let (_core, live) = open_page(&server);
+    let id = live.create_box(10.0, 10.0, 300.0, 1.0).unwrap();
+
+    assert!(live
+        .set_page_settings(Some("blue".into()), Some("grid".into()))
+        .unwrap());
+    let s = live.info().settings;
+    assert_eq!((s.color.as_str(), s.rules.as_str()), ("blue", "grid"));
+    wait_for("settings on the server", || {
+        let doc = nv_model::doc_from_update(&full(server.room.doc())).unwrap();
+        let txn = doc.transact();
+        nv_model::page::page_settings(&txn).color == "blue"
+    });
+    // Same again: nothing written. Unknown value ignored, the valid one still written.
+    assert!(!live
+        .set_page_settings(Some("blue".into()), None)
+        .unwrap());
+    assert!(live
+        .set_page_settings(Some("teal".into()), Some("lines".into()))
+        .unwrap());
+    let s = live.info().settings;
+    assert_eq!((s.color.as_str(), s.rules.as_str()), ("blue", "lines"));
+
+    // Undo takes the box back, not the settings (the web's undo does not cover them).
+    assert!(live.undo().unwrap());
+    assert!(!live.info().boxes.iter().any(|b| b.id == id));
+    assert_eq!(live.info().settings.color, "blue");
+
+    live.close();
+    assert_eq!(
+        live.set_page_settings(Some("none".into()), None)
+            .unwrap_err(),
+        BoxError::Closed
+    );
+}

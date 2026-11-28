@@ -157,3 +157,27 @@ impl LivePage {
         })
     }
 }
+
+#[uniffi::export]
+impl LivePage {
+    /// Set the page colour (`none`, `yellow`, `green`, `blue`, `purple`, `pink`, `grey`) and/or
+    /// rule lines (`none`, `lines`, `grid`), as the web's ribbon does: one transaction on the
+    /// live document, which goes out like any edit. A none argument leaves that setting alone;
+    /// an unknown value is ignored (the other one is still written). Answers whether anything
+    /// changed. **Not undoable**, like the web (its undo covers boxes and ink only): `undo()`
+    /// does not touch it. Read the result from `info().settings` (`on_change` fires).
+    pub fn set_page_settings(
+        &self,
+        color: Option<String>,
+        rules: Option<String>,
+    ) -> Result<bool, BoxError> {
+        if self.is_closed() {
+            return Err(BoxError::Closed);
+        }
+        Ok(model::set_page_settings(
+            self.doc(),
+            color.as_deref(),
+            rules.as_deref(),
+        ))
+    }
+}

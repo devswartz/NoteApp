@@ -3,7 +3,10 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use nv_api::{BinaryResponse, DownloadRequest, Request, Response, Transport, UploadRequest};
+use nv_api::{
+    AuthedDownloadRequest, AuthedDownloadResponse, BinaryResponse, DownloadRequest, Request,
+    Response, Transport, UploadRequest,
+};
 use nv_core::*;
 use serde_json::{json, Value};
 
@@ -52,6 +55,21 @@ impl Transport for Script {
             status: 200,
             body: b"bytes".to_vec(),
             content_type: Some("application/pdf".into()),
+        })
+    }
+    fn download_authed(
+        &self,
+        req: &AuthedDownloadRequest,
+    ) -> Result<AuthedDownloadResponse, String> {
+        self.seen
+            .lock()
+            .unwrap()
+            .push(format!("GET {} (bearer {})", req.url, req.bearer));
+        Ok(AuthedDownloadResponse {
+            status: 200,
+            body: b"PK".to_vec(),
+            content_disposition: Some("attachment; filename=\"Notivelo data - Ann.zip\"".into()),
+            request_id: None,
         })
     }
 }
@@ -151,4 +169,36 @@ fn too_large_is_a_clear_error_before_sending() {
         e => panic!("{e:?}"),
     }
     assert!(s.seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn resend_verification_feedback_and_export_my_data() {
+    let (core, s) = core();
+    s.reply(200, json!({ "ok": true, "alreadyVerified": false }));
+    assert!(!core.resend_verification().unwrap());
+    s.reply(200, json!({ "ok": true, "alreadyVerified": true }));
+    assert!(core.resend_verification().unwrap());
+    s.reply(429, json!({ "error": "Try again in a minute" }));
+    assert!(matches!(
+        core.resend_verification(),
+        Err(CoreError::Server { status: 429, .. })
+    ));
+
+    s.reply(200, json!({ "ok": true, "delivered": false }));
+    let r = core
+        .send_feedback("Nice".into(), Some("/w/w1".into()), "0.9".into(), "ios".into())
+        .unwrap();
+    assert!(!r.delivered);
+    assert_eq!(
+        s.seen.lock().unwrap().last().unwrap(),
+        "POST http://localhost:4417/api/feedback"
+    );
+
+    let d = core.export_my_data().unwrap();
+    assert_eq!(d.bytes, b"PK".to_vec());
+    assert_eq!(d.filename, "Notivelo data - Ann.zip");
+    assert_eq!(
+        s.seen.lock().unwrap().last().unwrap(),
+        "GET http://localhost:4417/api/me/export (bearer acc)"
+    );
 }

@@ -1118,3 +1118,28 @@ pub struct PageBacklink {
     pub notebook_name: String,
     pub updated_at: String,
 }
+
+/// POST /auth/resend-verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerificationSent {
+    /// The email was confirmed already: nothing was sent.
+    #[serde(default)]
+    pub already_verified: bool,
+}
+
+/// POST /feedback.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeedbackSent {
+    /// It reached an admin's inbox (false when the server cannot send mail: it is logged there).
+    #[serde(default)]
+    pub delivered: bool,
+}
+
+/// GET /me/export: the zip and the file name the server suggests.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DataExport {
+    pub bytes: Vec<u8>,
+    /// From `Content-Disposition`, if the server sent one.
+    pub filename: Option<String>,
+}

@@ -4,13 +4,18 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use nv_api::{ApiError, Client, NotificationSettingsPatch, Request, Response, Transport};
+use nv_api::{
+    ApiError, AuthedDownloadRequest, AuthedDownloadResponse, Client, NotificationSettingsPatch,
+    Request, Response, Transport,
+};
 use serde_json::{json, Value};
 
 #[derive(Clone, Default)]
 struct Script {
     replies: Arc<Mutex<VecDeque<Result<Response, String>>>>,
     seen: Arc<Mutex<Vec<Request>>>,
+    downloads: Arc<Mutex<VecDeque<AuthedDownloadResponse>>>,
+    download_seen: Arc<Mutex<Vec<AuthedDownloadRequest>>>,
 }
 
 impl Script {
@@ -42,6 +47,19 @@ impl Transport for Script {
             .unwrap()
             .pop_front()
             .unwrap_or_else(|| panic!("an unscripted request: {} {}", req.method, req.url))
+    }
+
+    fn download_authed(
+        &self,
+        req: &AuthedDownloadRequest,
+    ) -> Result<AuthedDownloadResponse, String> {
+        self.download_seen.lock().unwrap().push(req.clone());
+        Ok(self
+            .downloads
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("an unscripted download"))
     }
 }
 
@@ -227,6 +245,85 @@ fn connected_apps_list_and_disconnect() {
     s.reply(404, json!({ "error": "That app isn’t connected" }));
     match c.disconnect_app("c 1") {
         Err(ApiError::Http { status: 404, .. }) => {}
+        e => panic!("{e:?}"),
+    }
+}
+
+#[test]
+fn resend_verification_feedback_and_export() {
+    let (c, s) = client();
+    s.reply(200, json!({ "ok": true, "alreadyVerified": false }));
+    assert!(!c.resend_verification().unwrap().already_verified);
+    assert_eq!(
+        s.last(),
+        ("POST".into(), "/auth/resend-verification".into(), json!({}))
+    );
+    s.reply(200, json!({ "ok": true, "alreadyVerified": true }));
+    assert!(c.resend_verification().unwrap().already_verified);
+    s.reply(429, json!({ "error": "Wait a minute" }));
+    match c.resend_verification() {
+        Err(ApiError::Http { status: 429, .. }) => {}
+        e => panic!("{e:?}"),
+    }
+
+    s.reply(200, json!({ "ok": true, "delivered": true }));
+    assert!(c
+        .send_feedback("Love it", Some("/w/w1"), "0.9.1", "ios")
+        .unwrap()
+        .delivered);
+    assert_eq!(
+        s.last(),
+        (
+            "POST".into(),
+            "/feedback".into(),
+            json!({ "message": "Love it", "page": "/w/w1",
+                    "client": { "version": "0.9.1", "platform": "ios" } })
+        )
+    );
+    s.reply(200, json!({ "ok": true, "delivered": false }));
+    assert!(!c.send_feedback("Hi", None, "0.9.1", "mac").unwrap().delivered);
+    assert!(s.last().2.get("page").is_none());
+    s.reply(400, json!({ "error": "Write a message first" }));
+    assert!(matches!(
+        c.send_feedback("", None, "1", "mac"),
+        Err(ApiError::Http { status: 400, .. })
+    ));
+
+    s.downloads.lock().unwrap().push_back(AuthedDownloadResponse {
+        status: 200,
+        body: b"PK\x03\x04".to_vec(),
+        content_disposition: Some(
+            "attachment; filename=\"Ann_data.zip\"; filename*=UTF-8''Ann%20d%C3%A4ta.zip".into(),
+        ),
+        request_id: None,
+    });
+    let d = c.export_my_data().unwrap();
+    assert_eq!(d.bytes, b"PK\x03\x04");
+    assert_eq!(d.filename.as_deref(), Some("Ann däta.zip"));
+    let seen = s.download_seen.lock().unwrap().last().unwrap().clone();
+    assert_eq!(seen.url, "http://localhost:4417/api/me/export");
+    assert_eq!(seen.bearer, "acc");
+
+    // Plain filename only; then an error answer.
+    s.downloads.lock().unwrap().push_back(AuthedDownloadResponse {
+        status: 200,
+        body: vec![1],
+        content_disposition: Some("attachment; filename=\"x.zip\"".into()),
+        request_id: None,
+    });
+    assert_eq!(c.export_my_data().unwrap().filename.as_deref(), Some("x.zip"));
+    s.downloads.lock().unwrap().push_back(AuthedDownloadResponse {
+        status: 403,
+        body: br#"{"error":"Unlock your locked notes first","code":"locked"}"#.to_vec(),
+        content_disposition: None,
+        request_id: None,
+    });
+    match c.export_my_data() {
+        Err(ApiError::Http {
+            status: 403,
+            code: Some(c),
+            ..
+        }) => assert_eq!(c, "locked"),
         e => panic!("{e:?}"),
     }
 }

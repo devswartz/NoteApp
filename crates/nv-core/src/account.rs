@@ -141,3 +141,66 @@ impl Core {
         Ok(self.api.disconnect_app(&client_id)?)
     }
 }
+
+/// What `send_feedback` answers.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FeedbackResult {
+    /// It was mailed to an admin. False when the server cannot send mail (it logs the text, so
+    /// nothing is lost): still say "Thanks, your feedback was sent", as the web does.
+    pub delivered: bool,
+}
+
+/// The user's own data as a zip, to save to a file.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct DataExportFile {
+    /// The zip.
+    pub bytes: Vec<u8>,
+    /// The name the server suggests (e.g. `Notivelo data - Ann.zip`), or `notivelo-data.zip`
+    /// when it sent none.
+    pub filename: String,
+}
+
+#[uniffi::export]
+impl Core {
+    /// Send a new confirmation email (the older link stops working): `POST
+    /// /auth/resend-verification`, what the web's "check your email" page calls. Answers true
+    /// when the address was confirmed already (nothing was sent: refresh `profile()`). The
+    /// server allows one a minute and five an hour: a refusal is `CoreError::Server` 429 with
+    /// its message.
+    pub fn resend_verification(&self) -> Result<bool, CoreError> {
+        Ok(self.api.resend_verification()?.already_verified)
+    }
+
+    /// "Send feedback" (`POST /feedback`), as the web's dialog does. `message` is 1 to 4000
+    /// characters (400 / 413 otherwise); `page` is the in-app path the user was on
+    /// (e.g. `/w/<workspaceId>`; relative, no query), or none; `client_version` and `platform`
+    /// say which app sent it (e.g. "0.9.1", "ios"). Rate limited (429).
+    pub fn send_feedback(
+        &self,
+        message: String,
+        page: Option<String>,
+        client_version: String,
+        platform: String,
+    ) -> Result<FeedbackResult, CoreError> {
+        let r = self
+            .api
+            .send_feedback(&message, page.as_deref(), &client_version, &platform)?;
+        Ok(FeedbackResult {
+            delivered: r.delivered,
+        })
+    }
+
+    /// "Export my data" (`GET /me/export`): a zip of everything the user owns. Held in memory.
+    /// With locked pages that are locked, the server answers 403 code `locked` (unlock them
+    /// first); 429 when asked too often.
+    pub fn export_my_data(&self) -> Result<DataExportFile, CoreError> {
+        let d = self.api.export_my_data()?;
+        Ok(DataExportFile {
+            bytes: d.bytes,
+            filename: d
+                .filename
+                .filter(|f| !f.trim().is_empty())
+                .unwrap_or_else(|| "notivelo-data.zip".into()),
+        })
+    }
+}
