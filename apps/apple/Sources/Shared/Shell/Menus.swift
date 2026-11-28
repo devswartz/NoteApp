@@ -672,21 +672,27 @@ struct MenuLayer: View {
     private func pageColorMenu(_ p: Palette) -> some View {
         let names = ["none", "yellow", "green", "blue", "purple", "pink", "grey"]
         let page = theme.page
+        let current = shell.pageSettings?.color
         return MenuCard(palette: p, width: 156, radius: 10, padding: 4) {
             Text("Page colour").font(.web(12, 500)).foregroundStyle(p.textMuted.color)
                 .padding(.top, 2).padding(.horizontal, 4).padding(.bottom, 6)
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 4), count: 4), spacing: 4) {
                 ForEach(names, id: \.self) { name in
-                    Button { shell.notYet("Changing the page colour") } label: {
+                    Button { shell.setPageSettings(color: name, what: "Changing the page colour") } label: {
                         ZStack {
                             RoundedRectangle(cornerRadius: 7, style: .continuous).fill(page.tinted(name).bg.color)
                             if name == "none" {
                                 Rectangle().fill(p.textMuted.color).frame(width: 2, height: 40).rotationEffect(.degrees(45))
                             }
-                            RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(p.borderStrong.color, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(name == current ? Color.clear : p.borderStrong.color, lineWidth: 1)
                         }
                         .frame(width: 32, height: 32)
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay {
+                            // The chosen colour: a 2 pt accent ring (the web's aria-pressed swatch).
+                            if name == current { RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(p.accent.color, lineWidth: 2).padding(-1) }
+                        }
                     }
                     .buttonStyle(.plain)
                 }
@@ -698,14 +704,17 @@ struct MenuLayer: View {
     private func ruleMenu(_ p: Palette) -> some View {
         MenuCard(palette: p, width: 160, radius: 10, padding: 4) {
             let items: [(String, String?)] = [("None", nil), ("Lines", "rows-3"), ("Grid", "grid-3x3")]
+            let current = shell.pageSettings?.rules
+            let ink = { (i: Int) -> Color in current == items[i].0.lowercased() ? p.accent.color : p.text.color }
             ForEach(0..<items.count, id: \.self) { i in
-                Button { shell.notYet("Changing rule lines") } label: {
+                Button { shell.setPageSettings(rules: items[i].0.lowercased(), what: "Changing rule lines") } label: {
                     HStack(spacing: 8) {
-                        if let icon = items[i].1 { Icon(icon, 16, p.text2.color) } else { Color.clear.frame(width: 16, height: 16) }
-                        Text(items[i].0).font(.web(14)).foregroundStyle(p.text.color)
+                        if let icon = items[i].1 { Icon(icon, 16, ink(i)) } else { Color.clear.frame(width: 16, height: 16) }
+                        Text(items[i].0).font(.web(14)).foregroundStyle(ink(i))
                         Spacer(minLength: 0)
                     }
                     .padding(.vertical, 6).padding(.horizontal, 10)
+                    .background(current == items[i].0.lowercased() ? p.accentSoft.color : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 .buttonStyle(PressStyle(radius: 6, pressed: p.bgHover.color))
             }
