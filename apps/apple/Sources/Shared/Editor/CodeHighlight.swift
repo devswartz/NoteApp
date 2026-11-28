@@ -56,7 +56,7 @@ enum CodeHighlight {
     private static let typeWords = words("int long short char float double bool boolean byte unsigned signed string String Int Long Double Float Bool Boolean Char Byte any number object unknown never u8 u16 u32 u64 usize i8 i16 i32 i64 isize f32 f64 str Self")
     private static let lits = words("true false null nil None True False undefined NaN Infinity")
 
-    private static func lang(_ name: String) -> Lang? {
+    private static func config(_ name: String) -> Lang? {
         var l = Lang()
         switch name {
         case "c", "cpp", "csharp", "java", "kotlin", "go", "javascript", "typescript", "swift", "rust", "php", "graphql":
@@ -133,7 +133,7 @@ enum CodeHighlight {
         case "xml": return xml(text)
         default: break
         }
-        guard let lang = lang(language) else { return [] }
+        guard let lang = config(language) else { return [] }
         let u = Array(text.utf16)
         let n = u.count
         var out: [Span] = []

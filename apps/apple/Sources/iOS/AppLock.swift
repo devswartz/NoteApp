@@ -46,7 +46,8 @@ final class AppLock {
         let context = LAContext()
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, error in
             DispatchQueue.main.async {
-                let cancelled = (error as? LAError).map { [.userCancel, .appCancel, .systemCancel].contains($0.code) } ?? false
+                let quiet: [LAError.Code] = [.userCancel, .appCancel, .systemCancel]
+                let cancelled = (error as? LAError).map { quiet.contains($0.code) } ?? false
                 done(ok, ok || cancelled ? nil : error?.localizedDescription)
             }
         }
