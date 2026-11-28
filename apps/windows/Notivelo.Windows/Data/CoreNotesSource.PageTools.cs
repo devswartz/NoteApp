@@ -135,7 +135,7 @@ internal sealed partial class CoreNotesSource
 
     public IReadOnlyList<MemberInfo> Members() =>
         _members.Length > 0 ? _members.Select(m => new MemberInfo(m.Id, m.Name, m.Email, m.Color, m.Role)).ToList()
-                            : new[] { new MemberInfo(_user.Id, _user.Name, _user.Email, "#6366f1", WorkspaceRole ?? "owner") };
+                            : OfflineStart.IsKnown(_user) ? new[] { new MemberInfo(_user.Id, _user.Name, _user.Email, "#6366f1", WorkspaceRole ?? "owner") } : Array.Empty<MemberInfo>();
 
     private PageSharesInfo Map(N.PageShares s) => new(
         s.Shares.Select(x => new ShareEntry(x.UserId, x.Name, x.Email, x.Color, x.CanEdit, x.Member, x.Member && _members.FirstOrDefault(m => m.Id == x.UserId)?.Role == "viewer")).ToList(),

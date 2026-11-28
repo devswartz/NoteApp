@@ -18,13 +18,22 @@ internal static class OfflineStart
         try { return JsonSerializer.Deserialize<Kept>(json) is { Id.Length: > 0 } k ? k : null; } catch { return null; }
     }
 
-    /// <summary>The user to open the shell as, or null to keep the old behaviour (the sign-in screen with "Try again"): only when the failure was the network, the device
-    /// holds a stored workspace list and we know whose it is.</summary>
+    /// <summary>The user to open the shell as, or null to keep the old behaviour (the sign-in screen with "Try again"): only when the failure was the network and the device
+    /// holds a stored workspace list. The core has no call that names the user of a kept sign-in before the server has answered (<c>User()</c> reads the live session only and
+    /// <c>CachedWorkspaces</c> carries no owner), so without a kept record (an install that signed in before this build) the shell opens with a placeholder identity
+    /// (<see cref="Unknown"/>, an empty id); the real user is filled in when the session comes back.</summary>
     public static N.User? Decide(Exception failure, int cachedWorkspaces, Kept? kept)
     {
-        if (failure is not N.CoreException.Network || cachedWorkspaces <= 0 || kept is null || !kept.EmailVerified) return null;
-        return new N.User(kept.Id, kept.Email, kept.Name, kept.Color, true);
+        if (failure is not N.CoreException.Network || cachedWorkspaces <= 0) return null;
+        if (kept is null) return Unknown;
+        return kept.EmailVerified ? new N.User(kept.Id, kept.Email, kept.Name, kept.Color, true) : null;
     }
+
+    /// <summary>Whose stored data it is, when nobody knows yet: an empty id, so nothing is "mine" until the session answers.</summary>
+    public static readonly N.User Unknown = new("", "", "", "#6366f1", true);
+
+    /// <summary>Whether the user has a real id (assignee "me", the task counts and presence need one).</summary>
+    public static bool IsKnown(N.User? u) => u is { Id.Length: > 0 };
 
     /// <summary>The wait before the next try to restore the session: 5, 10, 20, 40 seconds, then a minute.</summary>
     public static TimeSpan RetryDelay(int attempt) => TimeSpan.FromSeconds(Math.Min(60, 5 * Math.Pow(2, Math.Clamp(attempt, 0, 6))));

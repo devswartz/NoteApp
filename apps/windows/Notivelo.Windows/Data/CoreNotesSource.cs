@@ -12,7 +12,7 @@ namespace Notivelo.Windows.Data;
 internal sealed partial class CoreNotesSource : INotesSource, IDisposable
 {
     private readonly AppSession _session;
-    private readonly N.User _user;
+    private N.User _user;
     private N.Workspace[] _workspaces = Array.Empty<N.Workspace>();
     private string? _wsId;
     private N.Tree? _tree;
@@ -363,7 +363,16 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
     public TaskItem? FindTask(string taskId) => TaskLine(taskId);
     public string? PageTitleOf(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Title ?? _shared.FirstOrDefault(s => s.Id == pageId)?.Title;
     public string? EmojiOfPage(string pageId) => _tree?.Pages.FirstOrDefault(p => p.Id == pageId)?.Icon is { Length: > 0 } i ? i : null;
-    public string? UserId => _user.Id;
+    public string? UserId => OfflineStart.IsKnown(_user) ? _user.Id : null;
+
+    /// <summary>The session answered after a start from the stored data with no kept user: fill the identity in.</summary>
+    public void ConfirmUser(N.User user)
+    {
+        if (_disposed || OfflineStart.IsKnown(_user) || !OfflineStart.IsKnown(user)) return;
+        _user = user;
+        Workspace = Workspace with { UserInitials = Initials(user.Name, user.Email), UserName = user.Name, UserEmail = user.Email };
+        Raise();
+    }
 
     /// <summary>Pages for the [[ menu: titles starting with the query first, then words starting with it, then containing it (Apple's pageMatches); newest first within each.</summary>
     public IReadOnlyList<(string Id, string Title, string Crumb)> SearchPages(string query, int max)
@@ -512,10 +521,10 @@ internal sealed partial class CoreNotesSource : INotesSource, IDisposable
         try
         {
             var title = t.Title;
-            string? assignee = t.AssigneeId is { Length: 0 } ? null : t.AssigneeId ?? _user.Id;
+            string? assignee = t.AssigneeId is { Length: 0 } ? null : t.AssigneeId ?? UserId;
             if (t.AssigneeId is null && t.AssigneeMention is { } mention)
             {
-                if (N.NvCore.ResolveMember(mention, _members, _user.Id) is { } id) assignee = id; else title += " @" + mention;
+                if (N.NvCore.ResolveMember(mention, _members, UserId ?? "") is { } id) assignee = id; else title += " @" + mention;
             }
             string? teamId = t.TeamId;
             if (teamId is null && t.TeamText is { } team)

@@ -41,6 +41,9 @@ public sealed partial class ShellView : UserControl
     private readonly global::Microsoft.UI.Xaml.DispatcherTimer _inboxTimer = new() { Interval = TimeSpan.FromSeconds(60) };
     private readonly global::Microsoft.UI.Xaml.DispatcherTimer _reminderTimer = new() { Interval = TimeSpan.FromMinutes(5) };
     private long _remindersFor = -1;
+    // what the tray icon shows, readable by a UI test (the icon itself is not): one pixel, no hit testing
+    private readonly TextBlock _trayProbe = new() { Text = "Tray", FontSize = 1, Width = 1, Height = 1, Opacity = 0.01, IsHitTestVisible = false, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Bottom };
+    private static bool _toldHotkey;
     private static readonly bool ForceOffline = Environment.GetEnvironmentVariable("NOTIVELO_FORCE_OFFLINE") == "1";
 
     public ShellView(INotesSource source, Action? signOut = null, string? server = null)
@@ -48,6 +51,8 @@ public sealed partial class ShellView : UserControl
         _source = source;
         ThemeBrushes.ApplyAccent(AppSettings.Accent);
         InitializeComponent();
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(_trayProbe, "tray-state");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_trayProbe, "Tray");
         _pageId = source.InitialPageId;
         _rail = new RailView(source, signOut);
         _sidebar = new SidebarView(source);
@@ -57,6 +62,8 @@ public sealed partial class ShellView : UserControl
         _settings = new SettingsView(source, () => _theme, m => SetTheme(m), signOut, server);
         Root.Children.Add(BuildOfflinePill());
         Root.Children.Add(_overlay);
+        Root.Children.Add(_trayProbe);
+        Grid.SetRowSpan(_trayProbe, 2);
         Grid.SetRowSpan(_overlay, 2);
         _host = new ShellHost(source, _overlay)
         {
@@ -106,7 +113,7 @@ public sealed partial class ShellView : UserControl
         // the bell: the unread count on sign-in, when the window comes to the front and every minute
         Action activated = () => DispatcherQueue.TryEnqueue(() => _host.Inbox.Refresh(false));
         Loaded += (_, _) => { MainWindow.WindowActivated += activated; _inboxTimer.Start(); _host.Inbox.Refresh(false); };
-        Unloaded += (_, _) => { MainWindow.WindowActivated -= activated; _inboxTimer.Stop(); TaskbarBadge.Set(0); };
+        Unloaded += (_, _) => { MainWindow.WindowActivated -= activated; _inboxTimer.Stop(); TaskbarBadge.Set(0); MainWindow.SetTodayCount(0); };
         _inboxTimer.Tick += (_, _) => _host.Inbox.Refresh(false);
         // reminder toasts: planned from the core's reminders on sign-in, every 5 minutes and when the task list changed
         _reminderTimer.Tick += (_, _) => _ = ReminderToasts.SyncAsync(_source);
@@ -129,6 +136,7 @@ public sealed partial class ShellView : UserControl
         _ui.ColorValuesChanged += (_, _) => DispatcherQueue.TryEnqueue(() => { if (_theme == ThemeMode.System) ApplyTheme(); });
         _offlineTimer.Tick += (_, _) => UpdateOffline();
         Loaded += (_, _) => { _offlineTimer.Start(); UpdateOffline(); };
+        Loaded += (_, _) => { if (!_toldHotkey && MainWindow.HotkeyProblem is { } problem) { _toldHotkey = true; _host.Toast(problem, true); } };
         Unloaded += (_, _) => _offlineTimer.Stop();
         SizeChanged += (_, e) => ApplyBreakpoints(e.NewSize.Width);
         ApplyTheme();
@@ -287,7 +295,10 @@ public sealed partial class ShellView : UserControl
         _rail.SetRoute(_route);
         _sidebar.Update(_route == AppRoute.Settings ? _before : _route, _pageId, _taskView);
         UpdateOffline();
-        TaskbarBadge.Set(_source.GetTaskCounts().Today);
+        var due = _source.GetTaskCounts().Today;
+        TaskbarBadge.Set(due);
+        MainWindow.SetTodayCount(due);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(_trayProbe, TrayRules.Readout(due, TrayRules.AppName, HotkeyService.QuickCapture, MainWindow.HotkeyProblem));
         if (_source.TasksVersion != _remindersFor) { _remindersFor = _source.TasksVersion; if (IsLoaded) _ = ReminderToasts.SyncAsync(_source, true); }
         if (_page.PageId == _pageId) _page.Refresh(); else _page.SetPage(_pageId);
         _tasks.SetView(_taskView);
@@ -352,6 +363,12 @@ public sealed partial class ShellView : UserControl
         }
     }
 
+    /// <summary>A page the quick-capture window just made: open it (the main window is already shown).</summary>
+    public void OpenPageById(string id) => _host.OpenPage(id);
+
+    /// <summary>The tray menu's Today, Upcoming and New Page.</summary>
+    internal void RunShellKeyPublic(ShellKey k) => RunShellKey(k);
+
     /// <summary>The app-menu shortcuts (the Mac menu's New Page, New Task, the Go menu and Settings).</summary>
     private void RunShellKey(ShellKey k)
     {
@@ -363,6 +380,7 @@ public sealed partial class ShellView : UserControl
                 else _host.Toast("Create a notebook first");
                 break;
             case ShellKey.NewTask: _host.OpenQuickAdd(null); break;
+            case ShellKey.QuickCapture: MainWindow.Instance?.ToggleQuickCapture(); break;
             case ShellKey.Settings: if (_route != AppRoute.Settings) _host.OpenSettings(); break;
             case ShellKey.Calendar: GoTo(AppRoute.Calendar); break;
             case ShellKey.Notes: GoTo(AppRoute.Notes); break;
