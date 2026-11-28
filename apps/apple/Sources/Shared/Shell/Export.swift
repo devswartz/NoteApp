@@ -57,6 +57,17 @@ enum FileExport {
         share(file: url)
     }
 
+    /// A file the core made (a zip), under its own name: to the share sheet.
+    static func save(data: Data, filename: String) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = dir.appendingPathComponent(filename)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: url)
+        } catch { return }
+        share(file: url)
+    }
+
     /// The front-most view controller (what a sheet is presented from).
     static func topViewController() -> UIViewController? {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
@@ -84,6 +95,18 @@ enum FileExport {
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    /// A file the core made (a zip), under its own name: the save panel.
+    static func save(data: Data, filename: String) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename
+        panel.allowedContentTypes = [UTType(filenameExtension: (filename as NSString).pathExtension) ?? .data]
+        panel.canCreateDirectories = true
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            try? data.write(to: url)
         }
     }
     #endif
