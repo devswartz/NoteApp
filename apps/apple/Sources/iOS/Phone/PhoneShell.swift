@@ -41,14 +41,17 @@ struct PhoneShell: View {
 
     private var isCalendar: Bool { shell.route == .calendar }
 
+    /// A page, or a page from the Trash: the top bar has Back instead of the menu.
     private var isPage: Bool {
-        if case .page = shell.route { return true }
-        return false
+        switch shell.route {
+        case .page, .trashedPage: return true
+        default: return false
+        }
     }
 
     private var showsFab: Bool {
         switch shell.route {
-        case .page, .settings: return false
+        case .page, .trashedPage, .settings: return false
         default: return true
         }
     }
@@ -63,7 +66,9 @@ struct PhoneShell: View {
     }
 
     private func goBack() {
-        if case let .page(id) = shell.route {
+        if case .trashedPage = shell.route {
+            shell.showTrashList()
+        } else if case let .page(id) = shell.route {
             if let sec = session.shownTree?.pages.first(where: { $0.id == id })?.sectionId {
                 shell.route = .section(sec)
             } else {

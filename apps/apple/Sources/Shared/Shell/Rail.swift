@@ -54,7 +54,7 @@ struct Rail: View {
 
     private var isNotes: Bool {
         switch shell.route {
-        case .notes, .page, .section: return true
+        case .notes, .page, .section, .trashedPage: return true
         default: return false
         }
     }

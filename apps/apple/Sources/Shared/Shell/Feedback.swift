@@ -13,7 +13,7 @@ extension Shell {
         guard let ws = session.workspaceId else { return nil }
         let base = "/w/\(ws)"
         switch route {
-        case let .page(id): return "\(base)/p/\(id)"
+        case let .page(id), let .trashedPage(id, _): return "\(base)/p/\(id)"
         case .notes, .section: return "\(base)/notes"
         case let .tasks(list): return "\(base)/tasks/\(list.rawValue)"
         case .calendar: return "\(base)/tasks/calendar"

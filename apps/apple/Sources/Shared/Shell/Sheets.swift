@@ -756,11 +756,19 @@ struct TrashCard: View {
             } else {
                 Icon(icon, 15, p.textMuted.color).frame(width: 18)
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(e.name.isEmpty ? "Untitled" : e.name).font(.web(14)).foregroundStyle(p.text.color).lineLimit(1)
-                Text(detail).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
+            // A page's name opens it, read-only (the web links it to the page).
+            Button { if e.kind == .page { shell.openTrashedPage(e.id, title: e.name) } } label: {
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(e.name.isEmpty ? "Untitled" : e.name).font(.web(14)).foregroundStyle(p.text.color).lineLimit(1)
+                        Text(detail).font(.web(12)).foregroundStyle(p.textMuted.color).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .disabled(e.kind != .page)
             if confirming == e.id {
                 DialogButton(title: "Delete forever", style: .danger) { deleteForever(e) }
             } else {

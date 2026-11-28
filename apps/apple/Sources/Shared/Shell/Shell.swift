@@ -12,6 +12,8 @@ final class Shell {
         case page(String)
         /// A section with no page open (the empty-section screen).
         case section(String)
+        /// A page in the Trash, read-only: its id and title (`TrashedPage.swift`).
+        case trashedPage(String, String)
         case tasks(TaskList)
         /// The Calendar: month or week, tasks by due date.
         case calendar
@@ -172,6 +174,7 @@ final class Shell {
             case "outline": route = .page(LookData.pageId("blocks"))
             case "backlinks": route = .page(LookData.pageId("canvas-boxes"))
             case "empty-notebook": route = .notes
+            case "trashed-page": route = .trashedPage(LookData.pageId("canvas-boxes"), "Quarterly plan")
             case "page-not-found": route = .page(LookData.pageId("not-found"))
             case "edit-caret", "edit-selection", "edit-new-box", "edit-link", "ribbon-page-active", "slash-menu", "table-tools", "cursors": route = .page(LookData.pageId("sandbox"))
             default:
@@ -583,6 +586,8 @@ struct MainArea: View {
                 NotesHome()
             case let .section(id):
                 SectionScreen(sectionId: id)
+            case let .trashedPage(id, title):
+                TrashedPageScreen(pageId: id, title: title).id(id)
             }
         }
         .background(theme.chrome.bg.color)

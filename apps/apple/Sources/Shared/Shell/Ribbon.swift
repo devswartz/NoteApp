@@ -156,7 +156,7 @@ struct Ribbon: View {
                         switch shell.route {
                         case .page: NoteRibbon(m: m)
                         case let .tasks(list): TasksRibbon(m: m, list: list)
-                        case .notes, .section: NotesRibbon(m: m)
+                        case .notes, .section, .trashedPage: NotesRibbon(m: m)
                         case .calendar: CalendarRibbon(m: m)
                         case .settings: SettingsRibbon(m: m)
                         }
