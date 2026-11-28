@@ -214,9 +214,7 @@ fn page_settings_write_reaches_the_server_and_is_not_undoable() {
         nv_model::page::page_settings(&txn).color == "blue"
     });
     // Same again: nothing written. Unknown value ignored, the valid one still written.
-    assert!(!live
-        .set_page_settings(Some("blue".into()), None)
-        .unwrap());
+    assert!(!live.set_page_settings(Some("blue".into()), None).unwrap());
     assert!(live
         .set_page_settings(Some("teal".into()), Some("lines".into()))
         .unwrap());

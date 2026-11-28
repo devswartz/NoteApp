@@ -186,7 +186,12 @@ fn resend_verification_feedback_and_export_my_data() {
 
     s.reply(200, json!({ "ok": true, "delivered": false }));
     let r = core
-        .send_feedback("Nice".into(), Some("/w/w1".into()), "0.9".into(), "ios".into())
+        .send_feedback(
+            "Nice".into(),
+            Some("/w/w1".into()),
+            "0.9".into(),
+            "ios".into(),
+        )
         .unwrap();
     assert!(!r.delivered);
     assert_eq!(

@@ -267,10 +267,11 @@ fn resend_verification_feedback_and_export() {
     }
 
     s.reply(200, json!({ "ok": true, "delivered": true }));
-    assert!(c
-        .send_feedback("Love it", Some("/w/w1"), "0.9.1", "ios")
-        .unwrap()
-        .delivered);
+    assert!(
+        c.send_feedback("Love it", Some("/w/w1"), "0.9.1", "ios")
+            .unwrap()
+            .delivered
+    );
     assert_eq!(
         s.last(),
         (
@@ -281,7 +282,11 @@ fn resend_verification_feedback_and_export() {
         )
     );
     s.reply(200, json!({ "ok": true, "delivered": false }));
-    assert!(!c.send_feedback("Hi", None, "0.9.1", "mac").unwrap().delivered);
+    assert!(
+        !c.send_feedback("Hi", None, "0.9.1", "mac")
+            .unwrap()
+            .delivered
+    );
     assert!(s.last().2.get("page").is_none());
     s.reply(400, json!({ "error": "Write a message first" }));
     assert!(matches!(
@@ -289,14 +294,18 @@ fn resend_verification_feedback_and_export() {
         Err(ApiError::Http { status: 400, .. })
     ));
 
-    s.downloads.lock().unwrap().push_back(AuthedDownloadResponse {
-        status: 200,
-        body: b"PK\x03\x04".to_vec(),
-        content_disposition: Some(
-            "attachment; filename=\"Ann_data.zip\"; filename*=UTF-8''Ann%20d%C3%A4ta.zip".into(),
-        ),
-        request_id: None,
-    });
+    s.downloads
+        .lock()
+        .unwrap()
+        .push_back(AuthedDownloadResponse {
+            status: 200,
+            body: b"PK\x03\x04".to_vec(),
+            content_disposition: Some(
+                "attachment; filename=\"Ann_data.zip\"; filename*=UTF-8''Ann%20d%C3%A4ta.zip"
+                    .into(),
+            ),
+            request_id: None,
+        });
     let d = c.export_my_data().unwrap();
     assert_eq!(d.bytes, b"PK\x03\x04");
     assert_eq!(d.filename.as_deref(), Some("Ann däta.zip"));
@@ -305,19 +314,28 @@ fn resend_verification_feedback_and_export() {
     assert_eq!(seen.bearer, "acc");
 
     // Plain filename only; then an error answer.
-    s.downloads.lock().unwrap().push_back(AuthedDownloadResponse {
-        status: 200,
-        body: vec![1],
-        content_disposition: Some("attachment; filename=\"x.zip\"".into()),
-        request_id: None,
-    });
-    assert_eq!(c.export_my_data().unwrap().filename.as_deref(), Some("x.zip"));
-    s.downloads.lock().unwrap().push_back(AuthedDownloadResponse {
-        status: 403,
-        body: br#"{"error":"Unlock your locked notes first","code":"locked"}"#.to_vec(),
-        content_disposition: None,
-        request_id: None,
-    });
+    s.downloads
+        .lock()
+        .unwrap()
+        .push_back(AuthedDownloadResponse {
+            status: 200,
+            body: vec![1],
+            content_disposition: Some("attachment; filename=\"x.zip\"".into()),
+            request_id: None,
+        });
+    assert_eq!(
+        c.export_my_data().unwrap().filename.as_deref(),
+        Some("x.zip")
+    );
+    s.downloads
+        .lock()
+        .unwrap()
+        .push_back(AuthedDownloadResponse {
+            status: 403,
+            body: br#"{"error":"Unlock your locked notes first","code":"locked"}"#.to_vec(),
+            content_disposition: None,
+            request_id: None,
+        });
     match c.export_my_data() {
         Err(ApiError::Http {
             status: 403,

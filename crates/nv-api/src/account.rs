@@ -145,7 +145,10 @@ impl Client {
             .err()
             .unwrap_or_else(|| ApiError::Decode("export failed".into())));
         }
-        let filename = res.content_disposition.as_deref().and_then(disposition_name);
+        let filename = res
+            .content_disposition
+            .as_deref()
+            .and_then(disposition_name);
         Ok(DataExport {
             bytes: res.body,
             filename,
