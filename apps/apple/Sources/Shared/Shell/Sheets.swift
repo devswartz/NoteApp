@@ -768,7 +768,6 @@ struct TrashCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(e.kind != .page)
             if confirming == e.id {
                 DialogButton(title: "Delete forever", style: .danger) { deleteForever(e) }
             } else {

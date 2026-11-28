@@ -476,7 +476,8 @@ struct TaskRowView: View {
         .focusable(canEditTitle)
         .focusEffectDisabled()
         .onKeyPress(keys: [KeyEquivalent("r"), TaskRowView.f2]) { press in
-            guard press.modifiers.isEmpty, canEditTitle, !renaming else { return .ignored }
+            // Not isEmpty: a Mac function key carries the .function flag.
+            guard press.modifiers.isDisjoint(with: [.command, .control, .option]), canEditTitle, !renaming else { return .ignored }
             startRename()
             return .handled
         }

@@ -156,35 +156,76 @@ impl Client {
     }
 }
 
-/// The file name in a `Content-Disposition` header: `filename*=UTF-8''...` first, else `filename="..."`.
+/// The file name in a `Content-Disposition` header: `filename*=UTF-8''...` first, else
+/// `filename="..."` or an unquoted `filename=...`. Only the last path component is kept, so a
+/// server cannot point a save outside the chosen folder.
 fn disposition_name(cd: &str) -> Option<String> {
     let lower = cd.to_ascii_lowercase();
-    if let Some(i) = lower.find("filename*=utf-8''") {
-        let rest = &cd[i + "filename*=utf-8''".len()..];
-        let raw = rest.split(';').next().unwrap_or("").trim();
-        let mut out = Vec::new();
-        let b = raw.as_bytes();
-        let mut k = 0;
-        while k < b.len() {
-            if b[k] == b'%' && k + 2 < b.len() {
-                let hex = std::str::from_utf8(&b[k + 1..k + 3]).unwrap_or("");
+    let name = star_name(cd, &lower).or_else(|| plain_name(cd, &lower))?;
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("").trim();
+    (!base.is_empty() && base != "." && base != "..").then(|| base.to_string())
+}
+
+fn star_name(cd: &str, lower: &str) -> Option<String> {
+    let key = "filename*=utf-8''";
+    let i = lower.find(key)?;
+    let rest = &cd[i + key.len()..];
+    let raw = rest.split(';').next().unwrap_or("").trim();
+    let mut out = Vec::new();
+    let b = raw.as_bytes();
+    let mut k = 0;
+    while k < b.len() {
+        if b[k] == b'%' && k + 2 < b.len() {
+            let hex = std::str::from_utf8(&b[k + 1..k + 3]).unwrap_or("");
+            if hex.bytes().all(|c| c.is_ascii_hexdigit()) {
                 if let Ok(v) = u8::from_str_radix(hex, 16) {
                     out.push(v);
                     k += 3;
                     continue;
                 }
             }
-            out.push(b[k]);
-            k += 1;
         }
-        if let Ok(s) = String::from_utf8(out) {
-            if !s.is_empty() {
-                return Some(s);
-            }
-        }
+        out.push(b[k]);
+        k += 1;
     }
-    let i = lower.find("filename=\"")? + "filename=\"".len();
-    let rest = &cd[i..];
-    let name = &rest[..rest.find('"')?];
+    String::from_utf8(out).ok().filter(|s| !s.is_empty())
+}
+
+fn plain_name(cd: &str, lower: &str) -> Option<String> {
+    let key = "filename=";
+    let i = lower.find(key)? + key.len();
+    let rest = cd[i..].trim_start();
+    let name = match rest.strip_prefix('"') {
+        Some(q) => &q[..q.find('"')?],
+        None => rest.split(';').next().unwrap_or("").trim(),
+    };
     (!name.is_empty()).then(|| name.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::disposition_name;
+
+    #[test]
+    fn file_names_from_content_disposition() {
+        let n = |s| disposition_name(s);
+        assert_eq!(
+            n("attachment; filename=\"a.zip\"; filename*=UTF-8''Notivelo%20data%20-%20%C3%85.zip"),
+            Some("Notivelo data - Å.zip".into())
+        );
+        assert_eq!(
+            n("attachment; filename=\"a b.zip\""),
+            Some("a b.zip".into())
+        );
+        assert_eq!(
+            n("attachment; filename=data.zip; size=3"),
+            Some("data.zip".into())
+        );
+        assert_eq!(
+            n("attachment; filename=\"../../x.zip\""),
+            Some("x.zip".into())
+        );
+        assert_eq!(n("attachment; filename=\"..\""), None);
+        assert_eq!(n("attachment"), None);
+    }
 }

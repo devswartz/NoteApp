@@ -482,7 +482,10 @@ struct AppShell: View {
         .modifier(MacAutoLock(session: session))
         #endif
         .onChange(of: session.workspaceId) {
-            if case .page = shell.route, !session.preview { shell.route = .notes }
+            switch shell.route {
+            case .page, .trashedPage: if !session.preview { shell.route = .notes }
+            default: break
+            }
             shell.calStatus = .open
             shell.calTags = []
             shell.calWho = .mine

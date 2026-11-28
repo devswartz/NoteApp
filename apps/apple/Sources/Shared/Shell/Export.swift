@@ -50,6 +50,12 @@ enum FileExport {
         return (cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(80))) + "." + ext
     }
 
+    /// The server's suggested name, kept to one path component.
+    static func safeName(_ name: String) -> String {
+        let base = (name as NSString).lastPathComponent.replacingOccurrences(of: ":", with: " ").trimmingCharacters(in: .whitespaces)
+        return base.isEmpty || base == "." || base == ".." ? "notivelo-data.zip" : base
+    }
+
     #if canImport(UIKit)
     static func present(text: String, title: String) {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName(title))
@@ -60,7 +66,7 @@ enum FileExport {
     /// A file the core made (a zip), under its own name: to the share sheet.
     static func save(data: Data, filename: String) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let url = dir.appendingPathComponent(filename)
+        let url = dir.appendingPathComponent(safeName(filename))
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try data.write(to: url)
@@ -101,8 +107,9 @@ enum FileExport {
     /// A file the core made (a zip), under its own name: the save panel.
     static func save(data: Data, filename: String) {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = filename
-        panel.allowedContentTypes = [UTType(filenameExtension: (filename as NSString).pathExtension) ?? .data]
+        let name = safeName(filename)
+        panel.nameFieldStringValue = name
+        panel.allowedContentTypes = [UTType(filenameExtension: (name as NSString).pathExtension) ?? .data]
         panel.canCreateDirectories = true
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
