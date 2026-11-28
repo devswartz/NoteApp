@@ -232,7 +232,7 @@ struct TaskSheet: View {
 
     private func titleRow(_ p: Palette) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            TaskCircle(priority: task.priority, done: done, size: 20, palette: p) { session.setDone(task, !done) }
+            TaskCircle(priority: task.priority, done: done, size: 20, palette: p) { Haptics.tap(); session.setDone(task, !done) }
                 .padding(.top, 7)
                 .disabled(task.locked)
             TextField("", text: $title, axis: .vertical)
@@ -496,7 +496,7 @@ struct TaskSheet: View {
                 }
                 ForEach(subs, id: \.id) { s in
                     HStack(spacing: 10) {
-                        TaskCircle(priority: s.priority, done: session.isDone(s), size: 18, palette: p) { session.setDone(s, !session.isDone(s)) }
+                        TaskCircle(priority: s.priority, done: session.isDone(s), size: 18, palette: p) { Haptics.tap(); session.setDone(s, !session.isDone(s)) }
                         Button { shell.openTask(s.id) } label: {
                             Text(s.title.isEmpty ? "Untitled" : s.title).font(.web(phone ? 15 : 14)).lineLimit(1)
                                 .strikethrough(session.isDone(s))

@@ -472,6 +472,14 @@ struct TaskRowView: View {
         .contentShape(Rectangle())
         .background(shell.bulk.ids.contains(task.id) ? p.accentSoft.color : Color.clear)
         .onTapGesture(count: 2) { startRename() }
+        // R or F2 on the focused row renames it (the web's `tasks.list.rename`).
+        .focusable(canEditTitle)
+        .focusEffectDisabled()
+        .onKeyPress(keys: [KeyEquivalent("r"), TaskRowView.f2]) { press in
+            guard press.modifiers.isEmpty, canEditTitle, !renaming else { return .ignored }
+            startRename()
+            return .handled
+        }
         .onTapGesture {
             if task.locked || renaming { return }
             if shell.bulk.active || TaskRowView.modifierSelects() {
@@ -485,6 +493,9 @@ struct TaskRowView: View {
         .onLongPressGesture(minimumDuration: 0.45) { startSelecting() }
         #endif
     }
+
+    /// F2 as SwiftUI names keys: the function-key code point.
+    private static let f2 = KeyEquivalent(Character(UnicodeScalar(0xF705)!))
 
     private var canEditTitle: Bool { !task.locked && !session.preview && session.workspace?.role != "viewer" && !shell.bulk.active }
 

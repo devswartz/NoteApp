@@ -404,6 +404,7 @@ struct AppShell: View {
             }
             #endif
             .overlay(alignment: .bottom) { ToastView() }
+            .modifier(ShellKeys(shell: shell))
             .coordinateSpace(name: "shell")
         }
         .environment(shell)
@@ -472,6 +473,8 @@ struct AppShell: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { session.lockNow() }
         }
+        #else
+        .modifier(MacAutoLock(session: session))
         #endif
         .onChange(of: session.workspaceId) {
             if case .page = shell.route, !session.preview { shell.route = .notes }
