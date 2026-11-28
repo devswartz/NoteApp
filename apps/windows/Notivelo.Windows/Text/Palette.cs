@@ -18,6 +18,14 @@ public static class TextColors
     public static string? Text(string? name, bool dark) =>
         name is not null && Table.TryGetValue(name.ToLowerInvariant(), out var c) ? (dark ? c.TextDark : c.TextLight) : null;
 
+    /// <summary>The engine command for a colour pick: setColor / setHighlight with the name, or the unset (name null = Default).</summary>
+    public static (string Command, string Args) Command(bool highlight, string? name) =>
+        name is null ? (highlight ? "unsetHighlight" : "unsetColor", "{}")
+                     : (highlight ? "setHighlight" : "setColor", "{\"color\":\"" + name + "\"}");
+
+    /// <summary>The names, in the web's order (shared/colors.ts).</summary>
+    public static readonly string[] Names = { "gray", "red", "orange", "yellow", "green", "blue", "purple", "pink" };
+
     /// <summary>A highlight with no name is yellow.</summary>
     public static string Highlight(string? name, bool dark)
     {

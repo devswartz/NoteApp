@@ -139,8 +139,21 @@ namespace Notivelo.Windows.Data
                 new("Search", new[] { "Ctrl", "K" }),
                 new("Search (alternative)", new[] { "Ctrl", "Shift", "F" }),
                 new("New task", new[] { "Q" }),
+                new("New page", new[] { "Ctrl", "N" }),
+                new("New task (quick add)", new[] { "Ctrl", "Shift", "T" }),
+                new("Settings", new[] { "Ctrl", "," }),
                 new("Keyboard shortcuts", new[] { "Ctrl", "/" }),
                 new("Close a dialog or menu", new[] { "Esc" }),
+            }),
+            new ShortcutGroup("Go to", new Shortcut[]
+            {
+                new("Today", new[] { "Ctrl", "1" }),
+                new("Upcoming", new[] { "Ctrl", "2" }),
+                new("My Tasks", new[] { "Ctrl", "3" }),
+                new("Team", new[] { "Ctrl", "4" }),
+                new("All tasks", new[] { "Ctrl", "5" }),
+                new("Calendar", new[] { "Ctrl", "6" }),
+                new("Notes", new[] { "Ctrl", "8" }),
             }),
             new ShortcutGroup("Text formatting", new Shortcut[]
             {

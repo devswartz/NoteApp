@@ -110,7 +110,14 @@ internal sealed partial class TasksView
     private void FillList()
     {
         if (_list is null) return;
-        _list.Children.Clear();
+        _renameBox = null;
+        FillListCore();
+        if (_renameBox is null) { _renameId = null; _renameText = ""; }   // the row being renamed is not shown any more
+    }
+
+    private void FillListCore()
+    {
+        _list!.Children.Clear();
         var s = State;
         IReadOnlyList<TaskGroup> groups;
         UIElement? team = null;

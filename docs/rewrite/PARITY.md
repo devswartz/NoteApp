@@ -100,7 +100,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Save state indicator (Saved / Saving / Connecting / Offline) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | phone hides ✓ when saved |
 | Page title | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | title change refused unless current title known |
 | Undo/redo across typing and box moves (⌘Z, ⌘⇧Z, Ctrl+Y) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `canvasUndo.ts`, `pageUndo.ts`, `undoTasks.ts` |
-| Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | |
+| Marks: bold, italic, underline, strikethrough, code, text colour, highlight | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | |
 | Links: ⌘K, editor with Text + Address | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `LinkEditor.tsx` |
 | Headings 1–3 | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | `#`, Ctrl+Alt+1/2/3 |
 | Bulleted lists (Ctrl+.) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | |
@@ -163,9 +163,9 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Filters (tag, team, assignee, section, status…), sort, group; filter bar with Clear | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `FilterChips.tsx`, `ViewFilterBar.tsx` |
 | Assignee menus grouped by team (subteams nested) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `assigneeGroups.ts` |
 | Saved views (server, optionally shared) | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `/workspaces/:id/task-views` |
-| Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● | ◐ | ● | with a hardware keyboard |
+| Keyboard: J/K, X/Space, D, A, 1–4, R/F2, ↵, S, ⌘A, Esc | ● | ◐ | ● | ● ✓ | ◐ | ● | with a hardware keyboard |
 | Bulk select and bulk bar (complete, reschedule, assign, priority, delete; one Undo) | ● | ◐ | ● | ● ✓ | ◐ | ● | `BulkBar.tsx`, `selection.ts` |
-| Inline rename, complete with Undo | ● | ● | ● | ● | ● | ● | |
+| Inline rename, complete with Undo | ● | ● | ● | ● ✓ | ● | ● | |
 | Recurrence (every N days/weeks on days, monthly by date or nth weekday, last, until, count, after completion) | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | `RecurrencePicker.tsx`; same task moves to next date |
 | Print task view (⌘P) | ● | ● | ● | ● | ● | ● | |
 | Tags: create, rename, colour, delete | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `Labels.tsx`, `/tags` |
@@ -254,7 +254,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Menu bar / tray icon with due-today count and quick actions | — | — | ● ✓ | ● | — | — | `tray.rs` |
 | Close window keeps app running in tray | — | — | ● | ● | — | — | |
 | Global quick capture ⌥⌘N / Ctrl+Alt+N (task or note, Tab switches) | — | — | ● ✓ | ● | — | — | `quick.rs` |
-| App menu shortcuts (⌘N, ⇧⌘T, ⌘1–8, ⌘,) | — | — | ● ✓ | ● | — | — | `menu.rs` |
+| App menu shortcuts (⌘N, ⇧⌘T, ⌘1–8, ⌘,) | — | — | ● ✓ | ● ✓ | — | — | `menu.rs` |
 | Self-updater (asks before restart) | — | — | ◐ | ● | — | — | direct-download Mac only; Mac App Store build updates via the store |
 | Native window theme | — | — | ● ✓ | ● | — | — | `theme.rs` |
 | Install as PWA | — | — | — | — | — | ● | |

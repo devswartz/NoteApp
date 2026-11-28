@@ -29,6 +29,8 @@ internal sealed class AppSession
     public bool Busy { get; private set; }
     /// <summary>A kept sign-in that could not be resumed (offline, say): the sign-in screen offers to try again.</summary>
     public bool CanRetryRestore { get; private set; }
+    /// <summary>The shell was opened from the data stored on this device because the server could not be reached: the session is not confirmed yet and is tried again in the background.</summary>
+    public bool Unconfirmed { get; private set; }
     public N.User? User { get; private set; }
     public CoreNotesSource? Source { get; private set; }
     public event Action? Changed;
@@ -82,13 +84,57 @@ internal sealed class AppSession
         catch (Exception e)
         {
             if (core != _core) return;
+            if (await TryOpenOfflineAsync(core, e)) return;
             Phase = SessionPhase.SignedOut;
             if (ErrorText.TokenRejected(e))
             {
-                CredentialStore.Delete(ServerUrl); CanRetryRestore = false; Error = "You were signed out. Sign in again.";
+                CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl); CanRetryRestore = false; Error = "You were signed out. Sign in again.";
             }
             else { CanRetryRestore = true; Error = ErrorText.Message(e); }
             Raise();
+        }
+    }
+
+    /// <summary>No network at launch: open the shell from the stored workspaces, tree and tasks (the Offline save state shows) and keep trying to restore the sign-in.</summary>
+    private async Task<bool> TryOpenOfflineAsync(N.Core core, Exception failure)
+    {
+        if (failure is not N.CoreException.Network) return false;
+        int cached;
+        try { cached = (await RunAsync(core, c => c.CachedWorkspaces()))?.Length ?? 0; } catch { return false; }
+        if (core != _core) return true;
+        if (OfflineStart.Decide(failure, cached, OfflineStart.Decode(AppSettings.LastUser(ServerUrl))) is not { } user) return false;
+        User = user; Error = null; CanRetryRestore = false; Unconfirmed = true;
+        Phase = SessionPhase.SignedIn;
+        Source = new CoreNotesSource(this, user);
+        Raise();
+        Source.Start();
+        _ = KeepTryingAsync(core);
+        return true;
+    }
+
+    /// <summary>Restore the kept sign-in again until it works (then the shell goes live) or is rejected (then back to the sign-in screen).</summary>
+    private async Task KeepTryingAsync(N.Core core)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            await Task.Delay(OfflineStart.RetryDelay(attempt));
+            if (core != _core || Phase != SessionPhase.SignedIn || !Unconfirmed) return;
+            var token = CredentialStore.Read(ServerUrl);
+            if (token is null) { EndSession(null); return; }
+            try
+            {
+                var (signedIn, latest) = await RunAsync(core, c => (c.RestoreSession(token), c.RefreshToken()));
+                if (core != _core || !Unconfirmed) return;
+                Unconfirmed = false;
+                DidSignIn(signedIn.User, latest ?? signedIn.RefreshToken);
+                Source?.GoLive();
+                return;
+            }
+            catch (Exception e)
+            {
+                if (core != _core) return;
+                if (OfflineStart.GiveUp(ErrorText.TokenRejected(e))) { CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl); EndSession("You were signed out. Sign in again."); return; }
+            }
         }
     }
 
@@ -173,7 +219,7 @@ internal sealed class AppSession
     public void SignOut()
     {
         var core = _core;
-        if (!Preview) { _ = Task.Run(() => { try { core.SignOut(); } catch { } }); CredentialStore.Delete(ServerUrl); }
+        if (!Preview) { _ = Task.Run(() => { try { core.SignOut(); } catch { } }); CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl); }
         EndSession(null);
     }
 
@@ -193,7 +239,8 @@ internal sealed class AppSession
     private void DidSignIn(N.User user, string token)
     {
         Store(token);
-        User = user; Error = null; CanRetryRestore = false;
+        if (!Preview) AppSettings.SetLastUser(ServerUrl, OfflineStart.Encode(user));
+        User = user; Error = null; CanRetryRestore = false; Unconfirmed = false;
         Phase = SessionPhase.SignedIn;
         if (!user.EmailVerified) { Source?.Dispose(); Source = null; Raise(); return; }   // the check-email screen; no data calls until confirmed
         if (Source is not null) { Raise(); return; }
@@ -205,7 +252,7 @@ internal sealed class AppSession
     private void EndSession(string? message)
     {
         Source?.Dispose();
-        Source = null; User = null; _savedToken = null; Busy = false; CanRetryRestore = false;
+        Source = null; User = null; _savedToken = null; Busy = false; CanRetryRestore = false; Unconfirmed = false;
         _core = MakeCore(ServerUrl);
         Error = message; Phase = SessionPhase.SignedOut;
         Raise();
@@ -247,9 +294,10 @@ internal sealed class AppSession
         }
         catch (N.CoreException.SignedOut e)
         {
-            if (core == _core && Phase == SessionPhase.SignedIn)
+            // opened from the stored data and not signed in yet: the server saying so means nothing; the background restore decides
+            if (core == _core && Phase == SessionPhase.SignedIn && !Unconfirmed)
             {
-                CredentialStore.Delete(ServerUrl);
+                CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl);
                 EndSession(ErrorText.Message(e));
             }
             throw;
