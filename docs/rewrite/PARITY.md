@@ -223,7 +223,7 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 
 | Feature | iPad | iPhone | Mac | Windows | Android | Web | Notes |
 |---|---|---|---|---|---|---|---|
-| Opens offline from a cold start | ● ✓ | ● ✓ | ● ✓ | ● | ● | ● | bundled web app; service worker on web |
+| Opens offline from a cold start | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | bundled web app; service worker on web |
 | Opened pages editable offline, sync on reconnect | ● | ● | ● | ● | ● | ● | `pageCache.ts`, `offlineCache.ts` |
 | Tree and tasks cached for offline reading | ● ✓ | ● ✓ | ● ✓ | ● ✓ | ● | ● | `store/cache.ts` |
 
@@ -251,9 +251,9 @@ Wide/phone layout: iPad, Mac, Windows and wide web windows use the **wide layout
 | Home-screen Today widget | ● ✓ | ● ✓ | ○ | ○ | ● | — | iOS TodayWidget (WidgetKit), Android `TodayWidgetProvider` |
 | Haptics | ● | ● | — | — | ● | — | |
 | Keyboard-aware layout | ● ✓ | ● ✓ | — | — | ● | ◐ | `keyboardInset.ts` |
-| Menu bar / tray icon with due-today count and quick actions | — | — | ● ✓ | ● | — | — | `tray.rs` |
-| Close window keeps app running in tray | — | — | ● | ● | — | — | |
-| Global quick capture ⌥⌘N / Ctrl+Alt+N (task or note, Tab switches) | — | — | ● ✓ | ● | — | — | `quick.rs` |
+| Menu bar / tray icon with due-today count and quick actions | — | — | ● ✓ | ● ✓ | — | — | `tray.rs` |
+| Close window keeps app running in tray | — | — | ● | ● ✓ | — | — | |
+| Global quick capture ⌥⌘N / Ctrl+Alt+N (task or note, Tab switches) | — | — | ● ✓ | ● ✓ | — | — | `quick.rs` |
 | App menu shortcuts (⌘N, ⇧⌘T, ⌘1–8, ⌘,) | — | — | ● ✓ | ● ✓ | — | — | `menu.rs` |
 | Self-updater (asks before restart) | — | — | ◐ | ● | — | — | direct-download Mac only; Mac App Store build updates via the store |
 | Native window theme | — | — | ● ✓ | ● | — | — | `theme.rs` |
