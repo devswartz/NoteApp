@@ -506,7 +506,9 @@ struct BoxTextRenderer {
             cx.left += 15
             cx.right += 15
             if !ctx.hidden { out.flush(pad: 35) }
-            line(inline(c.content, size: 13.5, mono: true, ctx: cx), cx, out, lineHeight: 13.5 * 1.7, font: WebType.mono(13.5))
+            let code = NSMutableAttributedString(attributedString: inline(c.content, size: 13.5, mono: true, ctx: cx))
+            CodeHighlight.apply(code, language: c.string("language"), dark: palette.isDark)
+            line(code, cx, out, lineHeight: 13.5 * 1.7, font: WebType.mono(13.5))
             if !ctx.hidden { out.addAfter += 13 }
             var d = BoxDecoration(kind: .code(language: c.string("language") ?? ""), from: from, to: out.string.length,
                                   left: ctx.left, right: ctx.right)

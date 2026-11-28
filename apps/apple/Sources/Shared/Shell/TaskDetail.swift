@@ -75,6 +75,7 @@ struct TaskSheet: View {
                     titleRow(p)
                     props(p).padding(.top, 18)
                     descriptionBox(p).padding(.top, 18)
+                    if task.pageId != nil { TaskNotesSection(task: task, palette: p) }
                     subtasks(p)
                     foot(p)
                 }
