@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Notivelo.Windows.Controls;
 using Notivelo.Windows.Data;
 using Notivelo.Windows.Views;
 using WinRT.Interop;
@@ -62,6 +63,10 @@ public sealed partial class MainWindow : Window
         }
         _subclass = (h, msg, w, l, id, data) =>
         {
+            if (msg == App.ShowMessage) { ShowMain(); return IntPtr.Zero; }
+            if (msg == 0x0016 && w != IntPtr.Zero) { _quitting = true; Cleanup(); }   // WM_ENDSESSION: the OS is shutting down or the user signs out; never hold that up in the tray
+            if (msg == 0x0312 && _hotkeys?.Owns((int)w) == true) { ToggleQuickCapture(); return IntPtr.Zero; }   // WM_HOTKEY
+            if (_tray?.HandleMessage(msg, w, l) == true) return IntPtr.Zero;
             if (msg == 0x0024) // WM_GETMINMAXINFO: ptMinTrackSize is at offset 24
             {
                 var s = GetDpiForWindow(h) / 96.0;
@@ -71,6 +76,7 @@ public sealed partial class MainWindow : Window
             return DefSubclassProc(h, msg, w, l);
         };
         SetWindowSubclass(hwnd, _subclass, 1, 0);
+        StartTray(hwnd);
     }
 
     /// <summary>The window came to the front (the shell asks the server for new notifications).</summary>
@@ -90,6 +96,7 @@ public sealed partial class MainWindow : Window
         {
             if (_checkShown) return;
             _checkShown = true; _shown = SessionPhase.SignedIn;
+            _shell = null; _shellSource = null;
             Host.Children.Clear();
             Host.Children.Add(new CheckEmailView(s));
             ApplyTheme(ThemeMode.Hybrid);
@@ -104,6 +111,7 @@ public sealed partial class MainWindow : Window
         {
             if (_shown == SessionPhase.SignedOut) return; // the sign-in view follows the session by itself
             _checkShown = false;
+            _shell = null; _shellSource = null;
             _shown = SessionPhase.SignedOut;
             _signIn = new SignInView(s);
             Host.Children.Clear();
@@ -115,6 +123,7 @@ public sealed partial class MainWindow : Window
     private void ShowShell(INotesSource source, Action? signOut, string? server)
     {
         var shell = new ShellView(source, signOut, server);
+        _shell = shell; _shellSource = source;
         if (Enum.TryParse<ThemeMode>(Environment.GetEnvironmentVariable("NOTIVELO_THEME"), true, out var mode)) shell.SetTheme(mode, false);
         if (Enum.TryParse<AppRoute>(Environment.GetEnvironmentVariable("NOTIVELO_ROUTE"), true, out var route)) shell.Navigate(route);
         Host.Children.Clear();
@@ -125,9 +134,91 @@ public sealed partial class MainWindow : Window
     private void ApplyTheme(ThemeMode mode) =>
         Host.RequestedTheme = mode == ThemeMode.Light ? ElementTheme.Light : ElementTheme.Dark;
 
+    // ---- tray icon, close to tray and global quick capture (Tauri's tray.rs, quick.rs, lib.rs) ----
+
+    private ShellView? _shell;
+    private INotesSource? _shellSource;
+    private TrayIcon? _tray;
+    private HotkeyService? _hotkeys;
+    private QuickCaptureWindow? _quick;
+    private bool _quitting;
+
+    /// <summary>Why the quick-capture shortcut is off (another app has it), or null; the shell says so once.</summary>
+    public static string? HotkeyProblem { get; private set; }
+
+    /// <summary>What the tray shows, for the shell to repeat in its test readout and to set the tooltip from: the count of tasks due today.</summary>
+    public static void SetTodayCount(int count) => Instance?._tray?.SetTooltip(TrayRules.Tooltip(TrayRules.AppName, count));
+
+    private void StartTray(IntPtr hwnd)
+    {
+        try
+        {
+            _quick = new QuickCaptureWindow(() => _shellSource, ShowMain, id => { ShowMain(); _shell?.OpenPageById(id); });
+            _hotkeys = new HotkeyService(new Win32Hotkeys(hwnd));
+            _hotkeys.Register();
+            HotkeyProblem = _hotkeys.Problem;   // another app may own the shortcut: the tray item and the in-app Ctrl+Alt+N still work
+            _tray = new TrayIcon(hwnd, TrayRules.AppName, HotkeyService.QuickCapture);
+            _tray.Activated += ShowMain;
+            _tray.Command += RunTrayCommand;
+            _tray.Install();
+        }
+        catch (Exception e)
+        {
+            try { File.AppendAllText(Path.Combine(Path.GetTempPath(), "notivelo-tray.log"), e + "\n"); } catch { }
+        }
+        // closing hides the window while the tray icon is there to bring it back (lib.rs); Quit from the tray menu really quits
+        AppWindow.Closing += (_, e) =>
+        {
+            if (TrayRules.HideOnClose(_quitting, _tray?.Installed == true)) { e.Cancel = true; AppWindow.Hide(); return; }
+            Cleanup();
+            _quick?.Quit();   // its hidden window would keep the process alive
+        };
+    }
+
+    /// <summary>Bring the main window back (tray click, tray menu, a second launch): restored if it was minimised, shown if it was hidden, in front.</summary>
+    public void ShowMain()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } p) p.Restore();
+        AppWindow.Show();
+        Activate();
+        SetForegroundWindow(hwnd);
+    }
+
+    /// <summary>Ctrl+Alt+N (global, or inside the app) and the tray's Quick Capture.</summary>
+    public void ToggleQuickCapture() => _quick?.Toggle();
+
+    private void RunTrayCommand(TrayCommand c)
+    {
+        switch (c)
+        {
+            case TrayCommand.QuickCapture: ToggleQuickCapture(); return;
+            case TrayCommand.Quit: Quit(); return;
+        }
+        if (TrayRules.ShowsMain(c)) ShowMain();
+        if (TrayRules.KeyOf(c) is var k and not ShellKey.None) _shell?.RunShellKeyPublic(k);
+    }
+
+    /// <summary>Quit for real (tray menu): remove the icon, free the shortcut, close the windows and exit.</summary>
+    public void Quit()
+    {
+        _quitting = true;
+        Cleanup();
+        _quick?.Quit();
+        try { Close(); } catch (Exception) { }
+        Application.Current.Exit();
+    }
+
+    private void Cleanup()
+    {
+        try { _hotkeys?.Unregister(); } catch (Exception) { }
+        try { _tray?.Dispose(); } catch (Exception) { }
+    }
+
     private readonly SubclassProc _subclass;
     private delegate IntPtr SubclassProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam, nuint id, nuint data);
     [DllImport("comctl32.dll")] private static extern bool SetWindowSubclass(IntPtr hWnd, SubclassProc proc, nuint id, nuint data);
     [DllImport("comctl32.dll")] private static extern IntPtr DefSubclassProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
 }

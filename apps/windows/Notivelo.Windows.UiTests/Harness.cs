@@ -109,6 +109,12 @@ internal sealed class AppHost : IDisposable
         _app = app; _auto = auto; Window = w; TaskLog = log; A = new Box(this, "a"); B = new Box(this, "b");
     }
 
+    /// <summary>Another top-level window of the app by title (the quick-capture window), or null while it is hidden or not made yet.</summary>
+    public Window? OtherWindow(string title)
+    {
+        try { return _app.GetAllTopLevelWindows(_auto).FirstOrDefault(w => w.Title == title); } catch (Exception) { return null; }
+    }
+
     public static string ExePath()
     {
         if (Environment.GetEnvironmentVariable("NOTIVELO_EXE") is { Length: > 0 } e) return e;

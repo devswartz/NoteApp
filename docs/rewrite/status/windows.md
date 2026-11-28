@@ -67,7 +67,9 @@ For a fresh session taking over the Windows stream. The newest dated section bel
   - A few unchecked look items are listed in the dated sections.
   - Nothing has run against a real server or on Devon's PC.
 
-## Parity left (Windows, 2026-11-24; updated after left5)
+## Parity left (Windows, 2026-11-24; updated after left6)
+
+**Left6 (2026-11-28, `rewrite/windows-left6`) moved 4 more PARITY rows to ✓**: opens offline from a cold start (finished, with no last-user record needed), the tray icon with the due-today count, close to tray, and Ctrl+Alt+N quick capture. See the left6 section below. **Next most-used no-server rows:** Print and PDF (122, 123, 85, 166), the ribbon Table group and Print button (53), Settings > Security > Locked notes (215), command palette commands (56), calendar drag to re-date (157), deep links (63), and the double-click to rename a task (164, polish).
 
 **Left5 (2026-11-28, `rewrite/windows-left5`) moved 4 more PARITY rows to ✓**: the highlight colour menu, the task keyboard (A, S, R/F2), inline rename with complete-and-Undo, and the app shortcuts (Ctrl+N, Ctrl+Shift+T, Ctrl+1–8, Ctrl+,). Opens offline from a cold start (222) is partly built: it needs a sign-in made under this build. See the left5 section below. **Next most-used no-server rows:** tray, close to tray and Ctrl+Alt+N quick capture (250-252), Print and PDF (122, 123, 85, 166), the ribbon Table group, Settings > Security > Locked notes (215), command palette commands (56), calendar drag to re-date (157), deep links (63).
 
@@ -138,6 +140,51 @@ After those: tray, close-to-tray and Ctrl+Alt+N quick capture (250-252), Print a
 | Notification settings extras (180) | quiet hours, calendar feed link, test notification |
 | Export workspace, import from export (230, 231) | `GET /workspaces/:id/export`, import route |
 | Opened pages editable offline, sync on reconnect (223) | store-backed screens and the offline queue (M7) |
+
+## 2026-11-28: left6: offline cold start finished, tray icon, close to tray, Ctrl+Alt+N quick capture (branch `rewrite/windows-left6`, from `rewrite/native` d13098a)
+
+Not merged, but pushed. Nothing was driven with input on this PC, and nothing ran against a server; the UI tests use the in-memory sample. `crates/` is unchanged.
+
+- **CI:** 46173301353 on 720fe2a passed:
+  - the x64 and arm64 builds;
+  - 414 unit tests;
+  - every UI test, including 3 new ones in `Left6Tests.cs`;
+  - the look shots.
+- **Restart:** the first build agent was killed by an app restart. Its uncommitted work was kept as the WIP checkpoint 45b3bdd. A second agent checked it, found it built and was sound, and added no code (2d52008, an empty commit). The review fixes are 720fe2a.
+- **Opens offline from a cold start (222), finished.**
+  - Left5 needed a last-user record. Now, when `RestoreSession` fails with Network and `CachedWorkspaces` is non-empty, the shell opens from the cache even without that record.
+  - With no record, it opens under a placeholder identity with an empty id. While the id is unknown, `UserId` is null, so the "me" filter and the assignee treat it as nobody, and `Members()` is empty.
+  - Leaving a share offline answers "Connect to the internet first." This was found in review: it had sent the empty id.
+  - `ConfirmUser` fills in the real user when the retry gets through. The retry backs off 5, 10, 20 and 40 s, then every 60 s.
+  - The core has no call that gives the cached account offline: `User()` is live only, `Profile()` needs the network, and `CachedWorkspaces` has no owner. This one would make the placeholder unnecessary.
+- **Tray icon (250).** `Controls/TrayIcon.cs` (Shell_NotifyIcon, NOTIFYICON_VERSION_4) and `Data/TrayRules.cs`, as in `tray.rs`:
+  - The icon is `Assets/Tray.png`, white for a dark taskbar.
+  - The tooltip reads "Notivelo: N tasks due today". N is `GetTaskCounts().Today`, the same count as `TaskbarBadge`.
+  - The menu has Open, Quick Capture… (Ctrl+Alt+N), Today, Upcoming, New Page and Quit.
+  - A left click opens the window. The icon comes back when Explorer restarts (TaskbarCreated).
+  - The UI test reads the `tray-state` readout, not the real icon.
+- **Close to tray (251).**
+  - Closing the window hides it while the tray icon exists. A second launch brings the window back, and Quit really quits.
+  - There is no setting and no first-close notice, because today's Tauri app on Windows has neither.
+  - On a sign-out or shutdown (WM_ENDSESSION) the app removes the icon and the hotkey and lets the session end. If there is no tray icon, closing really exits, and closes the hidden quick-capture window too.
+- **Quick capture (252).** `Views/QuickCaptureWindow.cs` and `Data/HotkeyRules.cs` (RegisterHotKey behind `IHotkeyApi`, on the main window's HWND):
+  - Ctrl+Alt+N anywhere, the tray item, or Ctrl+Alt+N inside the app opens or closes one capture window.
+  - Tab switches between Task and Page, Enter adds, and Esc hides.
+  - A page goes into the first section of the first notebook and opens in the main window, as in `quick.rs` and the web.
+  - If another app holds the hotkey, a one-time toast says so.
+- **PARITY ticks:**
+  - Opens offline from a cold start
+  - the tray icon with the due-today count
+  - Close keeps the app running in the tray
+  - Global quick capture
+- **Unverified:**
+  - everything on a real PC and against a server;
+  - the real tray icon, its clicks and menu;
+  - the global hotkey from another app;
+  - closing to the tray and shutting down while in the tray;
+  - how `Tray.png` looks on light and dark taskbars;
+  - the live go-live switch after an offline start;
+  - a second launch that comes before the first one's window exists (it exits without showing a window; the window is looked up by its title).
 
 ## 2026-11-28: left5: highlight colours, task keys and inline rename, offline cold start, app shortcuts (branch `rewrite/windows-left5`, from `rewrite/native` a4e8535)
 

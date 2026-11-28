@@ -1,7 +1,7 @@
 namespace Notivelo.Windows.Data;
 
 /// <summary>What an app-menu shortcut does (the Mac app's menu.rs, the web's DESKTOP_SHORTCUTS): the keys that stand in for the menu bar Windows has not got.</summary>
-public enum ShellKey { None, NewPage, NewTask, Today, Upcoming, MyTasks, Team, AllTasks, Calendar, Notes, Settings }
+public enum ShellKey { None, NewPage, NewTask, Today, Upcoming, MyTasks, Team, AllTasks, Calendar, Notes, Settings, QuickCapture }
 
 /// <summary>Pure rules for the shell's shortcuts (no WinUI: the unit tests compile this file).</summary>
 public static class ShellKeys
@@ -10,6 +10,7 @@ public static class ShellKeys
     /// <paramref name="vk"/> is a virtual-key code (letters and digits as their capitals, the number pad 0x60-0x69, comma 0xBC).</summary>
     public static ShellKey Of(bool ctrl, bool shift, bool alt, int vk)
     {
+        if (ctrl && alt && !shift && vk == 0x4E) return ShellKey.QuickCapture;   // Ctrl+Alt+N, the global quick-capture key, also works inside the app (and when another app owns the global one)
         if (!ctrl || alt) return ShellKey.None;
         if (shift) return vk == 0x54 ? ShellKey.NewTask : ShellKey.None;
         var digit = vk is >= 0x31 and <= 0x39 ? vk - 0x30 : vk is >= 0x61 and <= 0x69 ? vk - 0x60 : -1;

@@ -28,6 +28,8 @@
     <Compile Include="..\Notivelo.Windows\Data\SavedViews.cs" Link="Data\SavedViews.cs" />
     <Compile Include="..\Notivelo.Windows\Data\ShellKeys.cs" Link="Data\ShellKeys.cs" />
     <Compile Include="..\Notivelo.Windows\Data\OfflineStart.cs" Link="Data\OfflineStart.cs" />
+    <Compile Include="..\Notivelo.Windows\Data\TrayRules.cs" Link="Data\TrayRules.cs" />
+    <Compile Include="..\Notivelo.Windows\Data\HotkeyRules.cs" Link="Data\HotkeyRules.cs" />
     <Compile Include="$(NvCoreDir)generated\nv_core.cs" Link="Native\nv_core.cs" />
     <Content Include="$(NvCoreDir)runtimes\win-x64\native\nv_core.dll" Link="nv_core.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(NvCoreDir)runtimes\win-x64\native\nv_core.dll')" />
   </ItemGroup>

@@ -142,7 +142,6 @@ public class Left5RulesTests
     public void Anything_else_keeps_the_sign_in_screen()
     {
         Assert.Null(OfflineStart.Decide(new CoreException.Network("down"), 0, Me));          // nothing stored yet
-        Assert.Null(OfflineStart.Decide(new CoreException.Network("down"), 2, null));        // who is it?
         Assert.Null(OfflineStart.Decide(new CoreException.SignedOut(), 2, Me));     // the token was refused
         Assert.Null(OfflineStart.Decide(new InvalidOperationException(), 2, Me));
     }

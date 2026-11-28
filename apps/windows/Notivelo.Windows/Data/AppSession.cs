@@ -242,6 +242,7 @@ internal sealed class AppSession
         if (!Preview) AppSettings.SetLastUser(ServerUrl, OfflineStart.Encode(user));
         User = user; Error = null; CanRetryRestore = false; Unconfirmed = false;
         Phase = SessionPhase.SignedIn;
+        Source?.ConfirmUser(user);
         if (!user.EmailVerified) { Source?.Dispose(); Source = null; Raise(); return; }   // the check-email screen; no data calls until confirmed
         if (Source is not null) { Raise(); return; }
         Source = new CoreNotesSource(this, user);
