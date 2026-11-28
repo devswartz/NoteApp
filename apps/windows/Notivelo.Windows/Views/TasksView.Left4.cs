@@ -146,7 +146,7 @@ internal sealed partial class TasksView
         if (e.Handled) return;
         if (FocusManager.GetFocusedElement(XamlRoot) is TextBox or PasswordBox or RichEditBox) return;
         var ctrl = KeyDownNow(VirtualKey.Control); var shift = KeyDownNow(VirtualKey.Shift);
-        var key = e.Key switch { VirtualKey.J => VirtualKey.Down, VirtualKey.K => VirtualKey.Up, VirtualKey.X => VirtualKey.Space, _ => e.Key };
+        var key = e.Key switch { VirtualKey.J => VirtualKey.Down, VirtualKey.K => VirtualKey.Up, VirtualKey.X or VirtualKey.S => VirtualKey.Space, VirtualKey.F2 => VirtualKey.R, _ => e.Key };
         if (ctrl && key != VirtualKey.A) return;
         var starts = key is VirtualKey.Down or VirtualKey.Up or VirtualKey.Space && !ctrl;
         if (!_sel.Active && !starts) return;
@@ -177,6 +177,12 @@ internal sealed partial class TasksView
                 if (PickCursorIfNone()) { BulkPatch(new TaskPatch(Priority: p), "Priority set"); e.Handled = true; }
                 break;
             }
+            case VirtualKey.R:
+                if (_sel.Cursor is { } renaming && _byId.ContainsKey(renaming)) { StartRename(renaming); e.Handled = true; }
+                break;
+            case VirtualKey.A:
+                if (PickCursorIfNone()) { RefreshSelection(); if (_assignButton is { } a) BarMenu(a, "bulk-assign-menu", AssignMenu()); e.Handled = true; }
+                break;
             case VirtualKey.D:
                 if (PickCursorIfNone()) { RefreshSelection(); if (_dateButton is { } d) BarMenu(d, "bulk-date-menu", DateMenu()); e.Handled = true; }
                 break;
@@ -197,7 +203,20 @@ internal sealed partial class TasksView
         return true;
     }
 
-    private Button? _dateButton;
+    private Button? _dateButton, _assignButton;
+
+    private List<MenuEntry> AssignMenu()
+    {
+        var items = new List<MenuEntry>();
+        if (_source.UserId is { } me) items.Add(new("Me", "user", () => BulkPatch(new TaskPatch(AssigneeId: me), "Reassigned"), Id: "bulk-assign-me"));
+        items.Add(new("Unassigned", "user-minus", () => BulkPatch(new TaskPatch(ClearAssignee: true), "Reassigned"), Id: "bulk-assign-none"));
+        foreach (var m in _source.Members().Where(m => m.Id != _source.UserId && m.Role != "viewer"))
+        {
+            var id = m.Id;
+            items.Add(new(m.Name.Length > 0 ? m.Name : m.Email, null, () => BulkPatch(new TaskPatch(AssigneeId: id), "Reassigned"), Id: "bulk-assign-" + id));
+        }
+        return items;
+    }
 
     private List<MenuEntry> DateMenu() => new()
     {
@@ -252,18 +271,9 @@ internal sealed partial class TasksView
             for (var p = 1; p <= 4; p++) { var v = p; items.Add(new(TaskViewState.PriorityLabel(v), "flag", () => BulkPatch(new TaskPatch(Priority: v), "Priority set"), Id: "bulk-priority-" + v)); }
             BarMenu(b, "bulk-priority-menu", items);
         }, n > 0));
-        row.Children.Add(BarButton("user", "Assign", "bulk-assign", b =>
-        {
-            var items = new List<MenuEntry>();
-            if (_source.UserId is { } me) items.Add(new("Me", "user", () => BulkPatch(new TaskPatch(AssigneeId: me), "Reassigned"), Id: "bulk-assign-me"));
-            items.Add(new("Unassigned", "user-minus", () => BulkPatch(new TaskPatch(ClearAssignee: true), "Reassigned"), Id: "bulk-assign-none"));
-            foreach (var m in _source.Members().Where(m => m.Id != _source.UserId && m.Role != "viewer"))
-            {
-                var id = m.Id;
-                items.Add(new(m.Name.Length > 0 ? m.Name : m.Email, null, () => BulkPatch(new TaskPatch(AssigneeId: id), "Reassigned"), Id: "bulk-assign-" + id));
-            }
-            BarMenu(b, "bulk-assign-menu", items);
-        }, n > 0));
+        var assignBtn = BarButton("user", "Assign", "bulk-assign", b => BarMenu(b, "bulk-assign-menu", AssignMenu()), n > 0);
+        _assignButton = assignBtn;
+        row.Children.Add(assignBtn);
         row.Children.Add(BarButton("trash", "Delete", "bulk-delete", _ => BulkDelete(), n > 0, danger: true));
         row.Children.Add(BarButton("x", "Done", "bulk-done", _ => { _sel.Clear(); RebuildKeepScroll(); Focus(FocusState.Programmatic); }, true));
         var bar = new Border
@@ -286,6 +296,61 @@ internal sealed partial class TasksView
         var h = items.Sum(i => i.Height) + 14;
         var tl = anchor.TransformToVisual(null).TransformPoint(new global::Windows.Foundation.Point(0, 0));
         PopupMenu.Show(Host.Overlay, items, null, at: new global::Windows.Foundation.Point(tl.X, Math.Max(8, tl.Y - h - 6)), id: id, width: 220);
+    }
+
+    // ---- completing, renaming ----
+
+    /// <summary>The row's check circle: ticks or reopens the task; completing a task that does not repeat says so with an Undo (the web's toggleTask).</summary>
+    private void ToggleDone(TaskItem t)
+    {
+        var was = _source.BulkUpdateTasks(new[] { t.Id }, new TaskPatch(Done: !t.Done));
+        if (!t.Done && !t.Recurring)
+            Host?.Toast("Task completed", false, was.Count == 0 ? null : () => { foreach (var (id, undo) in was) _source.UpdateTask(id, undo); });
+    }
+
+    private string? _renameId;
+    private string _renameText = "";
+    private bool _filling;
+
+    /// <summary>R or F2 on the keyboard's row: its title becomes a box (the web's TitleEditor): Enter or leaving saves, Esc cancels.</summary>
+    private void StartRename(string id)
+    {
+        if (!_byId.TryGetValue(id, out var t)) return;
+        _renameId = id; _renameText = t.Title;
+        RefreshSelection();
+    }
+
+    private UIElement RenameBox(TaskItem t)
+    {
+        var tb = new TextBox
+        {
+            Text = _renameText, FontSize = 14, MaxLength = 1000, Padding = new Thickness(6, 3, 6, 3), MinHeight = 28, BorderBrush = B("Accent"), Background = B("Bg"), Foreground = B("Text"),
+            FontFamily = Ui.Font,
+        };
+        AutomationProperties.SetAutomationId(tb, "task-rename-input");
+        AutomationProperties.SetName(tb, "Task title");
+        var id = t.Id;
+        tb.TextChanged += (_, _) => { if (_renameId == id) _renameText = tb.Text; };
+        tb.Tapped += (_, e) => e.Handled = true;
+        tb.DoubleTapped += (_, e) => e.Handled = true;
+        tb.KeyDown += (_, e) =>
+        {
+            if (e.Key == VirtualKey.Enter) { e.Handled = true; FinishRename(id, save: true); }
+            else if (e.Key == VirtualKey.Escape) { e.Handled = true; FinishRename(id, save: false); }
+        };
+        tb.LostFocus += (_, _) => { if (!_filling && _renameId == id) FinishRename(id, save: true, refocus: false); };
+        tb.Loaded += (_, _) => { tb.Focus(FocusState.Programmatic); tb.SelectAll(); };
+        return tb;
+    }
+
+    private void FinishRename(string id, bool save, bool refocus = true)
+    {
+        if (_renameId != id) return;
+        var text = RenameRules.Result(_byId.TryGetValue(id, out var t) ? t.Title : "", _renameText, save);
+        _renameId = null; _renameText = "";
+        if (text is not null) _source.UpdateTask(id, new TaskPatch(Title: text));
+        FillList();
+        if (refocus) Focus(FocusState.Programmatic);
     }
 
     // ---- the actions ----

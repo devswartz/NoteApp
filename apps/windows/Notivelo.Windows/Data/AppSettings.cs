@@ -23,6 +23,8 @@ internal static class AppSettings
         public string? Accent { get; set; }
         /// <summary>The task views' filters, sort and group, per view (a JSON <c>TaskViewState</c> each): kept on this device, the server stores none.</summary>
         public Dictionary<string, string> TaskViews { get; set; } = new();
+        /// <summary>The user last signed in per server (JSON of <c>OfflineStart.Kept</c>), so a cold start without network can open the shell from the stored data.</summary>
+        public Dictionary<string, string> LastUsers { get; set; } = new();
     }
 
     private static readonly object Gate = new();
@@ -75,6 +77,10 @@ internal static class AppSettings
 
     public static string? TaskView(string view) => Load().TaskViews.GetValueOrDefault(view);
     public static void SetTaskView(string view, string json) { Load().TaskViews[view] = json; Save(); }
+
+    public static string? LastUser(string server) => Load().LastUsers.GetValueOrDefault(server);
+    public static void SetLastUser(string server, string json) { Load().LastUsers[server] = json; Save(); }
+    public static void ClearLastUser(string server) { if (Load().LastUsers.Remove(server)) Save(); }
 
     public static string? Workspace(string server) => Load().Workspaces.GetValueOrDefault(server);
 

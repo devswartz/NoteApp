@@ -325,6 +325,12 @@ public sealed partial class ShellView : UserControl
             }
         }
         if (!ctrl) return;
+        if (ShellKeys.Of(ctrl, shift, InputKeyboardSource.GetKeyStateForCurrentThread(global::Windows.System.VirtualKey.Menu).HasFlag(global::Windows.UI.Core.CoreVirtualKeyStates.Down), (int)e.Key) is var act and not ShellKey.None && !_overlay.IsOpen)
+        {
+            e.Handled = true;
+            RunShellKey(act);
+            return;
+        }
         // no box has the keyboard: undo/redo still reach the live page (a box's own key handling marks the key handled first)
         if (_route == AppRoute.Notes && (e.Key == global::Windows.System.VirtualKey.Z || e.Key == global::Windows.System.VirtualKey.Y)
             && !_overlay.IsOpen && e.OriginalSource is not TextBox)
@@ -343,6 +349,27 @@ public sealed partial class ShellView : UserControl
         {
             e.Handled = true;
             _host.OpenSearch();
+        }
+    }
+
+    /// <summary>The app-menu shortcuts (the Mac menu's New Page, New Task, the Go menu and Settings).</summary>
+    private void RunShellKey(ShellKey k)
+    {
+        switch (k)
+        {
+            case ShellKey.NewPage:
+                if (!_source.CanEditTree) break;
+                if (ShellKeys.SectionForNewPage(_source.Notebooks, _source.CurrentNotebookId, _route == AppRoute.Notes ? _pageId : null) is { } sec) _host.Tree.NewPage(sec);
+                else _host.Toast("Create a notebook first");
+                break;
+            case ShellKey.NewTask: _host.OpenQuickAdd(null); break;
+            case ShellKey.Settings: if (_route != AppRoute.Settings) _host.OpenSettings(); break;
+            case ShellKey.Calendar: GoTo(AppRoute.Calendar); break;
+            case ShellKey.Notes: GoTo(AppRoute.Notes); break;
+            default:
+                _taskView = k switch { ShellKey.Today => TaskViewKind.Today, ShellKey.Upcoming => TaskViewKind.Upcoming, ShellKey.MyTasks => TaskViewKind.MyTasks, ShellKey.Team => TaskViewKind.Team, _ => TaskViewKind.All };
+                GoTo(AppRoute.Tasks);
+                break;
         }
     }
 

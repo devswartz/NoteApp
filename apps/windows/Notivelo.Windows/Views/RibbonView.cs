@@ -31,7 +31,6 @@ internal sealed class RibbonView : ThemedControl
         ["Italic"] = new("toggleMark", "{\"mark\":\"italic\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Italic)),
         ["Underline"] = new("toggleMark", "{\"mark\":\"underline\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Underline)),
         ["Strikethrough"] = new("toggleMark", "{\"mark\":\"strike\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Strike)),
-        ["Highlight"] = new("toggleMark", "{\"mark\":\"highlight\"}", a => Mark(a, Notivelo.Native.ViewMarkKind.Highlight)),
         ["Bulleted list"] = new("toggleBulletList", "{}", a => a.List == "bulletList"),
         ["Numbered list"] = new("toggleOrderedList", "{}", a => a.List == "orderedList"),
         ["Decrease indent"] = new("outdent"),
@@ -69,21 +68,29 @@ internal sealed class RibbonView : ThemedControl
     }
 
     /// <summary>The text colours (the engine's setColor with a colour name; "Default" takes the colour off).</summary>
-    private MenuFlyout TextColourMenu()
+    private MenuFlyout TextColourMenu(bool highlight = false)
     {
         var f = new MenuFlyout();
         var dark = ActualTheme == ElementTheme.Dark;
+        var kind = highlight ? "highlight" : "text";
         void Add(string label, string? name)
         {
             var it = new MenuFlyoutItem { Text = label };
-            if (Notivelo.Windows.Text.TextColors.Text(name, dark) is { } hex)
+            if (highlight)
+            {
+                // a swatch square in the highlight colour; Default has none
+                if (name is not null)
+                    it.Icon = new FontIcon { Glyph = "■", FontSize = 14, Foreground = Ui.Hex(Notivelo.Windows.Text.TextColors.Highlight(name, dark)) };
+            }
+            else if (Notivelo.Windows.Text.TextColors.Text(name, dark) is { } hex)
                 it.Icon = new FontIcon { Glyph = "A", FontWeight = new FontWeight(700), FontSize = 14, Foreground = Ui.Hex(hex) };
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "colour-text-" + (name ?? "default"));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(it, "colour-" + kind + "-" + (name ?? "default"));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(it, label);
             it.Click += (_, _) =>
             {
                 var box = BoxTextView.Target;
-                if (name is null) box?.RunCommand("unsetColor"); else box?.RunCommand("setColor", "{\"color\":\"" + name + "\"}");
+                var (cmd, args) = Notivelo.Windows.Text.TextColors.Command(highlight, name);
+                box?.RunCommand(cmd, args);
                 box?.Focus(FocusState.Programmatic);
             };
             f.Items.Add(it);
@@ -384,7 +391,7 @@ internal sealed class RibbonView : ThemedControl
 
         ButtonBase b;
         Specs.TryGetValue(it.Tip, out var spec);
-        var custom = it.Tip is "Clear formatting" or "Link to page" or "Divider" or "Text colour" or "Table tools";
+        var custom = it.Tip is "Clear formatting" or "Link to page" or "Divider" or "Text colour" or "Highlight" or "Table tools";
         var editing = Route == AppRoute.Notes && (spec is not null || custom || it.Tip is "Undo" or "Redo" or "Picture" or "File");
         if (it.Pressed || spec?.Active is not null)
             b = new ToggleButton { Style = Ui.Style("RibbonToggleStyle"), IsChecked = it.Pressed };
@@ -418,6 +425,7 @@ internal sealed class RibbonView : ThemedControl
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(b, "ribbon-" + PopupMenu.Slug(it.Tip));
                 var tip = it.Tip;
                 if (tip == "Text colour") ((Button)b).Flyout = TextColourMenu();
+                else if (tip == "Highlight") ((Button)b).Flyout = TextColourMenu(highlight: true);
                 else if (tip == "Table tools") ((Button)b).Flyout = TableToolsMenu();
                 else b.Click += (_, _) =>
                 {

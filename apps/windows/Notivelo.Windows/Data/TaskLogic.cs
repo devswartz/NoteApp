@@ -140,3 +140,15 @@ internal static class TaskLogic
         CalendarStatus.Open => !done, CalendarStatus.Completed => done, _ => true,
     };
 }
+
+/// <summary>Inline rename of a task (the web's TitleEditor): what the box saves.</summary>
+internal static class RenameRules
+{
+    /// <summary>The new title to save, or null when nothing changes: Esc (not saving), an empty box, or the same title.</summary>
+    public static string? Result(string current, string typed, bool save)
+    {
+        if (!save) return null;
+        var v = typed.Trim();
+        return v.Length == 0 || v == current ? null : v;
+    }
+}

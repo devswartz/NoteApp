@@ -110,7 +110,13 @@ internal sealed partial class TasksView
     private void FillList()
     {
         if (_list is null) return;
-        _list.Children.Clear();
+        _filling = true;
+        try { FillListCore(); } finally { _filling = false; }
+    }
+
+    private void FillListCore()
+    {
+        _list!.Children.Clear();
         var s = State;
         IReadOnlyList<TaskGroup> groups;
         UIElement? team = null;

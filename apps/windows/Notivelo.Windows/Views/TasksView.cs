@@ -37,7 +37,10 @@ internal sealed partial class TasksView : ThemedControl
     protected override UIElement Build()
     {
         var root = new StackPanel { Padding = new Thickness(40, 36, 40, 120) };
-        root.Children.Add(Ui.Text(Title(View), 26, B("Text"), 700, lineHeight: 34, tracking: -0.02));
+        var heading = Ui.Text(Title(View), 26, B("Text"), 700, lineHeight: 34, tracking: -0.02);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(heading, "tasks-title");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(heading, Title(View));
+        root.Children.Add(heading);
         var sub = Ui.Text(_source.TasksSubtitle(View), 14, B("TextMuted"), lineHeight: 21);
         sub.Margin = new Thickness(0, 4, 0, 20);
         root.Children.Add(sub);
@@ -185,7 +188,7 @@ internal sealed partial class TasksView : ThemedControl
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(circle, (t.Done ? "Mark not done: " : "Mark done: ") + t.Title);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetItemStatus(circle, t.Done ? "done=1" : "done=0");
         circle.Tapped += (_, e) => e.Handled = true;
-        circle.Click += (_, _) => _source.UpdateTask(t.Id, new TaskPatch(Done: !t.Done));
+        circle.Click += (_, _) => ToggleDone(t);
         row.Children.Add(circle);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(row, "task-row-" + t.Id);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, t.Title);
@@ -196,10 +199,14 @@ internal sealed partial class TasksView : ThemedControl
         row.Tapped += (_, _) => Host?.OpenTask(t.Id);
 
         var body = new StackPanel();
-        var title = Ui.Text(t.Title, 14, t.Done ? B("TextMuted") : B("Text"), lineHeight: 19.6);
-        title.TextWrapping = TextWrapping.Wrap;
-        if (t.Done) title.TextDecorations = TextDecorations.Strikethrough;
-        body.Children.Add(title);
+        if (_renameId == t.Id) body.Children.Add(RenameBox(t));
+        else
+        {
+            var title = Ui.Text(t.Title, 14, t.Done ? B("TextMuted") : B("Text"), lineHeight: 19.6);
+            title.TextWrapping = TextWrapping.Wrap;
+            if (t.Done) title.TextDecorations = TextDecorations.Strikethrough;
+            body.Children.Add(title);
+        }
 
         var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 3, 0, 0), MinHeight = 22 };
         if (t.DueLabel is not null)

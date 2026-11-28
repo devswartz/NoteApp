@@ -9,7 +9,17 @@ internal sealed partial class CoreNotesSource
     private bool _netDown;
 
     /// <summary>The open page cannot connect, or the tree could not be loaded or changed for want of a network.</summary>
-    public bool IsOffline => _netDown || (_openId is not null && _state == PageState.Offline);
+    public bool IsOffline => _netDown || _session.Unconfirmed || (_openId is not null && _state == PageState.Offline);
+
+    /// <summary>The session came back after a cold start without network: load the workspaces, the tree and the tasks from the server.</summary>
+    public void GoLive()
+    {
+        if (_disposed) return;
+        _netDown = false;
+        Start();
+        if (_wsId is { } id) SelectWorkspace(id);
+        Raise();
+    }
 
     private void NoteNetwork(Exception e) { var was = IsOffline; if (e is N.CoreException.Network) _netDown = true; if (was != IsOffline) Raise(); }
     private void NoteOnline() { var was = IsOffline; _netDown = false; if (was != IsOffline) Raise(); }
