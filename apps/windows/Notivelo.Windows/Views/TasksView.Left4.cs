@@ -310,7 +310,7 @@ internal sealed partial class TasksView
 
     private string? _renameId;
     private string _renameText = "";
-    private bool _filling;
+    private TextBox? _renameBox;   // the box of the current build: a LostFocus from an older one (a rebuild replaced it) saves nothing
 
     /// <summary>R or F2 on the keyboard's row: its title becomes a box (the web's TitleEditor): Enter or leaving saves, Esc cancels.</summary>
     private void StartRename(string id)
@@ -327,6 +327,7 @@ internal sealed partial class TasksView
             Text = _renameText, FontSize = 14, MaxLength = 1000, Padding = new Thickness(6, 3, 6, 3), MinHeight = 28, BorderBrush = B("Accent"), Background = B("Bg"), Foreground = B("Text"),
             FontFamily = Ui.Font,
         };
+        _renameBox = tb;
         AutomationProperties.SetAutomationId(tb, "task-rename-input");
         AutomationProperties.SetName(tb, "Task title");
         var id = t.Id;
@@ -338,7 +339,7 @@ internal sealed partial class TasksView
             if (e.Key == VirtualKey.Enter) { e.Handled = true; FinishRename(id, save: true); }
             else if (e.Key == VirtualKey.Escape) { e.Handled = true; FinishRename(id, save: false); }
         };
-        tb.LostFocus += (_, _) => { if (!_filling && _renameId == id) FinishRename(id, save: true, refocus: false); };
+        tb.LostFocus += (_, _) => { if (_renameBox == tb && _renameId == id) FinishRename(id, save: true, refocus: false); };
         tb.Loaded += (_, _) => { tb.Focus(FocusState.Programmatic); tb.SelectAll(); };
         return tb;
     }

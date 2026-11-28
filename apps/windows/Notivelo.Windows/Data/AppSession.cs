@@ -88,7 +88,7 @@ internal sealed class AppSession
             Phase = SessionPhase.SignedOut;
             if (ErrorText.TokenRejected(e))
             {
-                CredentialStore.Delete(ServerUrl); CanRetryRestore = false; Error = "You were signed out. Sign in again.";
+                CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl); CanRetryRestore = false; Error = "You were signed out. Sign in again.";
             }
             else { CanRetryRestore = true; Error = ErrorText.Message(e); }
             Raise();
@@ -219,7 +219,7 @@ internal sealed class AppSession
     public void SignOut()
     {
         var core = _core;
-        if (!Preview) { _ = Task.Run(() => { try { core.SignOut(); } catch { } }); CredentialStore.Delete(ServerUrl); }
+        if (!Preview) { _ = Task.Run(() => { try { core.SignOut(); } catch { } }); CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl); }
         EndSession(null);
     }
 
@@ -297,7 +297,7 @@ internal sealed class AppSession
             // opened from the stored data and not signed in yet: the server saying so means nothing; the background restore decides
             if (core == _core && Phase == SessionPhase.SignedIn && !Unconfirmed)
             {
-                CredentialStore.Delete(ServerUrl);
+                CredentialStore.Delete(ServerUrl); AppSettings.ClearLastUser(ServerUrl);
                 EndSession(ErrorText.Message(e));
             }
             throw;

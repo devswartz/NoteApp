@@ -96,7 +96,7 @@ internal sealed class RibbonView : ThemedControl
             f.Items.Add(it);
         }
         Add("Default", null);
-        foreach (var n in new[] { "gray", "red", "orange", "yellow", "green", "blue", "purple", "pink" }) Add(char.ToUpperInvariant(n[0]) + n[1..], n);
+        foreach (var n in Notivelo.Windows.Text.TextColors.Names) Add(char.ToUpperInvariant(n[0]) + n[1..], n);
         return f;
     }
 

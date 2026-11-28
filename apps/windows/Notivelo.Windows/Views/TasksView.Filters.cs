@@ -110,8 +110,9 @@ internal sealed partial class TasksView
     private void FillList()
     {
         if (_list is null) return;
-        _filling = true;
-        try { FillListCore(); } finally { _filling = false; }
+        _renameBox = null;
+        FillListCore();
+        if (_renameBox is null) { _renameId = null; _renameText = ""; }   // the row being renamed is not shown any more
     }
 
     private void FillListCore()
